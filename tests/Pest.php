@@ -1,6 +1,7 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Enums\DefaultRole;
+use App\Models\Role;
 use Tests\TestCase;
 
 /*
@@ -14,9 +15,7 @@ use Tests\TestCase;
 |
 */
 
-pest()->extend(TestCase::class)
-    ->use(RefreshDatabase::class)
-    ->in('Feature');
+pest()->extend(TestCase::class)->in('Feature');
 
 /*
 |--------------------------------------------------------------------------
@@ -44,7 +43,10 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * The role record created from one of the initial role definitions.
+ */
+function role(DefaultRole $role): Role
 {
-    // ..
+    return Role::findByName($role->value, 'web');
 }

@@ -1,9 +1,13 @@
+import type { DataScopeValue } from './admin';
+
 export type User = {
     id: number;
     name: string;
     email: string;
     avatar?: string;
     email_verified_at: string | null;
+    is_active?: boolean;
+    last_login_at?: string | null;
     two_factor_enabled?: boolean;
     created_at: string;
     updated_at: string;
@@ -12,6 +16,14 @@ export type User = {
 
 export type Auth = {
     user: User;
+    role: {
+        id: number;
+        label: string;
+        scope: DataScopeValue;
+        is_root: boolean;
+        is_active: boolean;
+    } | null;
+    permissions: string[];
 };
 
 export type Passkey = {

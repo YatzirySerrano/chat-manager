@@ -17,7 +17,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'mariadb'),
 
     /*
     |--------------------------------------------------------------------------
@@ -115,6 +115,19 @@ return [
         ],
 
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Destructive Commands
+    |--------------------------------------------------------------------------
+    |
+    | Commands that drop data (migrate:fresh, migrate:refresh, migrate:reset,
+    | migrate:rollback, db:wipe) only run against databases whose name ends
+    | in "_testing", unless this flag is enabled. Production always blocks them.
+    |
+    */
+
+    'allow_destructive_commands' => (bool) env('DB_ALLOW_DESTRUCTIVE_COMMANDS', false),
 
     /*
     |--------------------------------------------------------------------------

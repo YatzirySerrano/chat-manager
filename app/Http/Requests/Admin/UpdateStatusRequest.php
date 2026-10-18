@@ -1,15 +1,16 @@
 <?php
 
-namespace App\Http\Requests\Settings;
+namespace App\Http\Requests\Admin;
 
-use App\Concerns\PasswordValidationRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class ProfileDeleteRequest extends FormRequest
+/**
+ * Shared validation for activating or deactivating a resource. Authorization
+ * is performed by the controller through the resource policy.
+ */
+class UpdateStatusRequest extends FormRequest
 {
-    use PasswordValidationRules;
-
     /**
      * Get the validation rules that apply to the request.
      *
@@ -18,7 +19,7 @@ class ProfileDeleteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'password' => $this->currentPasswordRules(),
+            'is_active' => ['required', 'boolean'],
         ];
     }
 }

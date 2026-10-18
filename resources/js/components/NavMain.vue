@@ -10,24 +10,33 @@ import {
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import type { NavItem } from '@/types';
 
-defineProps<{
-    items: NavItem[];
-}>();
+withDefaults(
+    defineProps<{
+        items: NavItem[];
+        label?: string;
+    }>(),
+    { label: 'Plataforma' },
+);
 
-const { isCurrentUrl } = useCurrentUrl();
+const { isCurrentOrParentUrl } = useCurrentUrl();
 </script>
 
 <template>
-    <SidebarGroup class="px-2 py-0">
-        <SidebarGroupLabel>Platform</SidebarGroupLabel>
-        <SidebarMenu>
+    <SidebarGroup class="px-3 py-1">
+        <SidebarGroupLabel
+            class="text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase"
+        >
+            {{ label }}
+        </SidebarGroupLabel>
+        <SidebarMenu class="gap-0.5">
             <SidebarMenuItem v-for="item in items" :key="item.title">
                 <SidebarMenuButton
                     as-child
-                    :is-active="isCurrentUrl(item.href)"
+                    :is-active="isCurrentOrParentUrl(item.href)"
                     :tooltip="item.title"
+                    class="h-9 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent data-[active=true]:bg-primary-soft data-[active=true]:text-primary-soft-foreground [&>svg]:text-muted-foreground data-[active=true]:[&>svg]:text-primary-soft-foreground"
                 >
-                    <Link :href="item.href">
+                    <Link :href="item.href" prefetch>
                         <component :is="item.icon" />
                         <span>{{ item.title }}</span>
                     </Link>

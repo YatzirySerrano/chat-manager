@@ -1,4 +1,5 @@
 import type { Directive } from 'vue';
+import type { ThemePaletteValue } from '@/types/admin';
 import type { Auth } from '@/types/auth';
 
 // Extend ImportMeta interface for Vite...
@@ -18,6 +19,11 @@ declare module '@inertiajs/core' {
     export interface InertiaConfig {
         sharedPageProps: {
             name: string;
+            platform: {
+                name: string;
+                timezone: string;
+                palette: ThemePaletteValue;
+            };
             auth: Auth;
             sidebarOpen: boolean;
             [key: string]: unknown;

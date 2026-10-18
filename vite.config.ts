@@ -14,6 +14,10 @@ export default defineConfig({
             fonts: [
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
+                    // Metric-matched fallbacks need the optional "fontaine"
+                    // package; the self-hosted font is preloaded, so the
+                    // system-ui fallback is enough for this internal app.
+                    optimizedFallbacks: false,
                 }),
             ],
         }),

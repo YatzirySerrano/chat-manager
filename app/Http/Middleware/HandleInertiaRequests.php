@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
+use App\Services\PlatformSettings;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -15,6 +17,8 @@ class HandleInertiaRequests extends Middleware
      * @var string
      */
     protected $rootView = 'app';
+
+    public function __construct(private PlatformSettings $settings) {}
 
     /**
      * Determines the current asset version.
@@ -35,13 +39,39 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $settings = $this->settings->all();
+
         return [
             ...parent::share($request),
-            'name' => config('app.name'),
+            'name' => $settings['general']['platform_name'],
+            'platform' => [
+                'name' => $settings['general']['platform_name'],
+                'timezone' => $settings['general']['timezone'],
+                'palette' => $settings['appearance']['palette'],
+            ],
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
+                'role' => $user instanceof User ? $this->roleSummary($user) : null,
+                'permissions' => $user instanceof User ? $user->effectivePermissions() : [],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        ];
+    }
+
+    /**
+     * @return array{id: int, label: string, scope: string, is_root: bool, is_active: bool}|null
+     */
+    private function roleSummary(User $user): ?array
+    {
+        $role = $user->role();
+
+        return $role === null ? null : [
+            'id' => $role->id,
+            'label' => $role->label,
+            'scope' => $role->scope->value,
+            'is_root' => $role->is_root,
+            'is_active' => $role->is_active,
         ];
     }
 }

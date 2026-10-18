@@ -1,0 +1,423 @@
+<script setup lang="ts">
+import { Head, useForm } from '@inertiajs/vue3';
+import { CircleDashed, Lock, PlugZap } from '@lucide/vue';
+import { computed } from 'vue';
+import FormField from '@/components/FormField.vue';
+import InputError from '@/components/InputError.vue';
+import PageHeader from '@/components/PageHeader.vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { edit, update } from '@/routes/admin/settings';
+import type { PlatformSettings, Weekday } from '@/types';
+
+defineOptions({
+    layout: {
+        breadcrumbs: [{ title: 'Configuración', href: edit() }],
+    },
+});
+
+const props = defineProps<{
+    settings: PlatformSettings;
+    timezones: string[];
+    weekdays: Weekday[];
+    departments: { id: number; name: string }[];
+    integration: {
+        whatsapp_accounts: number;
+        active_whatsapp_accounts: number;
+    };
+    can: { update: boolean };
+}>();
+
+const weekdayLabels: Record<Weekday, string> = {
+    monday: 'Lunes',
+    tuesday: 'Martes',
+    wednesday: 'Miércoles',
+    thursday: 'Jueves',
+    friday: 'Viernes',
+    saturday: 'Sábado',
+    sunday: 'Domingo',
+};
+
+/**
+ * Props are reactive proxies, which structuredClone cannot copy (it threw a
+ * DataCloneError and left this page blank). A JSON copy is enough for this
+ * plain settings object and keeps the form independent from the props.
+ */
+const form = useForm<PlatformSettings>(
+    JSON.parse(JSON.stringify(props.settings)) as PlatformSettings,
+);
+
+const errors = computed(
+    () => form.errors as Record<string, string | undefined>,
+);
+
+const nativeSelectClass =
+    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
+
+function toNullableNumber(value: string | number): number | null {
+    if (value === '' || value === null) {
+        return null;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function submit(): void {
+    form.submit(update(), {
+        preserveScroll: true,
+        onSuccess: () => {
+            form.defaults(
+                JSON.parse(JSON.stringify(props.settings)) as PlatformSettings,
+            );
+            form.reset();
+        },
+    });
+}
+
+const integrationConnected = computed(
+    () => props.integration.active_whatsapp_accounts > 0,
+);
+</script>
+
+<template>
+    <Head title="Configuración" />
+
+    <form class="flex flex-1 flex-col" @submit.prevent="submit">
+        <fieldset
+            :disabled="!can.update"
+            class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 p-4 md:p-6 lg:p-8"
+        >
+            <PageHeader
+                title="Configuración"
+                description="Parámetros generales de la plataforma. Los cambios quedan registrados en la auditoría."
+            />
+
+            <p
+                v-if="!can.update"
+                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
+            >
+                <Lock class="size-4" />
+                Puedes consultar la configuración, pero no modificarla.
+            </p>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="general-heading"
+            >
+                <div>
+                    <h2 id="general-heading" class="font-semibold">General</h2>
+                    <p class="text-sm text-muted-foreground">
+                        Nombre visible y zona horaria usada para mostrar fechas
+                        y calcular indicadores diarios.
+                    </p>
+                </div>
+                <div
+                    class="grid gap-5 rounded-xl border bg-card p-5 shadow-card sm:grid-cols-2"
+                >
+                    <FormField
+                        id="platform-name"
+                        label="Nombre de la plataforma"
+                        :error="errors['general.platform_name']"
+                    >
+                        <Input
+                            id="platform-name"
+                            v-model="form.general.platform_name"
+                            required
+                            maxlength="60"
+                        />
+                    </FormField>
+                    <FormField
+                        id="platform-timezone"
+                        label="Zona horaria"
+                        :error="errors['general.timezone']"
+                    >
+                        <select
+                            id="platform-timezone"
+                            v-model="form.general.timezone"
+                            :class="nativeSelectClass"
+                        >
+                            <option
+                                v-for="zone in timezones"
+                                :key="zone"
+                                :value="zone"
+                            >
+                                {{ zone.replaceAll('_', ' ') }}
+                            </option>
+                        </select>
+                    </FormField>
+                </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="hours-heading"
+            >
+                <div>
+                    <h2 id="hours-heading" class="font-medium">
+                        Horario de atención
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Se usará para identificar mensajes recibidos fuera de
+                        horario cuando se habilite la mensajería.
+                    </p>
+                </div>
+                <div
+                    class="overflow-hidden rounded-xl border bg-card shadow-card"
+                >
+                    <label
+                        class="flex items-center justify-between gap-4 border-b p-5"
+                    >
+                        <span>
+                            <span class="block text-sm font-medium"
+                                >Aplicar horario de atención</span
+                            >
+                            <span class="block text-sm text-muted-foreground">
+                                Si está desactivado, se considera atención
+                                continua.
+                            </span>
+                        </span>
+                        <Switch v-model="form.business_hours.enabled" />
+                    </label>
+                    <ul
+                        class="divide-y"
+                        :class="!form.business_hours.enabled && 'opacity-60'"
+                    >
+                        <li
+                            v-for="day in weekdays"
+                            :key="day"
+                            class="grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 sm:grid-cols-[8rem_auto_1fr]"
+                        >
+                            <span class="text-sm font-medium">{{
+                                weekdayLabels[day]
+                            }}</span>
+                            <Switch
+                                v-model="form.business_hours.days[day].open"
+                                :disabled="!form.business_hours.enabled"
+                                :aria-label="`Abierto el ${weekdayLabels[day].toLowerCase()}`"
+                            />
+                            <div
+                                class="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end"
+                            >
+                                <template
+                                    v-if="form.business_hours.days[day].open"
+                                >
+                                    <Input
+                                        v-model="
+                                            form.business_hours.days[day].start
+                                        "
+                                        type="time"
+                                        class="w-32"
+                                        :disabled="!form.business_hours.enabled"
+                                        :aria-label="`Apertura ${weekdayLabels[day]}`"
+                                    />
+                                    <span class="text-sm text-muted-foreground"
+                                        >a</span
+                                    >
+                                    <Input
+                                        v-model="
+                                            form.business_hours.days[day].end
+                                        "
+                                        type="time"
+                                        class="w-32"
+                                        :disabled="!form.business_hours.enabled"
+                                        :aria-label="`Cierre ${weekdayLabels[day]}`"
+                                    />
+                                </template>
+                                <span
+                                    v-else
+                                    class="text-sm text-muted-foreground"
+                                    >Cerrado</span
+                                >
+                                <InputError
+                                    class="w-full sm:text-right"
+                                    :message="
+                                        errors[
+                                            `business_hours.days.${day}.end`
+                                        ] ??
+                                        errors[
+                                            `business_hours.days.${day}.start`
+                                        ]
+                                    "
+                                />
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="operations-heading"
+            >
+                <div>
+                    <h2 id="operations-heading" class="font-medium">
+                        Operación
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Parámetros de distribución. Se aplicarán cuando se
+                        habilite la recepción de conversaciones.
+                    </p>
+                </div>
+                <div
+                    class="grid gap-5 rounded-xl border bg-card p-5 shadow-card sm:grid-cols-2"
+                >
+                    <FormField
+                        id="default-department"
+                        label="Departamento predeterminado"
+                        hint="Recibe las conversaciones nuevas sin departamento."
+                        :error="errors['operations.default_department_id']"
+                    >
+                        <select
+                            id="default-department"
+                            v-model="form.operations.default_department_id"
+                            :class="nativeSelectClass"
+                        >
+                            <option :value="null">Sin asignar</option>
+                            <option
+                                v-for="department in departments"
+                                :key="department.id"
+                                :value="department.id"
+                            >
+                                {{ department.name }}
+                            </option>
+                        </select>
+                    </FormField>
+                    <FormField
+                        id="max-open"
+                        label="Máximo de conversaciones por agente"
+                        hint="Déjalo vacío para no limitar."
+                        :error="
+                            errors[
+                                'operations.max_open_conversations_per_agent'
+                            ]
+                        "
+                    >
+                        <Input
+                            id="max-open"
+                            :model-value="
+                                form.operations
+                                    .max_open_conversations_per_agent ?? ''
+                            "
+                            @update:model-value="
+                                (value) =>
+                                    (form.operations.max_open_conversations_per_agent =
+                                        toNullableNumber(value))
+                            "
+                            type="number"
+                            min="1"
+                            max="200"
+                            inputmode="numeric"
+                        />
+                    </FormField>
+                    <FormField
+                        id="auto-close"
+                        label="Cierre por inactividad (horas)"
+                        hint="Déjalo vacío para no cerrar automáticamente."
+                        :error="errors['operations.auto_close_after_hours']"
+                    >
+                        <Input
+                            id="auto-close"
+                            :model-value="
+                                form.operations.auto_close_after_hours ?? ''
+                            "
+                            @update:model-value="
+                                (value) =>
+                                    (form.operations.auto_close_after_hours =
+                                        toNullableNumber(value))
+                            "
+                            type="number"
+                            min="1"
+                            max="720"
+                            inputmode="numeric"
+                        />
+                    </FormField>
+                </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="meta-heading"
+            >
+                <div>
+                    <h2 id="meta-heading" class="font-medium">
+                        Integración con Meta
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        WhatsApp Cloud API oficial.
+                    </p>
+                </div>
+                <div
+                    class="space-y-4 rounded-xl border bg-card p-5 shadow-card"
+                >
+                    <div class="flex items-start gap-3">
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-md"
+                            :class="
+                                integrationConnected
+                                    ? 'bg-success/10 text-success'
+                                    : 'bg-muted text-muted-foreground'
+                            "
+                        >
+                            <PlugZap
+                                v-if="integrationConnected"
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                            <CircleDashed
+                                v-else
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </span>
+                        <div>
+                            <p class="text-sm font-medium">
+                                {{
+                                    integrationConnected
+                                        ? 'Conectada'
+                                        : 'Sin configurar'
+                                }}
+                            </p>
+                            <p class="text-sm text-muted-foreground">
+                                {{ integration.active_whatsapp_accounts }} de
+                                {{ integration.whatsapp_accounts }} números de
+                                WhatsApp activos.
+                            </p>
+                        </div>
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                        La conexión se habilitará en un incremento posterior.
+                        Esta pantalla no solicita ni almacena credenciales; el
+                        token de acceso, el secreto de la aplicación y el token
+                        de verificación del webhook se configurarán de forma
+                        cifrada en el servidor.
+                    </p>
+                </div>
+            </section>
+        </fieldset>
+
+        <div
+            v-if="can.update"
+            class="sticky bottom-0 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
+        >
+            <span v-if="form.isDirty" class="text-sm text-muted-foreground"
+                >Cambios sin guardar</span
+            >
+            <Button
+                type="button"
+                variant="outline"
+                :disabled="!form.isDirty || form.processing"
+                @click="form.reset()"
+            >
+                Descartar
+            </Button>
+            <Button type="submit" :disabled="form.processing || !form.isDirty">
+                <Spinner v-if="form.processing" />
+                Guardar configuración
+            </Button>
+        </div>
+    </form>
+</template>

@@ -14,8 +14,11 @@ use Spatie\Permission\PermissionRegistrar;
  * customized from the interface. It is idempotent and safe on every deploy:
  *
  * - creates the catalog permissions that are missing;
+ * - grants the newly created permissions to the root role(s) only, so the
+ *   administrative authority keeps total control as modules ship;
  * - creates the initial roles only on an installation without roles;
- * - never changes the permissions, scope or state of existing roles;
+ * - never changes the scope or state of existing roles, nor the permissions
+ *   of any non-root role;
  * - only deletes permissions no longer in the catalog when asked to prune.
  */
 class SyncRolesAndPermissions
@@ -23,7 +26,7 @@ class SyncRolesAndPermissions
     public function __construct(private PermissionRegistrar $registrar) {}
 
     /**
-     * @return array{created_permissions: list<string>, created_roles: list<string>, obsolete_permissions: list<string>, pruned: bool}
+     * @return array{created_permissions: list<string>, created_roles: list<string>, granted_to_root: list<string>, obsolete_permissions: list<string>, pruned: bool}
      */
     public function handle(bool $prune = false): array
     {
@@ -50,6 +53,14 @@ class SyncRolesAndPermissions
             $this->registrar->forgetCachedPermissions();
 
             $createdRoles = [];
+            $grantedToRoot = [];
+
+            if ($missing !== []) {
+                foreach (Role::query()->where('is_root', true)->where('guard_name', 'web')->get() as $root) {
+                    $root->givePermissionTo($missing);
+                    $grantedToRoot[] = $root->label;
+                }
+            }
 
             if (Role::query()->doesntExist()) {
                 foreach (DefaultRole::cases() as $default) {
@@ -69,6 +80,7 @@ class SyncRolesAndPermissions
             return [
                 'created_permissions' => $missing,
                 'created_roles' => $createdRoles,
+                'granted_to_root' => $grantedToRoot,
                 'obsolete_permissions' => $obsolete,
                 'pruned' => $prune && $obsolete !== [],
             ];

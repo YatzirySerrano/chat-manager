@@ -1,0 +1,360 @@
+<?php
+
+namespace App\Http\Controllers\Contacts;
+
+use App\Actions\Contacts\CreateContact;
+use App\Actions\Contacts\FindDuplicateContacts;
+use App\Actions\Contacts\FlagHiddenDuplicates;
+use App\Actions\Contacts\UpdateContact;
+use App\Enums\ContactOriginType;
+use App\Enums\ContactSource;
+use App\Enums\Permission;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Contacts\ContactRequest;
+use App\Http\Resources\ContactAttributionResource;
+use App\Http\Resources\ContactResource;
+use App\Models\Contact;
+use App\Models\ContactNote;
+use App\Models\ContactReviewCase;
+use App\Models\Conversation;
+use App\Models\Tag;
+use App\Models\User;
+use App\Services\ResolveContactOrigin;
+use App\Support\PhoneNumber;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ContactController extends Controller
+{
+    /**
+     * Sort options exposed in the interface.
+     *
+     * @var list<string>
+     */
+    private const SORTS = ['recent', 'name', 'newest'];
+
+    /**
+     * Filter value meaning "no identified origin".
+     */
+    private const UNIDENTIFIED_ORIGIN = 'unknown';
+
+    /**
+     * Contacts within the actor's data scope, searched, filtered and paginated.
+     * Archived contacts are hidden unless the status filter asks for them.
+     */
+    public function index(Request $request, ResolveContactOrigin $resolveOrigin): Response
+    {
+        Gate::authorize('viewAny', Contact::class);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in(['active', 'archived', 'all'])],
+            'tags' => ['nullable', 'array', 'max:20'],
+            'tags.*' => ['integer'],
+            'source' => ['nullable', Rule::enum(ContactSource::class)],
+            'origin' => ['nullable', Rule::enum(ContactOriginType::class)],
+            'sort' => ['nullable', Rule::in(self::SORTS)],
+        ]);
+
+        $search = trim((string) ($filters['search'] ?? ''));
+        $status = $filters['status'] ?? 'active';
+        $tagIds = array_values(array_unique(array_map('intval', $filters['tags'] ?? [])));
+        $source = $filters['source'] ?? null;
+        $origin = $filters['origin'] ?? null;
+        $sort = $filters['sort'] ?? 'recent';
+
+        $contacts = Contact::query()
+            ->visibleTo($actor)
+            ->with([
+                'tags' => fn (BelongsToMany $query) => $query
+                    ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
+                    ->orderBy('tags.name'),
+                'attributions',
+            ])
+            ->when($status !== 'all', fn (Builder $query) => $query->where('status', $status))
+            ->when($search !== '', fn (Builder $query) => $this->applySearch($query, $search))
+            ->when($tagIds !== [], fn (Builder $query) => $query->whereHas(
+                'tags',
+                fn (Builder $tags) => $tags->whereIn('tags.id', $tagIds),
+            ))
+            ->when($source !== null, fn (Builder $query) => $query->where('source', $source))
+            ->when($origin !== null, fn (Builder $query) => $resolveOrigin->constrainToOrigin(
+                $query,
+                $origin === self::UNIDENTIFIED_ORIGIN ? null : $origin,
+            ))
+            ->when($sort === 'recent', fn (Builder $query) => $query
+                ->orderByRaw('last_interaction_at IS NULL')
+                ->orderByDesc('last_interaction_at')
+                ->orderByDesc('created_at'))
+            ->when($sort === 'name', fn (Builder $query) => $query->orderBy('name'))
+            ->when($sort === 'newest', fn (Builder $query) => $query->orderByDesc('created_at'))
+            ->orderBy('id')
+            ->paginate(15)
+            ->withQueryString();
+
+        return Inertia::render('contacts/Index', [
+            'contacts' => ContactResource::collection($contacts),
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'tags' => $tagIds,
+                'source' => $source,
+                'origin' => $origin,
+                'sort' => $sort,
+            ],
+            // The tag catalog is only offered as a filter to users allowed to see it.
+            'tags' => $actor->holdsPermission(Permission::ViewTags)
+                || $actor->holdsPermission(Permission::AssignTags)
+                || $actor->holdsPermission(Permission::ManageTags)
+                ? Tag::query()
+                    ->orderByDesc('is_active')
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'color', 'is_active'])
+                    ->map(fn (Tag $tag): array => [
+                        'id' => $tag->id,
+                        'name' => $tag->name,
+                        'color' => $tag->color->value,
+                        'is_active' => $tag->is_active,
+                    ])
+                : null,
+            'sources' => ContactSource::options(),
+            'originTypes' => ContactOriginType::options(),
+            'can' => [
+                'create' => $actor->can('create', Contact::class),
+                'reviewDuplicates' => $actor->can('reviewDuplicates', Contact::class),
+            ],
+            'openReviews' => $actor->can('reviewDuplicates', Contact::class)
+                ? ContactReviewCase::query()->open()->count()
+                : null,
+        ]);
+    }
+
+    public function store(ContactRequest $request, CreateContact $createContact, FindDuplicateContacts $findDuplicates, FlagHiddenDuplicates $flagHiddenDuplicates): RedirectResponse
+    {
+        $payload = $request->payload();
+
+        $this->ensureDuplicatesConfirmed($request, $findDuplicates, $payload['phone_e164'], $payload['email']);
+
+        $contact = $createContact->handle($payload, $request->user(), $request->confirmsDuplicate());
+        $flagHiddenDuplicates->handle($contact, $request->user(), $payload['phone_e164'], $payload['email']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Contacto {$contact->name} creado."]);
+
+        return to_route('contacts.show', $contact);
+    }
+
+    /**
+     * Contact profile: identity, origin, tags, private notes and the
+     * conversations the actor is allowed to see.
+     */
+    public function show(Request $request, Contact $contact, ResolveContactOrigin $resolveOrigin): Response
+    {
+        Gate::authorize('view', $contact);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $contact->load([
+            'creator:id,name',
+            'identities' => fn ($query) => $query->orderBy('id'),
+            'tags' => fn (BelongsToMany $query) => $query
+                ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
+                ->orderBy('tags.name'),
+            'attributions' => fn ($query) => $query->with('recorder:id,name')->latest('captured_at')->latest('id'),
+        ]);
+
+        $canManageNotes = $actor->can('manageNotes', $contact);
+        $currentOrigin = $resolveOrigin->best($contact->attributions);
+
+        return Inertia::render('contacts/Show', [
+            'contact' => ContactResource::make($contact)->resolve($request),
+            'origin' => [
+                'current' => $currentOrigin === null ? null : ContactAttributionResource::make($currentOrigin)->resolve($request),
+                'history' => ContactAttributionResource::collection($contact->attributions)->resolve($request),
+            ],
+            'notes' => $canManageNotes ? $this->notes($contact) : null,
+            'conversations' => $this->conversations($contact, $actor),
+            'originTypes' => array_values(array_filter(
+                ContactOriginType::options(),
+                fn (array $option): bool => $option['value'] !== ContactOriginType::Unknown->value
+                    && ! ContactOriginType::from($option['value'])->isProviderReported(),
+            )),
+            'availableTags' => $actor->holdsPermission(Permission::AssignTags)
+                ? Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active'])
+                    ->map(fn (Tag $tag): array => [
+                        'id' => $tag->id,
+                        'name' => $tag->name,
+                        'color' => $tag->color->value,
+                        'is_active' => $tag->is_active,
+                    ])
+                : [],
+            'can' => [
+                'update' => $actor->can('update', $contact),
+                'archive' => $actor->can('archive', $contact),
+                'manageNotes' => $canManageNotes,
+                'classifyOrigin' => $actor->can('classifyOrigin', $contact),
+                'assignTags' => $actor->holdsPermission(Permission::AssignTags),
+            ],
+        ]);
+    }
+
+    public function update(ContactRequest $request, Contact $contact, UpdateContact $updateContact, FindDuplicateContacts $findDuplicates, FlagHiddenDuplicates $flagHiddenDuplicates): RedirectResponse
+    {
+        $payload = $request->payload();
+
+        $phoneChanged = $payload['phone_e164'] !== null && $payload['phone_e164'] !== $contact->phone_e164;
+        $emailChanged = $payload['email'] !== null && $payload['email'] !== mb_strtolower((string) $contact->email);
+
+        $this->ensureDuplicatesConfirmed(
+            $request,
+            $findDuplicates,
+            $phoneChanged ? $payload['phone_e164'] : null,
+            $emailChanged ? $payload['email'] : null,
+            $contact,
+        );
+
+        $updateContact->handle($contact, $payload, $request->user(), $request->confirmsDuplicate());
+        $flagHiddenDuplicates->handle(
+            $contact,
+            $request->user(),
+            $phoneChanged ? $payload['phone_e164'] : null,
+            $emailChanged ? $payload['email'] : null,
+        );
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Contacto actualizado.']);
+
+        return back();
+    }
+
+    /**
+     * Stop the save while there are possible duplicates the user has not
+     * confirmed. Only contacts inside the actor's scope are considered, so
+     * nothing is revealed about contacts the actor cannot see; matches
+     * outside it go to administrative review (see FlagHiddenDuplicates).
+     *
+     * @throws ValidationException
+     */
+    private function ensureDuplicatesConfirmed(
+        ContactRequest $request,
+        FindDuplicateContacts $findDuplicates,
+        ?string $phone,
+        ?string $email,
+        ?Contact $ignore = null,
+    ): void {
+        if ($request->confirmsDuplicate()) {
+            return;
+        }
+
+        $duplicates = $findDuplicates->handle($phone, $email, $request->user(), $ignore);
+
+        $phoneTaken = array_any($duplicates, fn (array $match): bool => in_array('phone', $match['matches'], true));
+        $emailTaken = array_any($duplicates, fn (array $match): bool => in_array('email', $match['matches'], true));
+
+        if (! $phoneTaken && ! $emailTaken) {
+            return;
+        }
+
+        Inertia::flash('duplicates', ['contacts' => $duplicates]);
+
+        throw ValidationException::withMessages(array_filter([
+            'phone' => $phoneTaken ? 'Ya existe un contacto con este teléfono.' : null,
+            'email' => $emailTaken ? 'Ya existe un contacto con este correo electrónico.' : null,
+            'confirm_duplicate' => 'Revisa los posibles duplicados. Si se trata de otra persona, confirma para guardarlo de todos modos.',
+        ]));
+    }
+
+    /**
+     * Match the name, the email or the digits of the phone (partial numbers
+     * included, whatever formatting the user typed). A complete number is
+     * also matched in its normalized form, so the WhatsApp ("521...") and
+     * "00" spellings find the stored E.164 number.
+     *
+     * @param  Builder<Contact>  $query
+     */
+    private function applySearch(Builder $query, string $search): void
+    {
+        $term = '%'.addcslashes($search, '\\%_').'%';
+        $digits = preg_replace('/\D+/', '', $search) ?? '';
+        $normalizedPhone = PhoneNumber::normalize($search) ?? PhoneNumber::normalize('+'.$digits);
+
+        $query->where(fn (Builder $match) => $match
+            ->where('name', 'like', $term)
+            ->orWhere('profile_name', 'like', $term)
+            ->orWhere('email', 'like', $term)
+            ->when(strlen($digits) >= 3, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', 'like', "%{$digits}%"))
+            ->when($normalizedPhone !== null, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', $normalizedPhone)));
+    }
+
+    /**
+     * @return list<array{id: int, body: string, author: array{id: int, name: string}|null, created_at: string|null}>
+     */
+    private function notes(Contact $contact): array
+    {
+        return array_values($contact->notes()
+            ->with('author:id,name')
+            ->limit(200)
+            ->get()
+            ->map(fn (ContactNote $note): array => [
+                'id' => $note->id,
+                'body' => $note->body,
+                'author' => $note->author === null ? null : ['id' => $note->author->id, 'name' => $note->author->name],
+                'created_at' => $note->created_at?->toIso8601String(),
+            ])
+            ->all());
+    }
+
+    /**
+     * Conversations with the contact that the actor may see, newest first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function conversations(Contact $contact, User $actor): array
+    {
+        return array_values(Conversation::query()
+            ->visibleTo($actor)
+            ->where('contact_id', $contact->id)
+            ->with([
+                'channelConnection:id,name,display_phone_number',
+                'department:id,name,color,is_active',
+                'assignee:id,name',
+            ])
+            ->latest()
+            ->latest('id')
+            ->limit(50)
+            ->get()
+            ->map(fn (Conversation $conversation): array => [
+                'id' => $conversation->id,
+                'status' => $conversation->status->value,
+                'status_label' => $conversation->status->label(),
+                'connection' => $conversation->channelConnection === null ? null : [
+                    'id' => $conversation->channelConnection->id,
+                    'name' => $conversation->channelConnection->name,
+                    'display_phone_number' => $conversation->channelConnection->display_phone_number,
+                ],
+                'department' => $conversation->department === null ? null : [
+                    'id' => $conversation->department->id,
+                    'name' => $conversation->department->name,
+                    'color' => $conversation->department->color->value,
+                    'is_active' => $conversation->department->is_active,
+                ],
+                'assignee' => $conversation->assignee === null ? null : [
+                    'id' => $conversation->assignee->id,
+                    'name' => $conversation->assignee->name,
+                ],
+                'created_at' => $conversation->created_at?->toIso8601String(),
+                'last_message_at' => $conversation->last_message_at?->toIso8601String(),
+                'closed_at' => $conversation->closed_at?->toIso8601String(),
+            ])
+            ->all());
+    }
+}

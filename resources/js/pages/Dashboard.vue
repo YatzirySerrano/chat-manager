@@ -30,7 +30,8 @@ defineOptions({
 });
 
 const props = defineProps<{
-    overview?: DashboardOverview;
+    canViewMetrics: boolean;
+    overview?: DashboardOverview | null;
 }>();
 
 const page = usePage();
@@ -49,7 +50,9 @@ const scopeDescription = computed(() => {
         case 'own':
             return 'Vista general de tu bandeja de atención.';
         default:
-            return 'Cargando indicadores…';
+            return props.canViewMetrics
+                ? 'Cargando indicadores…'
+                : 'Usa el menú lateral para ir a los módulos de tu rol.';
     }
 });
 
@@ -67,7 +70,23 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
             :description="scopeDescription"
         />
 
-        <Deferred data="overview">
+        <div
+            v-if="!canViewMetrics"
+            class="flex gap-3 rounded-xl border p-4 text-sm"
+            role="status"
+        >
+            <Info
+                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+            />
+            <p class="text-muted-foreground">
+                Tu rol no incluye los indicadores del panel principal. Si los
+                necesitas, solicita el permiso «Ver el panel principal» a un
+                administrador.
+            </p>
+        </div>
+
+        <Deferred v-else data="overview">
             <template #fallback>
                 <div
                     class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"

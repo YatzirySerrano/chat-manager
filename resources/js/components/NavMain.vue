@@ -6,6 +6,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from '@/components/ui/sidebar';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import type { NavItem } from '@/types';
@@ -19,6 +20,9 @@ withDefaults(
 );
 
 const { isCurrentOrParentUrl } = useCurrentUrl();
+
+/** On phones the sidebar is a sheet over the page: close it after choosing. */
+const { setOpenMobile } = useSidebar();
 </script>
 
 <template>
@@ -36,7 +40,11 @@ const { isCurrentOrParentUrl } = useCurrentUrl();
                     :tooltip="item.title"
                     class="h-9 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent data-[active=true]:bg-primary-soft data-[active=true]:text-primary-soft-foreground [&>svg]:text-muted-foreground data-[active=true]:[&>svg]:text-primary-soft-foreground"
                 >
-                    <Link :href="item.href" prefetch>
+                    <Link
+                        :href="item.href"
+                        prefetch
+                        @click="setOpenMobile(false)"
+                    >
                         <component :is="item.icon" />
                         <span>{{ item.title }}</span>
                     </Link>

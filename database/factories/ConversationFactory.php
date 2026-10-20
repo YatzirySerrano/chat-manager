@@ -3,11 +3,11 @@
 namespace Database\Factories;
 
 use App\Enums\ConversationStatus;
+use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
-use App\Models\WhatsappAccount;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -23,7 +23,7 @@ class ConversationFactory extends Factory
     public function definition(): array
     {
         return [
-            'whatsapp_account_id' => WhatsappAccount::factory(),
+            'connection_id' => Connection::factory(),
             'contact_id' => Contact::factory(),
             'department_id' => null,
             'assigned_user_id' => null,

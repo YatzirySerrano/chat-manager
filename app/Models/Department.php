@@ -23,6 +23,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $description
  * @property ColorSwatch $color
  * @property bool $is_active
+ * @property string|null $welcome_message
+ * @property bool $uses_custom_hours
+ * @property array{days: array<string, array{open: bool, start: string, end: string}>}|null $business_hours Only applies while `uses_custom_hours` is true; otherwise the platform hours apply.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -39,6 +42,7 @@ class Department extends Model
      */
     protected $attributes = [
         'is_active' => true,
+        'uses_custom_hours' => false,
     ];
 
     /**
@@ -51,6 +55,8 @@ class Department extends Model
         return [
             'color' => ColorSwatch::class,
             'is_active' => 'boolean',
+            'uses_custom_hours' => 'boolean',
+            'business_hours' => 'array',
         ];
     }
 
@@ -72,6 +78,26 @@ class Department extends Model
     public function leaders(): BelongsToMany
     {
         return $this->members()->withPermission(Permission::ManageDepartmentMembers);
+    }
+
+    /**
+     * Connections whose conversations the department is authorized to receive.
+     *
+     * @return BelongsToMany<Connection, $this>
+     */
+    public function connections(): BelongsToMany
+    {
+        return $this->belongsToMany(Connection::class)->withTimestamps();
+    }
+
+    /**
+     * Non-global quick replies shared with the department.
+     *
+     * @return BelongsToMany<QuickReply, $this>
+     */
+    public function quickReplies(): BelongsToMany
+    {
+        return $this->belongsToMany(QuickReply::class)->withTimestamps();
     }
 
     /**

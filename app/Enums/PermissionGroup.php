@@ -9,8 +9,11 @@ enum PermissionGroup: string
     case Departments = 'departments';
     case Roles = 'roles';
     case Conversations = 'conversations';
+    case Connections = 'connections';
     case Contacts = 'contacts';
+    case Tags = 'tags';
     case QuickReplies = 'quick-replies';
+    case TeamChat = 'team-chat';
     case Reports = 'reports';
     case Settings = 'settings';
     case Appearance = 'appearance';
@@ -24,8 +27,11 @@ enum PermissionGroup: string
             self::Departments => 'Departamentos',
             self::Roles => 'Roles y permisos',
             self::Conversations => 'Conversaciones',
+            self::Connections => 'Conexiones',
             self::Contacts => 'Contactos',
+            self::Tags => 'Etiquetas',
             self::QuickReplies => 'Respuestas rápidas',
+            self::TeamChat => 'Chat interno',
             self::Reports => 'Reportes',
             self::Settings => 'Configuración',
             self::Appearance => 'Personalización',

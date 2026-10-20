@@ -178,10 +178,50 @@ export type DepartmentSummary = {
     description: string | null;
     color: ColorSwatch;
     is_active: boolean;
+    welcome_message: string | null;
+    uses_custom_hours: boolean;
+    /** Custom schedule; only applies while `uses_custom_hours` is true. */
+    business_hours: { days: Record<Weekday, BusinessDay> } | null;
     members_count?: number;
     leaders_count?: number;
+    connections_count?: number;
     leaders?: { id: number; name: string }[];
     created_at: string | null;
+};
+
+/** Real conversation counts of a department (never estimated). */
+export type DepartmentMetrics = {
+    total: number;
+    pending: number;
+    open: number;
+    unassigned: number;
+    closed_today: number;
+    closed_total: number;
+};
+
+export type DepartmentConnection = {
+    id: number;
+    name: string;
+    display_phone_number: string | null;
+    is_active: boolean;
+    is_default: boolean;
+    health: {
+        value: string;
+        label: string;
+        tone: 'success' | 'primary' | 'warning' | 'danger' | 'neutral';
+    };
+    /** Null when the viewer cannot open connections. */
+    url: string | null;
+};
+
+export type DepartmentQuickReplies = {
+    items: {
+        id: number;
+        title: string;
+        shortcut: string;
+        is_active: boolean;
+    }[];
+    global_count: number;
 };
 
 export type DepartmentMember = {

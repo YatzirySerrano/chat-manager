@@ -53,3 +53,27 @@ test('the initial roles are created only on an installation without roles', func
     expect(Role::query()->where('is_root', true)->sole()->label)->toBe('Administrador')
         ->and(Role::query()->count())->toBe(3);
 });
+
+test('newly created permissions are granted only to the root role', function () {
+    $newPermissions = [Permission::ViewConnections->value, Permission::ManageTags->value];
+    PermissionModel::query()->whereIn('name', $newPermissions)->delete();
+    $supervisorBefore = role(DefaultRole::Supervisor)->load('permissions')->permissionNames();
+    $agentBefore = role(DefaultRole::Agent)->load('permissions')->permissionNames();
+
+    $this->artisan('app:sync-permissions')
+        ->expectsOutputToContain('Permisos nuevos otorgados a la autoridad raíz: Administrador.')
+        ->assertSuccessful();
+
+    expect(role(DefaultRole::Administrator)->load('permissions')->permissionNames())->toContain(...$newPermissions)
+        ->and(role(DefaultRole::Supervisor)->load('permissions')->permissionNames())->toEqualCanonicalizing($supervisorBefore)
+        ->and(role(DefaultRole::Agent)->load('permissions')->permissionNames())->toEqualCanonicalizing($agentBefore);
+});
+
+test('permissions the root role already lacked are not granted again', function () {
+    $admin = role(DefaultRole::Administrator);
+    $admin->revokePermissionTo(Permission::ExportAuditLog->value);
+
+    $this->artisan('app:sync-permissions')->assertSuccessful();
+
+    expect($admin->refresh()->load('permissions')->permissionNames())->not->toContain(Permission::ExportAuditLog->value);
+});

@@ -12,12 +12,13 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $whatsapp_account_id
+ * @property int $connection_id
  * @property int $contact_id
  * @property int|null $department_id
  * @property int|null $assigned_user_id
@@ -33,7 +34,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['whatsapp_account_id', 'contact_id', 'department_id'])]
+#[Fillable(['connection_id', 'contact_id', 'department_id'])]
 class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
@@ -69,11 +70,14 @@ class Conversation extends Model
     }
 
     /**
-     * @return BelongsTo<WhatsappAccount, $this>
+     * The channel connection (e.g. a WhatsApp number). Not named `connection`
+     * because that would shadow Eloquent's database connection property.
+     *
+     * @return BelongsTo<Connection, $this>
      */
-    public function whatsappAccount(): BelongsTo
+    public function channelConnection(): BelongsTo
     {
-        return $this->belongsTo(WhatsappAccount::class);
+        return $this->belongsTo(Connection::class, 'connection_id');
     }
 
     /**
@@ -114,6 +118,14 @@ class Conversation extends Model
     public function events(): HasMany
     {
         return $this->hasMany(ConversationEvent::class);
+    }
+
+    /**
+     * @return BelongsToMany<Tag, $this>
+     */
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class)->withPivot(['tagged_by_user_id', 'created_at']);
     }
 
     /**

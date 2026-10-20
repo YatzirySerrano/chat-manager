@@ -95,7 +95,7 @@ test('editing a role replaces its permissions, keeps future ones and is audited'
             'label' => 'Agente de Atención',
             'description' => $agent->description,
             'scope' => 'assigned',
-            'permissions' => ['dashboard.view', 'audit.view'],
+            'permissions' => ['dashboard.view', 'contacts.view', 'quick-replies.use', 'audit.view'],
         ])
         ->assertSessionHasNoErrors();
 

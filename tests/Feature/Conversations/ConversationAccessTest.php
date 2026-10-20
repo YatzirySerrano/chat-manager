@@ -1,11 +1,11 @@
 <?php
 
+use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\User;
-use App\Models\WhatsappAccount;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 test('administrators can see every conversation', function () {
@@ -50,21 +50,21 @@ test('deactivated users see no conversations', function () {
 });
 
 test('a contact can only have one unclosed conversation per WhatsApp number', function () {
-    $account = WhatsappAccount::factory()->create();
+    $account = Connection::factory()->create();
     $contact = Contact::factory()->create();
-    Conversation::factory()->for($account)->for($contact)->create();
+    Conversation::factory()->for($account, 'channelConnection')->for($contact)->create();
 
-    expect(fn () => Conversation::factory()->for($account)->for($contact)->create())
+    expect(fn () => Conversation::factory()->for($account, 'channelConnection')->for($contact)->create())
         ->toThrow(UniqueConstraintViolationException::class);
 });
 
 test('a new conversation can start once the previous one is closed', function () {
-    $account = WhatsappAccount::factory()->create();
+    $account = Connection::factory()->create();
     $contact = Contact::factory()->create();
-    Conversation::factory()->for($account)->for($contact)->closed()->create();
-    Conversation::factory()->for($account)->for($contact)->closed()->create();
+    Conversation::factory()->for($account, 'channelConnection')->for($contact)->closed()->create();
+    Conversation::factory()->for($account, 'channelConnection')->for($contact)->closed()->create();
 
-    $open = Conversation::factory()->for($account)->for($contact)->create();
+    $open = Conversation::factory()->for($account, 'channelConnection')->for($contact)->create();
 
     expect($open->exists)->toBeTrue();
 });

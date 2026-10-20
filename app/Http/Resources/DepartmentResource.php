@@ -26,8 +26,12 @@ class DepartmentResource extends JsonResource
             'description' => $this->description,
             'color' => $this->color->value,
             'is_active' => $this->is_active,
+            'welcome_message' => $this->welcome_message,
+            'uses_custom_hours' => $this->uses_custom_hours,
+            'business_hours' => $this->business_hours,
             'members_count' => $this->whenCounted('members'),
             'leaders_count' => $this->whenCounted('leaders'),
+            'connections_count' => $this->whenCounted('connections'),
             'leaders' => $this->whenLoaded('leaders', fn () => $this->leaders->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,

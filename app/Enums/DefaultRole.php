@@ -67,6 +67,7 @@ enum DefaultRole: string
                 Permission::ReopenConversations,
                 Permission::ViewConversationHistory,
                 Permission::ViewContacts,
+                Permission::ViewTags,
                 Permission::UseQuickReplies,
                 Permission::ViewReports,
             ],

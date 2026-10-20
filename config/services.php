@@ -28,6 +28,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    | Meta Graph API used to verify WhatsApp Cloud API connections. Credentials
+    | are stored encrypted per connection, never here. Empty values fall back
+    | to the defaults below.
+    */
+    'meta' => [
+        'graph_version' => env('META_GRAPH_VERSION') ?: 'v26.0',
+        'base_url' => env('META_GRAPH_BASE_URL') ?: 'https://graph.facebook.com',
+        'timeout' => (int) (env('META_GRAPH_TIMEOUT') ?: 10),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -3,21 +3,27 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Actions\Departments\CreateDepartment;
+use App\Actions\Departments\SummarizeDepartmentConversations;
 use App\Actions\Departments\UpdateDepartment;
 use App\Enums\ColorSwatch;
 use App\Enums\DataScope;
+use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DepartmentRequest;
 use App\Http\Resources\DepartmentMemberResource;
 use App\Http\Resources\DepartmentResource;
+use App\Models\Connection;
 use App\Models\Department;
+use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\PlatformSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -34,7 +40,7 @@ class DepartmentController extends Controller
 
         $departments = Department::query()
             ->visibleTo($user)
-            ->withCount(['members', 'leaders'])
+            ->withCount(['members', 'leaders', 'connections'])
             ->with(['leaders' => fn (BelongsToMany $query) => $query
                 ->select('users.id', 'users.name')
                 ->orderBy('users.name')])
@@ -61,9 +67,11 @@ class DepartmentController extends Controller
     }
 
     /**
-     * Department detail with its members and the users that can be added.
+     * Department detail with its members, the users that can be added and its
+     * operational configuration (welcome message, hours, connections, quick
+     * replies and real conversation counts).
      */
-    public function show(Request $request, Department $department): Response
+    public function show(Request $request, Department $department, SummarizeDepartmentConversations $summarizeConversations, PlatformSettings $settings): Response
     {
         Gate::authorize('view', $department);
 
@@ -77,7 +85,7 @@ class DepartmentController extends Controller
         $canManageMembers = $actor->can('manageMembers', $department);
 
         return Inertia::render('departments/Show', [
-            'department' => DepartmentResource::make($department->loadCount(['members', 'leaders']))->resolve($request),
+            'department' => DepartmentResource::make($department->loadCount(['members', 'leaders', 'connections']))->resolve($request),
             'members' => DepartmentMemberResource::collection($members)->resolve($request),
             'removableMemberIds' => $members
                 ->filter(fn (User $member): bool => $actor->can('manageMember', [$department, $member]))
@@ -85,6 +93,19 @@ class DepartmentController extends Controller
                 ->values(),
             'candidates' => $canManageMembers ? $this->candidates($department, $actor) : [],
             'colors' => ColorSwatch::values(),
+            'metrics' => $summarizeConversations->handle($department),
+            'platformHours' => $settings->get('business_hours'),
+            'weekdays' => PlatformSettings::WEEKDAYS,
+            'connections' => $this->connections($department, $actor),
+            'quickReplies' => $this->quickReplies($department, $actor),
+            'links' => [
+                'connections' => Route::has('connections.index') && $actor->holdsPermission(Permission::ViewConnections)
+                    ? route('connections.index')
+                    : null,
+                'quickReplies' => Route::has('quick-replies.index') && $actor->holdsPermission(Permission::ManageQuickReplies)
+                    ? route('quick-replies.index')
+                    : null,
+            ],
             'can' => [
                 'update' => $actor->can('update', $department),
                 'changeStatus' => $actor->can('changeStatus', $department),
@@ -100,6 +121,66 @@ class DepartmentController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Departamento actualizado.']);
 
         return back();
+    }
+
+    /**
+     * Connections authorized to route conversations to the department. The
+     * association is edited from the connection form; only users who can
+     * view connections receive a link to it. No credential is exposed.
+     *
+     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_default: bool, health: array{value: string, label: string, tone: string}, url: string|null}>
+     */
+    private function connections(Department $department, User $actor): array
+    {
+        $canOpen = Route::has('connections.show') && $actor->holdsPermission(Permission::ViewConnections);
+
+        return array_values($department->connections()
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->get()
+            ->map(function (Connection $connection) use ($department, $canOpen): array {
+                $health = $connection->health();
+
+                return [
+                    'id' => $connection->id,
+                    'name' => $connection->name,
+                    'display_phone_number' => $connection->display_phone_number,
+                    'is_active' => $connection->is_active,
+                    'is_default' => $connection->default_department_id === $department->id,
+                    'health' => ['value' => $health->value, 'label' => $health->label(), 'tone' => $health->tone()],
+                    'url' => $canOpen ? route('connections.show', $connection) : null,
+                ];
+            })
+            ->all());
+    }
+
+    /**
+     * Quick replies shared specifically with the department plus the number of
+     * active global replies, or null when the actor cannot use quick replies.
+     *
+     * @return array{items: list<array{id: int, title: string, shortcut: string, is_active: bool}>, global_count: int}|null
+     */
+    private function quickReplies(Department $department, User $actor): ?array
+    {
+        if (! $actor->holdsPermission(Permission::UseQuickReplies) && ! $actor->holdsPermission(Permission::ManageQuickReplies)) {
+            return null;
+        }
+
+        return [
+            'items' => array_values($department->quickReplies()
+                ->where('is_global', false)
+                ->orderByDesc('is_active')
+                ->orderBy('title')
+                ->get(['quick_replies.id', 'title', 'shortcut', 'is_active'])
+                ->map(fn (QuickReply $reply): array => [
+                    'id' => $reply->id,
+                    'title' => $reply->title,
+                    'shortcut' => $reply->shortcut,
+                    'is_active' => $reply->is_active,
+                ])
+                ->all()),
+            'global_count' => QuickReply::query()->active()->where('is_global', true)->count(),
+        ];
     }
 
     /**

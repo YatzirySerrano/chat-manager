@@ -3,13 +3,17 @@
 namespace App\Providers;
 
 use App\Enums\Permission;
+use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\ContactAttribution;
+use App\Models\ContactNote;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
+use App\Models\QuickReply;
 use App\Models\Role;
+use App\Models\Tag;
 use App\Models\User;
-use App\Models\WhatsappAccount;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -77,11 +81,15 @@ class AppServiceProvider extends ServiceProvider
         Relation::morphMap([
             'user' => User::class,
             'department' => Department::class,
-            'whatsapp_account' => WhatsappAccount::class,
+            'connection' => Connection::class,
             'contact' => Contact::class,
+            'contact_note' => ContactNote::class,
+            'contact_attribution' => ContactAttribution::class,
             'conversation' => Conversation::class,
             'message' => Message::class,
             'role' => Role::class,
+            'tag' => Tag::class,
+            'quick_reply' => QuickReply::class,
         ]);
 
         DB::prohibitDestructiveCommands($this->destructiveCommandsAreProhibited());

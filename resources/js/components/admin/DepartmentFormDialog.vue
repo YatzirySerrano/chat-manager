@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { Check } from '@lucide/vue';
 import { computed, watch } from 'vue';
+import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue';
 import FormField from '@/components/FormField.vue';
-import InputError from '@/components/InputError.vue';
 import FormDialog from '@/components/FormDialog.vue';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { swatchClasses } from '@/lib/swatches';
 import { store, update } from '@/routes/departments';
 import type { ColorSwatch, DepartmentSummary } from '@/types';
 
@@ -98,37 +96,12 @@ function submit(): void {
                 />
             </FormField>
 
-            <fieldset class="grid gap-2">
-                <legend class="mb-2 text-sm font-medium">Color</legend>
-                <div
-                    class="flex flex-wrap gap-2"
-                    role="radiogroup"
-                    aria-label="Color del departamento"
-                >
-                    <button
-                        v-for="color in colors"
-                        :key="color"
-                        type="button"
-                        role="radio"
-                        :aria-checked="form.color === color"
-                        :aria-label="swatchClasses[color].label"
-                        :title="swatchClasses[color].label"
-                        class="flex size-8 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        :class="[
-                            swatchClasses[color].dot,
-                            form.color === color && 'ring-2 ring-foreground/60',
-                        ]"
-                        @click="form.color = color"
-                    >
-                        <Check
-                            v-if="form.color === color"
-                            class="size-4 text-white"
-                            aria-hidden="true"
-                        />
-                    </button>
-                </div>
-                <InputError :message="form.errors.color" />
-            </fieldset>
+            <ColorSwatchPicker
+                v-model="form.color"
+                :colors="colors"
+                group-label="Color del departamento"
+                :error="form.errors.color"
+            />
         </div>
     </FormDialog>
 </template>

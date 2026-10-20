@@ -1,10 +1,14 @@
 import {
     Building2,
+    Contact,
     LayoutGrid,
+    MessageSquareText,
     Palette,
+    PlugZap,
     ScrollText,
     ShieldCheck,
     SlidersHorizontal,
+    Tags,
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -15,7 +19,11 @@ import { index as auditIndex } from '@/routes/admin/audit';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { edit as platformSettings } from '@/routes/admin/settings';
 import { index as usersIndex } from '@/routes/admin/users';
+import { index as connectionsIndex } from '@/routes/connections';
+import { index as contactsIndex } from '@/routes/contacts';
 import { index as departmentsIndex } from '@/routes/departments';
+import { index as quickRepliesIndex } from '@/routes/quick-replies';
+import { index as tagsIndex } from '@/routes/tags';
 import type { NavItem } from '@/types';
 
 export type NavSection = {
@@ -29,7 +37,7 @@ export type NavSection = {
  * ever offered (the backend still enforces every access).
  */
 export function useNavigation() {
-    const { can } = usePermissions();
+    const { can, canAny } = usePermissions();
 
     const sections = computed<NavSection[]>(() => {
         const result: NavSection[] = [
@@ -45,6 +53,39 @@ export function useNavigation() {
                 ],
             },
         ];
+
+        const attention: NavSection['items'] = [];
+
+        if (can('contacts.view')) {
+            attention.push({
+                title: 'Contactos',
+                description: 'Personas, origen e historial',
+                href: contactsIndex(),
+                icon: Contact,
+            });
+        }
+
+        if (canAny('tags.view', 'tags.manage')) {
+            attention.push({
+                title: 'Etiquetas',
+                description: 'Clasificación de contactos',
+                href: tagsIndex(),
+                icon: Tags,
+            });
+        }
+
+        if (canAny('quick-replies.use', 'quick-replies.manage')) {
+            attention.push({
+                title: 'Respuestas rápidas',
+                description: 'Textos para insertar con «/»',
+                href: quickRepliesIndex(),
+                icon: MessageSquareText,
+            });
+        }
+
+        if (attention.length > 0) {
+            result.push({ label: 'Atención', items: attention });
+        }
 
         const team: NavSection['items'] = [];
 
@@ -71,6 +112,15 @@ export function useNavigation() {
         }
 
         const admin: NavSection['items'] = [];
+
+        if (canAny('connections.view', 'connections.manage')) {
+            admin.push({
+                title: 'Conexiones',
+                description: 'Números de WhatsApp y su estado',
+                href: connectionsIndex(),
+                icon: PlugZap,
+            });
+        }
 
         if (can('roles.view')) {
             admin.push({

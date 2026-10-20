@@ -5,16 +5,17 @@ namespace App\Services;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\Permission;
+use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
-use App\Models\WhatsappAccount;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Builds the dashboard overview from real data only.
  *
- * A metric is `null` when its source does not exist yet (for example, while no
+ * A metric is `null` when the user may not see it, or when its source does not exist yet (for example, while no
  * WhatsApp number is connected, or while agent presence is not implemented).
  * The interface must render an empty state for `null` values instead of zeros.
  *
@@ -32,20 +33,33 @@ class DashboardMetrics
     public function __construct(private PlatformSettings $settings) {}
 
     /**
+     * Every figure is limited to the user's scope: conversations to those the
+     * user can see, team figures to the user's departments.
+     *
      * @return Overview
+     *
+     * @throws AuthorizationException without dashboard.view.
      */
     public function overviewFor(User $user): array
     {
-        $messagingConnected = WhatsappAccount::query()->where('is_active', true)->exists();
+        if (! $user->holdsPermission(Permission::ViewDashboard)) {
+            throw new AuthorizationException('The dashboard requires the dashboard.view permission.');
+        }
+
+        $messagingConnected = Connection::query()
+            ->active()
+            ->get()
+            ->contains(fn (Connection $connection): bool => $connection->configurationHealth()->hasConfirmedTraffic());
         $canSeeTeam = $user->holdsPermission(Permission::ViewDepartments);
+        $canSeeConversations = $messagingConnected && $user->holdsPermission(Permission::ViewConversations);
 
         return [
             'scope' => $this->scopeFor($user),
             'messaging_connected' => $messagingConnected,
-            'conversations' => $messagingConnected
+            'conversations' => $canSeeConversations
                 ? $this->conversationCounts($user)
                 : ['active' => null, 'pending' => null, 'closed_today' => null],
-            'average_first_response_seconds' => $messagingConnected ? $this->averageFirstResponseSeconds($user) : null,
+            'average_first_response_seconds' => $canSeeConversations ? $this->averageFirstResponseSeconds($user) : null,
             'agents' => [
                 'registered' => $canSeeTeam ? $this->registeredAgents($user) : null,
                 'available' => null,

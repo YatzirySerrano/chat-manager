@@ -10,6 +10,7 @@ use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -28,9 +29,23 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Meta credentials must never be stored as old input in the session.
+        $exceptions->dontFlash(['access_token', 'app_secret', 'webhook_verify_token']);
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // A record outside the actor's scope must look exactly like one that
+        // does not exist, so JSON 404 responses never carry the model name,
+        // the id or any other detail that would tell them apart.
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            return response()->json(['message' => 'Not Found'], 404);
+        });
 
         // Permissions can be revoked while a page is open. Instead of an error
         // screen, Inertia visits return to a page the user can still see, with

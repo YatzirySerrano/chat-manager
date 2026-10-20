@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { Building2, ChevronRight, Plus, UserRound, Users } from '@lucide/vue';
+import {
+    Building2,
+    ChevronRight,
+    Plug,
+    Plus,
+    UserRound,
+    Users,
+} from '@lucide/vue';
 import { ref } from 'vue';
 import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import EmptyState from '@/components/EmptyState.vue';
@@ -100,6 +107,15 @@ const formOpen = ref(false);
                                 department.members_count === 1
                                     ? 'miembro'
                                     : 'miembros'
+                            }}
+                        </span>
+                        <span class="inline-flex items-center gap-1.5">
+                            <Plug class="size-3.5" aria-hidden="true" />
+                            {{ department.connections_count ?? 0 }}
+                            {{
+                                department.connections_count === 1
+                                    ? 'conexión'
+                                    : 'conexiones'
                             }}
                         </span>
                         <span class="inline-flex min-w-0 items-center gap-1.5">

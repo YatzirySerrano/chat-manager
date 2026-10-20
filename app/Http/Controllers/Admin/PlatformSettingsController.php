@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Actions\Settings\UpdatePlatformSettings;
+use App\Enums\ConnectionChannel;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdatePlatformSettingsRequest;
+use App\Models\Connection;
 use App\Models\Department;
-use App\Models\WhatsappAccount;
 use App\Services\PlatformSettings;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -33,8 +34,8 @@ class PlatformSettingsController extends Controller
                 'update' => $request->user()?->can('update-settings') ?? false,
             ],
             'integration' => [
-                'whatsapp_accounts' => WhatsappAccount::query()->count(),
-                'active_whatsapp_accounts' => WhatsappAccount::query()->where('is_active', true)->count(),
+                'whatsapp_accounts' => Connection::query()->where('channel', ConnectionChannel::Whatsapp)->count(),
+                'active_whatsapp_accounts' => Connection::query()->where('channel', ConnectionChannel::Whatsapp)->active()->count(),
             ],
         ]);
     }

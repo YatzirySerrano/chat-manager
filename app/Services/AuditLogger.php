@@ -4,8 +4,12 @@ namespace App\Services;
 
 use App\Enums\AuditAction;
 use App\Models\AuditLog;
+use App\Models\Connection;
+use App\Models\Contact;
 use App\Models\Department;
+use App\Models\QuickReply;
 use App\Models\Role;
+use App\Models\Tag;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -82,6 +86,12 @@ class AuditLogger
             $subject instanceof User => "{$subject->name} <{$subject->email}>",
             $subject instanceof Department => $subject->name,
             $subject instanceof Role => $subject->label,
+            $subject instanceof Connection => $subject->display_phone_number === null
+                ? $subject->name
+                : "{$subject->name} ({$subject->display_phone_number})",
+            $subject instanceof Contact => $subject->name,
+            $subject instanceof Tag => $subject->name,
+            $subject instanceof QuickReply => "{$subject->title} (/{$subject->shortcut})",
             default => null,
         };
     }

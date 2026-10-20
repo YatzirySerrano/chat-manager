@@ -377,8 +377,8 @@ const integrationConnected = computed(
                             <p class="text-sm font-medium">
                                 {{
                                     integrationConnected
-                                        ? 'Conectada'
-                                        : 'Sin configurar'
+                                        ? 'Con números activos'
+                                        : 'Sin números activos'
                                 }}
                             </p>
                             <p class="text-sm text-muted-foreground">
@@ -389,11 +389,10 @@ const integrationConnected = computed(
                         </div>
                     </div>
                     <p class="text-sm text-muted-foreground">
-                        La conexión se habilitará en un incremento posterior.
-                        Esta pantalla no solicita ni almacena credenciales; el
-                        token de acceso, el secreto de la aplicación y el token
-                        de verificación del webhook se configurarán de forma
-                        cifrada en el servidor.
+                        Los números, sus credenciales (guardadas cifradas) y su
+                        estado real se administran en Administración ›
+                        Conexiones. La recepción y el envío de mensajes se
+                        habilitarán en el incremento de integración.
                     </p>
                 </div>
             </section>

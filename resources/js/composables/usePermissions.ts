@@ -27,7 +27,20 @@ export type PermissionName =
     | 'settings.update'
     | 'appearance.view'
     | 'appearance.update'
-    | 'audit.view';
+    | 'audit.view'
+    | 'connections.view'
+    | 'connections.manage'
+    | 'contacts.view'
+    | 'contacts.create'
+    | 'contacts.update'
+    | 'contacts.archive'
+    | 'contacts.notes'
+    | 'contacts.classify-origin'
+    | 'tags.view'
+    | 'tags.manage'
+    | 'tags.assign'
+    | 'quick-replies.use'
+    | 'quick-replies.manage';
 
 export function usePermissions() {
     const page = usePage();

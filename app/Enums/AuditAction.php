@@ -18,6 +18,9 @@ enum AuditAction: string
     case DepartmentDeactivated = 'department.deactivated';
     case DepartmentMemberAdded = 'department.member_added';
     case DepartmentMemberRemoved = 'department.member_removed';
+    case DepartmentOperationsUpdated = 'department.operations_updated';
+    case DepartmentConnectionsChanged = 'department.connections_changed';
+    case DepartmentHoursUpdated = 'department.hours_updated';
     case RoleCreated = 'role.created';
     case RoleUpdated = 'role.updated';
     case RolePermissionsChanged = 'role.permissions_changed';
@@ -26,6 +29,32 @@ enum AuditAction: string
     case RoleDeleted = 'role.deleted';
     case SettingsUpdated = 'settings.updated';
     case AppearanceUpdated = 'appearance.updated';
+    case ConnectionCreated = 'connection.created';
+    case ConnectionUpdated = 'connection.updated';
+    case ConnectionActivated = 'connection.activated';
+    case ConnectionDeactivated = 'connection.deactivated';
+    case ConnectionCredentialsUpdated = 'connection.credentials_updated';
+    case ConnectionCredentialsVerified = 'connection.credentials_verified';
+    case ConnectionCredentialsFailed = 'connection.credentials_failed';
+    case ContactCreated = 'contact.created';
+    case ContactUpdated = 'contact.updated';
+    case ContactArchived = 'contact.archived';
+    case ContactRestored = 'contact.restored';
+    case ContactOriginClassified = 'contact.origin_classified';
+    case ContactNoteAdded = 'contact.note_added';
+    case ContactTagsChanged = 'contact.tags_changed';
+    case ContactIdentityLinked = 'contact.identity_linked';
+    case ContactReviewOpened = 'contact.review_opened';
+    case ContactReviewResolved = 'contact.review_resolved';
+    case TagCreated = 'tag.created';
+    case TagUpdated = 'tag.updated';
+    case TagActivated = 'tag.activated';
+    case TagDeactivated = 'tag.deactivated';
+    case QuickReplyCreated = 'quick_reply.created';
+    case QuickReplyUpdated = 'quick_reply.updated';
+    case QuickReplyActivated = 'quick_reply.activated';
+    case QuickReplyDeactivated = 'quick_reply.deactivated';
+    case QuickReplyDeleted = 'quick_reply.deleted';
 
     /**
      * Human readable description of the action.
@@ -47,6 +76,9 @@ enum AuditAction: string
             self::DepartmentDeactivated => 'Departamento desactivado',
             self::DepartmentMemberAdded => 'Miembro agregado al departamento',
             self::DepartmentMemberRemoved => 'Miembro retirado del departamento',
+            self::DepartmentOperationsUpdated => 'Configuración operativa del departamento actualizada',
+            self::DepartmentConnectionsChanged => 'Conexiones del departamento modificadas',
+            self::DepartmentHoursUpdated => 'Horario del departamento actualizado',
             self::RoleCreated => 'Rol creado',
             self::RoleUpdated => 'Rol actualizado',
             self::RolePermissionsChanged => 'Permisos del rol modificados',
@@ -55,6 +87,32 @@ enum AuditAction: string
             self::RoleDeleted => 'Rol eliminado',
             self::SettingsUpdated => 'Configuración actualizada',
             self::AppearanceUpdated => 'Apariencia global modificada',
+            self::ConnectionCreated => 'Conexión creada',
+            self::ConnectionUpdated => 'Conexión actualizada',
+            self::ConnectionActivated => 'Conexión activada',
+            self::ConnectionDeactivated => 'Conexión desactivada',
+            self::ConnectionCredentialsUpdated => 'Credenciales de la conexión actualizadas',
+            self::ConnectionCredentialsVerified => 'Credenciales de la conexión verificadas',
+            self::ConnectionCredentialsFailed => 'Falló la verificación de credenciales',
+            self::ContactCreated => 'Contacto creado',
+            self::ContactUpdated => 'Contacto actualizado',
+            self::ContactArchived => 'Contacto archivado',
+            self::ContactRestored => 'Contacto restaurado',
+            self::ContactOriginClassified => 'Origen del contacto clasificado',
+            self::ContactNoteAdded => 'Nota privada agregada al contacto',
+            self::ContactTagsChanged => 'Etiquetas del contacto modificadas',
+            self::ContactIdentityLinked => 'Identidad de WhatsApp vinculada al contacto',
+            self::ContactReviewOpened => 'Posible duplicado enviado a revisión',
+            self::ContactReviewResolved => 'Revisión de posible duplicado resuelta',
+            self::TagCreated => 'Etiqueta creada',
+            self::TagUpdated => 'Etiqueta actualizada',
+            self::TagActivated => 'Etiqueta activada',
+            self::TagDeactivated => 'Etiqueta desactivada',
+            self::QuickReplyCreated => 'Respuesta rápida creada',
+            self::QuickReplyUpdated => 'Respuesta rápida actualizada',
+            self::QuickReplyActivated => 'Respuesta rápida activada',
+            self::QuickReplyDeactivated => 'Respuesta rápida desactivada',
+            self::QuickReplyDeleted => 'Respuesta rápida eliminada',
         };
     }
 
@@ -65,11 +123,16 @@ enum AuditAction: string
     {
         return match ($this) {
             self::UserDeleted, self::UserDeactivated, self::DepartmentDeactivated, self::DepartmentMemberRemoved,
-            self::RoleDeactivated, self::RoleDeleted => 'danger',
+            self::RoleDeactivated, self::RoleDeleted, self::ConnectionDeactivated, self::ConnectionCredentialsFailed,
+            self::ContactArchived, self::TagDeactivated, self::QuickReplyDeactivated, self::QuickReplyDeleted => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
-            self::AppearanceUpdated => 'warning',
+            self::AppearanceUpdated, self::ConnectionCredentialsUpdated, self::DepartmentConnectionsChanged,
+            self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
+            self::ContactReviewOpened => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentActivated, self::DepartmentMemberAdded,
-            self::RoleCreated, self::RoleActivated => 'success',
+            self::RoleCreated, self::RoleActivated, self::ConnectionCreated, self::ConnectionActivated,
+            self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
+            self::TagActivated, self::QuickReplyCreated, self::QuickReplyActivated => 'success',
             default => 'neutral',
         };
     }

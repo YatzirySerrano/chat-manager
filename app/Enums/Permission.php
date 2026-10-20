@@ -38,12 +38,30 @@ enum Permission: string
     case ReopenConversations = 'conversations.reopen';
     case ViewConversationHistory = 'conversations.history';
 
+    case AcceptConversations = 'conversations.accept';
+    case AddConversationNotes = 'conversations.notes';
+
+    case ViewConnections = 'connections.view';
+    case ManageConnections = 'connections.manage';
+
     case ViewContacts = 'contacts.view';
     case CreateContacts = 'contacts.create';
     case UpdateContacts = 'contacts.update';
+    case ArchiveContacts = 'contacts.archive';
+    case ManageContactNotes = 'contacts.notes';
+    case ClassifyContactOrigin = 'contacts.classify-origin';
+
+    case ViewTags = 'tags.view';
+    case ManageTags = 'tags.manage';
+    case AssignTags = 'tags.assign';
 
     case UseQuickReplies = 'quick-replies.use';
     case ManageQuickReplies = 'quick-replies.manage';
+
+    case UseTeamChat = 'team-chat.use';
+    case CreateTeamChatGroups = 'team-chat.create-groups';
+    case ManageTeamChatGroups = 'team-chat.manage-groups';
+    case UseCrossDepartmentTeamChat = 'team-chat.cross-department';
 
     case ViewReports = 'reports.view';
     case ExportReports = 'reports.export';
@@ -89,11 +107,25 @@ enum Permission: string
             self::CloseConversations => 'Cerrar conversaciones',
             self::ReopenConversations => 'Reabrir conversaciones',
             self::ViewConversationHistory => 'Consultar historial',
+            self::AcceptConversations => 'Aceptar conversaciones pendientes de sus departamentos',
+            self::AddConversationNotes => 'Agregar notas internas',
+            self::ViewConnections => 'Ver conexiones',
+            self::ManageConnections => 'Administrar conexiones y credenciales',
             self::ViewContacts => 'Ver contactos',
             self::CreateContacts => 'Crear contactos',
             self::UpdateContacts => 'Editar contactos',
+            self::ArchiveContacts => 'Archivar y restaurar contactos',
+            self::ManageContactNotes => 'Registrar notas privadas de contactos',
+            self::ClassifyContactOrigin => 'Clasificar manualmente el origen',
+            self::ViewTags => 'Ver etiquetas',
+            self::ManageTags => 'Administrar etiquetas',
+            self::AssignTags => 'Asignar etiquetas a contactos',
             self::UseQuickReplies => 'Usar respuestas rápidas',
             self::ManageQuickReplies => 'Administrar respuestas rápidas',
+            self::UseTeamChat => 'Usar el chat interno',
+            self::CreateTeamChatGroups => 'Crear grupos internos',
+            self::ManageTeamChatGroups => 'Administrar grupos internos',
+            self::UseCrossDepartmentTeamChat => 'Comunicarse con otros departamentos',
             self::ViewReports => 'Ver reportes',
             self::ExportReports => 'Exportar reportes',
             self::ViewSettings => 'Ver configuración',
@@ -113,9 +145,8 @@ enum Permission: string
     {
         return ! in_array($this->group(), [
             PermissionGroup::Conversations,
-            PermissionGroup::Contacts,
-            PermissionGroup::QuickReplies,
             PermissionGroup::Reports,
+            PermissionGroup::TeamChat,
         ], true) && $this !== self::ExportAuditLog;
     }
 
@@ -137,6 +168,7 @@ enum Permission: string
             self::ChangeDepartmentStatus,
             self::UpdateSettings,
             self::UpdateAppearance,
+            self::ManageConnections,
         ], true);
     }
 
@@ -157,6 +189,9 @@ enum Permission: string
             self::UpdateSettings,
             self::ViewAppearance,
             self::UpdateAppearance,
+            self::ViewConnections,
+            self::ManageConnections,
+            self::ManageTags,
         ], true);
     }
 

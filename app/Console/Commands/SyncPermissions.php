@@ -23,6 +23,10 @@ class SyncPermissions extends Command
             default => count($result['created_permissions']).' permisos agregados al catálogo.',
         });
 
+        if ($result['granted_to_root'] !== []) {
+            $this->components->info('Permisos nuevos otorgados a la autoridad raíz: '.implode(', ', $result['granted_to_root']).'.');
+        }
+
         if ($result['created_roles'] !== []) {
             $this->components->info('Roles iniciales creados: '.implode(', ', $result['created_roles']).'.');
         }
@@ -35,7 +39,9 @@ class SyncPermissions extends Command
                 : $this->components->warn("Permisos fuera del catálogo (usa --prune para eliminarlos): {$list}.");
         }
 
-        $this->components->info('Los roles existentes y sus permisos no se modificaron.');
+        $this->components->info($result['granted_to_root'] === []
+            ? 'Los roles existentes y sus permisos no se modificaron.'
+            : 'Los demás roles y sus permisos no se modificaron.');
 
         return self::SUCCESS;
     }

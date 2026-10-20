@@ -14,6 +14,11 @@ import { toast } from 'vue-sonner';
 import AddMemberDialog from '@/components/admin/AddMemberDialog.vue';
 import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DepartmentConnectionsCard from '@/components/departments/DepartmentConnectionsCard.vue';
+import DepartmentHoursCard from '@/components/departments/DepartmentHoursCard.vue';
+import DepartmentMetricsCard from '@/components/departments/DepartmentMetricsCard.vue';
+import DepartmentQuickRepliesCard from '@/components/departments/DepartmentQuickRepliesCard.vue';
+import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWelcomeMessageCard.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
@@ -36,9 +41,14 @@ import { destroy as destroyMember } from '@/routes/departments/members';
 import { update as updateStatus } from '@/routes/departments/status';
 import type {
     ColorSwatch,
+    DepartmentConnection,
     DepartmentMember,
+    DepartmentMetrics,
+    DepartmentQuickReplies,
     DepartmentSummary,
     MemberCandidate,
+    PlatformSettings,
+    Weekday,
 } from '@/types';
 
 const props = defineProps<{
@@ -47,6 +57,13 @@ const props = defineProps<{
     removableMemberIds: number[];
     candidates: MemberCandidate[];
     colors: ColorSwatch[];
+    metrics: DepartmentMetrics;
+    platformHours: PlatformSettings['business_hours'];
+    weekdays: Weekday[];
+    connections: DepartmentConnection[];
+    /** Null when the viewer cannot use quick replies. */
+    quickReplies: DepartmentQuickReplies | null;
+    links: { connections: string | null; quickReplies: string | null };
     can: { update: boolean; changeStatus: boolean; manageMembers: boolean };
 }>();
 
@@ -230,6 +247,48 @@ const confirmCopy = computed(() => {
                 </Button>
             </template>
         </PageHeader>
+
+        <DepartmentMetricsCard
+            :metrics="metrics"
+            :members-count="department.members_count ?? members.length"
+        />
+
+        <div class="grid gap-6 lg:grid-cols-2">
+            <DepartmentWelcomeMessageCard
+                :department="department"
+                :can-update="can.update"
+            />
+            <DepartmentHoursCard
+                :department="department"
+                :platform-hours="platformHours"
+                :weekdays="weekdays"
+                :can-update="can.update"
+            />
+            <DepartmentConnectionsCard
+                :connections="connections"
+                :manage-url="links.connections"
+            />
+            <DepartmentQuickRepliesCard
+                v-if="quickReplies"
+                :quick-replies="quickReplies"
+                :manage-url="links.quickReplies"
+            />
+            <section
+                class="rounded-xl border border-dashed bg-card/60 p-5 lg:col-span-2"
+                aria-labelledby="assignment-heading"
+            >
+                <h2 id="assignment-heading" class="text-sm font-semibold">
+                    Distribución de conversaciones
+                </h2>
+                <p class="mt-1 text-sm text-muted-foreground">
+                    Las reglas de asignación de este departamento se
+                    configurarán cuando se habilite la bandeja de atención. Por
+                    ahora no hay parámetros que ajustar.
+                </p>
+            </section>
+        </div>
+
+        <h2 class="-mb-2 text-base font-semibold">Miembros</h2>
 
         <EmptyState
             v-if="members.length === 0"

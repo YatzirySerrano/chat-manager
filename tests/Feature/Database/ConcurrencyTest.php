@@ -6,14 +6,21 @@
  * is rebuilt before the next test.
  */
 
+use App\Actions\Contacts\RegisterInboundContact;
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Actions\Users\ChangeUserStatus;
+use App\Enums\ConnectionChannel;
+use App\Enums\ConnectionProvider;
+use App\Enums\InboundContactOutcome;
+use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\ContactIdentity;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
-use App\Models\WhatsappAccount;
-use Illuminate\Database\Connection;
+use App\Support\InboundSender;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Connection as DatabaseConnection;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
@@ -23,7 +30,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * Open an independent connection that gives up after waiting one second for a row lock.
  */
-function concurrentConnection(string $name): Connection
+function concurrentConnection(string $name): DatabaseConnection
 {
     config(["database.connections.{$name}" => config('database.connections.mariadb')]);
 
@@ -90,8 +97,8 @@ test('simultaneous requests cannot open two conversations for the same contact',
     $first = concurrentConnection('first');
     concurrentConnection('second');
 
-    [$account, $contact] = throughConnection('first', fn () => [WhatsappAccount::factory()->create(), Contact::factory()->create()]);
-    $openConversation = fn () => Conversation::factory()->for($account)->for($contact)->create();
+    [$account, $contact] = throughConnection('first', fn () => [Connection::factory()->create(), Contact::factory()->create()]);
+    $openConversation = fn () => Conversation::factory()->for($account, 'channelConnection')->for($contact)->create();
 
     $first->beginTransaction();
     throughConnection('first', $openConversation);
@@ -126,4 +133,69 @@ test('conversations being released are locked against concurrent changes', funct
     expect(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
         ->assigned_user_id->toBeNull()
         ->version->toBe(1);
+});
+
+/**
+ * The sender of an inbound WhatsApp message, as the webhook consumer builds it.
+ */
+function concurrentInboundSender(string $messageId): InboundSender
+{
+    return new InboundSender(
+        channel: ConnectionChannel::Whatsapp,
+        provider: ConnectionProvider::MetaCloudApi,
+        externalId: '5215512345678',
+        profileName: 'Laura',
+        messageId: $messageId,
+        occurredAt: CarbonImmutable::parse('2026-10-05 10:00'),
+    );
+}
+
+test('two workers registering the same new sender produce a single contact', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    $connection = throughConnection('first', fn () => Connection::factory()->create());
+    $register = fn (string $messageId) => fn () => app(RegisterInboundContact::class)->handle($connection, concurrentInboundSender($messageId));
+
+    $first->beginTransaction();
+    $winner = throughConnection('first', $register('wamid.a'));
+
+    expect(fn () => throughConnection('second', $register('wamid.b')))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    $loser = throughConnection('second', $register('wamid.b'));
+
+    expect($loser->contact->id)->toBe($winner->contact->id)
+        ->and($loser->outcome)->toBe(InboundContactOutcome::Matched)
+        ->and(throughConnection('second', fn () => [Contact::query()->count(), ContactIdentity::query()->count()]))->toBe([1, 1]);
+});
+
+test('a sender registered by another worker in the meantime is reused through the unique identity', function () {
+    concurrentConnection('first');
+    concurrentConnection('second');
+
+    $connection = throughConnection('first', fn () => Connection::factory()->create());
+    $otherWorkersContact = throughConnection('first', fn () => Contact::factory()->create(['name' => 'Registrado por el otro proceso', 'phone_e164' => null]));
+    $racing = false;
+
+    // Right before the second worker inserts the identity, another worker
+    // commits the same one: the window a lookup cannot close on its own.
+    ContactIdentity::creating(function () use (&$racing, $otherWorkersContact) {
+        if ($racing) {
+            return;
+        }
+
+        $racing = true;
+        throughConnection('first', fn () => ContactIdentity::factory()
+            ->for($otherWorkersContact)
+            ->create(['external_id' => '5215512345678']));
+    });
+
+    $registration = throughConnection('second', fn () => app(RegisterInboundContact::class)->handle($connection, concurrentInboundSender('wamid.race')));
+
+    expect($racing)->toBeTrue()
+        ->and($registration->outcome)->toBe(InboundContactOutcome::Matched)
+        ->and($registration->contact->name)->toBe('Registrado por el otro proceso')
+        ->and(throughConnection('second', fn () => [Contact::query()->count(), ContactIdentity::query()->count()]))->toBe([1, 1]);
 });

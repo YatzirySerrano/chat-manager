@@ -69,7 +69,7 @@ test('role names must be unique and permissions must exist and be available', fu
         ->post(route('admin.roles.store'), [
             'label' => 'Agente',
             'scope' => 'assigned',
-            'permissions' => ['invented.permission', 'conversations.reply'],
+            'permissions' => ['invented.permission', 'reports.view'],
         ])
         ->assertSessionHasErrors(['label', 'permissions.0', 'permissions.1']);
 });
@@ -87,22 +87,28 @@ test('organization-wide permissions require the organization scope', function ()
 });
 
 test('editing a role replaces its permissions, keeps future ones and is audited', function () {
+    // Increment B made the conversation permissions editable, so the
+    // "future" (not yet available) permission kept here is reports.view.
     $admin = User::factory()->administrator()->create();
-    $agent = role(DefaultRole::Agent);
+    $supervisor = role(DefaultRole::Supervisor);
+    $editable = array_values(array_filter(
+        $supervisor->permissionNames(),
+        fn (string $name): bool => Permission::from($name)->isAvailable(),
+    ));
 
     $this->actingAs($admin)
-        ->put(route('admin.roles.update', $agent), [
-            'label' => 'Agente de Atención',
-            'description' => $agent->description,
-            'scope' => 'assigned',
-            'permissions' => ['dashboard.view', 'contacts.view', 'quick-replies.use', 'audit.view'],
+        ->put(route('admin.roles.update', $supervisor), [
+            'label' => 'Supervisión de Atención',
+            'description' => $supervisor->description,
+            'scope' => 'departments',
+            'permissions' => [...$editable, 'audit.view'],
         ])
         ->assertSessionHasNoErrors();
 
-    $agent->refresh()->load('permissions');
+    $supervisor->refresh()->load('permissions');
 
-    expect($agent->label)->toBe('Agente de Atención')
-        ->and($agent->permissionNames())->toContain('audit.view', 'conversations.reply', 'conversations.view');
+    expect($supervisor->label)->toBe('Supervisión de Atención')
+        ->and($supervisor->permissionNames())->toContain('audit.view', 'reports.view', 'conversations.reply');
 
     $log = AuditLog::query()->where('action', AuditAction::RolePermissionsChanged)->sole();
 

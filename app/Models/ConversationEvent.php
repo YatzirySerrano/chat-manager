@@ -57,4 +57,36 @@ class ConversationEvent extends Model
     {
         return $this->belongsTo(User::class, 'actor_user_id');
     }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function fromUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'from_user_id');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function toUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'to_user_id');
+    }
+
+    /**
+     * @return BelongsTo<Department, $this>
+     */
+    public function fromDepartment(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'from_department_id');
+    }
+
+    /**
+     * @return BelongsTo<Department, $this>
+     */
+    public function toDepartment(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'to_department_id');
+    }
 }

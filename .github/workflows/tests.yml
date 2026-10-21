@@ -13,6 +13,22 @@ jobs:
   ci:
     runs-on: ubuntu-latest
 
+    # The suite only needs the testing database; no application database
+    # is created or migrated in CI.
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: chatmanager_testing
+          MARIADB_USER: chatmanager_test
+          MARIADB_PASSWORD: chatmanager_test
+          MARIADB_RANDOM_ROOT_PASSWORD: '1'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,7 +48,15 @@ jobs:
           node-version: '22'
 
       - name: Setup Application
-        run: composer setup
+        run: |
+          composer install --no-interaction --prefer-dist
+          cp .env.example .env
+          php artisan key:generate
+          cp .env.testing.example .env.testing
+          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=chatmanager_test/' .env.testing
+          php artisan key:generate --env=testing
+          npm install
+          npm run build
 
       - name: Run CI Checks
         run: composer ci:check

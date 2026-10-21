@@ -62,6 +62,18 @@ export type Contact = {
     tags?: ContactTag[];
     identities?: ContactIdentitySummary[];
     origin?: ContactOriginSummary | null;
+    /** What the viewer may do with this contact (resolved by the server). */
+    can?: { view: boolean; update: boolean; archive: boolean };
+};
+
+/** A connection (number) through which the contact wrote to the company. */
+export type ContactReceivingConnection = {
+    id: number;
+    name: string;
+    channel_label: string;
+    display_phone_number: string | null;
+    first_interaction_at: string | null;
+    last_interaction_at: string | null;
 };
 
 export type ContactSort = 'recent' | 'name' | 'newest';

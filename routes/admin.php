@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AppearanceController;
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\DepartmentController;
+use App\Http\Controllers\Admin\DepartmentDistributionController;
 use App\Http\Controllers\Admin\DepartmentHoursController;
 use App\Http\Controllers\Admin\DepartmentMemberController;
 use App\Http\Controllers\Admin\DepartmentOperationsController;
@@ -27,6 +28,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('departments/{department}', [DepartmentController::class, 'update'])->name('departments.update');
     Route::patch('departments/{department}/status', [DepartmentStatusController::class, 'update'])->name('departments.status.update');
     Route::put('departments/{department}/operations', [DepartmentOperationsController::class, 'update'])->name('departments.operations.update');
+    Route::put('departments/{department}/distribution', [DepartmentDistributionController::class, 'update'])->name('departments.distribution.update');
     Route::put('departments/{department}/hours', [DepartmentHoursController::class, 'update'])->name('departments.hours.update');
     Route::post('departments/{department}/members', [DepartmentMemberController::class, 'store'])->name('departments.members.store');
     Route::delete('departments/{department}/members/{member}', [DepartmentMemberController::class, 'destroy'])->name('departments.members.destroy');

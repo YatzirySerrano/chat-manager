@@ -30,6 +30,8 @@ class ReleaseAssignedConversations
                 $conversation->forceFill([
                     'assigned_user_id' => null,
                     'assigned_at' => null,
+                    'on_hold_at' => null,
+                    'on_hold_reason' => null,
                     'status' => ConversationStatus::Pending,
                     'version' => $conversation->version + 1,
                 ])->save();

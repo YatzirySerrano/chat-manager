@@ -17,6 +17,7 @@ export type TagSummary = TagOption & {
     contacts_count?: number;
     conversations_count?: number;
     created_at: string | null;
+    can: { update: boolean; changeStatus: boolean };
 };
 
 export type TagFilters = {

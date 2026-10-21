@@ -1,3 +1,6 @@
+import type { InertiaLinkProps } from '@inertiajs/vue3';
+import type { LucideIcon } from '@lucide/vue';
+
 export type Appearance = 'light' | 'dark' | 'system';
 export type ResolvedAppearance = 'light' | 'dark';
 
@@ -22,4 +25,35 @@ export type FieldHelpContent = {
     example?: string;
     /** Consequence worth knowing before saving. */
     warning?: string;
+};
+
+/**
+ * How a list module presents its records. The preference is per user and
+ * module, and switching never reloads the data.
+ */
+export type ViewMode = 'table' | 'cards';
+
+/**
+ * One operation available on a record (row or card). Build only the actions
+ * the server allows (per-record `can` flags); RecordActions renders each one
+ * as a visible icon button with a tooltip and an accessible name.
+ */
+export type RecordAction = {
+    /** Stable identifier within the record, e.g. "edit". */
+    key: string;
+    /** Name of the operation, e.g. "Editar". */
+    label: string;
+    icon: LucideIcon;
+    /** Navigates to a page (rendered as an Inertia link). */
+    href?: NonNullable<InertiaLinkProps['href']>;
+    /** Runs a client action: opens a dialog or sends a request. */
+    onSelect?: () => void;
+    /** Irreversible or destructive operation (styled as such). */
+    destructive?: boolean;
+    disabled?: boolean;
+    /**
+     * Rarely used operation. It only moves into the "Más acciones" menu
+     * when the record has more than four actions.
+     */
+    secondary?: boolean;
 };

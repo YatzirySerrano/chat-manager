@@ -6,8 +6,10 @@ use App\Enums\ContactOriginType;
 use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\AuditLog;
+use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAttribution;
+use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -167,4 +169,42 @@ test('classifying the origin requires contacts.classify-origin and a visible con
         ->assertNotFound();
 
     expect($contact->attributions()->count())->toBe(0);
+});
+
+test('declaring the origin by hand is reserved to roles with organization-wide scope', function (DataScope $scope) {
+    $role = Role::factory()->scope($scope)
+        ->withPermissions([Permission::ViewContacts, Permission::ClassifyContactOrigin])
+        ->create();
+    $user = User::factory()->withRole($role)->inDepartments(Department::factory()->create())->create();
+    $contact = Contact::factory()->createdBy($user)->create();
+
+    $this->actingAs($user)
+        ->get(route('contacts.show', $contact))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('can.classifyOrigin', false));
+
+    $this->actingAs($user)
+        ->post(route('contacts.attributions.store', $contact), ['origin_type' => 'website'])
+        ->assertForbidden();
+
+    expect($contact->attributions()->count())->toBe(0);
+})->with([
+    'departments scope (supervisor-like)' => [DataScope::Departments],
+    'assigned scope (agent-like)' => [DataScope::Assigned],
+]);
+
+test('the origin section lists the connections the contact wrote through without secrets', function () {
+    $contact = Contact::factory()->fromWhatsapp()->create();
+    $connection = Connection::factory()->create(['name' => 'Ventas', 'display_phone_number' => '+52 55 1234 5678']);
+    $contact->connections()->attach($connection, ['first_interaction_at' => now()->subDay(), 'last_interaction_at' => now()]);
+
+    $this->actingAs(User::factory()->administrator()->create())
+        ->get(route('contacts.show', $contact))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('origin.connections', 1)
+            ->where('origin.connections.0.name', 'Ventas')
+            ->where('origin.connections.0.display_phone_number', '+52 55 1234 5678')
+            ->missing('origin.connections.0.access_token')
+            ->missing('origin.connections.0.app_secret')
+        );
 });

@@ -89,6 +89,12 @@ class ConnectionResource extends JsonResource
             'last_activity_at' => $this->last_activity_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            'can' => [
+                'view' => $request->user()?->can('view', $this->resource) ?? false,
+                'update' => $request->user()?->can('update', $this->resource) ?? false,
+                'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
+                'verify' => $request->user()?->can('verify', $this->resource) ?? false,
+            ],
         ];
     }
 

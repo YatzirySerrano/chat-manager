@@ -2,6 +2,7 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import { CircleDashed, Lock, PlugZap } from '@lucide/vue';
 import { computed } from 'vue';
+import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
@@ -258,8 +259,9 @@ const integrationConnected = computed(
                         Operación
                     </h2>
                     <p class="text-sm text-muted-foreground">
-                        Parámetros de distribución. Se aplicarán cuando se
-                        habilite la recepción de conversaciones.
+                        Cómo llegan las conversaciones a los agentes. Cada
+                        departamento elige además su forma de distribución en su
+                        propia ficha.
                     </p>
                 </div>
                 <div
@@ -269,6 +271,13 @@ const integrationConnected = computed(
                         id="default-department"
                         label="Departamento predeterminado"
                         hint="Recibe las conversaciones nuevas sin departamento."
+                        :help="{
+                            description:
+                                'Cola a la que entra una conversación nueva cuando su conexión no tiene un departamento predeterminado propio.',
+                            howTo: 'Elige un departamento activo autorizado para las conexiones. Si no eliges ninguno, las conversaciones quedan «Sin departamento» y solo las ven quienes tienen alcance sobre toda la organización.',
+                            warning:
+                                'Nunca se adivina el departamento a partir del contenido de los mensajes.',
+                        }"
                         :error="errors['operations.default_department_id']"
                     >
                         <select
@@ -290,6 +299,13 @@ const integrationConnected = computed(
                         id="max-open"
                         label="Máximo de conversaciones por agente"
                         hint="Déjalo vacío para no limitar."
+                        :help="{
+                            description:
+                                'Cuántas conversaciones en atención o en espera puede tener un agente antes de dejar de aceptar pendientes y de recibir asignaciones automáticas.',
+                            example: '8',
+                            warning:
+                                'Quien tiene permiso de asignar puede entregar conversaciones por encima de este límite, porque es una decisión de supervisión.',
+                        }"
                         :error="
                             errors[
                                 'operations.max_open_conversations_per_agent'
@@ -317,6 +333,13 @@ const integrationConnected = computed(
                         id="auto-close"
                         label="Cierre por inactividad (horas)"
                         hint="Déjalo vacío para no cerrar automáticamente."
+                        :help="{
+                            description:
+                                'Cierra las conversaciones sin mensajes nuevos durante estas horas. Se revisa cada hora y queda registrado en su historial.',
+                            example: '48',
+                            warning:
+                                'Cerrar no envía nada al cliente. Si el cliente vuelve a escribir, se aplica la ventana de reapertura de la conexión.',
+                        }"
                         :error="errors['operations.auto_close_after_hours']"
                     >
                         <Input
@@ -335,6 +358,46 @@ const integrationConnected = computed(
                             inputmode="numeric"
                         />
                     </FormField>
+                    <div class="grid gap-2 sm:col-span-2">
+                        <div class="flex items-center gap-1.5">
+                            <span
+                                id="transfer-reason-label"
+                                class="text-sm font-medium"
+                                >Motivo obligatorio al transferir</span
+                            >
+                            <FieldHelp
+                                title="Motivo obligatorio al transferir"
+                                :help="{
+                                    description:
+                                        'Exige escribir por qué se transfiere una conversación a otro agente o departamento.',
+                                    warning:
+                                        'El motivo queda en el historial de la conversación; nunca se envía al cliente.',
+                                }"
+                            />
+                        </div>
+                        <label
+                            class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                        >
+                            <span class="text-muted-foreground">
+                                {{
+                                    form.operations.transfer_reason_required
+                                        ? 'Se pide el motivo en cada transferencia'
+                                        : 'El motivo es opcional'
+                                }}
+                            </span>
+                            <Switch
+                                v-model="
+                                    form.operations.transfer_reason_required
+                                "
+                                aria-labelledby="transfer-reason-label"
+                            />
+                        </label>
+                        <InputError
+                            :message="
+                                errors['operations.transfer_reason_required']
+                            "
+                        />
+                    </div>
                 </div>
             </section>
 

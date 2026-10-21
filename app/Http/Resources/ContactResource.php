@@ -61,6 +61,11 @@ class ContactResource extends JsonResource
                     'reliability' => $current->reliability->value,
                 ];
             }),
+            'can' => [
+                'view' => $request->user()?->can('view', $this->resource) ?? false,
+                'update' => $request->user()?->can('update', $this->resource) ?? false,
+                'archive' => $request->user()?->can('archive', $this->resource) ?? false,
+            ],
         ];
     }
 }

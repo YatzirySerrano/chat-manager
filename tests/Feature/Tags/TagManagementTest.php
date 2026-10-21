@@ -140,3 +140,15 @@ test('deactivating a tag keeps it on the records that already have it', function
     expect($tag->refresh()->is_active)->toBeTrue()
         ->and(AuditLog::query()->where('action', AuditAction::TagActivated)->count())->toBe(1);
 });
+
+test('each listed tag exposes only the operations the viewer may perform', function () {
+    Tag::factory()->create();
+
+    $this->actingAs(User::factory()->supervisor()->create())
+        ->get(route('tags.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => false, 'changeStatus' => false]));
+
+    $this->actingAs(User::factory()->administrator()->create())
+        ->get(route('tags.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => true, 'changeStatus' => true]));
+});

@@ -13,6 +13,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Contacts\ContactRequest;
 use App\Http\Resources\ContactAttributionResource;
 use App\Http\Resources\ContactResource;
+use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactNote;
 use App\Models\ContactReviewCase;
@@ -23,8 +24,10 @@ use App\Services\ResolveContactOrigin;
 use App\Support\PhoneNumber;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -171,6 +174,10 @@ class ContactController extends Controller
                 ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
                 ->orderBy('tags.name'),
             'attributions' => fn ($query) => $query->with('recorder:id,name')->latest('captured_at')->latest('id'),
+            'connections' => fn (BelongsToMany $query) => $query
+                ->select('connections.id', 'connections.name', 'connections.channel', 'connections.display_phone_number')
+                ->orderBy('connection_contact.first_interaction_at')
+                ->orderBy('connections.id'),
         ]);
 
         $canManageNotes = $actor->can('manageNotes', $contact);
@@ -181,6 +188,7 @@ class ContactController extends Controller
             'origin' => [
                 'current' => $currentOrigin === null ? null : ContactAttributionResource::make($currentOrigin)->resolve($request),
                 'history' => ContactAttributionResource::collection($contact->attributions)->resolve($request),
+                'connections' => $this->receivingConnections($contact),
             ],
             'notes' => $canManageNotes ? $this->notes($contact) : null,
             'conversations' => $this->conversations($contact, $actor),
@@ -311,6 +319,34 @@ class ContactController extends Controller
                 'created_at' => $note->created_at?->toIso8601String(),
             ])
             ->all());
+    }
+
+    /**
+     * Connections (numbers) through which the contact reached the company,
+     * in the order it first wrote to each one. No credential is exposed.
+     *
+     * @return list<array{id: int, name: string, channel_label: string, display_phone_number: string|null, first_interaction_at: string|null, last_interaction_at: string|null}>
+     */
+    private function receivingConnections(Contact $contact): array
+    {
+        return array_values($contact->connections
+            ->map(fn (Connection $connection): array => [
+                'id' => $connection->id,
+                'name' => $connection->name,
+                'channel_label' => $connection->channel->label(),
+                'display_phone_number' => $connection->display_phone_number,
+                'first_interaction_at' => $this->pivotTimestamp($connection, 'first_interaction_at'),
+                'last_interaction_at' => $this->pivotTimestamp($connection, 'last_interaction_at'),
+            ])
+            ->all());
+    }
+
+    private function pivotTimestamp(Connection $connection, string $column): ?string
+    {
+        $pivot = $connection->getRelation('pivot');
+        $value = $pivot instanceof Pivot ? $pivot->getAttribute($column) : null;
+
+        return $value === null ? null : Carbon::parse($value)->toIso8601String();
     }
 
     /**

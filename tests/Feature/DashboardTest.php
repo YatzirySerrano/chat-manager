@@ -59,7 +59,8 @@ test('conversation metrics only count the conversations the user can see', funct
                 ->where('overview.scope', 'own')
                 ->where('overview.messaging_connected', true)
                 ->where('overview.conversations.active', 1)
-                ->where('overview.conversations.pending', 0)
+                // The queued conversation is one the agent may accept, so it is visible (increment B).
+                ->where('overview.conversations.pending', 1)
                 ->where('overview.conversations.closed_today', 1)
                 ->where('overview.departments', null)
             )

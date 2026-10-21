@@ -2,7 +2,6 @@
 import { Head, router } from '@inertiajs/vue3';
 import {
     MessagesSquare,
-    MoreHorizontal,
     Pencil,
     Plus,
     Power,
@@ -19,17 +18,14 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import RecordActions from '@/components/RecordActions.vue';
+import RecordCard from '@/components/RecordCard.vue';
+import RecordGrid from '@/components/RecordGrid.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import TagFormDialog from '@/components/tags/TagFormDialog.vue';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -46,9 +42,18 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useViewMode } from '@/composables/useViewMode';
+import { recordActions } from '@/lib/recordActions';
 import { index as tagsIndex } from '@/routes/tags';
 import { update as updateStatus } from '@/routes/tags/status';
-import type { ColorSwatch, Paginated, TagFilters, TagSummary } from '@/types';
+import type {
+    ColorSwatch,
+    Paginated,
+    RecordAction,
+    TagFilters,
+    TagSummary,
+} from '@/types';
 
 defineOptions({
     layout: {
@@ -148,6 +153,33 @@ function confirmDeactivation(): void {
     }
 }
 
+const { mode: viewMode } = useViewMode('tags');
+
+function actionsFor(tag: TagSummary): RecordAction[] {
+    return recordActions(
+        tag.can.update && {
+            key: 'edit',
+            label: 'Editar',
+            icon: Pencil,
+            onSelect: () => openEdit(tag),
+        },
+        tag.can.changeStatus &&
+            !tag.is_active && {
+                key: 'activate',
+                label: 'Activar',
+                icon: Power,
+                onSelect: () => changeStatus(tag, true),
+            },
+        tag.can.changeStatus &&
+            tag.is_active && {
+                key: 'deactivate',
+                label: 'Desactivar',
+                icon: PowerOff,
+                onSelect: () => askDeactivation(tag),
+            },
+    );
+}
+
 function usageLabel(
     count: number | undefined,
     singular: string,
@@ -179,10 +211,10 @@ function usageLabel(
 
         <SurfaceCard>
             <div
-                class="flex flex-col gap-2 border-b p-4 sm:flex-row sm:items-center"
+                class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
             >
-                <div class="relative flex-1">
+                <div class="relative order-1 min-w-0 flex-1">
                     <Search
                         class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
@@ -195,7 +227,8 @@ function usageLabel(
                         aria-label="Buscar etiquetas"
                     />
                 </div>
-                <div class="flex gap-2">
+                <ViewModeToggle v-model="viewMode" class="order-2 sm:order-3" />
+                <div class="order-3 flex w-full gap-2 sm:order-2 sm:w-auto">
                     <Select
                         v-model="filterState.status"
                         @update:model-value="applyFilters"
@@ -223,13 +256,13 @@ function usageLabel(
                 </div>
             </div>
 
-            <Table v-if="tags.data.length > 0">
+            <Table v-if="tags.data.length > 0 && viewMode === 'table'">
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Etiqueta</TableHead>
                         <TableHead class="hidden md:table-cell">Uso</TableHead>
                         <TableHead>Estado</TableHead>
-                        <TableHead v-if="can.manage" class="w-14 pr-5">
+                        <TableHead class="pr-5 text-right">
                             <span class="sr-only">Acciones</span>
                         </TableHead>
                     </TableRow>
@@ -240,7 +273,7 @@ function usageLabel(
                         :key="tag.id"
                         :class="!tag.is_active && 'text-muted-foreground'"
                     >
-                        <TableCell class="py-3 pl-5">
+                        <TableCell class="w-full max-w-0 py-3 pl-5">
                             <div class="grid gap-1">
                                 <TagBadge
                                     :name="tag.name"
@@ -296,43 +329,77 @@ function usageLabel(
                                 inactive-label="Inactiva"
                             />
                         </TableCell>
-                        <TableCell v-if="can.manage" class="pr-5 text-right">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger as-child>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        :disabled="processingId === tag.id"
-                                        :aria-label="`Acciones para ${tag.name}`"
-                                    >
-                                        <MoreHorizontal />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" class="w-44">
-                                    <DropdownMenuItem @select="openEdit(tag)">
-                                        <Pencil />
-                                        Editar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        v-if="!tag.is_active"
-                                        @select="changeStatus(tag, true)"
-                                    >
-                                        <Power />
-                                        Activar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        v-else
-                                        @select="askDeactivation(tag)"
-                                    >
-                                        <PowerOff />
-                                        Desactivar
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                        <TableCell class="w-px pr-5 text-right">
+                            <RecordActions
+                                :actions="actionsFor(tag)"
+                                :record="`la etiqueta ${tag.name}`"
+                                :busy="processingId === tag.id"
+                            />
                         </TableCell>
                     </TableRow>
                 </TableBody>
             </Table>
+
+            <RecordGrid v-else-if="tags.data.length > 0">
+                <li v-for="tag in tags.data" :key="tag.id">
+                    <RecordCard :muted="!tag.is_active">
+                        <template #title>
+                            <TagBadge
+                                :name="tag.name"
+                                :color="tag.color"
+                                :inactive="!tag.is_active"
+                                size="md"
+                                class="max-w-full"
+                            />
+                        </template>
+                        <template #badges>
+                            <StatusBadge
+                                :active="tag.is_active"
+                                active-label="Activa"
+                                inactive-label="Inactiva"
+                            />
+                        </template>
+                        <p class="line-clamp-2 text-muted-foreground">
+                            {{ tag.description || 'Sin descripción.' }}
+                        </p>
+                        <template #meta>
+                            <span class="inline-flex items-center gap-1">
+                                <UsersRound
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
+                                {{
+                                    usageLabel(
+                                        tag.contacts_count,
+                                        'contacto',
+                                        'contactos',
+                                    )
+                                }}
+                            </span>
+                            <span class="inline-flex items-center gap-1">
+                                <MessagesSquare
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
+                                {{
+                                    usageLabel(
+                                        tag.conversations_count,
+                                        'conversación',
+                                        'conversaciones',
+                                    )
+                                }}
+                            </span>
+                        </template>
+                        <template #actions>
+                            <RecordActions
+                                :actions="actionsFor(tag)"
+                                :record="`la etiqueta ${tag.name}`"
+                                :busy="processingId === tag.id"
+                            />
+                        </template>
+                    </RecordCard>
+                </li>
+            </RecordGrid>
 
             <EmptyState
                 v-else

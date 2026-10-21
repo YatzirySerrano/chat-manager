@@ -3,7 +3,6 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     Eye,
     Globe2,
-    MoreHorizontal,
     Pencil,
     Plus,
     Power,
@@ -18,29 +17,37 @@ import RoleFormDialog from '@/components/admin/RoleFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import RecordActions from '@/components/RecordActions.vue';
+import RecordCard from '@/components/RecordCard.vue';
+import RecordGrid from '@/components/RecordGrid.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import SurfaceCard from '@/components/SurfaceCard.vue';
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { useRecordHighlight } from '@/composables/useRecordHighlight';
+import { useViewMode } from '@/composables/useViewMode';
+import { recordActions } from '@/lib/recordActions';
 import {
     destroy as destroyRole,
     index as rolesIndex,
 } from '@/routes/admin/roles';
 import { update as updateStatus } from '@/routes/admin/roles/status';
 import { index as usersIndex } from '@/routes/admin/users';
-import type { ManagedRole, PermissionGroupCatalog, ScopeOption } from '@/types';
+import type {
+    ManagedRole,
+    PermissionGroupCatalog,
+    RecordAction,
+    ScopeOption,
+} from '@/types';
 
 defineOptions({
     layout: {
@@ -110,9 +117,9 @@ function openCreate(): void {
     formOpen.value = true;
 }
 
-function openRole(role: ManagedRole): void {
+function openRole(role: ManagedRole, readonly: boolean): void {
     editingRole.value = role;
-    formReadonly.value = !role.can.update;
+    formReadonly.value = readonly || !role.can.update;
     formOpen.value = true;
 }
 
@@ -121,6 +128,61 @@ type PendingAction = { type: 'deactivate' | 'delete'; role: ManagedRole };
 const pendingAction = ref<PendingAction | null>(null);
 const confirmOpen = ref(false);
 const processingId = ref<number | null>(null);
+
+function askConfirmation(action: PendingAction): void {
+    pendingAction.value = action;
+    confirmOpen.value = true;
+}
+
+const { mode: viewMode } = useViewMode('admin.roles');
+
+/**
+ * A role can only be deleted while nobody has it, so the button is offered
+ * only then (the server rejects it otherwise).
+ */
+function actionsFor(role: ManagedRole): RecordAction[] {
+    return recordActions(
+        {
+            key: 'view',
+            label: 'Ver permisos',
+            icon: Eye,
+            onSelect: () => openRole(role, true),
+        },
+        role.can.update && {
+            key: 'edit',
+            label: 'Editar',
+            icon: Pencil,
+            onSelect: () => openRole(role, false),
+        },
+        role.can.changeStatus &&
+            !role.is_active && {
+                key: 'activate',
+                label: 'Activar',
+                icon: Power,
+                onSelect: () => activate(role),
+            },
+        role.can.changeStatus &&
+            role.is_active && {
+                key: 'deactivate',
+                label: 'Desactivar',
+                icon: PowerOff,
+                onSelect: () => askConfirmation({ type: 'deactivate', role }),
+            },
+        role.can.delete &&
+            role.users_count === 0 && {
+                key: 'delete',
+                label: 'Eliminar',
+                icon: Trash2,
+                destructive: true,
+                secondary: true,
+                onSelect: () => askConfirmation({ type: 'delete', role }),
+            },
+    );
+}
+
+function usersLabel(role: ManagedRole): string {
+    return `${role.users_count} ${role.users_count === 1 ? 'usuario' : 'usuarios'}`;
+}
 
 function showFirstError(errors: Record<string, string>): void {
     const message = Object.values(errors)[0];
@@ -212,35 +274,153 @@ const confirmCopy = computed(() => {
             </template>
         </PageHeader>
 
-        <ul
-            v-if="roles.length > 0"
-            class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3"
-        >
-            <li
-                v-for="role in roles"
-                :key="role.id"
-                class="flex flex-col rounded-xl border bg-card shadow-card transition-all duration-700"
-                :class="[
-                    !role.is_active && 'opacity-75',
-                    highlightedId === role.id && 'ring-2 ring-primary',
-                ]"
+        <SurfaceCard v-if="roles.length > 0">
+            <div
+                class="flex items-center justify-between gap-2 border-b px-4 py-3"
             >
-                <div class="flex items-start gap-3 p-5 pb-4">
-                    <span
-                        class="flex size-10 shrink-0 items-center justify-center rounded-lg"
-                        :class="
-                            role.is_root
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-primary-soft text-primary-soft-foreground'
-                        "
-                    >
-                        <ShieldCheck class="size-5" />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                        <p
-                            class="flex flex-wrap items-center gap-2 font-semibold"
+                <p class="text-sm text-muted-foreground">
+                    {{ roles.length }}
+                    {{ roles.length === 1 ? 'rol' : 'roles' }} ·
+                    {{ availableTotal }} permisos disponibles
+                </p>
+                <ViewModeToggle v-model="viewMode" />
+            </div>
+
+            <Table v-if="viewMode === 'table'">
+                <TableHeader>
+                    <TableRow class="hover:bg-transparent">
+                        <TableHead class="pl-5">Rol</TableHead>
+                        <TableHead class="hidden lg:table-cell"
+                            >Alcance</TableHead
                         >
-                            <span class="truncate">{{ role.label }}</span>
+                        <TableHead class="hidden lg:table-cell"
+                            >Permisos</TableHead
+                        >
+                        <TableHead class="hidden xl:table-cell"
+                            >Usuarios</TableHead
+                        >
+                        <TableHead>Estado</TableHead>
+                        <TableHead class="pr-5 text-right">
+                            <span class="sr-only">Acciones</span>
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    <TableRow
+                        v-for="role in roles"
+                        :key="role.id"
+                        class="transition-colors duration-700"
+                        :class="[
+                            !role.is_active && 'text-muted-foreground',
+                            highlightedId === role.id && 'bg-primary-soft/70',
+                        ]"
+                    >
+                        <TableCell class="w-full max-w-0 py-3 pl-5">
+                            <div class="flex min-w-0 items-center gap-3">
+                                <span
+                                    class="flex size-9 shrink-0 items-center justify-center rounded-lg"
+                                    :class="
+                                        role.is_root
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'bg-primary-soft text-primary-soft-foreground'
+                                    "
+                                >
+                                    <ShieldCheck
+                                        class="size-4"
+                                        aria-hidden="true"
+                                    />
+                                </span>
+                                <div class="min-w-0">
+                                    <p
+                                        class="flex flex-wrap items-center gap-1.5 font-medium text-foreground"
+                                    >
+                                        <span class="truncate">{{
+                                            role.label
+                                        }}</span>
+                                        <Badge
+                                            v-if="role.is_current_user_role"
+                                            variant="outline"
+                                            class="font-normal"
+                                            >Tu rol</Badge
+                                        >
+                                    </p>
+                                    <p
+                                        class="truncate text-xs text-muted-foreground"
+                                    >
+                                        {{
+                                            role.is_root
+                                                ? 'Autoridad administrativa'
+                                                : role.description ||
+                                                  'Sin descripción.'
+                                        }}
+                                    </p>
+                                </div>
+                            </div>
+                        </TableCell>
+                        <TableCell class="hidden text-sm lg:table-cell">
+                            {{ role.scope_label }}
+                        </TableCell>
+                        <TableCell
+                            class="hidden text-sm tabular-nums lg:table-cell"
+                        >
+                            {{ availableCount(role) }} de
+                            {{ availableTotal }}
+                        </TableCell>
+                        <TableCell class="hidden xl:table-cell">
+                            <Link
+                                :href="usersIndex({ query: { role: role.id } })"
+                                class="text-sm hover:underline"
+                                :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
+                            >
+                                {{ usersLabel(role) }}
+                            </Link>
+                        </TableCell>
+                        <TableCell>
+                            <StatusBadge :active="role.is_active" />
+                        </TableCell>
+                        <TableCell class="w-px pr-5 text-right">
+                            <RecordActions
+                                :actions="actionsFor(role)"
+                                :record="`el rol ${role.label}`"
+                                :busy="processingId === role.id"
+                            />
+                        </TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
+
+            <RecordGrid v-else>
+                <li v-for="role in roles" :key="role.id">
+                    <RecordCard
+                        :muted="!role.is_active"
+                        :highlighted="highlightedId === role.id"
+                    >
+                        <template #leading>
+                            <span
+                                class="flex size-9 shrink-0 items-center justify-center rounded-lg"
+                                :class="
+                                    role.is_root
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-primary-soft text-primary-soft-foreground'
+                                "
+                            >
+                                <ShieldCheck
+                                    class="size-4"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                        </template>
+                        <template #title>
+                            <span class="block truncate">{{ role.label }}</span>
+                        </template>
+                        <template #subtitle>
+                            <span class="inline-flex items-center gap-1">
+                                <Globe2 class="size-3" aria-hidden="true" />
+                                {{ role.scope_label }}
+                            </span>
+                        </template>
+                        <template #badges>
+                            <StatusBadge :active="role.is_active" />
                             <Badge
                                 v-if="role.is_root"
                                 variant="secondary"
@@ -253,161 +433,72 @@ const confirmCopy = computed(() => {
                                 class="font-normal"
                                 >Tu rol</Badge
                             >
+                        </template>
+                        <p class="line-clamp-2 text-muted-foreground">
+                            {{ role.description || 'Sin descripción.' }}
                         </p>
-                        <div class="mt-1 flex flex-wrap items-center gap-2">
-                            <StatusBadge
-                                :active="role.is_active"
-                                active-label="Activo"
-                                inactive-label="Inactivo"
-                            />
-                            <span
-                                class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                        <div class="space-y-1.5">
+                            <div
+                                class="flex items-center justify-between text-xs"
                             >
-                                <Globe2 class="size-3" /> {{ role.scope_label }}
-                            </span>
-                        </div>
-                    </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger as-child>
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                :disabled="processingId === role.id"
-                                :aria-label="`Acciones para el rol ${role.label}`"
+                                <span class="font-medium"
+                                    >Permisos disponibles</span
+                                >
+                                <span class="text-muted-foreground tabular-nums"
+                                    >{{ availableCount(role) }} de
+                                    {{ availableTotal }}</span
+                                >
+                            </div>
+                            <div
+                                class="h-1.5 overflow-hidden rounded-full bg-muted"
+                                aria-hidden="true"
                             >
-                                <MoreHorizontal />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" class="w-52">
-                            <DropdownMenuItem @select="openRole(role)">
-                                <component
-                                    :is="role.can.update ? Pencil : Eye"
+                                <div
+                                    class="h-full rounded-full bg-primary transition-all"
+                                    :style="{
+                                        width: `${availableTotal ? (availableCount(role) / availableTotal) * 100 : 0}%`,
+                                    }"
                                 />
-                                {{
-                                    role.can.update
-                                        ? 'Editar rol y permisos'
-                                        : 'Ver permisos'
-                                }}
-                            </DropdownMenuItem>
-                            <template v-if="role.can.changeStatus">
-                                <DropdownMenuItem
-                                    v-if="!role.is_active"
-                                    @select="activate(role)"
+                            </div>
+                            <ul class="flex flex-wrap gap-1 pt-0.5">
+                                <li
+                                    v-for="group in groupSummary(role)"
+                                    :key="group.label"
+                                    class="rounded-md bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground"
                                 >
-                                    <Power />
-                                    Activar
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    v-else
-                                    @select="
-                                        pendingAction = {
-                                            type: 'deactivate',
-                                            role,
-                                        };
-                                        confirmOpen = true;
-                                    "
-                                >
-                                    <PowerOff />
-                                    Desactivar
-                                </DropdownMenuItem>
-                            </template>
-                            <template v-if="role.can.delete">
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    variant="destructive"
-                                    :disabled="role.users_count > 0"
-                                    @select="
-                                        pendingAction = {
-                                            type: 'delete',
-                                            role,
-                                        };
-                                        confirmOpen = true;
-                                    "
-                                >
-                                    <Trash2 />
-                                    {{
-                                        role.users_count > 0
-                                            ? 'Eliminar (tiene usuarios)'
-                                            : 'Eliminar'
+                                    {{ group.label }} · {{ group.count }}/{{
+                                        group.total
                                     }}
-                                </DropdownMenuItem>
-                            </template>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </div>
-
-                <p
-                    class="line-clamp-2 min-h-10 px-5 text-sm text-muted-foreground"
-                >
-                    {{ role.description || 'Sin descripción.' }}
-                </p>
-
-                <div class="space-y-2 px-5 pt-4">
-                    <div class="flex items-center justify-between text-xs">
-                        <span class="font-medium">Permisos disponibles</span>
-                        <span class="text-muted-foreground tabular-nums"
-                            >{{ availableCount(role) }} de
-                            {{ availableTotal }}</span
-                        >
-                    </div>
-                    <div
-                        class="h-1.5 overflow-hidden rounded-full bg-muted"
-                        aria-hidden="true"
-                    >
-                        <div
-                            class="h-full rounded-full bg-primary transition-all"
-                            :style="{
-                                width: `${availableTotal ? (availableCount(role) / availableTotal) * 100 : 0}%`,
-                            }"
-                        />
-                    </div>
-                    <ul class="flex flex-wrap gap-1.5 pt-1">
-                        <li
-                            v-for="group in groupSummary(role)"
-                            :key="group.label"
-                            class="rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
-                        >
-                            {{ group.label }} · {{ group.count }}/{{
-                                group.total
-                            }}
-                        </li>
-                        <li
-                            v-if="groupSummary(role).length === 0"
-                            class="text-xs text-muted-foreground"
-                        >
-                            Sin permisos disponibles asignados.
-                        </li>
-                    </ul>
-                </div>
-
-                <div
-                    class="mt-auto flex items-center justify-between gap-2 border-t px-5 py-3"
-                >
-                    <Tooltip>
-                        <TooltipTrigger as-child>
+                                </li>
+                                <li
+                                    v-if="groupSummary(role).length === 0"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    Sin permisos disponibles asignados.
+                                </li>
+                            </ul>
+                        </div>
+                        <template #meta>
                             <Link
                                 :href="usersIndex({ query: { role: role.id } })"
-                                class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                                class="inline-flex items-center gap-1 hover:text-foreground hover:underline"
+                                :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
                             >
-                                <Users class="size-4" />
-                                {{ role.users_count }}
-                                {{
-                                    role.users_count === 1
-                                        ? 'usuario'
-                                        : 'usuarios'
-                                }}
+                                <Users class="size-3.5" aria-hidden="true" />
+                                {{ usersLabel(role) }}
                             </Link>
-                        </TooltipTrigger>
-                        <TooltipContent
-                            >Ver los usuarios con este rol</TooltipContent
-                        >
-                    </Tooltip>
-                    <Button variant="outline" size="sm" @click="openRole(role)">
-                        {{ role.can.update ? 'Editar' : 'Ver permisos' }}
-                    </Button>
-                </div>
-            </li>
-        </ul>
+                        </template>
+                        <template #actions>
+                            <RecordActions
+                                :actions="actionsFor(role)"
+                                :record="`el rol ${role.label}`"
+                                :busy="processingId === role.id"
+                            />
+                        </template>
+                    </RecordCard>
+                </li>
+            </RecordGrid>
+        </SurfaceCard>
 
         <EmptyState
             v-else

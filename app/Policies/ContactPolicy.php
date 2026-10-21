@@ -61,9 +61,22 @@ class ContactPolicy
         return $this->allowWithinScope($actor, $contact, Permission::ManageContactNotes);
     }
 
+    /**
+     * Declaring the origin by hand is an exceptional administrative action:
+     * besides the permission it requires the organization-wide scope, so
+     * agents and supervisors never record origins from their daily work.
+     */
     public function classifyOrigin(User $actor, Contact $contact): Response
     {
-        return $this->allowWithinScope($actor, $contact, Permission::ClassifyContactOrigin);
+        $response = $this->allowWithinScope($actor, $contact, Permission::ClassifyContactOrigin);
+
+        if ($response->denied()) {
+            return $response;
+        }
+
+        return $actor->dataScope() === DataScope::Global
+            ? Response::allow()
+            : Response::deny('Solo un administrador con alcance global puede registrar la procedencia declarada.');
     }
 
     private function allowWithinScope(User $actor, Contact $contact, Permission $permission): Response
@@ -84,6 +97,10 @@ class ContactPolicy
      */
     private function reaches(User $actor, Contact $contact): bool
     {
+        if ($actor->dataScope() === DataScope::Global) {
+            return true;
+        }
+
         return Contact::query()->visibleTo($actor)->whereKey($contact->id)->exists();
     }
 }

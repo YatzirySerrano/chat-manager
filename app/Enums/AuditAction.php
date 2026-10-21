@@ -12,6 +12,7 @@ enum AuditAction: string
     case UserActivated = 'user.activated';
     case UserDeactivated = 'user.deactivated';
     case UserDeleted = 'user.deleted';
+    case UserAvailabilityChanged = 'user.availability_changed';
     case DepartmentCreated = 'department.created';
     case DepartmentUpdated = 'department.updated';
     case DepartmentActivated = 'department.activated';
@@ -70,6 +71,7 @@ enum AuditAction: string
             self::UserActivated => 'Usuario activado',
             self::UserDeactivated => 'Usuario desactivado',
             self::UserDeleted => 'Usuario eliminado',
+            self::UserAvailabilityChanged => 'Disponibilidad para atender modificada',
             self::DepartmentCreated => 'Departamento creado',
             self::DepartmentUpdated => 'Departamento actualizado',
             self::DepartmentActivated => 'Departamento activado',

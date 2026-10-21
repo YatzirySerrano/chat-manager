@@ -3,40 +3,42 @@
 namespace App\Policies;
 
 use App\Enums\ConversationStatus;
-use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Services\Conversations\ConversationAccess;
 
 /**
- * Authorization rules for the messaging module. Prepared in increment 01 so the
- * inbox can rely on them as soon as messaging is enabled. Every rule checks the
- * permission (what) and the data scope of the role (which conversations).
+ * Authorization of the conversation engine. Every ability combines the
+ * permission of the action with the visibility rules of ConversationAccess
+ * (scope, departments and assignment). Whether the target state is valid
+ * is checked again by the engine under lock.
  */
 class ConversationPolicy
 {
+    public function __construct(private ConversationAccess $access) {}
+
+    public function viewAny(User $actor): bool
+    {
+        return $actor->holdsPermission(Permission::ViewConversations);
+    }
+
     public function view(User $actor, Conversation $conversation): bool
     {
-        if (! $actor->holdsPermission(Permission::ViewConversations)) {
-            return false;
-        }
-
-        return match ($actor->dataScope()) {
-            DataScope::Global => true,
-            DataScope::Departments => $conversation->assigned_user_id === $actor->id
-                || ($conversation->department_id !== null && $actor->belongsToDepartment($conversation->department_id)),
-            default => $conversation->assigned_user_id === $actor->id,
-        };
+        return $this->access->canView($actor, $conversation);
     }
 
     /**
-     * Only the assigned user replies; supervisors must take the conversation first.
+     * The operational timeline (assignments, transfers, closings).
      */
-    public function reply(User $actor, Conversation $conversation): bool
+    public function viewHistory(User $actor, Conversation $conversation): bool
     {
-        return $conversation->status !== ConversationStatus::Closed
-            && $conversation->assigned_user_id === $actor->id
-            && $actor->holdsPermission(Permission::ReplyConversations);
+        return $actor->holdsPermission(Permission::ViewConversationHistory) && $this->view($actor, $conversation);
+    }
+
+    public function accept(User $actor, Conversation $conversation): bool
+    {
+        return $this->access->canAccept($actor, $conversation);
     }
 
     public function assign(User $actor, Conversation $conversation): bool
@@ -46,11 +48,31 @@ class ConversationPolicy
             && $this->view($actor, $conversation);
     }
 
+    /**
+     * The responsible agent transfers their own conversation; users who can
+     * assign transfer any conversation they see.
+     */
     public function transfer(User $actor, Conversation $conversation): bool
     {
         return $conversation->status !== ConversationStatus::Closed
             && $actor->holdsPermission(Permission::TransferConversations)
-            && $this->view($actor, $conversation);
+            && $this->view($actor, $conversation)
+            && ($this->isResponsible($actor, $conversation) || $actor->holdsPermission(Permission::AssignConversations));
+    }
+
+    public function release(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status->hasResponsible() && $this->attendsOrManages($actor, $conversation);
+    }
+
+    public function hold(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status === ConversationStatus::Open && $this->attendsOrManages($actor, $conversation);
+    }
+
+    public function resume(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status === ConversationStatus::OnHold && $this->attendsOrManages($actor, $conversation);
     }
 
     public function close(User $actor, Conversation $conversation): bool
@@ -59,7 +81,7 @@ class ConversationPolicy
             return false;
         }
 
-        return $conversation->assigned_user_id === $actor->id
+        return $this->isResponsible($actor, $conversation)
             || ($actor->holdsPermission(Permission::AssignConversations) && $this->view($actor, $conversation));
     }
 
@@ -68,5 +90,31 @@ class ConversationPolicy
         return $conversation->status === ConversationStatus::Closed
             && $actor->holdsPermission(Permission::ReopenConversations)
             && $this->view($actor, $conversation);
+    }
+
+    public function addNote(User $actor, Conversation $conversation): bool
+    {
+        return $actor->holdsPermission(Permission::AddConversationNotes) && $this->view($actor, $conversation);
+    }
+
+    /**
+     * Only the responsible agent writes to the customer, while attending.
+     */
+    public function reply(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status === ConversationStatus::Open
+            && $this->isResponsible($actor, $conversation)
+            && $actor->holdsPermission(Permission::ReplyConversations);
+    }
+
+    private function isResponsible(User $actor, Conversation $conversation): bool
+    {
+        return $conversation->status->hasResponsible() && $conversation->assigned_user_id === $actor->id;
+    }
+
+    private function attendsOrManages(User $actor, Conversation $conversation): bool
+    {
+        return ($this->isResponsible($actor, $conversation) && $actor->holdsPermission(Permission::ReplyConversations))
+            || ($actor->holdsPermission(Permission::AssignConversations) && $this->view($actor, $conversation));
     }
 }

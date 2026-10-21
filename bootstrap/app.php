@@ -1,8 +1,12 @@
 <?php
 
+use App\Exceptions\ConversationConflict;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Models\Conversation;
+use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -45,6 +49,17 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return response()->json(['message' => 'Not Found'], 404);
+        });
+
+        // Two operations on the same data can deadlock in MariaDB; the loser of
+        // a conversation operation gets a controlled conflict, not an error.
+        $exceptions->render(function (QueryException $e, Request $request) {
+            if (! $request->route('conversation') instanceof Conversation
+                || ! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($e)) {
+                return null;
+            }
+
+            return (new ConversationConflict('Otra operación modificó esta conversación al mismo tiempo. Revisa su estado actual e inténtalo de nuevo.'))->render($request);
         });
 
         // Permissions can be revoked while a page is open. Instead of an error

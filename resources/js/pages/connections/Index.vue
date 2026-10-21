@@ -2,9 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     CircleAlert,
-    LayoutGrid,
-    List,
-    MoreHorizontal,
+    Eye,
     Pencil,
     Plug,
     PlugZap,
@@ -25,16 +23,12 @@ import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadg
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import RecordActions from '@/components/RecordActions.vue';
+import RecordCard from '@/components/RecordCard.vue';
+import RecordGrid from '@/components/RecordGrid.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -51,7 +45,10 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useViewMode } from '@/composables/useViewMode';
 import { formatDateTime, formatRelative } from '@/lib/format';
+import { recordActions } from '@/lib/recordActions';
 import {
     create as createConnection,
     index as connectionsIndex,
@@ -65,6 +62,7 @@ import type {
     ConnectionOption,
     ConnectionStats,
     DepartmentOption,
+    RecordAction,
 } from '@/types';
 
 defineOptions({
@@ -84,31 +82,8 @@ const props = defineProps<{
 }>();
 
 const ALL = 'all';
-const VIEW_STORAGE_KEY = 'connections.view';
 
-type ViewMode = 'list' | 'cards';
-
-function storedView(): ViewMode {
-    try {
-        return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'list'
-            ? 'list'
-            : 'cards';
-    } catch {
-        return 'cards';
-    }
-}
-
-const view = ref<ViewMode>(storedView());
-
-function setView(mode: ViewMode): void {
-    view.value = mode;
-
-    try {
-        window.localStorage.setItem(VIEW_STORAGE_KEY, mode);
-    } catch {
-        // Storage can be unavailable (private mode); the choice just isn't remembered.
-    }
-}
+const { mode: viewMode } = useViewMode('connections');
 
 const filterState = reactive({
     search: props.filters.search ?? '',
@@ -218,6 +193,50 @@ function confirmDeactivation(): void {
     });
 }
 
+/**
+ * Activation needs the required credentials; the server rejects it
+ * otherwise, so the button is only offered when they are saved.
+ */
+function actionsFor(connection: Connection): RecordAction[] {
+    return recordActions(
+        connection.can.view &&
+            !connection.can.update && {
+                key: 'view',
+                label: 'Ver',
+                icon: Eye,
+                href: showConnection(connection.id),
+            },
+        connection.can.update && {
+            key: 'edit',
+            label: 'Editar',
+            icon: Pencil,
+            href: showConnection(connection.id),
+        },
+        connection.can.verify &&
+            connection.has_required_credentials && {
+                key: 'verify',
+                label: 'Verificar credenciales',
+                icon: ShieldCheck,
+                onSelect: () => verifyCredentials(connection),
+            },
+        connection.can.changeStatus &&
+            !connection.is_active &&
+            connection.has_required_credentials && {
+                key: 'activate',
+                label: 'Activar',
+                icon: Power,
+                onSelect: () => activate(connection),
+            },
+        connection.can.changeStatus &&
+            connection.is_active && {
+                key: 'deactivate',
+                label: 'Desactivar',
+                icon: PowerOff,
+                onSelect: () => askDeactivation(connection),
+            },
+    );
+}
+
 function phoneLabel(connection: Connection): string {
     return (
         connection.display_phone_number ??
@@ -294,10 +313,10 @@ function phoneLabel(connection: Connection): string {
 
         <SurfaceCard v-else>
             <div
-                class="flex flex-col gap-2 border-b p-4 lg:flex-row lg:items-center"
+                class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
             >
-                <div class="relative flex-1">
+                <div class="relative order-1 min-w-0 flex-1">
                     <Search
                         class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
@@ -310,7 +329,10 @@ function phoneLabel(connection: Connection): string {
                         aria-label="Buscar conexiones"
                     />
                 </div>
-                <div class="grid grid-cols-2 gap-2 lg:flex">
+                <ViewModeToggle v-model="viewMode" class="order-2" />
+                <div
+                    class="order-3 grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:flex-wrap"
+                >
                     <Select
                         v-model="filterState.channel"
                         @update:model-value="applyFilters"
@@ -404,32 +426,6 @@ function phoneLabel(connection: Connection): string {
                         <X />
                         Limpiar
                     </Button>
-                    <div
-                        class="flex rounded-md border p-0.5"
-                        role="group"
-                        aria-label="Tipo de vista"
-                    >
-                        <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            :class="view === 'cards' && 'bg-muted'"
-                            :aria-pressed="view === 'cards'"
-                            aria-label="Vista de tarjetas"
-                            @click="setView('cards')"
-                        >
-                            <LayoutGrid />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            :class="view === 'list' && 'bg-muted'"
-                            :aria-pressed="view === 'list'"
-                            aria-label="Vista de lista"
-                            @click="setView('list')"
-                        >
-                            <List />
-                        </Button>
-                    </div>
                 </div>
             </div>
 
@@ -445,20 +441,12 @@ function phoneLabel(connection: Connection): string {
                 >
             </EmptyState>
 
-            <div
-                v-else-if="view === 'cards'"
-                class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3"
-            >
-                <article
-                    v-for="connection in connections"
-                    :key="connection.id"
-                    class="flex flex-col gap-4 rounded-xl border bg-card p-4 transition-shadow hover:shadow-card"
-                    :class="!connection.is_active && 'bg-muted/30'"
-                >
-                    <header class="flex items-start justify-between gap-3">
-                        <div class="flex min-w-0 items-center gap-3">
+            <RecordGrid v-else-if="viewMode === 'cards'">
+                <li v-for="connection in connections" :key="connection.id">
+                    <RecordCard :muted="!connection.is_active">
+                        <template #leading>
                             <span
-                                class="flex size-10 shrink-0 items-center justify-center rounded-lg"
+                                class="flex size-9 shrink-0 items-center justify-center rounded-lg"
                                 :class="
                                     connection.is_active
                                         ? 'bg-primary-soft text-primary-soft-foreground'
@@ -467,130 +455,87 @@ function phoneLabel(connection: Connection): string {
                             >
                                 <PlugZap
                                     v-if="connection.is_active"
-                                    class="size-5"
+                                    class="size-4"
                                     aria-hidden="true"
                                 />
                                 <Unplug
                                     v-else
-                                    class="size-5"
+                                    class="size-4"
                                     aria-hidden="true"
                                 />
                             </span>
-                            <div class="min-w-0">
-                                <Link
-                                    :href="showConnection(connection.id)"
-                                    class="block truncate font-medium hover:underline"
-                                >
-                                    {{ connection.name }}
-                                </Link>
-                                <p
-                                    class="truncate text-xs text-muted-foreground"
-                                >
-                                    {{ phoneLabel(connection) }} ·
-                                    {{ connection.channel.label }}
-                                </p>
-                            </div>
-                        </div>
-                        <DropdownMenu v-if="can.manage">
-                            <DropdownMenuTrigger as-child>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :disabled="processingId === connection.id"
-                                    :aria-label="`Acciones para ${connection.name}`"
-                                >
-                                    <MoreHorizontal />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" class="w-52">
-                                <DropdownMenuItem as-child>
-                                    <Link :href="showConnection(connection.id)">
-                                        <Pencil />
-                                        Editar
-                                    </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    :disabled="
-                                        !connection.has_required_credentials
-                                    "
-                                    @select="verifyCredentials(connection)"
-                                >
-                                    <ShieldCheck />
-                                    Verificar credenciales
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    v-if="!connection.is_active"
-                                    :disabled="
-                                        !connection.has_required_credentials
-                                    "
-                                    @select="activate(connection)"
-                                >
-                                    <Power />
-                                    Activar
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    v-else
-                                    @select="askDeactivation(connection)"
-                                >
-                                    <PowerOff />
-                                    Desactivar
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </header>
-
-                    <div class="flex flex-wrap items-center gap-2">
-                        <ConnectionHealthBadge :health="connection.health" />
-                        <ConnectionHealthBadge
-                            v-if="!connection.is_active"
-                            :health="connection.configuration_health"
+                        </template>
+                        <template #title>
+                            <Link
+                                :href="showConnection(connection.id)"
+                                class="block truncate hover:underline"
+                            >
+                                {{ connection.name }}
+                            </Link>
+                        </template>
+                        <template #subtitle>
+                            {{ phoneLabel(connection) }} ·
+                            {{ connection.channel.label }}
+                        </template>
+                        <template #badges>
+                            <ConnectionHealthBadge
+                                :health="connection.health"
+                            />
+                            <ConnectionHealthBadge
+                                v-if="!connection.is_active"
+                                :health="connection.configuration_health"
+                            />
+                        </template>
+                        <ConnectionChecklist
+                            :checks="connection.checks"
+                            compact
                         />
-                    </div>
-
-                    <ConnectionChecklist :checks="connection.checks" compact />
-
-                    <footer class="mt-auto flex flex-wrap gap-1 border-t pt-3">
-                        <DepartmentTag
-                            v-for="department in connection.departments.slice(
-                                0,
-                                3,
-                            )"
-                            :key="department.id"
-                            :name="department.name"
-                            :color="department.color"
-                            :muted="!department.is_active"
-                        />
-                        <span
-                            v-if="connection.departments.length > 3"
-                            class="text-xs text-muted-foreground"
-                        >
-                            +{{ connection.departments.length - 3 }}
-                        </span>
-                        <span
-                            v-if="connection.departments.length === 0"
-                            class="text-xs text-muted-foreground"
-                            >Sin departamentos autorizados</span
-                        >
-                    </footer>
-                </article>
-            </div>
+                        <template #meta>
+                            <DepartmentTag
+                                v-for="department in connection.departments.slice(
+                                    0,
+                                    2,
+                                )"
+                                :key="department.id"
+                                :name="department.name"
+                                :color="department.color"
+                                :muted="!department.is_active"
+                            />
+                            <span v-if="connection.departments.length > 2">
+                                +{{ connection.departments.length - 2 }}
+                            </span>
+                            <span v-if="connection.departments.length === 0"
+                                >Sin departamentos autorizados</span
+                            >
+                        </template>
+                        <template #actions>
+                            <RecordActions
+                                :actions="actionsFor(connection)"
+                                :record="connection.name"
+                                :busy="processingId === connection.id"
+                            />
+                        </template>
+                    </RecordCard>
+                </li>
+            </RecordGrid>
 
             <Table v-else>
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Conexión</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead class="hidden md:table-cell"
-                            >Credenciales</TableHead
+                        <TableHead class="hidden sm:table-cell"
+                            >Estado</TableHead
                         >
                         <TableHead class="hidden lg:table-cell"
-                            >Departamentos</TableHead
+                            >Credenciales</TableHead
                         >
                         <TableHead class="hidden xl:table-cell"
+                            >Departamentos</TableHead
+                        >
+                        <TableHead class="hidden 2xl:table-cell"
                             >Última actividad</TableHead
                         >
-                        <TableHead class="w-14 pr-5">
+                        <TableHead class="pr-5 text-right">
                             <span class="sr-only">Acciones</span>
                         </TableHead>
                     </TableRow>
@@ -603,24 +548,28 @@ function phoneLabel(connection: Connection): string {
                             !connection.is_active && 'text-muted-foreground'
                         "
                     >
-                        <TableCell class="py-3 pl-5">
+                        <TableCell class="w-full max-w-0 py-3 pl-5">
                             <Link
                                 :href="showConnection(connection.id)"
-                                class="font-medium text-foreground hover:underline"
+                                class="block truncate font-medium text-foreground hover:underline"
                             >
                                 {{ connection.name }}
                             </Link>
-                            <p class="text-xs text-muted-foreground">
+                            <p class="truncate text-xs text-muted-foreground">
                                 {{ phoneLabel(connection) }} ·
                                 {{ connection.channel.label }}
                             </p>
+                            <ConnectionHealthBadge
+                                class="mt-1 sm:hidden"
+                                :health="connection.health"
+                            />
                         </TableCell>
-                        <TableCell>
+                        <TableCell class="hidden sm:table-cell">
                             <ConnectionHealthBadge
                                 :health="connection.health"
                             />
                         </TableCell>
-                        <TableCell class="hidden text-sm md:table-cell">
+                        <TableCell class="hidden text-sm lg:table-cell">
                             <span
                                 v-if="
                                     connection.checks.credentials.state ===
@@ -665,7 +614,7 @@ function phoneLabel(connection: Connection): string {
                                 >Incompletas</span
                             >
                         </TableCell>
-                        <TableCell class="hidden lg:table-cell">
+                        <TableCell class="hidden xl:table-cell">
                             <div
                                 v-if="connection.departments.length > 0"
                                 class="flex flex-wrap gap-1"
@@ -691,7 +640,7 @@ function phoneLabel(connection: Connection): string {
                                 >Sin asignar</span
                             >
                         </TableCell>
-                        <TableCell class="hidden text-sm xl:table-cell">
+                        <TableCell class="hidden text-sm 2xl:table-cell">
                             <span
                                 v-if="connection.last_activity_at"
                                 :title="
@@ -705,60 +654,12 @@ function phoneLabel(connection: Connection): string {
                                 >Sin actividad registrada</span
                             >
                         </TableCell>
-                        <TableCell class="pr-5 text-right">
-                            <DropdownMenu v-if="can.manage">
-                                <DropdownMenuTrigger as-child>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        :disabled="
-                                            processingId === connection.id
-                                        "
-                                        :aria-label="`Acciones para ${connection.name}`"
-                                    >
-                                        <MoreHorizontal />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" class="w-52">
-                                    <DropdownMenuItem as-child>
-                                        <Link
-                                            :href="
-                                                showConnection(connection.id)
-                                            "
-                                        >
-                                            <Pencil />
-                                            Editar
-                                        </Link>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        :disabled="
-                                            !connection.has_required_credentials
-                                        "
-                                        @select="verifyCredentials(connection)"
-                                    >
-                                        <ShieldCheck />
-                                        Verificar credenciales
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        v-if="!connection.is_active"
-                                        :disabled="
-                                            !connection.has_required_credentials
-                                        "
-                                        @select="activate(connection)"
-                                    >
-                                        <Power />
-                                        Activar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        v-else
-                                        @select="askDeactivation(connection)"
-                                    >
-                                        <PowerOff />
-                                        Desactivar
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                        <TableCell class="w-px pr-5 text-right">
+                            <RecordActions
+                                :actions="actionsFor(connection)"
+                                :record="connection.name"
+                                :busy="processingId === connection.id"
+                            />
                         </TableCell>
                     </TableRow>
                 </TableBody>

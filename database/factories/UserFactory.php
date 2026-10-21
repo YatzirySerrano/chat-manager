@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\AgentAvailability;
 use App\Enums\DefaultRole;
 use App\Models\Department;
 use App\Models\Role;
@@ -94,6 +95,17 @@ class UserFactory extends Factory
     public function agent(): static
     {
         return $this->withRole(DefaultRole::Agent);
+    }
+
+    /**
+     * Declare the user available to receive automatic assignments.
+     */
+    public function available(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'availability' => AgentAvailability::Available,
+            'availability_changed_at' => now(),
+        ]);
     }
 
     /**

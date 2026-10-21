@@ -3,7 +3,6 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     Globe,
     MessageSquareText,
-    MoreHorizontal,
     Pencil,
     Plus,
     Power,
@@ -22,17 +21,12 @@ import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import QuickReplyFormDialog from '@/components/quick-replies/QuickReplyFormDialog.vue';
 import QuickReplySandbox from '@/components/quick-replies/QuickReplySandbox.vue';
-import WhatsAppText from '@/components/WhatsAppText.vue';
+import RecordActions from '@/components/RecordActions.vue';
+import RecordCard from '@/components/RecordCard.vue';
+import RecordGrid from '@/components/RecordGrid.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -41,6 +35,18 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import WhatsAppText from '@/components/WhatsAppText.vue';
+import { useViewMode } from '@/composables/useViewMode';
+import { recordActions } from '@/lib/recordActions';
 import {
     destroy as destroyQuickReply,
     index as quickRepliesIndex,
@@ -52,6 +58,7 @@ import type {
     QuickReplyFilters,
     QuickReplySummary,
     QuickReplyVariableOption,
+    RecordAction,
 } from '@/types';
 
 defineOptions({
@@ -220,8 +227,39 @@ const confirmCopy = computed(() => {
     };
 });
 
-const hasActions = (reply: QuickReplySummary): boolean =>
-    reply.can.update || reply.can.changeStatus || reply.can.delete;
+const { mode: viewMode } = useViewMode('quick-replies');
+
+function actionsFor(reply: QuickReplySummary): RecordAction[] {
+    return recordActions(
+        reply.can.update && {
+            key: 'edit',
+            label: 'Editar',
+            icon: Pencil,
+            onSelect: () => openEdit(reply),
+        },
+        reply.can.changeStatus &&
+            !reply.is_active && {
+                key: 'activate',
+                label: 'Activar',
+                icon: Power,
+                onSelect: () => activate(reply),
+            },
+        reply.can.changeStatus &&
+            reply.is_active && {
+                key: 'deactivate',
+                label: 'Desactivar',
+                icon: PowerOff,
+                onSelect: () => askConfirmation({ type: 'deactivate', reply }),
+            },
+        reply.can.delete && {
+            key: 'delete',
+            label: 'Eliminar',
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => askConfirmation({ type: 'delete', reply }),
+        },
+    );
+}
 </script>
 
 <template>
@@ -245,10 +283,10 @@ const hasActions = (reply: QuickReplySummary): boolean =>
         <div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <SurfaceCard>
                 <div
-                    class="flex flex-col gap-2 border-b p-4 lg:flex-row lg:items-center"
+                    class="flex flex-wrap items-center gap-2 border-b p-4"
                     role="search"
                 >
-                    <div class="relative flex-1">
+                    <div class="relative order-1 min-w-0 flex-1">
                         <Search
                             class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                             aria-hidden="true"
@@ -261,7 +299,10 @@ const hasActions = (reply: QuickReplySummary): boolean =>
                             aria-label="Buscar respuestas rápidas"
                         />
                     </div>
-                    <div class="grid grid-cols-2 gap-2 sm:flex">
+                    <ViewModeToggle v-model="viewMode" class="order-2" />
+                    <div
+                        class="order-3 grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap"
+                    >
                         <Select
                             v-model="filterState.department"
                             @update:model-value="applyFilters"
@@ -336,37 +377,126 @@ const hasActions = (reply: QuickReplySummary): boolean =>
                     </div>
                 </div>
 
-                <ul v-if="quickReplies.data.length > 0" class="divide-y">
-                    <li
-                        v-for="reply in quickReplies.data"
-                        :key="reply.id"
-                        class="flex gap-3 px-5 py-4"
-                        :class="!reply.is_active && 'bg-muted/30'"
-                    >
-                        <div class="grid min-w-0 flex-1 gap-2">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
-                                    >/{{ reply.shortcut }}</span
+                <Table
+                    v-if="quickReplies.data.length > 0 && viewMode === 'table'"
+                >
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Respuesta</TableHead>
+                            <TableHead class="hidden 2xl:table-cell"
+                                >Disponible para</TableHead
+                            >
+                            <TableHead class="hidden sm:table-cell"
+                                >Estado</TableHead
+                            >
+                            <TableHead class="pr-5 text-right">
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow
+                            v-for="reply in quickReplies.data"
+                            :key="reply.id"
+                            :class="!reply.is_active && 'text-muted-foreground'"
+                        >
+                            <TableCell class="w-full max-w-0 py-3 pl-5">
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <span
+                                        class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
+                                        >/{{ reply.shortcut }}</span
+                                    >
+                                    <span
+                                        class="truncate font-medium text-foreground"
+                                        >{{ reply.title }}</span
+                                    >
+                                </div>
+                                <p
+                                    class="mt-1 truncate text-xs text-muted-foreground"
                                 >
-                                <p class="max-w-full truncate font-medium">
-                                    {{ reply.title }}
+                                    {{ reply.body }}
                                 </p>
+                                <p
+                                    class="mt-0.5 truncate text-xs text-muted-foreground 2xl:hidden"
+                                >
+                                    {{
+                                        reply.is_global
+                                            ? 'Todos los departamentos'
+                                            : reply.departments
+                                                  .map(
+                                                      (department) =>
+                                                          department.name,
+                                                  )
+                                                  .join(', ')
+                                    }}
+                                </p>
+                            </TableCell>
+                            <TableCell class="hidden 2xl:table-cell">
+                                <span
+                                    v-if="reply.is_global"
+                                    class="inline-flex items-center gap-1 text-xs"
+                                >
+                                    <Globe class="size-3" aria-hidden="true" />
+                                    Todos los departamentos
+                                </span>
+                                <div v-else class="flex flex-wrap gap-1">
+                                    <DepartmentTag
+                                        v-for="department in reply.departments"
+                                        :key="department.id"
+                                        :name="department.name"
+                                        :color="department.color"
+                                        :muted="!department.is_active"
+                                    />
+                                </div>
+                            </TableCell>
+                            <TableCell class="hidden sm:table-cell">
                                 <StatusBadge
                                     :active="reply.is_active"
                                     active-label="Activa"
                                     inactive-label="Inactiva"
                                 />
-                            </div>
+                            </TableCell>
+                            <TableCell class="w-px pr-5 text-right">
+                                <RecordActions
+                                    :actions="actionsFor(reply)"
+                                    :record="`la respuesta /${reply.shortcut}`"
+                                    :busy="processingId === reply.id"
+                                />
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+
+                <RecordGrid v-else-if="quickReplies.data.length > 0">
+                    <li v-for="reply in quickReplies.data" :key="reply.id">
+                        <RecordCard :muted="!reply.is_active">
+                            <template #title>
+                                <span class="flex min-w-0 items-center gap-2">
+                                    <span
+                                        class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
+                                        >/{{ reply.shortcut }}</span
+                                    >
+                                    <span class="truncate">{{
+                                        reply.title
+                                    }}</span>
+                                </span>
+                            </template>
+                            <template #badges>
+                                <StatusBadge
+                                    :active="reply.is_active"
+                                    active-label="Activa"
+                                    inactive-label="Inactiva"
+                                />
+                            </template>
                             <p
-                                class="line-clamp-3 text-sm wrap-anywhere text-muted-foreground"
+                                class="line-clamp-3 wrap-anywhere text-muted-foreground"
                             >
                                 <WhatsAppText :text="reply.body" />
                             </p>
-                            <div class="flex flex-wrap items-center gap-1">
+                            <template #meta>
                                 <span
                                     v-if="reply.is_global"
-                                    class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs"
+                                    class="inline-flex items-center gap-1"
                                 >
                                     <Globe class="size-3" aria-hidden="true" />
                                     Todos los departamentos
@@ -379,67 +509,17 @@ const hasActions = (reply: QuickReplySummary): boolean =>
                                     :color="department.color"
                                     :muted="!department.is_active"
                                 />
-                            </div>
-                        </div>
-                        <DropdownMenu v-if="hasActions(reply)">
-                            <DropdownMenuTrigger as-child>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :disabled="processingId === reply.id"
-                                    :aria-label="`Acciones para /${reply.shortcut}`"
-                                >
-                                    <MoreHorizontal />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" class="w-44">
-                                <DropdownMenuItem
-                                    v-if="reply.can.update"
-                                    @select="openEdit(reply)"
-                                >
-                                    <Pencil />
-                                    Editar
-                                </DropdownMenuItem>
-                                <template v-if="reply.can.changeStatus">
-                                    <DropdownMenuItem
-                                        v-if="!reply.is_active"
-                                        @select="activate(reply)"
-                                    >
-                                        <Power />
-                                        Activar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        v-else
-                                        @select="
-                                            askConfirmation({
-                                                type: 'deactivate',
-                                                reply,
-                                            })
-                                        "
-                                    >
-                                        <PowerOff />
-                                        Desactivar
-                                    </DropdownMenuItem>
-                                </template>
-                                <template v-if="reply.can.delete">
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        variant="destructive"
-                                        @select="
-                                            askConfirmation({
-                                                type: 'delete',
-                                                reply,
-                                            })
-                                        "
-                                    >
-                                        <Trash2 />
-                                        Eliminar
-                                    </DropdownMenuItem>
-                                </template>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                            </template>
+                            <template #actions>
+                                <RecordActions
+                                    :actions="actionsFor(reply)"
+                                    :record="`la respuesta /${reply.shortcut}`"
+                                    :busy="processingId === reply.id"
+                                />
+                            </template>
+                        </RecordCard>
                     </li>
-                </ul>
+                </RecordGrid>
 
                 <EmptyState
                     v-else

@@ -152,3 +152,21 @@ test('the default department cannot be deactivated', function () {
 
     expect($department->refresh()->is_active)->toBeTrue();
 });
+
+test('each listed department exposes only the operations the viewer may perform', function () {
+    $department = Department::factory()->create();
+    $supervisor = User::factory()->supervisor()->inDepartments($department)->create();
+
+    $this->actingAs($supervisor)
+        ->get(route('departments.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('departments.0.can', ['view' => true, 'update' => false, 'changeStatus' => false]));
+
+    $this->actingAs($supervisor)->put(route('departments.update', $department), ['name' => 'Otro', 'color' => 'blue'])->assertForbidden();
+    $this->actingAs($supervisor)->patch(route('departments.status.update', $department), ['is_active' => false])->assertForbidden();
+
+    $this->actingAs(User::factory()->administrator()->create())
+        ->get(route('departments.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('departments.0.can', ['view' => true, 'update' => true, 'changeStatus' => true]));
+});

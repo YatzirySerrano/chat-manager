@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ColorSwatch;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
+use App\Enums\DistributionMode;
 use App\Enums\Permission;
 use Database\Factories\DepartmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property ColorSwatch $color
  * @property bool $is_active
  * @property string|null $welcome_message
+ * @property DistributionMode $distribution_mode
  * @property bool $uses_custom_hours
  * @property array{days: array<string, array{open: bool, start: string, end: string}>}|null $business_hours Only applies while `uses_custom_hours` is true; otherwise the platform hours apply.
  * @property Carbon|null $created_at
@@ -43,6 +45,7 @@ class Department extends Model
     protected $attributes = [
         'is_active' => true,
         'uses_custom_hours' => false,
+        'distribution_mode' => 'shared',
     ];
 
     /**
@@ -55,6 +58,7 @@ class Department extends Model
         return [
             'color' => ColorSwatch::class,
             'is_active' => 'boolean',
+            'distribution_mode' => DistributionMode::class,
             'uses_custom_hours' => 'boolean',
             'business_hours' => 'array',
         ];

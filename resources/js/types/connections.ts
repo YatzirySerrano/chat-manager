@@ -88,6 +88,13 @@ export type Connection = {
     last_activity_at: string | null;
     created_at: string | null;
     updated_at: string | null;
+    /** What the viewer may do with this connection (resolved by the server). */
+    can: {
+        view: boolean;
+        update: boolean;
+        changeStatus: boolean;
+        verify: boolean;
+    };
 };
 
 export type ConnectionFilters = {

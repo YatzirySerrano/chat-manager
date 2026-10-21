@@ -7,6 +7,7 @@ use App\Actions\Departments\SummarizeDepartmentConversations;
 use App\Actions\Departments\UpdateDepartment;
 use App\Enums\ColorSwatch;
 use App\Enums\DataScope;
+use App\Enums\DistributionMode;
 use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DepartmentRequest;
@@ -106,6 +107,7 @@ class DepartmentController extends Controller
                     ? route('quick-replies.index')
                     : null,
             ],
+            'distributionModes' => DistributionMode::options(),
             'can' => [
                 'update' => $actor->can('update', $department),
                 'changeStatus' => $actor->can('changeStatus', $department),

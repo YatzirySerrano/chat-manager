@@ -88,3 +88,23 @@ test('a custom global role with the manage permission can administer connections
 test('guests are redirected to the login', function () {
     $this->get(route('connections.index'))->assertRedirect(route('login'));
 });
+
+test('each listed connection exposes only the operations the viewer may perform', function () {
+    Connection::factory()->create();
+    $viewer = User::factory()->withRole(
+        Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewConnections])->create()
+    )->create();
+    $manager = User::factory()->withRole(
+        Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ManageConnections])->create()
+    )->create();
+
+    $this->actingAs($viewer)
+        ->get(route('connections.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.can', ['view' => true, 'update' => false, 'changeStatus' => false, 'verify' => false]));
+
+    $this->actingAs($manager)
+        ->get(route('connections.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('connections.0.can', ['view' => true, 'update' => true, 'changeStatus' => true, 'verify' => true]));
+});

@@ -16,6 +16,7 @@ import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DepartmentConnectionsCard from '@/components/departments/DepartmentConnectionsCard.vue';
 import DepartmentHoursCard from '@/components/departments/DepartmentHoursCard.vue';
+import DepartmentDistributionCard from '@/components/departments/DepartmentDistributionCard.vue';
 import DepartmentMetricsCard from '@/components/departments/DepartmentMetricsCard.vue';
 import DepartmentQuickRepliesCard from '@/components/departments/DepartmentQuickRepliesCard.vue';
 import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWelcomeMessageCard.vue';
@@ -46,6 +47,7 @@ import type {
     DepartmentMetrics,
     DepartmentQuickReplies,
     DepartmentSummary,
+    DistributionModeValue,
     MemberCandidate,
     PlatformSettings,
     Weekday,
@@ -64,6 +66,11 @@ const props = defineProps<{
     /** Null when the viewer cannot use quick replies. */
     quickReplies: DepartmentQuickReplies | null;
     links: { connections: string | null; quickReplies: string | null };
+    distributionModes: {
+        value: DistributionModeValue;
+        label: string;
+        description: string;
+    }[];
     can: { update: boolean; changeStatus: boolean; manageMembers: boolean };
 }>();
 
@@ -254,6 +261,11 @@ const confirmCopy = computed(() => {
         />
 
         <div class="grid gap-6 lg:grid-cols-2">
+            <DepartmentDistributionCard
+                :department="department"
+                :modes="distributionModes"
+                :can-update="can.update"
+            />
             <DepartmentWelcomeMessageCard
                 :department="department"
                 :can-update="can.update"
@@ -273,19 +285,6 @@ const confirmCopy = computed(() => {
                 :quick-replies="quickReplies"
                 :manage-url="links.quickReplies"
             />
-            <section
-                class="rounded-xl border border-dashed bg-card/60 p-5 lg:col-span-2"
-                aria-labelledby="assignment-heading"
-            >
-                <h2 id="assignment-heading" class="text-sm font-semibold">
-                    Distribución de conversaciones
-                </h2>
-                <p class="mt-1 text-sm text-muted-foreground">
-                    Las reglas de asignación de este departamento se
-                    configurarán cuando se habilite la bandeja de atención. Por
-                    ahora no hay parámetros que ajustar.
-                </p>
-            </section>
         </div>
 
         <h2 class="-mb-2 text-base font-semibold">Miembros</h2>

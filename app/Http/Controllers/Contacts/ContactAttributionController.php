@@ -18,7 +18,7 @@ class ContactAttributionController extends Controller
     {
         $classifyOrigin->handle($contact, $request->payload(), $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Origen registrado.']);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Procedencia declarada registrada.']);
 
         return back();
     }

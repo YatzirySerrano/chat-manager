@@ -3,8 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ConversationStatus;
-use App\Enums\DataScope;
-use App\Enums\Permission;
+use App\Services\Conversations\ConversationAccess;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -27,10 +26,15 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_message_at
  * @property Carbon|null $last_inbound_at
  * @property Carbon|null $first_response_at
+ * @property Carbon|null $last_outbound_at Informative only: replies never extend the customer service window.
  * @property Carbon|null $assigned_at
+ * @property Carbon|null $on_hold_at
+ * @property string|null $on_hold_reason
  * @property Carbon|null $closed_at
  * @property int|null $closed_by_user_id
- * @property int $version
+ * @property Carbon|null $reopened_at
+ * @property int $reopen_count
+ * @property int $version Incremented by every operational change, so a decision taken on stale data is detected.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -48,6 +52,7 @@ class Conversation extends Model
     protected $attributes = [
         'status' => 'pending',
         'version' => 0,
+        'reopen_count' => 0,
     ];
 
     /**
@@ -62,9 +67,13 @@ class Conversation extends Model
             'open_lock' => 'boolean',
             'last_message_at' => 'datetime',
             'last_inbound_at' => 'datetime',
+            'last_outbound_at' => 'datetime',
             'first_response_at' => 'datetime',
             'assigned_at' => 'datetime',
+            'on_hold_at' => 'datetime',
             'closed_at' => 'datetime',
+            'reopened_at' => 'datetime',
+            'reopen_count' => 'integer',
             'version' => 'integer',
         ];
     }
@@ -105,6 +114,34 @@ class Conversation extends Model
     }
 
     /**
+     * @return BelongsTo<User, $this>
+     */
+    public function closedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by_user_id');
+    }
+
+    /**
+     * Internal notes. They are never customer messages.
+     *
+     * @return HasMany<ConversationNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ConversationNote::class);
+    }
+
+    /**
+     * Provider evidence (e.g. a Meta ad referral) that arrived with this conversation.
+     *
+     * @return HasMany<ContactAttribution, $this>
+     */
+    public function attributions(): HasMany
+    {
+        return $this->hasMany(ContactAttribution::class);
+    }
+
+    /**
      * @return HasMany<Message, $this>
      */
     public function messages(): HasMany
@@ -129,29 +166,15 @@ class Conversation extends Model
     }
 
     /**
-     * Restrict the query to conversations the user is allowed to see.
-     *
-     * Administrators see everything, supervisors see their departments plus their
-     * own assignments, and agents only see conversations assigned to them.
+     * Restrict the query to conversations the user is allowed to see. The
+     * rule itself lives in ConversationAccess, shared with the policy.
      *
      * @param  Builder<Conversation>  $query
      */
     #[Scope]
     protected function visibleTo(Builder $query, User $user): void
     {
-        if (! $user->holdsPermission(Permission::ViewConversations)) {
-            $query->whereRaw('1 = 0');
-
-            return;
-        }
-
-        match ($user->dataScope()) {
-            DataScope::Global => null,
-            DataScope::Departments => $query->where(fn (Builder $visible) => $visible
-                ->where('assigned_user_id', $user->id)
-                ->orWhereIn('department_id', $user->departmentIds())),
-            default => $query->where('assigned_user_id', $user->id),
-        };
+        app(ConversationAccess::class)->restrictToVisible($query, $user);
     }
 
     /**
@@ -161,5 +184,16 @@ class Conversation extends Model
     protected function notClosed(Builder $query): void
     {
         $query->where('status', '!=', ConversationStatus::Closed);
+    }
+
+    /**
+     * Conversations an agent is responsible for (in attention or on hold).
+     *
+     * @param  Builder<Conversation>  $query
+     */
+    #[Scope]
+    protected function attended(Builder $query): void
+    {
+        $query->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold]);
     }
 }

@@ -40,7 +40,16 @@ export type PermissionName =
     | 'tags.manage'
     | 'tags.assign'
     | 'quick-replies.use'
-    | 'quick-replies.manage';
+    | 'quick-replies.manage'
+    | 'conversations.view'
+    | 'conversations.reply'
+    | 'conversations.assign'
+    | 'conversations.transfer'
+    | 'conversations.close'
+    | 'conversations.reopen'
+    | 'conversations.history'
+    | 'conversations.accept'
+    | 'conversations.notes';
 
 export function usePermissions() {
     const page = usePage();

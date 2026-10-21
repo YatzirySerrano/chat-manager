@@ -3,6 +3,7 @@ import {
     Contact,
     LayoutGrid,
     MessageSquareText,
+    MessagesSquare,
     Palette,
     PlugZap,
     ScrollText,
@@ -21,6 +22,7 @@ import { edit as platformSettings } from '@/routes/admin/settings';
 import { index as usersIndex } from '@/routes/admin/users';
 import { index as connectionsIndex } from '@/routes/connections';
 import { index as contactsIndex } from '@/routes/contacts';
+import { index as conversationsIndex } from '@/routes/conversations';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
 import { index as tagsIndex } from '@/routes/tags';
@@ -32,9 +34,9 @@ export type NavSection = {
 };
 
 /**
- * Navigation derived from the effective permissions of the current user. It
- * feeds both the sidebar and the quick search, so nothing unauthorized is
- * ever offered (the backend still enforces every access).
+ * Navigation derived from the effective permissions of the current user, so
+ * the sidebar never offers anything unauthorized (the backend still enforces
+ * every access).
  */
 export function useNavigation() {
     const { can, canAny } = usePermissions();
@@ -55,6 +57,15 @@ export function useNavigation() {
         ];
 
         const attention: NavSection['items'] = [];
+
+        if (can('conversations.view')) {
+            attention.push({
+                title: 'Conversaciones',
+                description: 'Cola, atención y seguimiento',
+                href: conversationsIndex(),
+                icon: MessagesSquare,
+            });
+        }
 
         if (can('contacts.view')) {
             attention.push({

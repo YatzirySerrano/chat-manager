@@ -14,6 +14,8 @@ use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Meta\UnavailableWhatsAppTransport;
+use App\Services\Meta\WhatsAppTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -30,7 +32,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Replaced by the WhatsApp Cloud API client once that integration exists.
+        $this->app->bind(WhatsAppTransport::class, UnavailableWhatsAppTransport::class);
     }
 
     /**
@@ -44,8 +47,8 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Destructive database commands are always blocked in production and,
-     * elsewhere, only allowed on a dedicated "_testing" database or when
-     * explicitly enabled through DB_ALLOW_DESTRUCTIVE_COMMANDS.
+     * elsewhere, only allowed on the testing database (database.testing_database)
+     * or when explicitly enabled through DB_ALLOW_DESTRUCTIVE_COMMANDS.
      */
     protected function destructiveCommandsAreProhibited(): bool
     {
@@ -55,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
 
         $database = (string) config('database.connections.'.config('database.default').'.database');
 
-        return ! str_ends_with($database, '_testing') && ! config('database.allow_destructive_commands');
+        return $database !== config('database.testing_database') && ! config('database.allow_destructive_commands');
     }
 
     /**

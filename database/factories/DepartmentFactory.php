@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\ColorSwatch;
+use App\Enums\DistributionMode;
 use App\Models\Department;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -37,6 +38,16 @@ class DepartmentFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
+        ]);
+    }
+
+    /**
+     * Use the given way of distributing pending conversations.
+     */
+    public function distribution(DistributionMode $mode): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'distribution_mode' => $mode,
         ]);
     }
 }

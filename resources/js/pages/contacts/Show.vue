@@ -34,6 +34,7 @@ import type {
     ContactEnumOption,
     ContactNote,
     ContactOriginTypeValue,
+    ContactReceivingConnection,
     ContactTag,
 } from '@/types';
 
@@ -42,6 +43,7 @@ const props = defineProps<{
     origin: {
         current: ContactAttribution | null;
         history: ContactAttribution[];
+        connections: ContactReceivingConnection[];
     };
     notes: ContactNote[] | null;
     conversations: ContactConversation[];
@@ -380,6 +382,8 @@ function changeStatus(status: 'active' | 'archived'): void {
                     :current="origin.current"
                     :history="origin.history"
                     :channels="channels"
+                    :connections="origin.connections"
+                    :first-interaction-at="contact.first_interaction_at"
                     :can-classify="can.classifyOrigin"
                     @classify="classifyOpen = true"
                 />

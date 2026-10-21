@@ -100,13 +100,13 @@ enum Permission: string
             self::UpdateRoles => 'Editar roles y sus permisos',
             self::ChangeRoleStatus => 'Activar y desactivar roles',
             self::DeleteRoles => 'Eliminar roles sin usuarios',
-            self::ViewConversations => 'Ver conversaciones autorizadas',
-            self::ReplyConversations => 'Responder conversaciones',
-            self::AssignConversations => 'Asignar conversaciones',
+            self::ViewConversations => 'Ver conversaciones de su alcance',
+            self::ReplyConversations => 'Atender y responder sus conversaciones',
+            self::AssignConversations => 'Asignar conversaciones y gestionar las de su alcance',
             self::TransferConversations => 'Transferir conversaciones',
             self::CloseConversations => 'Cerrar conversaciones',
-            self::ReopenConversations => 'Reabrir conversaciones',
-            self::ViewConversationHistory => 'Consultar historial',
+            self::ReopenConversations => 'Reabrir conversaciones cerradas',
+            self::ViewConversationHistory => 'Consultar conversaciones cerradas y su historial',
             self::AcceptConversations => 'Aceptar conversaciones pendientes de sus departamentos',
             self::AddConversationNotes => 'Agregar notas internas',
             self::ViewConnections => 'Ver conexiones',
@@ -116,7 +116,7 @@ enum Permission: string
             self::UpdateContacts => 'Editar contactos',
             self::ArchiveContacts => 'Archivar y restaurar contactos',
             self::ManageContactNotes => 'Registrar notas privadas de contactos',
-            self::ClassifyContactOrigin => 'Clasificar manualmente el origen',
+            self::ClassifyContactOrigin => 'Registrar procedencia declarada (excepcional, solo alcance global)',
             self::ViewTags => 'Ver etiquetas',
             self::ManageTags => 'Administrar etiquetas',
             self::AssignTags => 'Asignar etiquetas a contactos',
@@ -144,7 +144,6 @@ enum Permission: string
     public function isAvailable(): bool
     {
         return ! in_array($this->group(), [
-            PermissionGroup::Conversations,
             PermissionGroup::Reports,
             PermissionGroup::TeamChat,
         ], true) && $this !== self::ExportAuditLog;
@@ -192,6 +191,7 @@ enum Permission: string
             self::ViewConnections,
             self::ManageConnections,
             self::ManageTags,
+            self::ClassifyContactOrigin,
         ], true);
     }
 

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Fortify\Features;
 use PDO;
 use RuntimeException;
+use Tests\Support\TestDatabase;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -25,22 +26,23 @@ abstract class TestCase extends BaseTestCase
     protected string $seeder = RolesAndPermissionsSeeder::class;
 
     /**
-     * Refuse to rebuild any database other than a dedicated MariaDB "_testing" one,
-     * so a misconfigured environment can never wipe the application database.
+     * Refuse to rebuild any database other than the MariaDB testing database,
+     * so a misconfigured environment can never wipe the application database,
+     * and hold it exclusively while the suite runs.
      */
     protected function beforeRefreshingDatabase(): void
     {
+        $name = DB::getDefaultConnection();
+        TestDatabase::guard((string) config("database.connections.{$name}.database"));
+
         $connection = DB::connection();
-        $database = $connection->getDatabaseName();
         $serverVersion = (string) $connection->getPdo()->getAttribute(PDO::ATTR_SERVER_VERSION);
 
         if ($connection->getDriverName() !== 'mariadb' || ! str_contains($serverVersion, 'MariaDB')) {
             throw new RuntimeException("The test suite must run on MariaDB; connected to [{$connection->getDriverName()} {$serverVersion}].");
         }
 
-        if (! str_ends_with($database, '_testing')) {
-            throw new RuntimeException("Refusing to refresh [{$database}]: the test database name must end in \"_testing\".");
-        }
+        TestDatabase::lock(config("database.connections.{$name}"));
     }
 
     protected function skipUnlessFortifyHas(string $feature, ?string $message = null): void

@@ -28,6 +28,10 @@ class TagResource extends JsonResource
             'contacts_count' => $this->whenCounted('contacts'),
             'conversations_count' => $this->whenCounted('conversations'),
             'created_at' => $this->created_at?->toIso8601String(),
+            'can' => [
+                'update' => $request->user()?->can('update', $this->resource) ?? false,
+                'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
+            ],
         ];
     }
 }

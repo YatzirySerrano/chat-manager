@@ -91,7 +91,7 @@ class DashboardMetrics
         $counts = Conversation::query()
             ->visibleTo($user)
             ->toBase()
-            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active', [ConversationStatus::Open->value])
+            ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS active', [ConversationStatus::Open->value, ConversationStatus::OnHold->value])
             ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending', [ConversationStatus::Pending->value])
             ->selectRaw('SUM(CASE WHEN status = ? AND closed_at >= ? THEN 1 ELSE 0 END) AS closed_today', [ConversationStatus::Closed->value, $startOfToday])
             ->first();

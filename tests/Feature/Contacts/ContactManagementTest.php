@@ -258,3 +258,33 @@ test('the profile shows identity, custom fields and the actor capabilities', fun
             ->where('can.classifyOrigin', true)
         );
 });
+
+test('each listed contact exposes only the operations the viewer may perform', function () {
+    $viewerRole = Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewContacts])->create();
+    $viewer = User::factory()->withRole($viewerRole)->create();
+    $contact = Contact::factory()->create(['name' => 'Original']);
+
+    $this->actingAs($viewer)
+        ->get(route('contacts.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('contacts.data.0.id', $contact->id)
+            ->where('contacts.data.0.can', ['view' => true, 'update' => false, 'archive' => false])
+        );
+
+    $this->actingAs($viewer)
+        ->put(route('contacts.update', $contact), ['name' => 'Cambiado', 'phone' => '5512345678'])
+        ->assertForbidden();
+    $this->actingAs($viewer)
+        ->patch(route('contacts.status.update', $contact), ['status' => 'archived'])
+        ->assertForbidden();
+
+    expect($contact->refresh())
+        ->name->toBe('Original')
+        ->isArchived()->toBeFalse();
+
+    $this->actingAs(User::factory()->administrator()->create())
+        ->get(route('contacts.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('contacts.data.0.can', ['view' => true, 'update' => true, 'archive' => true])
+        );
+});

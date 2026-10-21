@@ -32,6 +32,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.default_department_id' => ['nullable', 'integer', Rule::exists(Department::class, 'id')->where('is_active', true)],
             'operations.max_open_conversations_per_agent' => ['nullable', 'integer', 'min:1', 'max:200'],
             'operations.auto_close_after_hours' => ['nullable', 'integer', 'min:1', 'max:720'],
+            'operations.transfer_reason_required' => ['sometimes', 'boolean'],
         ];
 
         foreach (PlatformSettings::WEEKDAYS as $day) {
@@ -80,6 +81,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.default_department_id' => 'departamento predeterminado',
             'operations.max_open_conversations_per_agent' => 'máximo de conversaciones por agente',
             'operations.auto_close_after_hours' => 'cierre automático por inactividad',
+            'operations.transfer_reason_required' => 'motivo obligatorio al transferir',
         ];
     }
 
@@ -113,6 +115,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
                 'default_department_id' => $this->filled('operations.default_department_id') ? $this->integer('operations.default_department_id') : null,
                 'max_open_conversations_per_agent' => $this->filled('operations.max_open_conversations_per_agent') ? $this->integer('operations.max_open_conversations_per_agent') : null,
                 'auto_close_after_hours' => $this->filled('operations.auto_close_after_hours') ? $this->integer('operations.auto_close_after_hours') : null,
+                'transfer_reason_required' => $this->boolean('operations.transfer_reason_required'),
             ],
         ];
     }

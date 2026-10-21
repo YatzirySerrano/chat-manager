@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { Head, Link, router, usePoll } from '@inertiajs/vue3';
 import {
+    Archive,
+    ArchiveRestore,
     ChevronDown,
     Contact as ContactIcon,
+    Eye,
+    Pencil,
     Plus,
     Search,
     ShieldQuestion,
@@ -11,12 +15,17 @@ import {
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onUnmounted, reactive, ref } from 'vue';
+import { toast } from 'vue-sonner';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
 import ContactOriginBadge from '@/components/contacts/ContactOriginBadge.vue';
 import ContactTagList from '@/components/contacts/ContactTagList.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import RecordActions from '@/components/RecordActions.vue';
+import RecordCard from '@/components/RecordCard.vue';
+import RecordGrid from '@/components/RecordGrid.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -45,11 +54,15 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { getInitials } from '@/composables/useInitials';
+import { useViewMode } from '@/composables/useViewMode';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
+import { recordActions } from '@/lib/recordActions';
 import { index as contactsIndex, show } from '@/routes/contacts';
 import { index as reviewsIndex } from '@/routes/contacts/reviews';
+import { update as updateStatus } from '@/routes/contacts/status';
 import type {
     Contact,
     ContactEnumOption,
@@ -59,6 +72,7 @@ import type {
     ContactSourceValue,
     ContactTag,
     Paginated,
+    RecordAction,
 } from '@/types';
 
 defineOptions({
@@ -190,7 +204,100 @@ const selectedTagsLabel = computed(() => {
     return `${filterState.tags.length} etiquetas`;
 });
 
+const { mode: viewMode } = useViewMode('contacts');
+
 const formOpen = ref(false);
+const editingContact = ref<Contact | null>(null);
+
+function openCreate(): void {
+    editingContact.value = null;
+    formOpen.value = true;
+}
+
+function openEdit(contact: Contact): void {
+    editingContact.value = contact;
+    formOpen.value = true;
+}
+
+const canEditAny = computed(
+    () =>
+        props.can.create ||
+        props.contacts.data.some((contact) => contact.can?.update),
+);
+
+const pendingArchive = ref<Contact | null>(null);
+const confirmOpen = ref(false);
+const processingId = ref<number | null>(null);
+
+function changeStatus(contact: Contact, status: 'active' | 'archived'): void {
+    router.visit(updateStatus(contact.id), {
+        data: { status },
+        preserveScroll: true,
+        onStart: () => (processingId.value = contact.id),
+        onSuccess: () => (confirmOpen.value = false),
+        onFinish: () => (processingId.value = null),
+        onError: (errors) => {
+            confirmOpen.value = false;
+            const message = Object.values(errors)[0];
+
+            if (message) {
+                toast.error(message);
+            }
+        },
+    });
+}
+
+function askArchive(contact: Contact): void {
+    pendingArchive.value = contact;
+    confirmOpen.value = true;
+}
+
+function confirmArchive(): void {
+    if (pendingArchive.value) {
+        changeStatus(pendingArchive.value, 'archived');
+    }
+}
+
+function actionsFor(contact: Contact): RecordAction[] {
+    const archived = contact.status === 'archived';
+
+    return recordActions(
+        contact.can?.view && {
+            key: 'view',
+            label: 'Ver',
+            icon: Eye,
+            href: show(contact.id),
+        },
+        contact.can?.update && {
+            key: 'edit',
+            label: 'Editar',
+            icon: Pencil,
+            onSelect: () => openEdit(contact),
+        },
+        contact.can?.archive &&
+            !archived && {
+                key: 'archive',
+                label: 'Archivar',
+                icon: Archive,
+                onSelect: () => askArchive(contact),
+            },
+        contact.can?.archive &&
+            archived && {
+                key: 'restore',
+                label: 'Restaurar',
+                icon: ArchiveRestore,
+                onSelect: () => changeStatus(contact, 'active'),
+            },
+    );
+}
+
+function contactSubtitle(contact: Contact): string | null {
+    if (contact.profile_name && contact.profile_name !== contact.name) {
+        return `WhatsApp: ${contact.profile_name}`;
+    }
+
+    return contact.email;
+}
 </script>
 
 <template>
@@ -216,7 +323,7 @@ const formOpen = ref(false);
                         >
                     </Link>
                 </Button>
-                <Button v-if="can.create" @click="formOpen = true">
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo contacto
                 </Button>
@@ -225,10 +332,10 @@ const formOpen = ref(false);
 
         <SurfaceCard>
             <div
-                class="flex flex-col gap-2 border-b p-4 lg:flex-row lg:items-center"
+                class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
             >
-                <div class="relative flex-1">
+                <div class="relative order-1 min-w-0 flex-1">
                     <Search
                         class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
@@ -241,7 +348,10 @@ const formOpen = ref(false);
                         aria-label="Buscar contactos"
                     />
                 </div>
-                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex">
+                <ViewModeToggle v-model="viewMode" class="order-2" />
+                <div
+                    class="order-3 grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap"
+                >
                     <Select
                         v-model="filterState.status"
                         @update:model-value="applyFilters"
@@ -395,7 +505,7 @@ const formOpen = ref(false);
             </div>
 
             <Table
-                v-if="contacts.data.length > 0"
+                v-if="contacts.data.length > 0 && viewMode === 'table'"
                 class="transition-opacity"
                 :class="loading && 'opacity-60'"
                 :aria-busy="loading"
@@ -403,19 +513,24 @@ const formOpen = ref(false);
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Contacto</TableHead>
-                        <TableHead class="hidden md:table-cell"
+                        <TableHead class="hidden lg:table-cell"
                             >Teléfono</TableHead
                         >
-                        <TableHead class="hidden lg:table-cell"
+                        <TableHead class="hidden xl:table-cell"
                             >Etiquetas</TableHead
                         >
-                        <TableHead class="hidden xl:table-cell"
+                        <TableHead class="hidden 2xl:table-cell"
                             >Origen</TableHead
                         >
-                        <TableHead class="hidden sm:table-cell"
+                        <TableHead class="hidden lg:table-cell"
                             >Última interacción</TableHead
                         >
-                        <TableHead class="pr-5">Estado</TableHead>
+                        <TableHead class="hidden sm:table-cell"
+                            >Estado</TableHead
+                        >
+                        <TableHead class="pr-5 text-right">
+                            <span class="sr-only">Acciones</span>
+                        </TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -427,7 +542,7 @@ const formOpen = ref(false);
                             'text-muted-foreground'
                         "
                     >
-                        <TableCell class="py-3 pl-5">
+                        <TableCell class="w-full max-w-0 py-3 pl-5">
                             <Link
                                 :href="show(contact.id)"
                                 class="group flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -462,7 +577,7 @@ const formOpen = ref(false);
                                         }}</template>
                                         <span
                                             v-if="contact.phone_e164"
-                                            class="md:hidden"
+                                            class="lg:hidden"
                                             ><template
                                                 v-if="
                                                     (contact.profile_name &&
@@ -478,22 +593,28 @@ const formOpen = ref(false);
                                     </p>
                                 </div>
                             </Link>
+                            <StatusBadge
+                                v-if="contact.status === 'archived'"
+                                class="mt-1 ml-12 sm:hidden"
+                                :active="false"
+                                inactive-label="Archivado"
+                            />
                         </TableCell>
                         <TableCell
-                            class="hidden font-mono text-sm tabular-nums md:table-cell"
+                            class="hidden font-mono text-sm tabular-nums lg:table-cell"
                         >
                             {{ formatPhone(contact.phone_e164) }}
                         </TableCell>
-                        <TableCell class="hidden lg:table-cell">
+                        <TableCell class="hidden xl:table-cell">
                             <ContactTagList
                                 :tags="contact.tags ?? []"
                                 :limit="3"
                             />
                         </TableCell>
-                        <TableCell class="hidden xl:table-cell">
+                        <TableCell class="hidden 2xl:table-cell">
                             <ContactOriginBadge :origin="contact.origin" />
                         </TableCell>
-                        <TableCell class="hidden sm:table-cell">
+                        <TableCell class="hidden lg:table-cell">
                             <span
                                 v-if="contact.last_interaction_at"
                                 class="text-sm"
@@ -509,15 +630,94 @@ const formOpen = ref(false);
                                 >Sin interacción</span
                             >
                         </TableCell>
-                        <TableCell class="pr-5">
+                        <TableCell class="hidden sm:table-cell">
                             <StatusBadge
                                 :active="contact.status === 'active'"
                                 inactive-label="Archivado"
                             />
                         </TableCell>
+                        <TableCell class="w-px pr-5 text-right">
+                            <RecordActions
+                                :actions="actionsFor(contact)"
+                                :record="contact.name"
+                                :busy="processingId === contact.id"
+                            />
+                        </TableCell>
                     </TableRow>
                 </TableBody>
             </Table>
+
+            <RecordGrid
+                v-else-if="contacts.data.length > 0"
+                class="transition-opacity"
+                :class="loading && 'opacity-60'"
+                :aria-busy="loading"
+            >
+                <li v-for="contact in contacts.data" :key="contact.id">
+                    <RecordCard :muted="contact.status === 'archived'">
+                        <template #leading>
+                            <Avatar class="size-9 rounded-lg">
+                                <AvatarFallback
+                                    class="rounded-lg bg-primary-soft text-xs font-semibold text-primary-soft-foreground"
+                                >
+                                    {{ getInitials(contact.name) }}
+                                </AvatarFallback>
+                            </Avatar>
+                        </template>
+                        <template #title>
+                            <Link
+                                :href="show(contact.id)"
+                                class="block truncate hover:underline"
+                            >
+                                {{ contact.name }}
+                            </Link>
+                        </template>
+                        <template #subtitle>
+                            <span class="font-mono tabular-nums">{{
+                                formatPhone(contact.phone_e164)
+                            }}</span>
+                        </template>
+                        <template #badges>
+                            <StatusBadge
+                                :active="contact.status === 'active'"
+                                inactive-label="Archivado"
+                            />
+                            <ContactOriginBadge :origin="contact.origin" />
+                        </template>
+                        <p
+                            v-if="contactSubtitle(contact)"
+                            class="truncate text-xs text-muted-foreground"
+                        >
+                            {{ contactSubtitle(contact) }}
+                        </p>
+                        <ContactTagList
+                            v-if="(contact.tags ?? []).length > 0"
+                            :tags="contact.tags ?? []"
+                            :limit="3"
+                        />
+                        <template #meta>
+                            <span
+                                v-if="contact.last_interaction_at"
+                                :title="
+                                    formatDateTime(contact.last_interaction_at)
+                                "
+                                >Última interacción
+                                {{
+                                    formatRelative(contact.last_interaction_at)
+                                }}</span
+                            >
+                            <span v-else>Sin interacción</span>
+                        </template>
+                        <template #actions>
+                            <RecordActions
+                                :actions="actionsFor(contact)"
+                                :record="contact.name"
+                                :busy="processingId === contact.id"
+                            />
+                        </template>
+                    </RecordCard>
+                </li>
+            </RecordGrid>
 
             <EmptyState
                 v-else
@@ -540,7 +740,7 @@ const formOpen = ref(false);
                     @click="clearFilters"
                     >Limpiar filtros</Button
                 >
-                <Button v-else-if="can.create" @click="formOpen = true">
+                <Button v-else-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo contacto
                 </Button>
@@ -552,9 +752,19 @@ const formOpen = ref(false);
         </SurfaceCard>
 
         <ContactFormDialog
-            v-if="can.create"
+            v-if="canEditAny"
             v-model:open="formOpen"
-            :contact="null"
+            :contact="editingContact"
+        />
+
+        <ConfirmDialog
+            v-model:open="confirmOpen"
+            :title="`¿Archivar a ${pendingArchive?.name ?? 'este contacto'}?`"
+            description="Dejará de aparecer en la lista principal de contactos. Su historial, notas y procedencia se conservan y podrás restaurarlo cuando quieras."
+            confirm-label="Archivar"
+            destructive
+            :processing="processingId !== null"
+            @confirm="confirmArchive"
         />
     </div>
 </template>

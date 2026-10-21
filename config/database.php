@@ -69,7 +69,7 @@ return [
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
+            'database' => env('DB_DATABASE', 'chatmanager'),
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
             'unix_socket' => env('DB_SOCKET', ''),
@@ -122,12 +122,26 @@ return [
     |--------------------------------------------------------------------------
     |
     | Commands that drop data (migrate:fresh, migrate:refresh, migrate:reset,
-    | migrate:rollback, db:wipe) only run against databases whose name ends
-    | in "_testing", unless this flag is enabled. Production always blocks them.
+    | migrate:rollback, db:wipe) only run against the testing database below,
+    | unless this flag is enabled on a local machine. Production always
+    | blocks them, whatever the flag says.
     |
     */
 
     'allow_destructive_commands' => (bool) env('DB_ALLOW_DESTRUCTIVE_COMMANDS', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Testing Database
+    |--------------------------------------------------------------------------
+    |
+    | The one database automated tests may rebuild (Pest and the browser
+    | scenarios share it and take turns through a lock). The application
+    | never connects to it; its name only lets the safety checks recognize it.
+    |
+    */
+
+    'testing_database' => env('DB_TESTING_DATABASE', 'chatmanager_testing'),
 
     /*
     |--------------------------------------------------------------------------

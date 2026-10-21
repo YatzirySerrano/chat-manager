@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Cache;
  *     general: array{platform_name: string, timezone: string},
  *     appearance: array{palette: string},
  *     business_hours: array{enabled: bool, days: array<string, BusinessDay>},
- *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null},
+ *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool},
  * }
  */
 class PlatformSettings
@@ -125,6 +125,7 @@ class PlatformSettings
                 'default_department_id' => null,
                 'max_open_conversations_per_agent' => null,
                 'auto_close_after_hours' => null,
+                'transfer_reason_required' => false,
             ],
         ];
     }

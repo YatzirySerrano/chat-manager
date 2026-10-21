@@ -27,6 +27,7 @@ class DepartmentResource extends JsonResource
             'color' => $this->color->value,
             'is_active' => $this->is_active,
             'welcome_message' => $this->welcome_message,
+            'distribution_mode' => $this->distribution_mode->value,
             'uses_custom_hours' => $this->uses_custom_hours,
             'business_hours' => $this->business_hours,
             'members_count' => $this->whenCounted('members'),
@@ -37,6 +38,11 @@ class DepartmentResource extends JsonResource
                 'name' => $user->name,
             ])->values()->all()),
             'created_at' => $this->created_at?->toIso8601String(),
+            'can' => [
+                'view' => $request->user()?->can('view', $this->resource) ?? false,
+                'update' => $request->user()?->can('update', $this->resource) ?? false,
+                'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
+            ],
         ];
     }
 }

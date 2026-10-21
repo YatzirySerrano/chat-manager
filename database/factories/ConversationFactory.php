@@ -56,6 +56,18 @@ class ConversationFactory extends Factory
     }
 
     /**
+     * Pause the attention of an assigned conversation.
+     */
+    public function onHold(?string $reason = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => ConversationStatus::OnHold,
+            'on_hold_at' => now(),
+            'on_hold_reason' => $reason,
+        ]);
+    }
+
+    /**
      * Mark the conversation as closed.
      */
     public function closed(): static

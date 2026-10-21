@@ -29,17 +29,24 @@ test('supervisors see their departments and their own assignments only', functio
         ->and($supervisor->can('assign', $departmentConversation))->toBeTrue();
 });
 
-test('agents only see the conversations assigned to them', function () {
+test('agents see their own conversations and the queue they may accept, never a colleague\'s', function () {
+    // Increment B: agents with the accept permission (granted to the initial
+    // Agent role) also see the pending conversations of their departments
+    // they can take; before the engine existed they saw only assignments.
     $department = Department::factory()->create();
     $agent = User::factory()->agent()->inDepartments($department)->create();
+    $colleague = User::factory()->agent()->inDepartments($department)->create();
     $assigned = Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
     $queued = Conversation::factory()->inDepartment($department)->create();
+    $colleagues = Conversation::factory()->inDepartment($department)->assignedTo($colleague)->create();
 
-    expect(Conversation::query()->visibleTo($agent)->pluck('id')->all())->toBe([$assigned->id])
-        ->and($agent->can('view', $queued))->toBeFalse()
+    expect(Conversation::query()->visibleTo($agent)->pluck('id')->sort()->values()->all())->toBe([$assigned->id, $queued->id])
+        ->and($agent->can('view', $colleagues))->toBeFalse()
+        ->and($agent->can('accept', $queued))->toBeTrue()
         ->and($agent->can('reply', $assigned))->toBeTrue()
         ->and($agent->can('assign', $assigned))->toBeFalse()
-        ->and($agent->can('transfer', $assigned))->toBeFalse();
+        ->and($agent->can('transfer', $assigned))->toBeTrue()
+        ->and($agent->can('transfer', $colleagues))->toBeFalse();
 });
 
 test('deactivated users see no conversations', function () {

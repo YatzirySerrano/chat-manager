@@ -72,12 +72,12 @@ function submit(): void {
 <template>
     <FormDialog
         v-model:open="open"
-        title="Clasificar origen"
-        description="Registra cómo llegó esta persona según la información que te dio. Quedará como origen declarado manualmente."
+        title="Registrar procedencia declarada"
+        description="Acción administrativa excepcional: registra cómo dice la persona que nos conoció. Quedará como dato declarado por ti y nunca como «Confirmado por Meta»."
         :processing="form.processing"
         :dirty="form.isDirty"
         :submit-disabled="form.origin_type === ''"
-        submit-label="Guardar origen"
+        submit-label="Registrar procedencia"
         @submit="submit"
     >
         <div class="grid gap-5">
@@ -85,26 +85,26 @@ function submit(): void {
                 v-if="hasConfirmedOrigin"
                 class="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground"
             >
-                Este contacto ya tiene un origen confirmado por el proveedor. Tu
-                clasificación se guardará en el historial, pero el origen
-                confirmado seguirá mostrándose como principal.
+                Este contacto ya tiene una procedencia confirmada por el
+                proveedor. Tu declaración se guardará en el historial, pero la
+                procedencia confirmada seguirá mostrándose como principal.
             </p>
 
             <FormField
                 id="origin-type"
-                label="Tipo de origen"
+                label="Procedencia declarada"
                 :error="form.errors.origin_type"
                 :help="{
                     description:
-                        'Cómo nos conoció la persona, según lo que declaró o lo que sabe tu equipo.',
-                    howTo: 'Elige la opción más cercana. Si no la conoces, no clasifiques: el contacto seguirá como «Origen no identificado».',
+                        'Cómo dice la persona que nos conoció. Es un dato declarado: se muestra como «Declarado por» con tu nombre y la fecha.',
+                    howTo: 'Elige la opción más cercana solo si la persona lo indicó. Si no lo sabes, no registres nada: el contacto seguirá como «Origen no identificado».',
                     warning:
-                        'Los orígenes confirmados por Meta nunca se reemplazan con una clasificación manual.',
+                        'Un dato declarado nunca se convierte en «Confirmado por Meta» ni reemplaza una procedencia confirmada por el proveedor.',
                 }"
             >
                 <Select v-model="form.origin_type">
                     <SelectTrigger id="origin-type" class="w-full">
-                        <SelectValue placeholder="Selecciona un origen" />
+                        <SelectValue placeholder="Selecciona una procedencia" />
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem

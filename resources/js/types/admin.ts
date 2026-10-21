@@ -171,6 +171,8 @@ export type UserStats = {
     inactive: number;
 };
 
+export type DistributionModeValue = 'shared' | 'manual' | 'automatic';
+
 export type DepartmentSummary = {
     id: number;
     name: string;
@@ -179,6 +181,8 @@ export type DepartmentSummary = {
     color: ColorSwatch;
     is_active: boolean;
     welcome_message: string | null;
+    /** How pending conversations reach an agent (see App\\Enums\\DistributionMode). */
+    distribution_mode: DistributionModeValue;
     uses_custom_hours: boolean;
     /** Custom schedule; only applies while `uses_custom_hours` is true. */
     business_hours: { days: Record<Weekday, BusinessDay> } | null;
@@ -187,6 +191,8 @@ export type DepartmentSummary = {
     connections_count?: number;
     leaders?: { id: number; name: string }[];
     created_at: string | null;
+    /** What the viewer may do with this department (resolved by the server). */
+    can?: { view: boolean; update: boolean; changeStatus: boolean };
 };
 
 /** Real conversation counts of a department (never estimated). */
@@ -282,6 +288,7 @@ export type PlatformSettings = {
         default_department_id: number | null;
         max_open_conversations_per_agent: number | null;
         auto_close_after_hours: number | null;
+        transfer_reason_required: boolean;
     };
 };
 

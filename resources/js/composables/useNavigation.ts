@@ -1,13 +1,17 @@
 import {
     Building2,
+    ChartColumnBig,
     Contact,
     FileDown,
+    FileText,
     LayoutGrid,
+    MessageCircle,
     MessageSquareText,
     MessagesSquare,
     Palette,
     PlugZap,
     ScrollText,
+    ServerCog,
     ShieldCheck,
     SlidersHorizontal,
     Tags,
@@ -15,11 +19,13 @@ import {
 } from '@lucide/vue';
 import { computed } from 'vue';
 import { usePermissions } from '@/composables/usePermissions';
+import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { edit as platformSettings } from '@/routes/admin/settings';
+import { index as systemIndex } from '@/routes/admin/system';
 import { index as usersIndex } from '@/routes/admin/users';
 import { index as connectionsIndex } from '@/routes/connections';
 import { index as contactsIndex } from '@/routes/contacts';
@@ -27,7 +33,10 @@ import { index as conversationsIndex } from '@/routes/conversations';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as exportsIndex } from '@/routes/exports';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
+import { index as reportsIndex } from '@/routes/reports';
 import { index as tagsIndex } from '@/routes/tags';
+import { index as teamChatIndex } from '@/routes/team-chat';
+import { index as templatesIndex } from '@/routes/templates';
 import type { NavItem } from '@/types';
 
 export type NavSection = {
@@ -42,6 +51,7 @@ export type NavSection = {
  */
 export function useNavigation() {
     const { can, canAny } = usePermissions();
+    const teamChatUnread = useTeamChatUnread();
 
     const sections = computed<NavSection[]>(() => {
         const result: NavSection[] = [
@@ -57,6 +67,15 @@ export function useNavigation() {
                 ],
             },
         ];
+
+        if (can('reports.view')) {
+            result[0].items.push({
+                title: 'Reportes',
+                description: 'Indicadores, tiempos y tendencias',
+                href: reportsIndex(),
+                icon: ChartColumnBig,
+            });
+        }
 
         if (canAny('reports.export', 'audit.export')) {
             result[0].items.push({
@@ -111,6 +130,16 @@ export function useNavigation() {
 
         const team: NavSection['items'] = [];
 
+        if (can('team-chat.use')) {
+            team.push({
+                title: 'Chat interno',
+                description: 'Mensajes privados y grupos del equipo',
+                href: teamChatIndex(),
+                icon: MessageCircle,
+                badge: teamChatUnread.value,
+            });
+        }
+
         if (can('departments.view')) {
             team.push({
                 title: 'Departamentos',
@@ -144,6 +173,15 @@ export function useNavigation() {
             });
         }
 
+        if (canAny('templates.view', 'templates.manage')) {
+            admin.push({
+                title: 'Plantillas de WhatsApp',
+                description: 'Plantillas aprobadas por Meta',
+                href: templatesIndex(),
+                icon: FileText,
+            });
+        }
+
         if (can('roles.view')) {
             admin.push({
                 title: 'Roles y permisos',
@@ -159,6 +197,15 @@ export function useNavigation() {
                 description: 'Historial de operaciones',
                 href: auditIndex(),
                 icon: ScrollText,
+            });
+        }
+
+        if (can('system.view')) {
+            admin.push({
+                title: 'Sistema',
+                description: 'Colas, fallos y salud técnica',
+                href: systemIndex(),
+                icon: ServerCog,
             });
         }
 

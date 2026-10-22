@@ -1,5 +1,6 @@
 import type { Directive } from 'vue';
 import type { ThemePaletteValue } from '@/types/admin';
+import type { RealtimeConfig } from '@/lib/realtime/types';
 import type { Auth, PasswordPolicy } from '@/types/auth';
 
 // Extend ImportMeta interface for Vite...
@@ -26,6 +27,9 @@ declare module '@inertiajs/core' {
             };
             auth: Auth;
             passwordPolicy: PasswordPolicy;
+            realtime: RealtimeConfig;
+            /** Unread internal chat messages (null without team-chat.use). */
+            teamChatUnread: number | null;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

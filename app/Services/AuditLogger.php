@@ -6,10 +6,12 @@ use App\Enums\AuditAction;
 use App\Models\AuditLog;
 use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\Tag;
+use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -108,8 +110,10 @@ class AuditLogger
                 ? $subject->name
                 : "{$subject->name} ({$subject->display_phone_number})",
             $subject instanceof Contact => $subject->name,
+            $subject instanceof Conversation => "Conversación #{$subject->id}",
             $subject instanceof Tag => $subject->name,
             $subject instanceof QuickReply => "{$subject->title} (/{$subject->shortcut})",
+            $subject instanceof TeamThread => $subject->name ?? 'Chat interno',
             default => null,
         };
     }

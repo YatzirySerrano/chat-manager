@@ -3,24 +3,39 @@
 namespace App\Actions\Conversations;
 
 use App\Actions\Contacts\RegisterInboundContact;
+use App\Enums\AttachmentStatus;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Enums\DistributionMode;
+use App\Enums\InboundContactOutcome;
 use App\Enums\InboundMessageOutcome;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
+use App\Enums\MessageType;
+use App\Events\Conversations\ConversationChanged;
+use App\Events\Messaging\MessageRecorded;
+use App\Jobs\DownloadInboundMedia;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAttribution;
+use App\Models\ContactIdentity;
 use App\Models\Conversation;
+use App\Models\Department;
 use App\Models\Message;
+use App\Models\MessageAttachment;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\ConversationRouter;
+use App\Services\Meta\MediaFileName;
 use App\Support\InboundContactRegistration;
 use App\Support\InboundMessage;
 use App\Support\InboundMessageReceipt;
 use Carbon\CarbonImmutable;
+use Closure;
+use Illuminate\Database\DetectsConcurrencyErrors;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Receives one customer message, independently of how it arrived (webhook,
@@ -34,7 +49,15 @@ use Illuminate\Support\Facades\DB;
  *    deliveries change nothing;
  * 4. moves the activity dates forward only (late events never move them
  *    back) and links the provider's referral to the conversation;
- * 5. distributes the conversation when its department does so automatically.
+ * 5. distributes the conversation when its department does so automatically;
+ * 6. registers the media it announces as a pending attachment and queues
+ *    its download (DownloadInboundMedia), never inside this transaction.
+ *
+ * A repeated delivery of an already stored message is answered before the
+ * directory is touched, so duplicates never update the contact's
+ * interaction data. If storing the message fails after the contact was
+ * registered, the webhook job retries the whole receipt; registration is
+ * idempotent.
  *
  * Two messages of the same contact processed at once race on the database's
  * single-unclosed-conversation key (or deadlock on its gap locks): the loser
@@ -42,6 +65,8 @@ use Illuminate\Support\Facades\DB;
  */
 class ReceiveInboundMessage
 {
+    use DetectsConcurrencyErrors;
+
     /** Attempts of the transaction when MariaDB resolves a deadlock between workers. */
     private const ATTEMPTS = 3;
 
@@ -55,15 +80,56 @@ class ReceiveInboundMessage
 
     public function handle(Connection $connection, InboundMessage $inbound): InboundMessageReceipt
     {
+        $duplicate = $this->duplicate($connection, $inbound);
+
+        if ($duplicate !== null) {
+            return $duplicate;
+        }
+
         $registration = $this->registerContact->handle($connection, $inbound->sender);
 
         // Deadlocks between workers creating the same conversation are retried
         // by the transaction itself; a unique violation means another worker
         // opened the conversation or stored this message first.
         try {
-            return DB::transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration), self::ATTEMPTS);
+            return $this->transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration));
         } catch (UniqueConstraintViolationException) {
-            return DB::transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration), self::ATTEMPTS);
+            return $this->transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration));
+        }
+    }
+
+    /**
+     * Runs the receipt at READ COMMITTED when it is the outermost
+     * transaction. At REPEATABLE READ the locking lookups of a contact
+     * without an unclosed conversation take gap locks, and new contacts
+     * (the highest ids) all share the same gap of the index: simultaneous
+     * first messages of different customers deadlocked on their inserts and
+     * exhausted their attempts under bursts (docs/rendimiento-y-carga.md).
+     * Without gap locks, two messages of the same contact still serialize on
+     * the existing rows, or race on the single-unclosed-conversation unique
+     * key, whose loser is retried by handle(). Deadlocks left are retried
+     * with a short random pause, so the same pair does not collide again.
+     *
+     * @param  Closure(): InboundMessageReceipt  $callback
+     */
+    private function transaction(Closure $callback): InboundMessageReceipt
+    {
+        if (DB::transactionLevel() > 0) {
+            return DB::transaction($callback, self::ATTEMPTS);
+        }
+
+        for ($attempt = 1; ; $attempt++) {
+            DB::statement('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+
+            try {
+                return DB::transaction($callback);
+            } catch (QueryException $exception) {
+                if ($exception instanceof UniqueConstraintViolationException || $attempt >= self::ATTEMPTS || ! $this->causedByConcurrencyError($exception)) {
+                    throw $exception;
+                }
+
+                usleep(random_int(5_000, 40_000) * $attempt);
+            }
         }
     }
 
@@ -87,13 +153,17 @@ class ReceiveInboundMessage
             'type' => $inbound->type,
             'status' => MessageStatus::Received,
             'body' => $inbound->body,
+            'reply_to_message_id' => $this->repliedMessageId($conversation, $inbound),
             'metadata' => array_filter([
                 'content' => $inbound->content,
                 'context' => $inbound->context,
+                'reply_to' => is_string($inbound->context['id'] ?? null) ? ['message_id' => $inbound->context['id']] : null,
                 'profile_name' => $inbound->sender->profileName,
             ], fn (mixed $value): bool => $value !== null),
         ]);
         $message->forceFill(['sent_at' => $sentAt])->save();
+
+        $attachment = $this->registerMedia($message, $inbound);
 
         $conversation->forceFill([
             'last_inbound_at' => $this->latest($conversation->last_inbound_at, $sentAt),
@@ -106,7 +176,99 @@ class ReceiveInboundMessage
             $this->assignAutomatically->handle($conversation);
         }
 
+        MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Inbound->value);
+        ConversationChanged::dispatch($conversation->id, 'message');
+
+        if ($attachment !== null) {
+            DownloadInboundMedia::dispatch($attachment->id)->afterCommit();
+        }
+
         return new InboundMessageReceipt($registration, $conversation->refresh(), $message, $outcome);
+    }
+
+    /**
+     * A message already stored is answered without registering the sender
+     * again (a repeated delivery must not touch the directory).
+     */
+    private function duplicate(Connection $connection, InboundMessage $inbound): ?InboundMessageReceipt
+    {
+        $stored = Message::query()->where('whatsapp_message_id', $inbound->sender->messageId)->first();
+
+        if ($stored === null) {
+            return null;
+        }
+
+        $conversation = Conversation::query()->with('contact')->findOrFail($stored->conversation_id);
+        $identity = ContactIdentity::query()
+            ->where('channel', $inbound->sender->channel)
+            ->where('external_id', $inbound->sender->externalId)
+            ->first();
+
+        if ($identity === null || $identity->contact_id !== $conversation->contact_id) {
+            return null;
+        }
+
+        return new InboundMessageReceipt(
+            new InboundContactRegistration($conversation->contact, $identity, $connection, InboundContactOutcome::Matched),
+            $conversation,
+            $stored,
+            InboundMessageOutcome::Duplicate,
+        );
+    }
+
+    /**
+     * The customer replied to a stored message (Meta's context id).
+     */
+    private function repliedMessageId(Conversation $conversation, InboundMessage $inbound): ?int
+    {
+        $id = $inbound->context['id'] ?? null;
+
+        if (! is_string($id) || $id === '') {
+            return null;
+        }
+
+        $replied = Message::query()
+            ->where('whatsapp_message_id', $id)
+            ->whereHas('conversation', fn ($query) => $query
+                ->where('connection_id', $conversation->connection_id)
+                ->where('contact_id', $conversation->contact_id))
+            ->value('id');
+
+        return is_int($replied) ? $replied : null;
+    }
+
+    /**
+     * Media announced by Meta becomes a pending attachment; the file is
+     * downloaded later by a dedicated job.
+     */
+    private function registerMedia(Message $message, InboundMessage $inbound): ?MessageAttachment
+    {
+        if (! in_array($inbound->type, [MessageType::Image, MessageType::Audio, MessageType::Video, MessageType::Document, MessageType::Sticker], true)) {
+            return null;
+        }
+
+        $mediaId = $inbound->content['id'] ?? null;
+
+        if (! is_string($mediaId) || $mediaId === '') {
+            return null;
+        }
+
+        $mime = is_string($inbound->content['mime_type'] ?? null) ? Str::limit(trim(explode(';', $inbound->content['mime_type'])[0]), 127, '') : 'application/octet-stream';
+        $fileName = is_string($inbound->content['filename'] ?? null) ? MediaFileName::sanitize($inbound->content['filename']) : null;
+
+        $attachment = new MessageAttachment;
+        $attachment->forceFill([
+            'message_id' => $message->id,
+            'whatsapp_media_id' => Str::limit($mediaId, 128, ''),
+            'disk' => (string) config('filesystems.media_disk', 'local'),
+            'path' => null,
+            'mime_type' => $mime,
+            'file_name' => $fileName,
+            'sha256' => is_string($inbound->content['sha256'] ?? null) && strlen($inbound->content['sha256']) <= 64 ? $inbound->content['sha256'] : null,
+            'status' => AttachmentStatus::Pending,
+        ])->save();
+
+        return $attachment;
     }
 
     /**
@@ -147,6 +309,14 @@ class ReceiveInboundMessage
         }
 
         ['department' => $department, 'routed_by' => $routedBy] = $this->router->route($connection);
+
+        // An automatic department is locked before the conversation row is
+        // inserted: the insert's foreign key check takes a shared lock on the
+        // department, and upgrading it later in AssignAutomatically
+        // deadlocked simultaneous arrivals (docs/rendimiento-y-carga.md).
+        if ($department?->distribution_mode === DistributionMode::Automatic) {
+            Department::query()->whereKey($department->id)->lockForUpdate()->value('id');
+        }
 
         $conversation = new Conversation([
             'connection_id' => $connection->id,

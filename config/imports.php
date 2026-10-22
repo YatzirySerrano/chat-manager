@@ -40,4 +40,11 @@ return [
     // Rows shown in the preview step.
     'preview_rows' => 50,
 
+    // Logical rollback of an import batch (see ImportBatchRollback): only
+    // for batches finished within "days", and only where it is safe.
+    'rollback' => [
+        'enabled' => (bool) env('IMPORTS_ROLLBACK_ENABLED', true),
+        'days' => (int) env('IMPORTS_ROLLBACK_DAYS', 30),
+    ],
+
 ];

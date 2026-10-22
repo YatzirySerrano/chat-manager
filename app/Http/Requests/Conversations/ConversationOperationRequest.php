@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Conversations;
 
+use App\Concerns\AuthorizesVisibleConversation;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -12,12 +13,9 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class ConversationOperationRequest extends FormRequest
 {
-    public const REASON_MAX_LENGTH = 255;
+    use AuthorizesVisibleConversation;
 
-    public function authorize(): bool
-    {
-        return true;
-    }
+    public const REASON_MAX_LENGTH = 255;
 
     /**
      * @return array<string, ValidationRule|array<mixed>|string>

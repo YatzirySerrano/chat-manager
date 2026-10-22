@@ -13,15 +13,21 @@ use App\Models\Message;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\Tag;
+use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\Meta\MetaCloudWhatsAppTransport;
+use App\Services\Meta\SimulatedWhatsAppTransport;
 use App\Services\Meta\UnavailableWhatsAppTransport;
 use App\Services\Meta\WhatsAppTransport;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -32,8 +38,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Replaced by the WhatsApp Cloud API client once that integration exists.
-        $this->app->bind(WhatsAppTransport::class, UnavailableWhatsAppTransport::class);
+        // Outbound WhatsApp transport (config whatsapp.transport): the real Cloud
+        // API, the local-only simulation, or the explicit "unavailable" default.
+        $this->app->bind(WhatsAppTransport::class, fn ($app): WhatsAppTransport => match (config('whatsapp.transport')) {
+            'meta' => $app->make(MetaCloudWhatsAppTransport::class),
+            'simulated' => $app->isProduction() ? new UnavailableWhatsAppTransport : new SimulatedWhatsAppTransport,
+            default => new UnavailableWhatsAppTransport,
+        });
     }
 
     /**
@@ -66,6 +77,11 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureAuthorization(): void
     {
+        // WhatsApp webhooks: per webhook URL (connection), so one noisy number
+        // never throttles another.
+        RateLimiter::for('whatsapp-webhooks', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('whatsapp.webhooks.rate_limit_per_minute', 1200)))
+            ->by('whatsapp-webhook:'.(string) $request->route('webhookKey')));
+
         Gate::define('view-settings', fn (User $user): bool => $user->holdsPermission(Permission::ViewSettings));
         Gate::define('update-settings', fn (User $user): bool => $user->holdsPermission(Permission::UpdateSettings));
         Gate::define('view-appearance', fn (User $user): bool => $user->holdsPermission(Permission::ViewAppearance));
@@ -93,6 +109,7 @@ class AppServiceProvider extends ServiceProvider
             'role' => Role::class,
             'tag' => Tag::class,
             'quick_reply' => QuickReply::class,
+            'team_thread' => TeamThread::class,
         ]);
 
         DB::prohibitDestructiveCommands($this->destructiveCommandsAreProhibited());

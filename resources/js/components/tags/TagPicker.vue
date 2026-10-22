@@ -32,9 +32,18 @@ const props = withDefaults(
         available: TagOption[];
         /** Read only: the user cannot assign tags. */
         disabled?: boolean;
+        /**
+         * Endpoint that replaces the tags (PUT `tag_ids`), for records other
+         * than contacts (e.g. a conversation). Defaults to the contact one.
+         */
+        syncUrl?: string | null;
+        /** Accessible name of the editor. */
+        label?: string;
     }>(),
     {
         disabled: false,
+        syncUrl: null,
+        label: 'Editar etiquetas del contacto',
     },
 );
 
@@ -117,29 +126,34 @@ function toggle(tag: TagOption, checked: boolean): void {
 function save(): void {
     const tagIds = [...draft.value];
 
-    router.visit(sync(props.contactId), {
-        data: { tag_ids: tagIds },
-        preserveScroll: true,
-        preserveState: true,
-        onStart: () => {
-            processing.value = true;
-            error.value = undefined;
+    router.visit(
+        props.syncUrl
+            ? { url: props.syncUrl, method: 'put' }
+            : sync(props.contactId),
+        {
+            data: { tag_ids: tagIds },
+            preserveScroll: true,
+            preserveState: true,
+            onStart: () => {
+                processing.value = true;
+                error.value = undefined;
+            },
+            onFinish: () => (processing.value = false),
+            onSuccess: () => {
+                open.value = false;
+                emit(
+                    'saved',
+                    options.value.filter((tag) => tagIds.includes(tag.id)),
+                );
+            },
+            onError: (errors: Record<string, string>) => {
+                error.value =
+                    errors.tag_ids ??
+                    Object.values(errors)[0] ??
+                    'No se pudieron guardar las etiquetas.';
+            },
         },
-        onFinish: () => (processing.value = false),
-        onSuccess: () => {
-            open.value = false;
-            emit(
-                'saved',
-                options.value.filter((tag) => tagIds.includes(tag.id)),
-            );
-        },
-        onError: (errors: Record<string, string>) => {
-            error.value =
-                errors.tag_ids ??
-                Object.values(errors)[0] ??
-                'No se pudieron guardar las etiquetas.';
-        },
-    });
+    );
 }
 </script>
 
@@ -166,11 +180,7 @@ function save(): void {
                     {{ selected.length === 0 ? 'Agregar' : 'Editar' }}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent
-                align="start"
-                class="w-80 p-0"
-                aria-label="Editar etiquetas del contacto"
-            >
+            <PopoverContent align="start" class="w-80 p-0" :aria-label="label">
                 <div class="border-b p-2">
                     <div class="relative">
                         <Search

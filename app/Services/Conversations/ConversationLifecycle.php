@@ -4,6 +4,7 @@ namespace App\Services\Conversations;
 
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Events\Conversations\ConversationChanged;
 use App\Exceptions\ConversationConflict;
 use App\Models\Conversation;
 use App\Models\ConversationEvent;
@@ -123,12 +124,16 @@ class ConversationLifecycle
      */
     public function record(Conversation $conversation, ConversationEventType $type, ?User $actor, array $attributes = []): ConversationEvent
     {
-        return $conversation->events()->create([
+        $event = $conversation->events()->create([
             ...$attributes,
             'type' => $type,
             'actor_user_id' => $actor?->id,
             'created_at' => now(),
         ]);
+
+        ConversationChanged::dispatch($conversation->id, $type->value, $actor?->id, $event->id);
+
+        return $event;
     }
 
     /**

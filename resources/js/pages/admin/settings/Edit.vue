@@ -2,6 +2,7 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import { CircleDashed, Lock, PlugZap } from '@lucide/vue';
 import { computed } from 'vue';
+import PlatformHolidaysCard from '@/components/automation/PlatformHolidaysCard.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
@@ -218,8 +219,8 @@ const integrationConnected = computed(
                         Horario de atención
                     </h2>
                     <p class="text-sm text-muted-foreground">
-                        Se usará para identificar mensajes recibidos fuera de
-                        horario cuando se habilite la mensajería.
+                        Define cuándo se envía la bienvenida o el mensaje fuera
+                        de horario. Cada departamento puede tener uno propio.
                     </p>
                 </div>
                 <div
@@ -267,7 +268,7 @@ const integrationConnected = computed(
                                             form.business_hours.days[day].start
                                         "
                                         type="time"
-                                        class="w-32"
+                                        class="w-36"
                                         :disabled="!form.business_hours.enabled"
                                         :aria-label="`Apertura ${weekdayLabels[day]}`"
                                     />
@@ -279,7 +280,7 @@ const integrationConnected = computed(
                                             form.business_hours.days[day].end
                                         "
                                         type="time"
-                                        class="w-32"
+                                        class="w-36"
                                         :disabled="!form.business_hours.enabled"
                                         :aria-label="`Cierre ${weekdayLabels[day]}`"
                                         v-bind="
@@ -305,6 +306,25 @@ const integrationConnected = computed(
                         </li>
                     </ul>
                 </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="holidays-heading"
+            >
+                <div>
+                    <h2 id="holidays-heading" class="font-medium">
+                        Días no laborables
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Fechas en las que no se atiende. Se guardan aparte del
+                        resto de la configuración.
+                    </p>
+                </div>
+                <PlatformHolidaysCard
+                    :holidays="settings.business_hours.holidays ?? []"
+                    :can-update="can.update"
+                />
             </section>
 
             <section
@@ -531,8 +551,9 @@ const integrationConnected = computed(
                     <p class="text-sm text-muted-foreground">
                         Los números, sus credenciales (guardadas cifradas) y su
                         estado real se administran en Administración ›
-                        Conexiones. La recepción y el envío de mensajes se
-                        habilitarán en el incremento de integración.
+                        Conexiones. Cada número recibe y envía mensajes solo
+                        mientras está activo y su integración con Meta está
+                        verificada.
                     </p>
                 </div>
             </section>
@@ -542,11 +563,15 @@ const integrationConnected = computed(
             v-if="can.update"
             class="sticky bottom-0 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
         >
-            <span class="text-sm text-muted-foreground" aria-live="polite">{{
-                validation.hasChanges
-                    ? 'Cambios sin guardar'
-                    : 'Sin cambios por guardar'
-            }}</span>
+            <span
+                class="text-sm text-muted-foreground max-sm:sr-only"
+                aria-live="polite"
+                >{{
+                    validation.hasChanges
+                        ? 'Cambios sin guardar'
+                        : 'Sin cambios por guardar'
+                }}</span
+            >
             <Button
                 type="button"
                 variant="outline"

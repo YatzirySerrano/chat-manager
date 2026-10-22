@@ -98,6 +98,17 @@ class ConversationPolicy
     }
 
     /**
+     * Tags classify the conversation: its responsible agent or whoever
+     * manages conversations they see, with the tag assignment permission.
+     */
+    public function tag(User $actor, Conversation $conversation): bool
+    {
+        return $actor->holdsPermission(Permission::AssignTags)
+            && $this->view($actor, $conversation)
+            && ($this->isResponsible($actor, $conversation) || $actor->holdsPermission(Permission::AssignConversations));
+    }
+
+    /**
      * Only the responsible agent writes to the customer, while attending.
      */
     public function reply(User $actor, Conversation $conversation): bool

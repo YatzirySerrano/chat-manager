@@ -22,6 +22,8 @@ use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\BusinessHours;
+use App\Services\Conversations\ConversationAccess;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
 use App\Support\SaveToast;
@@ -114,6 +116,7 @@ class DepartmentController extends Controller
                     : null,
             ],
             'distributionModes' => DistributionMode::options(),
+            'automation' => $this->automation($department, $actor),
             'can' => [
                 'update' => $actor->can('update', $department),
                 'delete' => $actor->can('delete', $department),
@@ -179,7 +182,7 @@ class DepartmentController extends Controller
      * association is edited from the connection form; only users who can
      * view connections receive a link to it. No credential is exposed.
      *
-     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_deleted: bool, is_default: bool, health: array{value: string, label: string, tone: string}, url: string|null}>
+     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_deleted: bool, is_default: bool, reopen_window_minutes: int|null, messages: array{welcome: bool, away: bool, farewell: bool}, health: array{value: string, label: string, tone: string}, url: string|null}>
      */
     private function connections(Department $department, User $actor): array
     {
@@ -200,11 +203,42 @@ class DepartmentController extends Controller
                     'is_active' => $connection->is_active,
                     'is_deleted' => $connection->isDeleted(),
                     'is_default' => $connection->default_department_id === $department->id,
+                    'reopen_window_minutes' => $connection->reopen_window_minutes,
+                    'messages' => [
+                        'welcome' => $connection->welcome_enabled && filled($connection->welcome_message),
+                        'away' => $connection->away_enabled && filled($connection->away_message),
+                        'farewell' => $connection->farewell_enabled && filled($connection->farewell_message),
+                    ],
                     'health' => ['value' => $health->value, 'label' => $health->label(), 'tone' => $health->tone()],
                     'url' => $canOpen ? route('connections.show', $connection) : null,
                 ];
             })
             ->all());
+    }
+
+    /**
+     * Read-only context of how the department operates today: whether it is
+     * attending right now under which schedule, the next non-working days,
+     * and the platform-wide load limit (configured in Configuración).
+     *
+     * @return array{hours: array{mode: string, is_open: bool, next_opening: string|null, holiday: string|null, timezone: string}, holidays: list<array{date: string, label: string, recurring: bool}>, load_limit: int|null, settings_url: string|null}
+     */
+    private function automation(Department $department, User $actor): array
+    {
+        $hours = app(BusinessHours::class);
+        $today = now()->setTimezone($hours->timezone())->format('Y-m-d');
+
+        return [
+            'hours' => $hours->describe($department),
+            'holidays' => array_slice(array_values(array_filter(
+                $hours->holidays(),
+                fn (array $holiday): bool => $holiday['recurring'] || $holiday['date'] >= $today,
+            )), 0, 5),
+            'load_limit' => app(ConversationAccess::class)->attentionLimit(),
+            'settings_url' => Route::has('admin.settings.edit') && $actor->holdsPermission(Permission::ViewSettings)
+                ? route('admin.settings.edit')
+                : null,
+        ];
     }
 
     /**

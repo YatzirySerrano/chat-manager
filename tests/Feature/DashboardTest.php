@@ -1,10 +1,14 @@
 <?php
 
+use App\Actions\Analytics\RebuildConversationMetrics;
 use App\Enums\DataScope;
+use App\Enums\MessageDirection;
+use App\Enums\MessageStatus;
 use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
+use App\Models\Message;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\DashboardMetrics;
@@ -38,7 +42,8 @@ test('conversation metrics are unavailable until a WhatsApp number is connected'
                 ->where('overview.messaging_connected', false)
                 ->where('overview.conversations.active', null)
                 ->where('overview.average_first_response_seconds', null)
-                ->where('overview.agents.available', null)
+                // Availability is declared by each person, so it is real even without messaging.
+                ->where('overview.agents.available', 0)
                 ->where('overview.departments.active', 2)
             )
         );
@@ -128,4 +133,65 @@ test('the dashboard figures never exceed the permissions and departments of the 
             ->where('overview.departments.total', 1)));
 
     expect($teammate->departmentIds())->toBe([$own->id]);
+});
+
+test('available agents come from the declared availability within the viewer reach', function () {
+    $own = Department::factory()->create();
+    $other = Department::factory()->create();
+    User::factory()->agent()->available()->inDepartments($own)->count(2)->create();
+    User::factory()->agent()->inDepartments($own)->create();
+    User::factory()->agent()->available()->inDepartments($other)->create();
+    $supervisor = User::factory()->supervisor()->inDepartments($own)->create();
+
+    $this->actingAs($supervisor)->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('overview.agents.available', 2)
+            ->where('overview.agents.registered', 4)));
+});
+
+test('the dashboard filters narrow the live figures and ignore unreachable values', function () {
+    $own = Department::factory()->create();
+    $other = Department::factory()->create();
+    $connection = Connection::factory()->operational()->create();
+    $agent = User::factory()->agent()->inDepartments($own)->create();
+    Conversation::factory()->for($connection, 'channelConnection')->inDepartment($own)->assignedTo($agent)->create();
+    Conversation::factory()->for($connection, 'channelConnection')->inDepartment($own)->create();
+    Conversation::factory()->for($connection, 'channelConnection')->inDepartment($other)->create();
+    $admin = User::factory()->administrator()->create();
+    $supervisor = User::factory()->supervisor()->inDepartments($own)->create();
+
+    $this->actingAs($admin)->get(route('dashboard', ['period' => '7d', 'department' => $own->id, 'agent' => $agent->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters', ['period' => '7d', 'department' => $own->id, 'agent' => $agent->id])
+            ->where('period.preset', '7d')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('overview.conversations.active', 1)
+                ->where('overview.conversations.pending', 0)
+                ->has('overview.trend', 7)));
+
+    $this->actingAs($supervisor)->get(route('dashboard', ['department' => $other->id, 'period' => '90d']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters', [])
+            ->where('period.preset', '30d')
+            ->loadDeferredProps(fn (Assert $reload) => $reload->where('overview.conversations.pending', 1)));
+});
+
+test('the average first response comes from human replies accepted by the provider', function () {
+    $department = Department::factory()->create();
+    $agent = User::factory()->agent()->inDepartments($department)->create();
+    $connection = Connection::factory()->operational()->create();
+    $conversation = Conversation::factory()->for($connection, 'channelConnection')->inDepartment($department)->assignedTo($agent)->create(['created_at' => now()->subMinutes(10)]);
+    Message::factory()->for($conversation)->create([
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Sent,
+        'sender_user_id' => $agent->id,
+        'created_at' => now()->subMinutes(7),
+    ]);
+    app(RebuildConversationMetrics::class)->handle();
+
+    $this->actingAs($agent)->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('overview.average_first_response_seconds', 180)
+            ->where('overview.first_response_samples', 1)
+            ->where('overview.received.value', 1)));
 });

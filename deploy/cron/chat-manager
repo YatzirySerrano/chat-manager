@@ -1,0 +1,14 @@
+# Chat Manager — cron alternative (sudo cp to /etc/cron.d/chat-manager).
+# Use EITHER the scheduler line OR the chatmanager-scheduler Supervisor program.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * www-data cd /var/www/chat-manager/current && php artisan schedule:run >> /dev/null 2>&1
+
+# Independent of the scheduler, so a stopped scheduler is still alerted
+# (ops:check-alerts throttles repeated alerts; keep it even with schedule:work).
+*/10 * * * * www-data cd /var/www/chat-manager/current && php artisan ops:check-alerts >> /dev/null 2>&1
+
+# Nightly database backup (see docs/recuperacion-y-respaldos.md).
+15 2 * * * root /var/www/chat-manager/current/deploy/scripts/backup-database.sh >> /var/log/chatmanager/backup.log 2>&1
+45 2 * * * root /var/www/chat-manager/current/deploy/scripts/backup-storage.sh >> /var/log/chatmanager/backup.log 2>&1

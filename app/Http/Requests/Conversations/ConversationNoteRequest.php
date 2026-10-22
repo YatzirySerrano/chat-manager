@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Conversations;
 
+use App\Concerns\AuthorizesVisibleConversation;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -11,12 +12,9 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class ConversationNoteRequest extends FormRequest
 {
-    public const BODY_MAX_LENGTH = 2000;
+    use AuthorizesVisibleConversation;
 
-    public function authorize(): bool
-    {
-        return true;
-    }
+    public const BODY_MAX_LENGTH = 2000;
 
     protected function prepareForValidation(): void
     {

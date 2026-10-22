@@ -21,6 +21,8 @@ enum ConversationEventType: string
     case NoteAdded = 'note_added';
     case NoteEdited = 'note_edited';
     case OutboundBlocked = 'outbound_blocked';
+    case MessageFailed = 'message_failed';
+    case MessageRetried = 'message_retried';
 
     public function label(): string
     {
@@ -38,6 +40,8 @@ enum ConversationEventType: string
             self::NoteAdded => 'Nota interna agregada',
             self::NoteEdited => 'Nota interna editada',
             self::OutboundBlocked => 'Envío bloqueado',
+            self::MessageFailed => 'Mensaje no enviado',
+            self::MessageRetried => 'Reintento de envío solicitado',
         };
     }
 }

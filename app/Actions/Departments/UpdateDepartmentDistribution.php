@@ -5,6 +5,7 @@ namespace App\Actions\Departments;
 use App\Actions\Conversations\AssignAutomatically;
 use App\Enums\AuditAction;
 use App\Enums\DistributionMode;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -36,6 +37,15 @@ class UpdateDepartmentDistribution
         $this->audit->record(AuditAction::DepartmentOperationsUpdated, $department, [
             'changes' => ['distribution_mode' => ['old' => $previous->value, 'new' => $mode->value]],
         ], $actor);
+
+        // Whether members may accept from the queue depends on the mode.
+        if (($previous === DistributionMode::Manual) !== ($mode === DistributionMode::Manual)) {
+            $members = array_values(array_map('intval', $department->members()->pluck('users.id')->all()));
+
+            if ($members !== []) {
+                UserAccessChanged::dispatch($members, 'department_distribution_changed');
+            }
+        }
 
         return $this->assignAutomatically->distributeQueue($department);
     }

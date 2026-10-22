@@ -51,7 +51,7 @@ defineProps<{
                     v-focus
                     :tabindex="1"
                     autocomplete="email"
-                    placeholder="email@example.com"
+                    placeholder="correo@empresa.com"
                 />
                 <InputError :message="errors.email" />
             </div>

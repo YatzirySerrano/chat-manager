@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property AppColor $color
  * @property bool $is_active
  * @property string|null $welcome_message
+ * @property string|null $away_message Sent instead of the welcome outside business hours; overrides the connection's away message.
  * @property DistributionMode $distribution_mode
  * @property bool $uses_custom_hours
  * @property array{days: array<string, array{open: bool, start: string, end: string}>}|null $business_hours Only applies while `uses_custom_hours` is true; otherwise the platform hours apply.

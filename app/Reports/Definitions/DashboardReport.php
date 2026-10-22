@@ -4,6 +4,7 @@ namespace App\Reports\Definitions;
 
 use App\Enums\ConversationStatus;
 use App\Enums\Permission;
+use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
@@ -18,6 +19,8 @@ use App\Reports\Metric;
 use App\Reports\PdfOptions;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
+use App\Services\Analytics\AnalyticsFilters;
+use App\Services\Analytics\AnalyticsScope;
 use App\Services\DashboardMetrics;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -43,7 +46,17 @@ class DashboardReport extends ReportDefinition
      */
     private array $overviews = [];
 
-    public function __construct(private DashboardMetrics $dashboard) {}
+    /**
+     * Filters resolved once per export context.
+     *
+     * @var array<int, AnalyticsFilters>
+     */
+    private array $filters = [];
+
+    public function __construct(
+        private DashboardMetrics $dashboard,
+        private AnalyticsScope $scope,
+    ) {}
 
     public function key(): string
     {
@@ -72,16 +85,34 @@ class DashboardReport extends ReportDefinition
 
     public function rules(): array
     {
-        return [];
+        return AnalyticsFilters::rules();
     }
 
     public function describeFilters(ReportContext $context): array
     {
-        return ['Alcance: '.match ($this->overview($context)['scope']) {
-            'all' => 'toda la organización',
-            'departments' => 'tus departamentos',
-            default => 'tus conversaciones',
-        }];
+        $filters = $this->filters($context);
+        $descriptions = [
+            'Alcance: '.match ($this->overview($context)['scope']) {
+                'all' => 'toda la organización',
+                'departments' => 'tus departamentos',
+                default => 'tus conversaciones',
+            },
+            "Periodo de tiempos y tendencia: {$filters->period->label()}",
+        ];
+
+        if ($filters->departmentId !== null) {
+            $descriptions[] = 'Departamento: '.Department::query()->whereKey($filters->departmentId)->value('name');
+        }
+
+        if ($filters->agentId !== null) {
+            $descriptions[] = 'Agente: '.User::query()->whereKey($filters->agentId)->value('name');
+        }
+
+        if ($filters->connectionId !== null) {
+            $descriptions[] = 'Conexión: '.Connection::query()->whereKey($filters->connectionId)->value('name');
+        }
+
+        return $descriptions;
     }
 
     /**
@@ -97,6 +128,7 @@ class DashboardReport extends ReportDefinition
             ->visibleTo($actor)
             ->notDeleted()
             ->when(! $this->showsBreakdown($context), fn (Builder $query) => $query->whereRaw('1 = 0'))
+            ->when($this->filters($context)->departmentId !== null, fn (Builder $query) => $query->whereKey($this->filters($context)->departmentId))
             ->withCount([
                 'conversations as pending_count' => fn (Builder $query) => $this->visible($query, $actor)->where('status', ConversationStatus::Pending),
                 'conversations as attending_count' => fn (Builder $query) => $this->visible($query, $actor)->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold]),
@@ -143,12 +175,14 @@ class DashboardReport extends ReportDefinition
             new Metric(
                 'Primera respuesta (prom.)',
                 $average === null ? null : $this->duration($average),
-                $average === null ? ($overview['messaging_connected'] ? 'Sin conversaciones respondidas en 30 días' : $unavailable) : 'Últimos 30 días',
+                $average === null ? ($overview['messaging_connected'] ? 'Sin datos suficientes en el periodo' : $unavailable) : 'Mensajes de agentes aceptados por WhatsApp; '.number_format($overview['first_response_samples']).' conversaciones medidas',
             ),
+            new Metric('Recibidas en el periodo', $overview['received']['value'], $overview['received']['value'] === null ? $unavailable : 'Periodo anterior: '.number_format((int) $overview['received']['previous'])),
         ];
 
         if ($overview['departments'] !== null) {
             $metrics[] = new Metric('Personas que atienden', $overview['agents']['registered'], 'Cuentas activas que pueden responder');
+            $metrics[] = new Metric('Agentes disponibles', $overview['agents']['available'], 'Declarados como disponibles ahora');
             $metrics[] = new Metric('Departamentos activos', $overview['departments']['active'], number_format($overview['departments']['total']).' en total');
         }
 
@@ -231,6 +265,11 @@ class DashboardReport extends ReportDefinition
      */
     private function overview(ReportContext $context): array
     {
-        return $this->overviews[$context->actor->id] ??= $this->dashboard->overviewFor($context->actor);
+        return $this->overviews[$context->actor->id] ??= $this->dashboard->overviewFor($context->actor, $this->filters($context));
+    }
+
+    private function filters(ReportContext $context): AnalyticsFilters
+    {
+        return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->generatedAt);
     }
 }

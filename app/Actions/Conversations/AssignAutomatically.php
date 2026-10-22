@@ -43,6 +43,16 @@ class AssignAutomatically
             return null;
         }
 
+        // Only automatic departments need the row lock; locking shared or
+        // manual ones made every new conversation of the department wait for
+        // the previous one under inbound bursts (docs/rendimiento-y-carga.md).
+        // The mode is checked again under the lock below.
+        $automatic = Department::query()->whereKey($conversation->department_id)->where('distribution_mode', DistributionMode::Automatic)->exists();
+
+        if (! $automatic) {
+            return null;
+        }
+
         $department = Department::query()->lockForUpdate()->find($conversation->department_id);
 
         if ($department === null || ! $department->is_active || $department->distribution_mode !== DistributionMode::Automatic) {

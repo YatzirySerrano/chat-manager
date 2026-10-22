@@ -5,15 +5,21 @@ namespace App\Services\Meta;
 use App\Models\Message;
 
 /**
- * Sends an ordinary text message to WhatsApp Cloud API. Only the outbound
- * delivery job uses it, after checking the customer service window again.
+ * Sends one stored outbound message (text, media with optional caption or
+ * template, optionally replying to a customer message) to WhatsApp. Only the
+ * delivery job calls it, after claiming the message and checking the
+ * connection, the customer service window and the template rules again.
  */
 interface WhatsAppTransport
 {
     /**
-     * @return string The provider message id (Meta "wamid").
-     *
-     * @throws WhatsAppTransportUnavailable When the integration cannot send.
+     * @throws WhatsAppTransportUnavailable When this installation cannot send at all.
+     * @throws MetaGraphException When the provider failed or refused the message (classified).
      */
-    public function sendText(Message $message): string;
+    public function send(Message $message): SendResult;
+
+    /**
+     * Short label of the transport for diagnostics ("meta", "simulated", "unavailable").
+     */
+    public function name(): string;
 }

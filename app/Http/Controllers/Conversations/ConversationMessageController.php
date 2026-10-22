@@ -11,9 +11,9 @@ use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
 /**
- * Agent replies. Prepared for the advanced inbox: the engine validates the
- * responsible agent and the customer service window, and the delivery job
- * checks the window again before reaching the provider.
+ * Agent replies from the inbox composer. The engine validates the
+ * responsible agent, the customer service window and the attachment, and
+ * the delivery job checks the window again before reaching the provider.
  */
 class ConversationMessageController extends ConversationOperationController
 {
@@ -21,9 +21,18 @@ class ConversationMessageController extends ConversationOperationController
     {
         $this->ensureVisible($conversation);
 
-        $message = $queue->handle($conversation, $request->user(), $request->string('body')->value(), $request->string('client_reference')->value());
+        $message = $queue->handle(
+            $conversation,
+            $request->user(),
+            $request->filled('body') ? $request->string('body')->value() : null,
+            $request->string('client_reference')->value(),
+            $request->file('attachment'),
+            $request->filled('reply_to_message_id') ? $request->integer('reply_to_message_id') : null,
+        );
 
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            $message->load(['sender', 'attachments', 'replyTo']);
+
             return (new ConversationMessageResource($message))->response()->setStatusCode(202);
         }
 

@@ -4,6 +4,7 @@ namespace App\Actions\Users;
 
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +55,8 @@ class DeleteUser
                 'role' => $locked->role()?->label,
                 'released_conversations' => $released,
             ], $actor);
+
+            UserAccessChanged::dispatch([$locked->id], 'deleted');
 
             return $locked;
         });

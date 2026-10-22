@@ -42,6 +42,9 @@ enum Permission: string
     case ViewConnections = 'connections.view';
     case ManageConnections = 'connections.manage';
 
+    case ViewTemplates = 'templates.view';
+    case ManageTemplates = 'templates.manage';
+
     case ViewContacts = 'contacts.view';
     case CreateContacts = 'contacts.create';
     case UpdateContacts = 'contacts.update';
@@ -75,6 +78,9 @@ enum Permission: string
 
     case ViewAuditLog = 'audit.view';
     case ExportAuditLog = 'audit.export';
+
+    case ViewSystem = 'system.view';
+    case ManageSystem = 'system.manage';
 
     public function group(): PermissionGroup
     {
@@ -110,6 +116,8 @@ enum Permission: string
             self::AddConversationNotes => 'Agregar notas internas',
             self::ViewConnections => 'Ver conexiones',
             self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
+            self::ViewTemplates => 'Ver plantillas de WhatsApp',
+            self::ManageTemplates => 'Sincronizar plantillas de WhatsApp con Meta',
             self::ViewContacts => 'Ver contactos',
             self::CreateContacts => 'Crear contactos',
             self::UpdateContacts => 'Editar contactos',
@@ -119,13 +127,13 @@ enum Permission: string
             self::ClassifyContactOrigin => 'Registrar procedencia declarada (excepcional, solo alcance global)',
             self::ViewTags => 'Ver etiquetas',
             self::ManageTags => 'Administrar etiquetas (crear, editar, eliminar y restaurar)',
-            self::AssignTags => 'Asignar etiquetas a contactos',
+            self::AssignTags => 'Asignar etiquetas a contactos y conversaciones',
             self::UseQuickReplies => 'Usar respuestas rápidas',
             self::ManageQuickReplies => 'Administrar respuestas rápidas (crear, editar, eliminar y restaurar)',
             self::UseTeamChat => 'Usar el chat interno',
             self::CreateTeamChatGroups => 'Crear grupos internos',
-            self::ManageTeamChatGroups => 'Administrar grupos internos',
-            self::UseCrossDepartmentTeamChat => 'Comunicarse con otros departamentos',
+            self::ManageTeamChatGroups => 'Administrar los grupos internos en los que participa',
+            self::UseCrossDepartmentTeamChat => 'Iniciar chats internos con personas de otros departamentos',
             self::ViewReports => 'Ver reportes',
             self::ExportReports => 'Exportar información a Excel y PDF',
             self::ViewSettings => 'Ver configuración',
@@ -135,6 +143,8 @@ enum Permission: string
             self::ViewDeletedRecords => 'Consultar registros eliminados',
             self::ViewAuditLog => 'Ver registros de auditoría',
             self::ExportAuditLog => 'Exportar registros de auditoría',
+            self::ViewSystem => 'Ver el estado técnico del sistema (colas, trabajos fallidos, salud)',
+            self::ManageSystem => 'Reintentar o descartar trabajos fallidos del sistema',
         };
     }
 
@@ -142,22 +152,17 @@ enum Permission: string
      * Whether the code enforcing this permission already exists. Unavailable
      * permissions are shown as "coming later" and cannot be edited.
      *
-     * reports.export is the generic export permission (Excel and PDF) of
-     * every module, available before the reports module itself ships.
+     * Every catalogued module now ships (reports.view is enforced by the
+     * reports module), so all permissions are
+     * available; the flag stays for future modules. reports.export is the
+     * generic export permission (Excel and PDF) of every module.
      * audit.export exports the audit log (always within what the viewer may
      * read) and contacts.import runs the contacts importer, which stays
      * reserved to the root authority.
      */
     public function isAvailable(): bool
     {
-        if ($this === self::ExportReports) {
-            return true;
-        }
-
-        return ! in_array($this->group(), [
-            PermissionGroup::Reports,
-            PermissionGroup::TeamChat,
-        ], true);
+        return true;
     }
 
     /**
@@ -181,6 +186,8 @@ enum Permission: string
             self::UpdateSettings,
             self::UpdateAppearance,
             self::ManageConnections,
+            self::ViewSystem,
+            self::ManageSystem,
         ], true);
     }
 
@@ -202,9 +209,12 @@ enum Permission: string
             self::UpdateAppearance,
             self::ViewConnections,
             self::ManageConnections,
+            self::ManageTemplates,
             self::ManageTags,
             self::ClassifyContactOrigin,
             self::ImportContacts,
+            self::ViewSystem,
+            self::ManageSystem,
         ], true);
     }
 

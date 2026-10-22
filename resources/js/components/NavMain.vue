@@ -4,6 +4,7 @@ import {
     SidebarGroup,
     SidebarGroupLabel,
     SidebarMenu,
+    SidebarMenuBadge,
     SidebarMenuButton,
     SidebarMenuItem,
     useSidebar,
@@ -28,7 +29,7 @@ const { setOpenMobile } = useSidebar();
 <template>
     <SidebarGroup class="px-3 py-1">
         <SidebarGroupLabel
-            class="text-[11px] font-semibold tracking-wider text-muted-foreground/80 uppercase"
+            class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
         >
             {{ label }}
         </SidebarGroupLabel>
@@ -49,6 +50,13 @@ const { setOpenMobile } = useSidebar();
                         <span>{{ item.title }}</span>
                     </Link>
                 </SidebarMenuButton>
+                <SidebarMenuBadge
+                    v-if="item.badge"
+                    class="rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
+                    :aria-label="`${item.badge} sin leer`"
+                >
+                    {{ item.badge > 99 ? '99+' : item.badge }}
+                </SidebarMenuBadge>
             </SidebarMenuItem>
         </SidebarMenu>
     </SidebarGroup>

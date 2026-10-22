@@ -15,6 +15,7 @@ import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
+import DepartmentAutomationCard from '@/components/departments/DepartmentAutomationCard.vue';
 import DepartmentConnectionsCard from '@/components/departments/DepartmentConnectionsCard.vue';
 import DepartmentHoursCard from '@/components/departments/DepartmentHoursCard.vue';
 import DepartmentDistributionCard from '@/components/departments/DepartmentDistributionCard.vue';
@@ -49,6 +50,7 @@ import {
 import { destroy as destroyMember } from '@/routes/departments/members';
 import type {
     ColorSwatch,
+    DepartmentAutomation,
     DepartmentConnection,
     DepartmentMember,
     DepartmentMetrics,
@@ -78,6 +80,7 @@ const props = defineProps<{
         label: string;
         description: string;
     }[];
+    automation: DepartmentAutomation;
     can: {
         update: boolean;
         delete: boolean;
@@ -248,6 +251,10 @@ function confirmRemoval(): void {
                 :platform-hours="platformHours"
                 :weekdays="weekdays"
                 :can-update="can.update"
+            />
+            <DepartmentAutomationCard
+                :automation="automation"
+                :connections="connections"
             />
             <DepartmentConnectionsCard
                 :connections="connections"

@@ -6,8 +6,8 @@ import type { Connection } from '@/types';
 
 /**
  * Each piece of evidence behind the health of a connection, shown
- * separately. A check is only "ok" when there is recorded proof; webhook
- * reception and sending arrive with the integration increment.
+ * separately. A check is only "ok" when there is recorded proof from Meta
+ * (webhook verification, received messages, messages accepted).
  */
 const props = defineProps<{
     checks: Connection['checks'];
@@ -87,7 +87,7 @@ const items = computed<Check[]>(() => {
             state: checks.webhook_verified_at ? 'ok' : 'muted',
             detail: checks.webhook_verified_at
                 ? `Verificado ${formatRelative(checks.webhook_verified_at)}.`
-                : 'Pendiente: se habilita en el incremento de integración.',
+                : 'Meta aún no verifica la URL del webhook de esta conexión.',
             title: checks.webhook_verified_at
                 ? formatDateTime(checks.webhook_verified_at)
                 : undefined,
@@ -108,8 +108,8 @@ const items = computed<Check[]>(() => {
             label: 'Envío confirmado',
             state: checks.last_outbound_at ? 'ok' : 'muted',
             detail: checks.last_outbound_at
-                ? `Último envío confirmado ${formatRelative(checks.last_outbound_at)}.`
-                : 'Aún no se ha confirmado ningún envío.',
+                ? `Último mensaje aceptado por Meta ${formatRelative(checks.last_outbound_at)}.`
+                : 'Meta aún no ha aceptado ningún mensaje enviado.',
             title: checks.last_outbound_at
                 ? formatDateTime(checks.last_outbound_at)
                 : undefined,

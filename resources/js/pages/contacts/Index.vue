@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, usePoll } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import {
     ChevronDown,
     Contact as ContactIcon,
@@ -56,7 +56,12 @@ import {
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { getInitials } from '@/composables/useInitials';
+import { useLiveReload } from '@/composables/useLiveReload';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import {
+    inboxChannelNames,
+    userChannelName,
+} from '@/composables/useUserChannel';
 import { useViewMode } from '@/composables/useViewMode';
 import { contactDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
@@ -103,10 +108,38 @@ const props = defineProps<{
 
 /**
  * Contacts registered automatically from inbound messages appear without any
- * action: the list is reloaded periodically with the current filters, search
- * and page (Inertia slows polling down while the tab is in the background).
+ * action: new conversations and messages in the inboxes the user can see
+ * (and finished imports) reload the list with the current filters, search
+ * and page. Without real-time the list refreshes every 30 seconds.
  */
-usePoll(30_000, { only: ['contacts', 'openReviews'] });
+useLiveReload({
+    channels: () => {
+        const user = userChannelName();
+
+        return [
+            ...inboxChannelNames().map((name) => ({
+                name,
+                events: ['inbox.changed'],
+            })),
+            ...(user
+                ? [
+                      {
+                          name: user,
+                          events: ['inbox.changed', 'transfer.changed'],
+                      },
+                  ]
+                : []),
+        ];
+    },
+    only: ['contacts', 'openReviews'],
+    filter: (event, payload) =>
+        event === 'transfer.changed' ||
+        payload.reason === 'created' ||
+        payload.reason === 'message',
+    debounceMs: 2000,
+    fallbackIntervalMs: 30_000,
+    safetyIntervalMs: 60_000,
+});
 
 const ALL = 'all';
 

@@ -3,6 +3,7 @@
 namespace App\Actions\Users;
 
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,8 @@ class RestoreUser
             $this->audit->record(AuditAction::UserRestored, $locked, [
                 'deleted_at' => $deletedAt?->toIso8601String(),
             ], $actor);
+
+            UserAccessChanged::dispatch([$locked->id], 'restored');
 
             return $locked;
         });

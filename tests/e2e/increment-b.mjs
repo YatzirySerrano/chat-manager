@@ -162,6 +162,41 @@ const overflow = (page) =>
         () => document.documentElement.scrollWidth - window.innerWidth,
     );
 
+/*
+ * Increment C rebuilt the inbox as one three-panel page (/conversations?c=ID):
+ * list rows are buttons that open the chat, and the operations live in the
+ * chat header (main action as a button, the rest in "Más acciones"). The
+ * helpers below follow that layout; the behavior checked is the same.
+ */
+const listRow = (page, name) =>
+    page.locator('[data-inbox-item]', { hasText: name }).first();
+
+const operations = (page) =>
+    page.getByRole('group', { name: 'Operaciones de la conversación' });
+
+async function runOperation(page, label) {
+    const direct = operations(page).getByRole('button', {
+        name: label,
+        exact: true,
+    });
+
+    if ((await direct.count()) > 0) {
+        await direct.click();
+
+        return;
+    }
+
+    await page
+        .getByRole('button', { name: 'Más acciones de la conversación' })
+        .click();
+    await page.getByRole('menuitem', { name: label, exact: true }).click();
+}
+
+async function openConversation(page, id, query = '') {
+    await page.goto(`${BASE}/conversations?${query}${query ? '&' : ''}c=${id}`);
+    await page.waitForLoadState('networkidle');
+}
+
 const run = async () => {
     const browser = await chromium.launch();
 
@@ -191,12 +226,16 @@ const run = async () => {
 
         // 1b. Agents get a personal inbox: their own conversations and the
         // queue of their department, without the "Solo mías" switch.
+        // Selector update (increment C): the queue tab is now labelled
+        // "Pendientes" and the agent filter lives in the "Filtros" popover.
         const mineView = ana.getByRole('button', {
-            name: /Mis conversaciones/,
+            name: /^Mis conversaciones/,
         });
-        const queueView = ana.getByRole('button', {
-            name: /Pendientes de mi departamento/,
-        });
+        const queueView = ana.getByRole('button', { name: /^Pendientes/ });
+        await ana.getByRole('button', { name: /^Filtros/ }).click();
+        const agentFilter = await ana.locator('#inbox-agent').count();
+        const departmentFilter = await ana.locator('#inbox-department').count();
+        await ana.keyboard.press('Escape');
         record(
             'agent-personal-inbox',
             'render',
@@ -206,10 +245,9 @@ const run = async () => {
                 (await ana
                     .getByRole('switch', { name: 'Solo mis conversaciones' })
                     .count()) === 0 &&
-                (await ana
-                    .getByRole('combobox', { name: 'Filtrar por agente' })
-                    .count()) === 0,
-            '"Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter',
+                departmentFilter === 1 &&
+                agentFilter === 0,
+            `"Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter (agent=${agentFilter})`,
         );
         await queueView.click();
         await ana.waitForURL(/view=queue/);
@@ -228,9 +266,7 @@ const run = async () => {
             outcome === 'created',
             `conversation ${firstId}`,
         );
-        const row = ana
-            .getByRole('link', { name: 'Cliente E2E Anuncio' })
-            .first();
+        const row = listRow(ana, 'Cliente E2E Anuncio');
         await row.waitFor({ timeout: 25_000 }).catch(() => {});
         const sameDocument = await ana.evaluate(
             () => window.__sameDocument === true,
@@ -244,17 +280,25 @@ const run = async () => {
         await shot(ana, 'b01_queue_agent');
 
         // 2b. While "No disponible" the agent sees the queue but cannot accept.
+        // Flow update (increment C): Accept moved from the row to the chat
+        // header; the row opens the chat in the same page.
         const unavailableBanner =
             (await ana.getByText('Estás como No disponible').count()) > 0;
-        const blockedAccept = ana.getByRole('button', {
-            name: /Aceptar \(no disponible.*Cliente E2E Anuncio/,
+        await row.click();
+        await ana.waitForURL(new RegExp(`c=${firstId}`));
+        const blockedAccept = operations(ana).getByRole('button', {
+            name: 'Aceptar',
+            exact: true,
         });
+        await blockedAccept.waitFor();
         record(
             'unavailable-cannot-accept',
             'render',
             unavailableBanner &&
-                (await blockedAccept.count()) > 0 &&
-                (await blockedAccept.first().isDisabled()),
+                (await blockedAccept.isDisabled()) &&
+                /Disponible/.test(
+                    (await blockedAccept.getAttribute('title')) ?? '',
+                ),
             'banner shown, Accept disabled with explanation',
         );
         const anaAvailable = await becomeAvailable(ana);
@@ -272,16 +316,16 @@ const run = async () => {
         await beto.goto(`${BASE}/conversations`);
         await becomeAvailable(beto);
         await Promise.all([
-            ana.goto(`${BASE}/conversations/${firstId}`),
-            beto.goto(`${BASE}/conversations/${firstId}`),
+            openConversation(ana, firstId),
+            openConversation(beto, firstId),
         ]);
         await Promise.all([
-            ana.waitForLoadState('networkidle'),
-            beto.waitForLoadState('networkidle'),
-        ]);
-        await Promise.all([
-            ana.getByRole('button', { name: 'Aceptar' }).click(),
-            beto.getByRole('button', { name: 'Aceptar' }).click(),
+            operations(ana)
+                .getByRole('button', { name: 'Aceptar', exact: true })
+                .click(),
+            operations(beto)
+                .getByRole('button', { name: 'Aceptar', exact: true })
+                .click(),
         ]);
         const [anaToast, betoToast] = await Promise.all([
             toastText(ana, ACCEPT_OUTCOME),
@@ -304,31 +348,41 @@ const run = async () => {
         await shot(winner, 'b02_accepted');
 
         // 4. Internal note, typed with the keyboard, never shown as a message.
+        // Flow update (increment C): notes are written in the composer's
+        // "Nota interna" mode and shown inline, styled apart from messages.
         await waitToastsGone(winner);
-        await winner.locator('#new-note').click();
+        await winner.getByRole('tab', { name: 'Nota interna' }).click();
+        await winner.locator('#chat-composer').click();
         await winner.keyboard.type('Pide factura a nombre de su empresa');
-        await winner.getByRole('button', { name: 'Agregar nota' }).click();
+        await winner.getByRole('button', { name: 'Guardar nota' }).click();
+        const note = winner.getByRole('article', {
+            name: /Nota interna de/,
+        });
         await winner
             .getByText('Pide factura a nombre de su empresa')
             .first()
             .waitFor();
-        const messagesText = await winner
-            .getByRole('list', { name: 'Mensajes' })
-            .innerText();
+        const inBubble = await winner
+            .locator('[data-message-id]', { hasText: 'Pide factura' })
+            .count();
         record(
             'internal-note',
             'keyboard',
-            !messagesText.includes('Pide factura'),
-            'note listed apart from messages',
+            inBubble === 0 &&
+                ((await note.count()) > 0 ||
+                    (await winner
+                        .locator('[aria-label^="Nota interna de"]')
+                        .count()) > 0),
+            `note shown as internal note, message bubbles with it=${inBubble}`,
         );
 
         // 5. Hold (Escape cancels first), then resume.
-        await winner.getByRole('button', { name: 'Poner en espera' }).click();
+        await runOperation(winner, 'Poner en espera');
         await winner.getByRole('dialog').waitFor();
         await winner.keyboard.press('Escape');
         await winner.getByRole('dialog').waitFor({ state: 'detached' });
         const stillOpen = (await winner.getByText('En atención').count()) > 0;
-        await winner.getByRole('button', { name: 'Poner en espera' }).click();
+        await runOperation(winner, 'Poner en espera');
         await winner.locator('#conversation-reason').click();
         await winner.keyboard.type('Esperando comprobante de pago');
         await winner
@@ -339,9 +393,16 @@ const run = async () => {
             .getByText(/Esperando comprobante de pago/)
             .first()
             .waitFor();
+        await operations(winner)
+            .getByRole('button', { name: 'Retomar' })
+            .waitFor();
         const onHold = (await winner.getByText('En espera').count()) > 0;
-        await winner.getByRole('button', { name: 'Retomar' }).click();
-        await winner.getByRole('button', { name: 'Poner en espera' }).waitFor();
+        await operations(winner)
+            .getByRole('button', { name: 'Retomar' })
+            .click();
+        await operations(winner)
+            .getByRole('button', { name: 'Retomar' })
+            .waitFor({ state: 'detached' });
         record(
             'hold-and-resume',
             'mouse + keyboard + Esc',
@@ -350,18 +411,24 @@ const run = async () => {
         );
 
         // 6. Transfer to another department's queue with a reason.
-        await winner.getByRole('button', { name: 'Transferir' }).click();
-        await winner.locator('#transfer-department').waitFor();
+        await waitToastsGone(winner);
+        await runOperation(winner, 'Transferir');
+        await winner.locator('select#transfer-department').waitFor();
         await winner
-            .locator('#transfer-department')
+            .locator('select#transfer-department')
             .selectOption({ label: 'E2E Soporte' });
-        await winner.locator('#transfer-reason').fill('Consulta técnica');
+        await winner
+            .locator('textarea#transfer-reason')
+            .fill('Consulta técnica');
         await winner
             .getByRole('dialog')
             .getByRole('button', { name: 'Transferir' })
             .click();
-        // The list the agent last looked at (e.g. the queue view) is restored.
-        await winner.waitForURL(/\/conversations(\?.*)?$/);
+        // The list the agent last looked at is restored (without the chat).
+        await winner.waitForURL(
+            (url) =>
+                url.pathname === '/conversations' && !url.searchParams.has('c'),
+        );
         const transferToast = await toastText(winner, /transferida/);
         record(
             'transfer-to-queue',
@@ -372,98 +439,126 @@ const run = async () => {
 
         // 7. The previous agent no longer reaches it by URL.
         const response = await winner.goto(`${BASE}/conversations/${firstId}`);
+        await winner.goto(`${BASE}/conversations?c=${firstId}`);
+        const unavailable =
+            (await winner
+                .getByText('La conversación no está disponible')
+                .count()) > 0;
         record(
             'direct-url-denied',
             'url',
-            response?.status() === 404,
-            `status ${response?.status()}`,
+            response?.status() === 404 && unavailable,
+            `status ${response?.status()}; ?c= shows not available=${unavailable}`,
         );
 
-        // 8. The receiving department's agent accepts it from the list with the keyboard.
+        // 8. The receiving department's agent accepts it with the keyboard.
         const carla = await newPage(browser);
         await login(carla, USERS.carla);
         await carla.goto(`${BASE}/conversations?view=queue`);
         await carla.waitForLoadState('networkidle');
         await becomeAvailable(carla);
-        const accept = carla.getByRole('button', {
-            name: 'Aceptar Cliente E2E Anuncio',
+        await listRow(carla, 'Cliente E2E Anuncio').focus();
+        await carla.keyboard.press('Enter');
+        await carla.waitForURL(new RegExp(`c=${firstId}`));
+        const accept = operations(carla).getByRole('button', {
+            name: 'Aceptar',
+            exact: true,
         });
         await accept.focus();
         await carla.keyboard.press('Enter');
-        await carla.waitForURL(new RegExp(`/conversations/${firstId}$`));
+        await toastText(carla, /Aceptaste la conversación/);
+        await carla.waitForLoadState('networkidle');
         record(
             'accept-from-list',
             'keyboard',
             (await carla.getByText('En atención').count()) > 0,
-            'Enter on the row action',
+            'Enter on the row, Enter on Aceptar',
         );
 
-        // 9. Administrator: cards view persists, close and reopen, history.
+        // 9. Administrator: the details panel preference persists.
+        // Flow update (increment C): the cards view was replaced by the
+        // three-panel inbox; the per-user layout preference now is the
+        // collapsible details panel.
         const admin = await newPage(browser);
         await login(admin, USERS.admin);
-        await admin.goto(`${BASE}/conversations?status=all`);
-        await admin.getByRole('button', { name: 'Vista de tarjetas' }).click();
+        await openConversation(admin, firstId, 'status=all');
+        const detailsToggle = admin.getByRole('button', {
+            name: 'Ocultar el panel de detalles',
+        });
+        await detailsToggle.click();
         await admin.reload();
         await admin.waitForLoadState('networkidle');
-        const cards =
+        const collapsed =
             (await admin
-                .getByRole('button', { name: 'Vista de tarjetas' })
-                .getAttribute('aria-pressed')) === 'true' &&
-            (await admin.locator('article').count()) > 0;
+                .getByRole('button', { name: 'Mostrar el panel de detalles' })
+                .count()) > 0 &&
+            (await admin
+                .getByRole('complementary', {
+                    name: 'Información del cliente y de la conversación',
+                })
+                .count()) === 0;
+        await admin
+            .getByRole('button', { name: 'Mostrar el panel de detalles' })
+            .click();
         record(
             'cards-view-persists',
             'mouse + reload',
-            cards,
-            'cards kept after reload',
+            collapsed,
+            'details panel hidden after reload (layout preference kept)',
         );
-        await shot(admin, 'b03_admin_cards');
+        await shot(admin, 'b03_admin_inbox');
 
-        // 9b. Filters survive opening a conversation and returning through the breadcrumb.
+        // 9b. Filters survive opening a conversation and reloading.
+        await admin.goto(`${BASE}/conversations?status=all`);
+        await admin.waitForLoadState('networkidle');
+        await admin.getByRole('button', { name: /^Filtros/ }).click();
         await admin
-            .getByRole('combobox', { name: 'Filtrar por departamento' })
+            .locator('#inbox-department')
             .selectOption({ label: 'E2E Soporte' });
         await admin.waitForURL(/department=/);
         await admin.waitForLoadState('networkidle');
+        await admin.keyboard.press('Escape');
         const filteredUrl = new URL(admin.url());
-        await admin
-            .locator('article')
-            .getByRole('link', { name: 'Cliente E2E Anuncio' })
-            .first()
-            .click();
-        await admin.waitForURL(new RegExp(`/conversations/${firstId}$`));
-        await admin
-            .getByRole('navigation', { name: /breadcrumb/i })
-            .getByRole('link', { name: 'Conversaciones' })
-            .click();
-        await admin.waitForURL(/\/conversations\?/);
+        await listRow(admin, 'Cliente E2E Anuncio').click();
+        await admin.waitForURL(new RegExp(`c=${firstId}`));
+        await admin.reload();
+        await admin.waitForLoadState('networkidle');
         const back = new URL(admin.url());
+        await admin.getByRole('button', { name: /^Filtros/ }).click();
+        const selected = await admin.locator('#inbox-department').inputValue();
+        await admin.keyboard.press('Escape');
         record(
             'filters-survive-navigation',
             'mouse',
             back.searchParams.get('department') ===
                 filteredUrl.searchParams.get('department') &&
                 back.searchParams.get('status') === 'all' &&
-                (await admin
-                    .getByRole('combobox', { name: 'Filtrar por departamento' })
-                    .inputValue()) ===
-                    filteredUrl.searchParams.get('department'),
+                selected === filteredUrl.searchParams.get('department'),
             `${filteredUrl.search} -> ${back.search}`,
         );
 
-        await admin.goto(`${BASE}/conversations/${firstId}`);
-        await admin.getByRole('button', { name: 'Cerrar' }).click();
-        await admin.locator('#conversation-reason').fill('Caso resuelto');
+        await openConversation(admin, firstId);
+        await runOperation(admin, 'Cerrar conversación');
+        await admin
+            .locator('textarea#conversation-reason')
+            .fill('Caso resuelto');
         await admin
             .getByRole('dialog')
             .getByRole('button', { name: 'Cerrar conversación' })
             .click();
-        await admin.getByRole('button', { name: 'Reabrir' }).waitFor();
-        await admin.getByRole('button', { name: 'Reabrir' }).click();
-        await admin
-            .getByRole('button', { name: 'Devolver a la cola' })
+        await operations(admin)
+            .getByRole('button', { name: 'Reabrir' })
             .waitFor();
+        await operations(admin)
+            .getByRole('button', { name: 'Reabrir' })
+            .click();
+        await operations(admin)
+            .getByRole('button', { name: 'Reabrir' })
+            .waitFor({ state: 'detached' });
+        await admin.waitForLoadState('networkidle');
+        // The operational history is shown inline in the chat timeline.
         const history = await admin
-            .getByRole('list', { name: 'Historial operativo' })
+            .getByRole('log', { name: /Historial de la conversación/ })
             .innerText();
         record(
             'close-reopen-history',
@@ -476,23 +571,23 @@ const run = async () => {
                 'Cerrada',
                 'Reabierta',
             ].every((label) => history.includes(label)) &&
-                (await admin.getByText('Ventana abierta').count()) > 0,
+                (await admin.getByText(/Ventana abierta/).count()) > 0,
             'timeline complete; window still open (not extended)',
         );
         await shot(admin, 'b04_admin_detail');
 
         // 10. Stale data: a second tab acting on the old version is told so.
         const staleTab = await admin.context().newPage();
-        await staleTab.goto(`${BASE}/conversations/${firstId}`);
-        await admin.getByRole('button', { name: 'Poner en espera' }).click();
+        await openConversation(staleTab, firstId);
+        await runOperation(admin, 'Poner en espera');
         await admin
             .getByRole('dialog')
             .getByRole('button', { name: 'Poner en espera' })
             .click();
-        await admin.getByRole('button', { name: 'Retomar' }).waitFor();
-        await staleTab
-            .getByRole('button', { name: 'Devolver a la cola' })
-            .click();
+        await operations(admin)
+            .getByRole('button', { name: 'Retomar' })
+            .waitFor();
+        await runOperation(staleTab, 'Devolver a la cola');
         await staleTab
             .getByRole('dialog')
             .getByRole('button', { name: 'Devolver a la cola' })
@@ -546,9 +641,10 @@ const run = async () => {
         });
         await login(phone, USERS.carla);
         await phone.goto(`${BASE}/conversations`);
+        await phone.waitForLoadState('networkidle');
         const listOverflow = await overflow(phone);
         await shot(phone, 'b05_phone_dark_list');
-        await phone.goto(`${BASE}/conversations/${firstId}`);
+        await openConversation(phone, firstId);
         const detailOverflow = await overflow(phone);
         const dark = await phone.evaluate(() =>
             document.documentElement.classList.contains('dark'),

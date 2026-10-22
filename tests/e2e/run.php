@@ -16,6 +16,9 @@
 |   NODE_BINARY           Node.js executable (default "node")
 |   PLAYWRIGHT_MODULE     where to load Playwright from (default "playwright")
 |   E2E_SCREENSHOTS       optional directory for screenshots
+|   E2E_REVERB=1          also start a Reverb server for real-time scenarios,
+|                         with throwaway credentials generated for the run
+|   E2E_REVERB_PORT       Reverb port (default 8081)
 */
 
 use Illuminate\Contracts\Console\Kernel;
@@ -66,9 +69,60 @@ if (Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]) !== 0)
 
 $environment = [...getenv(), 'APP_ENV' => 'testing', 'APP_URL' => $baseUrl, 'E2E_BASE_URL' => $baseUrl];
 
+$reverb = null;
+
+if (getenv('E2E_REVERB') === '1') {
+    $reverbPort = (int) (getenv('E2E_REVERB_PORT') ?: 8081);
+
+    if (@fsockopen('127.0.0.1', $reverbPort, timeout: 0.5) !== false) {
+        $fail("Port {$reverbPort} is already in use; stop that server or set E2E_REVERB_PORT.");
+    }
+
+    // Credentials only live for this run; real-time listeners run inline
+    // (sync) because no queue worker is started for the scenarios.
+    $environment = [
+        ...$environment,
+        'BROADCAST_CONNECTION' => 'reverb',
+        'REVERB_APP_ID' => (string) random_int(100000, 999999),
+        'REVERB_APP_KEY' => bin2hex(random_bytes(10)),
+        'REVERB_APP_SECRET' => bin2hex(random_bytes(16)),
+        'REVERB_HOST' => '127.0.0.1',
+        'REVERB_PORT' => (string) $reverbPort,
+        'REVERB_SCHEME' => 'http',
+        'REVERB_SERVER_HOST' => '127.0.0.1',
+        'REVERB_SERVER_PORT' => (string) $reverbPort,
+        'REVERB_ALLOWED_ORIGINS' => '127.0.0.1,localhost',
+        'REALTIME_QUEUE_CONNECTION' => 'sync',
+        'E2E_REVERB_PORT' => (string) $reverbPort,
+    ];
+
+    $reverb = proc_open(
+        [PHP_BINARY, $root.'/artisan', 'reverb:start', '--host=127.0.0.1', "--port={$reverbPort}"],
+        [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+        $pipes,
+        $root,
+        $environment,
+    );
+
+    for ($attempt = 0; $attempt < 50 && @fsockopen('127.0.0.1', $reverbPort, timeout: 0.2) === false; $attempt++) {
+        usleep(200_000);
+    }
+}
+
+$stopReverb = function () use ($reverb): void {
+    if (! is_resource($reverb)) {
+        return;
+    }
+
+    exec('pkill -TERM -P '.(int) proc_get_status($reverb)['pid']);
+    proc_terminate($reverb);
+    proc_close($reverb);
+};
+
 passthru(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__DIR__.'/increment-b-seed.php').' setup > /dev/null', $seeded);
 
 if ($seeded !== 0) {
+    $stopReverb();
     $fail('Seeding the scenario data failed.');
 }
 
@@ -97,5 +151,6 @@ $node = proc_open([getenv('NODE_BINARY') ?: 'node', $scenario], [1 => STDOUT, 2 
 $status = proc_close($node);
 
 $stopServer();
+$stopReverb();
 
 exit($status);

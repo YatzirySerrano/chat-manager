@@ -3,6 +3,7 @@
 namespace App\Actions\Departments;
 
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
@@ -44,8 +45,22 @@ class DeleteDepartment
                 'members_kept' => $locked->members()->count(),
             ], $actor);
 
+            $this->signalMembers($locked, 'department_deleted');
+
             return $locked;
         });
+    }
+
+    /**
+     * Members lose the department's queue and team inbox at once.
+     */
+    private function signalMembers(Department $department, string $reason): void
+    {
+        $members = array_values(array_map('intval', $department->members()->pluck('users.id')->all()));
+
+        if ($members !== []) {
+            UserAccessChanged::dispatch($members, $reason);
+        }
     }
 
     /**

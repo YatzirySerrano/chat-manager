@@ -16,6 +16,13 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Private disk of customer media (WhatsApp attachments). Files are stored
+    | under media/{yyyy}/{mm}/{uuid} and only served through authorized routes;
+    | an S3-compatible private disk may be configured here.
+    */
+    'media_disk' => env('MEDIA_DISK', 'local'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
@@ -33,7 +40,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Private files (media, team chat, imports, exports) are only served
+            // by authorized controllers; no signed "storage/{path}" route.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

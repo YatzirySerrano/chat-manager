@@ -123,3 +123,30 @@ export type ConnectionStats = {
 };
 
 export type ConnectionOption = { value: string; label: string };
+
+/** Activation checklist of a connection (evidence only, never secrets). */
+export type ConnectionDiagnostics = {
+    transport: {
+        mode: 'meta' | 'simulated' | 'unavailable';
+        label: string;
+    };
+    webhook: {
+        url: string | null;
+        https: boolean;
+        verify_token_saved: boolean;
+        app_secret_saved: boolean;
+        verified_at: string | null;
+        last_received_at: string | null;
+        fields: string[];
+        events_24h: { processed: number; pending: number; failed: number };
+        last_failure: { at: string; error: string | null } | null;
+    };
+    subscription: {
+        state: 'subscribed' | 'not_subscribed' | 'unknown';
+        checked_at: string | null;
+        meta_app_id_saved: boolean;
+    };
+    templates: { approved: number; last_synced_at: string | null };
+    outbound: { unconfirmed: number };
+    signals: { field: string; at: string | null; event: string | null }[];
+};

@@ -2,9 +2,11 @@
 
 namespace App\Actions\Roles;
 
+use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Enums\AuditAction;
 use App\Enums\DataScope;
 use App\Enums\Permission;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -14,6 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 use Spatie\Permission\PermissionRegistrar;
+use Throwable;
 
 /**
  * Creates or updates a role and its permissions in a single transaction.
@@ -24,6 +27,7 @@ class SaveRole
     public function __construct(
         private AuditLogger $audit,
         private PermissionRegistrar $registrar,
+        private ReleaseAssignedConversations $releaseConversations,
     ) {}
 
     /**
@@ -122,6 +126,16 @@ class SaveRole
                 ], $actor);
             }
 
+            $holders = $this->holderIds($role);
+
+            if ($holders !== []) {
+                UserAccessChanged::dispatch($holders, 'role_updated');
+            }
+
+            if ($holders !== [] && in_array(Permission::ReplyConversations->value, $removed, true)) {
+                DB::afterCommit(fn () => $this->releaseConversationsOf($holders, $actor));
+            }
+
             return $role;
         });
 
@@ -153,6 +167,35 @@ class SaveRole
         }
 
         return $changes;
+    }
+
+    /**
+     * Holders who can no longer reply return their open conversations to the
+     * queue (as a role change of a single user does), each in its own
+     * transaction once the new permissions are committed. A failure for one
+     * holder is reported and never undoes the saved role.
+     *
+     * @param  list<int>  $holderIds
+     */
+    private function releaseConversationsOf(array $holderIds, User $actor): void
+    {
+        foreach (User::query()->whereKey($holderIds)->orderBy('id')->get() as $holder) {
+            try {
+                $this->releaseConversations->handle($holder, null, $actor, 'Cambio de permisos del rol');
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+    }
+
+    /**
+     * Accounts holding the role, whose open sessions must revalidate access.
+     *
+     * @return list<int>
+     */
+    private function holderIds(Role $role): array
+    {
+        return array_values(array_map('intval', $role->users()->pluck('users.id')->all()));
     }
 
     private function uniqueName(string $label): string

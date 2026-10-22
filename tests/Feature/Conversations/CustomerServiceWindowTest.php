@@ -12,6 +12,7 @@ use App\Models\Department;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Meta\SendResult;
 use App\Services\Meta\WhatsAppTransport;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
@@ -33,11 +34,16 @@ function recordingTransport(): WhatsAppTransport
         /** @var list<int> */
         public array $sent = [];
 
-        public function sendText(Message $message): string
+        public function send(Message $message): SendResult
         {
             $this->sent[] = $message->id;
 
-            return 'wamid.out.'.$message->id;
+            return new SendResult('wamid.out.'.$message->id);
+        }
+
+        public function name(): string
+        {
+            return 'recording';
         }
     };
 
@@ -133,7 +139,7 @@ test('a reply inside the window is queued once and delivered, without extending 
     expect($message)
         ->direction->toBe(MessageDirection::Outbound)
         ->type->toBe(MessageType::Text)
-        ->status->toBe(MessageStatus::Sent)
+        ->status->toBe(MessageStatus::Accepted)
         ->whatsapp_message_id->toBe('wamid.out.'.$message->id)
         ->sender_user_id->toBe($this->agent->id)
         ->and($transport->sent)->toBe([$message->id])

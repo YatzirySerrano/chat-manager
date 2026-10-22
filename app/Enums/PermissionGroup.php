@@ -10,6 +10,7 @@ enum PermissionGroup: string
     case Roles = 'roles';
     case Conversations = 'conversations';
     case Connections = 'connections';
+    case Templates = 'templates';
     case Contacts = 'contacts';
     case Tags = 'tags';
     case QuickReplies = 'quick-replies';
@@ -19,6 +20,7 @@ enum PermissionGroup: string
     case Appearance = 'appearance';
     case Records = 'records';
     case Audit = 'audit';
+    case System = 'system';
 
     public function label(): string
     {
@@ -29,6 +31,7 @@ enum PermissionGroup: string
             self::Roles => 'Roles y permisos',
             self::Conversations => 'Conversaciones',
             self::Connections => 'Conexiones',
+            self::Templates => 'Plantillas de WhatsApp',
             self::Contacts => 'Contactos',
             self::Tags => 'Etiquetas',
             self::QuickReplies => 'Respuestas rápidas',
@@ -38,6 +41,7 @@ enum PermissionGroup: string
             self::Appearance => 'Personalización',
             self::Records => 'Registros eliminados',
             self::Audit => 'Auditoría',
+            self::System => 'Sistema y operación',
         };
     }
 }

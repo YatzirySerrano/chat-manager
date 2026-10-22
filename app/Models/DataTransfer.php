@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\DataTransferStatus;
 use App\Enums\DataTransferType;
 use App\Enums\ExportFormat;
+use App\Events\DataTransfers\DataTransferFinished;
 use Database\Factories\DataTransferFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -83,6 +84,26 @@ class DataTransfer extends Model
             'finished_at' => 'datetime',
             'expires_at' => 'datetime',
         ];
+    }
+
+    /**
+     * A transfer that leaves the queue (queued or processing) as completed or
+     * failed announces it once, after commit, so its owner can be notified.
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (DataTransfer $transfer): void {
+            if (! $transfer->wasChanged('status')) {
+                return;
+            }
+
+            $previous = $transfer->getOriginal('status');
+
+            if (in_array($previous, [DataTransferStatus::Queued, DataTransferStatus::Processing], true)
+                && in_array($transfer->status, [DataTransferStatus::Completed, DataTransferStatus::Failed], true)) {
+                DataTransferFinished::dispatch($transfer->id, $transfer->status->value);
+            }
+        });
     }
 
     /**

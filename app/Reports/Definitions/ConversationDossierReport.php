@@ -355,6 +355,8 @@ class ConversationDossierReport extends ReportDefinition
         return match ($status) {
             MessageStatus::Received => 'Recibido',
             MessageStatus::Queued => 'En cola',
+            MessageStatus::Sending => 'En proceso',
+            MessageStatus::Accepted => 'Aceptado por WhatsApp',
             MessageStatus::Sent => 'Enviado',
             MessageStatus::Delivered => 'Entregado',
             MessageStatus::Read => 'Leído',

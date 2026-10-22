@@ -11,4 +11,6 @@ export type NavItem = {
     href: NonNullable<InertiaLinkProps['href']>;
     icon?: LucideIcon;
     isActive?: boolean;
+    /** Counter shown next to the entry (e.g. unread messages). */
+    badge?: number | null;
 };

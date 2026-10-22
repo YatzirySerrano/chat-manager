@@ -7,8 +7,9 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Validation for the operational configuration of a department (its welcome
- * message). Uses the same authorization as editing the department.
+ * Validation for the automatic messages of a department (welcome and
+ * out-of-hours). Each field is optional so either card can be saved alone.
+ * Uses the same authorization as editing the department.
  */
 class UpdateDepartmentOperationsRequest extends FormRequest
 {
@@ -33,7 +34,8 @@ class UpdateDepartmentOperationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'welcome_message' => ['nullable', 'string', 'max:'.self::WELCOME_MESSAGE_MAX_LENGTH],
+            'welcome_message' => ['sometimes', 'nullable', 'string', 'max:'.self::WELCOME_MESSAGE_MAX_LENGTH],
+            'away_message' => ['sometimes', 'nullable', 'string', 'max:'.self::WELCOME_MESSAGE_MAX_LENGTH],
         ];
     }
 
@@ -46,18 +48,24 @@ class UpdateDepartmentOperationsRequest extends FormRequest
     {
         return [
             'welcome_message' => 'mensaje de bienvenida',
+            'away_message' => 'mensaje fuera de horario',
         ];
     }
 
     /**
-     * @return array{welcome_message: string|null}
+     * @return array{welcome_message?: string|null, away_message?: string|null}
      */
     public function payload(): array
     {
-        $message = $this->string('welcome_message')->trim()->value();
+        $payload = [];
 
-        return [
-            'welcome_message' => $message === '' ? null : $message,
-        ];
+        foreach (['welcome_message', 'away_message'] as $field) {
+            if ($this->has($field)) {
+                $message = $this->string($field)->trim()->value();
+                $payload[$field] = $message === '' ? null : $message;
+            }
+        }
+
+        return $payload;
     }
 }

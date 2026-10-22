@@ -3,6 +3,7 @@
 namespace App\Actions\Departments;
 
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -51,6 +52,8 @@ class AddDepartmentMember
                 'member_id' => $member->id,
                 'member_role' => $role->label,
             ], $actor);
+
+            UserAccessChanged::dispatch([$member->id], 'department_member_added');
         });
     }
 }

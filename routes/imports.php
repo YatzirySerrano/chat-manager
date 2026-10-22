@@ -4,7 +4,8 @@ use App\Http\Controllers\Contacts\ContactImportController;
 use Illuminate\Support\Facades\Route;
 
 /*
-| Contacts importer (Excel/CSV), reserved to the Superadministrador through
+| Contacts importer and migration wizard (Excel/CSV, source adapters, batch
+| history and logical rollback), reserved to the Superadministrador through
 | contacts.import. Registered before the contacts routes so "contacts/import"
 | is never taken for a contact identifier.
 */
@@ -18,4 +19,5 @@ Route::middleware(['auth', 'verified'])->prefix('contacts/import')->name('contac
     Route::post('{transfer}/confirm', [ContactImportController::class, 'confirm'])->whereNumber('transfer')->middleware('throttle:10,1')->name('confirm');
     Route::delete('{transfer}', [ContactImportController::class, 'destroy'])->whereNumber('transfer')->name('destroy');
     Route::get('{transfer}/report', [ContactImportController::class, 'report'])->whereNumber('transfer')->name('report');
+    Route::post('{transfer}/rollback', [ContactImportController::class, 'rollback'])->whereNumber('transfer')->middleware('throttle:10,1')->name('rollback');
 });

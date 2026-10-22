@@ -55,8 +55,8 @@ const icon = computed(() =>
                 v-if="window.allows_free_form"
                 class="text-xs text-foreground/80"
             >
-                Quedan {{ formatDuration(window.remaining_seconds) }}; vence
-                {{ formatDateTime(window.expires_at) }}.
+                Quedan {{ formatDuration(window.remaining_seconds) }}; vence el
+                {{ formatDateTime(window.expires_at) }}
             </p>
             <p v-else class="text-xs text-foreground/80">
                 {{ window.block_reason }}

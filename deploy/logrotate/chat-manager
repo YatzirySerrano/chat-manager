@@ -1,0 +1,26 @@
+# Chat Manager — logrotate (sudo cp to /etc/logrotate.d/chat-manager).
+# Laravel's own files: with LOG_STACK=single the application writes
+# storage/logs/laravel.log (rotated here). With LOG_STACK=daily Laravel
+# rotates by itself (LOG_DAILY_DAYS) and only the supervisor logs need this.
+# copytruncate: PHP-FPM and long-running workers keep the file open.
+
+/var/www/chat-manager/shared/storage/logs/laravel.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su www-data www-data
+}
+
+/var/log/chatmanager/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

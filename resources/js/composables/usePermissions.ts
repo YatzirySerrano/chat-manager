@@ -28,9 +28,14 @@ export type PermissionName =
     | 'records.view-deleted'
     | 'audit.view'
     | 'audit.export'
+    | 'system.view'
+    | 'system.manage'
+    | 'reports.view'
     | 'reports.export'
     | 'connections.view'
     | 'connections.manage'
+    | 'templates.view'
+    | 'templates.manage'
     | 'contacts.view'
     | 'contacts.create'
     | 'contacts.update'
@@ -51,7 +56,11 @@ export type PermissionName =
     | 'conversations.reopen'
     | 'conversations.history'
     | 'conversations.accept'
-    | 'conversations.notes';
+    | 'conversations.notes'
+    | 'team-chat.use'
+    | 'team-chat.create-groups'
+    | 'team-chat.manage-groups'
+    | 'team-chat.cross-department';
 
 export function usePermissions() {
     const page = usePage();

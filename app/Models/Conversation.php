@@ -150,6 +150,16 @@ class Conversation extends Model
     }
 
     /**
+     * Personal read markers of the people who opened the conversation.
+     *
+     * @return HasMany<ConversationRead, $this>
+     */
+    public function reads(): HasMany
+    {
+        return $this->hasMany(ConversationRead::class);
+    }
+
+    /**
      * @return HasMany<ConversationEvent, $this>
      */
     public function events(): HasMany

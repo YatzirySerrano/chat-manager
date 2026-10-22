@@ -20,6 +20,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Services\PlatformSettings;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /*
@@ -282,6 +283,9 @@ test('automatic departments assign new conversations on arrival', function () {
 });
 
 test('every message type is stored with its readable text and provider content', function (array $message, MessageType $type, ?string $body) {
+    // Media downloads are queued; Meta is never reached from this test.
+    Http::preventStrayRequests();
+    Http::fake(['graph.facebook.com/*' => Http::response(['error' => ['message' => 'Unsupported get request.', 'code' => 100]], 400)]);
     $connection = Connection::factory()->create();
     $payload = whatsappWebhook($connection, [[
         'from' => '5215512345678',

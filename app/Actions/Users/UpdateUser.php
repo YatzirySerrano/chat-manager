@@ -5,6 +5,7 @@ namespace App\Actions\Users;
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Enums\AuditAction;
 use App\Enums\Permission;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
@@ -64,6 +65,10 @@ class UpdateUser
                 $user->forceFill(['password' => $password, 'remember_token' => null])->save();
 
                 $this->audit->record(AuditAction::UserPasswordReset, $user, [], $actor);
+            }
+
+            if ($roleChanges || $departmentsChanged) {
+                UserAccessChanged::dispatch([$user->id], $roleChanges ? 'role_changed' : 'departments_changed');
             }
 
             $user->refresh();

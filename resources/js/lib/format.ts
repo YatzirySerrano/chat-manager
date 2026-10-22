@@ -91,3 +91,11 @@ export function formatDuration(totalSeconds: number): string {
 
     return `${seconds} s`;
 }
+
+/**
+ * End a sentence with a period unless the text already ends with one, as
+ * es-MX times do ("9:00 a.m."), so the copy never shows "a.m..".
+ */
+export function endSentence(text: string): string {
+    return text.endsWith('.') ? text : `${text}.`;
+}

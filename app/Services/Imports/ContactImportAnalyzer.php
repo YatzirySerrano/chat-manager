@@ -6,6 +6,7 @@ use App\Http\Requests\Contacts\StoreContactNoteRequest;
 use App\Models\Contact;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Migration\MigrationSourceAdapter;
 use App\Support\PhoneNumber;
 use Egulias\EmailValidator\EmailValidator;
 use Egulias\EmailValidator\Validation\RFCValidation;
@@ -50,7 +51,7 @@ class ContactImportAnalyzer
      *
      * @var array<string, list<string>>
      */
-    private const HEADER_HINTS = [
+    public const HEADER_HINTS = [
         'name' => ['nombre', 'nombre completo', 'nombres', 'name', 'full name', 'contacto', 'cliente', 'razon social'],
         'phone' => ['telefono', 'tel', 'tel.', 'celular', 'cel', 'movil', 'whatsapp', 'numero', 'phone', 'mobile', 'telefono celular', 'numero de telefono'],
         'email' => ['correo', 'correo electronico', 'email', 'e-mail', 'mail', 'correo-e'],
@@ -132,13 +133,16 @@ class ContactImportAnalyzer
     }
 
     /**
-     * Validate every row and detect duplicates.
+     * Validate every row and detect duplicates. The source adapter, when
+     * given, normalizes the mapped values first (and may reject rows that
+     * are not contacts in that source, such as group chats).
      *
      * @param  list<array{line: int, cells: list<string>}>  $rows
      * @param  ImportMapping  $mapping
+     * @param  list<string>  $headers
      * @return list<AnalyzedRow>
      */
-    public function analyze(array $rows, array $mapping, User $actor): array
+    public function analyze(array $rows, array $mapping, User $actor, ?MigrationSourceAdapter $source = null, array $headers = []): array
     {
         $tags = $this->tagIndex();
         $analyzed = [];
@@ -146,7 +150,7 @@ class ContactImportAnalyzer
         $seenEmails = [];
 
         foreach ($rows as $row) {
-            $result = $this->analyzeRow($row, $mapping, $tags);
+            $result = $this->analyzeRow($row, $mapping, $tags, $source, $headers);
 
             if ($result['status'] === 'valid') {
                 $phone = $result['data']['phone_e164'];
@@ -206,9 +210,10 @@ class ContactImportAnalyzer
      * @param  array{line: int, cells: list<string>}  $row
      * @param  ImportMapping  $mapping
      * @param  array<string, Tag>  $tags
+     * @param  list<string>  $headers
      * @return AnalyzedRow
      */
-    private function analyzeRow(array $row, array $mapping, array $tags): array
+    private function analyzeRow(array $row, array $mapping, array $tags, ?MigrationSourceAdapter $source, array $headers): array
     {
         $values = [];
 
@@ -219,6 +224,17 @@ class ContactImportAnalyzer
 
         $errors = [];
         $warnings = [];
+
+        if ($source !== null) {
+            $normalized = $source->normalizeRow($values, $row['cells'], $headers);
+
+            foreach (array_keys(self::FIELDS) as $field) {
+                $values[$field] = trim((string) ($normalized['values'][$field] ?? ''));
+            }
+
+            array_push($errors, ...$normalized['errors']);
+            array_push($warnings, ...$normalized['warnings']);
+        }
 
         $name = $this->singleLine($values['name']);
         $phone = null;

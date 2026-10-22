@@ -16,3 +16,21 @@ Artisan::command('conversations:close-inactive', function (CloseInactiveConversa
 Schedule::command('conversations:close-inactive')->hourly()->withoutOverlapping();
 
 Schedule::command('exports:prune')->hourly()->withoutOverlapping();
+
+// Reconciles the report metrics of recent conversations (covers refreshes lost by a worker outage).
+Schedule::command('analytics:rebuild --days=2')->dailyAt('03:30')->withoutOverlapping();
+
+// Old read notifications and expired deduplication receipts (automation module).
+Schedule::command('notifications:prune')->dailyAt('04:10')->withoutOverlapping();
+
+// WhatsApp Cloud API (meta module): stuck deliveries, raw webhook log retention, template synchronization.
+Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping();
+Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
+Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
+
+// Operations (ops module): scheduler heartbeat (system health) and critical failure alerts.
+Schedule::command('ops:heartbeat')->everyMinute();
+Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('queue:prune-failed --hours=2160')->dailyAt('04:30');
+Schedule::command('queue:prune-batches --hours=168')->dailyAt('04:40');

@@ -21,6 +21,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -164,12 +165,24 @@ class ReportExporter
     /**
      * Write the report in the given format to a local path.
      *
+     * Every query of the report reads one consistent snapshot (a REPEATABLE
+     * READ transaction that takes no locks): rows read page by page never
+     * shift while customer messages keep moving conversations up the list,
+     * so no record is exported twice or skipped, and writers are never
+     * blocked by the export.
+     *
      * @param  ReportDefinition<Model>  $definition
      * @return int Rows written.
      */
     public function render(ReportDefinition $definition, ReportContext $context, ExportFormat $format, string $path): int
     {
-        return $this->renderer($format)->render($definition, $context, $path, $format->maxRows());
+        $connection = DB::connection();
+
+        if ($connection->transactionLevel() === 0) {
+            $connection->statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        }
+
+        return $connection->transaction(fn (): int => $this->renderer($format)->render($definition, $context, $path, $format->maxRows()));
     }
 
     /**

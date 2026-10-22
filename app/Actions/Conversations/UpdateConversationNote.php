@@ -3,6 +3,7 @@
 namespace App\Actions\Conversations;
 
 use App\Enums\ConversationEventType;
+use App\Events\Conversations\ConversationNoteSaved;
 use App\Models\ConversationNote;
 use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
@@ -37,6 +38,8 @@ class UpdateConversationNote
             $this->lifecycle->record($note->conversation()->firstOrFail(), ConversationEventType::NoteEdited, $actor, [
                 'metadata' => ['note_id' => $note->id],
             ]);
+
+            ConversationNoteSaved::dispatch($note->conversation_id, $note->id, $actor->id);
 
             return true;
         });

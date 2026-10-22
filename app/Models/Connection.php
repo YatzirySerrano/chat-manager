@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * A channel the company is reachable through, such as a WhatsApp Business
@@ -29,7 +30,8 @@ use Illuminate\Support\Carbon;
  * Meta (Activar/Desactivar) and `deleted_at` the logical deletion
  * (Eliminar/Restaurar). A deleted connection is always inactive, keeps its
  * conversations and history and keeps its Phone number ID reserved. Only an
- * operational connection (see isOperational) may receive or send traffic.
+ * operational connection (see isOperational) may send; an inactive (not
+ * deleted) one still receives and stores inbound messages (ADR-META-5).
  *
  * @property int $id
  * @property string $name
@@ -43,6 +45,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $access_token
  * @property string|null $app_secret
  * @property string|null $webhook_verify_token
+ * @property string|null $webhook_key Random opaque identifier of the webhook URL (not a secret; events are signed).
  * @property bool $is_active
  * @property int|null $default_department_id
  * @property string|null $welcome_message
@@ -59,6 +62,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $platform_type
  * @property string|null $quality_rating
  * @property Carbon|null $webhook_verified_at
+ * @property Carbon|null $last_webhook_at
+ * @property bool|null $app_subscribed Result of the last subscribed_apps check (null: never checked).
+ * @property Carbon|null $subscription_checked_at
+ * @property array<string, mixed>|null $provider_signals Last account/quality notices reported by Meta.
  * @property Carbon|null $last_inbound_at
  * @property Carbon|null $last_outbound_at
  * @property Carbon|null $last_error_at
@@ -96,6 +103,16 @@ class Connection extends Model
     ];
 
     /**
+     * Every connection gets its own webhook URL identifier when created.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (Connection $connection): void {
+            $connection->webhook_key ??= Str::random(48);
+        });
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -115,6 +132,10 @@ class Connection extends Model
             'reopen_window_minutes' => 'integer',
             'credentials_verified_at' => 'datetime',
             'webhook_verified_at' => 'datetime',
+            'last_webhook_at' => 'datetime',
+            'app_subscribed' => 'boolean',
+            'subscription_checked_at' => 'datetime',
+            'provider_signals' => 'array',
             'last_inbound_at' => 'datetime',
             'last_outbound_at' => 'datetime',
             'last_error_at' => 'datetime',
@@ -161,6 +182,22 @@ class Connection extends Model
         return $this->belongsToMany(Contact::class)
             ->withPivot(['first_interaction_at', 'last_interaction_at'])
             ->withTimestamps();
+    }
+
+    /**
+     * @return HasMany<MessageTemplate, $this>
+     */
+    public function messageTemplates(): HasMany
+    {
+        return $this->hasMany(MessageTemplate::class);
+    }
+
+    /**
+     * @return HasMany<WebhookEvent, $this>
+     */
+    public function webhookEvents(): HasMany
+    {
+        return $this->hasMany(WebhookEvent::class);
     }
 
     /**

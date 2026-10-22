@@ -83,7 +83,7 @@ export const connectionFieldHelp = {
         howTo: 'Activa cada mensaje y escribe su texto. Puedes usar *negritas*, _cursivas_, ~tachado~ y ```monoespaciado```.',
         example: '¡Hola! Gracias por escribir a *Mi Empresa*.',
         warning:
-            'Por ahora solo se guarda la configuración; el envío llegará con la integración y solo dentro de la ventana de 24 horas de atención al cliente de WhatsApp. Meta puede cobrar los mensajes según su tarifa vigente.',
+            'Solo se envían como texto, dentro de la ventana de 24 horas de atención al cliente de WhatsApp y mientras la conexión está activa. Meta puede cobrar los mensajes según su tarifa vigente.',
     },
     welcome: {
         description:

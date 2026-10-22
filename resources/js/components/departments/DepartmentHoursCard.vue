@@ -84,7 +84,7 @@ function summary(day: BusinessDay): string {
 
 const helpContent = {
     description:
-        'Define en qué horario atiende este departamento. Se usará para identificar mensajes recibidos fuera de horario cuando se habilite la mensajería.',
+        'Define en qué horario atiende este departamento. Fuera de él (y en los días no laborables de la plataforma) se envía el mensaje fuera de horario en lugar de la bienvenida.',
     howTo: 'Elige "Horario de la plataforma" para seguir el horario general, o "Horario propio" para definir apertura y cierre por día.',
     warning:
         'Volver al horario de la plataforma no borra el horario propio guardado; solo deja de aplicarse.',
@@ -173,14 +173,14 @@ function submit(): void {
                             <Input
                                 v-model="form.business_hours.days[day].start"
                                 type="time"
-                                class="w-32"
+                                class="w-36"
                                 :aria-label="`Apertura ${weekdayLabels[day]}`"
                             />
                             <span class="text-sm text-muted-foreground">a</span>
                             <Input
                                 v-model="form.business_hours.days[day].end"
                                 type="time"
-                                class="w-32"
+                                class="w-36"
                                 :aria-label="`Cierre ${weekdayLabels[day]}`"
                             />
                         </template>

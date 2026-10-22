@@ -3,6 +3,7 @@
 namespace App\Actions\Conversations;
 
 use App\Enums\ConversationStatus;
+use App\Enums\MessageDirection;
 use App\Enums\Permission;
 use App\Models\Conversation;
 use App\Models\User;
@@ -23,7 +24,7 @@ use Illuminate\Validation\Rule;
  * A view or filter outside the actor's options is ignored, so tampering
  * with the query string never widens what they see.
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string}
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, tag?: int|null, sort?: string}
  */
 class ConversationInboxQuery
 {
@@ -42,6 +43,16 @@ class ConversationInboxQuery
 
     public const VIEW_QUEUE = 'queue';
 
+    /**
+     * Orderings of the list: pending first then latest activity (default),
+     * latest activity, or longest waiting first.
+     */
+    public const SORT_PRIORITY = 'priority';
+
+    public const SORT_RECENT = 'recent';
+
+    public const SORT_OLDEST = 'oldest';
+
     public function __construct(private ConversationAccess $access) {}
 
     /**
@@ -58,6 +69,8 @@ class ConversationInboxQuery
             'agent' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
             'connection' => ['nullable', 'integer'],
             'search' => ['nullable', 'string', 'max:100'],
+            'tag' => ['nullable', 'integer', 'min:1'],
+            'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
         ];
     }
 
@@ -88,6 +101,8 @@ class ConversationInboxQuery
             'agent' => ! $personal && is_scalar($agent) && (string) $agent !== '' ? (string) $agent : null,
             'connection' => is_numeric($validated['connection'] ?? null) ? (int) $validated['connection'] : null,
             'search' => trim(is_string($search) ? $search : ''),
+            'tag' => is_numeric($validated['tag'] ?? null) ? (int) $validated['tag'] : null,
+            'sort' => in_array($validated['sort'] ?? null, [self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_PRIORITY,
         ];
     }
 
@@ -112,6 +127,7 @@ class ConversationInboxQuery
             ->when($agent === self::NONE, fn (Builder $query) => $query->whereNull('conversations.assigned_user_id'))
             ->when(ctype_digit((string) $agent), fn (Builder $query) => $query->where('conversations.assigned_user_id', (int) $agent))
             ->when($filters['connection'] !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters['connection']))
+            ->when(($filters['tag'] ?? null) !== null, fn (Builder $query) => $query->whereHas('tags', fn (Builder $tags) => $tags->whereKey($filters['tag'] ?? 0)))
             ->when($search !== '', fn (Builder $query) => $query->whereHas('contact', fn (Builder $contact) => $contact
                 ->where('name', 'like', '%'.addcslashes($search, '%_\\').'%')
                 ->orWhere('profile_name', 'like', '%'.addcslashes($search, '%_\\').'%')
@@ -128,13 +144,39 @@ class ConversationInboxQuery
     public function handle(User $actor, array $filters): Builder
     {
         $status = $filters['status'];
+        $sort = $filters['sort'] ?? self::SORT_PRIORITY;
 
         return $this->filtered($actor, $filters)
             ->when($status === 'active', fn (Builder $query) => $query->notClosed())
             ->when(! in_array($status, ['active', 'all'], true), fn (Builder $query) => $query->where('conversations.status', $status))
-            ->orderByRaw("FIELD(conversations.status, 'pending', 'open', 'on_hold', 'closed')")
-            ->orderByDesc('conversations.last_message_at')
-            ->orderByDesc('conversations.id');
+            ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw("FIELD(conversations.status, 'pending', 'open', 'on_hold', 'closed')"))
+            ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy('conversations.last_message_at')->orderBy('conversations.id'))
+            ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc('conversations.last_message_at')->orderByDesc('conversations.id'));
+    }
+
+    /**
+     * Adds what the inbox list shows per row for the viewer: the id of the
+     * latest message (for its preview) and how many customer messages
+     * arrived after the viewer's read marker. Both are index backed
+     * correlated subqueries, evaluated only for the rows of the page.
+     *
+     * @param  Builder<Conversation>  $query
+     * @return Builder<Conversation>
+     */
+    public function withListColumns(Builder $query, User $viewer): Builder
+    {
+        return $query
+            ->select('conversations.*')
+            ->selectSub(fn ($latest) => $latest
+                ->from('messages')
+                ->selectRaw('MAX(messages.id)')
+                ->whereColumn('messages.conversation_id', 'conversations.id'), 'last_message_id')
+            ->selectSub(fn ($unread) => $unread
+                ->from('messages')
+                ->selectRaw('COUNT(*)')
+                ->whereColumn('messages.conversation_id', 'conversations.id')
+                ->where('messages.direction', MessageDirection::Inbound->value)
+                ->whereRaw('messages.id > COALESCE((SELECT conversation_reads.last_read_message_id FROM conversation_reads WHERE conversation_reads.conversation_id = conversations.id AND conversation_reads.user_id = ?), 0)', [$viewer->id]), 'unread_count');
     }
 
     /**

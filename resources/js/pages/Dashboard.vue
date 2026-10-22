@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
+    ArrowRight,
     Building2,
     CheckCircle2,
-    Clock3,
     Hourglass,
     Info,
     MessageCircle,
@@ -12,12 +12,22 @@ import {
 import { computed } from 'vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import AnalyticsFilterBar from '@/components/reports/AnalyticsFilterBar.vue';
+import KpiCard from '@/components/reports/KpiCard.vue';
+import Sparkline from '@/components/reports/Sparkline.vue';
 import StatCard from '@/components/StatCard.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatDuration } from '@/lib/format';
 import { dashboard } from '@/routes';
 import { edit as platformSettings } from '@/routes/admin/settings';
-import type { DashboardOverview } from '@/types';
+import { index as reportsIndex } from '@/routes/reports';
+import type {
+    AnalyticsOptions,
+    AnalyticsPeriod,
+    AnalyticsPreset,
+    AnalyticsQuery,
+    DashboardOverview,
+} from '@/types';
 
 defineOptions({
     layout: {
@@ -34,7 +44,41 @@ const props = defineProps<{
     canExport?: boolean;
     canViewMetrics: boolean;
     overview?: DashboardOverview | null;
+    filters?: AnalyticsQuery;
+    period?: AnalyticsPeriod;
+    periods?: AnalyticsPreset[];
+    options?: AnalyticsOptions;
+    canViewReports?: boolean;
 }>();
+
+const presetLabels: Record<string, string> = {
+    today: 'Hoy',
+    '7d': 'Últimos 7 días',
+    '30d': 'Últimos 30 días',
+};
+
+const presets = computed(() =>
+    (props.periods ?? []).map((value) => ({
+        value,
+        label: presetLabels[value] ?? value,
+    })),
+);
+
+function applyFilters(query: AnalyticsQuery): void {
+    router.get(dashboard.url({ query }), undefined, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        only: ['filters', 'period', 'overview'],
+    });
+}
+
+const trendTotal = computed(() =>
+    (props.overview?.trend ?? []).reduce(
+        (sum, point) => sum + point.received,
+        0,
+    ),
+);
 
 const page = usePage();
 const { can } = usePermissions();
@@ -72,7 +116,11 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
             :description="scopeDescription"
         >
             <template v-if="canExport && canViewMetrics" #actions>
-                <ExportMenu report="dashboard" label="Exportar resumen" />
+                <ExportMenu
+                    report="dashboard"
+                    :filters="filters"
+                    label="Exportar resumen"
+                />
             </template>
         </PageHeader>
 
@@ -92,7 +140,16 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
             </p>
         </div>
 
-        <Deferred v-else data="overview">
+        <AnalyticsFilterBar
+            v-if="canViewMetrics && filters && period && options"
+            :query="filters"
+            :period="period"
+            :presets="presets"
+            :options="options"
+            @change="applyFilters"
+        />
+
+        <Deferred v-if="canViewMetrics" data="overview">
             <template #fallback>
                 <div
                     class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
@@ -170,9 +227,8 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                             hint="Desde las 00:00 (hora de la plataforma)"
                             :unavailable-label="messagingUnavailable"
                         />
-                        <StatCard
-                            label="Primera respuesta (prom.)"
-                            :icon="Clock3"
+                        <KpiCard
+                            label="Primera respuesta humana (prom.)"
                             :value="
                                 overview.average_first_response_seconds === null
                                     ? null
@@ -180,13 +236,97 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                                           overview.average_first_response_seconds,
                                       )
                             "
-                            hint="Últimos 30 días"
+                            :current="overview.average_first_response_seconds"
+                            :previous="overview.previous_first_response_seconds"
+                            :previous-label="
+                                overview.previous_first_response_seconds ===
+                                null
+                                    ? null
+                                    : formatDuration(
+                                          overview.previous_first_response_seconds,
+                                      )
+                            "
+                            better="lower"
+                            :hint="
+                                overview.first_response_samples > 0
+                                    ? `${period?.label ?? ''} · ${overview.first_response_samples} conversaciones`
+                                    : undefined
+                            "
                             :unavailable-label="
                                 overview.messaging_connected
-                                    ? 'Aún no hay respuestas registradas'
+                                    ? 'Sin datos suficientes en el periodo'
                                     : messagingUnavailable
                             "
                         />
+                    </div>
+                </section>
+
+                <section
+                    v-if="overview.received.value !== null"
+                    aria-labelledby="demand-heading"
+                    class="space-y-3"
+                >
+                    <div class="flex items-center justify-between gap-2">
+                        <h2
+                            id="demand-heading"
+                            class="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                        >
+                            Demanda del periodo
+                        </h2>
+                        <Link
+                            v-if="canViewReports"
+                            :href="reportsIndex({ query: filters })"
+                            class="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                        >
+                            Ver reportes completos
+                            <ArrowRight class="size-3.5" aria-hidden="true" />
+                        </Link>
+                    </div>
+                    <div class="grid gap-4 lg:grid-cols-3">
+                        <KpiCard
+                            label="Conversaciones recibidas"
+                            :value="
+                                overview.received.value.toLocaleString('es-MX')
+                            "
+                            :current="overview.received.value"
+                            :previous="overview.received.previous"
+                            :hint="
+                                period
+                                    ? `${period.label} vs. ${period.previous.label}`
+                                    : undefined
+                            "
+                        />
+                        <div
+                            class="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-card lg:col-span-2"
+                        >
+                            <span class="text-sm text-muted-foreground">
+                                Tendencia de recibidas
+                            </span>
+                            <Sparkline
+                                v-if="trendTotal > 0"
+                                :values="
+                                    overview.trend.map(
+                                        (point) => point.received,
+                                    )
+                                "
+                                :label="`Conversaciones recibidas por ${period?.granularity === 'month' ? 'mes' : 'día'}: ${overview.trend.map((point) => `${point.label} ${point.received}`).join(', ')}`"
+                            />
+                            <p v-else class="text-sm text-muted-foreground">
+                                Sin conversaciones recibidas en el periodo.
+                            </p>
+                            <div
+                                v-if="
+                                    trendTotal > 0 && overview.trend.length > 1
+                                "
+                                class="flex justify-between text-xs text-muted-foreground"
+                            >
+                                <span>{{ overview.trend[0]?.label }}</span>
+                                <span>{{
+                                    overview.trend[overview.trend.length - 1]
+                                        ?.label
+                                }}</span>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -203,15 +343,15 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                     </h2>
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                         <StatCard
-                            label="Agentes disponibles"
+                            label="Agentes disponibles ahora"
                             :icon="UserRoundCheck"
                             :value="overview.agents.available"
                             :hint="
                                 overview.agents.registered === null
                                     ? undefined
-                                    : `${overview.agents.registered} ${overview.agents.registered === 1 ? 'persona activa puede atender conversaciones' : 'personas activas pueden atender conversaciones'}`
+                                    : `De ${overview.agents.registered} ${overview.agents.registered === 1 ? 'persona activa que puede atender' : 'personas activas que pueden atender'} (disponibilidad declarada)`
                             "
-                            unavailable-label="Requiere estado de presencia en línea"
+                            unavailable-label="Sin datos"
                         />
                         <StatCard
                             label="Departamentos activos"

@@ -63,7 +63,7 @@ test('viewers can consult connections but not change them', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('connections/Form')
             ->where('connection.name', 'Ventas')
-            ->where('can', ['update' => false, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false]));
+            ->where('can', ['update' => false, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false]));
 
     $this->actingAs($viewer)->get(route('connections.create'))->assertForbidden();
     $this->actingAs($viewer)->post(route('connections.store'), ['name' => 'Nueva', 'department_ids' => []])->assertForbidden();

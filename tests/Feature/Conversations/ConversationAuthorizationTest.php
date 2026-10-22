@@ -56,15 +56,20 @@ test('an agent cannot open a colleague\'s conversation or another queue by URL',
 test('an agent opens their own conversation and the pending ones they can accept', function () {
     $this->actingAs($this->agent)
         ->get(route('conversations.show', $this->mine))
+        ->assertRedirect(route('conversations.index', ['c' => $this->mine->id]));
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $this->mine->id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('conversations/Show')
+            ->component('conversations/Index')
+            ->where('selectedId', $this->mine->id)
             ->where('conversation.can.reply', true)
             ->where('conversation.can.assign', false)
             ->where('conversation.can.accept', false));
 
     $this->actingAs($this->agent)
-        ->get(route('conversations.show', $this->queued))
+        ->get(route('conversations.index', ['c' => $this->queued->id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversation.can.accept', true)
@@ -195,9 +200,9 @@ test('filters cannot reveal conversations outside the scope', function () {
 
 test('the transfer options only name people the actor may already see', function () {
     $this->actingAs($this->agent)
-        ->get(route('conversations.show', $this->mine), [
+        ->get(route('conversations.index', ['c' => $this->mine->id]), [
             'X-Inertia' => 'true',
-            'X-Inertia-Partial-Component' => 'conversations/Show',
+            'X-Inertia-Partial-Component' => 'conversations/Index',
             'X-Inertia-Partial-Data' => 'transferOptions',
             'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
         ])

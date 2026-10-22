@@ -6,12 +6,17 @@ use App\Enums\DataTransferStatus;
 use App\Enums\DataTransferType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Imports\ConfigureContactImportRequest;
+use App\Http\Requests\Imports\RollbackContactImportRequest;
 use App\Http\Requests\Imports\UploadContactImportRequest;
 use App\Models\DataTransfer;
 use App\Models\User;
 use App\Services\Imports\ContactImportAnalyzer;
 use App\Services\Imports\ContactImporter;
 use App\Services\Imports\ContactImportReport;
+use App\Services\Imports\ImportBatchRollback;
+use App\Services\Migration\GenericContactsAdapter;
+use App\Services\Migration\MigrationSourceAdapter;
+use App\Services\Migration\MigrationSourceRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,8 +28,11 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Contacts importer, reserved to the Superadministrador (contacts.import):
- * upload → mapping and preview → result. See ContactImporter.
+ * Contacts importer and migration wizard, reserved to the
+ * Superadministrador (contacts.import): source and upload → mapping and
+ * validation preview → result, plus the batch history and the logical
+ * rollback of a batch (preview, then confirmation). See ContactImporter and
+ * ImportBatchRollback.
  *
  * @phpstan-import-type AnalyzedRow from ContactImportAnalyzer
  */
@@ -33,7 +41,7 @@ class ContactImportController extends Controller
     /**
      * Upload step, with the actor's recent imports.
      */
-    public function create(Request $request): Response
+    public function create(Request $request, MigrationSourceRegistry $sources, ImportBatchRollback $rollback): Response
     {
         Gate::authorize('createImport', DataTransfer::class);
 
@@ -44,14 +52,15 @@ class ContactImportController extends Controller
             'step' => 'upload',
             'transfer' => null,
             'preview' => null,
+            'sources' => $sources->options(),
             'recent' => DataTransfer::query()
                 ->ownedBy($actor)
                 ->where('type', DataTransferType::Import)
                 ->latest()
                 ->orderByDesc('id')
-                ->limit(10)
+                ->limit(20)
                 ->get()
-                ->map(fn (DataTransfer $transfer): array => $this->present($transfer))
+                ->map(fn (DataTransfer $transfer): array => $this->present($transfer, $sources, $rollback))
                 ->values(),
             ...$this->limits(),
         ]);
@@ -74,7 +83,7 @@ class ContactImportController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
-        $transfer = $importer->upload($request->file('file'), $actor);
+        $transfer = $importer->upload($request->file('file'), $actor, $request->string('source', GenericContactsAdapter::KEY)->value() ?: GenericContactsAdapter::KEY);
 
         return to_route('contacts.import.show', $transfer);
     }
@@ -83,7 +92,7 @@ class ContactImportController extends Controller
      * Mapping and preview while the import is a draft; progress and result
      * once it is confirmed.
      */
-    public function show(Request $request, DataTransfer $transfer, ContactImporter $importer): Response
+    public function show(Request $request, DataTransfer $transfer, ContactImporter $importer, MigrationSourceRegistry $sources, ImportBatchRollback $rollback): Response
     {
         Gate::authorize('manageImport', $transfer);
 
@@ -91,10 +100,27 @@ class ContactImportController extends Controller
         $actor = $request->user();
         $isDraft = $transfer->status === DataTransferStatus::Draft;
         $previous = $isDraft ? $importer->previousImportOf($transfer) : null;
+        $headers = $importer->headers($transfer);
+        $source = $importer->source($transfer);
 
         return Inertia::render('contacts/Import', [
             'step' => $isDraft ? 'mapping' : 'result',
-            'transfer' => $this->present($transfer),
+            'transfer' => $this->present($transfer, $sources, $rollback),
+            'sources' => $sources->options(),
+            'source' => [
+                'current' => $source->key(),
+                'detection' => array_map(fn (array $result): array => [
+                    'key' => $result['key'],
+                    'label' => $result['label'],
+                    'score' => $result['score'],
+                    'signals' => $result['signals'],
+                ], $isDraft ? $sources->detect($headers) : []),
+                'suggested_mappings' => $isDraft
+                    ? array_map(fn (MigrationSourceAdapter $adapter): array => $adapter->suggestMapping($headers), $sources->all())
+                    : (object) [],
+            ],
+            'rollbackPreview' => Inertia::optional(fn (): ?array => $isDraft || $rollback->unavailableReason($transfer) !== null ? null : $rollback->preview($transfer)),
+            'rollbackKept' => $isDraft || $rollback->state($transfer) === null ? [] : $rollback->handledNotReverted($transfer, (int) config('imports.preview_rows', 50)),
             'preview' => $isDraft ? fn (): array => $this->previewPayload($importer->preview($transfer, $actor)) : null,
             'mapping' => [
                 'headers' => $importer->headers($transfer),
@@ -114,7 +140,9 @@ class ContactImportController extends Controller
 
     public function update(ConfigureContactImportRequest $request, DataTransfer $transfer, ContactImporter $importer): RedirectResponse
     {
-        $importer->configure($transfer, $request->mapping(), $request->string('decision')->value());
+        $source = $request->input('source');
+
+        $importer->configure($transfer, $request->mapping(), $request->string('decision')->value(), is_string($source) && $source !== '' ? $source : null);
 
         return to_route('contacts.import.show', $transfer);
     }
@@ -144,6 +172,22 @@ class ContactImportController extends Controller
         return to_route('contacts.import.create');
     }
 
+    /**
+     * Queue the logical rollback of a finished batch, once the user has
+     * seen its preview and confirmed it.
+     */
+    public function rollback(RollbackContactImportRequest $request, DataTransfer $transfer, ImportBatchRollback $rollback): RedirectResponse
+    {
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $rollback->request($transfer, $actor);
+
+        Inertia::flash('toast', ['type' => 'info', 'message' => 'Reversión en proceso. Al terminar verás qué se revirtió y qué se conservó.']);
+
+        return to_route('contacts.import.show', $transfer);
+    }
+
     public function report(DataTransfer $transfer): StreamedResponse
     {
         Gate::authorize('manageImport', $transfer);
@@ -160,8 +204,12 @@ class ContactImportController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function present(DataTransfer $transfer): array
+    private function present(DataTransfer $transfer, MigrationSourceRegistry $sources, ImportBatchRollback $rollback): array
     {
+        $source = $sources->resolve(is_string($transfer->options['source'] ?? null) ? $transfer->options['source'] : null);
+        $state = $rollback->state($transfer);
+        $unavailable = $transfer->status === DataTransferStatus::Draft ? null : $rollback->unavailableReason($transfer);
+
         return [
             'id' => $transfer->id,
             'status' => ['value' => $transfer->status->value, 'label' => $transfer->status->label()],
@@ -176,6 +224,16 @@ class ContactImportController extends Controller
             'expires_at' => $transfer->expires_at?->toIso8601String(),
             'report_url' => $transfer->isDownloadable() ? route('contacts.import.report', $transfer) : null,
             'url' => route('contacts.import.show', $transfer),
+            'source' => ['value' => $source->key(), 'label' => $source->label(), 'validated' => $source->isValidated()],
+            'rollback' => [
+                'status' => $state['status'] ?? null,
+                'requested_at' => $state['requested_at'] ?? null,
+                'finished_at' => $state['finished_at'] ?? null,
+                'summary' => $state['summary'] ?? null,
+                'error' => $state['error'] ?? null,
+                'available' => $transfer->status !== DataTransferStatus::Draft && $unavailable === null,
+                'unavailable_reason' => $unavailable,
+            ],
         ];
     }
 

@@ -16,8 +16,10 @@ use App\Http\Requests\Admin\ConnectionRequest;
 use App\Http\Resources\ConnectionResource;
 use App\Models\Connection;
 use App\Models\Department;
+use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
+use App\Services\Meta\ConnectionDiagnostics;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -97,8 +99,9 @@ class ConnectionController extends Controller
 
         return Inertia::render('connections/Form', [
             'connection' => null,
+            'diagnostics' => null,
             ...$this->formOptions(),
-            'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false],
+            'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false],
         ]);
     }
 
@@ -131,6 +134,7 @@ class ConnectionController extends Controller
 
         return Inertia::render('connections/Form', [
             'connection' => ConnectionResource::make($connection)->resolve($request),
+            'diagnostics' => fn () => app(ConnectionDiagnostics::class)->for($connection),
             ...$this->formOptions($connection),
             'can' => [
                 'update' => $actor->can('update', $connection),
@@ -138,6 +142,8 @@ class ConnectionController extends Controller
                 'verify' => $actor->can('verify', $connection),
                 'delete' => $actor->can('delete', $connection),
                 'restore' => $actor->can('restore', $connection),
+                'syncTemplates' => $actor->can('sync', [MessageTemplate::class, $connection]),
+                'viewTemplates' => $actor->can('viewAny', MessageTemplate::class),
             ],
         ]);
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Reports\Definitions\AnalyticsReport;
 use App\Reports\Definitions\AuditReport;
 use App\Reports\Definitions\ConnectionsReport;
 use App\Reports\Definitions\ContactsReport;
@@ -7,6 +8,7 @@ use App\Reports\Definitions\ConversationDossierReport;
 use App\Reports\Definitions\ConversationsReport;
 use App\Reports\Definitions\DashboardReport;
 use App\Reports\Definitions\DepartmentsReport;
+use App\Reports\Definitions\MessageTemplatesReport;
 use App\Reports\Definitions\QuickRepliesReport;
 use App\Reports\Definitions\RolesReport;
 use App\Reports\Definitions\TagsReport;
@@ -37,6 +39,8 @@ return [
         'roles' => RolesReport::class,
         'connections' => ConnectionsReport::class,
         'audit' => AuditReport::class,
+        'message-templates' => MessageTemplatesReport::class,
+        'analytics' => AnalyticsReport::class,
     ],
 
     /*
@@ -64,12 +68,12 @@ return [
     /*
     | Queue that processes large exports (and the contacts importer).
     |
-    | Production: use a dedicated "exports" queue (EXPORTS_QUEUE=exports) and
-    | run a worker for it, e.g.
-    |   php artisan queue:work --queue=exports,default --timeout=660 --tries=1
-    | (or a separate worker for "exports" only). Local development keeps it
-    | on "default" (the default below), which `composer run dev` already
-    | processes with `php artisan queue:listen`.
+    | It defaults to the shared "exports" queue name (QUEUE_NAME_EXPORTS,
+    | config/queue.php), the same one the contacts importer uses. Production
+    | runs a dedicated worker for it, e.g.
+    |   php artisan queue:work --queue=exports --timeout=660 --tries=1
+    | and `composer run dev` already listens on every queue locally.
+    | EXPORTS_QUEUE still overrides it.
     |
     | The job timeout must stay below the "retry_after" of the queue
     | connection (DB_QUEUE_RETRY_AFTER, config/queue.php), otherwise a long
@@ -77,7 +81,7 @@ return [
     | generating it. The worker's --timeout must be above the job timeout.
     */
 
-    'queue' => env('EXPORTS_QUEUE', 'default'),
+    'queue' => env('EXPORTS_QUEUE', env('QUEUE_NAME_EXPORTS', 'exports')),
 
     'job_timeout' => (int) env('EXPORTS_JOB_TIMEOUT', 600),
 

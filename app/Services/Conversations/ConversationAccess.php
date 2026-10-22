@@ -94,6 +94,23 @@ class ConversationAccess
             return [];
         }
 
+        // Departments already loaded on the user (once per request by the
+        // inbox, or under lock by the engine) answer without one query per
+        // conversation listed (docs/rendimiento-y-carga.md). Only when they
+        // were loaded with their state: a partial load (`departments:id`)
+        // would read every department as inactive.
+        if ($user->dataScope() !== DataScope::Global && $user->relationLoaded('departments')
+            && $user->departments->every(fn (Department $department): bool => array_key_exists('is_active', $department->getAttributes())
+                && array_key_exists('distribution_mode', $department->getAttributes()))) {
+            $ids = $user->departments
+                ->filter(fn (Department $department): bool => $department->is_active && $department->distribution_mode !== DistributionMode::Manual)
+                ->modelKeys();
+            $ids = array_map('intval', $ids);
+            sort($ids);
+
+            return $ids;
+        }
+
         $query = Department::query()
             ->active()
             ->where('distribution_mode', '!=', DistributionMode::Manual);

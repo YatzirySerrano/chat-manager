@@ -30,6 +30,77 @@ export type ContactImport = {
     expires_at: string | null;
     report_url: string | null;
     url: string;
+    source: { value: string; label: string; validated: boolean };
+    rollback: ImportRollbackState;
+};
+
+/**
+ * Source adapters of the importer (App\Services\Migration). A source that
+ * is not validated is a heuristic pending a real export of that system.
+ */
+export type ImportSourceOption = {
+    value: string;
+    label: string;
+    description: string;
+    validated: boolean;
+    validation_note: string | null;
+};
+
+export type ImportSourceDetection = {
+    key: string;
+    label: string;
+    score: number;
+    signals: string[];
+};
+
+export type ImportSourceInfo = {
+    current: string;
+    detection: ImportSourceDetection[];
+    suggested_mappings: Record<string, ContactImportMapping>;
+};
+
+export type ImportRollbackStatus =
+    | 'queued'
+    | 'processing'
+    | 'completed'
+    | 'failed';
+
+export type ImportRollbackSummary = {
+    records: number;
+    contacts_archived: number;
+    contacts_kept: number;
+    fields_restored: number;
+    fields_kept: number;
+    tags_removed: number;
+    notes_kept: number;
+    reverted: number;
+    partial: number;
+    kept: number;
+};
+
+export type ImportRollbackState = {
+    status: ImportRollbackStatus | null;
+    requested_at: string | null;
+    finished_at: string | null;
+    summary: ImportRollbackSummary | null;
+    error: string | null;
+    available: boolean;
+    unavailable_reason: string | null;
+};
+
+export type ImportRollbackRecord = {
+    line: number | null;
+    contact_id: number;
+    name: string;
+    action: 'created' | 'filled';
+    outcome: 'reverted' | 'partial' | 'kept' | null;
+    reason: string | null;
+};
+
+export type ImportRollbackPreview = {
+    summary: ImportRollbackSummary;
+    kept: ImportRollbackRecord[];
+    limit: number;
 };
 
 export type ContactImportField = 'name' | 'phone' | 'email' | 'tags' | 'notes';

@@ -195,6 +195,8 @@ export type DepartmentSummary = {
     is_active: boolean;
     is_deleted: boolean;
     welcome_message: string | null;
+    /** Out-of-hours message; overrides the connection's away message. */
+    away_message: string | null;
     /** How pending conversations reach an agent (see App\\Enums\\DistributionMode). */
     distribution_mode: DistributionModeValue;
     uses_custom_hours: boolean;
@@ -226,6 +228,10 @@ export type DepartmentConnection = {
     is_active: boolean;
     is_deleted: boolean;
     is_default: boolean;
+    /** Minutes after closing in which a customer message reopens the conversation; null starts a new one. */
+    reopen_window_minutes: number | null;
+    /** Which automatic messages of the connection are enabled (texts are edited in the connection). */
+    messages: { welcome: boolean; away: boolean; farewell: boolean };
     health: {
         value: string;
         label: string;
@@ -299,9 +305,16 @@ export type BusinessDay = {
     end: string;
 };
 
+/** A non-working day; a recurring one repeats every year on the same month and day. */
+export type Holiday = { date: string; label: string; recurring: boolean };
+
 export type PlatformSettings = {
     general: { platform_name: string; timezone: string };
-    business_hours: { enabled: boolean; days: Record<Weekday, BusinessDay> };
+    business_hours: {
+        enabled: boolean;
+        days: Record<Weekday, BusinessDay>;
+        holidays: Holiday[];
+    };
     operations: {
         default_department_id: number | null;
         max_open_conversations_per_agent: number | null;
@@ -322,7 +335,12 @@ export type DashboardOverview = {
         pending: number | null;
         closed_today: number | null;
     };
+    /** Average first human response (agent reply accepted by WhatsApp) in the period. */
     average_first_response_seconds: number | null;
+    previous_first_response_seconds: number | null;
+    first_response_samples: number;
+    received: { value: number | null; previous: number | null };
+    trend: { label: string; received: number }[];
     agents: { registered: number | null; available: number | null };
     departments: { active: number; total: number } | null;
 };

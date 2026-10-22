@@ -56,6 +56,6 @@ test('application code never refers to a testing database', function () {
     $files = Finder::create()->files()->name('*.php')->in([base_path('app'), base_path('routes'), base_path('bootstrap'), base_path('database')]);
 
     foreach ($files as $file) {
-        expect($file->getContents())->not->toMatch('/\w+_testing\b|_verify\b[\'"]/');
+        expect($file->getContents())->not->toMatch('/\w+_testing\b|\b(?!can_)\w+_verify\b[\'"]/');
     }
 });

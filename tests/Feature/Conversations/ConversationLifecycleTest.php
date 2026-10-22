@@ -20,7 +20,6 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Services\PlatformSettings;
 use Illuminate\Database\QueryException;
-use Inertia\Testing\AssertableInertia as Assert;
 
 /*
 | Operations of the conversation engine through their HTTP endpoints, as the
@@ -96,12 +95,12 @@ test('losing the race from the conversation page returns the agent to the queue 
 
 test('the queue keeps the user\'s filters when an operation or the breadcrumb returns to it', function () {
     $queued = pendingIn($this->department);
-    $filters = ['status' => 'pending', 'department' => (string) $this->department->id, 'page' => 2];
+    $filters = ['status' => 'pending', 'department' => (string) $this->department->id];
 
     $this->actingAs($this->agent)->get(route('conversations.index', $filters))->assertOk();
     $this->actingAs($this->agent)
         ->get(route('conversations.show', $queued))
-        ->assertInertia(fn (Assert $page) => $page->where('listUrl', route('conversations.index', $filters)));
+        ->assertRedirect(route('conversations.index', [...$filters, 'c' => $queued->id]));
 
     $this->actingAs($this->colleague)->post(route('conversations.accept', $queued));
 

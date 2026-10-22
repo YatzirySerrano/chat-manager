@@ -12,13 +12,13 @@ use Illuminate\Http\RedirectResponse;
 class DepartmentOperationsController extends Controller
 {
     /**
-     * Update the operational configuration (welcome message) of a department.
+     * Update the automatic messages (welcome and out-of-hours) of a department.
      */
     public function update(UpdateDepartmentOperationsRequest $request, Department $department, UpdateDepartmentOperations $updateOperations): RedirectResponse
     {
         $changes = $updateOperations->handle($department, $request->payload(), $request->user());
 
-        SaveToast::flash($changes !== [], 'Mensaje de bienvenida actualizado.');
+        SaveToast::flash($changes !== [], 'Mensajes automáticos actualizados.');
 
         return back();
     }

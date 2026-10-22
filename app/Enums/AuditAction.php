@@ -49,6 +49,9 @@ enum AuditAction: string
     case ConnectionCredentialsUpdated = 'connection.credentials_updated';
     case ConnectionCredentialsVerified = 'connection.credentials_verified';
     case ConnectionCredentialsFailed = 'connection.credentials_failed';
+    case ConnectionSubscriptionChecked = 'connection.subscription_checked';
+    case ConnectionAppSubscribed = 'connection.app_subscribed';
+    case TemplatesSynchronized = 'templates.synchronized';
     case ContactCreated = 'contact.created';
     case ContactUpdated = 'contact.updated';
     case ContactArchived = 'contact.archived';
@@ -57,6 +60,7 @@ enum AuditAction: string
     case ContactOriginClassified = 'contact.origin_classified';
     case ContactNoteAdded = 'contact.note_added';
     case ContactTagsChanged = 'contact.tags_changed';
+    case ConversationTagsChanged = 'conversation.tags_changed';
     case ContactIdentityLinked = 'contact.identity_linked';
     case ContactReviewOpened = 'contact.review_opened';
     case ContactReviewResolved = 'contact.review_resolved';
@@ -78,6 +82,24 @@ enum AuditAction: string
     case ImportRequested = 'import.requested';
     case ImportCompleted = 'import.completed';
     case ImportFailed = 'import.failed';
+    case ImportRollbackRequested = 'import.rollback_requested';
+    case ImportRolledBack = 'import.rolled_back';
+    case ImportRollbackFailed = 'import.rollback_failed';
+    case TeamChatGroupCreated = 'team_chat.group_created';
+    case TeamChatGroupUpdated = 'team_chat.group_updated';
+    case TeamChatParticipantsAdded = 'team_chat.participants_added';
+    case TeamChatParticipantRemoved = 'team_chat.participant_removed';
+    case TeamChatParticipantRoleChanged = 'team_chat.participant_role_changed';
+    case TeamChatGroupArchived = 'team_chat.group_archived';
+    case TeamChatGroupUnarchived = 'team_chat.group_unarchived';
+    case SystemJobRetried = 'system.job_retried';
+    case SystemJobForgotten = 'system.job_forgotten';
+    case AuthPasswordChanged = 'auth.password_changed';
+    case AuthPasswordResetByLink = 'auth.password_reset_by_link';
+    case AuthTwoFactorEnabled = 'auth.two_factor_enabled';
+    case AuthTwoFactorDisabled = 'auth.two_factor_disabled';
+    case AuthRecoveryCodesRegenerated = 'auth.recovery_codes_regenerated';
+    case AuthLockout = 'auth.lockout';
 
     /**
      * Human readable description of the action.
@@ -124,6 +146,9 @@ enum AuditAction: string
             self::ConnectionCredentialsUpdated => 'Credenciales de la conexión actualizadas',
             self::ConnectionCredentialsVerified => 'Credenciales de la conexión verificadas',
             self::ConnectionCredentialsFailed => 'Falló la verificación de credenciales',
+            self::ConnectionSubscriptionChecked => 'Suscripción del webhook de la conexión consultada',
+            self::ConnectionAppSubscribed => 'App suscrita a los webhooks de la cuenta de WhatsApp',
+            self::TemplatesSynchronized => 'Plantillas de WhatsApp sincronizadas con Meta',
             self::ContactCreated => 'Contacto creado',
             self::ContactUpdated => 'Contacto actualizado',
             self::ContactArchived => 'Contacto archivado',
@@ -132,6 +157,7 @@ enum AuditAction: string
             self::ContactOriginClassified => 'Origen del contacto clasificado',
             self::ContactNoteAdded => 'Nota privada agregada al contacto',
             self::ContactTagsChanged => 'Etiquetas del contacto modificadas',
+            self::ConversationTagsChanged => 'Etiquetas de la conversación modificadas',
             self::ContactIdentityLinked => 'Identidad de WhatsApp vinculada al contacto',
             self::ContactReviewOpened => 'Posible duplicado enviado a revisión',
             self::ContactReviewResolved => 'Revisión de posible duplicado resuelta',
@@ -153,6 +179,24 @@ enum AuditAction: string
             self::ImportRequested => 'Importación de contactos solicitada',
             self::ImportCompleted => 'Importación de contactos terminada',
             self::ImportFailed => 'Importación de contactos fallida',
+            self::ImportRollbackRequested => 'Reversión de importación solicitada',
+            self::ImportRolledBack => 'Importación de contactos revertida',
+            self::ImportRollbackFailed => 'Reversión de importación fallida',
+            self::TeamChatGroupCreated => 'Grupo de chat interno creado',
+            self::TeamChatGroupUpdated => 'Grupo de chat interno actualizado',
+            self::TeamChatParticipantsAdded => 'Participantes agregados a un grupo interno',
+            self::TeamChatParticipantRemoved => 'Participante retirado de un grupo interno',
+            self::TeamChatParticipantRoleChanged => 'Administradores de un grupo interno modificados',
+            self::TeamChatGroupArchived => 'Grupo de chat interno archivado',
+            self::TeamChatGroupUnarchived => 'Grupo de chat interno reactivado',
+            self::SystemJobRetried => 'Trabajo fallido reenviado a la cola',
+            self::SystemJobForgotten => 'Trabajo fallido descartado',
+            self::AuthPasswordChanged => 'Contraseña cambiada por su titular',
+            self::AuthPasswordResetByLink => 'Contraseña restablecida con enlace de recuperación',
+            self::AuthTwoFactorEnabled => 'Verificación en dos pasos activada',
+            self::AuthTwoFactorDisabled => 'Verificación en dos pasos desactivada',
+            self::AuthRecoveryCodesRegenerated => 'Códigos de recuperación regenerados',
+            self::AuthLockout => 'Inicio de sesión bloqueado por intentos fallidos',
         };
     }
 
@@ -166,17 +210,22 @@ enum AuditAction: string
             self::RoleDeactivated, self::RoleDeleted, self::ConnectionDeactivated, self::ConnectionCredentialsFailed,
             self::ContactArchived, self::TagDeactivated, self::QuickReplyDeactivated, self::QuickReplyDeleted,
             self::DepartmentDeleted, self::ConnectionDeleted, self::ContactDeleted, self::TagDeleted,
-            self::ExportFailed, self::ImportFailed => 'danger',
+            self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
+            self::AuthTwoFactorDisabled, self::AuthLockout => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated, self::DepartmentConnectionsChanged,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
-            self::ContactReviewOpened => 'warning',
+            self::ContactReviewOpened, self::TeamChatParticipantRemoved, self::TeamChatParticipantRoleChanged,
+            self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten,
+            self::ImportRollbackRequested, self::ImportRolledBack,
+            self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentActivated, self::DepartmentMemberAdded,
             self::RoleCreated, self::RoleActivated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
             self::TagActivated, self::QuickReplyCreated, self::QuickReplyActivated, self::UserRestored,
             self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
-            self::QuickReplyRestored, self::ImportCompleted => 'success',
+            self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
+            self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled => 'success',
             default => 'neutral',
         };
     }
@@ -187,7 +236,10 @@ enum AuditAction: string
      */
     public function isAlwaysRestricted(): bool
     {
-        return in_array($this, [self::ImportRequested, self::ImportCompleted, self::ImportFailed], true);
+        return in_array($this, [
+            self::ImportRequested, self::ImportCompleted, self::ImportFailed,
+            self::ImportRollbackRequested, self::ImportRolledBack, self::ImportRollbackFailed,
+        ], true);
     }
 
     /**

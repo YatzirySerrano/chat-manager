@@ -50,6 +50,9 @@ use Illuminate\Support\Facades\DB;
  */
 class RegisterInboundContact
 {
+    /** Attempts of the registration when MariaDB resolves a deadlock between workers. */
+    private const ATTEMPTS = 3;
+
     public function __construct(
         private AuditLogger $audit,
         private OpenContactReview $openReview,
@@ -85,7 +88,10 @@ class RegisterInboundContact
         }
 
         try {
-            return DB::transaction(fn (): array => $this->registerIdentity($connection, $sender));
+            // Workers registering the same new sender at once can deadlock on
+            // the phone lookup's gap locks: MariaDB rolls one back and it is
+            // retried, finding the winner's identity through the unique key.
+            return DB::transaction(fn (): array => $this->registerIdentity($connection, $sender), self::ATTEMPTS);
         } catch (UniqueConstraintViolationException) {
             // Another worker registered the same sender first: use its contact.
             return [$this->findIdentity($sender) ?? throw new \LogicException('The concurrently registered identity was not found.'), InboundContactOutcome::Matched, null];

@@ -3,6 +3,7 @@
 namespace App\Actions\Departments;
 
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -28,6 +29,12 @@ class RestoreDepartment
             $locked->forceFill(['is_active' => true])->save();
 
             $this->audit->record(AuditAction::DepartmentRestored, $locked, [], $actor);
+
+            $members = array_values(array_map('intval', $locked->members()->pluck('users.id')->all()));
+
+            if ($members !== []) {
+                UserAccessChanged::dispatch($members, 'department_restored');
+            }
 
             return $locked;
         });

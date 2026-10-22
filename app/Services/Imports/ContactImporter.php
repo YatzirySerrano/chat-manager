@@ -16,8 +16,13 @@ use App\Enums\Permission;
 use App\Jobs\ImportContacts;
 use App\Models\Contact;
 use App\Models\DataTransfer;
+use App\Models\ImportBatchRecord;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\Migration\GenericContactsAdapter;
+use App\Services\Migration\MigrationSourceAdapter;
+use App\Services\Migration\MigrationSourceRegistry;
+use App\Support\Queues;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -51,20 +56,16 @@ use Throwable;
  * written, so re-running a file never duplicates contacts (already imported
  * rows end up as "omitted" or "no new data").
  *
- * Future Whaticket migration (technical note). Moving a Whaticket
- * installation will need its real data, not a guessed layout: a dump of its
- * database (or CSV exports of each table) for contacts, tickets
- * (conversations), messages (and their media files), queues (departments),
- * users, whatsapps (connections), tags with their contact relations, and
- * quick answers. Their columns must be read from the actual dump of the
- * installation to migrate before writing any mapping; credentials and
- * passwords found there must never be imported. The architecture already
- * hosts it: one DataTransfer of type import per source file with its own
- * report key (e.g. "whaticket-contacts", "whaticket-tickets"), a reader per
- * format, a mapping step, batches in a queued job with progress, an
- * idempotency key per source record (the Whaticket id stored as an external
- * reference) and a downloadable result report; messages would need a
- * dedicated importer that writes history without sending anything.
+ * Source adapters (App\Services\Migration): the file is read as coming
+ * from a source ("generic" or "whaticket-contacts", options.source) that
+ * suggests the mapping and normalizes the values before validation. The
+ * mapping always stays editable.
+ *
+ * Traceability: every contact created or completed is linked to the batch
+ * (this DataTransfer) in import_batch_records (ImportBatchTracker), which
+ * allows a logical rollback of the batch when it is safe
+ * (ImportBatchRollback). Historical Whaticket conversations and messages are
+ * NOT imported: see docs/migracion-whaticket.md for what that would need.
  *
  * @phpstan-import-type AnalyzedRow from ContactImportAnalyzer
  * @phpstan-import-type ImportMapping from ContactImportAnalyzer
@@ -92,6 +93,8 @@ class ContactImporter
         private SyncContactTags $syncTags,
         private AddContactNote $addNote,
         private ContactImportReport $report,
+        private MigrationSourceRegistry $sources,
+        private ImportBatchTracker $tracker,
     ) {}
 
     /**
@@ -99,10 +102,11 @@ class ContactImporter
      *
      * @throws ValidationException When the file is unsafe or invalid.
      */
-    public function upload(UploadedFile $file, User $actor): DataTransfer
+    public function upload(UploadedFile $file, User $actor, string $source = GenericContactsAdapter::KEY): DataTransfer
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $sheet = $this->reader->read((string) $file->getRealPath(), $extension);
+        $adapter = $this->sources->find($source);
 
         $disk = (string) config('imports.disk', 'local');
         $directory = trim((string) config('imports.directory', 'imports'), '/')."/{$actor->id}";
@@ -127,7 +131,9 @@ class ContactImporter
                 'original_name' => Str::limit($this->safeName($file->getClientOriginalName()), 120, ''),
                 'hash' => (string) hash_file('sha256', (string) $file->getRealPath()),
                 'headers' => $sheet['headers'],
-                'mapping' => $this->analyzer->suggestMapping($sheet['headers']),
+                'source' => $adapter->key(),
+                'detection' => $this->sources->detect($sheet['headers']),
+                'mapping' => $adapter->suggestMapping($sheet['headers']),
                 'decision' => self::DECISION_SKIP,
             ],
         ]);
@@ -142,7 +148,7 @@ class ContactImporter
     {
         $mapping = $this->mapping($transfer);
         $mappingErrors = $this->analyzer->mappingErrors($mapping, $this->headers($transfer));
-        $rows = $mappingErrors === [] ? $this->analyzer->analyze($this->readSource($transfer)['rows'], $mapping, $actor) : [];
+        $rows = $mappingErrors === [] ? $this->analyze($transfer, $actor) : [];
 
         return [
             'rows' => $rows,
@@ -152,13 +158,14 @@ class ContactImporter
     }
 
     /**
-     * Save the mapping and the duplicate decision of a draft.
+     * Save the mapping, the duplicate decision and (optionally) the source
+     * adapter of a draft.
      *
      * @param  ImportMapping  $mapping
      *
      * @throws ValidationException
      */
-    public function configure(DataTransfer $transfer, array $mapping, string $decision): void
+    public function configure(DataTransfer $transfer, array $mapping, string $decision, ?string $source = null): void
     {
         $this->ensureDraft($transfer);
 
@@ -169,7 +176,12 @@ class ContactImporter
             throw ValidationException::withMessages(['mapping' => $errors[0]]);
         }
 
-        $transfer->update(['options' => [...(array) $transfer->options, 'mapping' => $mapping, 'decision' => $decision]]);
+        $transfer->update(['options' => [
+            ...(array) $transfer->options,
+            'mapping' => $mapping,
+            'decision' => $decision,
+            'source' => $source === null ? $this->source($transfer)->key() : $this->sources->find($source)->key(),
+        ]]);
     }
 
     /**
@@ -208,12 +220,13 @@ class ContactImporter
         $this->audit->record(AuditAction::ImportRequested, null, [
             'transfer_id' => $transfer->id,
             'file' => $transfer->options['original_name'] ?? null,
+            'source' => $this->source($transfer)->key(),
             'rows' => $transfer->rows_total,
             'decision' => $transfer->options['decision'] ?? self::DECISION_SKIP,
             'fields' => array_keys(array_filter($this->mapping($transfer), fn (?int $column): bool => $column !== null)),
         ], $actor);
 
-        ImportContacts::dispatch($transfer->id)->onQueue((string) config('exports.queue'));
+        ImportContacts::dispatch($transfer->id)->onQueue(Queues::name(Queues::EXPORTS));
     }
 
     /**
@@ -252,7 +265,7 @@ class ContactImporter
         }
 
         try {
-            $rows = $this->analyzer->analyze($this->readSource($transfer)['rows'], $this->mapping($transfer), $actor);
+            $rows = $this->analyze($transfer, $actor);
         } catch (ValidationException $exception) {
             $this->fail($transfer, $actor, $exception->validator->errors()->first());
 
@@ -260,12 +273,13 @@ class ContactImporter
         }
 
         $decision = (string) ($transfer->options['decision'] ?? self::DECISION_SKIP);
+        $transfer->update(['options' => [...(array) $transfer->options, 'traceability' => true]]);
         $outcomes = [];
         $counts = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0];
 
         foreach (array_chunk($rows, max(1, (int) config('imports.batch_size', 200))) as $batch) {
             foreach ($batch as $row) {
-                $outcome = $this->processRow($row, $decision, $actor);
+                $outcome = $this->processRow($transfer, $row, $decision, $actor);
                 $counts[$outcome['result']]++;
                 $outcomes[] = $outcome;
             }
@@ -293,6 +307,7 @@ class ContactImporter
         $this->audit->record(AuditAction::ImportCompleted, null, [
             'transfer_id' => $transfer->id,
             'file' => $transfer->options['original_name'] ?? null,
+            'source' => $this->source($transfer)->key(),
             ...$counts,
         ], $actor);
     }
@@ -337,10 +352,38 @@ class ContactImporter
     }
 
     /**
+     * Source adapter of the import (generic for imports older than adapters).
+     */
+    public function source(DataTransfer $transfer): MigrationSourceAdapter
+    {
+        $key = $transfer->options['source'] ?? null;
+
+        return $this->sources->resolve(is_string($key) ? $key : null);
+    }
+
+    /**
+     * Rows of the source file analyzed with the current mapping and source.
+     *
+     * @return list<AnalyzedRow>
+     *
+     * @throws ValidationException
+     */
+    private function analyze(DataTransfer $transfer, User $actor): array
+    {
+        return $this->analyzer->analyze(
+            $this->readSource($transfer)['rows'],
+            $this->mapping($transfer),
+            $actor,
+            $this->source($transfer),
+            $this->headers($transfer),
+        );
+    }
+
+    /**
      * @param  AnalyzedRow  $row
      * @return array{line: int, result: 'created'|'updated'|'skipped'|'failed', name: string, phone: string|null, email: string|null, contact_id: int|null, reason: string|null}
      */
-    private function processRow(array $row, string $decision, User $actor): array
+    private function processRow(DataTransfer $transfer, array $row, string $decision, User $actor): array
     {
         if ($row['status'] === 'error') {
             return $this->outcome($row, 'failed', implode(' ', $row['errors']));
@@ -357,7 +400,7 @@ class ContactImporter
             $matches = $this->findDuplicates->handle($data['phone_e164'], $data['email'], $actor);
 
             if ($matches === []) {
-                $contact = DB::transaction(function () use ($data, $actor): Contact {
+                $contact = DB::transaction(function () use ($transfer, $row, $data, $actor): Contact {
                     $contact = $this->createContact->handle([
                         'name' => $data['name'],
                         'phone_e164' => $data['phone_e164'],
@@ -365,7 +408,8 @@ class ContactImporter
                         'custom_fields' => null,
                     ], $actor, false, ContactSource::Import);
 
-                    $this->applyTagsAndNote($contact, $data, $actor);
+                    $added = $this->applyTagsAndNote($contact, $data, $actor);
+                    $this->tracker->created($transfer, $contact, $row['line'], $added['tag_ids'], $added['note_id']);
 
                     return $contact;
                 });
@@ -379,6 +423,10 @@ class ContactImporter
 
             $existing = Contact::query()->findOrFail($matches[0]['id']);
 
+            if ($existing->isDeleted() && ($rolledBackBy = $this->rolledBackBatchOf($existing)) !== null) {
+                return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}), eliminado al revertir la importación #{$rolledBackBy}; restáuralo desde Contactos si quieres conservarlo.", $existing->id);
+            }
+
             if ($decision !== self::DECISION_FILL_EMPTY) {
                 return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}).", $existing->id);
             }
@@ -387,20 +435,35 @@ class ContactImporter
                 return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}), pero está eliminado; restáuralo antes de completarlo.", $existing->id);
             }
 
-            $changed = DB::transaction(function () use ($existing, $data, $actor): bool {
-                $filled = [
-                    'name' => $existing->name,
-                    'phone_e164' => $existing->phone_e164 ?? $data['phone_e164'],
-                    'email' => $existing->email ?? $data['email'],
-                    'custom_fields' => $existing->custom_fields,
-                ];
-                $updates = $filled['phone_e164'] !== $existing->phone_e164 || $filled['email'] !== $existing->email;
+            $changed = DB::transaction(function () use ($transfer, $row, $existing, $data, $actor): bool {
+                $previous = [];
+                $applied = [];
 
-                if ($updates) {
-                    $this->updateContact->handle($existing, $filled, $actor);
+                foreach (['phone_e164', 'email'] as $field) {
+                    if ($existing->getAttribute($field) === null && $data[$field] !== null) {
+                        $previous[$field] = null;
+                        $applied[$field] = $data[$field];
+                    }
                 }
 
-                return $this->applyTagsAndNote($existing, $data, $actor) || $updates;
+                if ($applied !== []) {
+                    $this->updateContact->handle($existing, [
+                        'name' => $existing->name,
+                        'phone_e164' => $existing->phone_e164 ?? $data['phone_e164'],
+                        'email' => $existing->email ?? $data['email'],
+                        'custom_fields' => $existing->custom_fields,
+                    ], $actor);
+                }
+
+                $added = $this->applyTagsAndNote($existing, $data, $actor);
+
+                if ($applied === [] && $added['tag_ids'] === [] && $added['note_id'] === null) {
+                    return false;
+                }
+
+                $this->tracker->filled($transfer, $existing, $row['line'], $previous, $applied, $added['tag_ids'], $added['note_id']);
+
+                return true;
             });
 
             return $changed
@@ -438,11 +501,11 @@ class ContactImporter
      * note, unless the contact already has the same note.
      *
      * @param  array{name: string, phone_e164: string|null, email: string|null, tag_ids: list<int>, tag_names: list<string>, notes: string|null}  $data
-     * @return bool Whether anything changed.
+     * @return array{tag_ids: list<int>, note_id: int|null} What was added.
      */
-    private function applyTagsAndNote(Contact $contact, array $data, User $actor): bool
+    private function applyTagsAndNote(Contact $contact, array $data, User $actor): array
     {
-        $changed = false;
+        $added = ['tag_ids' => [], 'note_id' => null];
 
         if ($data['tag_ids'] !== [] && $actor->holdsPermission(Permission::AssignTags)) {
             $current = $contact->tags()->pluck('tags.id')->map(fn (mixed $id): int => (int) $id)->all();
@@ -450,17 +513,33 @@ class ContactImporter
 
             if ($missing !== []) {
                 $this->syncTags->handle($contact, array_values([...$current, ...$missing]), $actor);
-                $changed = true;
+                $added['tag_ids'] = $missing;
             }
         }
 
         if ($data['notes'] !== null && Gate::forUser($actor)->allows('manageNotes', $contact)
             && ! $contact->notes()->where('body', $data['notes'])->exists()) {
-            $this->addNote->handle($contact, $data['notes'], $actor);
-            $changed = true;
+            $added['note_id'] = $this->addNote->handle($contact, $data['notes'], $actor)->id;
         }
 
-        return $changed;
+        return $added;
+    }
+
+    /**
+     * The import whose rollback archived this contact, if that is why it is
+     * deleted.
+     */
+    private function rolledBackBatchOf(Contact $contact): ?int
+    {
+        $transferId = ImportBatchRecord::query()
+            ->where('record_type', $contact->getMorphClass())
+            ->where('record_id', $contact->id)
+            ->where('action', ImportBatchRecord::ACTION_CREATED)
+            ->where('rollback_outcome', ImportBatchRecord::OUTCOME_REVERTED)
+            ->latest('rolled_back_at')
+            ->value('data_transfer_id');
+
+        return $transferId === null ? null : (int) $transferId;
     }
 
     /**

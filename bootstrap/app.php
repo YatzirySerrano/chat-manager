@@ -1,9 +1,12 @@
 <?php
 
 use App\Exceptions\ConversationConflict;
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Models\Conversation;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\QueryException;
@@ -23,8 +26,21 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Real-time channel authorization (POST /broadcasting/auth): only signed
+    // in, verified and active users (EnsureUserIsActive runs in "web"),
+    // throttled so a reconnection storm cannot flood the application.
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        ['middleware' => ['web', 'auth', 'verified', 'throttle:180,1']],
+    )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+
+        // "throttle:attempts,minutes" counts per route, not one shared counter per user.
+        $middleware->alias(['throttle' => ThrottleRequestsPerRoute::class]);
+
+        // Every response (pages, webhooks, health): correlation id and browser hardening headers.
+        $middleware->append([AssignRequestId::class, SecurityHeaders::class]);
 
         $middleware->web(append: [
             EnsureUserIsActive::class,

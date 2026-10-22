@@ -5,6 +5,7 @@ namespace App\Http\Requests\Imports;
 use App\Models\DataTransfer;
 use App\Services\Imports\ContactImportAnalyzer;
 use App\Services\Imports\ContactImporter;
+use App\Services\Migration\MigrationSourceRegistry;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -12,8 +13,9 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 /**
- * Column mapping (field => column index of the file, or null) and the
- * decision for contacts that already exist.
+ * Column mapping (field => column index of the file, or null), the
+ * decision for contacts that already exist and, optionally, the source
+ * adapter of the file.
  */
 class ConfigureContactImportRequest extends FormRequest
 {
@@ -34,6 +36,7 @@ class ConfigureContactImportRequest extends FormRequest
         $rules = [
             'mapping' => ['required', 'array:'.implode(',', array_keys(ContactImportAnalyzer::FIELDS))],
             'decision' => ['required', Rule::in(array_keys(ContactImporter::DECISIONS))],
+            'source' => ['nullable', 'string', Rule::in(app(MigrationSourceRegistry::class)->keys())],
         ];
 
         foreach (array_keys(ContactImportAnalyzer::FIELDS) as $field) {

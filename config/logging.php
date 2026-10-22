@@ -81,6 +81,16 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Operational alerts (ops:check-alerts): failed jobs spikes, stopped
+        // scheduler, webhook or queue backlog. Separate file, kept longer.
+        'ops' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ops.log'),
+            'level' => 'warning',
+            'max_files' => (int) env('LOG_OPS_DAYS', 90),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

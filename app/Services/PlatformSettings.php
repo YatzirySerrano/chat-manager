@@ -11,10 +11,11 @@ use Illuminate\Support\Facades\Cache;
  * Typed access to the platform configuration stored in the `settings` table.
  *
  * @phpstan-type BusinessDay array{open: bool, start: string, end: string}
+ * @phpstan-type Holiday array{date: string, label: string, recurring: bool}
  * @phpstan-type SettingsShape array{
  *     general: array{platform_name: string, timezone: string},
  *     appearance: array{palette: string},
- *     business_hours: array{enabled: bool, days: array<string, BusinessDay>},
+ *     business_hours: array{enabled: bool, days: array<string, BusinessDay>, holidays: list<Holiday>},
  *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool},
  * }
  */
@@ -80,8 +81,13 @@ class PlatformSettings
             $merged = array_replace($current[$group], $values);
             $groupChanged = false;
 
-            foreach (Arr::dot($merged) as $path => $value) {
-                $previous = Arr::get($current[$group], $path);
+            $before = Arr::dot($current[$group]);
+            $after = Arr::dot($merged);
+
+            // Paths of both sides: an item removed from a list is a change too.
+            foreach (array_unique([...array_keys($after), ...array_keys($before)]) as $path) {
+                $previous = $before[$path] ?? null;
+                $value = $after[$path] ?? null;
 
                 if ($previous !== $value) {
                     $changes["{$group}.{$path}"] = ['old' => $previous, 'new' => $value];
@@ -127,6 +133,7 @@ class PlatformSettings
             'business_hours' => [
                 'enabled' => false,
                 'days' => $days,
+                'holidays' => [],
             ],
             'operations' => [
                 'default_department_id' => null,

@@ -192,7 +192,7 @@ onBeforeUnmount(clearTimers);
                 :aria-expanded="open"
                 :aria-describedby="open ? descriptionId : undefined"
                 data-slot="field-help"
-                class="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                class="relative inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 @pointerdown.stop="onTriggerPointerDown"
                 @mousedown.stop.prevent
                 @click.stop.prevent="toggle"

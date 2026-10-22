@@ -9,11 +9,13 @@ import {
     Download,
     FileSpreadsheet,
     Info,
+    RotateCcw,
     Upload,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ImportRollbackDialog from '@/components/imports/ImportRollbackDialog.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatCard from '@/components/StatCard.vue';
@@ -36,7 +38,8 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { formatDateTime } from '@/lib/format';
+import { useUserChannel } from '@/composables/useUserChannel';
+import { endSentence, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import { index as contactsIndex, show as contactShow } from '@/routes/contacts';
@@ -55,6 +58,10 @@ import type {
     ContactImportMappingOptions,
     ContactImportPreview,
     ContactImportPreviewRow,
+    ImportRollbackPreview,
+    ImportRollbackRecord,
+    ImportSourceInfo,
+    ImportSourceOption,
 } from '@/types';
 
 defineOptions({
@@ -77,13 +84,21 @@ const props = defineProps<{
     } | null;
     recent: ContactImport[];
     limits: { max_megabytes: number; max_rows: number; max_columns: number };
+    sources: ImportSourceOption[];
+    source?: ImportSourceInfo;
+    rollbackPreview?: ImportRollbackPreview | null;
+    rollbackKept?: ImportRollbackRecord[];
 }>();
 
 const steps = [
-    { key: 'upload', label: 'Subir archivo' },
-    { key: 'mapping', label: 'Mapear y revisar' },
+    { key: 'upload', label: 'Origen y archivo' },
+    { key: 'mapping', label: 'Mapear y validar' },
     { key: 'result', label: 'Resultado' },
 ] as const;
+
+function sourceOption(key: string | undefined): ImportSourceOption | undefined {
+    return props.sources.find((option) => option.value === key);
+}
 
 const currentStep = computed(() =>
     steps.findIndex((step) => step.key === props.step),
@@ -91,7 +106,10 @@ const currentStep = computed(() =>
 
 /* Step 1: upload */
 
-const upload = useForm<{ file: File | null }>({ file: null });
+const upload = useForm<{ file: File | null; source: string }>({
+    file: null,
+    source: props.sources[0]?.value ?? 'generic',
+});
 
 function pickFile(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -122,6 +140,7 @@ function initialMapping(): Record<ContactImportField, string> {
 const configuration = useForm({
     mapping: initialMapping(),
     decision: (props.mapping?.decision ?? 'skip') as ContactImportDecision,
+    source: props.source?.current ?? 'generic',
 });
 
 watch(
@@ -130,10 +149,38 @@ watch(
         configuration.defaults({
             mapping: initialMapping(),
             decision: props.mapping?.decision ?? 'skip',
+            source: props.source?.current ?? 'generic',
         });
         configuration.reset();
     },
 );
+
+/**
+ * Switching the source prefills the mapping that source suggests; the
+ * user can still change every column.
+ */
+function changeSource(key: string): void {
+    configuration.source = key;
+    const suggested = props.source?.suggested_mappings[key];
+
+    if (!suggested) {
+        return;
+    }
+
+    for (const field of Object.keys(configuration.mapping)) {
+        const column = suggested[field as ContactImportField] ?? null;
+        configuration.mapping[field as ContactImportField] =
+            column === null ? NONE : String(column);
+    }
+}
+
+const bestDetection = computed(() => {
+    const best = props.source?.detection[0];
+
+    return best && best.score > 0 && best.key !== configuration.source
+        ? best
+        : null;
+});
 
 function mappingPayload(): Record<ContactImportField, number | null> {
     const result = {} as Record<ContactImportField, number | null>;
@@ -257,14 +304,44 @@ const isRunning = computed(() =>
     ['queued', 'processing'].includes(props.transfer?.status.value ?? ''),
 );
 
+const isRollingBack = computed(() =>
+    ['queued', 'processing'].includes(props.transfer?.rollback.status ?? ''),
+);
+
+const rollbackOpen = ref(false);
+
+function rollbackLabel(item: ContactImport): string | null {
+    switch (item.rollback.status) {
+        case 'queued':
+        case 'processing':
+            return 'Reversión en proceso';
+        case 'completed':
+            return 'Revertida';
+        case 'failed':
+            return 'Reversión fallida';
+        default:
+            return null;
+    }
+}
+
+// Progress (rows processed) is polled while the import runs; the final
+// result is shown as soon as the server signals that it finished.
 const { start, stop } = usePoll(
     2000,
-    { only: ['transfer'] },
+    { only: ['transfer', 'rollbackKept'] },
     { autoStart: false },
 );
 
+useUserChannel({
+    'transfer.changed': (payload) => {
+        if (props.transfer && payload.transfer_id === props.transfer.id) {
+            router.reload({ only: ['transfer'] });
+        }
+    },
+});
+
 watch(
-    isRunning,
+    () => isRunning.value || isRollingBack.value,
     (running) => {
         if (running) {
             start();
@@ -291,7 +368,7 @@ const progress = computed(() => {
     >
         <PageHeader
             title="Importar contactos"
-            description="Registra contactos desde un archivo de Excel (.xlsx) o .csv. Revisa cada fila antes de confirmar; los datos existentes nunca se sobrescriben."
+            description="Registra o migra contactos desde un archivo de Excel (.xlsx) o .csv, por ejemplo una exportación de Whaticket. Revisa cada fila antes de confirmar; los datos existentes nunca se sobrescriben y cada lote puede revertirse si es seguro."
         >
             <template #actions>
                 <Button variant="outline" as-child>
@@ -355,6 +432,57 @@ const progress = computed(() => {
                     class="flex flex-col gap-4"
                     @submit.prevent="submitUpload"
                 >
+                    <fieldset class="flex flex-col gap-2">
+                        <legend class="mb-1 text-sm font-medium">
+                            ¿De dónde viene el archivo?
+                        </legend>
+                        <div class="grid gap-2 md:grid-cols-2">
+                            <label
+                                v-for="option in sources"
+                                :key="option.value"
+                                :class="
+                                    cn(
+                                        'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors',
+                                        upload.source === option.value
+                                            ? 'border-primary bg-primary-soft/60'
+                                            : 'hover:bg-muted/40',
+                                    )
+                                "
+                            >
+                                <input
+                                    v-model="upload.source"
+                                    type="radio"
+                                    name="source"
+                                    :value="option.value"
+                                    class="mt-0.5 accent-primary"
+                                />
+                                <span class="flex flex-col gap-1">
+                                    <span
+                                        class="flex flex-wrap items-center gap-2 font-medium"
+                                    >
+                                        {{ option.label }}
+                                        <span
+                                            v-if="!option.validated"
+                                            class="inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
+                                        >
+                                            Pendiente de validación
+                                        </span>
+                                    </span>
+                                    <span class="text-xs text-muted-foreground">
+                                        {{ option.description }}
+                                    </span>
+                                    <span
+                                        v-if="option.validation_note"
+                                        class="text-xs text-warning"
+                                    >
+                                        {{ option.validation_note }}
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                        <InputError :message="upload.errors.source" />
+                    </fieldset>
+
                     <label
                         for="import-file"
                         class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors focus-within:border-primary hover:border-primary hover:bg-muted/40"
@@ -412,7 +540,10 @@ const progress = computed(() => {
                 </form>
             </SurfaceCard>
 
-            <SurfaceCard title="Importaciones recientes">
+            <SurfaceCard
+                title="Historial de lotes"
+                description="Cada importación es un lote trazable: puedes abrirlo para ver su resultado o revertirlo si es seguro."
+            >
                 <EmptyState
                     v-if="recent.length === 0"
                     :icon="FileSpreadsheet"
@@ -423,6 +554,9 @@ const progress = computed(() => {
                     <TableHeader>
                         <TableRow>
                             <TableHead>Archivo</TableHead>
+                            <TableHead class="hidden md:table-cell">
+                                Origen
+                            </TableHead>
                             <TableHead>Estado</TableHead>
                             <TableHead class="hidden sm:table-cell">
                                 Fecha
@@ -437,7 +571,29 @@ const progress = computed(() => {
                                     {{ item.file ?? 'Archivo' }}
                                 </Link>
                             </TableCell>
-                            <TableCell>{{ item.status.label }}</TableCell>
+                            <TableCell
+                                class="hidden text-muted-foreground md:table-cell"
+                            >
+                                {{ item.source.label }}
+                            </TableCell>
+                            <TableCell>
+                                <span class="flex flex-col">
+                                    <span>{{ item.status.label }}</span>
+                                    <span
+                                        v-if="rollbackLabel(item)"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        {{ rollbackLabel(item) }}
+                                    </span>
+                                    <Link
+                                        v-else-if="item.rollback.available"
+                                        :href="item.url"
+                                        class="text-xs text-primary hover:underline"
+                                    >
+                                        Se puede revertir
+                                    </Link>
+                                </span>
+                            </TableCell>
                             <TableCell
                                 class="hidden text-muted-foreground sm:table-cell"
                             >
@@ -465,11 +621,77 @@ const progress = computed(() => {
                 <AlertTitle>Este archivo ya se importó</AlertTitle>
                 <AlertDescription>
                     Se importó el
-                    {{ formatDateTime(previousImport.finished_at) }}. Las filas
-                    que ya existen se detectan como duplicadas, así que volver a
-                    importarlo no crea contactos repetidos.
+                    {{
+                        endSentence(formatDateTime(previousImport.finished_at))
+                    }}
+                    Las filas que ya existen se detectan como duplicadas, así
+                    que volver a importarlo no crea contactos repetidos.
                 </AlertDescription>
             </Alert>
+
+            <SurfaceCard
+                title="Origen del archivo"
+                description="El origen sugiere el mapeo y normaliza los valores antes de validarlos. Puedes cambiarlo; el mapeo siempre es editable."
+                body-class="flex flex-col gap-3 p-5"
+            >
+                <div
+                    class="grid gap-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center"
+                >
+                    <label for="import-source" class="text-sm font-medium">
+                        Origen
+                    </label>
+                    <Select
+                        :model-value="configuration.source"
+                        @update:model-value="changeSource(String($event))"
+                    >
+                        <SelectTrigger id="import-source" class="w-full">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem
+                                v-for="option in sources"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <InputError :message="configuration.errors.source" />
+                <Alert
+                    v-if="sourceOption(configuration.source)?.validation_note"
+                >
+                    <AlertTriangle />
+                    <AlertTitle>Pendiente de validación</AlertTitle>
+                    <AlertDescription>
+                        {{
+                            sourceOption(configuration.source)?.validation_note
+                        }}
+                    </AlertDescription>
+                </Alert>
+                <p
+                    v-if="bestDetection"
+                    class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+                >
+                    <Info class="size-4" aria-hidden="true" />
+                    Por sus encabezados, el archivo se parece más a «{{
+                        bestDetection.label
+                    }}»<template v-if="bestDetection.signals.length">
+                        (columnas
+                        {{ bestDetection.signals.join(', ') }})</template
+                    >. Es solo una coincidencia de nombres, no confirma el
+                    formato.
+                    <Button
+                        variant="link"
+                        size="sm"
+                        class="h-auto p-0"
+                        @click="changeSource(bestDetection.key)"
+                    >
+                        Usar este origen
+                    </Button>
+                </p>
+            </SurfaceCard>
 
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <SurfaceCard
@@ -882,6 +1104,123 @@ const progress = computed(() => {
                         </a>
                     </Button>
                 </div>
+            </SurfaceCard>
+
+            <SurfaceCard
+                v-if="
+                    !isRunning &&
+                    (transfer.summary ||
+                        transfer.rollback.available ||
+                        transfer.rollback.status)
+                "
+                title="Reversión del lote"
+                description="Elimina lógicamente los contactos que este lote creó y no se han usado, y vacía los campos que completó si nadie los cambió. Lo que tenga actividad posterior se conserva."
+                body-class="flex flex-col gap-4 p-5"
+            >
+                <div
+                    v-if="isRollingBack"
+                    class="flex items-center gap-2 text-sm font-medium"
+                >
+                    <Spinner />
+                    Revirtiendo el lote…
+                </div>
+
+                <Alert
+                    v-else-if="transfer.rollback.status === 'failed'"
+                    variant="destructive"
+                >
+                    <AlertCircle />
+                    <AlertTitle>La reversión no se completó</AlertTitle>
+                    <AlertDescription>
+                        {{ transfer.rollback.error }}
+                    </AlertDescription>
+                </Alert>
+
+                <template
+                    v-if="
+                        transfer.rollback.status === 'completed' &&
+                        transfer.rollback.summary
+                    "
+                >
+                    <p class="text-sm text-muted-foreground">
+                        Revertido el
+                        {{
+                            endSentence(
+                                formatDateTime(transfer.rollback.finished_at),
+                            )
+                        }}
+                    </p>
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <StatCard
+                            label="Contactos eliminados"
+                            :value="transfer.rollback.summary.contacts_archived"
+                            hint="Se pueden restaurar"
+                        />
+                        <StatCard
+                            label="Contactos conservados"
+                            :value="transfer.rollback.summary.contacts_kept"
+                        />
+                        <StatCard
+                            label="Campos vaciados"
+                            :value="transfer.rollback.summary.fields_restored"
+                        />
+                        <StatCard
+                            label="Etiquetas quitadas"
+                            :value="transfer.rollback.summary.tags_removed"
+                        />
+                    </div>
+                </template>
+
+                <div
+                    v-if="rollbackKept && rollbackKept.length"
+                    class="flex flex-col gap-2 text-sm"
+                >
+                    <p class="font-medium">Se conservaron</p>
+                    <ul class="flex flex-col divide-y rounded-lg border">
+                        <li
+                            v-for="record in rollbackKept"
+                            :key="record.contact_id"
+                            class="flex flex-col gap-0.5 px-3 py-2"
+                        >
+                            <Link
+                                :href="contactShow(record.contact_id)"
+                                class="font-medium hover:underline"
+                                >{{ record.name }}</Link
+                            >
+                            <span class="text-xs text-muted-foreground">
+                                Fila {{ record.line ?? '—' }} ·
+                                {{ record.reason }}
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+
+                <p
+                    v-if="
+                        !transfer.rollback.available &&
+                        !isRollingBack &&
+                        transfer.rollback.unavailable_reason
+                    "
+                    class="text-sm text-muted-foreground"
+                >
+                    {{ transfer.rollback.unavailable_reason }}
+                </p>
+
+                <div
+                    v-if="transfer.rollback.available"
+                    class="flex justify-end"
+                >
+                    <Button variant="outline" @click="rollbackOpen = true">
+                        <RotateCcw />
+                        Revisar y revertir
+                    </Button>
+                </div>
+
+                <ImportRollbackDialog
+                    v-model:open="rollbackOpen"
+                    :transfer-id="transfer.id"
+                    :preview="rollbackPreview"
+                />
             </SurfaceCard>
         </template>
     </div>

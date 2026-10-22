@@ -1,0 +1,309 @@
+<script setup lang="ts">
+import { Link, router } from '@inertiajs/vue3';
+import {
+    CircleCheck,
+    CircleDashed,
+    CircleX,
+    Copy,
+    FlaskConical,
+    RefreshCw,
+    TriangleAlert,
+} from '@lucide/vue';
+import { useClipboard } from '@vueuse/core';
+import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
+import SurfaceCard from '@/components/SurfaceCard.vue';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { formatDateTime, formatRelative } from '@/lib/format';
+import {
+    check as checkSubscription,
+    store as subscribeApp,
+} from '@/routes/connections/subscription';
+import {
+    index as templatesIndex,
+    sync as syncTemplates,
+} from '@/routes/templates';
+import type { Connection, ConnectionDiagnostics } from '@/types';
+
+/**
+ * Real activation checklist of a WhatsApp Cloud API connection: the webhook
+ * URL to register in Meta, the evidence received (verification, deliveries,
+ * errors), the app subscription to the business account and templates.
+ * Secrets are never shown: only whether each one is saved.
+ */
+const props = defineProps<{
+    connection: Connection;
+    diagnostics: ConnectionDiagnostics;
+    can: { verify: boolean; syncTemplates: boolean; viewTemplates: boolean };
+}>();
+
+const { copy, isSupported } = useClipboard({ legacy: true });
+const busy = ref<'check' | 'subscribe' | 'sync' | null>(null);
+
+async function copyUrl(): Promise<void> {
+    if (!props.diagnostics.webhook.url) {
+        return;
+    }
+
+    await copy(props.diagnostics.webhook.url);
+    toast.success('URL del webhook copiada.');
+}
+
+function post(action: 'check' | 'subscribe' | 'sync'): void {
+    const url =
+        action === 'check'
+            ? checkSubscription.url(props.connection.id)
+            : action === 'subscribe'
+              ? subscribeApp.url(props.connection.id)
+              : syncTemplates.url(props.connection.id);
+
+    router.post(url, undefined, {
+        preserveScroll: true,
+        onStart: () => (busy.value = action),
+        onError: (errors) => {
+            toast.error(
+                Object.values(errors)[0] ??
+                    'No fue posible completar la acción.',
+            );
+        },
+        onFinish: () => (busy.value = null),
+    });
+}
+
+type State = 'ok' | 'error' | 'pending';
+
+const icon = {
+    ok: CircleCheck,
+    error: CircleX,
+    pending: CircleDashed,
+} as const;
+const iconClass: Record<State, string> = {
+    ok: 'text-success',
+    error: 'text-destructive',
+    pending: 'text-muted-foreground',
+};
+
+const checks = computed<
+    { key: string; label: string; state: State; detail: string }[]
+>(() => {
+    const webhook = props.diagnostics.webhook;
+    const subscription = props.diagnostics.subscription;
+
+    return [
+        {
+            key: 'secrets',
+            label: 'Secreto de la app y token de verificación',
+            state:
+                webhook.app_secret_saved && webhook.verify_token_saved
+                    ? 'ok'
+                    : 'error',
+            detail:
+                webhook.app_secret_saved && webhook.verify_token_saved
+                    ? 'Guardados (cifrados). Se usan para validar la firma y el registro del webhook.'
+                    : 'Sin el secreto de la app no se pueden autenticar los eventos de Meta; sin el token de verificación Meta no puede registrar el webhook.',
+        },
+        {
+            key: 'verified',
+            label: 'Webhook verificado por Meta',
+            state: webhook.verified_at ? 'ok' : 'pending',
+            detail: webhook.verified_at
+                ? `Meta verificó la URL ${formatRelative(webhook.verified_at)}.`
+                : 'Registra la URL y el token de verificación en la configuración de WhatsApp de tu app en Meta.',
+        },
+        {
+            key: 'subscription',
+            label: 'App suscrita a la cuenta de WhatsApp Business',
+            state:
+                subscription.state === 'subscribed'
+                    ? 'ok'
+                    : subscription.state === 'not_subscribed'
+                      ? 'error'
+                      : 'pending',
+            detail:
+                subscription.state === 'unknown'
+                    ? 'Aún no se ha consultado en Meta.'
+                    : `${subscription.state === 'subscribed' ? 'Suscrita' : 'No suscrita'} según la consulta ${formatRelative(subscription.checked_at)}.${subscription.meta_app_id_saved ? '' : ' Guarda el Meta App ID para comprobar que sea tu app.'}`,
+        },
+        {
+            key: 'deliveries',
+            label: 'Eventos recibidos',
+            state: webhook.last_received_at ? 'ok' : 'pending',
+            detail: webhook.last_received_at
+                ? `Último evento autenticado ${formatRelative(webhook.last_received_at)}. Últimas 24 h: ${webhook.events_24h.processed} procesados, ${webhook.events_24h.pending} en espera, ${webhook.events_24h.failed} con error.`
+                : 'Todavía no llega ningún evento firmado por Meta.',
+        },
+    ];
+});
+</script>
+
+<template>
+    <SurfaceCard
+        title="Integración con WhatsApp Cloud API"
+        description="Pasos de activación con evidencia real de Meta."
+        body-class="grid grid-cols-1 gap-4 p-5 text-sm"
+    >
+        <div
+            v-if="diagnostics.transport.mode !== 'meta'"
+            class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+        >
+            <FlaskConical
+                v-if="diagnostics.transport.mode === 'simulated'"
+                class="mt-0.5 size-4 shrink-0 text-warning"
+                aria-hidden="true"
+            />
+            <TriangleAlert
+                v-else
+                class="mt-0.5 size-4 shrink-0 text-warning"
+                aria-hidden="true"
+            />
+            <p>
+                <strong>{{
+                    diagnostics.transport.mode === 'simulated'
+                        ? 'Simulación'
+                        : 'Envío deshabilitado'
+                }}</strong>
+                · {{ diagnostics.transport.label }}
+            </p>
+        </div>
+
+        <div class="grid min-w-0 grid-cols-1 gap-1.5">
+            <p class="text-xs font-medium">
+                URL de devolución de llamada (webhook)
+            </p>
+            <div class="flex gap-2">
+                <code
+                    class="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-2 py-1.5 text-xs"
+                    :title="diagnostics.webhook.url ?? ''"
+                    >{{ diagnostics.webhook.url ?? 'No disponible' }}</code
+                >
+                <Button
+                    v-if="isSupported && diagnostics.webhook.url"
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Copiar URL del webhook"
+                    @click="copyUrl"
+                >
+                    <Copy />
+                </Button>
+            </div>
+            <p
+                v-if="!diagnostics.webhook.https"
+                class="text-xs text-destructive"
+            >
+                Meta solo acepta URLs https públicas: configura APP_URL con el
+                dominio https de producción.
+            </p>
+            <p class="text-xs text-muted-foreground">
+                Token de verificación: el valor que guardaste en esta conexión
+                (no se muestra). Campos a suscribir:
+                {{ diagnostics.webhook.fields.join(', ') }}.
+            </p>
+        </div>
+
+        <ul class="grid gap-3">
+            <li v-for="item in checks" :key="item.key" class="flex gap-2">
+                <component
+                    :is="icon[item.state]"
+                    class="mt-0.5 size-4 shrink-0"
+                    :class="iconClass[item.state]"
+                    aria-hidden="true"
+                />
+                <div class="min-w-0">
+                    <p class="text-xs font-medium">{{ item.label }}</p>
+                    <p class="text-xs text-muted-foreground">
+                        {{ item.detail }}
+                    </p>
+                </div>
+            </li>
+        </ul>
+
+        <div
+            v-if="diagnostics.webhook.last_failure"
+            class="rounded-lg bg-destructive/5 p-3 text-xs"
+        >
+            <p class="font-medium text-destructive">
+                Último evento con error ·
+                {{ formatDateTime(diagnostics.webhook.last_failure.at) }}
+            </p>
+            <p class="text-muted-foreground">
+                {{ diagnostics.webhook.last_failure.error }}
+            </p>
+        </div>
+
+        <p
+            v-if="diagnostics.outbound.unconfirmed > 0"
+            class="rounded-lg bg-warning/10 p-3 text-xs"
+        >
+            {{ diagnostics.outbound.unconfirmed }} mensaje(s) enviados sin
+            confirmación de Meta. Si no llega la confirmación se marcarán como
+            «entrega desconocida».
+        </p>
+
+        <div v-if="diagnostics.signals.length > 0" class="grid gap-1 text-xs">
+            <p class="font-medium">Avisos recientes de Meta</p>
+            <p
+                v-for="signal in diagnostics.signals"
+                :key="signal.field"
+                class="text-muted-foreground"
+            >
+                {{ signal.field
+                }}{{ signal.event ? `: ${signal.event}` : '' }} ·
+                {{ formatRelative(signal.at) }}
+            </p>
+        </div>
+
+        <div class="flex flex-wrap gap-2 border-t pt-4">
+            <Button
+                v-if="can.verify"
+                variant="outline"
+                size="sm"
+                :disabled="busy !== null"
+                @click="post('check')"
+            >
+                <Spinner v-if="busy === 'check'" />
+                <RefreshCw v-else />
+                Revisar suscripción
+            </Button>
+            <Button
+                v-if="
+                    can.verify &&
+                    diagnostics.subscription.state !== 'subscribed'
+                "
+                size="sm"
+                :disabled="busy !== null"
+                @click="post('subscribe')"
+            >
+                <Spinner v-if="busy === 'subscribe'" />
+                Suscribir app
+            </Button>
+            <Button
+                v-if="can.syncTemplates"
+                variant="outline"
+                size="sm"
+                :disabled="busy !== null"
+                @click="post('sync')"
+            >
+                <Spinner v-if="busy === 'sync'" />
+                <RefreshCw v-else />
+                Sincronizar plantillas
+            </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">
+            Plantillas aprobadas: {{ diagnostics.templates.approved }}
+            <template v-if="diagnostics.templates.last_synced_at">
+                · sincronizadas
+                {{
+                    formatRelative(diagnostics.templates.last_synced_at)
+                }}</template
+            >.
+            <Link
+                v-if="can.viewTemplates"
+                :href="templatesIndex({ query: { connection: connection.id } })"
+                class="font-medium text-primary hover:underline"
+                >Ver plantillas</Link
+            >
+        </p>
+    </SurfaceCard>
+</template>

@@ -2,6 +2,8 @@
 import { usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import NotificationBell from '@/components/notifications/NotificationBell.vue';
+import RealtimeStatus from '@/components/RealtimeStatus.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem } from '@/types';
@@ -33,6 +35,7 @@ const role = computed(() => page.props.auth?.role);
             />
         </div>
         <div class="flex shrink-0 items-center gap-1.5">
+            <RealtimeStatus />
             <span
                 v-if="role"
                 class="hidden max-w-40 items-center truncate rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground sm:inline-block"
@@ -40,6 +43,7 @@ const role = computed(() => page.props.auth?.role);
             >
                 <span class="sr-only">Tu rol: </span>{{ role.label }}
             </span>
+            <NotificationBell />
             <ThemeToggle />
         </div>
     </header>

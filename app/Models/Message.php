@@ -31,6 +31,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $delivered_at
  * @property Carbon|null $read_at
  * @property Carbon|null $failed_at
+ * @property Carbon|null $accepted_at Meta's API returned the message id.
+ * @property Carbon|null $sending_started_at A worker claimed the message and called Meta.
+ * @property int $delivery_attempts
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -56,6 +59,9 @@ class Message extends Model
             'delivered_at' => 'datetime',
             'read_at' => 'datetime',
             'failed_at' => 'datetime',
+            'accepted_at' => 'datetime',
+            'sending_started_at' => 'datetime',
+            'delivery_attempts' => 'integer',
         ];
     }
 

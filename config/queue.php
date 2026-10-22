@@ -70,9 +70,15 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            // Same rule as the database connection: above the longest worker
+            // --timeout (exports), or a running job is handed to a second worker.
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 900),
             'block_for' => null,
-            'after_commit' => false,
+            // Redis is outside the database transaction: a job dispatched
+            // inside one must not reach a worker before the rows it reads
+            // are committed. The database driver inserts the job row in the
+            // same transaction, so it needs no deferral.
+            'after_commit' => (bool) env('REDIS_QUEUE_AFTER_COMMIT', true),
         ],
 
         'deferred' => [
@@ -91,6 +97,27 @@ return [
             ],
         ],
 
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Queue Names (App\Support\Queues)
+    |--------------------------------------------------------------------------
+    |
+    | One queue per responsibility, so a burst of one kind of work never
+    | delays the critical path. Workers are grouped by priority (see
+    | deploy/supervisor and docs/infraestructura-y-despliegue.md):
+    | webhooks + messages, media, notifications + default, exports.
+    |
+    */
+
+    'names' => [
+        'webhooks' => env('QUEUE_NAME_WEBHOOKS', 'webhooks'),
+        'messages' => env('QUEUE_NAME_MESSAGES', 'messages'),
+        'media' => env('QUEUE_NAME_MEDIA', 'media'),
+        'notifications' => env('QUEUE_NAME_NOTIFICATIONS', 'notifications'),
+        'exports' => env('QUEUE_NAME_EXPORTS', 'exports'),
+        'default' => env('QUEUE_NAME_DEFAULT', 'default'),
     ],
 
     /*

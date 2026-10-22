@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Actions\TeamChat\TeamUnreadCounter;
+use App\Broadcasting\RealtimeClientConfig;
+use App\Enums\Permission;
 use App\Models\User;
 use App\Services\PlatformSettings;
 use App\Support\PasswordPolicy;
@@ -57,6 +60,10 @@ class HandleInertiaRequests extends Middleware
                 'permissions' => $user instanceof User ? $user->effectivePermissions() : [],
             ],
             'passwordPolicy' => fn (): array => PasswordPolicy::current(),
+            'realtime' => fn (): array => app(RealtimeClientConfig::class)->for($user instanceof User ? $user : null),
+            'teamChatUnread' => fn (): ?int => $user instanceof User && $user->holdsPermission(Permission::UseTeamChat)
+                ? app(TeamUnreadCounter::class)->total($user)
+                : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

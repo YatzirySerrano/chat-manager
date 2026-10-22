@@ -16,8 +16,9 @@ use RuntimeException;
  *   production one or ad hoc copies ("*_verify", "*_e2e_testing"...) are
  *   never refreshed and new databases are never needed;
  * - lock() takes an exclusive MariaDB lock for the whole process, so two
- *   runs sharing the database never interfere: the second one stops with an
- *   explanation instead of corrupting the first one's data.
+ *   runs sharing the database never interfere: the second one waits up to
+ *   TEST_DB_LOCK_WAIT seconds (default 0, fail at once) and then stops with
+ *   an explanation instead of corrupting the first one's data.
  */
 final class TestDatabase
 {
@@ -48,17 +49,20 @@ final class TestDatabase
             return;
         }
 
-        self::$holder = self::tryLock($connection) ?? throw new RuntimeException(
+        $wait = max(0, (int) (getenv('TEST_DB_LOCK_WAIT') ?: 0));
+
+        self::$holder = self::tryLock($connection, $wait) ?? throw new RuntimeException(
             "Another run (Pest or the browser scenarios) is using [{$connection['database']}]. Wait for it to finish and try again.",
         );
     }
 
     /**
-     * The connection that now holds the lock, or null when another process has it.
+     * The connection that now holds the lock, or null when another process
+     * still has it after waiting up to $waitSeconds.
      *
      * @param  array<string, mixed>  $connection
      */
-    public static function tryLock(array $connection): ?PDO
+    public static function tryLock(array $connection, int $waitSeconds = 0): ?PDO
     {
         $socket = (string) ($connection['unix_socket'] ?? '');
         $dsn = $socket !== ''
@@ -66,7 +70,7 @@ final class TestDatabase
             : sprintf('mysql:host=%s;port=%s', $connection['host'], $connection['port']);
 
         $pdo = new PDO($dsn, (string) $connection['username'], (string) $connection['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $statement = $pdo->query('SELECT GET_LOCK('.$pdo->quote(self::lockName((string) $connection['database'])).', 0)');
+        $statement = $pdo->query('SELECT GET_LOCK('.$pdo->quote(self::lockName((string) $connection['database'])).', '.max(0, $waitSeconds).')');
 
         return $statement !== false && (int) $statement->fetchColumn() === 1 ? $pdo : null;
     }

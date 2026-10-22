@@ -28,6 +28,7 @@ class DepartmentResource extends JsonResource
             'is_active' => $this->is_active,
             'is_deleted' => $this->isDeleted(),
             'welcome_message' => $this->welcome_message,
+            'away_message' => $this->away_message,
             'distribution_mode' => $this->distribution_mode->value,
             'uses_custom_hours' => $this->uses_custom_hours,
             'business_hours' => $this->business_hours,

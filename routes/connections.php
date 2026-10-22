@@ -20,5 +20,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('connections/{connection}', [ConnectionController::class, 'destroy'])->name('connections.destroy');
     Route::patch('connections/{connection}/restore', [ConnectionController::class, 'restore'])->name('connections.restore');
     Route::patch('connections/{connection}/status', [ConnectionStatusController::class, 'update'])->name('connections.status.update');
-    Route::post('connections/{connection}/verify', [ConnectionVerificationController::class, 'store'])->name('connections.verify');
+    Route::post('connections/{connection}/verify', [ConnectionVerificationController::class, 'store'])->middleware('throttle:10,1')->name('connections.verify');
 });

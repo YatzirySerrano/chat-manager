@@ -5,6 +5,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeDataFreshness } from '@/lib/dataFreshness';
 import { initializeFlashToast } from '@/lib/flashToast';
+import { initializeRealtime } from '@/lib/realtime';
 import { initializeThemePalette } from '@/lib/theme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -46,3 +47,6 @@ initializeDataFreshness();
 
 // Apply the global palette chosen in Personalización...
 initializeThemePalette();
+
+// Connect to the real-time server (Reverb) when the server enables it...
+initializeRealtime();

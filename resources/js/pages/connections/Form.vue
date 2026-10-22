@@ -16,6 +16,7 @@ import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import AutoMessagePreview from '@/components/connections/AutoMessagePreview.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
+import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagnosticsCard.vue';
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
@@ -59,6 +60,7 @@ import { update as updateStatus } from '@/routes/connections/status';
 import type {
     AppColor,
     Connection,
+    ConnectionDiagnostics,
     ConnectionMessageKind,
     ConnectionOption,
 } from '@/types';
@@ -81,12 +83,15 @@ const props = defineProps<{
     }[];
     limits: { message: number; reopen_window: number };
     graphVersion: string;
+    diagnostics: ConnectionDiagnostics | null;
     can: {
         update: boolean;
         changeStatus: boolean;
         verify: boolean;
         delete: boolean;
         restore: boolean;
+        syncTemplates: boolean;
+        viewTemplates: boolean;
     };
 }>();
 
@@ -822,10 +827,11 @@ const pageTitle = computed(() =>
                                 aria-hidden="true"
                             />
                             <p>
-                                Por ahora solo se guarda la configuración. El
-                                envío se habilitará con la integración de
-                                mensajería y únicamente dentro de la ventana de
-                                24 horas de atención al cliente de WhatsApp.
+                                Estos mensajes se envían solos, solo como texto,
+                                únicamente dentro de la ventana de 24 horas de
+                                atención al cliente de WhatsApp y solo mientras
+                                la conexión está activa. El mensaje de ausencia
+                                o bienvenida del departamento tiene prioridad.
                             </p>
                         </div>
 
@@ -1012,7 +1018,9 @@ const pageTitle = computed(() =>
                     </SurfaceCard>
                 </fieldset>
 
-                <aside class="grid gap-6 lg:sticky lg:top-4">
+                <aside
+                    class="grid min-w-0 grid-cols-1 gap-6 lg:sticky lg:top-4"
+                >
                     <SurfaceCard body-class="grid gap-4 p-5">
                         <div class="flex items-center justify-between gap-2">
                             <h2
@@ -1192,6 +1200,13 @@ const pageTitle = computed(() =>
                             credenciales con Meta y activarla.
                         </p>
                     </SurfaceCard>
+
+                    <ConnectionDiagnosticsCard
+                        v-if="connection && diagnostics"
+                        :connection="connection"
+                        :diagnostics="diagnostics"
+                        :can="can"
+                    />
                 </aside>
             </div>
         </div>
@@ -1202,12 +1217,12 @@ const pageTitle = computed(() =>
         >
             <span
                 v-if="validation.hasChanges"
-                class="text-sm text-muted-foreground"
+                class="text-sm text-muted-foreground max-sm:sr-only"
                 >Cambios sin guardar</span
             >
             <span
                 v-else-if="isEditing"
-                class="text-sm text-muted-foreground"
+                class="text-sm text-muted-foreground max-sm:sr-only"
                 aria-live="polite"
                 >Sin cambios por guardar</span
             >

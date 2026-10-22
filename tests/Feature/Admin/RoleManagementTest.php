@@ -73,7 +73,9 @@ test('role names must be unique and permissions must exist and be available', fu
             'scope' => 'assigned',
             'permissions' => ['invented.permission', 'reports.view'],
         ])
-        ->assertSessionHasErrors(['label', 'permissions.0', 'permissions.1']);
+        ->assertSessionHasErrors(['label', 'permissions.0'])
+        // reports.view is available since increment F (reports module).
+        ->assertSessionDoesntHaveErrors(['permissions.1']);
 });
 
 test('organization-wide permissions require the organization scope', function () {
@@ -89,8 +91,8 @@ test('organization-wide permissions require the organization scope', function ()
 });
 
 test('editing a role replaces its permissions, keeps future ones and is audited', function () {
-    // Increment B made the conversation permissions editable, so the
-    // "future" (not yet available) permission kept here is reports.view.
+    // Every permission is available since increment F, so the editable set
+    // is the whole role and reports.view is kept because it is resubmitted.
     $admin = User::factory()->superAdministrator()->create();
     $supervisor = role(DefaultRole::Supervisor);
     $editable = array_values(array_filter(

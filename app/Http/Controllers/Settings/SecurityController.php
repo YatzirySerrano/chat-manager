@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Enums\AuditAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\PasswordUpdateRequest;
 use App\Http\Requests\Settings\TwoFactorAuthenticationRequest;
+use App\Services\AuditLogger;
 use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Hash;
@@ -39,7 +41,7 @@ class SecurityController extends Controller
      * Update the user's password. A new password equal to the current one
      * writes nothing.
      */
-    public function update(PasswordUpdateRequest $request): RedirectResponse
+    public function update(PasswordUpdateRequest $request, AuditLogger $audit): RedirectResponse
     {
         $user = $request->user();
         $password = $request->string('password')->value();
@@ -47,6 +49,7 @@ class SecurityController extends Controller
 
         if ($changed) {
             $user->update(['password' => $password]);
+            $audit->record(AuditAction::AuthPasswordChanged, $user, [], $user);
         }
 
         SaveToast::flash($changed, 'Contraseña actualizada.');

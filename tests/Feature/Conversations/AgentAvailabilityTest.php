@@ -71,7 +71,7 @@ test('an unavailable agent keeps managing the conversations already assigned', f
     $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->unavailable)->create();
 
     $this->actingAs($this->unavailable)
-        ->get(route('conversations.show', $conversation))
+        ->get(route('conversations.index', ['c' => $conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('availability.value', 'unavailable')
             ->where('conversation.can.reply', true)
@@ -144,9 +144,9 @@ test('the transfer options show each agent\'s availability and load', function (
     $conversation = Conversation::factory()->inDepartment($this->department)->create();
 
     $this->actingAs($this->admin)
-        ->get(route('conversations.show', $conversation), [
+        ->get(route('conversations.index', ['c' => $conversation->id]), [
             'X-Inertia' => 'true',
-            'X-Inertia-Partial-Component' => 'conversations/Show',
+            'X-Inertia-Partial-Component' => 'conversations/Index',
             'X-Inertia-Partial-Data' => 'transferOptions',
             'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
         ])

@@ -1,0 +1,19 @@
+# Chat Manager — scheduler (alternative to Supervisor or cron; use only one).
+[Unit]
+Description=Chat Manager scheduler
+After=network.target mariadb.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/chat-manager/current
+ExecStart=/usr/bin/php artisan schedule:work
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

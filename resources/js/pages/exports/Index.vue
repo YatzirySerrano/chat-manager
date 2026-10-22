@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, usePoll } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import {
     AlertCircle,
     CheckCircle2,
@@ -10,7 +10,7 @@ import {
     FolderDown,
     Hourglass,
 } from '@lucide/vue';
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import DataPagination from '@/components/DataPagination.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
@@ -24,6 +24,8 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { useLiveReload } from '@/composables/useLiveReload';
+import { userChannelName } from '@/composables/useUserChannel';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { index as exportsIndex } from '@/routes/exports';
 import type { DataTransfer, DataTransferStatus, Paginated } from '@/types';
@@ -45,24 +47,22 @@ const hasPending = computed(() =>
     ),
 );
 
-// Refresh only while something is still being generated.
-const { start, stop } = usePoll(
-    3000,
-    { only: ['transfers'] },
-    { autoStart: false },
-);
+/**
+ * While something is still being generated, the list refreshes as soon as
+ * the server signals that one of the user's exports finished; without
+ * real-time it refreshes every few seconds instead.
+ */
+useLiveReload({
+    channels: () => {
+        const channel = userChannelName();
 
-watch(
-    hasPending,
-    (pending) => {
-        if (pending) {
-            start();
-        } else {
-            stop();
-        }
+        return channel ? [{ name: channel, events: ['transfer.changed'] }] : [];
     },
-    { immediate: true },
-);
+    only: ['transfers'],
+    enabled: hasPending,
+    fallbackIntervalMs: 4000,
+    safetyIntervalMs: 30_000,
+});
 
 const statusStyles: Record<
     DataTransferStatus,

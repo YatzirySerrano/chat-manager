@@ -83,6 +83,10 @@ enum DefaultRole: string
                 Permission::ViewTags,
                 Permission::UseQuickReplies,
                 Permission::ViewReports,
+                Permission::UseTeamChat,
+                Permission::CreateTeamChatGroups,
+                Permission::ManageTeamChatGroups,
+                Permission::UseCrossDepartmentTeamChat,
             ],
             self::Agent => [
                 Permission::ViewDashboard,
@@ -95,6 +99,7 @@ enum DefaultRole: string
                 Permission::AddConversationNotes,
                 Permission::ViewContacts,
                 Permission::UseQuickReplies,
+                Permission::UseTeamChat,
             ],
         };
     }

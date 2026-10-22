@@ -4,6 +4,7 @@ namespace App\Actions\Departments;
 
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Enums\AuditAction;
+use App\Events\Users\UserAccessChanged;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -31,6 +32,8 @@ class RemoveDepartmentMember
                 'member_id' => $member->id,
                 'released_conversations' => $released,
             ], $actor);
+
+            UserAccessChanged::dispatch([$member->id], 'department_member_removed');
         });
     }
 }

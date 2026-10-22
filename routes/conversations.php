@@ -5,8 +5,12 @@ use App\Http\Controllers\Conversations\ConversationAssignmentController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
+use App\Http\Controllers\Conversations\ConversationReadController;
 use App\Http\Controllers\Conversations\ConversationStatusController;
+use App\Http\Controllers\Conversations\ConversationTagController;
+use App\Http\Controllers\Conversations\ConversationTimelineController;
 use App\Http\Controllers\Conversations\ConversationTransferController;
+use App\Http\Controllers\Conversations\MessageAttachmentController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -32,4 +36,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('conversations/{conversation}/messages', [ConversationMessageController::class, 'store'])
         ->middleware('throttle:60,1')
         ->name('conversations.messages.store');
+    Route::get('conversations/{conversation}/timeline', [ConversationTimelineController::class, 'index'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.timeline');
+    Route::post('conversations/{conversation}/read', [ConversationReadController::class, 'store'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.read');
+    Route::put('conversations/{conversation}/tags', [ConversationTagController::class, 'update'])->name('conversations.tags.update');
+    Route::get('conversations/{conversation}/messages/{message}/attachments/{attachment}', [MessageAttachmentController::class, 'show'])
+        ->name('conversations.messages.attachments.show');
 });

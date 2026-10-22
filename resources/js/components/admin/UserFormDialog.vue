@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useForm, useHttp } from '@inertiajs/vue3';
+import { useForm, useHttp, usePage } from '@inertiajs/vue3';
 import { Building2, KeyRound, ShieldCheck, UserRound } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoleChangeImpactDialog from '@/components/admin/RoleChangeImpactDialog.vue';
@@ -8,6 +8,7 @@ import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
+import PasswordRequirements from '@/components/PasswordRequirements.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,6 +21,17 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { useEmailAvailability } from '@/composables/useEmailAvailability';
+import { useFormValidation } from '@/composables/useFormValidation';
+import {
+    email,
+    matches,
+    maxLength,
+    normalizers,
+    password,
+    required,
+    when,
+} from '@/lib/validation';
 import { roleImpact, store, update } from '@/routes/admin/users';
 import type {
     AdminUser,
@@ -58,6 +70,54 @@ const form = useForm<{
     role_change_fingerprint: null,
 });
 
+const page = usePage();
+
+/** The password is only validated (and sent) when it is being set. */
+const settingPassword = computed(
+    () => !isEditing.value || changePassword.value,
+);
+
+const availability = useEmailAvailability({
+    email: () => form.email,
+    userId: () => props.user?.id ?? null,
+    currentEmail: () => props.user?.email ?? null,
+    enabled: () => open.value,
+});
+
+const validation = useFormValidation(form, {
+    rules: () => ({
+        name: [required('Escribe el nombre completo.'), maxLength(255)],
+        email: [
+            required('Escribe el correo electrónico.'),
+            email(),
+            maxLength(255),
+            availability.rule,
+        ],
+        role_id: canChangeRole.value ? [required('Selecciona un rol.')] : [],
+        password: [
+            when(
+                () => settingPassword.value,
+                [
+                    required('Escribe la contraseña.'),
+                    password(page.props.passwordPolicy),
+                ],
+            ),
+        ],
+        password_confirmation: [
+            when(
+                () => settingPassword.value,
+                [
+                    required('Confirma la contraseña.'),
+                    matches('password', 'Las contraseñas no coinciden.'),
+                ],
+            ),
+        ],
+    }),
+    normalize: { email: normalizers.email },
+    ignore: ['role_change_fingerprint'],
+    requireChanges: isEditing,
+});
+
 const preview = useHttp<{ role_id: number | null }, RoleChangeImpact>({
     role_id: null,
 });
@@ -74,10 +134,9 @@ watch(open, (isOpen) => {
         (role) => role.assignable && !role.is_root && role.allows_departments,
     );
 
-    form.clearErrors();
     changePassword.value = false;
     impact.value = null;
-    form.defaults({
+    validation.load({
         name: props.user?.name ?? '',
         email: props.user?.email ?? '',
         role_id: props.user?.role?.id ?? defaultRole?.id ?? null,
@@ -86,7 +145,18 @@ watch(open, (isOpen) => {
         password_confirmation: '',
         role_change_fingerprint: null,
     });
-    form.reset();
+});
+
+/**
+ * Choosing not to change the password discards what was typed, so it is
+ * neither validated nor counted as a change.
+ */
+watch(changePassword, (changing) => {
+    if (!changing) {
+        form.password = '';
+        form.password_confirmation = '';
+        form.clearErrors('password', 'password_confirmation');
+    }
 });
 
 const assignableRoles = computed(() =>
@@ -114,15 +184,6 @@ const selectableDepartments = computed(() =>
             department.is_active || form.department_ids.includes(department.id),
     ),
 );
-
-const departmentError = computed(() => {
-    const errors = form.errors as Record<string, string | undefined>;
-    const key = Object.keys(errors).find((name) =>
-        name.startsWith('department_ids'),
-    );
-
-    return key ? errors[key] : undefined;
-});
 
 const roleChangeError = computed(
     () => (form.errors as Record<string, string | undefined>).role_change,
@@ -228,7 +289,7 @@ function submit(): void {
         "
         size="lg"
         :processing="form.processing || preview.processing"
-        :dirty="form.isDirty"
+        :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear usuario'"
         @submit="submit"
     >
@@ -242,26 +303,33 @@ function submit(): void {
                     <FormField
                         id="user-name"
                         label="Nombre completo"
-                        :error="form.errors.name"
+                        :error="validation.error('name')"
                     >
                         <Input
                             id="user-name"
                             v-model="form.name"
                             autocomplete="off"
-                            :aria-invalid="!!form.errors.name"
+                            maxlength="255"
+                            v-bind="validation.field('name', 'user-name')"
                         />
                     </FormField>
                     <FormField
                         id="user-email"
                         label="Correo electrónico"
-                        :error="form.errors.email"
+                        :error="validation.error('email')"
+                        :hint="
+                            availability.checking.value
+                                ? 'Comprobando que el correo esté disponible…'
+                                : undefined
+                        "
                     >
                         <Input
                             id="user-email"
                             v-model="form.email"
                             type="email"
                             autocomplete="off"
-                            :aria-invalid="!!form.errors.email"
+                            maxlength="255"
+                            v-bind="validation.field('email', 'user-email')"
                         />
                     </FormField>
                 </div>
@@ -276,13 +344,13 @@ function submit(): void {
                     v-if="canChangeRole"
                     id="user-role"
                     label="Rol"
-                    :error="form.errors.role_id"
+                    :error="validation.error('role_id')"
                 >
                     <Select v-model="form.role_id">
                         <SelectTrigger
                             id="user-role"
                             class="w-full"
-                            :aria-invalid="!!form.errors.role_id"
+                            v-bind="validation.field('role_id', 'user-role')"
                         >
                             <SelectValue placeholder="Selecciona un rol" />
                         </SelectTrigger>
@@ -373,7 +441,7 @@ function submit(): void {
                         El alcance del rol se aplica sobre los departamentos
                         seleccionados.
                     </p>
-                    <InputError :message="departmentError" />
+                    <InputError :message="validation.error('department_ids')" />
                 </template>
                 <p
                     v-else
@@ -420,25 +488,43 @@ function submit(): void {
                                 ? 'Nueva contraseña'
                                 : 'Contraseña inicial'
                         "
-                        :error="form.errors.password"
+                        :error="validation.error('password')"
                     >
                         <PasswordInput
                             id="user-password"
                             v-model="form.password"
                             autocomplete="new-password"
+                            v-bind="
+                                validation.field(
+                                    'password',
+                                    'user-password',
+                                    'user-password-requirements',
+                                )
+                            "
                         />
                     </FormField>
                     <FormField
                         id="user-password-confirmation"
                         label="Confirmar contraseña"
-                        :error="form.errors.password_confirmation"
+                        :error="validation.error('password_confirmation')"
                     >
                         <PasswordInput
                             id="user-password-confirmation"
                             v-model="form.password_confirmation"
                             autocomplete="new-password"
+                            v-bind="
+                                validation.field(
+                                    'password_confirmation',
+                                    'user-password-confirmation',
+                                )
+                            "
                         />
                     </FormField>
+                    <PasswordRequirements
+                        id="user-password-requirements"
+                        class="sm:col-span-2"
+                        :password="form.password"
+                    />
                 </div>
             </section>
         </div>

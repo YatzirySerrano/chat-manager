@@ -93,4 +93,28 @@ class PhoneNumber
     {
         return self::normalize($number, $defaultCountry) !== null;
     }
+
+    /**
+     * Readable rendering of an E.164 number, mirroring formatPhone() of
+     * resources/js/lib/phone.ts: "+52 55 1234 5678", "+1 415 555 2671";
+     * other countries are grouped generically.
+     */
+    public static function format(?string $e164): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $e164) ?? '';
+
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '52') && strlen($digits) === 12) {
+            return '+52 '.substr($digits, 2, 2).' '.substr($digits, 4, 4).' '.substr($digits, 8);
+        }
+
+        if (str_starts_with($digits, '1') && strlen($digits) === 11) {
+            return '+1 '.substr($digits, 1, 3).' '.substr($digits, 4, 3).' '.substr($digits, 7);
+        }
+
+        return trim('+'.substr($digits, 0, 2).' '.implode(' ', str_split(substr($digits, 2), 4)));
+    }
 }

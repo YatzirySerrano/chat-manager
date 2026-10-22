@@ -12,9 +12,6 @@ test('security page is displayed', function () {
         'confirm' => true,
         'confirmPassword' => true,
     ]);
-    Features::passkeys([
-        'confirmPassword' => true,
-    ]);
 
     $user = User::factory()->create();
 
@@ -23,8 +20,8 @@ test('security page is displayed', function () {
         ->get(route('security.edit'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('settings/Security')
-            ->where('canManagePasskeys', true)
-            ->where('passkeys', [])
+            ->missing('canManagePasskeys')
+            ->missing('passkeys')
             ->where('canManageTwoFactor', true)
             ->where('twoFactorEnabled', false),
         );
@@ -59,8 +56,8 @@ test('security page renders without two factor when feature is disabled', functi
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('settings/Security')
-            ->where('canManagePasskeys', false)
-            ->where('passkeys', [])
+            ->missing('canManagePasskeys')
+            ->missing('passkeys')
             ->where('canManageTwoFactor', false)
             ->missing('twoFactorEnabled')
             ->missing('requiresConfirmation'),
@@ -101,4 +98,47 @@ test('correct password must be provided to update password', function () {
     $response
         ->assertSessionHasErrors('current_password')
         ->assertRedirect(route('security.edit'));
+});
+
+test('the effective password policy is shared with every page', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('profile.edit'))
+        ->assertInertia(fn (Assert $page) => $page->where('passwordPolicy', [
+            'min' => 8,
+            'max' => null,
+            'letters' => false,
+            'mixed_case' => false,
+            'numbers' => false,
+            'symbols' => false,
+            'uncompromised' => false,
+        ]));
+});
+
+test('the password update is translated and confirmed', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Contraseña actualizada.']);
+});
+
+test('choosing the current password as the new one writes nothing and says so', function () {
+    $user = User::factory()->create();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($user)
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([]);
 });

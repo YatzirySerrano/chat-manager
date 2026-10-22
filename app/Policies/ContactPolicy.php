@@ -43,14 +43,31 @@ class ContactPolicy
             && $actor->holdsPermission(Permission::CreateContacts);
     }
 
+    /**
+     * A deleted contact is read-only until it is restored.
+     */
     public function update(User $actor, Contact $contact): Response
     {
-        return $this->allowWithinScope($actor, $contact, Permission::UpdateContacts);
+        return $this->allowOnLiveContact($actor, $contact, Permission::UpdateContacts);
     }
 
-    public function archive(User $actor, Contact $contact): Response
+    /**
+     * Logical deletion (archiving).
+     */
+    public function delete(User $actor, Contact $contact): Response
     {
-        return $this->allowWithinScope($actor, $contact, Permission::ArchiveContacts);
+        return $this->allowOnLiveContact($actor, $contact, Permission::DeleteContacts);
+    }
+
+    /**
+     * Restoring requires seeing deleted records (otherwise the contact is
+     * reported as not found) besides the delete permission.
+     */
+    public function restore(User $actor, Contact $contact): Response
+    {
+        $response = $this->allowWithinScope($actor, $contact, Permission::DeleteContacts);
+
+        return $response->allowed() && ! $contact->isDeleted() ? Response::deny() : $response;
     }
 
     /**
@@ -92,11 +109,24 @@ class ContactPolicy
         return $actor->holdsPermission($permission) ? Response::allow() : Response::deny();
     }
 
+    private function allowOnLiveContact(User $actor, Contact $contact, Permission $permission): Response
+    {
+        $response = $this->allowWithinScope($actor, $contact, $permission);
+
+        return $response->allowed() && $contact->isDeleted() ? Response::deny() : $response;
+    }
+
     /**
-     * Whether the contact is inside the actor's data scope.
+     * Whether the contact is inside the actor's data scope. Deleted contacts
+     * are outside it for people who cannot consult deleted records, so their
+     * identifiers reveal nothing.
      */
     private function reaches(User $actor, Contact $contact): bool
     {
+        if ($contact->isDeleted() && ! $actor->canViewDeletedRecords()) {
+            return false;
+        }
+
         if ($actor->dataScope() === DataScope::Global) {
             return true;
         }

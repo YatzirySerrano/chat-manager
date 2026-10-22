@@ -1,6 +1,7 @@
 import {
     Building2,
     Contact,
+    FileDown,
     LayoutGrid,
     MessageSquareText,
     MessagesSquare,
@@ -24,6 +25,7 @@ import { index as connectionsIndex } from '@/routes/connections';
 import { index as contactsIndex } from '@/routes/contacts';
 import { index as conversationsIndex } from '@/routes/conversations';
 import { index as departmentsIndex } from '@/routes/departments';
+import { index as exportsIndex } from '@/routes/exports';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
 import { index as tagsIndex } from '@/routes/tags';
 import type { NavItem } from '@/types';
@@ -55,6 +57,15 @@ export function useNavigation() {
                 ],
             },
         ];
+
+        if (canAny('reports.export', 'audit.export')) {
+            result[0].items.push({
+                title: 'Exportaciones',
+                description: 'Archivos de Excel y PDF generados',
+                href: exportsIndex(),
+                icon: FileDown,
+            });
+        }
 
         const attention: NavSection['items'] = [];
 

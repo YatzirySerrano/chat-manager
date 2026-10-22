@@ -1,4 +1,5 @@
 import type { DepartmentOption } from './admin';
+import type { RecordStateValue } from './ui';
 
 export type QuickReplyVariableValue =
     | 'contacto.nombre'
@@ -19,20 +20,21 @@ export type QuickReplySummary = {
     shortcut: string;
     body: string;
     is_active: boolean;
+    is_deleted: boolean;
     is_global: boolean;
     departments: DepartmentOption[];
     updated_at: string | null;
     can: {
         update: boolean;
-        changeStatus: boolean;
         delete: boolean;
+        restore: boolean;
     };
 };
 
 export type QuickReplyFilters = {
     search: string;
     department: number | null;
-    status: 'active' | 'inactive' | null;
+    record: RecordStateValue;
     availability: 'global' | 'departments' | null;
 };
 

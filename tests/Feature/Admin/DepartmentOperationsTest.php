@@ -43,7 +43,7 @@ function customWeek(): array
 }
 
 test('administrators update the welcome message and the change is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)
@@ -62,7 +62,7 @@ test('administrators update the welcome message and the change is audited', func
 });
 
 test('an empty welcome message clears it and an unchanged one is not audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $department->forceFill(['welcome_message' => 'Hola'])->save();
 
@@ -74,7 +74,7 @@ test('an empty welcome message clears it and an unchanged one is not audited', f
 });
 
 test('the welcome message cannot exceed 1024 characters', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)
@@ -116,7 +116,7 @@ test('only users who can update the department in their scope change its operati
 });
 
 test('a department can switch to a custom schedule and the diff is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)
@@ -153,7 +153,7 @@ test('a department can switch to a custom schedule and the diff is audited', fun
 });
 
 test('returning to platform hours keeps the stored custom schedule', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $department->forceFill(['uses_custom_hours' => true, 'business_hours' => ['days' => customWeek()]])->save();
 
@@ -170,7 +170,7 @@ test('returning to platform hours keeps the stored custom schedule', function ()
 });
 
 test('custom hours are validated like the platform hours', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $week = customWeek();
     $week['monday']['start'] = '9am';
@@ -206,7 +206,7 @@ test('custom hours are validated like the platform hours', function () {
 test('operational metrics count only the conversations of the department', function () {
     $this->travelTo(now()->setDate(2026, 10, 17)->setTime(18, 0));
 
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $other = Department::factory()->create();
     $agent = User::factory()->agent()->inDepartments($department)->create();
@@ -237,7 +237,7 @@ test('operational metrics count only the conversations of the department', funct
 });
 
 test('a department without conversations reports zero totals', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)
@@ -246,7 +246,7 @@ test('a department without conversations reports zero totals', function () {
 });
 
 test('the detail lists only the connections and specific quick replies of the department', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $other = Department::factory()->create();
 
@@ -301,7 +301,7 @@ test('connection links and quick replies follow the viewer permissions', functio
 });
 
 test('the department index includes the number of associated connections', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     Connection::factory()->count(2)->create()->each(fn (Connection $connection) => $connection->departments()->attach($department));
 
@@ -309,3 +309,20 @@ test('the department index includes the number of associated connections', funct
         ->get(route('departments.index'))
         ->assertInertia(fn (Assert $page) => $page->where('departments.0.connections_count', 2));
 });
+
+test('saving the same operations, hours or distribution writes nothing and says so', function (string $routeName, array $payload) {
+    $admin = User::factory()->superAdministrator()->create();
+    $department = Department::factory()->create();
+    $department->forceFill(['welcome_message' => 'Hola', 'uses_custom_hours' => true, 'business_hours' => ['days' => customWeek()]])->save();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route($routeName, $department), $payload)
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([]);
+})->with([
+    'welcome message' => ['departments.operations.update', ['welcome_message' => ' Hola ']],
+    'hours' => ['departments.hours.update', ['uses_custom_hours' => true, 'business_hours' => ['days' => customWeek()]]],
+    'distribution' => ['departments.distribution.update', ['distribution_mode' => 'shared']],
+]);

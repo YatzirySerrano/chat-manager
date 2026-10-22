@@ -17,7 +17,7 @@ test('only users with the permission can open the personalization module', funct
 })->with(['supervisor' => DefaultRole::Supervisor, 'agent' => DefaultRole::Agent]);
 
 test('the platform uses the green palette by default', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('admin.appearance.edit'))
@@ -33,7 +33,7 @@ test('the platform uses the green palette by default', function () {
 });
 
 test('the global palette can be changed, is shared with every page and is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->put(route('admin.appearance.update'), ['palette' => 'indigo'])
@@ -48,9 +48,23 @@ test('the global palette can be changed, is shared with every page and is audite
 });
 
 test('only curated palettes are accepted', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->put(route('admin.appearance.update'), ['palette' => 'red; background: url(x)'])
         ->assertSessionHasErrors('palette');
+});
+
+test('choosing the palette already in use writes nothing and says so', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $this->actingAs($admin)->put(route('admin.appearance.update'), ['palette' => 'indigo'])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Apariencia global actualizada.']);
+    AuditLog::query()->delete();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('admin.appearance.update'), ['palette' => 'indigo'])
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and(AuditLog::query()->exists())->toBeFalse();
 });

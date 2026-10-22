@@ -10,6 +10,7 @@ import {
     UserRoundCheck,
 } from '@lucide/vue';
 import { computed } from 'vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatCard from '@/components/StatCard.vue';
 import { usePermissions } from '@/composables/usePermissions';
@@ -30,6 +31,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+    canExport?: boolean;
     canViewMetrics: boolean;
     overview?: DashboardOverview | null;
 }>();
@@ -68,7 +70,11 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
         <PageHeader
             :title="`Hola, ${firstName}`"
             :description="scopeDescription"
-        />
+        >
+            <template v-if="canExport && canViewMetrics" #actions>
+                <ExportMenu report="dashboard" label="Exportar resumen" />
+            </template>
+        </PageHeader>
 
         <div
             v-if="!canViewMetrics"

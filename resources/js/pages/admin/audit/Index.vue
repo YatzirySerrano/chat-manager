@@ -3,8 +3,10 @@ import { Head, router } from '@inertiajs/vue3';
 import { ScrollText, X } from '@lucide/vue';
 import { computed, reactive, ref } from 'vue';
 import AuditDetailSheet from '@/components/admin/AuditDetailSheet.vue';
+import AuditRestrictedBadge from '@/components/admin/AuditRestrictedBadge.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +43,7 @@ defineOptions({
 const props = defineProps<{
     logs: Paginated<AuditLogEntry>;
     filters: AuditFilters;
+    canExport?: boolean;
     actions: { value: string; label: string }[];
     actors: { id: number; name: string }[];
     scope: 'all' | 'own';
@@ -127,7 +130,11 @@ function openDetail(entry: AuditLogEntry): void {
                     ? 'Operaciones que realizaste. Tu rol solo permite consultar tus propios registros.'
                     : 'Registro inalterable de las acciones administrativas. No incluye contraseñas ni secretos.'
             "
-        />
+        >
+            <template v-if="canExport" #actions>
+                <ExportMenu report="audit" :filters="filters" />
+            </template>
+        </PageHeader>
 
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-end">
             <Select
@@ -239,6 +246,7 @@ function openDetail(entry: AuditLogEntry): void {
                                     aria-hidden="true"
                                 />
                                 {{ entry.action.label }}
+                                <AuditRestrictedBadge v-if="entry.restricted" />
                             </span>
                         </TableCell>
                         <TableCell

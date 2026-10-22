@@ -38,6 +38,9 @@ class ConnectionResource extends JsonResource
             'meta_app_id' => $this->meta_app_id,
             'verified_name' => $this->verified_name,
             'is_active' => $this->is_active,
+            'is_deleted' => $this->isDeleted(),
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
+            'conversations_count' => $this->whenCounted('conversations'),
             'secrets' => [
                 'access_token' => filled($this->access_token),
                 'app_secret' => filled($this->app_secret),
@@ -94,6 +97,8 @@ class ConnectionResource extends JsonResource
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
                 'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
                 'verify' => $request->user()?->can('verify', $this->resource) ?? false,
+                'delete' => $request->user()?->can('delete', $this->resource) ?? false,
+                'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
         ];
     }

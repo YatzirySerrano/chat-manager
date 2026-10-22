@@ -2,57 +2,60 @@
 
 namespace App\Actions\Users;
 
+use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Enums\AuditAction;
-use App\Models\Conversation;
-use App\Models\ConversationEvent;
-use App\Models\Message;
 use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Permanently deletes an account that has no operational history.
- * Accounts with history must be deactivated to preserve traceability.
+ * Logically deletes an account: it loses access at once (sessions and the
+ * "remember me" token are discarded and EnsureUserIsActive signs it out),
+ * its open conversations return to their department queue with an audited
+ * event, and everything it did stays in the history. Nothing is removed.
  */
 class DeleteUser
 {
     public function __construct(
         private AuditLogger $audit,
         private EnsureRootAuthorityRemains $ensureRootAuthorityRemains,
+        private ReleaseAssignedConversations $releaseConversations,
     ) {}
 
-    public function handle(User $user, User $actor): void
+    /**
+     * @throws ValidationException
+     */
+    public function handle(User $user, User $actor): User
     {
         if ($user->is($actor)) {
-            throw ValidationException::withMessages(['user' => 'No puedes eliminar tu propia cuenta desde administración.']);
+            throw ValidationException::withMessages(['user' => 'No puedes eliminar tu propia cuenta.']);
         }
 
-        DB::transaction(function () use ($user, $actor): void {
+        return DB::transaction(function () use ($user, $actor): User {
             $this->ensureRootAuthorityRemains->handle($user);
 
-            if ($this->hasOperationalHistory($user)) {
-                throw ValidationException::withMessages([
-                    'user' => 'El usuario tiene historial operativo. Desactívalo en lugar de eliminarlo para conservar la trazabilidad.',
-                ]);
+            /** @var User $locked */
+            $locked = User::query()->lockForUpdate()->findOrFail($user->id);
+
+            if ($locked->isDeleted()) {
+                return $locked;
             }
 
-            $this->audit->record(AuditAction::UserDeleted, $user, [
-                'role' => $user->role()?->label,
+            $locked->forceFill(['is_active' => false, 'deactivated_at' => now(), 'remember_token' => null])->save();
+
+            $released = $this->releaseConversations->handle($locked, null, $actor, 'Usuario eliminado');
+
+            if (config('session.driver') === 'database') {
+                DB::table((string) config('session.table', 'sessions'))->where('user_id', $locked->id)->delete();
+            }
+
+            $this->audit->record(AuditAction::UserDeleted, $locked, [
+                'role' => $locked->role()?->label,
+                'released_conversations' => $released,
             ], $actor);
 
-            $user->delete();
+            return $locked;
         });
-    }
-
-    private function hasOperationalHistory(User $user): bool
-    {
-        return Message::query()->where('sender_user_id', $user->id)->exists()
-            || Conversation::query()->where('assigned_user_id', $user->id)->exists()
-            || ConversationEvent::query()
-                ->where(fn ($query) => $query->where('actor_user_id', $user->id)
-                    ->orWhere('from_user_id', $user->id)
-                    ->orWhere('to_user_id', $user->id))
-                ->exists();
     }
 }

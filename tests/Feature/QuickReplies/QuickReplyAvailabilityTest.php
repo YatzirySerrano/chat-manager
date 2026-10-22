@@ -18,7 +18,7 @@ test('members can use active global replies and those shared with their departme
 });
 
 test('global users can use every active reply because they attend every department', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     QuickReply::factory()->create();
     QuickReply::factory()->forDepartments(Department::factory()->create())->create();
     QuickReply::factory()->inactive()->create();

@@ -65,15 +65,15 @@ const confirmCopy = computed(() => {
             return {
                 title: `¿Vincular el WhatsApp de «${reviewed}» a «${target}»?`,
                 description:
-                    'La identidad de WhatsApp, sus conexiones, su procedencia, notas y etiquetas pasan a la ficha existente. El registro automático queda archivado con su historial.',
+                    'La identidad de WhatsApp, sus conexiones, su procedencia, notas y etiquetas pasan a la ficha existente. El registro automático queda eliminado y conserva su historial (puede restaurarse).',
                 label: 'Vincular',
             };
         case 'duplicate_archived':
             return {
-                title: `¿Archivar «${reviewed}» como duplicado de «${target}»?`,
+                title: `¿Eliminar «${reviewed}» como duplicado de «${target}»?`,
                 description:
-                    'El registro nuevo se archiva y conserva su historial; la ficha existente no cambia.',
-                label: 'Archivar duplicado',
+                    'El registro nuevo se elimina y conserva su historial (puede restaurarse); la ficha existente no cambia.',
+                label: 'Eliminar duplicado',
             };
         default:
             return {
@@ -246,7 +246,7 @@ function phone(summary: ContactReviewSummary): string {
                     <StatusBadge
                         :active="reviewCase.contact.status === 'active'"
                         active-label="Activo"
-                        inactive-label="Archivado"
+                        inactive-label="Eliminado"
                         class="justify-self-start"
                     />
                 </section>
@@ -312,7 +312,7 @@ function phone(summary: ContactReviewSummary): string {
                                     )
                                 "
                             >
-                                Archivar el registro en revisión
+                                Eliminar el registro en revisión
                             </Button>
                         </div>
                     </section>

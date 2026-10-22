@@ -4,33 +4,36 @@ namespace App\Http\Controllers\QuickReplies;
 
 use App\Actions\QuickReplies\CreateQuickReply;
 use App\Actions\QuickReplies\DeleteQuickReply;
+use App\Actions\QuickReplies\QuickReplyListQuery;
+use App\Actions\QuickReplies\RestoreQuickReply;
 use App\Actions\QuickReplies\UpdateQuickReply;
 use App\Enums\DataScope;
-use App\Enums\Permission;
 use App\Enums\QuickReplyVariable;
+use App\Enums\RecordState;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\QuickReplies\QuickReplyRequest;
 use App\Http\Resources\QuickReplyResource;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
+use App\Services\Exports\ReportExporter;
 use App\Services\QuickReplyRenderer;
+use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class QuickReplyController extends Controller
 {
     /**
-     * Managers see every reply within their scope (inactive included); users
-     * that can only use replies see the ones they can insert.
+     * Managers see every reply within their scope (deleted ones only when they
+     * can consult deleted records); users that can only use replies see the
+     * ones they can insert.
      */
-    public function index(Request $request, QuickReplyRenderer $renderer): Response
+    public function index(Request $request, QuickReplyRenderer $renderer, QuickReplyListQuery $list, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', QuickReply::class);
 
@@ -38,41 +41,14 @@ class QuickReplyController extends Controller
         $actor = $request->user();
         $actor->loadMissing(['roles.permissions', 'departments:id']);
 
-        $filters = $request->validate([
-            'search' => ['nullable', 'string', 'max:100'],
-            'department' => ['nullable', 'integer'],
-            'status' => ['nullable', Rule::in(['active', 'inactive'])],
-            'availability' => ['nullable', Rule::in(['global', 'departments'])],
-        ]);
+        $filters = $list->filters($actor, $request->validate(QuickReplyListQuery::rules()));
+        $search = $filters['search'];
+        $departmentId = $filters['department'];
+        $record = $filters['record'];
+        $availability = $filters['availability'];
+        $canManage = $filters['manages'];
 
-        $search = trim((string) ($filters['search'] ?? ''));
-        $departmentId = isset($filters['department']) ? (int) $filters['department'] : null;
-        $status = $filters['status'] ?? null;
-        $availability = $filters['availability'] ?? null;
-        $canManage = $actor->holdsPermission(Permission::ManageQuickReplies);
-
-        $quickReplies = QuickReply::query()
-            ->when($canManage, fn (Builder $query) => $query->visibleTo($actor), fn (Builder $query) => $query->usableBy($actor))
-            ->with(['departments' => fn (BelongsToMany $query) => $query
-                ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')
-                ->orderBy('departments.name')])
-            ->when($search !== '', function (Builder $query) use ($search): void {
-                $term = '%'.addcslashes($search, '\\%_').'%';
-                $shortcut = '%'.addcslashes(ltrim($search, '/'), '\\%_').'%';
-                $query->where(fn (Builder $match) => $match
-                    ->where('title', 'like', $term)
-                    ->orWhere('shortcut', 'like', $shortcut)
-                    ->orWhere('body', 'like', $term));
-            })
-            ->when($departmentId !== null, fn (Builder $query) => $query->whereHas(
-                'departments',
-                fn (Builder $departments) => $departments->whereKey($departmentId),
-            ))
-            ->when($status !== null, fn (Builder $query) => $query->where('is_active', $status === 'active'))
-            ->when($availability !== null, fn (Builder $query) => $query->where('is_global', $availability === 'global'))
-            ->orderByDesc('is_active')
-            ->orderBy('shortcut')
-            ->orderBy('id')
+        $quickReplies = $list->handle($actor, $filters)
             ->paginate(15)
             ->withQueryString();
 
@@ -81,11 +57,12 @@ class QuickReplyController extends Controller
             'filters' => [
                 'search' => $search,
                 'department' => $departmentId,
-                'status' => $status,
+                'record' => $record->value,
                 'availability' => $availability,
             ],
-            'departments' => $this->departmentOptions(Department::query()->visibleTo($actor)),
-            'assignableDepartments' => $canManage ? $this->departmentOptions($this->assignableDepartments($actor)) : [],
+            'recordStates' => $canManage ? RecordState::optionsFor($actor) : [],
+            'departments' => $this->departmentOptions(Department::query()->visibleTo($actor)->notDeleted()),
+            'assignableDepartments' => $canManage ? $this->departmentOptions($this->assignableDepartments($actor)->notDeleted()) : [],
             'variables' => QuickReplyVariable::options(),
             'sampleValues' => $renderer->sampleContext(),
             'bodyMaxLength' => QuickReplyRequest::BODY_MAX_LENGTH,
@@ -94,6 +71,7 @@ class QuickReplyController extends Controller
                 'manageGlobal' => $actor->can('manageGlobal', QuickReply::class),
                 'use' => $actor->can('use', QuickReply::class),
             ],
+            'canExport' => $exporter->allowsReport('quick-replies', $actor),
         ]);
     }
 
@@ -108,20 +86,35 @@ class QuickReplyController extends Controller
 
     public function update(QuickReplyRequest $request, QuickReply $quickReply, UpdateQuickReply $updateQuickReply): RedirectResponse
     {
-        $updateQuickReply->handle($quickReply, $request->payload(), $request->user());
+        $changed = $updateQuickReply->handle($quickReply, $request->payload(), $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Respuesta rápida actualizada.']);
+        SaveToast::flash($changed, 'Respuesta rápida actualizada.');
 
         return back();
     }
 
+    /**
+     * Logical deletion: the reply can no longer be used and its shortcut
+     * stays reserved.
+     */
     public function destroy(Request $request, QuickReply $quickReply, DeleteQuickReply $deleteQuickReply): RedirectResponse
     {
         Gate::authorize('delete', $quickReply);
 
         $deleteQuickReply->handle($quickReply, $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Respuesta rápida /{$quickReply->shortcut} eliminada."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Respuesta rápida /{$quickReply->shortcut} eliminada. Su atajo queda reservado."]);
+
+        return back();
+    }
+
+    public function restore(Request $request, QuickReply $quickReply, RestoreQuickReply $restoreQuickReply): RedirectResponse
+    {
+        Gate::authorize('restore', $quickReply);
+
+        $restoreQuickReply->handle($quickReply, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Respuesta rápida /{$quickReply->shortcut} restaurada."]);
 
         return back();
     }

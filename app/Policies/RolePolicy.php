@@ -23,24 +23,27 @@ class RolePolicy
 
     public function update(User $actor, Role $role): bool
     {
-        return $actor->holdsPermission(Permission::UpdateRoles)
+        return ! $role->isDeleted()
+            && $actor->holdsPermission(Permission::UpdateRoles)
             && $this->guard->canManageRole($actor, $role);
     }
 
     /**
-     * The root role can never be deactivated.
+     * Logical deletion. The root role can never be deleted.
      */
-    public function changeStatus(User $actor, Role $role): bool
-    {
-        return ! $role->is_root
-            && $actor->holdsPermission(Permission::ChangeRoleStatus)
-            && $this->guard->canManageRole($actor, $role);
-    }
-
     public function delete(User $actor, Role $role): bool
     {
         return ! $role->is_root
+            && ! $role->isDeleted()
             && $actor->holdsPermission(Permission::DeleteRoles)
+            && $this->guard->canManageRole($actor, $role);
+    }
+
+    public function restore(User $actor, Role $role): bool
+    {
+        return $role->isDeleted()
+            && $actor->holdsPermission(Permission::DeleteRoles)
+            && $actor->canViewDeletedRecords()
             && $this->guard->canManageRole($actor, $role);
     }
 }

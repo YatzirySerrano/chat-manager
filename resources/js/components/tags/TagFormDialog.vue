@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
-import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue';
+import ColorPicker from '@/components/ColorPicker.vue';
 import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, normalizers, required } from '@/lib/validation';
 import { store, update } from '@/routes/tags';
-import type { ColorSwatch, TagSummary } from '@/types';
+import type { AppColor, ColorSwatch, TagSummary } from '@/types';
 
 const props = defineProps<{
     tag: TagSummary | null;
@@ -22,11 +24,21 @@ const isEditing = computed(() => props.tag !== null);
 const form = useForm<{
     name: string;
     description: string;
-    color: ColorSwatch;
+    color: AppColor;
 }>({
     name: '',
     description: '',
     color: 'blue',
+});
+
+const validation = useFormValidation(form, {
+    rules: {
+        name: [required('Escribe el nombre.'), maxLength(60)],
+        description: [maxLength(255)],
+        color: [required('Elige un color.')],
+    },
+    normalize: { name: normalizers.squish },
+    requireChanges: isEditing,
 });
 
 watch(open, (isOpen) => {
@@ -34,13 +46,11 @@ watch(open, (isOpen) => {
         return;
     }
 
-    form.clearErrors();
-    form.defaults({
+    validation.load({
         name: props.tag?.name ?? '',
         description: props.tag?.description ?? '',
         color: props.tag?.color ?? 'blue',
     });
-    form.reset();
 });
 
 const previewName = computed(
@@ -69,7 +79,7 @@ function submit(): void {
         :title="isEditing ? 'Editar etiqueta' : 'Nueva etiqueta'"
         description="Las etiquetas clasifican contactos y conversaciones. No otorgan permisos ni cambian estados."
         :processing="form.processing"
-        :dirty="form.isDirty"
+        :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear etiqueta'"
         @submit="submit"
     >
@@ -77,7 +87,7 @@ function submit(): void {
             <FormField
                 id="tag-name"
                 label="Nombre"
-                :error="form.errors.name"
+                :error="validation.error('name')"
                 :help="{
                     description:
                         'Texto corto que verá el equipo en contactos y conversaciones.',
@@ -89,14 +99,14 @@ function submit(): void {
                     id="tag-name"
                     v-model="form.name"
                     maxlength="60"
-                    :aria-invalid="!!form.errors.name"
+                    v-bind="validation.field('name', 'tag-name')"
                 />
             </FormField>
 
             <FormField
                 id="tag-description"
                 label="Descripción (opcional)"
-                :error="form.errors.description"
+                :error="validation.error('description')"
                 hint="Explica cuándo aplicarla para que todos la usen igual."
             >
                 <Textarea
@@ -104,14 +114,15 @@ function submit(): void {
                     v-model="form.description"
                     rows="2"
                     maxlength="255"
+                    v-bind="validation.field('description', 'tag-description')"
                 />
             </FormField>
 
-            <ColorSwatchPicker
+            <ColorPicker
                 v-model="form.color"
                 :colors="colors"
                 group-label="Color de la etiqueta"
-                :error="form.errors.color"
+                :error="validation.error('color')"
             />
 
             <div class="grid gap-2 rounded-lg border bg-muted/40 p-3">
@@ -124,7 +135,6 @@ function submit(): void {
                         :color="form.color"
                         size="md"
                     />
-                    <TagBadge :name="previewName" :color="form.color" />
                 </div>
             </div>
         </div>

@@ -67,7 +67,7 @@ test('users that can only use replies see the active ones available to them', fu
 });
 
 test('the list can be searched by shortcut, title or text and filtered', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create();
     QuickReply::factory()->create(['shortcut' => 'horario', 'title' => 'Horario', 'body' => 'Abrimos de 9 a 18.']);
     $envio = QuickReply::factory()->forDepartments($sales)->create(['shortcut' => 'envio', 'title' => 'Costo de envío', 'body' => 'El envío es gratis.']);
@@ -75,6 +75,10 @@ test('the list can be searched by shortcut, title or text and filtered', functio
 
     $this->actingAs($admin)
         ->get(route('quick-replies.index', ['search' => '/envio']))
+        ->assertInertia(fn (Assert $page) => $page->has('quickReplies.data', 1)->where('quickReplies.data.0.id', $envio->id));
+
+    $this->actingAs($admin)
+        ->get(route('quick-replies.index', ['search' => '/envio', 'record' => 'all']))
         ->assertInertia(fn (Assert $page) => $page->has('quickReplies.data', 2));
 
     $this->actingAs($admin)
@@ -82,16 +86,20 @@ test('the list can be searched by shortcut, title or text and filtered', functio
         ->assertInertia(fn (Assert $page) => $page->has('quickReplies.data', 1)->where('quickReplies.data.0.id', $envio->id));
 
     $this->actingAs($admin)
-        ->get(route('quick-replies.index', ['department' => $sales->id, 'status' => 'active', 'availability' => 'departments']))
+        ->get(route('quick-replies.index', ['department' => $sales->id, 'record' => 'active', 'availability' => 'departments']))
         ->assertInertia(fn (Assert $page) => $page->has('quickReplies.data', 1)->where('quickReplies.data.0.id', $envio->id));
 
     $this->actingAs($admin)
-        ->get(route('quick-replies.index', ['status' => 'inactive']))
-        ->assertInertia(fn (Assert $page) => $page->has('quickReplies.data', 1)->where('quickReplies.data.0.shortcut', 'envio-viejo'));
+        ->get(route('quick-replies.index', ['record' => 'deleted']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('quickReplies.data', 1)
+            ->where('quickReplies.data.0.shortcut', 'envio-viejo')
+            ->where('quickReplies.data.0.can.restore', true)
+            ->where('quickReplies.data.0.can.update', false));
 });
 
 test('administrators can create a global reply and it is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('quick-replies.store'), quickReplyInput(['shortcut' => '/Saludo']))
@@ -110,7 +118,7 @@ test('administrators can create a global reply and it is audited', function () {
 });
 
 test('replies restricted to departments store them', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$sales, $support] = Department::factory()->count(2)->create();
 
     $this->actingAs($admin)
@@ -122,7 +130,7 @@ test('replies restricted to departments store them', function () {
 });
 
 test('fields are validated with clear messages', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('quick-replies.store'), [
@@ -141,7 +149,7 @@ test('fields are validated with clear messages', function () {
 });
 
 test('the body only accepts catalog variables', function (string $body, string $message) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('quick-replies.store'), quickReplyInput(['body' => $body]))
@@ -172,7 +180,7 @@ test('the body only accepts catalog variables', function (string $body, string $
 ]);
 
 test('comparison signs that are not tags are allowed in the body', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('quick-replies.store'), quickReplyInput(['body' => 'Pedidos < 500 pesos pagan envío; > 500 es gratis.']))
@@ -180,7 +188,7 @@ test('comparison signs that are not tags are allowed in the body', function () {
 });
 
 test('shortcuts must be unique within their scope', function (bool $existingGlobal, array $existingDepartments, bool $newGlobal, array $newDepartments, bool $conflicts) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $departments = [
         'sales' => Department::factory()->create(['name' => 'Ventas']),
         'support' => Department::factory()->create(['name' => 'Soporte']),
@@ -212,7 +220,7 @@ test('shortcuts must be unique within their scope', function (bool $existingGlob
 ]);
 
 test('the shortcut conflict message explains where it is used', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     QuickReply::factory()->forDepartments($sales)->create(['shortcut' => 'hola', 'title' => 'Saludo de ventas']);
 
@@ -222,7 +230,7 @@ test('the shortcut conflict message explains where it is used', function () {
 });
 
 test('inactive replies keep their shortcut reserved', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     QuickReply::factory()->inactive()->create(['shortcut' => 'hola']);
 
     $this->actingAs($admin)
@@ -231,7 +239,7 @@ test('inactive replies keep their shortcut reserved', function () {
 });
 
 test('updating a reply keeps its own shortcut and audits the changes', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$sales, $support] = Department::factory()->count(2)->create();
     $reply = QuickReply::factory()->forDepartments($sales)->create(['shortcut' => 'hola', 'title' => 'Antes']);
 
@@ -290,7 +298,6 @@ test('department managers cannot change global replies or replies of other depar
         $this->actingAs($manager)
             ->put(route('quick-replies.update', $reply), quickReplyInput(['shortcut' => $reply->shortcut, 'is_global' => false, 'department_ids' => [$own->id]]))
             ->assertForbidden();
-        $this->actingAs($manager)->patch(route('quick-replies.status.update', $reply), ['is_active' => false])->assertForbidden();
         $this->actingAs($manager)->delete(route('quick-replies.destroy', $reply))->assertForbidden();
     }
 
@@ -303,29 +310,35 @@ test('department managers cannot change global replies or replies of other depar
             ->where('assignableDepartments.0.id', $own->id)
         );
 
-    $this->actingAs($manager)->patch(route('quick-replies.status.update', $mine), ['is_active' => false])->assertSessionHasNoErrors();
+    $this->actingAs($manager)->delete(route('quick-replies.destroy', $mine))->assertSessionHasNoErrors();
 
     expect($mine->refresh()->is_active)->toBeFalse();
+
+    $this->actingAs($manager)->patch(route('quick-replies.restore', $mine))->assertForbidden();
 });
 
-test('replies can be deactivated, reactivated and deleted with audit entries', function () {
-    $admin = User::factory()->administrator()->create();
+test('a deleted reply cannot be used, keeps its shortcut reserved and can be restored', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create();
+    $agent = User::factory()->agent()->inDepartments($sales)->create();
     $reply = QuickReply::factory()->forDepartments($sales)->create(['shortcut' => 'adios', 'body' => 'Hasta luego']);
-
-    $this->actingAs($admin)->patch(route('quick-replies.status.update', $reply), ['is_active' => false])->assertSessionHasNoErrors();
-    expect($reply->refresh()->is_active)->toBeFalse();
-
-    $this->actingAs($admin)->patch(route('quick-replies.status.update', $reply), ['is_active' => true])->assertSessionHasNoErrors();
-    expect($reply->refresh()->is_active)->toBeTrue();
 
     $this->actingAs($admin)->delete(route('quick-replies.destroy', $reply))->assertSessionHasNoErrors();
 
-    expect(QuickReply::query()->exists())->toBeFalse()
-        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyDeactivated)->count())->toBe(1)
-        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyActivated)->count())->toBe(1)
-        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyDeleted)->sole()->properties)
-        ->toMatchArray(['shortcut' => 'adios', 'body' => 'Hasta luego', 'departments' => [$sales->name]]);
+    $this->assertModelExists($reply);
+    expect($reply->refresh()->isDeleted())->toBeTrue()
+        ->and($this->actingAs($agent)->getJson(route('quick-replies.available'))->json('data'))->toBe([]);
+
+    $this->actingAs($admin)
+        ->post(route('quick-replies.store'), quickReplyInput(['shortcut' => 'adios', 'is_global' => false, 'department_ids' => [$sales->id]]))
+        ->assertSessionHasErrors('shortcut');
+
+    $this->actingAs($admin)->put(route('quick-replies.update', $reply), quickReplyInput(['shortcut' => 'adios']))->assertForbidden();
+    $this->actingAs($admin)->patch(route('quick-replies.restore', $reply))->assertSessionHasNoErrors();
+
+    expect($reply->refresh()->is_active)->toBeTrue()
+        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyDeleted)->count())->toBe(1)
+        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyRestored)->count())->toBe(1);
 });
 
 test('users that can only use replies cannot manage them', function () {
@@ -334,4 +347,40 @@ test('users that can only use replies cannot manage them', function () {
 
     $this->actingAs($agent)->post(route('quick-replies.store'), quickReplyInput())->assertForbidden();
     $this->actingAs($agent)->delete(route('quick-replies.destroy', $reply))->assertForbidden();
+});
+
+test('saving a reply without effective changes writes nothing and says so', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    [$sales, $support] = Department::factory()->count(2)->create();
+    $reply = QuickReply::factory()->forDepartments($sales, $support)->create([
+        'title' => 'Saludo inicial',
+        'shortcut' => 'saludo',
+        'body' => "Hola,\nbienvenido.",
+    ]);
+    $updatedAt = $reply->updated_at;
+    $this->travel(1)->hours();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('quick-replies.update', $reply), quickReplyInput([
+            'title' => ' Saludo   inicial ',
+            'shortcut' => '/Saludo',
+            'body' => "Hola,\r\nbienvenido.  ",
+            'is_global' => false,
+            'department_ids' => [$support->id, $sales->id],
+        ]))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and($reply->refresh()->updated_at->equalTo($updatedAt))->toBeTrue()
+        ->and(AuditLog::query()->where('action', AuditAction::QuickReplyUpdated)->exists())->toBeFalse();
+});
+
+test('a real change to a reply is confirmed with a success toast', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $reply = QuickReply::factory()->create(['shortcut' => 'saludo', 'title' => 'Antes']);
+
+    $this->actingAs($admin)
+        ->put(route('quick-replies.update', $reply), quickReplyInput(['title' => 'Después', 'body' => $reply->body]))
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Respuesta rápida actualizada.']);
 });

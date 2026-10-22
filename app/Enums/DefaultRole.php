@@ -3,19 +3,25 @@
 namespace App\Enums;
 
 /**
- * Roles created on a fresh installation. They are only a starting point:
- * after installation every role, including these, is managed from the
- * interface and the synchronization never overwrites those changes.
+ * Roles the platform starts with. They are only a starting point: the
+ * synchronization creates the ones that do not exist yet and never touches
+ * an existing role, so every role is then managed from the interface.
+ *
+ * The Superadministrador keeps the historical name 'admin' because existing
+ * installations already store it; the Administrador is a regular (non-root)
+ * role with organization-wide reach.
  */
 enum DefaultRole: string
 {
-    case Administrator = 'admin';
+    case SuperAdministrator = 'admin';
+    case Administrator = 'administrator';
     case Supervisor = 'supervisor';
     case Agent = 'agent';
 
     public function label(): string
     {
         return match ($this) {
+            self::SuperAdministrator => 'Superadministrador',
             self::Administrator => 'Administrador',
             self::Supervisor => 'Supervisor',
             self::Agent => 'Agente',
@@ -25,7 +31,8 @@ enum DefaultRole: string
     public function description(): string
     {
         return match ($this) {
-            self::Administrator => 'Autoridad administrativa de la plataforma: usuarios, roles, departamentos y configuración.',
+            self::SuperAdministrator => 'Autoridad raíz de la plataforma: controla todo, incluidas las capacidades reservadas y los demás superadministradores.',
+            self::Administrator => 'Administra la operación de toda la organización por debajo del superadministrador.',
             self::Supervisor => 'Supervisa las conversaciones y los miembros de sus departamentos.',
             self::Agent => 'Atiende las conversaciones que tiene asignadas.',
         };
@@ -34,18 +41,18 @@ enum DefaultRole: string
     public function scope(): DataScope
     {
         return match ($this) {
-            self::Administrator => DataScope::Global,
+            self::SuperAdministrator, self::Administrator => DataScope::Global,
             self::Supervisor => DataScope::Departments,
             self::Agent => DataScope::Assigned,
         };
     }
 
     /**
-     * The administrator role is the protected root authority.
+     * The superadministrator role is the protected root authority.
      */
     public function isRoot(): bool
     {
-        return $this === self::Administrator;
+        return $this === self::SuperAdministrator;
     }
 
     /**
@@ -54,7 +61,11 @@ enum DefaultRole: string
     public function permissions(): array
     {
         return match ($this) {
-            self::Administrator => Permission::cases(),
+            self::SuperAdministrator => Permission::cases(),
+            self::Administrator => array_values(array_filter(
+                Permission::cases(),
+                fn (Permission $permission): bool => ! $permission->isReservedToRoot(),
+            )),
             self::Supervisor => [
                 Permission::ViewDashboard,
                 Permission::ViewDepartments,

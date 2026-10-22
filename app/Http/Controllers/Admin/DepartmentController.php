@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Actions\Departments\CreateDepartment;
+use App\Actions\Departments\DeleteDepartment;
+use App\Actions\Departments\DepartmentListQuery;
+use App\Actions\Departments\RestoreDepartment;
 use App\Actions\Departments\SummarizeDepartmentConversations;
 use App\Actions\Departments\UpdateDepartment;
 use App\Enums\ColorSwatch;
 use App\Enums\DataScope;
 use App\Enums\DistributionMode;
 use App\Enums\Permission;
+use App\Enums\RecordState;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DepartmentRequest;
 use App\Http\Resources\DepartmentMemberResource;
@@ -18,9 +22,10 @@ use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
+use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -31,30 +36,30 @@ use Inertia\Response;
 class DepartmentController extends Controller
 {
     /**
-     * Global roles see every department; other roles only the ones they belong to.
+     * Global roles see every department; other roles only the ones they belong
+     * to. Deleted departments are only listed for people who can consult them.
      */
-    public function index(Request $request): Response
+    public function index(Request $request, DepartmentListQuery $list, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', Department::class);
 
+        /** @var User $user */
         $user = $request->user();
 
-        $departments = Department::query()
-            ->visibleTo($user)
-            ->withCount(['members', 'leaders', 'connections'])
-            ->with(['leaders' => fn (BelongsToMany $query) => $query
-                ->select('users.id', 'users.name')
-                ->orderBy('users.name')])
-            ->orderByDesc('is_active')
-            ->orderBy('name')
-            ->get();
+        $filters = $list->filters($user, $request->validate(DepartmentListQuery::rules()));
+        $record = $filters['record'];
+
+        $departments = $list->handle($user, $filters)->get();
 
         return Inertia::render('departments/Index', [
             'departments' => DepartmentResource::collection($departments)->resolve($request),
+            'filters' => ['record' => $record->value],
+            'recordStates' => RecordState::optionsFor($user),
             'colors' => ColorSwatch::values(),
             'can' => [
                 'create' => $user->can('create', Department::class),
             ],
+            'canExport' => $exporter->allowsReport('departments', $user),
         ]);
     }
 
@@ -79,6 +84,7 @@ class DepartmentController extends Controller
         $actor = $request->user();
 
         $members = $department->members()
+            ->hidingDeletedFrom($actor)
             ->with(['roles.permissions', 'departments:id'])
             ->orderBy('users.name')
             ->get();
@@ -86,7 +92,7 @@ class DepartmentController extends Controller
         $canManageMembers = $actor->can('manageMembers', $department);
 
         return Inertia::render('departments/Show', [
-            'department' => DepartmentResource::make($department->loadCount(['members', 'leaders', 'connections']))->resolve($request),
+            'department' => DepartmentResource::make($department->loadCount($this->counts($actor)))->resolve($request),
             'members' => DepartmentMemberResource::collection($members)->resolve($request),
             'removableMemberIds' => $members
                 ->filter(fn (User $member): bool => $actor->can('manageMember', [$department, $member]))
@@ -110,17 +116,60 @@ class DepartmentController extends Controller
             'distributionModes' => DistributionMode::options(),
             'can' => [
                 'update' => $actor->can('update', $department),
-                'changeStatus' => $actor->can('changeStatus', $department),
+                'delete' => $actor->can('delete', $department),
+                'restore' => $actor->can('restore', $department),
                 'manageMembers' => $canManageMembers,
             ],
         ]);
     }
 
+    /**
+     * Logical deletion: the department stops operating and keeps its members
+     * (inert) and its history.
+     */
+    public function destroy(Request $request, Department $department, DeleteDepartment $deleteDepartment): RedirectResponse
+    {
+        Gate::authorize('delete', $department);
+
+        $deleteDepartment->handle($department, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Departamento {$department->name} eliminado. Sus miembros e historial se conservan."]);
+
+        // Deleted from its own detail page by someone who cannot consult
+        // deleted records: that page no longer exists for them.
+        $leavesDetail = ! $request->user()->canViewDeletedRecords()
+            && parse_url(url()->previous(), PHP_URL_PATH) === parse_url(route('departments.show', $department), PHP_URL_PATH);
+
+        return $leavesDetail ? to_route('departments.index') : back();
+    }
+
+    public function restore(Request $request, Department $department, RestoreDepartment $restoreDepartment): RedirectResponse
+    {
+        Gate::authorize('restore', $department);
+
+        $restoreDepartment->handle($department, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Departamento {$department->name} restaurado."]);
+
+        return back();
+    }
+
+    /**
+     * Counters of a department, without deleted members or connections for
+     * people who cannot consult deleted records.
+     *
+     * @return array<string, \Closure>
+     */
+    private function counts(User $actor): array
+    {
+        return app(DepartmentListQuery::class)->counts($actor);
+    }
+
     public function update(DepartmentRequest $request, Department $department, UpdateDepartment $updateDepartment): RedirectResponse
     {
-        $updateDepartment->handle($department, $request->payload(), $request->user());
+        $changed = $updateDepartment->handle($department, $request->payload(), $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Departamento actualizado.']);
+        SaveToast::flash($changed, 'Departamento actualizado.');
 
         return back();
     }
@@ -130,13 +179,14 @@ class DepartmentController extends Controller
      * association is edited from the connection form; only users who can
      * view connections receive a link to it. No credential is exposed.
      *
-     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_default: bool, health: array{value: string, label: string, tone: string}, url: string|null}>
+     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_deleted: bool, is_default: bool, health: array{value: string, label: string, tone: string}, url: string|null}>
      */
     private function connections(Department $department, User $actor): array
     {
         $canOpen = Route::has('connections.show') && $actor->holdsPermission(Permission::ViewConnections);
 
         return array_values($department->connections()
+            ->hidingDeletedFrom($actor)
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
@@ -148,6 +198,7 @@ class DepartmentController extends Controller
                     'name' => $connection->name,
                     'display_phone_number' => $connection->display_phone_number,
                     'is_active' => $connection->is_active,
+                    'is_deleted' => $connection->isDeleted(),
                     'is_default' => $connection->default_department_id === $department->id,
                     'health' => ['value' => $health->value, 'label' => $health->label(), 'tone' => $health->tone()],
                     'url' => $canOpen ? route('connections.show', $connection) : null,
@@ -170,6 +221,7 @@ class DepartmentController extends Controller
 
         return [
             'items' => array_values($department->quickReplies()
+                ->hidingDeletedFrom($actor)
                 ->where('is_global', false)
                 ->orderByDesc('is_active')
                 ->orderBy('title')

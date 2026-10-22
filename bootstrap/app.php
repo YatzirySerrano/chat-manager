@@ -12,6 +12,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -52,7 +53,26 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         // Two operations on the same data can deadlock in MariaDB; the loser of
-        // a conversation operation gets a controlled conflict, not an error.
+        // a conversation operation gets a controlled conflict, not an error,
+        // so it is logged as a warning instead of an application error.
+        $exceptions->report(function (QueryException $e) {
+            $request = request();
+
+            if (! $request->route('conversation') instanceof Conversation
+                || ! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($e)) {
+                return null;
+            }
+
+            Log::warning('Operación de conversación interrumpida por concurrencia en la base de datos.', [
+                'conversation_id' => $request->route('conversation')->getKey(),
+                'user_id' => $request->user()?->getAuthIdentifier(),
+                'route' => $request->route()?->getName(),
+                'sql_state' => $e->getCode(),
+            ]);
+
+            return false;
+        });
+
         $exceptions->render(function (QueryException $e, Request $request) {
             if (! $request->route('conversation') instanceof Conversation
                 || ! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($e)) {

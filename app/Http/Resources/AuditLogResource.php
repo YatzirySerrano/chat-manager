@@ -37,6 +37,7 @@ class AuditLogResource extends JsonResource
             'properties' => $this->properties ?? (object) [],
             'ip_address' => $this->ip_address,
             'user_agent' => $this->user_agent,
+            'restricted' => $this->restricted,
             'created_at' => $this->created_at->toIso8601String(),
         ];
     }

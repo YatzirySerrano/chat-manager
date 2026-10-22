@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\DeletesLogically;
 use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
 use App\Enums\Permission;
@@ -23,6 +24,10 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
+ * An employee account. Deleting it is logical (see DeletesLogically): the
+ * account becomes inactive, loses access and keeps all of its history;
+ * `deactivated_at` records when it was deleted.
+ *
  * @property int $id
  * @property string $name
  * @property string $email
@@ -46,7 +51,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use DeletesLogically, HasFactory, HasRoles, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * The model's default values for attributes.
@@ -203,7 +208,9 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
     /**
      * Whether the account is active and its active role grants the permission.
-     * Organization-wide permissions additionally require the global scope.
+     * Organization-wide permissions additionally require the global scope, and
+     * permissions reserved to the root authority are never exercised through
+     * any other role.
      */
     public function holdsPermission(Permission $permission): bool
     {
@@ -213,7 +220,20 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             return false;
         }
 
+        if ($permission->isReservedToRoot() && ! $this->hasRootAuthority()) {
+            return false;
+        }
+
         return $this->checkPermissionTo($permission->value);
+    }
+
+    /**
+     * Whether the user may see logically deleted records in the lists and
+     * records of their scope.
+     */
+    public function canViewDeletedRecords(): bool
+    {
+        return $this->holdsPermission(Permission::ViewDeletedRecords);
     }
 
     /**

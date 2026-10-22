@@ -55,7 +55,7 @@ function probeConnectionPayload(array $overrides = []): array
 */
 
 test('a connection created without credentials is completed later and every value persists without exposing secrets', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $support = Department::factory()->create(['name' => 'Soporte']);
 
@@ -120,7 +120,7 @@ test('the verification endpoint only changes health from a faked Meta answer and
         'quality_rating' => 'GREEN',
     ])]);
 
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->create(['phone_number_id' => PROBE_PHONE_ID, 'access_token' => PROBE_TOKEN]);
 
     expect($connection->health())->toBe(ConnectionHealth::Configured);
@@ -143,7 +143,7 @@ test('the verification endpoint only changes health from a faked Meta answer and
 });
 
 test('an enabled automatic message made only of spaces is rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('connections.store'), probeConnectionPayload(['welcome_enabled' => true, 'welcome_message' => "   \n  "]))
@@ -153,7 +153,7 @@ test('an enabled automatic message made only of spaces is rejected', function ()
 });
 
 test('current behavior: automatic connection messages accept HTML while quick replies reject it', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('connections.store'), probeConnectionPayload([
@@ -165,19 +165,23 @@ test('current behavior: automatic connection messages accept HTML while quick re
     expect(Connection::query()->sole()->welcome_message)->toContain('<script>');
 });
 
-test('current behavior: the default department of an active connection can be deactivated', function () {
-    $admin = User::factory()->administrator()->create();
+/*
+| Business rule changed on purpose (logical deletion): the default department
+| of a connection that is not deleted can no longer be deleted (it could be
+| deactivated before), so new conversations always have a working department.
+*/
+test('the default department of an active connection cannot be deleted', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $connection = Connection::factory()->create(['default_department_id' => $department->id]);
     $connection->departments()->attach($department);
 
     $this->actingAs($admin)
-        ->patch(route('departments.status.update', $department), ['is_active' => false])
-        ->assertSessionHasNoErrors();
+        ->delete(route('departments.destroy', $department))
+        ->assertSessionHasErrors('department');
 
-    expect($department->refresh()->is_active)->toBeFalse()
-        ->and($connection->refresh()->is_active)->toBeTrue()
-        ->and($connection->default_department_id)->toBe($department->id);
+    expect($department->refresh()->is_active)->toBeTrue()
+        ->and($connection->refresh()->default_department_id)->toBe($department->id);
 });
 
 /*
@@ -252,7 +256,7 @@ test('a variable without value is blank and reported when the department is outs
 });
 
 test('moving a reply into a department where its shortcut is already used is rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$sales, $support] = [Department::factory()->create(['name' => 'Ventas']), Department::factory()->create(['name' => 'Soporte'])];
     QuickReply::factory()->forDepartments($sales)->create(['shortcut' => 'hola', 'title' => 'Saludo ventas']);
     $supportReply = QuickReply::factory()->forDepartments($support)->create(['shortcut' => 'hola', 'title' => 'Saludo soporte', 'body' => 'Hola']);
@@ -286,8 +290,8 @@ test('moving a reply into a department where its shortcut is already used is rej
 | departments is only offered while one of those departments is active and the
 | user belongs to it. It previously stayed available after deactivation.
 */
-test('replies of a deactivated department stop being offered, while global ones and other active departments keep theirs', function () {
-    $admin = User::factory()->administrator()->create();
+test('replies of a deleted department stop being offered, while global ones and other active departments keep theirs', function () {
+    $admin = User::factory()->superAdministrator()->create();
     [$closing, $open] = Department::factory()->count(2)->create();
     $agent = User::factory()->agent()->inDepartments([$closing, $open])->create();
     $onlyClosing = QuickReply::factory()->forDepartments($closing)->create(['shortcut' => 'viejo']);
@@ -295,7 +299,7 @@ test('replies of a deactivated department stop being offered, while global ones 
     $global = QuickReply::factory()->create(['shortcut' => 'global', 'is_global' => true]);
 
     $this->actingAs($admin)
-        ->patch(route('departments.status.update', $closing), ['is_active' => false])
+        ->delete(route('departments.destroy', $closing))
         ->assertSessionHasNoErrors();
 
     $offered = fn (User $user, array $query = []) => collect($this->actingAs($user)
@@ -321,7 +325,7 @@ test('closed today is counted from midnight in the platform timezone', function 
 
     $this->travelTo(now()->setTimezone('UTC')->setDate(2026, 10, 17)->setTime(5, 30));
 
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     Conversation::factory()->inDepartment($department)->closed()->create(['closed_at' => now()->setTime(5, 0)]);
@@ -342,14 +346,14 @@ test('supervisors cannot open or change departments outside their scope', functi
 
     $this->actingAs($supervisor)->get(route('departments.show', $own))->assertOk();
     $this->actingAs($supervisor)->get(route('departments.show', $foreign))->assertForbidden();
-    $this->actingAs($supervisor)->patch(route('departments.status.update', $foreign), ['is_active' => false])->assertForbidden();
+    $this->actingAs($supervisor)->delete(route('departments.destroy', $foreign))->assertForbidden();
     $this->actingAs($supervisor)->put(route('departments.update', $foreign), ['name' => 'Tomado'])->assertForbidden();
 
     expect($foreign->refresh()->is_active)->toBeTrue();
 });
 
 test('an inactive connection with traffic does not mark messaging as connected on the dashboard', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Connection::factory()->operational()->inactive()->create();
 
     $this->actingAs($admin)

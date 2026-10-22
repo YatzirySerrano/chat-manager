@@ -9,6 +9,7 @@ use App\Enums\ConnectionProvider;
 use App\Enums\ContactOriginType;
 use App\Enums\ContactReviewReason;
 use App\Enums\ContactSource;
+use App\Enums\ContactStatus;
 use App\Enums\InboundContactOutcome;
 use App\Models\AuditLog;
 use App\Models\Connection;
@@ -346,7 +347,7 @@ test('a referral confirmed by Meta outranks an earlier manual declaration, which
 });
 
 test('a manual classification cannot claim to come from Meta', function (string $originType) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
     $this->actingAs($admin)
@@ -359,7 +360,7 @@ test('a manual classification cannot claim to come from Meta', function (string 
 test('automatic registration does not widen what each employee can see', function () {
     $department = Department::factory()->create();
     $agent = User::factory()->agent()->inDepartments($department)->create();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $registration = registerInbound(Connection::factory()->create(), inboundSender(profileName: 'Cliente Reservado'));
 
     $this->actingAs($agent)->get(route('contacts.show', $registration->contact))->assertNotFound();
@@ -418,4 +419,21 @@ test('webhook items without a usable sender are skipped and logged', function ()
     Log::shouldHaveReceived('warning')->with('Meta webhook message ignored: The message lacks its sender, id or timestamp.', Mockery::any())->once();
     Log::shouldHaveReceived('warning')->with('Meta webhook message ignored: The sender identity is missing or malformed.', Mockery::any())->once();
     Log::shouldHaveReceived('info')->with('Meta webhook system notice ignored.', Mockery::any())->once();
+});
+
+test('a deleted contact keeps receiving the messages of its sender instead of being duplicated', function () {
+    $connection = Connection::factory()->create();
+    $first = registerInbound($connection, inboundSender('5215512345678', 'Laura'));
+    $first->contact->forceFill(['status' => ContactStatus::Archived, 'archived_at' => now()])->save();
+    $deletedByHand = Contact::factory()->archived()->create(['phone_e164' => '+525598765432', 'profile_name' => null]);
+
+    $known = registerInbound($connection, inboundSender('5215512345678', 'Laura'));
+    $linked = registerInbound($connection, inboundSender('5215598765432', 'Pedro'));
+
+    expect($known->outcome)->toBe(InboundContactOutcome::Matched)
+        ->and($known->contact->id)->toBe($first->contact->id)
+        ->and($known->contact->refresh()->isDeleted())->toBeTrue()
+        ->and($linked->outcome)->toBe(InboundContactOutcome::Linked)
+        ->and($linked->contact->id)->toBe($deletedByHand->id)
+        ->and(Contact::query()->count())->toBe(2);
 });

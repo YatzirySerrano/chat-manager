@@ -103,7 +103,7 @@ test('notes, transfers, holds and reopening never extend the window', function (
     $lastInbound = CarbonImmutable::now()->subHours(23);
     $conversation = attendedConversation($this->agent, $this->department, $lastInbound);
     $admin = User::factory()->administrator()->create();
-    $colleague = User::factory()->agent()->inDepartments($this->department)->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
 
     $this->actingAs($this->agent)->post(route('conversations.notes.store', $conversation), ['body' => 'Nota']);
     $this->actingAs($this->agent)->post(route('conversations.hold', $conversation), ['version' => 0]);
@@ -184,6 +184,30 @@ test('a reply queued while the window was open is not sent when the worker runs 
     app()->call([new DeliverOutboundMessage($message->id), 'handle']);
     expect($transport->sent)->toBe([]);
 });
+
+test('a reply queued before its connection was deleted or deactivated is never sent', function (array $change) {
+    Queue::fake();
+    $transport = recordingTransport();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+
+    $this->actingAs($this->agent)
+        ->post(route('conversations.messages.store', $conversation), ['body' => 'Le confirmo en un momento', 'client_reference' => (string) Str::uuid()])
+        ->assertSessionHasNoErrors();
+
+    $message = Message::query()->sole();
+    $conversation->channelConnection()->firstOrFail()->forceFill($change)->save();
+
+    app()->call([new DeliverOutboundMessage($message->id), 'handle']);
+
+    expect($message->refresh())
+        ->status->toBe(MessageStatus::Failed)
+        ->error_code->toBe('connection_unavailable')
+        ->and($transport->sent)->toBe([])
+        ->and($conversation->events()->where('type', ConversationEventType::OutboundBlocked)->exists())->toBeTrue();
+})->with([
+    'deleted' => [['deleted_at' => now(), 'is_active' => false]],
+    'deactivated' => [['is_active' => false]],
+]);
 
 test('without the WhatsApp integration a reply is marked as not sent instead of pretending delivery', function () {
     $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());

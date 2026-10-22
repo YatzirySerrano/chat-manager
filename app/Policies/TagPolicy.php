@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\Permission;
 use App\Models\Contact;
+use App\Models\Tag;
 use App\Models\User;
 
 /**
@@ -24,14 +25,27 @@ class TagPolicy
         return $actor->holdsPermission(Permission::ManageTags);
     }
 
-    public function update(User $actor): bool
+    /**
+     * A deleted tag is read-only until it is restored.
+     */
+    public function update(User $actor, Tag $tag): bool
     {
-        return $actor->holdsPermission(Permission::ManageTags);
+        return ! $tag->isDeleted() && $actor->holdsPermission(Permission::ManageTags);
     }
 
-    public function changeStatus(User $actor): bool
+    /**
+     * Logical deletion: the tag stays where it was applied.
+     */
+    public function delete(User $actor, Tag $tag): bool
     {
-        return $actor->holdsPermission(Permission::ManageTags);
+        return $this->update($actor, $tag);
+    }
+
+    public function restore(User $actor, Tag $tag): bool
+    {
+        return $tag->isDeleted()
+            && $actor->holdsPermission(Permission::ManageTags)
+            && $actor->canViewDeletedRecords();
     }
 
     /**

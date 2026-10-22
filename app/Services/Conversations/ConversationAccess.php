@@ -147,7 +147,7 @@ class ConversationAccess
     public function attendRefusal(User $user, ?Department $department): ?string
     {
         return match (true) {
-            ! $user->is_active => "{$user->name} está desactivado.",
+            ! $user->is_active => "La cuenta de {$user->name} está eliminada.",
             $user->dataScope() === null => "{$user->name} no tiene un rol activo.",
             ! $this->canAttendConversations($user) => "El rol de {$user->name} no le permite atender conversaciones.",
             $department === null && $user->dataScope() !== DataScope::Global => 'Una conversación sin departamento solo puede asignarse a quien tiene alcance sobre toda la organización.',
@@ -155,6 +155,35 @@ class ConversationAccess
             $department !== null && ! $this->canAttend($user, $department) => "{$user->name} no pertenece al departamento {$department->name}.",
             default => null,
         };
+    }
+
+    /**
+     * Asked before handing a conversation by hand to an agent declared
+     * unavailable (an exception only users who can assign may make).
+     */
+    public function unavailableConfirmation(User $agent): string
+    {
+        return "{$agent->name} está como No disponible. Confirma que quieres asignarle la conversación de todas formas; su disponibilidad no cambiará.";
+    }
+
+    /**
+     * Whether the user's reach does not go beyond their own assignments (plus
+     * the queue they may accept from): their inbox is personal, never a
+     * window on colleagues' work. Derived from the data scope, not the role.
+     */
+    public function hasPersonalInbox(User $user): bool
+    {
+        return ! in_array($user->dataScope(), [DataScope::Global, DataScope::Departments], true);
+    }
+
+    /**
+     * Whether the user attends conversations themselves somewhere (can be
+     * responsible for at least one department, or for any of them).
+     */
+    public function attendsConversations(User $user): bool
+    {
+        return $this->canAttendConversations($user)
+            && ($user->dataScope() === DataScope::Global || $user->departmentIds() !== []);
     }
 
     /**

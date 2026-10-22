@@ -17,16 +17,19 @@ class UpdateConversationNote
 {
     public function __construct(private ConversationLifecycle $lifecycle) {}
 
-    public function handle(ConversationNote $note, User $actor, string $body): ConversationNote
+    /**
+     * @return bool Whether the text changed (the same text writes nothing).
+     */
+    public function handle(ConversationNote $note, User $actor, string $body): bool
     {
-        return DB::transaction(function () use ($note, $actor, $body): ConversationNote {
+        return DB::transaction(function () use ($note, $actor, $body): bool {
             $note = ConversationNote::query()->lockForUpdate()->findOrFail($note->id);
             $actor = $this->lifecycle->freshUser($actor->id, lock: false);
 
             Gate::forUser($actor)->authorize('update', $note);
 
             if ($note->body === $body) {
-                return $note;
+                return false;
             }
 
             $note->forceFill(['body' => $body, 'edited_at' => now()])->save();
@@ -35,7 +38,7 @@ class UpdateConversationNote
                 'metadata' => ['note_id' => $note->id],
             ]);
 
-            return $note;
+            return true;
         });
     }
 }

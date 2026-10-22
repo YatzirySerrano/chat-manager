@@ -6,7 +6,6 @@ use App\Enums\DataScope;
 use App\Enums\DefaultRole;
 use App\Enums\Permission;
 use App\Models\AuditLog;
-use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
@@ -29,7 +28,7 @@ test('users without the permission cannot access user administration', function 
 ]);
 
 test('administrators can list users with their roles and departments', function () {
-    $admin = User::factory()->administrator()->create(['name' => 'Administrador']);
+    $admin = User::factory()->superAdministrator()->create(['name' => 'Administrador']);
     $department = Department::factory()->create(['name' => 'Ventas']);
     User::factory()->agent()->inDepartments($department)->create(['name' => 'Ana Agente']);
 
@@ -40,18 +39,20 @@ test('administrators can list users with their roles and departments', function 
             ->component('admin/users/Index')
             ->has('users.data', 2)
             ->where('users.data.0.name', 'Administrador')
-            ->where('users.data.0.can.changeStatus', false)
+            ->where('users.data.0.can.delete', false)
             ->where('users.data.1.name', 'Ana Agente')
             ->where('users.data.1.role.label', 'Agente')
             ->where('users.data.1.departments.0.name', 'Ventas')
-            ->where('users.data.1.can.changeStatus', true)
-            ->where('stats.total', 2)
+            ->where('users.data.1.can.delete', true)
+            ->where('users.data.1.can.restore', false)
+            ->where('stats.active', 2)
+            ->where('stats.deleted', 0)
             ->where('can.create', true)
         );
 });
 
 test('the user list can be searched, filtered and sorted', function () {
-    $admin = User::factory()->administrator()->create(['name' => 'Administrador']);
+    $admin = User::factory()->superAdministrator()->create(['name' => 'Administrador']);
     $support = Department::factory()->create();
     User::factory()->agent()->inDepartments($support)->create(['name' => 'Laura Soporte']);
     User::factory()->agent()->create(['name' => 'Luis Ventas']);
@@ -63,7 +64,7 @@ test('the user list can be searched, filtered and sorted', function () {
             'search' => 'laura',
             'role' => role(DefaultRole::Agent)->id,
             'department' => $support->id,
-            'status' => 'active',
+            'record' => 'active',
         ]))
         ->assertInertia(fn (Assert $page) => $page
             ->has('users.data', 1)
@@ -71,7 +72,7 @@ test('the user list can be searched, filtered and sorted', function () {
         );
 
     $this->actingAs($admin)
-        ->get(route('admin.users.index', ['sort' => 'newest']))
+        ->get(route('admin.users.index', ['sort' => 'newest', 'record' => 'all']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.sort', 'newest')
             ->where('users.data.0.name', 'Laura Inactiva')
@@ -79,7 +80,7 @@ test('the user list can be searched, filtered and sorted', function () {
 });
 
 test('search terms are treated literally', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     User::factory()->agent()->create(['name' => 'Agente Uno']);
 
     $this->actingAs($admin)
@@ -88,11 +89,11 @@ test('search terms are treated literally', function () {
 });
 
 test('administrators can create employees with a role and departments', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $departments = Department::factory()->count(2)->create();
 
     $this->actingAs($admin)
-        ->from(route('admin.users.index', ['status' => 'inactive']))
+        ->from(route('admin.users.index', ['record' => 'deleted']))
         ->post(route('admin.users.store'), [
             'name' => 'Carla Agente',
             'email' => 'CARLA@empresa.test',
@@ -103,7 +104,7 @@ test('administrators can create employees with a role and departments', function
             'is_active' => false,
         ])
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('admin.users.index', ['status' => 'inactive']))
+        ->assertRedirect(route('admin.users.index', ['record' => 'deleted']))
         ->assertInertiaFlash('highlight.email', 'carla@empresa.test');
 
     $user = User::query()->where('email', 'carla@empresa.test')->firstOrFail();
@@ -122,7 +123,7 @@ test('administrators can create employees with a role and departments', function
 });
 
 test('users with an organization-wide role are never attached to departments', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)->post(route('admin.users.store'), [
@@ -130,7 +131,7 @@ test('users with an organization-wide role are never attached to departments', f
         'email' => 'otro@empresa.test',
         'password' => 'password',
         'password_confirmation' => 'password',
-        'role_id' => role(DefaultRole::Administrator)->id,
+        'role_id' => role(DefaultRole::SuperAdministrator)->id,
         'department_ids' => [$department->id],
     ])->assertSessionHasNoErrors();
 
@@ -138,7 +139,7 @@ test('users with an organization-wide role are never attached to departments', f
 });
 
 test('custom roles can be assigned to new users', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $auditor = Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewAuditLog])->create(['label' => 'Auditor Operativo']);
 
     $this->actingAs($admin)->post(route('admin.users.store'), [
@@ -156,8 +157,8 @@ test('custom roles can be assigned to new users', function () {
         ->and($user->holdsPermission(Permission::ViewUsers))->toBeFalse();
 });
 
-test('inactive roles cannot be assigned', function () {
-    $admin = User::factory()->administrator()->create();
+test('deleted roles cannot be assigned', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $inactive = Role::factory()->inactive()->create();
 
     $this->actingAs($admin)->post(route('admin.users.store'), [
@@ -166,11 +167,11 @@ test('inactive roles cannot be assigned', function () {
         'password' => 'password',
         'password_confirmation' => 'password',
         'role_id' => $inactive->id,
-    ])->assertSessionHasErrors(['role_id' => 'El rol seleccionado está desactivado.']);
+    ])->assertSessionHasErrors(['role_id' => 'El rol seleccionado está eliminado.']);
 });
 
 test('creating a user requires valid data', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('admin.users.store'), [])
@@ -183,7 +184,7 @@ test('creating a user requires valid data', function () {
 });
 
 test('users cannot be created with a duplicated email or an inactive department', function () {
-    $admin = User::factory()->administrator()->create(['email' => 'admin@empresa.test']);
+    $admin = User::factory()->superAdministrator()->create(['email' => 'admin@empresa.test']);
     $inactive = Department::factory()->inactive()->create();
 
     $this->actingAs($admin)
@@ -199,7 +200,7 @@ test('users cannot be created with a duplicated email or an inactive department'
 });
 
 test('administrators can change the departments of a user', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $support = Department::factory()->create(['name' => 'Soporte']);
     $user = User::factory()->agent()->inDepartments($sales)->create();
@@ -221,7 +222,7 @@ test('administrators can change the departments of a user', function () {
 });
 
 test('an administrator can reset a password without it being audited in plain text', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $user = User::factory()->agent()->create();
 
     $this->actingAs($admin)->put(route('admin.users.update', $user), [
@@ -238,8 +239,8 @@ test('an administrator can reset a password without it being audited in plain te
 });
 
 test('nobody can change their own role', function () {
-    $admin = User::factory()->administrator()->create();
-    User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
+    User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->put(route('admin.users.update', $admin), [
@@ -252,8 +253,8 @@ test('nobody can change their own role', function () {
     expect($admin->refresh()->hasRootAuthority())->toBeTrue();
 });
 
-test('users without operational history can be deleted keeping the current filters', function () {
-    $admin = User::factory()->administrator()->create();
+test('deleting a user keeps the current filters and never removes the account', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $user = User::factory()->agent()->create();
 
     $this->actingAs($admin)
@@ -261,25 +262,13 @@ test('users without operational history can be deleted keeping the current filte
         ->delete(route('admin.users.destroy', $user))
         ->assertRedirect(route('admin.users.index', ['search' => 'agente']));
 
-    $this->assertModelMissing($user);
-    expect(AuditLog::query()->where('action', AuditAction::UserDeleted)->sole()->auditable_label)
-        ->toContain($user->email);
-});
-
-test('users with operational history must be deactivated instead of deleted', function () {
-    $admin = User::factory()->administrator()->create();
-    $agent = User::factory()->agent()->create();
-    Conversation::factory()->assignedTo($agent)->create();
-
-    $this->actingAs($admin)
-        ->delete(route('admin.users.destroy', $agent))
-        ->assertSessionHasErrors('user');
-
-    $this->assertModelExists($agent);
+    $this->assertModelExists($user);
+    expect($user->refresh()->isDeleted())->toBeTrue()
+        ->and(AuditLog::query()->where('action', AuditAction::UserDeleted)->sole()->auditable_label)->toContain($user->email);
 });
 
 test('administrators cannot delete their own account from administration', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->delete(route('admin.users.destroy', $admin))->assertForbidden();
 
@@ -287,7 +276,7 @@ test('administrators cannot delete their own account from administration', funct
 });
 
 test('a duplicated email that slips past validation is reported as a validation error', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     User::factory()->create(['email' => 'repetido@empresa.test']);
 
     expect(fn () => app(CreateUser::class)->handle([
@@ -298,4 +287,63 @@ test('a duplicated email that slips past validation is reported as a validation 
     ], $admin))->toThrow(ValidationException::class, 'El valor de correo electrónico ya está en uso.');
 
     expect(User::query()->where('email', 'repetido@empresa.test')->count())->toBe(1);
+});
+
+test('saving a user without effective changes writes nothing and says so', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $sales = Department::factory()->create();
+    $support = Department::factory()->create();
+    $user = User::factory()->agent()->inDepartments([$sales, $support])->create(['name' => 'Laura Pérez', 'email' => 'laura@empresa.test']);
+    $updatedAt = $user->updated_at;
+    $this->travel(1)->hours();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('admin.users.update', $user), [
+            'name' => '  Laura Pérez ',
+            'email' => ' LAURA@empresa.test',
+            'role_id' => role(DefaultRole::Agent)->id,
+            'department_ids' => [$support->id, $sales->id],
+            'password' => '',
+            'password_confirmation' => '',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.'])
+        ->assertInertiaFlashMissing('highlight'));
+
+    expect($writes)->toBe([])
+        ->and($user->refresh()->updated_at->equalTo($updatedAt))->toBeTrue()
+        ->and(AuditLog::query()->where('auditable_type', $user->getMorphClass())->where('auditable_id', $user->id)->exists())->toBeFalse();
+});
+
+test('resetting a password to the current one is not a change', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $user = User::factory()->agent()->create(['password' => 'contraseña-actual-1']);
+
+    $this->actingAs($admin)
+        ->put(route('admin.users.update', $user), [
+            'name' => $user->name,
+            'email' => $user->email,
+            'password' => 'contraseña-actual-1',
+            'password_confirmation' => 'contraseña-actual-1',
+        ])
+        ->assertInertiaFlash('toast.type', 'info');
+
+    expect(AuditLog::query()->where('action', AuditAction::UserPasswordReset)->exists())->toBeFalse();
+});
+
+test('a real change to a user is saved, audited and confirmed', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $user = User::factory()->agent()->create(['name' => 'Laura Pérez']);
+
+    $this->actingAs($admin)
+        ->put(route('admin.users.update', $user), [
+            'name' => 'Laura Pérez Gómez',
+            'email' => $user->email,
+        ])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Cambios guardados.'])
+        ->assertInertiaFlash('highlight.id', $user->id);
+
+    expect($user->refresh()->name)->toBe('Laura Pérez Gómez')
+        ->and(AuditLog::query()->where('action', AuditAction::UserUpdated)->sole()->properties['changes']['name'])
+        ->toBe(['old' => 'Laura Pérez', 'new' => 'Laura Pérez Gómez']);
 });

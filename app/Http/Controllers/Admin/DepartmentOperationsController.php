@@ -6,8 +6,8 @@ use App\Actions\Departments\UpdateDepartmentOperations;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateDepartmentOperationsRequest;
 use App\Models\Department;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
-use Inertia\Inertia;
 
 class DepartmentOperationsController extends Controller
 {
@@ -18,10 +18,7 @@ class DepartmentOperationsController extends Controller
     {
         $changes = $updateOperations->handle($department, $request->payload(), $request->user());
 
-        Inertia::flash('toast', [
-            'type' => $changes === [] ? 'info' : 'success',
-            'message' => $changes === [] ? 'No había cambios por guardar.' : 'Mensaje de bienvenida actualizado.',
-        ]);
+        SaveToast::flash($changes !== [], 'Mensaje de bienvenida actualizado.');
 
         return back();
     }

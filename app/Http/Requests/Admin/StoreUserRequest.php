@@ -77,7 +77,7 @@ class StoreUserRequest extends FormRequest
                 $actor = $this->user();
 
                 if (! $role->is_active) {
-                    $validator->errors()->add('role_id', 'El rol seleccionado está desactivado.');
+                    $validator->errors()->add('role_id', 'El rol seleccionado está eliminado.');
                 } elseif (! app(PrivilegeGuard::class)->canAssignRole($actor, $role)) {
                     $validator->errors()->add('role_id', 'No puedes asignar un rol con más privilegios de los que administras.');
                 }

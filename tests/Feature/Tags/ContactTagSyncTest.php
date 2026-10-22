@@ -53,7 +53,7 @@ test('tags of a visible contact are replaced and the change is audited', functio
 });
 
 test('saving the same tags records nothing', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
     $tag = Tag::factory()->create();
     $contact->tags()->attach($tag);
@@ -90,8 +90,8 @@ test('contacts outside the actor scope are reported as not found', function () {
     expect($contact->tags()->count())->toBe(0);
 });
 
-test('inactive tags cannot be newly assigned but may remain on the contact', function () {
-    $admin = User::factory()->administrator()->create();
+test('deleted tags cannot be newly assigned but may remain on the contact', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
     $existing = Tag::factory()->inactive()->create(['name' => 'Antiguo']);
     $other = Tag::factory()->inactive()->create(['name' => 'Retirado']);
@@ -100,7 +100,7 @@ test('inactive tags cannot be newly assigned but may remain on the contact', fun
 
     $this->actingAs($admin)
         ->put(route('contacts.tags.sync', $contact), ['tag_ids' => [$existing->id, $other->id, $active->id]])
-        ->assertSessionHasErrors(['tag_ids' => 'La etiqueta «Retirado» está inactiva y no puede asignarse.']);
+        ->assertSessionHasErrors(['tag_ids' => 'La etiqueta «Retirado» está eliminada y no puede asignarse.']);
 
     expect($contact->tags()->pluck('tags.id')->all())->toBe([$existing->id]);
 
@@ -112,7 +112,7 @@ test('inactive tags cannot be newly assigned but may remain on the contact', fun
 });
 
 test('unknown tags are rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
     $this->actingAs($admin)

@@ -12,7 +12,7 @@ use App\Models\User;
 */
 
 test('malformed input never produces a server error', function (Closure $send) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $response = $send($this->actingAs($admin)->from('/dashboard'), $department);
@@ -52,12 +52,12 @@ test('malformed input never produces a server error', function (Closure $send) {
     'connection index department string' => [fn ($t, $d) => $t->get(route('connections.index', ['department' => 'x']))],
     'verify without credentials' => [fn ($t, $d) => $t->post(route('connections.verify', Connection::factory()->unconfigured()->create()))],
     'activate without credentials' => [fn ($t, $d) => $t->patch(route('connections.status.update', Connection::factory()->unconfigured()->create()), ['is_active' => true])],
-    'status missing' => [fn ($t, $d) => $t->patch(route('tags.status.update', Tag::factory()->create()), [])],
+    'restore a tag that is not deleted' => [fn ($t, $d) => $t->patch(route('tags.restore', Tag::factory()->create()), [])],
     'quick reply delete' => [fn ($t, $d) => $t->delete(route('quick-replies.destroy', QuickReply::factory()->forDepartments($d)->create()))],
 ]);
 
 test('creating two tags whose names produce the same slug works', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('tags.store'), ['name' => 'C++', 'color' => 'emerald'])->assertSessionHasNoErrors();
     $this->actingAs($admin)->post(route('tags.store'), ['name' => 'C#', 'color' => 'emerald'])->assertSessionHasNoErrors();
@@ -66,7 +66,7 @@ test('creating two tags whose names produce the same slug works', function () {
 });
 
 test('tag names differing only by accents are both accepted or a clear message is shown', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('tags.store'), ['name' => 'Café', 'color' => 'emerald'])->assertSessionHasNoErrors();
     $response = $this->actingAs($admin)->post(route('tags.store'), ['name' => 'Cafe', 'color' => 'emerald']);

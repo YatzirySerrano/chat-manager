@@ -41,7 +41,9 @@ test('the list shows each person only the conversations within their reach', fun
 })->with([
     'administrator' => [fn ($test) => User::factory()->administrator()->create(), fn ($test) => [$test->mine, $test->colleagues, $test->queued, $test->otherQueue, $test->unrouted]],
     'supervisor of the department' => [fn ($test) => User::factory()->supervisor()->inDepartments($test->sales)->create(), fn ($test) => [$test->mine, $test->colleagues, $test->queued]],
-    'agent with accept permission' => [fn ($test) => $test->agent, fn ($test) => [$test->mine, $test->queued]],
+    // Agents open on "Mis conversaciones"; the queue they may accept from is
+    // a separate view (see ConversationInboxTest).
+    'agent with accept permission' => [fn ($test) => $test->agent, fn ($test) => [$test->mine]],
     'agent without accept permission' => [fn ($test) => conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$test->sales]), fn ($test) => []],
 ]);
 
@@ -178,12 +180,13 @@ test('tampered inputs are rejected without side effects', function (array $input
 ]);
 
 test('filters cannot reveal conversations outside the scope', function () {
+    // A personal inbox ignores the agent filter: it only ever holds the agent's own work.
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['agent' => $this->colleague->id, 'status' => 'all']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('conversations.data', [])
-            ->where('agents', fn ($agents) => collect($agents)->pluck('id')->all() === [$this->agent->id]));
+            ->where('conversations.data', fn ($rows) => collect($rows)->pluck('id')->all() === [$this->mine->id])
+            ->where('agents', []));
 
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['department' => 'none']))

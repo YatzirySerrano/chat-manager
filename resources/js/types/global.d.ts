@@ -1,6 +1,6 @@
 import type { Directive } from 'vue';
 import type { ThemePaletteValue } from '@/types/admin';
-import type { Auth } from '@/types/auth';
+import type { Auth, PasswordPolicy } from '@/types/auth';
 
 // Extend ImportMeta interface for Vite...
 declare module 'vite/client' {
@@ -25,6 +25,7 @@ declare module '@inertiajs/core' {
                 palette: ThemePaletteValue;
             };
             auth: Auth;
+            passwordPolicy: PasswordPolicy;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

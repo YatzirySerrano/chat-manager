@@ -16,16 +16,18 @@ import {
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
@@ -46,12 +48,17 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useViewMode } from '@/composables/useViewMode';
+import { connectionDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { recordActions } from '@/lib/recordActions';
+import { toastFirstError } from '@/lib/toastErrors';
 import {
     create as createConnection,
+    destroy as destroyConnection,
     index as connectionsIndex,
+    restore as restoreConnection,
     show as showConnection,
     verify,
 } from '@/routes/connections';
@@ -63,6 +70,7 @@ import type {
     ConnectionStats,
     DepartmentOption,
     RecordAction,
+    RecordStateOption,
 } from '@/types';
 
 defineOptions({
@@ -74,11 +82,13 @@ defineOptions({
 const props = defineProps<{
     connections: Connection[];
     filters: ConnectionFilters;
+    recordStates: RecordStateOption[];
     stats: ConnectionStats;
     channels: ConnectionOption[];
     healthOptions: ConnectionOption[];
     departments: DepartmentOption[];
     can: { create: boolean; manage: boolean };
+    canExport?: boolean;
 }>();
 
 const ALL = 'all';
@@ -94,6 +104,7 @@ const filterState = reactive({
             ? ALL
             : String(props.filters.department),
     status: props.filters.status ?? ALL,
+    record: props.filters.record,
 });
 
 const hasFilters = computed(
@@ -102,7 +113,8 @@ const hasFilters = computed(
         filterState.channel !== ALL ||
         filterState.health !== ALL ||
         filterState.department !== ALL ||
-        filterState.status !== ALL,
+        filterState.status !== ALL ||
+        filterState.record !== 'active',
 );
 
 function applyFilters(): void {
@@ -116,6 +128,10 @@ function applyFilters(): void {
         if (filterState[key] !== ALL) {
             query[key] = filterState[key];
         }
+    }
+
+    if (filterState.record !== 'active') {
+        query.record = filterState.record;
     }
 
     router.get(connectionsIndex.url({ query }), undefined, {
@@ -134,6 +150,7 @@ function clearFilters(): void {
     filterState.health = ALL;
     filterState.department = ALL;
     filterState.status = ALL;
+    filterState.record = 'active';
     applyFilters();
 }
 
@@ -141,20 +158,18 @@ const processingId = ref<number | null>(null);
 const pendingDeactivation = ref<Connection | null>(null);
 const confirmOpen = ref(false);
 
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
+const deletion = useRecordDeletion<Connection>({
+    destroy: (connection) => destroyConnection(connection.id),
+    restore: (connection) => restoreConnection(connection.id),
+    copy: connectionDeletionCopy,
+});
 
 function verifyCredentials(connection: Connection): void {
     router.visit(verify(connection.id), {
         preserveScroll: true,
         onStart: () => (processingId.value = connection.id),
         onFinish: () => (processingId.value = null),
-        onError: showFirstError,
+        onError: toastFirstError,
     });
 }
 
@@ -164,7 +179,7 @@ function activate(connection: Connection): void {
         preserveScroll: true,
         onStart: () => (processingId.value = connection.id),
         onFinish: () => (processingId.value = null),
-        onError: showFirstError,
+        onError: toastFirstError,
     });
 }
 
@@ -188,7 +203,7 @@ function confirmDeactivation(): void {
         onFinish: () => (processingId.value = null),
         onError: (errors) => {
             confirmOpen.value = false;
-            showFirstError(errors);
+            toastFirstError(errors);
         },
     });
 }
@@ -234,6 +249,7 @@ function actionsFor(connection: Connection): RecordAction[] {
                 icon: PowerOff,
                 onSelect: () => askDeactivation(connection),
             },
+        ...deletion.actionsFor(connection),
     );
 }
 
@@ -257,8 +273,13 @@ function phoneLabel(connection: Connection): string {
             title="Conexiones"
             description="Números de WhatsApp Business conectados mediante la API oficial de Meta y su estado real."
         >
-            <template v-if="can.create" #actions>
-                <Button as-child>
+            <template v-if="can.create || canExport" #actions>
+                <ExportMenu
+                    v-if="canExport"
+                    report="connections"
+                    :filters="filters"
+                />
+                <Button v-if="can.create" as-child>
                     <Link :href="createConnection()">
                         <Plus />
                         Nueva conexión
@@ -298,7 +319,7 @@ function phoneLabel(connection: Connection): string {
         </div>
 
         <EmptyState
-            v-if="stats.total === 0"
+            v-if="stats.total === 0 && recordStates.length === 0"
             :icon="Unplug"
             title="Aún no hay conexiones"
             description="Registra tu número de WhatsApp Business con los datos de tu app de Meta. Podrás guardar la configuración aunque todavía no tengas todas las credenciales; ningún indicador se marcará como funcionando hasta que exista evidencia real."
@@ -418,6 +439,11 @@ function phoneLabel(connection: Connection): string {
                             <SelectItem value="inactive">Inactivas</SelectItem>
                         </SelectContent>
                     </Select>
+                    <RecordStateFilter
+                        v-model="filterState.record"
+                        :options="recordStates"
+                        @change="applyFilters"
+                    />
                     <Button
                         v-if="hasFilters"
                         variant="ghost"
@@ -443,7 +469,11 @@ function phoneLabel(connection: Connection): string {
 
             <RecordGrid v-else-if="viewMode === 'cards'">
                 <li v-for="connection in connections" :key="connection.id">
-                    <RecordCard :muted="!connection.is_active">
+                    <RecordCard
+                        :muted="!connection.is_active || connection.is_deleted"
+                        :href="showConnection(connection.id)"
+                        :label="`Ver conexión ${connection.name}`"
+                    >
                         <template #leading>
                             <span
                                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
@@ -466,18 +496,19 @@ function phoneLabel(connection: Connection): string {
                             </span>
                         </template>
                         <template #title>
-                            <Link
-                                :href="showConnection(connection.id)"
-                                class="block truncate hover:underline"
-                            >
-                                {{ connection.name }}
-                            </Link>
+                            <span class="block truncate">{{
+                                connection.name
+                            }}</span>
                         </template>
                         <template #subtitle>
                             {{ phoneLabel(connection) }} ·
                             {{ connection.channel.label }}
                         </template>
                         <template #badges>
+                            <DeletedBadge
+                                v-if="connection.is_deleted"
+                                feminine
+                            />
                             <ConnectionHealthBadge
                                 :health="connection.health"
                             />
@@ -512,7 +543,10 @@ function phoneLabel(connection: Connection): string {
                             <RecordActions
                                 :actions="actionsFor(connection)"
                                 :record="connection.name"
-                                :busy="processingId === connection.id"
+                                :busy="
+                                    processingId === connection.id ||
+                                    deletion.processingId === connection.id
+                                "
                             />
                         </template>
                     </RecordCard>
@@ -559,15 +593,26 @@ function phoneLabel(connection: Connection): string {
                                 {{ phoneLabel(connection) }} ·
                                 {{ connection.channel.label }}
                             </p>
-                            <ConnectionHealthBadge
-                                class="mt-1 sm:hidden"
-                                :health="connection.health"
-                            />
+                            <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
+                                <DeletedBadge
+                                    v-if="connection.is_deleted"
+                                    feminine
+                                />
+                                <ConnectionHealthBadge
+                                    :health="connection.health"
+                                />
+                            </div>
                         </TableCell>
                         <TableCell class="hidden sm:table-cell">
-                            <ConnectionHealthBadge
-                                :health="connection.health"
-                            />
+                            <div class="flex flex-wrap gap-1">
+                                <DeletedBadge
+                                    v-if="connection.is_deleted"
+                                    feminine
+                                />
+                                <ConnectionHealthBadge
+                                    :health="connection.health"
+                                />
+                            </div>
                         </TableCell>
                         <TableCell class="hidden text-sm lg:table-cell">
                             <span
@@ -658,7 +703,10 @@ function phoneLabel(connection: Connection): string {
                             <RecordActions
                                 :actions="actionsFor(connection)"
                                 :record="connection.name"
-                                :busy="processingId === connection.id"
+                                :busy="
+                                    processingId === connection.id ||
+                                    deletion.processingId === connection.id
+                                "
                             />
                         </TableCell>
                     </TableRow>
@@ -674,6 +722,12 @@ function phoneLabel(connection: Connection): string {
             destructive
             :processing="processingId !== null"
             @confirm="confirmDeactivation"
+        />
+
+        <ConfirmDialog
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Conversations;
 
+use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Exceptions\ConversationConflict;
@@ -15,6 +16,10 @@ use Illuminate\Support\Facades\DB;
  * An agent takes a pending conversation from a queue they can accept from.
  * The conversation row is locked, so when two agents accept at once the
  * second one finds it already taken and receives a controlled conflict.
+ *
+ * Only an agent declared available takes new conversations. Availability is
+ * read from the locked, freshly read user, so switching to unavailable while
+ * an accept waits for the lock is honored when it proceeds.
  */
 class AcceptConversation
 {
@@ -40,6 +45,10 @@ class AcceptConversation
 
             $actor = $this->lifecycle->freshUser($actor->id);
             $this->lifecycle->authorize($actor, 'accept', $conversation);
+
+            if ($actor->availability !== AgentAvailability::Available) {
+                throw ConversationConflict::unavailableToAccept();
+            }
 
             $limit = $this->access->attentionLimit();
 

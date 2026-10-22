@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Lock, Minus, Search, X } from '@lucide/vue';
+import { Check, Lock, Minus, Search, ShieldCheck, X } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,9 @@ import type { CatalogPermission, PermissionGroupCatalog } from '@/types';
 
 /**
  * Permissions grouped by module with per-group selection, search and
- * counters. Unavailable (future) permissions are shown but never editable.
+ * counters. Unavailable (future) permissions are shown but never editable,
+ * and neither are those reserved to the Superadministrador (the server never
+ * offers them as grantable).
  */
 const props = defineProps<{
     catalog: PermissionGroupCatalog[];
@@ -242,6 +244,14 @@ function clearSelection(): void {
                                         <Lock class="size-3" /> Obligatorio
                                     </Badge>
                                     <Badge
+                                        v-if="permission.reserved"
+                                        variant="outline"
+                                        class="gap-1 border-primary/40 text-[10px] font-normal text-primary"
+                                    >
+                                        <ShieldCheck class="size-3" /> Solo
+                                        superadministrador
+                                    </Badge>
+                                    <Badge
                                         v-if="permission.sensitive"
                                         variant="outline"
                                         class="border-warning/40 text-[10px] font-normal text-warning"
@@ -261,6 +271,7 @@ function clearSelection(): void {
                                     <Badge
                                         v-if="
                                             permission.available &&
+                                            !permission.reserved &&
                                             !readonly &&
                                             !grantable.includes(
                                                 permission.value,

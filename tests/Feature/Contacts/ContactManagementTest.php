@@ -13,7 +13,7 @@ use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /**
- * A global role that can view, create and edit contacts but not archive them.
+ * A global role that can view, create and edit contacts but not delete them.
  */
 function contactEditor(): User
 {
@@ -24,8 +24,8 @@ function contactEditor(): User
     return User::factory()->withRole($role)->create();
 }
 
-test('the contact list hides archived contacts by default', function () {
-    $admin = User::factory()->administrator()->create();
+test('the contact list hides deleted contacts by default', function () {
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['name' => 'Ana Activa']);
     Contact::factory()->archived()->create(['name' => 'Arturo Archivado']);
 
@@ -36,19 +36,19 @@ test('the contact list hides archived contacts by default', function () {
             ->component('contacts/Index')
             ->has('contacts.data', 1)
             ->where('contacts.data.0.name', 'Ana Activa')
-            ->where('filters.status', 'active')
+            ->where('filters.record', 'active')
             ->where('can.create', true)
         );
 
     $this->actingAs($admin)
-        ->get(route('contacts.index', ['status' => 'archived']))
+        ->get(route('contacts.index', ['record' => 'deleted']))
         ->assertInertia(fn (Assert $page) => $page
             ->has('contacts.data', 1)
             ->where('contacts.data.0.name', 'Arturo Archivado')
         );
 
     $this->actingAs($admin)
-        ->get(route('contacts.index', ['status' => 'all']))
+        ->get(route('contacts.index', ['record' => 'all']))
         ->assertInertia(fn (Assert $page) => $page->has('contacts.data', 2));
 });
 
@@ -61,7 +61,7 @@ test('users without contacts.view cannot open the contact list', function () {
 });
 
 test('quick search matches name, email and partial phone digits in any format', function (string $search) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['name' => 'María López', 'phone_e164' => '+525512345678', 'email' => 'maria@example.com']);
     Contact::factory()->create(['name' => 'Pedro Ruiz', 'phone_e164' => '+528187654321', 'email' => 'pedro@example.com']);
 
@@ -79,7 +79,7 @@ test('quick search matches name, email and partial phone digits in any format', 
 ]);
 
 test('contacts can be filtered by tags, source and origin', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$vip, $wholesale] = Tag::factory()->count(2)->create();
 
     $tagged = Contact::factory()->create(['name' => 'Etiquetado']);
@@ -103,7 +103,7 @@ test('contacts can be filtered by tags, source and origin', function () {
 });
 
 test('the origin filter follows the winning attribution, not any attribution', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
     ContactAttribution::factory()->fromMetaAd()->for($contact)->create(['captured_at' => now()->subDay()]);
     ContactAttribution::factory()->for($contact)->create(['origin_type' => 'referral', 'captured_at' => now()]);
@@ -121,7 +121,7 @@ test('the origin filter follows the winning attribution, not any attribution', f
 });
 
 test('pagination is server side and keeps the query string', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->count(17)->create(['name' => 'Cliente Frecuente']);
 
     $this->actingAs($admin)
@@ -233,7 +233,7 @@ test('users without contacts.update cannot edit a visible contact', function () 
 });
 
 test('the profile shows identity, custom fields and the actor capabilities', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->fromWhatsapp('5215512345678')->create([
         'name' => 'Rosa',
         'profile_name' => 'Rosa M.',
@@ -253,7 +253,8 @@ test('the profile shows identity, custom fields and the actor capabilities', fun
             ->has('notes', 0)
             ->has('conversations', 0)
             ->where('can.update', true)
-            ->where('can.archive', true)
+            ->where('can.delete', true)
+            ->where('can.restore', false)
             ->where('can.manageNotes', true)
             ->where('can.classifyOrigin', true)
         );
@@ -268,23 +269,60 @@ test('each listed contact exposes only the operations the viewer may perform', f
         ->get(route('contacts.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('contacts.data.0.id', $contact->id)
-            ->where('contacts.data.0.can', ['view' => true, 'update' => false, 'archive' => false])
+            ->where('contacts.data.0.can', ['view' => true, 'update' => false, 'delete' => false, 'restore' => false])
         );
 
     $this->actingAs($viewer)
         ->put(route('contacts.update', $contact), ['name' => 'Cambiado', 'phone' => '5512345678'])
         ->assertForbidden();
     $this->actingAs($viewer)
-        ->patch(route('contacts.status.update', $contact), ['status' => 'archived'])
+        ->delete(route('contacts.destroy', $contact))
         ->assertForbidden();
 
     expect($contact->refresh())
         ->name->toBe('Original')
-        ->isArchived()->toBeFalse();
+        ->isDeleted()->toBeFalse();
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('contacts.data.0.can', ['view' => true, 'update' => true, 'archive' => true])
+            ->where('contacts.data.0.can', ['view' => true, 'update' => true, 'delete' => true, 'restore' => false])
         );
+});
+
+test('saving a contact without effective changes writes nothing and says so', function () {
+    $editor = contactEditor();
+    $contact = Contact::factory()->create([
+        'name' => 'Juan Pérez',
+        'phone_e164' => '+525511112222',
+        'email' => 'juan@cliente.test',
+        'custom_fields' => ['Empresa' => 'Acme'],
+    ]);
+    $updatedAt = $contact->updated_at;
+    $this->travel(1)->hours();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($editor)
+        ->put(route('contacts.update', $contact), [
+            'name' => '  Juan   Pérez ',
+            'phone' => '55 1111 2222',
+            'email' => ' Juan@Cliente.test ',
+            'custom_fields' => [['label' => ' Empresa ', 'value' => 'Acme ']],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and($contact->refresh()->updated_at->equalTo($updatedAt))->toBeTrue()
+        ->and(AuditLog::query()->where('action', AuditAction::ContactUpdated)->exists())->toBeFalse();
+});
+
+test('a real change to a contact is confirmed with a success toast', function () {
+    $editor = contactEditor();
+    $contact = Contact::factory()->create(['name' => 'Juan', 'phone_e164' => '+525511112222']);
+
+    $this->actingAs($editor)
+        ->put(route('contacts.update', $contact), ['name' => 'Juan Pérez', 'phone' => '5511112222'])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Contacto actualizado.']);
+
+    expect(AuditLog::query()->where('action', AuditAction::ContactUpdated)->sole()->properties['changes'])->toHaveKey('name');
 });

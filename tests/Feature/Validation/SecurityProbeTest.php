@@ -69,7 +69,7 @@ test('the contact search never matches hidden contacts by phone digits, name or 
     Conversation::factory()->inDepartment($other)->create(['contact_id' => $hidden->id]);
 
     $this->actingAs($supervisor)
-        ->get(route('contacts.index', ['search' => $search, 'status' => 'all']))
+        ->get(route('contacts.index', ['search' => $search, 'record' => 'all']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('contacts.data', 0));
 })->with(['98761234', 'Oculta', 'oculta@example.com']);
@@ -106,7 +106,7 @@ test('the quick replies list never names departments the viewer does not belong 
 */
 
 test('a note made only of control characters is rejected instead of stored empty', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
     $this->actingAs($admin)
@@ -117,7 +117,7 @@ test('a note made only of control characters is rejected instead of stored empty
 });
 
 test('markup typed in contact names and custom fields is stored as plain text', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('contacts.store'), [
         'name' => '<img src=x onerror=alert(1)>Juan',
@@ -136,8 +136,8 @@ test('markup typed in contact names and custom fields is stored as plain text', 
 */
 
 test('protected contact fields cannot be mass assigned on create or update', function () {
-    $admin = User::factory()->administrator()->create();
-    $other = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
+    $other = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('contacts.store'), [
         'name' => 'Ana',
@@ -169,8 +169,8 @@ test('protected contact fields cannot be mass assigned on create or update', fun
 });
 
 test('protected connection, tag and quick reply fields cannot be mass assigned', function () {
-    $admin = User::factory()->administrator()->create();
-    $other = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
+    $other = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('connections.store'), [
         'name' => 'Principal',
@@ -230,7 +230,7 @@ test('department managers cannot attach a quick reply to a department they do no
 */
 
 test('connection secrets are not flashed as old input nor written to the audit log when updating', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->create();
     $secrets = [
         'access_token' => 'EAAGupdatedSecretToken1234567890',
@@ -289,7 +289,6 @@ test('leaving a department removes access to its contacts and quick replies in o
 
     $this->actingAs($user->refresh())->get(route('contacts.show', $contact))->assertNotFound();
     $this->actingAs($user)->put(route('contacts.update', $contact), ['name' => 'X', 'phone' => '5512345678'])->assertNotFound();
-    $this->actingAs($user)->patch(route('quick-replies.status.update', $reply), ['is_active' => false])->assertForbidden();
     $this->actingAs($user)->delete(route('quick-replies.destroy', $reply))->assertForbidden();
 
     expect($reply->refresh()->is_active)->toBeTrue();
@@ -301,16 +300,16 @@ test('narrowing a role scope or revoking tags.manage stops global-only operation
     $connection = Connection::factory()->inactive()->create();
     $tag = Tag::factory()->create();
 
-    $this->actingAs($user)->patch(route('tags.status.update', $tag), ['is_active' => false])->assertSessionHasNoErrors();
+    $this->actingAs($user)->put(route('tags.update', $tag), ['name' => 'Renombrada', 'color' => 'blue'])->assertSessionHasNoErrors();
 
     $role->revokePermissionTo(Permission::ManageTags->value);
-    $this->actingAs($user->refresh())->patch(route('tags.status.update', $tag), ['is_active' => true])->assertForbidden();
+    $this->actingAs($user->refresh())->delete(route('tags.destroy', $tag))->assertForbidden();
 
     $role->forceFill(['scope' => DataScope::Departments])->save();
     $this->actingAs($user->refresh())->patch(route('connections.status.update', $connection), ['is_active' => true])->assertForbidden();
     $this->actingAs($user)->post(route('connections.verify', $connection))->assertForbidden();
 
-    expect($tag->refresh()->is_active)->toBeFalse()
+    expect($tag->refresh()->is_active)->toBeTrue()
         ->and($connection->refresh()->is_active)->toBe(false);
 });
 
@@ -327,13 +326,14 @@ test('state-changing routes of the new modules reject requests without a CSRF to
         }
     });
 
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $request($this->actingAs($admin))->assertStatus(419);
 })->with([
     'contact create' => [fn ($t) => $t->post(route('contacts.store'), ['name' => 'A', 'phone' => '5512345678'])],
     'contact note' => [fn ($t) => $t->post(route('contacts.notes.store', Contact::factory()->create()), ['body' => 'x'])],
-    'contact status' => [fn ($t) => $t->patch(route('contacts.status.update', Contact::factory()->create()), ['status' => 'archived'])],
+    'contact delete' => [fn ($t) => $t->delete(route('contacts.destroy', Contact::factory()->create()))],
+    'user delete' => [fn ($t) => $t->delete(route('admin.users.destroy', User::factory()->agent()->create()))],
     'contact tags' => [fn ($t) => $t->put(route('contacts.tags.sync', Contact::factory()->create()), ['tag_ids' => []])],
     'tag create' => [fn ($t) => $t->post(route('tags.store'), ['name' => 'x', 'color' => 'slate'])],
     'quick reply delete' => [fn ($t) => $t->delete(route('quick-replies.destroy', QuickReply::factory()->create()))],
@@ -347,7 +347,7 @@ test('state-changing routes of the new modules reject requests without a CSRF to
 */
 
 test('a tag name taken after validation answers a validation error instead of a server error', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Tag::factory()->create(['name' => 'Repetida']);
 
     expect(fn () => app(CreateTag::class)->handle(['name' => 'repetida', 'color' => ColorSwatch::Slate], $admin))
@@ -355,7 +355,7 @@ test('a tag name taken after validation answers a validation error instead of a 
 });
 
 test('a phone number id taken after validation answers a validation error instead of a server error', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Connection::factory()->create(['phone_number_id' => '123456789']);
 
     expect(fn () => app(CreateConnection::class)->handle([
@@ -369,12 +369,12 @@ test('a phone number id taken after validation answers a validation error instea
 | Repeated requests
 */
 
-test('archiving the same contact twice records a single audit entry', function () {
-    $admin = User::factory()->administrator()->create();
+test('deleting the same contact twice records a single audit entry', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
-    $this->actingAs($admin)->patch(route('contacts.status.update', $contact), ['status' => 'archived'])->assertSessionHasNoErrors();
-    $this->actingAs($admin)->patch(route('contacts.status.update', $contact), ['status' => 'archived'])->assertSessionHasNoErrors();
+    $this->actingAs($admin)->delete(route('contacts.destroy', $contact))->assertSessionHasNoErrors();
+    $this->actingAs($admin)->delete(route('contacts.destroy', $contact))->assertForbidden();
 
     expect(AuditLog::query()->where('auditable_type', $contact->getMorphClass())->where('auditable_id', $contact->id)->count())->toBe(1);
 });

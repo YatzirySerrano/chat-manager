@@ -31,6 +31,7 @@ class DepartmentMemberResource extends JsonResource
                 'is_root' => $role->is_root,
             ],
             'is_active' => $this->is_active,
+            'is_deleted' => $this->isDeleted(),
             'last_login_at' => $this->last_login_at?->toIso8601String(),
         ];
     }

@@ -4,6 +4,8 @@ namespace App\Http\Requests\Admin;
 
 use App\Enums\ColorSwatch;
 use App\Models\Department;
+use App\Rules\AppColorValue;
+use App\Support\AppColor;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -39,7 +41,7 @@ class DepartmentRequest extends FormRequest
                 Rule::unique(Department::class)->ignore($department instanceof Department ? $department->id : null),
             ],
             'description' => ['nullable', 'string', 'max:500'],
-            'color' => ['required', Rule::enum(ColorSwatch::class)],
+            'color' => ['required', 'string', new AppColorValue],
         ];
     }
 
@@ -58,14 +60,14 @@ class DepartmentRequest extends FormRequest
     }
 
     /**
-     * @return array{name: string, description: string|null, color: ColorSwatch}
+     * @return array{name: string, description: string|null, color: AppColor}
      */
     public function payload(): array
     {
         return [
             'name' => $this->string('name')->trim()->value(),
             'description' => $this->filled('description') ? $this->string('description')->trim()->value() : null,
-            'color' => $this->enum('color', ColorSwatch::class) ?? ColorSwatch::Slate,
+            'color' => AppColor::tryFrom($this->input('color')) ?? AppColor::from(ColorSwatch::Slate),
         ];
     }
 }

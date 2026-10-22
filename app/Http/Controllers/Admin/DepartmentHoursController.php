@@ -6,8 +6,8 @@ use App\Actions\Departments\UpdateDepartmentHours;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateDepartmentHoursRequest;
 use App\Models\Department;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
-use Inertia\Inertia;
 
 class DepartmentHoursController extends Controller
 {
@@ -18,10 +18,7 @@ class DepartmentHoursController extends Controller
     {
         $changes = $updateHours->handle($department, $request->payload(), $request->user());
 
-        Inertia::flash('toast', [
-            'type' => $changes === [] ? 'info' : 'success',
-            'message' => $changes === [] ? 'No había cambios por guardar.' : 'Horario del departamento actualizado.',
-        ]);
+        SaveToast::flash($changes !== [], 'Horario del departamento actualizado.');
 
         return back();
     }

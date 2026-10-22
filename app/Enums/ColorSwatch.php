@@ -14,6 +14,23 @@ enum ColorSwatch: string
     case Violet = 'violet';
 
     /**
+     * Spanish name of the swatch (as in resources/js/lib/swatches.ts).
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::Slate => 'Pizarra',
+            self::Blue => 'Azul',
+            self::Teal => 'Turquesa',
+            self::Emerald => 'Esmeralda',
+            self::Amber => 'Ámbar',
+            self::Orange => 'Naranja',
+            self::Rose => 'Rosa',
+            self::Violet => 'Violeta',
+        };
+    }
+
+    /**
      * @return list<string>
      */
     public static function values(): array

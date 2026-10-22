@@ -1,4 +1,4 @@
-import type { ColorSwatch } from './admin';
+import type { AppColor } from './admin';
 
 export type ConversationStatusValue = 'pending' | 'open' | 'on_hold' | 'closed';
 
@@ -39,7 +39,7 @@ export type ConversationSummary = {
     department: {
         id: number;
         name: string;
-        color: ColorSwatch;
+        color: AppColor;
         is_active: boolean;
     } | null;
     assignee: { id: number; name: string; is_active: boolean } | null;
@@ -54,13 +54,35 @@ export type ConversationSummary = {
     can: ConversationAbilities;
 };
 
+/**
+ * Views of the inbox: every authorized conversation (team inboxes), the
+ * viewer's own ones, and the pending ones waiting to be accepted in the
+ * viewer's departments (personal inboxes).
+ */
+export type ConversationInboxView = 'all' | 'mine' | 'queue';
+
+export type ConversationInbox = {
+    /** The viewer's reach does not go beyond their own assignments. */
+    personal: boolean;
+    /** Views the viewer may open; the first one is the default. */
+    views: ConversationInboxView[];
+};
+
+export type AgentAvailabilityValue = 'available' | 'unavailable';
+
+export type ViewerAvailability = {
+    value: AgentAvailabilityValue;
+    label: string;
+    options: { value: string; label: string }[];
+};
+
 export type ConversationFilters = {
+    view: ConversationInboxView;
     status: ConversationStatusFilter;
     department: string | null;
     agent: string | null;
     connection: number | null;
     search: string;
-    mine: boolean;
 };
 
 export type ConversationMessage = {
@@ -111,7 +133,7 @@ export type CustomerWindow = {
 export type TransferAgentOption = {
     id: number;
     name: string;
-    availability: 'available' | 'unavailable';
+    availability: AgentAvailabilityValue;
     load: number;
 };
 

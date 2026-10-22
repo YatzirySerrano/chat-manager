@@ -83,7 +83,7 @@ test('notes cannot be added to contacts outside the actor scope', function () {
 test('note bodies are required and limited to 2000 characters', function (string $body) {
     $contact = Contact::factory()->create();
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->post(route('contacts.notes.store', $contact), ['body' => $body])
         ->assertSessionHasErrors('body');
 })->with([

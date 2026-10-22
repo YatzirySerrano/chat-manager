@@ -139,6 +139,24 @@ async function waitToastsGone(page) {
         .catch(() => {});
 }
 
+const AVAILABILITY_SWITCH = 'Disponible para aceptar y recibir conversaciones';
+
+/**
+ * Demo agents start as "No disponible": they switch to "Disponible" through
+ * the availability switch of the list before taking conversations.
+ */
+async function becomeAvailable(page) {
+    const toggle = page.getByRole('switch', { name: AVAILABILITY_SWITCH });
+
+    if ((await toggle.getAttribute('aria-checked')) !== 'true') {
+        await toggle.click();
+        await toastText(page, /Ahora estás disponible/);
+        await page.waitForLoadState('networkidle');
+    }
+
+    return (await toggle.getAttribute('aria-checked')) === 'true';
+}
+
 const overflow = (page) =>
     page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
@@ -170,6 +188,32 @@ const run = async () => {
         await nav.click();
         await ana.waitForURL(/\/conversations$/);
         await ana.waitForLoadState('networkidle');
+
+        // 1b. Agents get a personal inbox: their own conversations and the
+        // queue of their department, without the "Solo mías" switch.
+        const mineView = ana.getByRole('button', {
+            name: /Mis conversaciones/,
+        });
+        const queueView = ana.getByRole('button', {
+            name: /Pendientes de mi departamento/,
+        });
+        record(
+            'agent-personal-inbox',
+            'render',
+            (await mineView.count()) === 1 &&
+                (await mineView.getAttribute('aria-pressed')) === 'true' &&
+                (await queueView.count()) === 1 &&
+                (await ana
+                    .getByRole('switch', { name: 'Solo mis conversaciones' })
+                    .count()) === 0 &&
+                (await ana
+                    .getByRole('combobox', { name: 'Filtrar por agente' })
+                    .count()) === 0,
+            '"Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter',
+        );
+        await queueView.click();
+        await ana.waitForURL(/view=queue/);
+        await ana.waitForLoadState('networkidle');
         await ana.evaluate(() => (window.__sameDocument = true));
 
         // 2. A simulated customer message appears without reloading.
@@ -199,9 +243,34 @@ const run = async () => {
         );
         await shot(ana, 'b01_queue_agent');
 
+        // 2b. While "No disponible" the agent sees the queue but cannot accept.
+        const unavailableBanner =
+            (await ana.getByText('Estás como No disponible').count()) > 0;
+        const blockedAccept = ana.getByRole('button', {
+            name: /Aceptar \(no disponible.*Cliente E2E Anuncio/,
+        });
+        record(
+            'unavailable-cannot-accept',
+            'render',
+            unavailableBanner &&
+                (await blockedAccept.count()) > 0 &&
+                (await blockedAccept.first().isDisabled()),
+            'banner shown, Accept disabled with explanation',
+        );
+        const anaAvailable = await becomeAvailable(ana);
+        record(
+            'switch-to-available',
+            'mouse',
+            anaAvailable &&
+                (await ana.getByText('Estás como No disponible').count()) === 0,
+            'availability switch; banner gone',
+        );
+
         // 3. Two agents accept at the same time: exactly one wins.
         const beto = await newPage(browser);
         await login(beto, USERS.beto);
+        await beto.goto(`${BASE}/conversations`);
+        await becomeAvailable(beto);
         await Promise.all([
             ana.goto(`${BASE}/conversations/${firstId}`),
             beto.goto(`${BASE}/conversations/${firstId}`),
@@ -291,7 +360,8 @@ const run = async () => {
             .getByRole('dialog')
             .getByRole('button', { name: 'Transferir' })
             .click();
-        await winner.waitForURL(/\/conversations$/);
+        // The list the agent last looked at (e.g. the queue view) is restored.
+        await winner.waitForURL(/\/conversations(\?.*)?$/);
         const transferToast = await toastText(winner, /transferida/);
         record(
             'transfer-to-queue',
@@ -312,7 +382,9 @@ const run = async () => {
         // 8. The receiving department's agent accepts it from the list with the keyboard.
         const carla = await newPage(browser);
         await login(carla, USERS.carla);
-        await carla.goto(`${BASE}/conversations`);
+        await carla.goto(`${BASE}/conversations?view=queue`);
+        await carla.waitForLoadState('networkidle');
+        await becomeAvailable(carla);
         const accept = carla.getByRole('button', {
             name: 'Aceptar Cliente E2E Anuncio',
         });

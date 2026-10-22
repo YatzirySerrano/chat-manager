@@ -3,13 +3,16 @@
 namespace App\Services;
 
 use App\Enums\DataScope;
+use App\Enums\Permission;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
 
 /**
  * Rules that prevent privilege escalation. Nobody can grant, assign or manage
- * more than they hold; only the root authority reaches every role and user.
+ * more than they hold; only the root authority (Superadministrador) reaches
+ * every role and user, and permissions reserved to it never reach another
+ * role.
  */
 class PrivilegeGuard
 {
@@ -52,6 +55,23 @@ class PrivilegeGuard
         }
 
         return array_diff($permissionNames, $actor->effectivePermissions()) === [];
+    }
+
+    /**
+     * Permissions reserved to the root authority among the given ones that
+     * the role may not hold: every reserved one unless the role is the root
+     * role. Applies to every actor, the root authority included.
+     *
+     * @param  list<string>  $permissionNames
+     * @return list<string>
+     */
+    public function reservedPermissionsOutsideRoot(?Role $role, array $permissionNames): array
+    {
+        if ($role->is_root ?? false) {
+            return [];
+        }
+
+        return array_values(array_intersect($permissionNames, Permission::reservedToRootValues()));
     }
 
     public function canGrantScope(User $actor, DataScope $scope): bool

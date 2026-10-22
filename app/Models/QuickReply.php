@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\DeletesLogically;
 use App\Enums\DataScope;
 use Database\Factories\QuickReplyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,7 +17,8 @@ use Illuminate\Support\Carbon;
 /**
  * Predefined plain-text answer inserted into the composer with "/shortcut".
  * It is available to everyone when global, otherwise to the members of its
- * departments.
+ * departments. Deleting it is logical (see DeletesLogically): it can no
+ * longer be used and its shortcut stays reserved until it is restored.
  *
  * @property int $id
  * @property string $title
@@ -33,7 +35,7 @@ use Illuminate\Support\Carbon;
 class QuickReply extends Model
 {
     /** @use HasFactory<QuickReplyFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.

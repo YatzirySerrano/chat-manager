@@ -2,6 +2,12 @@
 
 namespace App\Enums;
 
+/**
+ * Actions recorded in the audit log. Stored values are permanent: cases that
+ * are no longer emitted (the activation and deactivation of catalogs that
+ * now use logical deletion, archiving contacts) are kept so older entries
+ * keep their meaning.
+ */
 enum AuditAction: string
 {
     case UserCreated = 'user.created';
@@ -12,11 +18,14 @@ enum AuditAction: string
     case UserActivated = 'user.activated';
     case UserDeactivated = 'user.deactivated';
     case UserDeleted = 'user.deleted';
+    case UserRestored = 'user.restored';
     case UserAvailabilityChanged = 'user.availability_changed';
     case DepartmentCreated = 'department.created';
     case DepartmentUpdated = 'department.updated';
     case DepartmentActivated = 'department.activated';
     case DepartmentDeactivated = 'department.deactivated';
+    case DepartmentDeleted = 'department.deleted';
+    case DepartmentRestored = 'department.restored';
     case DepartmentMemberAdded = 'department.member_added';
     case DepartmentMemberRemoved = 'department.member_removed';
     case DepartmentOperationsUpdated = 'department.operations_updated';
@@ -28,18 +37,22 @@ enum AuditAction: string
     case RoleActivated = 'role.activated';
     case RoleDeactivated = 'role.deactivated';
     case RoleDeleted = 'role.deleted';
+    case RoleRestored = 'role.restored';
     case SettingsUpdated = 'settings.updated';
     case AppearanceUpdated = 'appearance.updated';
     case ConnectionCreated = 'connection.created';
     case ConnectionUpdated = 'connection.updated';
     case ConnectionActivated = 'connection.activated';
     case ConnectionDeactivated = 'connection.deactivated';
+    case ConnectionDeleted = 'connection.deleted';
+    case ConnectionRestored = 'connection.restored';
     case ConnectionCredentialsUpdated = 'connection.credentials_updated';
     case ConnectionCredentialsVerified = 'connection.credentials_verified';
     case ConnectionCredentialsFailed = 'connection.credentials_failed';
     case ContactCreated = 'contact.created';
     case ContactUpdated = 'contact.updated';
     case ContactArchived = 'contact.archived';
+    case ContactDeleted = 'contact.deleted';
     case ContactRestored = 'contact.restored';
     case ContactOriginClassified = 'contact.origin_classified';
     case ContactNoteAdded = 'contact.note_added';
@@ -51,11 +64,20 @@ enum AuditAction: string
     case TagUpdated = 'tag.updated';
     case TagActivated = 'tag.activated';
     case TagDeactivated = 'tag.deactivated';
+    case TagDeleted = 'tag.deleted';
+    case TagRestored = 'tag.restored';
     case QuickReplyCreated = 'quick_reply.created';
     case QuickReplyUpdated = 'quick_reply.updated';
     case QuickReplyActivated = 'quick_reply.activated';
     case QuickReplyDeactivated = 'quick_reply.deactivated';
     case QuickReplyDeleted = 'quick_reply.deleted';
+    case QuickReplyRestored = 'quick_reply.restored';
+    case ExportRequested = 'export.requested';
+    case ExportGenerated = 'export.generated';
+    case ExportFailed = 'export.failed';
+    case ImportRequested = 'import.requested';
+    case ImportCompleted = 'import.completed';
+    case ImportFailed = 'import.failed';
 
     /**
      * Human readable description of the action.
@@ -71,11 +93,14 @@ enum AuditAction: string
             self::UserActivated => 'Usuario activado',
             self::UserDeactivated => 'Usuario desactivado',
             self::UserDeleted => 'Usuario eliminado',
+            self::UserRestored => 'Usuario restaurado',
             self::UserAvailabilityChanged => 'Disponibilidad para atender modificada',
             self::DepartmentCreated => 'Departamento creado',
             self::DepartmentUpdated => 'Departamento actualizado',
             self::DepartmentActivated => 'Departamento activado',
             self::DepartmentDeactivated => 'Departamento desactivado',
+            self::DepartmentDeleted => 'Departamento eliminado',
+            self::DepartmentRestored => 'Departamento restaurado',
             self::DepartmentMemberAdded => 'Miembro agregado al departamento',
             self::DepartmentMemberRemoved => 'Miembro retirado del departamento',
             self::DepartmentOperationsUpdated => 'Configuración operativa del departamento actualizada',
@@ -87,18 +112,22 @@ enum AuditAction: string
             self::RoleActivated => 'Rol activado',
             self::RoleDeactivated => 'Rol desactivado',
             self::RoleDeleted => 'Rol eliminado',
+            self::RoleRestored => 'Rol restaurado',
             self::SettingsUpdated => 'Configuración actualizada',
             self::AppearanceUpdated => 'Apariencia global modificada',
             self::ConnectionCreated => 'Conexión creada',
             self::ConnectionUpdated => 'Conexión actualizada',
             self::ConnectionActivated => 'Conexión activada',
             self::ConnectionDeactivated => 'Conexión desactivada',
+            self::ConnectionDeleted => 'Conexión eliminada',
+            self::ConnectionRestored => 'Conexión restaurada',
             self::ConnectionCredentialsUpdated => 'Credenciales de la conexión actualizadas',
             self::ConnectionCredentialsVerified => 'Credenciales de la conexión verificadas',
             self::ConnectionCredentialsFailed => 'Falló la verificación de credenciales',
             self::ContactCreated => 'Contacto creado',
             self::ContactUpdated => 'Contacto actualizado',
             self::ContactArchived => 'Contacto archivado',
+            self::ContactDeleted => 'Contacto eliminado',
             self::ContactRestored => 'Contacto restaurado',
             self::ContactOriginClassified => 'Origen del contacto clasificado',
             self::ContactNoteAdded => 'Nota privada agregada al contacto',
@@ -110,11 +139,20 @@ enum AuditAction: string
             self::TagUpdated => 'Etiqueta actualizada',
             self::TagActivated => 'Etiqueta activada',
             self::TagDeactivated => 'Etiqueta desactivada',
+            self::TagDeleted => 'Etiqueta eliminada',
+            self::TagRestored => 'Etiqueta restaurada',
             self::QuickReplyCreated => 'Respuesta rápida creada',
             self::QuickReplyUpdated => 'Respuesta rápida actualizada',
             self::QuickReplyActivated => 'Respuesta rápida activada',
             self::QuickReplyDeactivated => 'Respuesta rápida desactivada',
             self::QuickReplyDeleted => 'Respuesta rápida eliminada',
+            self::QuickReplyRestored => 'Respuesta rápida restaurada',
+            self::ExportRequested => 'Exportación solicitada',
+            self::ExportGenerated => 'Exportación generada',
+            self::ExportFailed => 'Exportación fallida',
+            self::ImportRequested => 'Importación de contactos solicitada',
+            self::ImportCompleted => 'Importación de contactos terminada',
+            self::ImportFailed => 'Importación de contactos fallida',
         };
     }
 
@@ -126,7 +164,9 @@ enum AuditAction: string
         return match ($this) {
             self::UserDeleted, self::UserDeactivated, self::DepartmentDeactivated, self::DepartmentMemberRemoved,
             self::RoleDeactivated, self::RoleDeleted, self::ConnectionDeactivated, self::ConnectionCredentialsFailed,
-            self::ContactArchived, self::TagDeactivated, self::QuickReplyDeactivated, self::QuickReplyDeleted => 'danger',
+            self::ContactArchived, self::TagDeactivated, self::QuickReplyDeactivated, self::QuickReplyDeleted,
+            self::DepartmentDeleted, self::ConnectionDeleted, self::ContactDeleted, self::TagDeleted,
+            self::ExportFailed, self::ImportFailed => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated, self::DepartmentConnectionsChanged,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
@@ -134,9 +174,20 @@ enum AuditAction: string
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentActivated, self::DepartmentMemberAdded,
             self::RoleCreated, self::RoleActivated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
-            self::TagActivated, self::QuickReplyCreated, self::QuickReplyActivated => 'success',
+            self::TagActivated, self::QuickReplyCreated, self::QuickReplyActivated, self::UserRestored,
+            self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
+            self::QuickReplyRestored, self::ImportCompleted => 'success',
             default => 'neutral',
         };
+    }
+
+    /**
+     * Entries only the root authority may read whoever performed them: the
+     * contacts importer is reserved to the Superadministrador.
+     */
+    public function isAlwaysRestricted(): bool
+    {
+        return in_array($this, [self::ImportRequested, self::ImportCompleted, self::ImportFailed], true);
     }
 
     /**

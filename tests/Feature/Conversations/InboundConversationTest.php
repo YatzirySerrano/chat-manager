@@ -316,3 +316,23 @@ test('messages of an unknown business number are skipped and logged without pers
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'no connection')
         && $context === ['phone_number_id' => '999000999000999', 'message_id' => 'wamid.unknown']);
 });
+
+test('a deleted connection keeps its history but no new traffic is attached to it', function () {
+    $connection = Connection::factory()->create();
+    $existing = receiveWhatsapp($connection, '5215512345678', 'Hola', null, 'wamid.before')->conversation;
+    $connection->forceFill(['deleted_at' => now(), 'is_active' => false])->save();
+    Log::spy();
+
+    $receipts = app(ProcessInboundMessages::class)->handle(whatsappWebhook($connection, [whatsappTextMessage('5215512345678', 'Sigo aquí', id: 'wamid.after')]));
+
+    expect($receipts)->toBe([])
+        ->and(Message::query()->where('whatsapp_message_id', 'wamid.after')->exists())->toBeFalse()
+        ->and($existing->refresh()->messages()->count())->toBe(1);
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'was deleted'))->once();
+});
+
+test('an inactive (not deleted) connection still receives customer messages, so none are lost', function () {
+    $connection = Connection::factory()->inactive()->create();
+
+    expect(receiveWhatsapp($connection)->outcome)->toBe(InboundMessageOutcome::Created);
+});

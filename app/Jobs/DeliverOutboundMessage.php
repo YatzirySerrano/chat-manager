@@ -41,7 +41,19 @@ class DeliverOutboundMessage implements ShouldQueue
                 return null;
             }
 
-            $conversation = Conversation::query()->findOrFail($message->conversation_id);
+            $conversation = Conversation::query()->with('channelConnection')->findOrFail($message->conversation_id);
+
+            // Nothing leaves through a connection that was deleted or deactivated
+            // after the message was queued.
+            if (! ($conversation->channelConnection?->isOperational() ?? false)) {
+                $this->markFailed($message, 'connection_unavailable', 'La conexión de WhatsApp de esta conversación no está disponible.');
+                $lifecycle->record($conversation, ConversationEventType::OutboundBlocked, null, [
+                    'metadata' => ['message_id' => $message->id, 'reason' => 'connection_unavailable'],
+                ]);
+
+                return null;
+            }
+
             $state = $window->for($conversation);
 
             if (! $state->allowsFreeFormMessages()) {

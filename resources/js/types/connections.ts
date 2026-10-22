@@ -1,4 +1,5 @@
-import type { ColorSwatch } from './admin';
+import type { AppColor } from './admin';
+import type { RecordStateValue } from './ui';
 
 export type ConnectionHealthValue =
     | 'inactive'
@@ -40,7 +41,7 @@ export type ConnectionSecretField =
 export type ConnectionDepartment = {
     id: number;
     name: string;
-    color: ColorSwatch;
+    color: AppColor;
     is_active: boolean;
     is_default: boolean;
 };
@@ -55,7 +56,13 @@ export type Connection = {
     business_account_id: string | null;
     meta_app_id: string | null;
     verified_name: string | null;
+    /** Operational activation with Meta (Activar / Desactivar). */
     is_active: boolean;
+    /** Logical deletion (Eliminar / Restaurar), independent of `is_active`. */
+    is_deleted: boolean;
+    deleted_at: string | null;
+    /** Conversations that depend on the connection (kept when deleted). */
+    conversations_count?: number;
     secrets: Record<ConnectionSecretField, boolean>;
     has_required_credentials: boolean;
     default_department_id: number | null;
@@ -94,6 +101,8 @@ export type Connection = {
         update: boolean;
         changeStatus: boolean;
         verify: boolean;
+        delete: boolean;
+        restore: boolean;
     };
 };
 
@@ -103,6 +112,7 @@ export type ConnectionFilters = {
     health: ConnectionHealthValue | null;
     department: number | null;
     status: 'active' | 'inactive' | null;
+    record: RecordStateValue;
 };
 
 export type ConnectionStats = {

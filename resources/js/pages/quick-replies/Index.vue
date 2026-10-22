@@ -1,30 +1,21 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import {
-    Globe,
-    MessageSquareText,
-    Pencil,
-    Plus,
-    Power,
-    PowerOff,
-    Search,
-    Trash2,
-    X,
-} from '@lucide/vue';
+import { Globe, MessageSquareText, Pencil, Plus, Search, X } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import QuickReplyFormDialog from '@/components/quick-replies/QuickReplyFormDialog.vue';
 import QuickReplySandbox from '@/components/quick-replies/QuickReplySandbox.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,13 +36,14 @@ import {
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import WhatsAppText from '@/components/WhatsAppText.vue';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
 import {
     destroy as destroyQuickReply,
     index as quickRepliesIndex,
+    restore as restoreQuickReply,
 } from '@/routes/quick-replies';
-import { update as updateStatus } from '@/routes/quick-replies/status';
 import type {
     DepartmentOption,
     Paginated,
@@ -59,6 +51,7 @@ import type {
     QuickReplySummary,
     QuickReplyVariableOption,
     RecordAction,
+    RecordStateOption,
 } from '@/types';
 
 defineOptions({
@@ -72,12 +65,14 @@ defineOptions({
 const props = defineProps<{
     quickReplies: Paginated<QuickReplySummary>;
     filters: QuickReplyFilters;
+    recordStates: RecordStateOption[];
     departments: DepartmentOption[];
     assignableDepartments: DepartmentOption[];
     variables: QuickReplyVariableOption[];
     sampleValues: Record<string, string>;
     bodyMaxLength: number;
     can: { create: boolean; manageGlobal: boolean; use: boolean };
+    canExport?: boolean;
 }>();
 
 const ALL = 'all';
@@ -88,7 +83,7 @@ const filterState = reactive({
         props.filters.department === null
             ? ALL
             : String(props.filters.department),
-    status: props.filters.status ?? ALL,
+    record: props.filters.record,
     availability: props.filters.availability ?? ALL,
 });
 
@@ -96,7 +91,7 @@ const hasFilters = computed(
     () =>
         filterState.search !== '' ||
         filterState.department !== ALL ||
-        filterState.status !== ALL ||
+        filterState.record !== 'active' ||
         filterState.availability !== ALL,
 );
 
@@ -107,10 +102,14 @@ function applyFilters(): void {
         query.search = filterState.search.trim();
     }
 
-    for (const key of ['department', 'status', 'availability'] as const) {
+    for (const key of ['department', 'availability'] as const) {
         if (filterState[key] !== ALL) {
             query[key] = filterState[key];
         }
+    }
+
+    if (filterState.record !== 'active') {
+        query.record = filterState.record;
     }
 
     router.get(quickRepliesIndex.url({ query }), undefined, {
@@ -126,7 +125,7 @@ watchDebounced(() => filterState.search, applyFilters, { debounce: 300 });
 function clearFilters(): void {
     filterState.search = '';
     filterState.department = ALL;
-    filterState.status = ALL;
+    filterState.record = 'active';
     filterState.availability = ALL;
     applyFilters();
 }
@@ -144,87 +143,20 @@ function openEdit(reply: QuickReplySummary): void {
     formOpen.value = true;
 }
 
-type PendingAction = {
-    type: 'deactivate' | 'delete';
-    reply: QuickReplySummary;
-};
-
-const pendingAction = ref<PendingAction | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
-
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
-
-function activate(reply: QuickReplySummary): void {
-    router.visit(updateStatus(reply.id), {
-        data: { is_active: true },
-        preserveScroll: true,
-        onStart: () => (processingId.value = reply.id),
-        onFinish: () => (processingId.value = null),
-        onError: showFirstError,
-    });
-}
-
-function askConfirmation(action: PendingAction): void {
-    pendingAction.value = action;
-    confirmOpen.value = true;
-}
-
-function confirmPendingAction(): void {
-    const action = pendingAction.value;
-
-    if (!action) {
-        return;
-    }
-
-    const options = {
-        preserveScroll: true,
-        onStart: () => (processingId.value = action.reply.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: (errors: Record<string, string>) => {
-            confirmOpen.value = false;
-            showFirstError(errors);
-        },
-    };
-
-    if (action.type === 'deactivate') {
-        router.visit(updateStatus(action.reply.id), {
-            ...options,
-            data: { is_active: false },
-        });
-
-        return;
-    }
-
-    router.visit(destroyQuickReply(action.reply.id), options);
-}
-
-const confirmCopy = computed(() => {
-    const action = pendingAction.value;
-    const shortcut = action ? `/${action.reply.shortcut}` : '';
-
-    if (action?.type === 'delete') {
-        return {
-            title: `¿Eliminar la respuesta ${shortcut}?`,
-            description:
-                'Se eliminará de forma permanente y su atajo quedará libre. Los mensajes ya enviados no cambian. Si solo quieres dejar de usarla, desactívala.',
-            confirmLabel: 'Eliminar',
-        };
-    }
-
-    return {
-        title: `¿Desactivar la respuesta ${shortcut}?`,
-        description:
-            'Dejará de aparecer al escribir «/» en el chat. Su atajo sigue reservado y puedes reactivarla cuando quieras.',
-        confirmLabel: 'Desactivar',
-    };
+const deletion = useRecordDeletion<QuickReplySummary>({
+    destroy: (reply) => destroyQuickReply(reply.id),
+    restore: (reply) => restoreQuickReply(reply.id),
+    copy: (reply, step) =>
+        step === 'delete'
+            ? {
+                  title: `¿Eliminar la respuesta /${reply.shortcut}?`,
+                  description: `Nadie podrá usarla y su atajo /${reply.shortcut} quedará reservado mientras esté eliminada. Los mensajes ya enviados no cambian. Podrás restaurarla.`,
+              }
+            : {
+                  title: `¿Restaurar la respuesta /${reply.shortcut}?`,
+                  description:
+                      'Volverá a aparecer al escribir «/» en el chat para quienes la tienen disponible.',
+              },
 });
 
 const { mode: viewMode } = useViewMode('quick-replies');
@@ -237,27 +169,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(reply),
         },
-        reply.can.changeStatus &&
-            !reply.is_active && {
-                key: 'activate',
-                label: 'Activar',
-                icon: Power,
-                onSelect: () => activate(reply),
-            },
-        reply.can.changeStatus &&
-            reply.is_active && {
-                key: 'deactivate',
-                label: 'Desactivar',
-                icon: PowerOff,
-                onSelect: () => askConfirmation({ type: 'deactivate', reply }),
-            },
-        reply.can.delete && {
-            key: 'delete',
-            label: 'Eliminar',
-            icon: Trash2,
-            destructive: true,
-            onSelect: () => askConfirmation({ type: 'delete', reply }),
-        },
+        ...deletion.actionsFor(reply),
     );
 }
 </script>
@@ -272,8 +184,13 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             title="Respuestas rápidas"
             description="Textos predefinidos que el equipo inserta en el chat escribiendo «/» y su atajo. Se insertan para revisarlos; nunca se envían solos."
         >
-            <template v-if="can.create" #actions>
-                <Button @click="openCreate">
+            <template v-if="can.create || canExport" #actions>
+                <ExportMenu
+                    v-if="canExport"
+                    report="quick-replies"
+                    :filters="filters"
+                />
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nueva respuesta
                 </Button>
@@ -348,24 +265,12 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                                 >
                             </SelectContent>
                         </Select>
-                        <Select
-                            v-model="filterState.status"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full sm:w-32"
-                                aria-label="Filtrar por estado"
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="ALL">Todas</SelectItem>
-                                <SelectItem value="active">Activas</SelectItem>
-                                <SelectItem value="inactive"
-                                    >Inactivas</SelectItem
-                                >
-                            </SelectContent>
-                        </Select>
+                        <RecordStateFilter
+                            v-model="filterState.record"
+                            :options="recordStates"
+                            class="sm:w-36"
+                            @change="applyFilters"
+                        />
                         <Button
                             v-if="hasFilters"
                             variant="ghost"
@@ -398,7 +303,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                         <TableRow
                             v-for="reply in quickReplies.data"
                             :key="reply.id"
-                            :class="!reply.is_active && 'text-muted-foreground'"
+                            :class="reply.is_deleted && 'text-muted-foreground'"
                         >
                             <TableCell class="w-full max-w-0 py-3 pl-5">
                                 <div class="flex min-w-0 items-center gap-2">
@@ -450,17 +355,21 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                                 </div>
                             </TableCell>
                             <TableCell class="hidden sm:table-cell">
-                                <StatusBadge
-                                    :active="reply.is_active"
-                                    active-label="Activa"
-                                    inactive-label="Inactiva"
+                                <DeletedBadge
+                                    v-if="reply.is_deleted"
+                                    feminine
                                 />
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >Activa</span
+                                >
                             </TableCell>
                             <TableCell class="w-px pr-5 text-right">
                                 <RecordActions
                                     :actions="actionsFor(reply)"
                                     :record="`la respuesta /${reply.shortcut}`"
-                                    :busy="processingId === reply.id"
+                                    :busy="deletion.processingId === reply.id"
                                 />
                             </TableCell>
                         </TableRow>
@@ -469,7 +378,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
 
                 <RecordGrid v-else-if="quickReplies.data.length > 0">
                     <li v-for="reply in quickReplies.data" :key="reply.id">
-                        <RecordCard :muted="!reply.is_active">
+                        <RecordCard :muted="reply.is_deleted">
                             <template #title>
                                 <span class="flex min-w-0 items-center gap-2">
                                     <span
@@ -481,12 +390,8 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                                     }}</span>
                                 </span>
                             </template>
-                            <template #badges>
-                                <StatusBadge
-                                    :active="reply.is_active"
-                                    active-label="Activa"
-                                    inactive-label="Inactiva"
-                                />
+                            <template v-if="reply.is_deleted" #badges>
+                                <DeletedBadge feminine />
                             </template>
                             <p
                                 class="line-clamp-3 wrap-anywhere text-muted-foreground"
@@ -514,7 +419,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                                 <RecordActions
                                     :actions="actionsFor(reply)"
                                     :record="`la respuesta /${reply.shortcut}`"
-                                    :busy="processingId === reply.id"
+                                    :busy="deletion.processingId === reply.id"
                                 />
                             </template>
                         </RecordCard>
@@ -587,13 +492,9 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="confirmCopy.title"
-            :description="confirmCopy.description"
-            :confirm-label="confirmCopy.confirmLabel"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmPendingAction"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

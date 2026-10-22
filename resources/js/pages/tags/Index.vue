@@ -4,8 +4,6 @@ import {
     MessagesSquare,
     Pencil,
     Plus,
-    Power,
-    PowerOff,
     Search,
     Tag as TagIcon,
     UsersRound,
@@ -13,27 +11,21 @@ import {
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import TagFormDialog from '@/components/tags/TagFormDialog.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import {
     Table,
     TableBody,
@@ -43,14 +35,19 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
-import { index as tagsIndex } from '@/routes/tags';
-import { update as updateStatus } from '@/routes/tags/status';
+import {
+    destroy as destroyTag,
+    index as tagsIndex,
+    restore as restoreTag,
+} from '@/routes/tags';
 import type {
     ColorSwatch,
     Paginated,
     RecordAction,
+    RecordStateOption,
     TagFilters,
     TagSummary,
 } from '@/types';
@@ -64,19 +61,19 @@ defineOptions({
 const props = defineProps<{
     tags: Paginated<TagSummary>;
     filters: TagFilters;
+    recordStates: RecordStateOption[];
     colors: ColorSwatch[];
     can: { manage: boolean };
+    canExport?: boolean;
 }>();
-
-const ALL = 'all';
 
 const filterState = reactive({
     search: props.filters.search ?? '',
-    status: props.filters.status ?? ALL,
+    record: props.filters.record,
 });
 
 const hasFilters = computed(
-    () => filterState.search !== '' || filterState.status !== ALL,
+    () => filterState.search !== '' || filterState.record !== 'active',
 );
 
 function applyFilters(): void {
@@ -86,8 +83,8 @@ function applyFilters(): void {
         query.search = filterState.search.trim();
     }
 
-    if (filterState.status !== ALL) {
-        query.status = filterState.status;
+    if (filterState.record !== 'active') {
+        query.record = filterState.record;
     }
 
     router.get(tagsIndex.url({ query }), undefined, {
@@ -102,7 +99,7 @@ watchDebounced(() => filterState.search, applyFilters, { debounce: 300 });
 
 function clearFilters(): void {
     filterState.search = '';
-    filterState.status = ALL;
+    filterState.record = 'active';
     applyFilters();
 }
 
@@ -119,39 +116,21 @@ function openEdit(tag: TagSummary): void {
     formOpen.value = true;
 }
 
-const pendingDeactivation = ref<TagSummary | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
-
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
-
-function changeStatus(tag: TagSummary, active: boolean): void {
-    router.visit(updateStatus(tag.id), {
-        data: { is_active: active },
-        preserveScroll: true,
-        onStart: () => (processingId.value = tag.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: showFirstError,
-    });
-}
-
-function askDeactivation(tag: TagSummary): void {
-    pendingDeactivation.value = tag;
-    confirmOpen.value = true;
-}
-
-function confirmDeactivation(): void {
-    if (pendingDeactivation.value) {
-        changeStatus(pendingDeactivation.value, false);
-    }
-}
+const deletion = useRecordDeletion<TagSummary>({
+    destroy: (tag) => destroyTag(tag.id),
+    restore: (tag) => restoreTag(tag.id),
+    copy: (tag, step) =>
+        step === 'delete'
+            ? {
+                  title: `¿Eliminar la etiqueta ${tag.name}?`,
+                  description:
+                      'Ya no podrá asignarse, pero se conserva en los contactos y conversaciones donde ya está aplicada. Podrás restaurarla.',
+              }
+            : {
+                  title: `¿Restaurar la etiqueta ${tag.name}?`,
+                  description: 'Podrá asignarse de nuevo.',
+              },
+});
 
 const { mode: viewMode } = useViewMode('tags');
 
@@ -163,20 +142,7 @@ function actionsFor(tag: TagSummary): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(tag),
         },
-        tag.can.changeStatus &&
-            !tag.is_active && {
-                key: 'activate',
-                label: 'Activar',
-                icon: Power,
-                onSelect: () => changeStatus(tag, true),
-            },
-        tag.can.changeStatus &&
-            tag.is_active && {
-                key: 'deactivate',
-                label: 'Desactivar',
-                icon: PowerOff,
-                onSelect: () => askDeactivation(tag),
-            },
+        ...deletion.actionsFor(tag),
     );
 }
 
@@ -201,8 +167,9 @@ function usageLabel(
             title="Etiquetas"
             description="Clasifica contactos y conversaciones con etiquetas de color. Solo clasifican: no otorgan permisos ni cambian estados."
         >
-            <template v-if="can.manage" #actions>
-                <Button @click="openCreate">
+            <template v-if="can.manage || canExport" #actions>
+                <ExportMenu v-if="canExport" report="tags" :filters="filters" />
+                <Button v-if="can.manage" @click="openCreate">
                     <Plus />
                     Nueva etiqueta
                 </Button>
@@ -229,22 +196,12 @@ function usageLabel(
                 </div>
                 <ViewModeToggle v-model="viewMode" class="order-2 sm:order-3" />
                 <div class="order-3 flex w-full gap-2 sm:order-2 sm:w-auto">
-                    <Select
-                        v-model="filterState.status"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full sm:w-36"
-                            aria-label="Filtrar por estado"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL">Todas</SelectItem>
-                            <SelectItem value="active">Activas</SelectItem>
-                            <SelectItem value="inactive">Inactivas</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <RecordStateFilter
+                        v-model="filterState.record"
+                        :options="recordStates"
+                        class="sm:w-36"
+                        @change="applyFilters"
+                    />
                     <Button
                         v-if="hasFilters"
                         variant="ghost"
@@ -271,14 +228,14 @@ function usageLabel(
                     <TableRow
                         v-for="tag in tags.data"
                         :key="tag.id"
-                        :class="!tag.is_active && 'text-muted-foreground'"
+                        :class="tag.is_deleted && 'text-muted-foreground'"
                     >
                         <TableCell class="w-full max-w-0 py-3 pl-5">
                             <div class="grid gap-1">
                                 <TagBadge
                                     :name="tag.name"
                                     :color="tag.color"
-                                    :inactive="!tag.is_active"
+                                    :deleted="tag.is_deleted"
                                     size="md"
                                     class="w-fit"
                                 />
@@ -323,17 +280,16 @@ function usageLabel(
                             </div>
                         </TableCell>
                         <TableCell>
-                            <StatusBadge
-                                :active="tag.is_active"
-                                active-label="Activa"
-                                inactive-label="Inactiva"
-                            />
+                            <DeletedBadge v-if="tag.is_deleted" feminine />
+                            <span v-else class="text-xs text-muted-foreground"
+                                >Activa</span
+                            >
                         </TableCell>
                         <TableCell class="w-px pr-5 text-right">
                             <RecordActions
                                 :actions="actionsFor(tag)"
                                 :record="`la etiqueta ${tag.name}`"
-                                :busy="processingId === tag.id"
+                                :busy="deletion.processingId === tag.id"
                             />
                         </TableCell>
                     </TableRow>
@@ -342,22 +298,18 @@ function usageLabel(
 
             <RecordGrid v-else-if="tags.data.length > 0">
                 <li v-for="tag in tags.data" :key="tag.id">
-                    <RecordCard :muted="!tag.is_active">
+                    <RecordCard :muted="tag.is_deleted">
                         <template #title>
                             <TagBadge
                                 :name="tag.name"
                                 :color="tag.color"
-                                :inactive="!tag.is_active"
+                                :deleted="tag.is_deleted"
                                 size="md"
                                 class="max-w-full"
                             />
                         </template>
-                        <template #badges>
-                            <StatusBadge
-                                :active="tag.is_active"
-                                active-label="Activa"
-                                inactive-label="Inactiva"
-                            />
+                        <template v-if="tag.is_deleted" #badges>
+                            <DeletedBadge feminine />
                         </template>
                         <p class="line-clamp-2 text-muted-foreground">
                             {{ tag.description || 'Sin descripción.' }}
@@ -394,7 +346,7 @@ function usageLabel(
                             <RecordActions
                                 :actions="actionsFor(tag)"
                                 :record="`la etiqueta ${tag.name}`"
-                                :busy="processingId === tag.id"
+                                :busy="deletion.processingId === tag.id"
                             />
                         </template>
                     </RecordCard>
@@ -446,13 +398,9 @@ function usageLabel(
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="`¿Desactivar la etiqueta ${pendingDeactivation?.name ?? ''}?`"
-            description="Ya no podrá asignarse a nuevos contactos ni conversaciones. Los registros que ya la tienen la conservan."
-            confirm-label="Desactivar"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmDeactivation"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

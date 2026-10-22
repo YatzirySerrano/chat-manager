@@ -6,6 +6,8 @@ import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength } from '@/lib/validation';
 import { update } from '@/routes/departments/operations';
 import type { DepartmentSummary, FieldHelpContent } from '@/types';
 
@@ -20,6 +22,11 @@ const form = useForm({
     welcome_message: props.department.welcome_message ?? '',
 });
 
+const validation = useFormValidation(form, {
+    rules: { welcome_message: [maxLength(MAX_LENGTH)] },
+    requireChanges: true,
+});
+
 /**
  * Keep the form in sync when fresh props arrive (e.g. after saving or when
  * another administrator changed the message) unless there are local edits.
@@ -27,9 +34,8 @@ const form = useForm({
 watch(
     () => props.department.welcome_message,
     (message) => {
-        if (!form.isDirty) {
-            form.defaults({ welcome_message: message ?? '' });
-            form.reset();
+        if (!validation.hasChanges) {
+            validation.load({ welcome_message: message ?? '' });
         }
     },
 );
@@ -47,13 +53,16 @@ const help: FieldHelpContent = {
 };
 
 function submit(): void {
+    if (!validation.validate()) {
+        return;
+    }
+
     form.submit(update(props.department.id), {
         preserveScroll: true,
         onSuccess: () => {
-            form.defaults({
+            validation.load({
                 welcome_message: props.department.welcome_message ?? '',
             });
-            form.reset();
         },
     });
 }
@@ -65,11 +74,16 @@ function submit(): void {
         description="Saludo para las conversaciones que llegan a este departamento."
         body-class="p-5"
     >
-        <form v-if="canUpdate" class="space-y-4" @submit.prevent="submit">
+        <form
+            v-if="canUpdate"
+            class="space-y-4"
+            novalidate
+            @submit.prevent="submit"
+        >
             <FormField
                 id="department-welcome-message"
                 label="Mensaje"
-                :error="form.errors.welcome_message"
+                :error="validation.error('welcome_message')"
                 :help="help"
             >
                 <Textarea
@@ -78,6 +92,12 @@ function submit(): void {
                     :maxlength="MAX_LENGTH"
                     rows="4"
                     placeholder="Sin mensaje de bienvenida"
+                    v-bind="
+                        validation.field(
+                            'welcome_message',
+                            'department-welcome-message',
+                        )
+                    "
                 />
                 <p
                     class="text-right text-xs text-muted-foreground tabular-nums"
@@ -90,14 +110,14 @@ function submit(): void {
                 <Button
                     type="button"
                     variant="outline"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!validation.hasChanges || form.processing"
                     @click="form.reset()"
                 >
                     Descartar
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!validation.hasChanges || form.processing"
                 >
                     <Spinner v-if="form.processing" />
                     Guardar mensaje

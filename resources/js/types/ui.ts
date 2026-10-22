@@ -9,6 +9,8 @@ export type AppVariant = 'header' | 'sidebar';
 export type FlashToast = {
     type: 'success' | 'info' | 'warning' | 'error';
     message: string;
+    /** Optional link shown as the toast action (e.g. "Ver exportaciones"). */
+    action?: { label: string; href: string };
 };
 
 /**
@@ -57,3 +59,15 @@ export type RecordAction = {
      */
     secondary?: boolean;
 };
+
+/**
+ * "Estado del registro" of a list (see App\Enums\RecordState). Deleted
+ * records are only listed for people who can consult them: the server sends
+ * no options otherwise and always answers with the active records.
+ */
+export type RecordStateValue = 'active' | 'deleted' | 'all';
+
+export type RecordStateOption = { value: RecordStateValue; label: string };
+
+/** Per-record permissions of a logically deletable record. */
+export type DeletionAbilities = { delete: boolean; restore: boolean };

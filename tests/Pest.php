@@ -10,6 +10,8 @@ use App\Models\Role;
 use App\Models\User;
 use App\Support\InboundMessageReceipt;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /*
@@ -126,4 +128,27 @@ function conversationUser(array $permissions, DataScope $scope = DataScope::Assi
     $role = Role::factory()->scope($scope)->withPermissions($permissions)->create();
 
     return User::factory()->withRole($role)->inDepartments($departments)->create();
+}
+
+/**
+ * SQL statements that changed data (insert, update, delete) while the
+ * callback ran, to prove that a request wrote nothing.
+ *
+ * @return list<string>
+ */
+function databaseWritesDuring(callable $callback): array
+{
+    $writes = [];
+    $recording = true;
+
+    DB::listen(function (QueryExecuted $query) use (&$writes, &$recording): void {
+        if ($recording && preg_match('/^\s*(insert|update|delete|replace)\b/i', $query->sql) === 1) {
+            $writes[] = $query->sql;
+        }
+    });
+
+    $callback();
+    $recording = false;
+
+    return $writes;
 }

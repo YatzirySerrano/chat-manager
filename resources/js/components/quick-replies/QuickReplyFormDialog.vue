@@ -12,6 +12,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import {
+    maxLength,
+    normalizers,
+    pattern,
+    required,
+    when,
+} from '@/lib/validation';
 import { store, update } from '@/routes/quick-replies';
 import type {
     DepartmentOption,
@@ -60,8 +68,7 @@ watch(open, (isOpen) => {
     const ownDepartments =
         props.departments.length === 1 ? [props.departments[0].id] : [];
 
-    form.clearErrors();
-    form.defaults({
+    validation.load({
         title: props.quickReply?.title ?? '',
         shortcut: props.quickReply?.shortcut ?? '',
         body: props.quickReply?.body ?? '',
@@ -70,11 +77,11 @@ watch(open, (isOpen) => {
             props.quickReply?.departments.map((department) => department.id) ??
             ownDepartments,
     });
-    form.reset();
 });
 
 /**
- * Active departments plus inactive ones the reply already uses.
+ * Departments that are not deleted plus deleted ones the reply already uses
+ * (the server keeps those memberships until the department is restored).
  */
 const selectableDepartments = computed(() =>
     props.departments.filter(
@@ -154,13 +161,31 @@ const bodyWarning = computed(() => {
     return undefined;
 });
 
-const departmentError = computed(() => {
-    const errors = form.errors as Record<string, string | undefined>;
-    const key = Object.keys(errors).find((name) =>
-        name.startsWith('department_ids'),
-    );
-
-    return key ? errors[key] : undefined;
+const validation = useFormValidation(form, {
+    rules: () => ({
+        title: [required('Escribe el título.'), maxLength(120)],
+        shortcut: [
+            required('Escribe el atajo.'),
+            maxLength(32),
+            pattern(
+                /^[a-z0-9][a-z0-9_-]*$/,
+                'Usa minúsculas sin acentos, números, guion o guion bajo, empezando con letra o número.',
+            ),
+        ],
+        body: [
+            required('Escribe el mensaje.'),
+            maxLength(props.bodyMaxLength),
+            () => bodyWarning.value,
+        ],
+        department_ids: [
+            when(
+                (data) => !data.is_global,
+                [required('Elige al menos un departamento.')],
+            ),
+        ],
+    }),
+    normalize: { title: normalizers.squish },
+    requireChanges: isEditing,
 });
 
 function submit(): void {
@@ -193,7 +218,7 @@ function submit(): void {
         "
         description="Texto predefinido que el equipo inserta en el chat escribiendo «/» y el atajo. Siempre se puede revisar antes de enviar."
         :processing="form.processing"
-        :dirty="form.isDirty"
+        :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear respuesta'"
         @submit="submit"
     >
@@ -202,7 +227,7 @@ function submit(): void {
                 <FormField
                     id="quick-reply-title"
                     label="Título"
-                    :error="form.errors.title"
+                    :error="validation.error('title')"
                     hint="Nombre descriptivo para encontrarla en la lista."
                 >
                     <Input
@@ -210,14 +235,14 @@ function submit(): void {
                         v-model="form.title"
                         maxlength="120"
                         placeholder="Saludo inicial"
-                        :aria-invalid="!!form.errors.title"
+                        v-bind="validation.field('title', 'quick-reply-title')"
                     />
                 </FormField>
 
                 <FormField
                     id="quick-reply-shortcut"
                     label="Atajo"
-                    :error="form.errors.shortcut"
+                    :error="validation.error('shortcut')"
                     :help="{
                         description:
                             'Palabra que se escribe después de «/» en el chat para insertar esta respuesta.',
@@ -241,7 +266,12 @@ function submit(): void {
                             spellcheck="false"
                             class="rounded-l-none font-mono"
                             placeholder="saludo"
-                            :aria-invalid="!!form.errors.shortcut"
+                            v-bind="
+                                validation.field(
+                                    'shortcut',
+                                    'quick-reply-shortcut',
+                                )
+                            "
                             @update:model-value="normalizeShortcut"
                         />
                     </div>
@@ -304,16 +334,20 @@ function submit(): void {
                         v-model="form.body"
                         rows="6"
                         class="max-h-72 min-h-32"
-                        :aria-invalid="!!form.errors.body"
                         placeholder="Hola {contacto.nombre}, gracias por escribirnos."
+                        v-bind="validation.field('body', 'quick-reply-body')"
                     />
                     <p
-                        v-if="bodyWarning && !form.errors.body"
+                        v-if="bodyWarning && !validation.error('body')"
                         class="text-xs text-foreground"
+                        aria-live="polite"
                     >
                         {{ bodyWarning }}
                     </p>
-                    <InputError :message="form.errors.body" />
+                    <InputError
+                        id="quick-reply-body-error"
+                        :message="validation.error('body')"
+                    />
                 </div>
 
                 <fieldset class="grid gap-3">
@@ -389,7 +423,7 @@ function submit(): void {
                             </span>
                         </button>
                     </div>
-                    <InputError :message="form.errors.is_global" />
+                    <InputError :message="validation.error('is_global')" />
 
                     <template v-if="!form.is_global">
                         <p
@@ -428,7 +462,9 @@ function submit(): void {
                                 />
                             </Label>
                         </div>
-                        <InputError :message="departmentError" />
+                        <InputError
+                            :message="validation.error('department_ids')"
+                        />
                     </template>
                 </fieldset>
             </div>

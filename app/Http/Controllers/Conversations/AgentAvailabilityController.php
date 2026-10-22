@@ -32,9 +32,9 @@ class AgentAvailabilityController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => match (true) {
-                $availability === AgentAvailability::Unavailable => 'Ahora estás no disponible: no recibirás asignaciones automáticas. Tus conversaciones actuales se mantienen.',
+                $availability === AgentAvailability::Unavailable => 'Ahora estás no disponible: no aceptarás conversaciones nuevas ni recibirás asignaciones automáticas. Tus conversaciones actuales se mantienen.',
                 $assigned > 0 => "Ahora estás disponible. Recibiste {$assigned} conversaciones que esperaban en la cola.",
-                default => 'Ahora estás disponible para recibir asignaciones automáticas.',
+                default => 'Ahora estás disponible para aceptar conversaciones y recibir asignaciones automáticas.',
             },
         ]);
 

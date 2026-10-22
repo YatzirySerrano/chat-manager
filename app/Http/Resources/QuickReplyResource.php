@@ -29,6 +29,7 @@ class QuickReplyResource extends JsonResource
             'shortcut' => $this->shortcut,
             'body' => $this->body,
             'is_active' => $this->is_active,
+            'is_deleted' => $this->isDeleted(),
             'is_global' => $this->is_global,
             'departments' => $this->whenLoaded('departments', fn () => $this->departments
                 // Departments the viewer does not belong to are not named.
@@ -42,8 +43,8 @@ class QuickReplyResource extends JsonResource
             'updated_at' => $this->updated_at?->toIso8601String(),
             'can' => [
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
-                'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
                 'delete' => $request->user()?->can('delete', $this->resource) ?? false,
+                'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
         ];
     }

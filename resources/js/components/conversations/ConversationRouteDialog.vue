@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useForm } from '@inertiajs/vue3';
+import { TriangleAlert } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -13,6 +17,8 @@ import {
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, required, when } from '@/lib/validation';
 import type {
     ConversationSummary,
     TransferAgentOption,
@@ -24,6 +30,10 @@ import type {
  * another department and/or agent. The destinations come from the server
  * (only active, authorized departments and people who can attend them) and
  * are loaded when the dialog opens, so they are always current.
+ *
+ * Each agent shows their availability and load. Choosing an agent declared
+ * unavailable is an exception: the dialog warns about it and requires an
+ * explicit confirmation, which the server checks again and records.
  */
 const props = defineProps<{
     mode: 'assign' | 'transfer';
@@ -43,6 +53,7 @@ const emit = defineEmits<{
             department_id: number | null;
             user_id: number | null;
             reason: string;
+            confirm_unavailable: boolean;
         },
     ];
 }>();
@@ -51,7 +62,33 @@ const NO_AGENT = '';
 
 const departmentId = ref<string>('');
 const userId = ref<string>(NO_AGENT);
-const reason = ref('');
+const confirmUnavailable = ref(false);
+
+/** Local draft of the reason: the parent sends the request. */
+const reasonForm = useForm({ reason: '' });
+
+const validation = useFormValidation(reasonForm, {
+    rules: () => ({
+        reason: [
+            when(
+                () => props.mode === 'transfer' && props.reasonRequired,
+                [required('Escribe el motivo de la transferencia.')],
+            ),
+            maxLength(255),
+        ],
+    }),
+});
+
+watch(
+    () => props.errors.reason,
+    (message) => {
+        if (message) {
+            reasonForm.setError('reason', message);
+        } else {
+            reasonForm.clearErrors('reason');
+        }
+    },
+);
 
 watch(
     open,
@@ -61,13 +98,15 @@ watch(
                 ? String(props.conversation.department.id)
                 : '';
             userId.value = NO_AGENT;
-            reason.value = '';
+            validation.load({ reason: '' });
+            confirmUnavailable.value = false;
         }
     },
     { immediate: true },
 );
 
 watch(departmentId, () => (userId.value = NO_AGENT));
+watch(userId, () => (confirmUnavailable.value = false));
 
 const agents = computed<TransferAgentOption[]>(() => {
     if (!props.options) {
@@ -85,6 +124,15 @@ const agents = computed<TransferAgentOption[]>(() => {
     );
 });
 
+const selectedAgent = computed<TransferAgentOption | null>(
+    () =>
+        agents.value.find((agent) => String(agent.id) === userId.value) ?? null,
+);
+
+const selectedIsUnavailable = computed(
+    () => selectedAgent.value?.availability === 'unavailable',
+);
+
 const selectClass =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
 
@@ -95,19 +143,19 @@ const canSubmit = computed(() => {
         return false;
     }
 
-    if (!isTransfer.value) {
-        return userId.value !== NO_AGENT;
+    if (selectedIsUnavailable.value && !confirmUnavailable.value) {
+        return false;
     }
 
-    if (props.reasonRequired && reason.value.trim() === '') {
-        return false;
+    if (!isTransfer.value) {
+        return userId.value !== NO_AGENT;
     }
 
     return departmentId.value !== '' || userId.value !== NO_AGENT;
 });
 
 function submit(): void {
-    if (!canSubmit.value) {
+    if (!canSubmit.value || !validation.validate()) {
         return;
     }
 
@@ -121,13 +169,15 @@ function submit(): void {
                 ? department
                 : null,
         user_id: userId.value === NO_AGENT ? null : Number(userId.value),
-        reason: reason.value.trim(),
+        reason: reasonForm.reason.trim(),
+        confirm_unavailable:
+            selectedIsUnavailable.value && confirmUnavailable.value,
     });
 }
 
 function agentLabel(agent: TransferAgentOption): string {
     const availability =
-        agent.availability === 'available' ? 'disponible' : 'no disponible';
+        agent.availability === 'available' ? 'Disponible' : 'No disponible';
 
     return `${agent.name} · ${availability} · ${agent.load} en atención`;
 }
@@ -136,7 +186,7 @@ function agentLabel(agent: TransferAgentOption): string {
 <template>
     <Dialog v-model:open="open">
         <DialogContent class="sm:max-w-lg">
-            <form class="grid gap-4" @submit.prevent="submit">
+            <form class="grid gap-4" novalidate @submit.prevent="submit">
                 <DialogHeader>
                     <DialogTitle>
                         {{
@@ -242,19 +292,82 @@ function agentLabel(agent: TransferAgentOption): string {
                         </select>
                     </FormField>
 
+                    <div
+                        v-if="selectedAgent"
+                        class="flex flex-wrap items-center gap-2 text-sm"
+                        aria-live="polite"
+                    >
+                        <span class="font-medium">{{
+                            selectedAgent.name
+                        }}</span>
+                        <Badge
+                            :variant="
+                                selectedIsUnavailable
+                                    ? 'destructive'
+                                    : 'secondary'
+                            "
+                        >
+                            {{
+                                selectedIsUnavailable
+                                    ? 'No disponible'
+                                    : 'Disponible'
+                            }}
+                        </Badge>
+                        <span class="text-muted-foreground"
+                            >{{ selectedAgent.load }} en atención</span
+                        >
+                    </div>
+
+                    <div
+                        v-if="selectedIsUnavailable"
+                        class="grid gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+                        role="alert"
+                    >
+                        <p class="flex gap-2">
+                            <TriangleAlert
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span
+                                >{{ selectedAgent?.name }} está como No
+                                disponible: no acepta conversaciones nuevas ni
+                                recibe asignaciones automáticas. Asignársela es
+                                una excepción que quedará registrada en el
+                                historial; su disponibilidad no cambiará.</span
+                            >
+                        </p>
+                        <label
+                            class="flex cursor-pointer items-center gap-2 font-medium"
+                        >
+                            <Checkbox
+                                id="route-confirm-unavailable"
+                                :model-value="confirmUnavailable"
+                                @update:model-value="
+                                    (value) =>
+                                        (confirmUnavailable = value === true)
+                                "
+                            />
+                            Confirmo que quiero asignársela aunque no esté
+                            disponible
+                        </label>
+                    </div>
+
                     <FormField
                         v-if="isTransfer"
                         id="transfer-reason"
                         :label="reasonRequired ? 'Motivo' : 'Motivo (opcional)'"
-                        :error="errors.reason"
+                        :error="validation.error('reason')"
                         hint="Queda en el historial interno; el cliente no lo ve."
                     >
                         <Textarea
                             id="transfer-reason"
-                            v-model="reason"
+                            v-model="reasonForm.reason"
                             rows="2"
                             maxlength="255"
                             :required="reasonRequired"
+                            v-bind="
+                                validation.field('reason', 'transfer-reason')
+                            "
                         />
                     </FormField>
                 </template>

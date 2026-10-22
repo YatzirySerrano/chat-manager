@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, usePoll } from '@inertiajs/vue3';
 import {
-    Archive,
-    ArchiveRestore,
     ChevronDown,
     Contact as ContactIcon,
     Eye,
@@ -11,22 +9,24 @@ import {
     Search,
     ShieldQuestion,
     Tags,
+    Upload,
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onUnmounted, reactive, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
 import ContactOriginBadge from '@/components/contacts/ContactOriginBadge.vue';
 import ContactTagList from '@/components/contacts/ContactTagList.vue';
 import DataPagination from '@/components/DataPagination.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -56,13 +56,20 @@ import {
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { getInitials } from '@/composables/useInitials';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useViewMode } from '@/composables/useViewMode';
+import { contactDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { recordActions } from '@/lib/recordActions';
-import { index as contactsIndex, show } from '@/routes/contacts';
+import {
+    destroy as destroyContact,
+    index as contactsIndex,
+    restore as restoreContact,
+    show,
+} from '@/routes/contacts';
+import { create as importCreate } from '@/routes/contacts/import';
 import { index as reviewsIndex } from '@/routes/contacts/reviews';
-import { update as updateStatus } from '@/routes/contacts/status';
 import type {
     Contact,
     ContactEnumOption,
@@ -73,6 +80,7 @@ import type {
     ContactTag,
     Paginated,
     RecordAction,
+    RecordStateOption,
 } from '@/types';
 
 defineOptions({
@@ -84,10 +92,12 @@ defineOptions({
 const props = defineProps<{
     contacts: Paginated<Contact>;
     filters: ContactFilters;
+    recordStates: RecordStateOption[];
     tags: ContactTag[] | null;
     sources: ContactEnumOption<ContactSourceValue>[];
     originTypes: ContactEnumOption<ContactOriginTypeValue>[];
-    can: { create: boolean; reviewDuplicates: boolean };
+    can: { create: boolean; reviewDuplicates: boolean; import?: boolean };
+    canExport?: boolean;
     openReviews: number | null;
 }>();
 
@@ -108,7 +118,7 @@ const SORT_OPTIONS: { value: ContactSort; label: string }[] = [
 
 const filterState = reactive({
     search: props.filters.search ?? '',
-    status: props.filters.status ?? 'active',
+    record: props.filters.record,
     tags: [...(props.filters.tags ?? [])] as number[],
     source: props.filters.source ?? ALL,
     origin: props.filters.origin ?? ALL,
@@ -118,7 +128,7 @@ const filterState = reactive({
 const hasFilters = computed(
     () =>
         filterState.search !== '' ||
-        filterState.status !== 'active' ||
+        filterState.record !== 'active' ||
         filterState.tags.length > 0 ||
         filterState.source !== ALL ||
         filterState.origin !== ALL,
@@ -145,8 +155,8 @@ function applyFilters(): void {
         query.search = filterState.search.trim();
     }
 
-    if (filterState.status !== 'active') {
-        query.status = filterState.status;
+    if (filterState.record !== 'active') {
+        query.record = filterState.record;
     }
 
     if (filterState.tags.length > 0) {
@@ -182,7 +192,7 @@ function toggleTag(tagId: number, checked: boolean): void {
 
 function clearFilters(): void {
     filterState.search = '';
-    filterState.status = 'active';
+    filterState.record = 'active';
     filterState.tags = [];
     filterState.source = ALL;
     filterState.origin = ALL;
@@ -225,42 +235,13 @@ const canEditAny = computed(
         props.contacts.data.some((contact) => contact.can?.update),
 );
 
-const pendingArchive = ref<Contact | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
-
-function changeStatus(contact: Contact, status: 'active' | 'archived'): void {
-    router.visit(updateStatus(contact.id), {
-        data: { status },
-        preserveScroll: true,
-        onStart: () => (processingId.value = contact.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: (errors) => {
-            confirmOpen.value = false;
-            const message = Object.values(errors)[0];
-
-            if (message) {
-                toast.error(message);
-            }
-        },
-    });
-}
-
-function askArchive(contact: Contact): void {
-    pendingArchive.value = contact;
-    confirmOpen.value = true;
-}
-
-function confirmArchive(): void {
-    if (pendingArchive.value) {
-        changeStatus(pendingArchive.value, 'archived');
-    }
-}
+const deletion = useRecordDeletion<Contact>({
+    destroy: (contact) => destroyContact(contact.id),
+    restore: (contact) => restoreContact(contact.id),
+    copy: contactDeletionCopy,
+});
 
 function actionsFor(contact: Contact): RecordAction[] {
-    const archived = contact.status === 'archived';
-
     return recordActions(
         contact.can?.view && {
             key: 'view',
@@ -274,20 +255,7 @@ function actionsFor(contact: Contact): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(contact),
         },
-        contact.can?.archive &&
-            !archived && {
-                key: 'archive',
-                label: 'Archivar',
-                icon: Archive,
-                onSelect: () => askArchive(contact),
-            },
-        contact.can?.archive &&
-            archived && {
-                key: 'restore',
-                label: 'Restaurar',
-                icon: ArchiveRestore,
-                onSelect: () => changeStatus(contact, 'active'),
-            },
+        ...deletion.actionsFor(contact),
     );
 }
 
@@ -310,7 +278,20 @@ function contactSubtitle(contact: Contact): string | null {
             title="Contactos"
             description="Personas que atiende tu equipo, con su origen, etiquetas e historial."
         >
-            <template v-if="can.create || can.reviewDuplicates" #actions>
+            <template
+                v-if="
+                    can.create ||
+                    can.reviewDuplicates ||
+                    can.import ||
+                    canExport
+                "
+                #actions
+            >
+                <ExportMenu
+                    v-if="canExport"
+                    report="contacts"
+                    :filters="filters"
+                />
                 <Button v-if="can.reviewDuplicates" variant="outline" as-child>
                     <Link :href="reviewsIndex()">
                         <ShieldQuestion />
@@ -321,6 +302,12 @@ function contactSubtitle(contact: Contact): string | null {
                             :aria-label="`${openReviews} pendientes`"
                             >{{ openReviews }}</span
                         >
+                    </Link>
+                </Button>
+                <Button v-if="can.import" variant="outline" as-child>
+                    <Link :href="importCreate()">
+                        <Upload />
+                        Importar
                     </Link>
                 </Button>
                 <Button v-if="can.create" @click="openCreate">
@@ -352,22 +339,11 @@ function contactSubtitle(contact: Contact): string | null {
                 <div
                     class="order-3 grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap"
                 >
-                    <Select
-                        v-model="filterState.status"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-32"
-                            aria-label="Filtrar por estado"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="active">Activos</SelectItem>
-                            <SelectItem value="archived">Archivados</SelectItem>
-                            <SelectItem :value="ALL">Todos</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <RecordStateFilter
+                        v-model="filterState.record"
+                        :options="recordStates"
+                        @change="applyFilters"
+                    />
 
                     <DropdownMenu v-if="tags !== null">
                         <DropdownMenuTrigger as-child>
@@ -537,10 +513,7 @@ function contactSubtitle(contact: Contact): string | null {
                     <TableRow
                         v-for="contact in contacts.data"
                         :key="contact.id"
-                        :class="
-                            contact.status === 'archived' &&
-                            'text-muted-foreground'
-                        "
+                        :class="contact.is_deleted && 'text-muted-foreground'"
                     >
                         <TableCell class="w-full max-w-0 py-3 pl-5">
                             <Link
@@ -593,11 +566,9 @@ function contactSubtitle(contact: Contact): string | null {
                                     </p>
                                 </div>
                             </Link>
-                            <StatusBadge
-                                v-if="contact.status === 'archived'"
+                            <DeletedBadge
+                                v-if="contact.is_deleted"
                                 class="mt-1 ml-12 sm:hidden"
-                                :active="false"
-                                inactive-label="Archivado"
                             />
                         </TableCell>
                         <TableCell
@@ -631,16 +602,16 @@ function contactSubtitle(contact: Contact): string | null {
                             >
                         </TableCell>
                         <TableCell class="hidden sm:table-cell">
-                            <StatusBadge
-                                :active="contact.status === 'active'"
-                                inactive-label="Archivado"
-                            />
+                            <DeletedBadge v-if="contact.is_deleted" />
+                            <span v-else class="text-xs text-muted-foreground"
+                                >Activo</span
+                            >
                         </TableCell>
                         <TableCell class="w-px pr-5 text-right">
                             <RecordActions
                                 :actions="actionsFor(contact)"
                                 :record="contact.name"
-                                :busy="processingId === contact.id"
+                                :busy="deletion.processingId === contact.id"
                             />
                         </TableCell>
                     </TableRow>
@@ -654,7 +625,11 @@ function contactSubtitle(contact: Contact): string | null {
                 :aria-busy="loading"
             >
                 <li v-for="contact in contacts.data" :key="contact.id">
-                    <RecordCard :muted="contact.status === 'archived'">
+                    <RecordCard
+                        :muted="contact.is_deleted"
+                        :href="show(contact.id)"
+                        :label="`Ver contacto ${contact.name}`"
+                    >
                         <template #leading>
                             <Avatar class="size-9 rounded-lg">
                                 <AvatarFallback
@@ -665,12 +640,9 @@ function contactSubtitle(contact: Contact): string | null {
                             </Avatar>
                         </template>
                         <template #title>
-                            <Link
-                                :href="show(contact.id)"
-                                class="block truncate hover:underline"
-                            >
-                                {{ contact.name }}
-                            </Link>
+                            <span class="block truncate">{{
+                                contact.name
+                            }}</span>
                         </template>
                         <template #subtitle>
                             <span class="font-mono tabular-nums">{{
@@ -678,10 +650,7 @@ function contactSubtitle(contact: Contact): string | null {
                             }}</span>
                         </template>
                         <template #badges>
-                            <StatusBadge
-                                :active="contact.status === 'active'"
-                                inactive-label="Archivado"
-                            />
+                            <DeletedBadge v-if="contact.is_deleted" />
                             <ContactOriginBadge :origin="contact.origin" />
                         </template>
                         <p
@@ -712,7 +681,7 @@ function contactSubtitle(contact: Contact): string | null {
                             <RecordActions
                                 :actions="actionsFor(contact)"
                                 :record="contact.name"
-                                :busy="processingId === contact.id"
+                                :busy="deletion.processingId === contact.id"
                             />
                         </template>
                     </RecordCard>
@@ -758,13 +727,9 @@ function contactSubtitle(contact: Contact): string | null {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="`¿Archivar a ${pendingArchive?.name ?? 'este contacto'}?`"
-            description="Dejará de aparecer en la lista principal de contactos. Su historial, notas y procedencia se conservan y podrás restaurarlo cuando quieras."
-            confirm-label="Archivar"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmArchive"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

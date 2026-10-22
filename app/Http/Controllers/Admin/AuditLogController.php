@@ -2,43 +2,35 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Audit\AuditLogQuery;
 use App\Enums\AuditAction;
 use App\Enums\DataScope;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AuditLogResource;
 use App\Models\AuditLog;
-use Illuminate\Database\Eloquent\Builder;
+use App\Models\User;
+use App\Services\Exports\ReportExporter;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AuditLogController extends Controller
 {
-    public function index(Request $request): Response
+    /**
+     * The entries the viewer may read (the same query as the audit report).
+     */
+    public function index(Request $request, AuditLogQuery $audit, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', AuditLog::class);
 
-        $filters = $request->validate([
-            'action' => ['nullable', Rule::enum(AuditAction::class)],
-            'actor' => ['nullable', 'integer'],
-            'from' => ['nullable', 'date_format:Y-m-d'],
-            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
-        ]);
+        $filters = $audit->filters($request->validate(AuditLogQuery::rules()));
 
-        $ownOnly = $request->user()?->dataScope() !== DataScope::Global;
-        $actorId = $request->user()?->id;
+        /** @var User $viewer */
+        $viewer = $request->user();
+        $ownOnly = $viewer->dataScope() !== DataScope::Global;
 
-        $logs = AuditLog::query()
-            ->when($ownOnly, fn (Builder $query) => $query->where('user_id', $actorId))
-            ->when($filters['action'] ?? null, fn (Builder $query, string $action) => $query->where('action', $action))
-            ->when($filters['actor'] ?? null, fn (Builder $query, int|string $actor) => $query->where('user_id', (int) $actor))
-            ->when($filters['from'] ?? null, fn (Builder $query, string $from) => $query->where('created_at', '>=', Carbon::parse($from)->startOfDay()))
-            ->when($filters['to'] ?? null, fn (Builder $query, string $to) => $query->where('created_at', '<=', Carbon::parse($to)->endOfDay()))
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
+        $logs = $audit->handle($viewer, $filters)
             ->paginate(25)
             ->withQueryString();
 
@@ -46,15 +38,15 @@ class AuditLogController extends Controller
             'logs' => AuditLogResource::collection($logs),
             'filters' => [
                 'action' => $filters['action'] ?? null,
-                'actor' => isset($filters['actor']) ? (int) $filters['actor'] : null,
+                'actor' => $filters['actor'],
                 'from' => $filters['from'] ?? null,
                 'to' => $filters['to'] ?? null,
             ],
             'actions' => AuditAction::options(),
             'scope' => $ownOnly ? 'own' : 'all',
             'actors' => AuditLog::query()
+                ->visibleTo($viewer)
                 ->whereNotNull('user_id')
-                ->when($ownOnly, fn (Builder $query) => $query->where('user_id', $actorId))
                 ->select(['user_id', 'actor_name'])
                 ->distinct()
                 ->orderBy('actor_name')
@@ -63,6 +55,7 @@ class AuditLogController extends Controller
                 ->unique('user_id')
                 ->map(fn (AuditLog $log): array => ['id' => (int) $log->user_id, 'name' => (string) $log->actor_name])
                 ->values(),
+            'canExport' => $exporter->allowsReport('audit', $viewer),
         ]);
     }
 }

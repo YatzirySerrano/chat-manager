@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\QuickReplies\AvailableQuickReplyController;
 use App\Http\Controllers\QuickReplies\QuickReplyController;
-use App\Http\Controllers\QuickReplies\QuickReplyStatusController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -16,6 +15,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('quick-replies/available', AvailableQuickReplyController::class)->name('quick-replies.available');
     Route::post('quick-replies', [QuickReplyController::class, 'store'])->name('quick-replies.store');
     Route::put('quick-replies/{quickReply}', [QuickReplyController::class, 'update'])->name('quick-replies.update');
-    Route::patch('quick-replies/{quickReply}/status', [QuickReplyStatusController::class, 'update'])->name('quick-replies.status.update');
     Route::delete('quick-replies/{quickReply}', [QuickReplyController::class, 'destroy'])->name('quick-replies.destroy');
+    Route::patch('quick-replies/{quickReply}/restore', [QuickReplyController::class, 'restore'])->name('quick-replies.restore');
 });

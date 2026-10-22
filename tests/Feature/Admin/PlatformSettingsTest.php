@@ -27,7 +27,7 @@ test('only administrators can manage the platform settings', function (DefaultRo
 ]);
 
 test('administrators can view the platform settings', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('admin.settings.edit'))
@@ -39,7 +39,7 @@ test('administrators can view the platform settings', function () {
 });
 
 test('administrators can update the platform settings and the change is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
 
     $this->actingAs($admin)
@@ -68,7 +68,7 @@ test('administrators can update the platform settings and the change is audited'
 });
 
 test('platform settings are validated', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $inactive = Department::factory()->inactive()->create();
 
     $this->actingAs($admin)
@@ -83,4 +83,28 @@ test('platform settings are validated', function () {
             'business_hours.days.monday.end' => 'La hora de cierre debe ser posterior a la hora de apertura.',
             'operations.default_department_id',
         ]);
+});
+
+test('saving the current settings writes nothing and says so', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $this->actingAs($admin)->put(route('admin.settings.update'), validSettingsPayload(['general' => ['platform_name' => 'Atención']]));
+    AuditLog::query()->delete();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('admin.settings.update'), validSettingsPayload(['general' => ['platform_name' => '  Atención ']]))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and(AuditLog::query()->exists())->toBeFalse();
+});
+
+test('saving the default settings for the first time does not create records', function () {
+    $admin = User::factory()->superAdministrator()->create();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('admin.settings.update'), validSettingsPayload())
+        ->assertInertiaFlash('toast.type', 'info'));
+
+    expect($writes)->toBe([]);
 });

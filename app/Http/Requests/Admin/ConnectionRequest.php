@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin;
 
 use App\Actions\Connections\ConnectionSecrets;
+use App\Enums\RecordState;
 use App\Models\Connection;
 use App\Models\Department;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -62,9 +63,11 @@ class ConnectionRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:120'],
             'display_phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+?[0-9][0-9 ()\-]{5,31}$/'],
+            // A deleted connection keeps its number reserved: that conflict
+            // is explained in after() so it can be restored instead.
             'phone_number_id' => [
                 ...$metaId,
-                Rule::unique(Connection::class)->ignore($connection instanceof Connection ? $connection->id : null),
+                Rule::unique(Connection::class)->ignore($connection instanceof Connection ? $connection->id : null)->whereNull('deleted_at'),
             ],
             'business_account_id' => $metaId,
             'meta_app_id' => $metaId,
@@ -85,14 +88,35 @@ class ConnectionRequest extends FormRequest
     }
 
     /**
-     * Departments newly authorized must be active; departments already
-     * attached may stay even if they were deactivated later.
+     * Departments newly authorized must not be deleted; departments already
+     * attached may stay even if they were deleted later. A Phone number ID
+     * that belongs to a deleted connection is explained, naming it only to
+     * people who can consult deleted records.
      *
      * @return array<int, callable(Validator): void>
      */
     public function after(): array
     {
         return [
+            function (Validator $validator): void {
+                if ($validator->errors()->has('phone_number_id') || ! $this->filled('phone_number_id')) {
+                    return;
+                }
+
+                $connection = $this->route('connection');
+                $ignoreId = $connection instanceof Connection ? $connection->id : null;
+                $deleted = Connection::query()
+                    ->inRecordState(RecordState::Deleted)
+                    ->where('phone_number_id', $this->input('phone_number_id'))
+                    ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+                    ->first(['id', 'name']);
+
+                if ($deleted !== null) {
+                    $validator->errors()->add('phone_number_id', $this->user()?->canViewDeletedRecords()
+                        ? "Este Phone number ID pertenece a la conexión eliminada «{$deleted->name}». Restáurala en lugar de registrarlo de nuevo."
+                        : 'Este Phone number ID pertenece a una conexión eliminada. Pide a quien pueda consultar registros eliminados que la restaure.');
+                }
+            },
             function (Validator $validator): void {
                 if ($validator->errors()->has('department_ids') || $validator->errors()->has('department_ids.*')) {
                     return;
@@ -101,14 +125,21 @@ class ConnectionRequest extends FormRequest
                 $connection = $this->route('connection');
                 $attached = $connection instanceof Connection ? $connection->departments()->pluck('departments.id')->all() : [];
 
-                $inactive = Department::query()
+                $deleted = Department::query()
                     ->whereKey(array_diff($this->departmentIds(), $attached))
-                    ->where('is_active', false)
+                    ->inRecordState(RecordState::Deleted)
                     ->orderBy('name')
                     ->pluck('name');
 
-                if ($inactive->isNotEmpty()) {
-                    $validator->errors()->add('department_ids', 'No es posible autorizar departamentos inactivos: '.$inactive->implode(', ').'.');
+                if ($deleted->isNotEmpty()) {
+                    $validator->errors()->add('department_ids', 'No es posible autorizar departamentos eliminados: '.$deleted->implode(', ').'.');
+                }
+
+                $defaultId = $this->filled('default_department_id') ? $this->integer('default_department_id') : null;
+                $defaultChanges = $defaultId !== null && $defaultId !== ($connection instanceof Connection ? $connection->default_department_id : null);
+
+                if ($defaultChanges && Department::query()->whereKey($defaultId)->inRecordState(RecordState::Deleted)->exists()) {
+                    $validator->errors()->add('default_department_id', 'No es posible elegir como predeterminado un departamento eliminado.');
                 }
             },
         ];

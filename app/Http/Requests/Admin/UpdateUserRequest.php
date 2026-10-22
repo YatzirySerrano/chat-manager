@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Concerns\ProfileValidationRules;
 use App\Enums\DataScope;
+use App\Enums\RecordState;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
@@ -87,7 +88,9 @@ class UpdateUserRequest extends FormRequest
 
     /**
      * Validated payload for the UpdateUser action. Actors limited to their own
-     * departments only add or remove those; other memberships are preserved.
+     * departments only add or remove those; other memberships are preserved,
+     * and so are memberships of deleted departments (inert while deleted, they
+     * come back with the department when it is restored).
      *
      * @return array{name: string, email: string, password: string|null, role: Role|null, department_ids: list<int>|null, role_change_fingerprint: string|null}
      */
@@ -103,15 +106,19 @@ class UpdateUserRequest extends FormRequest
         if ($this->has('department_ids')) {
             $requested = array_values(array_map('intval', $this->validated('department_ids', [])));
 
+            $current = $user->departmentIds();
+            $deleted = array_map('intval', Department::query()->whereKey($current)->inRecordState(RecordState::Deleted)->pluck('id')->all());
+
             if ($actor->dataScope() === DataScope::Global) {
-                $departmentIds = $requested;
+                $kept = $deleted;
+                $chosen = $requested;
             } else {
                 $reachable = $actor->departmentIds();
-                $departmentIds = array_values(array_unique([
-                    ...array_diff($user->departmentIds(), $reachable),
-                    ...array_intersect($requested, $reachable),
-                ]));
+                $kept = [...array_diff($current, $reachable), ...$deleted];
+                $chosen = array_intersect($requested, $reachable);
             }
+
+            $departmentIds = array_values(array_unique([...$kept, ...$chosen]));
         }
 
         return [

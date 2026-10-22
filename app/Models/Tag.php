@@ -2,7 +2,8 @@
 
 namespace App\Models;
 
-use App\Enums\ColorSwatch;
+use App\Concerns\DeletesLogically;
+use App\Support\AppColor;
 use Database\Factories\TagFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -14,13 +15,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 
 /**
- * A label for contacts and conversations. Inactive tags cannot be newly
- * assigned but remain visible where they were already applied.
+ * A label for contacts and conversations. Deleting it is logical (see
+ * DeletesLogically): a deleted tag cannot be newly assigned but remains
+ * visible, as history, where it was already applied.
  *
  * @property int $id
  * @property string $name
  * @property string $slug
- * @property ColorSwatch $color
+ * @property AppColor $color
  * @property string|null $description
  * @property bool $is_active
  * @property int|null $created_by_user_id
@@ -31,7 +33,7 @@ use Illuminate\Support\Carbon;
 class Tag extends Model
 {
     /** @use HasFactory<TagFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.
@@ -50,7 +52,7 @@ class Tag extends Model
     protected function casts(): array
     {
         return [
-            'color' => ColorSwatch::class,
+            'color' => AppColor::class,
             'is_active' => 'boolean',
         ];
     }

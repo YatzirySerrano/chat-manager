@@ -6,7 +6,9 @@ import {
     Lock,
     Power,
     PowerOff,
+    RotateCcw,
     ShieldCheck,
+    Trash2,
     TriangleAlert,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -17,6 +19,8 @@ import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vu
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
+import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
@@ -29,16 +33,31 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { swatchClasses } from '@/lib/swatches';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import { colorPresentations } from '@/lib/colors';
+import { connectionDeletionCopy } from '@/lib/deletionCopy';
+import { toastFirstError } from '@/lib/toastErrors';
 import {
+    integerBetween,
+    maxLength,
+    minLength,
+    pattern,
+    required,
+    when,
+} from '@/lib/validation';
+import type { FieldRule } from '@/lib/validation';
+import {
+    destroy as destroyConnection,
     index as connectionsIndex,
+    restore as restoreConnection,
     store,
     update,
     verify,
 } from '@/routes/connections';
 import { update as updateStatus } from '@/routes/connections/status';
 import type {
-    ColorSwatch,
+    AppColor,
     Connection,
     ConnectionMessageKind,
     ConnectionOption,
@@ -57,12 +76,18 @@ const props = defineProps<{
     departments: {
         id: number;
         name: string;
-        color: ColorSwatch;
+        color: AppColor;
         is_active: boolean;
     }[];
     limits: { message: number; reopen_window: number };
     graphVersion: string;
-    can: { update: boolean; changeStatus: boolean; verify: boolean };
+    can: {
+        update: boolean;
+        changeStatus: boolean;
+        verify: boolean;
+        delete: boolean;
+        restore: boolean;
+    };
 }>();
 
 type ConnectionForm = {
@@ -109,9 +134,63 @@ const form = useForm<ConnectionForm>({
     reopen_window_minutes: connection.value?.reopen_window_minutes ?? null,
 });
 
-const errors = computed(
-    () => form.errors as Record<string, string | undefined>,
-);
+const metaId = (message: string): FieldRule[] => [
+    pattern(/^\d{5,64}$/, message),
+];
+
+const secret = (
+    min: number,
+    max: number,
+    spacesMessage: string,
+): FieldRule[] => [
+    minLength(min),
+    maxLength(max),
+    pattern(/^\S+$/, spacesMessage),
+];
+
+const message = (kind: ConnectionMessageKind): FieldRule[] => [
+    when(
+        (data) => data[`${kind}_enabled`] === true,
+        [required('Escribe el mensaje o desactívalo.')],
+    ),
+    maxLength(props.limits.message),
+];
+
+const validation = useFormValidation(form, {
+    rules: () => ({
+        name: [required('Escribe el nombre de la conexión.'), maxLength(120)],
+        display_phone_number: [
+            maxLength(32),
+            pattern(
+                /^\+?[0-9][0-9 ()-]{5,31}$/,
+                'Escribe el número con lada internacional, por ejemplo +52 55 1234 5678.',
+            ),
+        ],
+        phone_number_id: metaId(
+            'El Phone number ID solo contiene dígitos (de 5 a 64); lo encuentras en WhatsApp Manager o en la configuración de la API de tu app de Meta.',
+        ),
+        business_account_id: metaId(
+            'El WABA ID solo contiene dígitos (de 5 a 64).',
+        ),
+        meta_app_id: metaId('El App ID solo contiene dígitos (de 5 a 64).'),
+        access_token: secret(
+            20,
+            2000,
+            'El token de acceso no debe contener espacios.',
+        ),
+        app_secret: secret(16, 255, 'El app secret no debe contener espacios.'),
+        webhook_verify_token: secret(
+            16,
+            255,
+            'El token de verificación no debe contener espacios.',
+        ),
+        welcome_message: message('welcome'),
+        away_message: message('away'),
+        farewell_message: message('farewell'),
+        reopen_window_minutes: [integerBetween(1, props.limits.reopen_window)],
+    }),
+    requireChanges: isEditing,
+});
 
 const nativeSelectClass =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30';
@@ -246,8 +325,22 @@ const reopenSummary = computed(() => {
 });
 
 function submit(): void {
+    if (!validation.validate()) {
+        toast.error('Revisa los campos marcados.');
+
+        return;
+    }
+
     const options = {
         preserveScroll: true,
+        // Saved secrets are never sent back: the fields return to "keep".
+        onSuccess: () =>
+            validation.load({
+                ...form.data(),
+                access_token: '',
+                app_secret: '',
+                webhook_verify_token: '',
+            }),
         onError: () => {
             toast.error('Revisa los campos marcados.');
         },
@@ -264,13 +357,11 @@ const verifying = ref(false);
 const statusProcessing = ref(false);
 const confirmDeactivateOpen = ref(false);
 
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
+const deletion = useRecordDeletion<Connection>({
+    destroy: (record) => destroyConnection(record.id),
+    restore: (record) => restoreConnection(record.id),
+    copy: connectionDeletionCopy,
+});
 
 function verifyCredentials(): void {
     if (!connection.value) {
@@ -281,7 +372,7 @@ function verifyCredentials(): void {
         preserveScroll: true,
         onStart: () => (verifying.value = true),
         onFinish: () => (verifying.value = false),
-        onError: showFirstError,
+        onError: toastFirstError,
     });
 }
 
@@ -298,7 +389,7 @@ function changeStatus(active: boolean): void {
         onFinish: () => (statusProcessing.value = false),
         onError: (errors) => {
             confirmDeactivateOpen.value = false;
-            showFirstError(errors);
+            toastFirstError(errors);
         },
     });
 }
@@ -366,12 +457,24 @@ const pageTitle = computed(() =>
                     </Link>
                 </template>
                 <template v-if="connection" #actions>
+                    <DeletedBadge v-if="connection.is_deleted" feminine />
                     <ConnectionHealthBadge :health="connection.health" />
                 </template>
             </PageHeader>
 
+            <DeletedRecordNotice
+                v-if="connection?.is_deleted"
+                title="Esta conexión está eliminada"
+                :deleted-at="connection.deleted_at"
+            >
+                No envía ni recibe mensajes y su Phone number ID queda
+                reservado. Sus conversaciones e historial se conservan. Al
+                restaurarla quedará inactiva y deberás verificar sus
+                credenciales de nuevo.
+            </DeletedRecordNotice>
+
             <p
-                v-if="!can.update"
+                v-else-if="!can.update"
                 class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
             >
                 <Lock class="size-4" aria-hidden="true" />
@@ -390,16 +493,18 @@ const pageTitle = computed(() =>
                         <FormField
                             id="connection-name"
                             label="Nombre"
-                            :error="errors.name"
+                            :error="validation.error('name')"
                             :help="help.name"
                         >
                             <Input
                                 id="connection-name"
+                                v-bind="
+                                    validation.field('name', 'connection-name')
+                                "
                                 v-model="form.name"
                                 required
                                 maxlength="120"
                                 placeholder="Ventas CDMX"
-                                :aria-invalid="!!errors.name"
                             />
                         </FormField>
                         <FormField
@@ -417,17 +522,22 @@ const pageTitle = computed(() =>
                         <FormField
                             id="connection-display-phone"
                             label="Número visible (opcional)"
-                            :error="errors.display_phone_number"
+                            :error="validation.error('display_phone_number')"
                             :help="help.displayPhoneNumber"
                             class="sm:col-span-2"
                         >
                             <Input
                                 id="connection-display-phone"
+                                v-bind="
+                                    validation.field(
+                                        'display_phone_number',
+                                        'connection-display-phone',
+                                    )
+                                "
                                 v-model="form.display_phone_number"
                                 inputmode="tel"
                                 maxlength="32"
                                 placeholder="+52 55 1234 5678"
-                                :aria-invalid="!!errors.display_phone_number"
                             />
                         </FormField>
                     </SurfaceCard>
@@ -441,49 +551,64 @@ const pageTitle = computed(() =>
                             <FormField
                                 id="connection-phone-number-id"
                                 label="Phone number ID"
-                                :error="errors.phone_number_id"
+                                :error="validation.error('phone_number_id')"
                                 :help="help.phoneNumberId"
                             >
                                 <Input
                                     id="connection-phone-number-id"
+                                    v-bind="
+                                        validation.field(
+                                            'phone_number_id',
+                                            'connection-phone-number-id',
+                                        )
+                                    "
                                     v-model="form.phone_number_id"
                                     inputmode="numeric"
                                     maxlength="64"
                                     class="font-mono"
                                     placeholder="106540352242922"
-                                    :aria-invalid="!!errors.phone_number_id"
                                 />
                             </FormField>
                             <FormField
                                 id="connection-waba-id"
                                 label="WABA ID"
-                                :error="errors.business_account_id"
+                                :error="validation.error('business_account_id')"
                                 :help="help.businessAccountId"
                             >
                                 <Input
                                     id="connection-waba-id"
+                                    v-bind="
+                                        validation.field(
+                                            'business_account_id',
+                                            'connection-waba-id',
+                                        )
+                                    "
                                     v-model="form.business_account_id"
                                     inputmode="numeric"
                                     maxlength="64"
                                     class="font-mono"
                                     placeholder="102290129340398"
-                                    :aria-invalid="!!errors.business_account_id"
                                 />
                             </FormField>
                             <FormField
                                 id="connection-app-id"
                                 label="App ID (opcional)"
-                                :error="errors.meta_app_id"
+                                :error="validation.error('meta_app_id')"
                                 :help="help.metaAppId"
                                 class="sm:col-span-2"
                             >
                                 <Input
                                     id="connection-app-id"
+                                    v-bind="
+                                        validation.field(
+                                            'meta_app_id',
+                                            'connection-app-id',
+                                        )
+                                    "
                                     v-model="form.meta_app_id"
                                     inputmode="numeric"
                                     maxlength="64"
                                     class="font-mono sm:max-w-xs"
-                                    :aria-invalid="!!errors.meta_app_id"
                                 />
                             </FormField>
                         </div>
@@ -505,7 +630,7 @@ const pageTitle = computed(() =>
                         <FormField
                             id="connection-access-token"
                             label="Token de acceso"
-                            :error="errors.access_token"
+                            :error="validation.error('access_token')"
                             :help="help.accessToken"
                         >
                             <SecretInput
@@ -515,7 +640,12 @@ const pageTitle = computed(() =>
                                     connection?.secrets.access_token ?? false
                                 "
                                 :disabled="!can.update"
-                                :invalid="!!errors.access_token"
+                                :field-attrs="
+                                    validation.field(
+                                        'access_token',
+                                        'connection-access-token',
+                                    )
+                                "
                                 :maxlength="2000"
                                 placeholder="EAAG…"
                             />
@@ -524,7 +654,7 @@ const pageTitle = computed(() =>
                             <FormField
                                 id="connection-app-secret"
                                 label="App secret"
-                                :error="errors.app_secret"
+                                :error="validation.error('app_secret')"
                                 :help="help.appSecret"
                             >
                                 <SecretInput
@@ -534,14 +664,21 @@ const pageTitle = computed(() =>
                                         connection?.secrets.app_secret ?? false
                                     "
                                     :disabled="!can.update"
-                                    :invalid="!!errors.app_secret"
+                                    :field-attrs="
+                                        validation.field(
+                                            'app_secret',
+                                            'connection-app-secret',
+                                        )
+                                    "
                                     :maxlength="255"
                                 />
                             </FormField>
                             <FormField
                                 id="connection-verify-token"
                                 label="Token de verificación del webhook"
-                                :error="errors.webhook_verify_token"
+                                :error="
+                                    validation.error('webhook_verify_token')
+                                "
                                 :help="help.webhookVerifyToken"
                             >
                                 <SecretInput
@@ -552,7 +689,12 @@ const pageTitle = computed(() =>
                                             .webhook_verify_token ?? false
                                     "
                                     :disabled="!can.update"
-                                    :invalid="!!errors.webhook_verify_token"
+                                    :field-attrs="
+                                        validation.field(
+                                            'webhook_verify_token',
+                                            'connection-verify-token',
+                                        )
+                                    "
                                     :maxlength="255"
                                     generatable
                                 />
@@ -601,8 +743,9 @@ const pageTitle = computed(() =>
                                     />
                                     <span
                                         class="size-2 shrink-0 rounded-full"
-                                        :class="
-                                            swatchClasses[department.color].dot
+                                        v-bind="
+                                            colorPresentations(department.color)
+                                                .dot
                                         "
                                         aria-hidden="true"
                                     />
@@ -612,7 +755,7 @@ const pageTitle = computed(() =>
                                     <span
                                         v-if="!department.is_active"
                                         class="ml-auto text-xs text-muted-foreground"
-                                        >Inactivo</span
+                                        >Eliminado</span
                                     >
                                 </label>
                             </div>
@@ -621,19 +764,14 @@ const pageTitle = computed(() =>
                                 Departamentos para poder autorizarlo.
                             </p>
                             <InputError
-                                :message="
-                                    errors.department_ids ??
-                                    Object.entries(errors).find(([key]) =>
-                                        key.startsWith('department_ids.'),
-                                    )?.[1]
-                                "
+                                :message="validation.error('department_ids')"
                             />
                         </fieldset>
 
                         <FormField
                             id="connection-default-department"
                             label="Departamento predeterminado"
-                            :error="errors.default_department_id"
+                            :error="validation.error('default_department_id')"
                             :help="help.defaultDepartment"
                         >
                             <select
@@ -742,10 +880,11 @@ const pageTitle = computed(() =>
                                         rows="3"
                                         :maxlength="limits.message"
                                         :placeholder="definition.placeholder"
-                                        :aria-invalid="
-                                            !!errors[
-                                                `${definition.kind}_message`
-                                            ]
+                                        v-bind="
+                                            validation.field(
+                                                `${definition.kind}_message`,
+                                                `connection-${definition.kind}-message`,
+                                            )
                                         "
                                         @update:model-value="
                                             (value: string | number) =>
@@ -759,10 +898,11 @@ const pageTitle = computed(() =>
                                         class="flex items-start justify-between gap-3"
                                     >
                                         <InputError
+                                            :id="`connection-${definition.kind}-message-error`"
                                             :message="
-                                                errors[
-                                                    `${definition.kind}_message`
-                                                ]
+                                                validation.error(
+                                                    `${definition.kind}_message`,
+                                                )
                                             "
                                         />
                                         <span
@@ -825,10 +965,18 @@ const pageTitle = computed(() =>
                             <FormField
                                 id="connection-reopen-window"
                                 label="Minutos"
-                                :error="errors.reopen_window_minutes"
+                                :error="
+                                    validation.error('reopen_window_minutes')
+                                "
                             >
                                 <Input
                                     id="connection-reopen-window"
+                                    v-bind="
+                                        validation.field(
+                                            'reopen_window_minutes',
+                                            'connection-reopen-window',
+                                        )
+                                    "
                                     type="number"
                                     min="1"
                                     :max="limits.reopen_window"
@@ -836,9 +984,6 @@ const pageTitle = computed(() =>
                                     class="w-32"
                                     :model-value="
                                         form.reopen_window_minutes ?? ''
-                                    "
-                                    :aria-invalid="
-                                        !!errors.reopen_window_minutes
                                     "
                                     @input="onReopenInput"
                                 />
@@ -939,7 +1084,12 @@ const pageTitle = computed(() =>
                             </dl>
 
                             <div
-                                v-if="can.verify || can.changeStatus"
+                                v-if="
+                                    can.verify ||
+                                    can.changeStatus ||
+                                    can.delete ||
+                                    can.restore
+                                "
                                 class="grid gap-2 border-t pt-4"
                             >
                                 <Button
@@ -948,7 +1098,7 @@ const pageTitle = computed(() =>
                                     variant="outline"
                                     :disabled="
                                         verifying ||
-                                        form.isDirty ||
+                                        validation.hasChanges ||
                                         !connection.has_required_credentials
                                     "
                                     @click="verifyCredentials"
@@ -958,7 +1108,7 @@ const pageTitle = computed(() =>
                                     Verificar credenciales
                                 </Button>
                                 <p
-                                    v-if="can.verify && form.isDirty"
+                                    v-if="can.verify && validation.hasChanges"
                                     class="text-xs text-muted-foreground"
                                 >
                                     Guarda los cambios antes de verificar.
@@ -1014,6 +1164,25 @@ const pageTitle = computed(() =>
                                         verificar las credenciales primero.
                                     </p>
                                 </template>
+
+                                <Button
+                                    v-if="can.restore"
+                                    type="button"
+                                    @click="deletion.ask('restore', connection)"
+                                >
+                                    <RotateCcw />
+                                    Restaurar conexión
+                                </Button>
+                                <Button
+                                    v-if="can.delete"
+                                    type="button"
+                                    variant="ghost"
+                                    class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    @click="deletion.ask('delete', connection)"
+                                >
+                                    <Trash2 />
+                                    Eliminar conexión
+                                </Button>
                             </div>
                         </template>
 
@@ -1031,14 +1200,22 @@ const pageTitle = computed(() =>
             v-if="can.update"
             class="sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
         >
-            <span v-if="form.isDirty" class="text-sm text-muted-foreground"
+            <span
+                v-if="validation.hasChanges"
+                class="text-sm text-muted-foreground"
                 >Cambios sin guardar</span
+            >
+            <span
+                v-else-if="isEditing"
+                class="text-sm text-muted-foreground"
+                aria-live="polite"
+                >Sin cambios por guardar</span
             >
             <Button
                 v-if="isEditing"
                 type="button"
                 variant="outline"
-                :disabled="!form.isDirty || form.processing"
+                :disabled="!validation.hasChanges || form.processing"
                 @click="form.reset()"
             >
                 Descartar
@@ -1046,7 +1223,13 @@ const pageTitle = computed(() =>
             <Button v-else as-child variant="outline">
                 <Link :href="connectionsIndex()">Cancelar</Link>
             </Button>
-            <Button type="submit" :disabled="form.processing">
+            <Button
+                type="submit"
+                :disabled="
+                    form.processing ||
+                    (validation.requiresChanges && !validation.hasChanges)
+                "
+            >
                 <Spinner v-if="form.processing" />
                 {{ isEditing ? 'Guardar cambios' : 'Crear conexión' }}
             </Button>
@@ -1060,6 +1243,12 @@ const pageTitle = computed(() =>
             destructive
             :processing="statusProcessing"
             @confirm="changeStatus(false)"
+        />
+
+        <ConfirmDialog
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </form>
 </template>

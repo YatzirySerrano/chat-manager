@@ -7,7 +7,9 @@ import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
 import { formatDateTime, formatRelative } from '@/lib/format';
+import { maxLength, required } from '@/lib/validation';
 import { store } from '@/routes/contacts/notes';
 import type { ContactNote } from '@/types';
 
@@ -20,10 +22,18 @@ const props = defineProps<{
 
 const form = useForm({ body: '' });
 
+const validation = useFormValidation(form, {
+    rules: { body: [required('Escribe la nota.'), maxLength(MAX_LENGTH)] },
+});
+
 function submit(): void {
+    if (!validation.validate()) {
+        return;
+    }
+
     form.submit(store(props.contactId), {
         preserveScroll: true,
-        onSuccess: () => form.reset(),
+        onSuccess: () => validation.load({ body: '' }),
     });
 }
 </script>
@@ -42,9 +52,12 @@ function submit(): void {
                 rows="3"
                 :maxlength="MAX_LENGTH"
                 placeholder="Escribe una nota interna sobre este contacto…"
-                :aria-invalid="!!form.errors.body"
+                v-bind="validation.field('body', 'contact-note')"
             />
-            <InputError :message="form.errors.body" />
+            <InputError
+                id="contact-note-error"
+                :message="validation.error('body')"
+            />
             <div class="flex items-center justify-between gap-2">
                 <span
                     class="flex items-center gap-1 text-xs text-muted-foreground"

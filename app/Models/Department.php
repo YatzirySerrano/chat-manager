@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
-use App\Enums\ColorSwatch;
+use App\Concerns\DeletesLogically;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\DistributionMode;
 use App\Enums\Permission;
+use App\Support\AppColor;
 use Database\Factories\DepartmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -18,11 +19,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
+ * A group of employees that attends conversations. Deleting it is logical
+ * (see DeletesLogically): it stops operating, its memberships are kept
+ * (inert while deleted) and the history keeps pointing to it.
+ *
  * @property int $id
  * @property string $name
  * @property string $slug
  * @property string|null $description
- * @property ColorSwatch $color
+ * @property AppColor $color
  * @property bool $is_active
  * @property string|null $welcome_message
  * @property DistributionMode $distribution_mode
@@ -35,7 +40,7 @@ use Illuminate\Support\Carbon;
 class Department extends Model
 {
     /** @use HasFactory<DepartmentFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.
@@ -56,7 +61,7 @@ class Department extends Model
     protected function casts(): array
     {
         return [
-            'color' => ColorSwatch::class,
+            'color' => AppColor::class,
             'is_active' => 'boolean',
             'distribution_mode' => DistributionMode::class,
             'uses_custom_hours' => 'boolean',

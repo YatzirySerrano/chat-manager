@@ -8,6 +8,7 @@ use App\Http\Requests\Tags\TagRequest;
 use App\Models\Tag;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\AppColor;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -20,11 +21,14 @@ class UpdateTag
     ) {}
 
     /**
-     * @param  array{name: string, description?: string|null, color: ColorSwatch}  $data
+     * Nothing is written (no save, no audit entry) when the data matches.
+     *
+     * @param  array{name: string, description?: string|null, color: AppColor|ColorSwatch|string}  $data
+     * @return bool Whether anything changed.
      */
-    public function handle(Tag $tag, array $data, User $actor): Tag
+    public function handle(Tag $tag, array $data, User $actor): bool
     {
-        return DB::transaction(function () use ($tag, $data, $actor): Tag {
+        return DB::transaction(function () use ($tag, $data, $actor): bool {
             $tag->fill([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -32,7 +36,7 @@ class UpdateTag
             ]);
 
             if (! $tag->isDirty()) {
-                return $tag;
+                return false;
             }
 
             if ($tag->isDirty('name')) {
@@ -48,8 +52,8 @@ class UpdateTag
 
                 $original = $tag->getOriginal($attribute);
                 $changes[$attribute] = [
-                    'old' => $original instanceof ColorSwatch ? $original->value : $original,
-                    'new' => $value instanceof ColorSwatch ? $value->value : $value,
+                    'old' => $original instanceof AppColor ? $original->value : $original,
+                    'new' => $value instanceof AppColor ? $value->value : $value,
                 ];
             }
 
@@ -61,7 +65,7 @@ class UpdateTag
 
             $this->audit->record(AuditAction::TagUpdated, $tag, ['changes' => $changes], $actor);
 
-            return $tag;
+            return true;
         });
     }
 }

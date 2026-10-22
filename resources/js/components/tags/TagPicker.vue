@@ -20,8 +20,8 @@ import type { TagOption } from '@/types';
 /**
  * Shows the tags of a contact and, when allowed, lets the user change them
  * through the `contacts.tags.sync` endpoint. Only active tags can be newly
- * added; inactive tags the contact already has can be kept or removed. The
- * backend enforces every rule again (permission, contact scope, inactive).
+ * added; deleted tags the contact already has can be kept or removed. The
+ * backend enforces every rule again (permission, contact scope, deletion).
  */
 const props = withDefaults(
     defineProps<{
@@ -58,7 +58,7 @@ watch(open, (isOpen) => {
 });
 
 /**
- * Active catalog plus the inactive tags the contact already carries.
+ * Active catalog plus the deleted tags the contact already carries.
  */
 const options = computed<TagOption[]>(() => {
     const byId = new Map<number, TagOption>();
@@ -150,7 +150,7 @@ function save(): void {
             :key="tag.id"
             :name="tag.name"
             :color="tag.color"
-            :inactive="!tag.is_active"
+            :deleted="!tag.is_active"
         />
         <span
             v-if="selected.length === 0"
@@ -218,7 +218,7 @@ function save(): void {
                         <TagBadge
                             :name="tag.name"
                             :color="tag.color"
-                            :inactive="!tag.is_active"
+                            :deleted="!tag.is_active"
                         />
                     </Label>
                 </div>
@@ -228,7 +228,7 @@ function save(): void {
                         v-if="options.some((tag) => !tag.is_active)"
                         class="text-xs text-muted-foreground"
                     >
-                        Las etiquetas inactivas solo pueden conservarse o
+                        Las etiquetas eliminadas solo pueden conservarse o
                         quitarse.
                     </p>
                     <InputError :message="error" />

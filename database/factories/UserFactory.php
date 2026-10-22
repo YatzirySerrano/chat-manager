@@ -74,7 +74,15 @@ class UserFactory extends Factory
     }
 
     /**
-     * Assign the administrator role.
+     * Assign the superadministrator (root authority) role.
+     */
+    public function superAdministrator(): static
+    {
+        return $this->withRole(DefaultRole::SuperAdministrator);
+    }
+
+    /**
+     * Assign the administrator role (organization-wide, not root).
      */
     public function administrator(): static
     {

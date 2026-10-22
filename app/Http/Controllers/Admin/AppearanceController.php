@@ -8,6 +8,7 @@ use App\Enums\ThemePalette;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateAppearanceRequest;
 use App\Services\PlatformSettings;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -38,10 +39,7 @@ class AppearanceController extends Controller
             AuditAction::AppearanceUpdated,
         );
 
-        Inertia::flash('toast', [
-            'type' => $changes === [] ? 'info' : 'success',
-            'message' => $changes === [] ? 'La apariencia ya tenía esa paleta.' : 'Apariencia global actualizada.',
-        ]);
+        SaveToast::flash($changes !== [], 'Apariencia global actualizada.');
 
         return back();
     }

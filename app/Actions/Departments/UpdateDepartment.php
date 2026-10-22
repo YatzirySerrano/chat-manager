@@ -7,6 +7,7 @@ use App\Enums\ColorSwatch;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\AppColor;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -19,11 +20,14 @@ class UpdateDepartment
     ) {}
 
     /**
-     * @param  array{name: string, description?: string|null, color: ColorSwatch}  $data
+     * Nothing is written (no save, no audit entry) when the data matches.
+     *
+     * @param  array{name: string, description?: string|null, color: AppColor|ColorSwatch|string}  $data
+     * @return bool Whether anything changed.
      */
-    public function handle(Department $department, array $data, User $actor): Department
+    public function handle(Department $department, array $data, User $actor): bool
     {
-        return DB::transaction(function () use ($department, $data, $actor): Department {
+        return DB::transaction(function () use ($department, $data, $actor): bool {
             $department->fill([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -31,7 +35,7 @@ class UpdateDepartment
             ]);
 
             if (! $department->isDirty()) {
-                return $department;
+                return false;
             }
 
             if ($department->isDirty('name')) {
@@ -43,8 +47,8 @@ class UpdateDepartment
             foreach ($department->getDirty() as $attribute => $value) {
                 $original = $department->getOriginal($attribute);
                 $changes[$attribute] = [
-                    'old' => $original instanceof ColorSwatch ? $original->value : $original,
-                    'new' => $value instanceof ColorSwatch ? $value->value : $value,
+                    'old' => $original instanceof AppColor ? $original->value : $original,
+                    'new' => $value instanceof AppColor ? $value->value : $value,
                 ];
             }
 
@@ -56,7 +60,7 @@ class UpdateDepartment
 
             $this->audit->record(AuditAction::DepartmentUpdated, $department, ['changes' => $changes], $actor);
 
-            return $department;
+            return true;
         });
     }
 }

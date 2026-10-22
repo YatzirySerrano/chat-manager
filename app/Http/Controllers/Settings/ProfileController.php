@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Support\SaveToast;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,19 +25,24 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update the user's profile information.
+     * Update the user's profile information. Submitting the current name and
+     * email writes nothing.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $user->fill($request->validated());
+        $changed = $user->isDirty();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        if ($changed) {
+            if ($user->isDirty('email')) {
+                $user->email_verified_at = null;
+            }
+
+            $user->save();
         }
 
-        $request->user()->save();
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
+        SaveToast::flash($changed, 'Perfil actualizado.');
 
         return to_route('profile.edit');
     }

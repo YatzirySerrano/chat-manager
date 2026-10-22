@@ -31,9 +31,11 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import LogoutConfirmDialog from '@/components/LogoutConfirmDialog.vue';
 import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import { getInitials } from '@/composables/useInitials';
+import { useLogoutConfirmation } from '@/composables/useLogoutConfirmation';
 import { toUrl } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem, NavItem } from '@/types';
@@ -49,6 +51,11 @@ const props = withDefaults(defineProps<Props>(), {
 const page = usePage();
 const auth = computed(() => page.props.auth);
 const { isCurrentUrl, whenCurrentUrl } = useCurrentUrl();
+const {
+    open: logoutDialogOpen,
+    request: requestLogout,
+    onMenuCloseAutoFocus,
+} = useLogoutConfirmation();
 
 const activeItemStyles =
     'text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100';
@@ -261,10 +268,18 @@ const rightNavItems: NavItem[] = [
                                 </Avatar>
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" class="w-56">
-                            <UserMenuContent :user="auth.user" />
+                        <DropdownMenuContent
+                            align="end"
+                            class="w-56"
+                            @close-auto-focus="onMenuCloseAutoFocus"
+                        >
+                            <UserMenuContent
+                                :user="auth.user"
+                                @logout="requestLogout"
+                            />
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    <LogoutConfirmDialog v-model:open="logoutDialogOpen" />
                 </div>
             </div>
         </div>

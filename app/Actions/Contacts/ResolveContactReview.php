@@ -6,7 +6,6 @@ use App\Enums\AuditAction;
 use App\Enums\ContactReviewReason;
 use App\Enums\ContactReviewResolution;
 use App\Enums\ContactReviewStatus;
-use App\Enums\ContactStatus;
 use App\Models\Contact;
 use App\Models\ContactReviewCase;
 use App\Models\User;
@@ -16,14 +15,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Closes a review case with the administrator's decision. Nothing is deleted:
- * a duplicate is archived and keeps its history, and every move is audited.
+ * Closes a review case with the administrator's decision. Nothing is removed:
+ * a duplicate is logically deleted (archived) and keeps its history, and
+ * every move is audited.
  */
 class ResolveContactReview
 {
     public function __construct(
         private AuditLogger $audit,
-        private ChangeContactStatus $changeContactStatus,
+        private DeleteContact $deleteContact,
     ) {}
 
     /**
@@ -133,7 +133,7 @@ class ResolveContactReview
             'matched_by' => 'administrator',
         ], $actor);
 
-        $this->changeContactStatus->handle($source, ContactStatus::Archived, $actor);
+        $this->deleteContact->handle($source, $actor);
     }
 
     private function moveConnections(Contact $source, Contact $target): void
@@ -165,7 +165,7 @@ class ResolveContactReview
             throw ValidationException::withMessages(['resolution' => 'Un remitente de WhatsApp se resuelve vinculándolo o marcándolo como persona distinta.']);
         }
 
-        $this->changeContactStatus->handle($case->contact()->lockForUpdate()->firstOrFail(), ContactStatus::Archived, $actor);
+        $this->deleteContact->handle($case->contact()->firstOrFail(), $actor);
     }
 
     private function date(mixed $value): ?CarbonImmutable

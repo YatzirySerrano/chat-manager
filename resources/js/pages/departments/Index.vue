@@ -1,26 +1,25 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import {
     Building2,
     Eye,
     Pencil,
     Plug,
     Plus,
-    Power,
-    PowerOff,
     UserRound,
     Users,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,12 +31,25 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import { useRecordStateFilter } from '@/composables/useRecordStateFilter';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
-import { swatchClasses } from '@/lib/swatches';
-import { index as departmentsIndex, show } from '@/routes/departments';
-import { update as updateStatus } from '@/routes/departments/status';
-import type { ColorSwatch, DepartmentSummary, RecordAction } from '@/types';
+import { colorPresentations } from '@/lib/colors';
+import { departmentDeletionCopy } from '@/lib/deletionCopy';
+import {
+    destroy as destroyDepartment,
+    index as departmentsIndex,
+    restore as restoreDepartment,
+    show,
+} from '@/routes/departments';
+import type {
+    ColorSwatch,
+    DepartmentSummary,
+    RecordAction,
+    RecordStateOption,
+    RecordStateValue,
+} from '@/types';
 
 defineOptions({
     layout: {
@@ -47,8 +59,11 @@ defineOptions({
 
 const props = defineProps<{
     departments: DepartmentSummary[];
+    filters: { record: RecordStateValue };
+    recordStates: RecordStateOption[];
     colors: ColorSwatch[];
     can: { create: boolean };
+    canExport?: boolean;
 }>();
 
 const { mode: viewMode } = useViewMode('departments');
@@ -72,42 +87,17 @@ function openEdit(department: DepartmentSummary): void {
     formOpen.value = true;
 }
 
-const pendingDeactivation = ref<DepartmentSummary | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
+const { record, apply: applyRecordState } = useRecordStateFilter(
+    departmentsIndex,
+    props.filters.record,
+    ['departments', 'filters'],
+);
 
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
-
-function changeStatus(department: DepartmentSummary, active: boolean): void {
-    router.visit(updateStatus(department.id), {
-        data: { is_active: active },
-        preserveScroll: true,
-        onStart: () => (processingId.value = department.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: (errors) => {
-            confirmOpen.value = false;
-            showFirstError(errors);
-        },
-    });
-}
-
-function askDeactivation(department: DepartmentSummary): void {
-    pendingDeactivation.value = department;
-    confirmOpen.value = true;
-}
-
-function confirmDeactivation(): void {
-    if (pendingDeactivation.value) {
-        changeStatus(pendingDeactivation.value, false);
-    }
-}
+const deletion = useRecordDeletion<DepartmentSummary>({
+    destroy: (department) => destroyDepartment(department.id),
+    restore: (department) => restoreDepartment(department.id),
+    copy: departmentDeletionCopy,
+});
 
 function actionsFor(department: DepartmentSummary): RecordAction[] {
     return recordActions(
@@ -123,20 +113,7 @@ function actionsFor(department: DepartmentSummary): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(department),
         },
-        department.can?.changeStatus &&
-            !department.is_active && {
-                key: 'activate',
-                label: 'Activar',
-                icon: Power,
-                onSelect: () => changeStatus(department, true),
-            },
-        department.can?.changeStatus &&
-            department.is_active && {
-                key: 'deactivate',
-                label: 'Desactivar',
-                icon: PowerOff,
-                onSelect: () => askDeactivation(department),
-            },
+        ...deletion.actionsFor(department),
     );
 }
 
@@ -167,17 +144,22 @@ function leadersLabel(department: DepartmentSummary): string {
                     : 'Departamentos a los que perteneces.'
             "
         >
-            <template v-if="can.create" #actions>
-                <Button @click="openCreate">
+            <template v-if="can.create || canExport" #actions>
+                <ExportMenu
+                    v-if="canExport"
+                    report="departments"
+                    :filters="filters"
+                />
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo departamento
                 </Button>
             </template>
         </PageHeader>
 
-        <SurfaceCard v-if="departments.length > 0">
+        <SurfaceCard v-if="departments.length > 0 || record !== 'active'">
             <div
-                class="flex items-center justify-between gap-2 border-b px-4 py-3"
+                class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
             >
                 <p class="text-sm text-muted-foreground">
                     {{
@@ -188,10 +170,25 @@ function leadersLabel(department: DepartmentSummary): string {
                         )
                     }}
                 </p>
-                <ViewModeToggle v-model="viewMode" />
+                <div class="flex items-center gap-2">
+                    <RecordStateFilter
+                        v-model="record"
+                        :options="recordStates"
+                        @change="applyRecordState"
+                    />
+                    <ViewModeToggle v-model="viewMode" />
+                </div>
             </div>
 
-            <Table v-if="viewMode === 'table'">
+            <EmptyState
+                v-if="departments.length === 0"
+                class="m-4 border-none"
+                :icon="Building2"
+                title="Ningún departamento en este estado"
+                description="Prueba con otro estado del registro."
+            />
+
+            <Table v-else-if="viewMode === 'table'">
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Departamento</TableHead>
@@ -215,15 +212,16 @@ function leadersLabel(department: DepartmentSummary): string {
                         v-for="department in departments"
                         :key="department.id"
                         :class="
-                            !department.is_active && 'text-muted-foreground'
+                            department.is_deleted && 'text-muted-foreground'
                         "
                     >
                         <TableCell class="w-full max-w-0 py-3 pl-5">
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
                                     class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                                    :class="
-                                        swatchClasses[department.color].soft
+                                    v-bind="
+                                        colorPresentations(department.color)
+                                            .soft
                                     "
                                 >
                                     <Building2
@@ -268,13 +266,16 @@ function leadersLabel(department: DepartmentSummary): string {
                             {{ leadersLabel(department) }}
                         </TableCell>
                         <TableCell>
-                            <StatusBadge :active="department.is_active" />
+                            <DeletedBadge v-if="department.is_deleted" />
+                            <span v-else class="text-xs text-muted-foreground"
+                                >Activo</span
+                            >
                         </TableCell>
                         <TableCell class="w-px pr-5 text-right">
                             <RecordActions
                                 :actions="actionsFor(department)"
                                 :record="department.name"
-                                :busy="processingId === department.id"
+                                :busy="deletion.processingId === department.id"
                             />
                         </TableCell>
                     </TableRow>
@@ -283,29 +284,32 @@ function leadersLabel(department: DepartmentSummary): string {
 
             <RecordGrid v-else>
                 <li v-for="department in departments" :key="department.id">
-                    <RecordCard :muted="!department.is_active">
+                    <RecordCard
+                        :muted="department.is_deleted"
+                        :href="
+                            department.can?.view
+                                ? show(department.id)
+                                : undefined
+                        "
+                        :label="`Ver departamento ${department.name}`"
+                    >
                         <template #leading>
                             <span
                                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                                :class="swatchClasses[department.color].soft"
+                                v-bind="
+                                    colorPresentations(department.color).soft
+                                "
                             >
                                 <Building2 class="size-4" aria-hidden="true" />
                             </span>
                         </template>
                         <template #title>
-                            <Link
-                                v-if="department.can?.view"
-                                :href="show(department.id)"
-                                class="block truncate hover:underline"
-                            >
-                                {{ department.name }}
-                            </Link>
-                            <span v-else class="block truncate">{{
+                            <span class="block truncate">{{
                                 department.name
                             }}</span>
                         </template>
-                        <template #badges>
-                            <StatusBadge :active="department.is_active" />
+                        <template v-if="department.is_deleted" #badges>
+                            <DeletedBadge />
                         </template>
                         <p class="line-clamp-2 text-muted-foreground">
                             {{ department.description || 'Sin descripción.' }}
@@ -347,7 +351,7 @@ function leadersLabel(department: DepartmentSummary): string {
                             <RecordActions
                                 :actions="actionsFor(department)"
                                 :record="department.name"
-                                :busy="processingId === department.id"
+                                :busy="deletion.processingId === department.id"
                             />
                         </template>
                     </RecordCard>
@@ -383,13 +387,9 @@ function leadersLabel(department: DepartmentSummary): string {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="`¿Desactivar ${pendingDeactivation?.name ?? 'el departamento'}?`"
-            description="No se podrán agregar miembros ni recibir nuevas conversaciones. Solo es posible si no tiene conversaciones abiertas."
-            confirm-label="Desactivar"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmDeactivation"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

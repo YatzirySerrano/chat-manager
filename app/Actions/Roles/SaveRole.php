@@ -12,6 +12,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use LogicException;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -30,15 +31,52 @@ class SaveRole
      */
     public function handle(?Role $role, array $data, User $actor): Role
     {
-        $saved = DB::transaction(function () use ($role, $data, $actor): Role {
+        $saved = $this->persist($role, $data, $actor);
+
+        return $saved ?? $role ?? throw new LogicException('A new role is always saved.');
+    }
+
+    /**
+     * Update an existing role. Nothing is written (no save, no permission
+     * sync, no audit entry, no cache flush) when the attributes and the set
+     * of permissions stay the same, whatever their order.
+     *
+     * @param  array{label: string, description: string|null, scope: DataScope, permissions: list<string>}  $data
+     * @return bool Whether anything changed.
+     */
+    public function update(Role $role, array $data, User $actor): bool
+    {
+        return $this->persist($role, $data, $actor) !== null;
+    }
+
+    /**
+     * @param  array{label: string, description: string|null, scope: DataScope, permissions: list<string>}  $data
+     * @return Role|null The saved role, or null when an existing role did not change.
+     */
+    private function persist(?Role $role, array $data, User $actor): ?Role
+    {
+        $saved = DB::transaction(function () use ($role, $data, $actor): ?Role {
             $creating = $role === null;
             $role ??= new Role(['guard_name' => 'web', 'name' => $this->uniqueName($data['label'])]);
             $role->loadMissing('permissions');
 
             $previous = $creating ? [] : $role->permissionNames();
+            // Unavailable permissions are kept, except reserved ones a
+            // non-root role must never hold. The root role always keeps its
+            // reserved permissions: the editor never offers them.
             $preservedUnavailable = array_values(array_filter(
                 $previous,
-                fn (string $name): bool => ! (Permission::tryFrom($name)?->isAvailable() ?? false),
+                function (string $name) use ($role): bool {
+                    $permission = Permission::tryFrom($name);
+
+                    if ($permission === null) {
+                        return true;
+                    }
+
+                    return $role->is_root
+                        ? ! $permission->isAvailable() || $permission->isReservedToRoot()
+                        : ! $permission->isAvailable() && ! $permission->isReservedToRoot();
+                },
             ));
             $permissions = array_values(array_unique([...$data['permissions'], ...$preservedUnavailable]));
 
@@ -48,6 +86,12 @@ class SaveRole
                 'scope' => $data['scope'],
             ]);
             $changes = $creating ? [] : $this->attributeChanges($role);
+            $added = array_values(array_diff($permissions, $previous));
+            $removed = array_values(array_diff($previous, $permissions));
+
+            if (! $creating && $changes === [] && $added === [] && $removed === []) {
+                return null;
+            }
 
             try {
                 $role->save();
@@ -70,9 +114,6 @@ class SaveRole
                 $this->audit->record(AuditAction::RoleUpdated, $role, ['changes' => $changes], $actor);
             }
 
-            $added = array_values(array_diff($permissions, $previous));
-            $removed = array_values(array_diff($previous, $permissions));
-
             if ($added !== [] || $removed !== []) {
                 $this->audit->record(AuditAction::RolePermissionsChanged, $role, [
                     'added' => $added,
@@ -83,6 +124,10 @@ class SaveRole
 
             return $role;
         });
+
+        if ($saved === null) {
+            return null;
+        }
 
         $this->registrar->forgetCachedPermissions();
 

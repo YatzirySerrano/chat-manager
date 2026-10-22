@@ -1,3 +1,5 @@
+import type { RecordStateValue } from './ui';
+
 export type DataScopeValue = 'global' | 'departments' | 'assigned';
 
 export type ThemePaletteValue =
@@ -19,6 +21,12 @@ export type ColorSwatch =
     | 'orange'
     | 'rose'
     | 'violet';
+
+/** Custom color chosen by the user, stored as lowercase "#rrggbb". */
+export type HexColor = `#${string}`;
+
+/** Department or tag color: a palette key or a custom hex color. */
+export type AppColor = ColorSwatch | HexColor;
 
 export type RoleOption = {
     id: number;
@@ -47,11 +55,12 @@ export type ManagedRole = {
     scope: DataScopeValue;
     scope_label: string;
     is_active: boolean;
+    is_deleted: boolean;
     is_root: boolean;
     users_count: number;
     permissions: string[];
     is_current_user_role: boolean;
-    can: { update: boolean; changeStatus: boolean; delete: boolean };
+    can: { update: boolean; delete: boolean; restore: boolean };
     updated_at: string | null;
 };
 
@@ -61,6 +70,8 @@ export type CatalogPermission = {
     available: boolean;
     sensitive: boolean;
     global_only: boolean;
+    /** Only the root role (Superadministrador) can ever hold it. */
+    reserved: boolean;
 };
 
 export type PermissionGroupCatalog = {
@@ -131,7 +142,7 @@ export type Paginated<T> = {
 export type DepartmentOption = {
     id: number;
     name: string;
-    color: ColorSwatch;
+    color: AppColor;
     is_active: boolean;
 };
 
@@ -141,17 +152,18 @@ export type AdminUser = {
     email: string;
     role: RoleSummary | null;
     is_active: boolean;
+    is_deleted: boolean;
     two_factor_enabled: boolean;
     last_login_at: string | null;
-    deactivated_at: string | null;
+    deleted_at: string | null;
     created_at: string | null;
     departments: DepartmentOption[];
     is_current_user: boolean;
     can: {
         update: boolean;
         assignRole: boolean;
-        changeStatus: boolean;
         delete: boolean;
+        restore: boolean;
     };
 };
 
@@ -161,14 +173,15 @@ export type UserFilters = {
     search: string;
     role: number | null;
     department: number | null;
-    status: 'active' | 'inactive' | null;
+    record: RecordStateValue;
     sort: UserSort;
 };
 
 export type UserStats = {
-    total: number;
     active: number;
-    inactive: number;
+    two_factor: number;
+    /** Null when the viewer cannot consult deleted records. */
+    deleted: number | null;
 };
 
 export type DistributionModeValue = 'shared' | 'manual' | 'automatic';
@@ -178,8 +191,9 @@ export type DepartmentSummary = {
     name: string;
     slug: string;
     description: string | null;
-    color: ColorSwatch;
+    color: AppColor;
     is_active: boolean;
+    is_deleted: boolean;
     welcome_message: string | null;
     /** How pending conversations reach an agent (see App\\Enums\\DistributionMode). */
     distribution_mode: DistributionModeValue;
@@ -192,7 +206,7 @@ export type DepartmentSummary = {
     leaders?: { id: number; name: string }[];
     created_at: string | null;
     /** What the viewer may do with this department (resolved by the server). */
-    can?: { view: boolean; update: boolean; changeStatus: boolean };
+    can?: { view: boolean; update: boolean; delete: boolean; restore: boolean };
 };
 
 /** Real conversation counts of a department (never estimated). */
@@ -210,6 +224,7 @@ export type DepartmentConnection = {
     name: string;
     display_phone_number: string | null;
     is_active: boolean;
+    is_deleted: boolean;
     is_default: boolean;
     health: {
         value: string;
@@ -236,6 +251,7 @@ export type DepartmentMember = {
     email: string;
     role: RoleSummary | null;
     is_active: boolean;
+    is_deleted: boolean;
     last_login_at: string | null;
 };
 
@@ -256,6 +272,8 @@ export type AuditLogEntry = {
     properties: Record<string, unknown>;
     ip_address: string | null;
     user_agent: string | null;
+    /** Entry about the root authority, only visible to superadministrators. */
+    restricted: boolean;
     created_at: string;
 };
 

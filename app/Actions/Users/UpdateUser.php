@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class UpdateUser
@@ -27,11 +28,16 @@ class UpdateUser
      * transaction: if it is significant, the caller must send the fingerprint
      * of the impact the actor confirmed, otherwise the change is rejected.
      *
+     * Nothing is written (no save, no audit entry, no released conversations)
+     * when the submitted data matches the account; a password equal to the
+     * current one is not a change either.
+     *
      * @param  array{name: string, email: string, role: Role|null, department_ids: list<int>|null, password?: string|null, role_change_fingerprint?: string|null}  $data
+     * @return bool Whether anything changed.
      */
-    public function handle(User $user, array $data, User $actor): User
+    public function handle(User $user, array $data, User $actor): bool
     {
-        return DB::transaction(function () use ($user, $data, $actor): User {
+        return DB::transaction(function () use ($user, $data, $actor): bool {
             $user->loadMissing(['roles.permissions', 'departments']);
 
             $previousRole = $user->role();
@@ -42,21 +48,27 @@ class UpdateUser
                 $this->changeRole($user, $newRole, $data['role_change_fingerprint'] ?? null, $actor);
             }
 
-            $this->updateProfile($user, $data, $actor);
+            $profileChanged = $this->updateProfile($user, $data, $actor);
 
             $allowsMembership = $newRole?->scope->allowsDepartmentMembership() ?? false;
+            $departmentsChanged = false;
 
             if ($data['department_ids'] !== null || ! $allowsMembership) {
-                $this->syncDepartments($user, $allowsMembership ? $data['department_ids'] ?? [] : [], $actor);
+                $departmentsChanged = $this->syncDepartments($user, $allowsMembership ? $data['department_ids'] ?? [] : [], $actor);
             }
 
-            if (filled($data['password'] ?? null)) {
-                $user->forceFill(['password' => $data['password'], 'remember_token' => null])->save();
+            $password = $data['password'] ?? null;
+            $passwordChanged = filled($password) && ! Hash::check($password, $user->password);
+
+            if ($passwordChanged) {
+                $user->forceFill(['password' => $password, 'remember_token' => null])->save();
 
                 $this->audit->record(AuditAction::UserPasswordReset, $user, [], $actor);
             }
 
-            return $user->refresh();
+            $user->refresh();
+
+            return $roleChanges || $profileChanged || $departmentsChanged || $passwordChanged;
         });
     }
 
@@ -101,12 +113,12 @@ class UpdateUser
     /**
      * @param  array{name: string, email: string}  $data
      */
-    private function updateProfile(User $user, array $data, User $actor): void
+    private function updateProfile(User $user, array $data, User $actor): bool
     {
         $user->fill(['name' => $data['name'], 'email' => $data['email']]);
 
         if (! $user->isDirty()) {
-            return;
+            return false;
         }
 
         $changes = [];
@@ -126,12 +138,14 @@ class UpdateUser
         }
 
         $this->audit->record(AuditAction::UserUpdated, $user, ['changes' => $changes], $actor);
+
+        return true;
     }
 
     /**
      * @param  list<int>  $departmentIds
      */
-    private function syncDepartments(User $user, array $departmentIds, User $actor): void
+    private function syncDepartments(User $user, array $departmentIds, User $actor): bool
     {
         $result = $user->departments()->sync($departmentIds);
 
@@ -141,7 +155,7 @@ class UpdateUser
         $detached = $result['detached'];
 
         if ($attached === [] && $detached === []) {
-            return;
+            return false;
         }
 
         $released = 0;
@@ -159,5 +173,7 @@ class UpdateUser
         ], $actor);
 
         $user->unsetRelation('departments');
+
+        return true;
     }
 }

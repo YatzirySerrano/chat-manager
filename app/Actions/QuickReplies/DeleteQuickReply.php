@@ -8,26 +8,30 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Logically deletes a quick reply: nobody can insert it anymore and its
+ * shortcut stays reserved (see EnsureShortcutIsAvailable), so restoring it
+ * never creates a conflict.
+ */
 class DeleteQuickReply
 {
     public function __construct(private AuditLogger $audit) {}
 
-    /**
-     * Messages already sent are plain text and never reference the reply, so
-     * deleting it leaves no history behind. The audit entry keeps its content.
-     */
-    public function handle(QuickReply $quickReply, User $actor): void
+    public function handle(QuickReply $quickReply, User $actor): QuickReply
     {
-        DB::transaction(function () use ($quickReply, $actor): void {
-            $this->audit->record(AuditAction::QuickReplyDeleted, $quickReply, [
-                'title' => $quickReply->title,
-                'shortcut' => $quickReply->shortcut,
-                'is_global' => $quickReply->is_global,
-                'departments' => $quickReply->departments()->orderBy('name')->pluck('name')->all(),
-                'body' => $quickReply->body,
-            ], $actor);
+        return DB::transaction(function () use ($quickReply, $actor): QuickReply {
+            /** @var QuickReply $locked */
+            $locked = QuickReply::query()->lockForUpdate()->findOrFail($quickReply->id);
 
-            $quickReply->delete();
+            if ($locked->isDeleted()) {
+                return $locked;
+            }
+
+            $locked->forceFill(['is_active' => false, 'updated_by_user_id' => $actor->id])->save();
+
+            $this->audit->record(AuditAction::QuickReplyDeleted, $locked, [], $actor);
+
+            return $locked;
         });
     }
 }

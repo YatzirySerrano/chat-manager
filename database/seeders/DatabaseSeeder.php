@@ -30,7 +30,7 @@ class DatabaseSeeder extends Seeder
         $sales = Department::factory()->create(['name' => 'Ventas', 'slug' => 'ventas', 'color' => ColorSwatch::Blue]);
         $support = Department::factory()->create(['name' => 'Soporte', 'slug' => 'soporte', 'color' => ColorSwatch::Emerald]);
 
-        User::factory()->administrator()->create([
+        User::factory()->superAdministrator()->create([
             'name' => 'Administrador',
             'email' => 'admin@chatmanager.test',
         ]);

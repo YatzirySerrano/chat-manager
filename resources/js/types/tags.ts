@@ -1,4 +1,5 @@
-import type { ColorSwatch } from './admin';
+import type { AppColor } from './admin';
+import type { RecordStateValue } from './ui';
 
 /**
  * Minimal tag shape used by badges and pickers (structurally compatible with
@@ -7,20 +8,21 @@ import type { ColorSwatch } from './admin';
 export type TagOption = {
     id: number;
     name: string;
-    color: ColorSwatch;
+    color: AppColor;
     is_active: boolean;
 };
 
 export type TagSummary = TagOption & {
+    is_deleted: boolean;
     slug: string;
     description: string | null;
     contacts_count?: number;
     conversations_count?: number;
     created_at: string | null;
-    can: { update: boolean; changeStatus: boolean };
+    can: { update: boolean; delete: boolean; restore: boolean };
 };
 
 export type TagFilters = {
     search: string;
-    status: 'active' | 'inactive' | null;
+    record: RecordStateValue;
 };

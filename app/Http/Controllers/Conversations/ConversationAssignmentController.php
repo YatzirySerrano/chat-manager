@@ -47,7 +47,7 @@ class ConversationAssignmentController extends ConversationOperationController
 
         $agent = $this->destinationAgent($request->integer('user_id'), $request->user(), $conversation->department);
 
-        $assign->handle($conversation, $agent, $request->user(), $request->version());
+        $assign->handle($conversation, $agent, $request->user(), $request->version(), $request->confirmsUnavailable());
 
         return $this->done($conversation, $request->user(), "Conversación asignada a {$agent->name}.");
     }

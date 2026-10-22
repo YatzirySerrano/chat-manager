@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -14,6 +15,9 @@ use RuntimeException;
  * stale, a rule forbids the change). It is answered as a controlled
  * response: 409 for JSON clients, or back to the page with the explanation
  * as an error, never as a server error.
+ *
+ * Being expected, it is never reported as an application error: it is
+ * logged at info level with the operation's context, for auditing races.
  */
 class ConversationConflict extends RuntimeException
 {
@@ -35,6 +39,26 @@ class ConversationConflict extends RuntimeException
     public static function anotherActive(): self
     {
         return new self('Este contacto ya tiene otra conversación activa en esta conexión; continúa la atención en ella.');
+    }
+
+    public static function unavailableToAccept(): self
+    {
+        return new self('Estás como No disponible. Cambia tu disponibilidad a Disponible para aceptar conversaciones.');
+    }
+
+    /**
+     * Replaces the default reporting (which logs at error level).
+     */
+    public function report(Request $request): void
+    {
+        $conversation = $request->route('conversation');
+
+        Log::info('Conflicto operativo en una conversación.', [
+            'reason' => $this->getMessage(),
+            'conversation_id' => $conversation instanceof Conversation ? $conversation->getKey() : null,
+            'user_id' => $request->user()?->getAuthIdentifier(),
+            'route' => $request->route()?->getName(),
+        ]);
     }
 
     public function render(Request $request): JsonResponse|RedirectResponse

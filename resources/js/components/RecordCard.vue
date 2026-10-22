@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { LinkComponentBaseProps } from '@inertiajs/core';
+import { Link } from '@inertiajs/vue3';
 import type { HTMLAttributes } from 'vue';
 import { cn } from '@/lib/utils';
 
@@ -8,8 +10,17 @@ import { cn } from '@/lib/utils';
  *
  * Slots: `leading` (avatar or icon), `title`, `subtitle`, `badges`, default
  * (key information), `meta` (footer metadata) and `actions`.
+ *
+ * With `href` the whole card opens that record ("stretched link"): the title
+ * becomes the card's only link and its ::after covers the card, while every
+ * interactive element inside (actions, buttons, links, inputs) is raised
+ * above it, so it keeps its own behavior without navigating.
  */
 const props = defineProps<{
+    /** Detail page the card opens; omit it when the user may not view it. */
+    href?: LinkComponentBaseProps['href'];
+    /** Accessible name of the card link; defaults to the title text. */
+    label?: string;
     /** Inactive or archived records are rendered subdued. */
     muted?: boolean;
     /** Briefly highlights a record that was just created or edited. */
@@ -22,8 +33,10 @@ const props = defineProps<{
     <article
         :class="
             cn(
-                'flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-card transition-colors duration-700',
+                'relative flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-card transition-colors duration-700',
                 muted && 'bg-muted/30',
+                href &&
+                    'has-[[data-record-card-link]:hover]:border-foreground/25 has-[[data-record-card-link]:hover]:bg-accent/40 [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:relative [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:z-10',
                 highlighted && 'border-primary/40 bg-primary-soft/60',
                 props.class,
             )
@@ -33,7 +46,16 @@ const props = defineProps<{
             <slot name="leading" />
             <div class="min-w-0 flex-1 space-y-0.5">
                 <div class="min-w-0 text-sm font-medium text-foreground">
-                    <slot name="title" />
+                    <Link
+                        v-if="href"
+                        :href="href"
+                        :aria-label="label"
+                        data-record-card-link
+                        class="block truncate rounded-sm outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] hover:underline focus-visible:underline focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-background"
+                    >
+                        <slot name="title" />
+                    </Link>
+                    <slot v-else name="title" />
                 </div>
                 <div
                     v-if="$slots.subtitle"
@@ -61,7 +83,9 @@ const props = defineProps<{
             >
                 <slot name="meta" />
             </div>
-            <slot name="actions" />
+            <div v-if="$slots.actions" class="relative z-10 shrink-0">
+                <slot name="actions" />
+            </div>
         </footer>
     </article>
 </template>

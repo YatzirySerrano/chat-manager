@@ -45,7 +45,7 @@ test('verified credentials store the profile reported by Meta', function () {
         'platform_type' => 'CLOUD_API',
     ])]);
     $this->freezeSecond();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify();
 
     $response = $this->actingAs($admin)
@@ -80,7 +80,7 @@ test('the graph version is configurable', function () {
     Http::preventStrayRequests();
     config(['services.meta.graph_version' => 'v25.0']);
     Http::fake(['graph.facebook.com/v25.0/*' => Http::response(['id' => VERIFICATION_PHONE_ID, 'status' => 'CONNECTED'])]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)->post(route('connections.verify', connectionToVerify()))->assertRedirect();
 
@@ -90,7 +90,7 @@ test('the graph version is configurable', function () {
 test('a number that is not connected is reported even when the credentials are valid', function () {
     Http::preventStrayRequests();
     Http::fake([VERIFICATION_ENDPOINT => Http::response(['id' => VERIFICATION_PHONE_ID, 'status' => 'PENDING'])]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify();
 
     $this->actingAs($admin)
@@ -111,7 +111,7 @@ test('credentials rejected by Meta are recorded without leaking the token', func
             'fbtrace_id' => 'AbCdEf',
         ],
     ], 401)]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify('verified');
 
     $response = $this->actingAs($admin)
@@ -135,7 +135,7 @@ test('an unknown phone number id is reported as rejected', function () {
     Http::fake([VERIFICATION_ENDPOINT => Http::response([
         'error' => ['message' => 'Unsupported get request.', 'type' => 'GraphMethodException', 'code' => 100],
     ], 400)]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify('verified');
 
     $this->actingAs($admin)->post(route('connections.verify', $connection));
@@ -146,7 +146,7 @@ test('an unknown phone number id is reported as rejected', function () {
 test('an unreachable Meta does not change the recorded credential state', function (Closure $fake) {
     Http::preventStrayRequests();
     Http::fake([VERIFICATION_ENDPOINT => $fake()]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify('verified');
     $verifiedAt = $connection->credentials_verified_at;
 
@@ -172,7 +172,7 @@ test('an unreachable Meta does not change the recorded credential state', functi
 test('verification requires the phone number id and the access token', function () {
     Http::preventStrayRequests();
     Http::fake();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->unconfigured()->create();
 
     $this->actingAs($admin)
@@ -184,7 +184,7 @@ test('verification requires the phone number id and the access token', function 
 
 test('a verification answer is discarded when the credentials changed meanwhile', function () {
     Http::preventStrayRequests();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify();
 
     Http::fake([VERIFICATION_ENDPOINT => function () use ($connection) {
@@ -204,7 +204,7 @@ test('a verification answer is discarded when the credentials changed meanwhile'
 test('verification attempts are rate limited per user and connection', function () {
     Http::preventStrayRequests();
     Http::fake([VERIFICATION_ENDPOINT => Http::response(['id' => VERIFICATION_PHONE_ID, 'status' => 'CONNECTED'])]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = connectionToVerify();
 
     foreach (range(1, 5) as $attempt) {

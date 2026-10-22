@@ -69,3 +69,26 @@ test('the profile page no longer offers account deletion', function () {
 
     $this->actingAs($user)->get(route('profile.edit'))->assertOk()->assertDontSee('delete-user-button');
 });
+
+test('saving the current profile writes nothing and says so', function () {
+    $user = User::factory()->create(['name' => 'Laura Pérez', 'email' => 'laura@empresa.test']);
+    $updatedAt = $user->updated_at;
+    $this->travel(1)->hours();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($user)
+        ->patch(route('profile.update'), ['name' => ' Laura Pérez ', 'email' => 'laura@empresa.test '])
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and($user->refresh()->updated_at->equalTo($updatedAt))->toBeTrue()
+        ->and($user->email_verified_at)->not->toBeNull();
+});
+
+test('a profile change is confirmed in Spanish', function () {
+    $user = User::factory()->create(['name' => 'Laura Pérez']);
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), ['name' => 'Laura Gómez', 'email' => $user->email])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Perfil actualizado.']);
+});

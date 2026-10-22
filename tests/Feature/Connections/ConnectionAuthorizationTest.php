@@ -20,6 +20,7 @@ test('users without the connections permissions cannot reach any connection endp
     $this->actingAs($user)->put(route('connections.update', $connection), ['name' => 'Renombrada', 'department_ids' => []])->assertForbidden();
     $this->actingAs($user)->patch(route('connections.status.update', $connection), ['is_active' => true])->assertForbidden();
     $this->actingAs($user)->post(route('connections.verify', $connection))->assertForbidden();
+    $this->actingAs($user)->delete(route('connections.destroy', $connection))->assertForbidden();
 
     expect(Connection::query()->count())->toBe(1)
         ->and($connection->refresh())->name->toBe('Ventas')->is_active->toBeFalse();
@@ -62,15 +63,16 @@ test('viewers can consult connections but not change them', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('connections/Form')
             ->where('connection.name', 'Ventas')
-            ->where('can', ['update' => false, 'changeStatus' => false, 'verify' => false]));
+            ->where('can', ['update' => false, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false]));
 
     $this->actingAs($viewer)->get(route('connections.create'))->assertForbidden();
     $this->actingAs($viewer)->post(route('connections.store'), ['name' => 'Nueva', 'department_ids' => []])->assertForbidden();
     $this->actingAs($viewer)->put(route('connections.update', $connection), ['name' => 'Renombrada', 'department_ids' => []])->assertForbidden();
     $this->actingAs($viewer)->patch(route('connections.status.update', $connection), ['is_active' => false])->assertForbidden();
     $this->actingAs($viewer)->post(route('connections.verify', $connection))->assertForbidden();
+    $this->actingAs($viewer)->delete(route('connections.destroy', $connection))->assertForbidden();
 
-    expect($connection->refresh())->name->toBe('Ventas')->is_active->toBeTrue();
+    expect($connection->refresh())->name->toBe('Ventas')->is_active->toBeTrue()->deleted_at->toBeNull();
 });
 
 test('a custom global role with the manage permission can administer connections', function () {
@@ -101,10 +103,10 @@ test('each listed connection exposes only the operations the viewer may perform'
     $this->actingAs($viewer)
         ->get(route('connections.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('connections.0.can', ['view' => true, 'update' => false, 'changeStatus' => false, 'verify' => false]));
+            ->where('connections.0.can', ['view' => true, 'update' => false, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false]));
 
     $this->actingAs($manager)
         ->get(route('connections.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('connections.0.can', ['view' => true, 'update' => true, 'changeStatus' => true, 'verify' => true]));
+            ->where('connections.0.can', ['view' => true, 'update' => true, 'changeStatus' => true, 'verify' => true, 'delete' => true, 'restore' => false]));
 });

@@ -33,19 +33,27 @@ class QuickReplyPolicy
         return $actor->holdsPermission(Permission::ManageQuickReplies);
     }
 
+    /**
+     * A deleted reply is read-only until it is restored.
+     */
     public function update(User $actor, QuickReply $quickReply): bool
     {
-        return $this->manages($actor, $quickReply);
+        return ! $quickReply->isDeleted() && $this->manages($actor, $quickReply);
     }
 
-    public function changeStatus(User $actor, QuickReply $quickReply): bool
-    {
-        return $this->manages($actor, $quickReply);
-    }
-
+    /**
+     * Logical deletion: the shortcut stays reserved.
+     */
     public function delete(User $actor, QuickReply $quickReply): bool
     {
-        return $this->manages($actor, $quickReply);
+        return $this->update($actor, $quickReply);
+    }
+
+    public function restore(User $actor, QuickReply $quickReply): bool
+    {
+        return $quickReply->isDeleted()
+            && $actor->canViewDeletedRecords()
+            && $this->manages($actor, $quickReply);
     }
 
     /**

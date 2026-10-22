@@ -17,7 +17,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 test('a contact without attribution shows an unidentified origin', function () {
     $contact = Contact::factory()->fromWhatsapp()->create();
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.show', $contact))
         ->assertInertia(fn (Assert $page) => $page
             ->where('origin.current', null)
@@ -34,7 +34,7 @@ test('a Meta ad referral is shown as confirmed by Meta with its ad details', fun
         'raw_referral' => ['ctwa_clid' => 'click-id-secreto'],
     ]);
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.show', $contact))
         ->assertInertia(fn (Assert $page) => $page
             ->where('origin.current.id', $referral->id)
@@ -59,7 +59,7 @@ test('an incomplete referral only exposes the data Meta actually sent', function
         'page_name' => null,
     ]);
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.show', $contact))
         ->assertInertia(fn (Assert $page) => $page
             ->where('origin.current.origin_type', 'facebook_ad')
@@ -71,7 +71,7 @@ test('an incomplete referral only exposes the data Meta actually sent', function
 });
 
 test('origin can be classified manually with optional details and the change is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
     $this->actingAs($admin)
@@ -107,7 +107,7 @@ test('origin can be classified manually with optional details and the change is 
 });
 
 test('a manual classification never alters nor outranks a provider confirmed origin', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
     $confirmed = ContactAttribution::factory()->fromMetaAd()->for($contact)->create(['captured_at' => now()->subWeek()]);
     $snapshot = $confirmed->fresh()->getAttributes();
@@ -133,7 +133,7 @@ test('the most recent manual declaration wins among manual ones', function () {
     ContactAttribution::factory()->for($contact)->create(['origin_type' => 'website', 'captured_at' => now()->subDay()]);
     $latest = ContactAttribution::factory()->for($contact)->create(['origin_type' => 'qr_code', 'captured_at' => now()]);
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.show', $contact))
         ->assertInertia(fn (Assert $page) => $page->where('origin.current.id', $latest->id));
 });
@@ -141,7 +141,7 @@ test('the most recent manual declaration wins among manual ones', function () {
 test('manual classification validates the origin type and only accepts web URLs', function (array $input, string $error) {
     $contact = Contact::factory()->create();
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->post(route('contacts.attributions.store', $contact), [...['origin_type' => 'website'], ...$input])
         ->assertSessionHasErrors($error);
 
@@ -198,7 +198,7 @@ test('the origin section lists the connections the contact wrote through without
     $connection = Connection::factory()->create(['name' => 'Ventas', 'display_phone_number' => '+52 55 1234 5678']);
     $contact->connections()->attach($connection, ['first_interaction_at' => now()->subDay(), 'last_interaction_at' => now()]);
 
-    $this->actingAs(User::factory()->administrator()->create())
+    $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.show', $contact))
         ->assertInertia(fn (Assert $page) => $page
             ->has('origin.connections', 1)

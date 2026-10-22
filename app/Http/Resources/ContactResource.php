@@ -28,7 +28,8 @@ class ContactResource extends JsonResource
             'phone_e164' => $this->phone_e164,
             'email' => $this->email,
             'status' => $this->status->value,
-            'archived_at' => $this->archived_at?->toIso8601String(),
+            'is_deleted' => $this->isDeleted(),
+            'deleted_at' => $this->archived_at?->toIso8601String(),
             'source' => $this->source->value,
             'source_label' => $this->source->label(),
             'custom_fields' => $this->custom_fields ?? (object) [],
@@ -64,7 +65,8 @@ class ContactResource extends JsonResource
             'can' => [
                 'view' => $request->user()?->can('view', $this->resource) ?? false,
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
-                'archive' => $request->user()?->can('archive', $this->resource) ?? false,
+                'delete' => $request->user()?->can('delete', $this->resource) ?? false,
+                'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
         ];
     }

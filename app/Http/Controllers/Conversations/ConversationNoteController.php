@@ -7,6 +7,7 @@ use App\Actions\Conversations\UpdateConversationNote;
 use App\Http\Requests\Conversations\ConversationNoteRequest;
 use App\Models\Conversation;
 use App\Models\ConversationNote;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
@@ -28,9 +29,9 @@ class ConversationNoteController extends ConversationOperationController
         $this->ensureVisible($conversation);
         abort_unless($note->conversation_id === $conversation->id, 404);
 
-        $updateNote->handle($note, $request->user(), $request->string('body')->value());
+        $changed = $updateNote->handle($note, $request->user(), $request->string('body')->value());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Nota actualizada.']);
+        SaveToast::flash($changed, 'Nota actualizada.');
 
         return back();
     }

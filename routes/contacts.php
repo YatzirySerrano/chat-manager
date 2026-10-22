@@ -4,7 +4,6 @@ use App\Http\Controllers\Contacts\ContactAttributionController;
 use App\Http\Controllers\Contacts\ContactController;
 use App\Http\Controllers\Contacts\ContactNoteController;
 use App\Http\Controllers\Contacts\ContactReviewController;
-use App\Http\Controllers\Contacts\ContactStatusController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -20,7 +19,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('contacts/reviews/{contactReviewCase}', [ContactReviewController::class, 'update'])->name('contacts.reviews.update');
     Route::get('contacts/{contact}', [ContactController::class, 'show'])->name('contacts.show');
     Route::put('contacts/{contact}', [ContactController::class, 'update'])->name('contacts.update');
-    Route::patch('contacts/{contact}/status', [ContactStatusController::class, 'update'])->name('contacts.status.update');
+    Route::delete('contacts/{contact}', [ContactController::class, 'destroy'])->name('contacts.destroy');
+    Route::patch('contacts/{contact}/restore', [ContactController::class, 'restore'])->name('contacts.restore');
     Route::post('contacts/{contact}/notes', [ContactNoteController::class, 'store'])->name('contacts.notes.store');
     Route::post('contacts/{contact}/attributions', [ContactAttributionController::class, 'store'])->name('contacts.attributions.store');
 });

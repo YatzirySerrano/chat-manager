@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('administrators can add supervisors and agents to a department', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $supervisor = User::factory()->supervisor()->create();
     $agent = User::factory()->agent()->create();
@@ -28,7 +28,7 @@ test('administrators can add supervisors and agents to a department', function (
 });
 
 test('an agent can belong to several departments', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$sales, $support] = Department::factory()->count(2)->create();
     $agent = User::factory()->agent()->inDepartments($sales)->create();
 
@@ -102,14 +102,12 @@ test('supervisors only get agents as candidates and can only remove agents', fun
 });
 
 test('inconsistent memberships are rejected', function (string $case) {
-    $admin = User::factory()->administrator()->create();
-    $department = $case === 'inactive department'
-        ? Department::factory()->inactive()->create()
-        : Department::factory()->create();
+    $admin = User::factory()->superAdministrator()->create();
+    $department = Department::factory()->create();
 
     $member = match ($case) {
         'inactive user' => User::factory()->agent()->inactive()->create(),
-        'administrator' => User::factory()->administrator()->create(),
+        'administrator' => User::factory()->superAdministrator()->create(),
         'already a member' => User::factory()->agent()->inDepartments($department)->create(),
         default => User::factory()->agent()->create(),
     };
@@ -117,10 +115,23 @@ test('inconsistent memberships are rejected', function (string $case) {
     $this->actingAs($admin)
         ->post(route('departments.members.store', $department), ['user_id' => $member->id])
         ->assertSessionHasErrors('user_id');
-})->with(['inactive user', 'administrator', 'already a member', 'inactive department']);
+})->with(['inactive user', 'administrator', 'already a member']);
+
+test('the memberships of a deleted department are kept but cannot be changed', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $department = Department::factory()->inactive()->create();
+    $member = User::factory()->agent()->inDepartments($department)->create();
+    $candidate = User::factory()->agent()->create();
+
+    $this->actingAs($admin)->post(route('departments.members.store', $department), ['user_id' => $candidate->id])->assertForbidden();
+    $this->actingAs($admin)->delete(route('departments.members.destroy', [$department, $member]))->assertForbidden();
+
+    expect($member->refresh()->belongsToDepartment($department))->toBeTrue()
+        ->and($candidate->belongsToDepartment($department))->toBeFalse();
+});
 
 test('removing a member returns their conversations in that department to the queue', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     [$sales, $support] = Department::factory()->count(2)->create();
     $agent = User::factory()->agent()->inDepartments([$sales, $support])->create();
     $salesConversation = Conversation::factory()->inDepartment($sales)->assignedTo($agent)->create();
@@ -140,7 +151,7 @@ test('removing a member returns their conversations in that department to the qu
 });
 
 test('a member added by a simultaneous request is reported instead of failing', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $agent = User::factory()->agent()->create();
 

@@ -4,6 +4,8 @@ namespace App\Http\Requests\Tags;
 
 use App\Enums\ColorSwatch;
 use App\Models\Tag;
+use App\Rules\AppColorValue;
+use App\Support\AppColor;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -53,7 +55,7 @@ class TagRequest extends FormRequest
                 Rule::unique(Tag::class)->ignore($tag instanceof Tag ? $tag->id : null),
             ],
             'description' => ['nullable', 'string', 'max:255'],
-            'color' => ['required', Rule::enum(ColorSwatch::class)],
+            'color' => ['required', 'string', new AppColorValue],
         ];
     }
 
@@ -84,14 +86,14 @@ class TagRequest extends FormRequest
     }
 
     /**
-     * @return array{name: string, description: string|null, color: ColorSwatch}
+     * @return array{name: string, description: string|null, color: AppColor}
      */
     public function payload(): array
     {
         return [
             'name' => $this->string('name')->trim()->value(),
             'description' => $this->filled('description') ? $this->string('description')->trim()->value() : null,
-            'color' => $this->enum('color', ColorSwatch::class) ?? ColorSwatch::Slate,
+            'color' => AppColor::tryFrom($this->input('color')) ?? AppColor::from(ColorSwatch::Slate),
         ];
     }
 }

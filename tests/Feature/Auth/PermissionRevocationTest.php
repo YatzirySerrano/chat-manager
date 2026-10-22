@@ -32,7 +32,7 @@ test('permissions revoked from a role stop working in sessions that are already 
 });
 
 test('permissions granted from the interface apply without deploying code', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $agent = User::factory()->agent()->create();
 
     $this->actingAs($agent)->get(route('admin.audit.index'))->assertForbidden();
@@ -52,7 +52,7 @@ test('permissions granted from the interface apply without deploying code', func
 });
 
 test('an inertia visit that is no longer authorized returns to a permitted page with fresh permissions', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $role = Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewUsers, Permission::UpdateUsers])->create();
     $manager = User::factory()->withRole($role)->create();
     $target = User::factory()->agent()->create();

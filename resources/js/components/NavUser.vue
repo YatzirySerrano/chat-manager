@@ -13,12 +13,19 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from '@/components/ui/sidebar';
+import LogoutConfirmDialog from '@/components/LogoutConfirmDialog.vue';
 import UserInfo from '@/components/UserInfo.vue';
 import UserMenuContent from '@/components/UserMenuContent.vue';
+import { useLogoutConfirmation } from '@/composables/useLogoutConfirmation';
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 const { isMobile, state } = useSidebar();
+const {
+    open: logoutDialogOpen,
+    request: requestLogout,
+    onMenuCloseAutoFocus,
+} = useLogoutConfirmation();
 </script>
 
 <template>
@@ -46,10 +53,12 @@ const { isMobile, state } = useSidebar();
                     "
                     align="end"
                     :side-offset="4"
+                    @close-auto-focus="onMenuCloseAutoFocus"
                 >
-                    <UserMenuContent :user="user" />
+                    <UserMenuContent :user="user" @logout="requestLogout" />
                 </DropdownMenuContent>
             </DropdownMenu>
+            <LogoutConfirmDialog v-model:open="logoutDialogOpen" />
         </SidebarMenuItem>
     </SidebarMenu>
 </template>

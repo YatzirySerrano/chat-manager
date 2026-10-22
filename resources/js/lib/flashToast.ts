@@ -11,6 +11,18 @@ export function initializeFlashToast(): void {
             return;
         }
 
-        toast[data.type](data.message);
+        const action = data.action;
+
+        toast[data.type](
+            data.message,
+            action
+                ? {
+                      action: {
+                          label: action.label,
+                          onClick: () => router.visit(action.href),
+                      },
+                  }
+                : undefined,
+        );
     });
 }

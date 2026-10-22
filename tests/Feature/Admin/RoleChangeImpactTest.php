@@ -26,7 +26,7 @@ function previewRoleChange(User $actor, User $user, DefaultRole $to): array
 }
 
 test('the preview explains what a supervisor loses when becoming an agent', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $supervisor = User::factory()->supervisor()->inDepartments($sales)->create();
 
@@ -46,7 +46,7 @@ test('the preview explains what a supervisor loses when becoming an agent', func
 });
 
 test('a significant role change requires confirming the impact that was previewed', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $supervisor = User::factory()->supervisor()->create();
     $payload = ['name' => $supervisor->name, 'email' => $supervisor->email, 'role_id' => role(DefaultRole::Agent)->id];
 
@@ -71,11 +71,11 @@ test('a significant role change requires confirming the impact that was previewe
 });
 
 test('a confirmation based on stale information is rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $supervisor = User::factory()->supervisor()->inDepartments($department)->create();
 
-    $impact = previewRoleChange($admin, $supervisor, DefaultRole::Administrator);
+    $impact = previewRoleChange($admin, $supervisor, DefaultRole::SuperAdministrator);
 
     // Meanwhile the user received an open conversation and joined another department.
     $supervisor->departments()->attach(Department::factory()->create());
@@ -84,7 +84,7 @@ test('a confirmation based on stale information is rejected', function () {
         ->put(route('admin.users.update', $supervisor), [
             'name' => $supervisor->name,
             'email' => $supervisor->email,
-            'role_id' => role(DefaultRole::Administrator)->id,
+            'role_id' => role(DefaultRole::SuperAdministrator)->id,
             'role_change_fingerprint' => $impact['fingerprint'],
         ])
         ->assertSessionHasErrors('role_change');
@@ -93,18 +93,18 @@ test('a confirmation based on stale information is rejected', function () {
 });
 
 test('moving a user to an organization-wide role leaves their departments and is explained first', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $agent = User::factory()->agent()->inDepartments($sales)->create();
 
-    $impact = previewRoleChange($admin, $agent, DefaultRole::Administrator);
+    $impact = previewRoleChange($admin, $agent, DefaultRole::SuperAdministrator);
 
     expect(collect($impact['departments_to_leave'])->pluck('name')->all())->toBe(['Ventas']);
 
     $this->actingAs($admin)->put(route('admin.users.update', $agent), [
         'name' => $agent->name,
         'email' => $agent->email,
-        'role_id' => role(DefaultRole::Administrator)->id,
+        'role_id' => role(DefaultRole::SuperAdministrator)->id,
         'department_ids' => [$sales->id],
         'role_change_fingerprint' => $impact['fingerprint'],
     ])->assertSessionHasNoErrors();
@@ -114,7 +114,7 @@ test('moving a user to an organization-wide role leaves their departments and is
 });
 
 test('open conversations return to the queue when the new role cannot attend them', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $agent = User::factory()->agent()->inDepartments($department)->create();
     $conversation = Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
@@ -141,21 +141,21 @@ test('open conversations return to the queue when the new role cannot attend the
 });
 
 test('a change that breaks a rule is blocked with an explanation', function () {
-    $lastAdministrator = User::factory()->administrator()->create();
+    $lastAdministrator = User::factory()->superAdministrator()->create();
     $inactiveRole = Role::factory()->inactive()->create(['label' => 'Temporal']);
 
     $impact = app(AssessRoleChange::class)->handle($lastAdministrator, $inactiveRole, $lastAdministrator);
 
     expect($impact->blockers)->toBe([
         'No puedes modificar tu propio rol.',
-        'El rol Temporal está desactivado. Actívalo antes de asignarlo.',
-        'Es la última autoridad administrativa activa. Asigna el rol administrador a otra persona antes de cambiarle el rol.',
+        'El rol Temporal está eliminado. Restáuralo antes de asignarlo.',
+        'Es el último superadministrador activo. Asigna el rol de superadministrador a otra persona antes de cambiarle el rol.',
     ]);
 });
 
 test('the last root authority can never lose the administrator role', function () {
-    $lastAdministrator = User::factory()->administrator()->create();
-    $actor = User::factory()->administrator()->inactive()->create();
+    $lastAdministrator = User::factory()->superAdministrator()->create();
+    $actor = User::factory()->superAdministrator()->inactive()->create();
 
     expect(fn () => app(UpdateUser::class)->handle($lastAdministrator, [
         'name' => $lastAdministrator->name,
@@ -168,8 +168,8 @@ test('the last root authority can never lose the administrator role', function (
 });
 
 test('an administrator can be demoted while another root authority remains', function () {
-    $admin = User::factory()->administrator()->create();
-    $otherAdmin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
+    $otherAdmin = User::factory()->superAdministrator()->create();
 
     $impact = previewRoleChange($admin, $otherAdmin, DefaultRole::Supervisor);
 

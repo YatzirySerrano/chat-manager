@@ -88,7 +88,7 @@ $support = Department::query()->firstOrCreate(['slug' => 'e2e-soporte'], ['name'
 $sales->forceFill(['distribution_mode' => DistributionMode::Shared, 'is_active' => true])->save();
 $support->forceFill(['distribution_mode' => DistributionMode::Shared, 'is_active' => true])->save();
 
-$admin = $user('e2e-admin@example.test', 'E2E Administración', DefaultRole::Administrator);
+$admin = $user('e2e-admin@example.test', 'E2E Administración', DefaultRole::SuperAdministrator);
 $ana = $user('e2e-ana@example.test', 'E2E Ana', DefaultRole::Agent, [$sales]);
 $beto = $user('e2e-beto@example.test', 'E2E Beto', DefaultRole::Agent, [$sales]);
 $carla = $user('e2e-carla@example.test', 'E2E Carla', DefaultRole::Agent, [$support]);

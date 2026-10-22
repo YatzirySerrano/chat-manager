@@ -30,8 +30,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 beforeEach(function () {
     $this->department = Department::factory()->create(['name' => 'Ventas']);
     $this->admin = User::factory()->administrator()->create();
-    $this->agent = User::factory()->agent()->inDepartments($this->department)->create(['name' => 'Ana']);
-    $this->colleague = User::factory()->agent()->inDepartments($this->department)->create(['name' => 'Beto']);
+    $this->agent = User::factory()->agent()->available()->inDepartments($this->department)->create(['name' => 'Ana']);
+    $this->colleague = User::factory()->agent()->available()->inDepartments($this->department)->create(['name' => 'Beto']);
 });
 
 function pendingIn(Department $department): Conversation
@@ -230,7 +230,7 @@ test('conversations are never assigned to someone who cannot attend them', funct
         ->and($conversation->events()->count())->toBe(0);
 })->with([
     'inexistent user' => [fn () => null, 'El agente elegido no existe.'],
-    'deactivated user' => [fn (Department $department) => User::factory()->agent()->inactive()->inDepartments($department)->create(), ':name está desactivado.'],
+    'deactivated user' => [fn (Department $department) => User::factory()->agent()->inactive()->inDepartments($department)->create(), 'La cuenta de :name está eliminada.'],
     'not a member of the department' => [fn () => User::factory()->agent()->inDepartments(Department::factory()->create())->create(), ':name no pertenece al departamento Ventas.'],
     'role that cannot reply' => [fn (Department $department) => conversationUser([Permission::ViewConversations], departments: [$department]), 'El rol de :name no le permite atender conversaciones.'],
 ]);
@@ -247,7 +247,7 @@ test('conversations of an inactive department cannot be assigned', function () {
 
 test('a transfer to another department keeps messages, notes, tags and origin, and records the trace', function () {
     $support = Department::factory()->create(['name' => 'Soporte']);
-    $receiver = User::factory()->agent()->inDepartments($support)->create();
+    $receiver = User::factory()->agent()->available()->inDepartments($support)->create();
     $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
     Message::factory()->count(3)->for($conversation)->create();
     ConversationNote::factory()->for($conversation)->create(['user_id' => $this->agent->id]);
@@ -513,6 +513,7 @@ test('releasing in an automatic department offers the conversation to another ag
 });
 
 test('switching a department to automatic distributes its waiting queue', function () {
+    User::query()->whereKey([$this->agent->id, $this->colleague->id])->update(['availability' => AgentAvailability::Unavailable]);
     $agent = User::factory()->agent()->available()->inDepartments($this->department)->create();
     $waiting = pendingIn($this->department);
 
@@ -555,4 +556,27 @@ test('the inactivity closing does nothing while it is not configured', function 
 
     expect(app(CloseInactiveConversations::class)->handle())->toBe(0)
         ->and(ConversationEvent::query()->count())->toBe(0);
+});
+
+test('saving a note with the same text writes nothing and says so', function () {
+    $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
+    $note = ConversationNote::factory()->for($conversation)->create(['user_id' => $this->agent->id, 'body' => 'El cliente pidió factura']);
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($this->agent)
+        ->put(route('conversations.notes.update', [$conversation, $note]), ['body' => "  El cliente pidió factura \n"])
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and($note->refresh()->edited_at)->toBeNull()
+        ->and($conversation->events()->where('type', ConversationEventType::NoteEdited)->exists())->toBeFalse();
+});
+
+test('editing the text of a note is confirmed with a success toast', function () {
+    $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
+    $note = ConversationNote::factory()->for($conversation)->create(['user_id' => $this->agent->id, 'body' => 'Antes']);
+
+    $this->actingAs($this->agent)
+        ->put(route('conversations.notes.update', [$conversation, $note]), ['body' => 'Después'])
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Nota actualizada.']);
 });

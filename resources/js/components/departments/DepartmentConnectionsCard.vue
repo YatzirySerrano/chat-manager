@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { ChevronRight, Plug, Star } from '@lucide/vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import type { DepartmentConnection } from '@/types';
 
@@ -73,7 +74,9 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
                             }}
                         </p>
                     </div>
+                    <DeletedBadge v-if="connection.is_deleted" feminine />
                     <span
+                        v-else
                         class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
                         :class="toneClasses[connection.health.tone]"
                     >

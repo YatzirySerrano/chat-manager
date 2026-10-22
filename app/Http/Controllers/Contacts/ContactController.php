@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers\Contacts;
 
+use App\Actions\Contacts\ContactListQuery;
 use App\Actions\Contacts\CreateContact;
+use App\Actions\Contacts\DeleteContact;
 use App\Actions\Contacts\FindDuplicateContacts;
 use App\Actions\Contacts\FlagHiddenDuplicates;
+use App\Actions\Contacts\RestoreContact;
 use App\Actions\Contacts\UpdateContact;
 use App\Enums\ContactOriginType;
 use App\Enums\ContactSource;
 use App\Enums\Permission;
+use App\Enums\RecordState;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Contacts\ContactRequest;
 use App\Http\Resources\ContactAttributionResource;
@@ -20,16 +24,15 @@ use App\Models\ContactReviewCase;
 use App\Models\Conversation;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Exports\ReportExporter;
 use App\Services\ResolveContactOrigin;
-use App\Support\PhoneNumber;
-use Illuminate\Database\Eloquent\Builder;
+use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,71 +40,32 @@ use Inertia\Response;
 class ContactController extends Controller
 {
     /**
-     * Sort options exposed in the interface.
-     *
-     * @var list<string>
+     * Contacts within the actor's data scope, searched, filtered and paginated
+     * (the same query as the contacts report). Deleted (archived) contacts are
+     * only listed for people who can consult deleted records and ask for them.
      */
-    private const SORTS = ['recent', 'name', 'newest'];
-
-    /**
-     * Filter value meaning "no identified origin".
-     */
-    private const UNIDENTIFIED_ORIGIN = 'unknown';
-
-    /**
-     * Contacts within the actor's data scope, searched, filtered and paginated.
-     * Archived contacts are hidden unless the status filter asks for them.
-     */
-    public function index(Request $request, ResolveContactOrigin $resolveOrigin): Response
+    public function index(Request $request, ContactListQuery $list, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', Contact::class);
 
         /** @var User $actor */
         $actor = $request->user();
 
-        $filters = $request->validate([
-            'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['active', 'archived', 'all'])],
-            'tags' => ['nullable', 'array', 'max:20'],
-            'tags.*' => ['integer'],
-            'source' => ['nullable', Rule::enum(ContactSource::class)],
-            'origin' => ['nullable', Rule::enum(ContactOriginType::class)],
-            'sort' => ['nullable', Rule::in(self::SORTS)],
-        ]);
+        $filters = $list->filters($actor, $request->validate(ContactListQuery::rules()));
+        $search = $filters['search'];
+        $record = $filters['record'];
+        $tagIds = $filters['tags'];
+        $source = $filters['source'];
+        $origin = $filters['origin'];
+        $sort = $filters['sort'];
 
-        $search = trim((string) ($filters['search'] ?? ''));
-        $status = $filters['status'] ?? 'active';
-        $tagIds = array_values(array_unique(array_map('intval', $filters['tags'] ?? [])));
-        $source = $filters['source'] ?? null;
-        $origin = $filters['origin'] ?? null;
-        $sort = $filters['sort'] ?? 'recent';
-
-        $contacts = Contact::query()
-            ->visibleTo($actor)
+        $contacts = $list->handle($actor, $filters)
             ->with([
                 'tags' => fn (BelongsToMany $query) => $query
                     ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
                     ->orderBy('tags.name'),
                 'attributions',
             ])
-            ->when($status !== 'all', fn (Builder $query) => $query->where('status', $status))
-            ->when($search !== '', fn (Builder $query) => $this->applySearch($query, $search))
-            ->when($tagIds !== [], fn (Builder $query) => $query->whereHas(
-                'tags',
-                fn (Builder $tags) => $tags->whereIn('tags.id', $tagIds),
-            ))
-            ->when($source !== null, fn (Builder $query) => $query->where('source', $source))
-            ->when($origin !== null, fn (Builder $query) => $resolveOrigin->constrainToOrigin(
-                $query,
-                $origin === self::UNIDENTIFIED_ORIGIN ? null : $origin,
-            ))
-            ->when($sort === 'recent', fn (Builder $query) => $query
-                ->orderByRaw('last_interaction_at IS NULL')
-                ->orderByDesc('last_interaction_at')
-                ->orderByDesc('created_at'))
-            ->when($sort === 'name', fn (Builder $query) => $query->orderBy('name'))
-            ->when($sort === 'newest', fn (Builder $query) => $query->orderByDesc('created_at'))
-            ->orderBy('id')
             ->paginate(15)
             ->withQueryString();
 
@@ -109,7 +73,7 @@ class ContactController extends Controller
             'contacts' => ContactResource::collection($contacts),
             'filters' => [
                 'search' => $search,
-                'status' => $status,
+                'record' => $record->value,
                 'tags' => $tagIds,
                 'source' => $source,
                 'origin' => $origin,
@@ -120,6 +84,7 @@ class ContactController extends Controller
                 || $actor->holdsPermission(Permission::AssignTags)
                 || $actor->holdsPermission(Permission::ManageTags)
                 ? Tag::query()
+                    ->hidingDeletedFrom($actor)
                     ->orderByDesc('is_active')
                     ->orderBy('name')
                     ->get(['id', 'name', 'color', 'is_active'])
@@ -130,12 +95,15 @@ class ContactController extends Controller
                         'is_active' => $tag->is_active,
                     ])
                 : null,
+            'recordStates' => RecordState::optionsFor($actor),
             'sources' => ContactSource::options(),
             'originTypes' => ContactOriginType::options(),
             'can' => [
                 'create' => $actor->can('create', Contact::class),
                 'reviewDuplicates' => $actor->can('reviewDuplicates', Contact::class),
+                'import' => $actor->holdsPermission(Permission::ImportContacts),
             ],
+            'canExport' => $exporter->allowsReport('contacts', $actor),
             'openReviews' => $actor->can('reviewDuplicates', Contact::class)
                 ? ContactReviewCase::query()->open()->count()
                 : null,
@@ -208,7 +176,8 @@ class ContactController extends Controller
                 : [],
             'can' => [
                 'update' => $actor->can('update', $contact),
-                'archive' => $actor->can('archive', $contact),
+                'delete' => $actor->can('delete', $contact),
+                'restore' => $actor->can('restore', $contact),
                 'manageNotes' => $canManageNotes,
                 'classifyOrigin' => $actor->can('classifyOrigin', $contact),
                 'assignTags' => $actor->holdsPermission(Permission::AssignTags),
@@ -231,15 +200,49 @@ class ContactController extends Controller
             $contact,
         );
 
-        $updateContact->handle($contact, $payload, $request->user(), $request->confirmsDuplicate());
-        $flagHiddenDuplicates->handle(
-            $contact,
-            $request->user(),
-            $phoneChanged ? $payload['phone_e164'] : null,
-            $emailChanged ? $payload['email'] : null,
-        );
+        $changed = $updateContact->handle($contact, $payload, $request->user(), $request->confirmsDuplicate());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Contacto actualizado.']);
+        if ($changed) {
+            $flagHiddenDuplicates->handle(
+                $contact,
+                $request->user(),
+                $phoneChanged ? $payload['phone_e164'] : null,
+                $emailChanged ? $payload['email'] : null,
+            );
+        }
+
+        SaveToast::flash($changed, 'Contacto actualizado.');
+
+        return back();
+    }
+
+    /**
+     * Logical deletion (archiving): the history is kept and the person keeps
+     * being recognized if they write again.
+     */
+    public function destroy(Request $request, Contact $contact, DeleteContact $deleteContact): RedirectResponse
+    {
+        Gate::authorize('delete', $contact);
+
+        $deleteContact->handle($contact, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Contacto {$contact->name} eliminado. Su historial se conserva."]);
+
+        // Deleted from its own detail page by someone who cannot consult
+        // deleted records: that page no longer exists for them.
+        $leavesDetail = ! $request->user()->canViewDeletedRecords()
+            && parse_url(url()->previous(), PHP_URL_PATH) === parse_url(route('contacts.show', $contact), PHP_URL_PATH);
+
+        return $leavesDetail ? to_route('contacts.index') : back();
+    }
+
+    public function restore(Request $request, Contact $contact, RestoreContact $restoreContact): RedirectResponse
+    {
+        Gate::authorize('restore', $contact);
+
+        $restoreContact->handle($contact, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Contacto {$contact->name} restaurado."]);
 
         return back();
     }
@@ -279,28 +282,6 @@ class ContactController extends Controller
             'email' => $emailTaken ? 'Ya existe un contacto con este correo electrónico.' : null,
             'confirm_duplicate' => 'Revisa los posibles duplicados. Si se trata de otra persona, confirma para guardarlo de todos modos.',
         ]));
-    }
-
-    /**
-     * Match the name, the email or the digits of the phone (partial numbers
-     * included, whatever formatting the user typed). A complete number is
-     * also matched in its normalized form, so the WhatsApp ("521...") and
-     * "00" spellings find the stored E.164 number.
-     *
-     * @param  Builder<Contact>  $query
-     */
-    private function applySearch(Builder $query, string $search): void
-    {
-        $term = '%'.addcslashes($search, '\\%_').'%';
-        $digits = preg_replace('/\D+/', '', $search) ?? '';
-        $normalizedPhone = PhoneNumber::normalize($search) ?? PhoneNumber::normalize('+'.$digits);
-
-        $query->where(fn (Builder $match) => $match
-            ->where('name', 'like', $term)
-            ->orWhere('profile_name', 'like', $term)
-            ->orWhere('email', 'like', $term)
-            ->when(strlen($digits) >= 3, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', 'like', "%{$digits}%"))
-            ->when($normalizedPhone !== null, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', $normalizedPhone)));
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\DeletesLogically;
 use App\Enums\ContactSource;
 use App\Enums\ContactStatus;
 use App\Enums\DataScope;
@@ -42,7 +43,7 @@ use Illuminate\Support\Carbon;
 class Contact extends Model
 {
     /** @use HasFactory<ContactFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.
@@ -142,32 +143,27 @@ class Contact extends Model
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
-    public function isArchived(): bool
+    /**
+     * A contact is logically deleted by archiving it (status + archived_at),
+     * the mechanism contacts always had: there is no second one.
+     */
+    public function isDeleted(): bool
     {
         return $this->status === ContactStatus::Archived;
     }
 
     /**
-     * @param  Builder<Contact>  $query
+     * @param  Builder<static>  $query
      */
-    #[Scope]
-    protected function active(Builder $query): void
+    protected function constrainDeletion(Builder $query, bool $deleted): void
     {
-        $query->where('status', ContactStatus::Active);
+        $query->where($query->qualifyColumn('status'), $deleted ? ContactStatus::Archived : ContactStatus::Active);
     }
 
     /**
-     * @param  Builder<Contact>  $query
-     */
-    #[Scope]
-    protected function archived(Builder $query): void
-    {
-        $query->where('status', ContactStatus::Archived);
-    }
-
-    /**
-     * Restrict the query to contacts the user is allowed to see. Archived
-     * contacts are included; hiding them is a list filter.
+     * Restrict the query to contacts the user is allowed to see. Deleted
+     * (archived) contacts are included; hiding them from people who cannot
+     * consult deleted records is done with hidingDeletedFrom().
      *
      * - Global scope: every contact.
      * - Departments scope: contacts with a conversation in one of the user's

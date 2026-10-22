@@ -40,7 +40,7 @@ function connectionPayload(array $overrides = []): array
 }
 
 test('the index explains the empty state without inventing indicators', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('connections.index'))
@@ -52,7 +52,7 @@ test('the index explains the empty state without inventing indicators', function
 });
 
 test('administrators create a connection that starts inactive with encrypted secrets', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $support = Department::factory()->create(['name' => 'Soporte']);
 
@@ -91,7 +91,7 @@ test('administrators create a connection that starts inactive with encrypted sec
 });
 
 test('a connection can be saved before the Meta credentials are known', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('connections.store'), connectionPayload([
@@ -110,7 +110,7 @@ test('a connection can be saved before the Meta credentials are known', function
 });
 
 test('connection input is validated', function (Closure $payload, array $errors) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('connections.store'), connectionPayload($payload()))
@@ -143,7 +143,7 @@ test('connection input is validated', function (Closure $payload, array $errors)
 ]);
 
 test('messages up to 1024 characters are accepted', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('connections.store'), connectionPayload([
@@ -156,7 +156,7 @@ test('messages up to 1024 characters are accepted', function () {
 });
 
 test('blank secret fields keep the stored values', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->verified()->create([
         'name' => 'Ventas Sur',
         'access_token' => CONNECTION_TEST_TOKEN,
@@ -185,7 +185,7 @@ test('blank secret fields keep the stored values', function () {
 });
 
 test('replacing the access token discards the previous verification', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->verified()->create(['access_token' => CONNECTION_TEST_TOKEN]);
 
     $this->actingAs($admin)
@@ -214,7 +214,7 @@ test('replacing the access token discards the previous verification', function (
 });
 
 test('changing the phone number id discards a previous verification or rejection', function (string $state) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->{$state}()->create();
 
     $this->actingAs($admin)
@@ -231,8 +231,8 @@ test('changing the phone number id discards a previous verification or rejection
         ->and(AuditLog::query()->where('action', AuditAction::ConnectionUpdated)->sole()->properties['verification_reset'])->toBeTrue();
 })->with(['verified', 'withInvalidCredentials']);
 
-test('a department deactivated after being authorized can stay authorized', function () {
-    $admin = User::factory()->administrator()->create();
+test('a department deleted after being authorized can stay authorized but cannot become the default', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();
     $connection = Connection::factory()->create();
     $connection->departments()->attach($department);
@@ -243,15 +243,22 @@ test('a department deactivated after being authorized can stay authorized', func
             'name' => 'Renombrada',
             'phone_number_id' => $connection->phone_number_id,
             'department_ids' => [$department->id],
-            'default_department_id' => $department->id,
         ]))
         ->assertSessionHasNoErrors();
 
     expect($connection->refresh()->name)->toBe('Renombrada');
+
+    $this->actingAs($admin)
+        ->put(route('connections.update', $connection), connectionPayload([
+            'phone_number_id' => $connection->phone_number_id,
+            'department_ids' => [$department->id],
+            'default_department_id' => $department->id,
+        ]))
+        ->assertSessionHasErrors(['default_department_id' => 'No es posible elegir como predeterminado un departamento eliminado.']);
 });
 
 test('department authorization changes are audited by name', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create(['name' => 'Ventas']);
     $support = Department::factory()->create(['name' => 'Soporte']);
     $connection = Connection::factory()->create();
@@ -273,7 +280,7 @@ test('department authorization changes are audited by name', function () {
 });
 
 test('secrets are never sent to the browser', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->create([
         'access_token' => CONNECTION_TEST_TOKEN,
         'app_secret' => CONNECTION_TEST_APP_SECRET,
@@ -296,7 +303,7 @@ test('secrets are never sent to the browser', function () {
 });
 
 test('the index shows the health derived from evidence for each connection', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Connection::factory()->unconfigured()->create(['name' => 'A sin configurar']);
     Connection::factory()->create(['name' => 'B guardada']);
     Connection::factory()->withInvalidCredentials()->create(['name' => 'C rechazada']);
@@ -329,7 +336,7 @@ test('the index shows the health derived from evidence for each connection', fun
 });
 
 test('connections can be searched and filtered', function (array $query, array $expected) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $sales = Department::factory()->create();
     $sales->connections()->attach(Connection::factory()->verified()->create(['name' => 'Ventas', 'display_phone_number' => '+5215511112222'])->id);
     Connection::factory()->inactive()->create(['name' => 'Soporte', 'display_phone_number' => '+5213399998888']);
@@ -353,7 +360,7 @@ test('connections can be searched and filtered', function (array $query, array $
 ]);
 
 test('invalid filters are rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('connections.index', ['health' => 'funcionando']))
@@ -361,7 +368,7 @@ test('invalid filters are rejected', function () {
 });
 
 test('activation requires the identifiers and the access token', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->unconfigured()->inactive()->create();
 
     $this->actingAs($admin)
@@ -373,7 +380,7 @@ test('activation requires the identifiers and the access token', function () {
 });
 
 test('a connection with unverified credentials can be activated with a warning', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->inactive()->create();
 
     $this->actingAs($admin)
@@ -386,7 +393,7 @@ test('a connection with unverified credentials can be activated with a warning',
 });
 
 test('deactivation is audited', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->verified()->create();
 
     $this->actingAs($admin)
@@ -396,4 +403,59 @@ test('deactivation is audited', function () {
 
     expect($connection->refresh()->is_active)->toBeFalse()
         ->and(AuditLog::query()->where('action', AuditAction::ConnectionDeactivated)->sole()->auditable_id)->toBe($connection->id);
+});
+
+test('saving a connection without effective changes writes nothing and says so', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    [$sales, $support] = Department::factory()->count(2)->create();
+    $connection = Connection::factory()->verified()->create([
+        'name' => 'Ventas Sur',
+        'display_phone_number' => '+52 55 1234 5678',
+        'access_token' => CONNECTION_TEST_TOKEN,
+        'welcome_enabled' => false,
+        'welcome_message' => null,
+        'reopen_window_minutes' => 60,
+    ]);
+    $connection->departments()->sync([$sales->id, $support->id]);
+    $updatedAt = $connection->updated_at;
+    $this->travel(1)->hours();
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($admin)
+        ->put(route('connections.update', $connection), connectionPayload([
+            'name' => ' Ventas Sur ',
+            'display_phone_number' => '+52 55 1234 5678',
+            'phone_number_id' => $connection->phone_number_id,
+            'business_account_id' => $connection->business_account_id,
+            'meta_app_id' => $connection->meta_app_id,
+            'access_token' => CONNECTION_TEST_TOKEN,
+            'department_ids' => [$support->id, $sales->id],
+            'default_department_id' => $connection->default_department_id,
+            'welcome_enabled' => $connection->welcome_enabled,
+            'away_enabled' => $connection->away_enabled,
+            'away_message' => $connection->away_message,
+            'farewell_enabled' => $connection->farewell_enabled,
+            'farewell_message' => $connection->farewell_message,
+            'reopen_window_minutes' => '60',
+        ]))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
+
+    expect($writes)->toBe([])
+        ->and($connection->refresh()->updated_at->equalTo($updatedAt))->toBeTrue()
+        ->and($connection->credentials_verified_at)->not->toBeNull()
+        ->and(AuditLog::query()->exists())->toBeFalse();
+});
+
+test('a real change to a connection is confirmed with a success toast', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $connection = Connection::factory()->create(['name' => 'Ventas Sur']);
+
+    $this->actingAs($admin)
+        ->put(route('connections.update', $connection), connectionPayload([
+            'name' => 'Ventas Norte',
+            'phone_number_id' => $connection->phone_number_id,
+        ]))
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Conexión actualizada.']);
+
+    expect(AuditLog::query()->where('action', AuditAction::ConnectionUpdated)->exists())->toBeTrue();
 });

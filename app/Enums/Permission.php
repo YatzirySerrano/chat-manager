@@ -14,7 +14,6 @@ enum Permission: string
     case ViewUsers = 'users.view';
     case CreateUsers = 'users.create';
     case UpdateUsers = 'users.update';
-    case ChangeUserStatus = 'users.change-status';
     case AssignRoles = 'users.assign-roles';
     case DeleteUsers = 'users.delete';
 
@@ -22,12 +21,11 @@ enum Permission: string
     case CreateDepartments = 'departments.create';
     case UpdateDepartments = 'departments.update';
     case ManageDepartmentMembers = 'departments.manage-members';
-    case ChangeDepartmentStatus = 'departments.change-status';
+    case DeleteDepartments = 'departments.delete';
 
     case ViewRoles = 'roles.view';
     case CreateRoles = 'roles.create';
     case UpdateRoles = 'roles.update';
-    case ChangeRoleStatus = 'roles.change-status';
     case DeleteRoles = 'roles.delete';
 
     case ViewConversations = 'conversations.view';
@@ -47,7 +45,8 @@ enum Permission: string
     case ViewContacts = 'contacts.view';
     case CreateContacts = 'contacts.create';
     case UpdateContacts = 'contacts.update';
-    case ArchiveContacts = 'contacts.archive';
+    case DeleteContacts = 'contacts.delete';
+    case ImportContacts = 'contacts.import';
     case ManageContactNotes = 'contacts.notes';
     case ClassifyContactOrigin = 'contacts.classify-origin';
 
@@ -72,6 +71,8 @@ enum Permission: string
     case ViewAppearance = 'appearance.view';
     case UpdateAppearance = 'appearance.update';
 
+    case ViewDeletedRecords = 'records.view-deleted';
+
     case ViewAuditLog = 'audit.view';
     case ExportAuditLog = 'audit.export';
 
@@ -87,19 +88,17 @@ enum Permission: string
             self::ViewUsers => 'Ver usuarios',
             self::CreateUsers => 'Crear usuarios',
             self::UpdateUsers => 'Editar usuarios',
-            self::ChangeUserStatus => 'Activar y desactivar usuarios',
             self::AssignRoles => 'Asignar roles a usuarios',
-            self::DeleteUsers => 'Eliminar usuarios sin historial',
+            self::DeleteUsers => 'Eliminar y restaurar usuarios',
             self::ViewDepartments => 'Ver departamentos',
             self::CreateDepartments => 'Crear departamentos',
             self::UpdateDepartments => 'Editar departamentos',
             self::ManageDepartmentMembers => 'Administrar miembros',
-            self::ChangeDepartmentStatus => 'Activar y desactivar departamentos',
+            self::DeleteDepartments => 'Eliminar y restaurar departamentos',
             self::ViewRoles => 'Ver roles y permisos',
             self::CreateRoles => 'Crear roles',
             self::UpdateRoles => 'Editar roles y sus permisos',
-            self::ChangeRoleStatus => 'Activar y desactivar roles',
-            self::DeleteRoles => 'Eliminar roles sin usuarios',
+            self::DeleteRoles => 'Eliminar y restaurar roles sin usuarios',
             self::ViewConversations => 'Ver conversaciones de su alcance',
             self::ReplyConversations => 'Atender y responder sus conversaciones',
             self::AssignConversations => 'Asignar conversaciones y gestionar las de su alcance',
@@ -110,28 +109,30 @@ enum Permission: string
             self::AcceptConversations => 'Aceptar conversaciones pendientes de sus departamentos',
             self::AddConversationNotes => 'Agregar notas internas',
             self::ViewConnections => 'Ver conexiones',
-            self::ManageConnections => 'Administrar conexiones y credenciales',
+            self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
             self::ViewContacts => 'Ver contactos',
             self::CreateContacts => 'Crear contactos',
             self::UpdateContacts => 'Editar contactos',
-            self::ArchiveContacts => 'Archivar y restaurar contactos',
+            self::DeleteContacts => 'Eliminar y restaurar contactos',
+            self::ImportContacts => 'Importar contactos desde Excel/CSV',
             self::ManageContactNotes => 'Registrar notas privadas de contactos',
             self::ClassifyContactOrigin => 'Registrar procedencia declarada (excepcional, solo alcance global)',
             self::ViewTags => 'Ver etiquetas',
-            self::ManageTags => 'Administrar etiquetas',
+            self::ManageTags => 'Administrar etiquetas (crear, editar, eliminar y restaurar)',
             self::AssignTags => 'Asignar etiquetas a contactos',
             self::UseQuickReplies => 'Usar respuestas rápidas',
-            self::ManageQuickReplies => 'Administrar respuestas rápidas',
+            self::ManageQuickReplies => 'Administrar respuestas rápidas (crear, editar, eliminar y restaurar)',
             self::UseTeamChat => 'Usar el chat interno',
             self::CreateTeamChatGroups => 'Crear grupos internos',
             self::ManageTeamChatGroups => 'Administrar grupos internos',
             self::UseCrossDepartmentTeamChat => 'Comunicarse con otros departamentos',
             self::ViewReports => 'Ver reportes',
-            self::ExportReports => 'Exportar reportes',
+            self::ExportReports => 'Exportar información a Excel y PDF',
             self::ViewSettings => 'Ver configuración',
             self::UpdateSettings => 'Modificar configuración',
             self::ViewAppearance => 'Ver personalización',
             self::UpdateAppearance => 'Modificar la apariencia global',
+            self::ViewDeletedRecords => 'Consultar registros eliminados',
             self::ViewAuditLog => 'Ver registros de auditoría',
             self::ExportAuditLog => 'Exportar registros de auditoría',
         };
@@ -140,13 +141,23 @@ enum Permission: string
     /**
      * Whether the code enforcing this permission already exists. Unavailable
      * permissions are shown as "coming later" and cannot be edited.
+     *
+     * reports.export is the generic export permission (Excel and PDF) of
+     * every module, available before the reports module itself ships.
+     * audit.export exports the audit log (always within what the viewer may
+     * read) and contacts.import runs the contacts importer, which stays
+     * reserved to the root authority.
      */
     public function isAvailable(): bool
     {
+        if ($this === self::ExportReports) {
+            return true;
+        }
+
         return ! in_array($this->group(), [
             PermissionGroup::Reports,
             PermissionGroup::TeamChat,
-        ], true) && $this !== self::ExportAuditLog;
+        ], true);
     }
 
     /**
@@ -157,14 +168,16 @@ enum Permission: string
         return in_array($this, [
             self::CreateUsers,
             self::UpdateUsers,
-            self::ChangeUserStatus,
             self::AssignRoles,
             self::DeleteUsers,
             self::CreateRoles,
             self::UpdateRoles,
-            self::ChangeRoleStatus,
             self::DeleteRoles,
-            self::ChangeDepartmentStatus,
+            self::DeleteDepartments,
+            self::DeleteContacts,
+            self::ImportContacts,
+            self::ViewDeletedRecords,
+            self::ExportAuditLog,
             self::UpdateSettings,
             self::UpdateAppearance,
             self::ManageConnections,
@@ -179,10 +192,9 @@ enum Permission: string
     {
         return in_array($this, [
             self::CreateDepartments,
-            self::ChangeDepartmentStatus,
+            self::DeleteDepartments,
             self::CreateRoles,
             self::UpdateRoles,
-            self::ChangeRoleStatus,
             self::DeleteRoles,
             self::ViewSettings,
             self::UpdateSettings,
@@ -192,12 +204,32 @@ enum Permission: string
             self::ManageConnections,
             self::ManageTags,
             self::ClassifyContactOrigin,
+            self::ImportContacts,
         ], true);
     }
 
     /**
-     * Capabilities the root authority can never lose: managing users and roles,
-     * so the platform can always be recovered.
+     * Capabilities only the root authority (Superadministrador) may hold: they
+     * are never granted to another role, whoever edits it, and a non-root role
+     * never exercises them even if the database says otherwise.
+     *
+     * - contacts.import: a bulk import rewrites the directory of the whole
+     *   organization in one operation (and can merge or overwrite customers
+     *   that other departments attend), so it stays with the platform owner.
+     *
+     * No other existing permission is reserved: the Administrador manages
+     * everything else below the root authority, and the privilege guard
+     * already keeps the root role and root users out of their reach.
+     */
+    public function isReservedToRoot(): bool
+    {
+        return $this === self::ImportContacts;
+    }
+
+    /**
+     * Capabilities the root authority can never lose: managing users (including
+     * restoring deleted ones, which requires seeing them) and roles, so the
+     * platform can always be recovered.
      *
      * @return list<self>
      */
@@ -207,11 +239,20 @@ enum Permission: string
             self::ViewUsers,
             self::CreateUsers,
             self::UpdateUsers,
-            self::ChangeUserStatus,
+            self::DeleteUsers,
             self::AssignRoles,
             self::ViewRoles,
             self::UpdateRoles,
+            self::ViewDeletedRecords,
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function reservedToRootValues(): array
+    {
+        return array_column(array_values(array_filter(self::cases(), fn (self $permission): bool => $permission->isReservedToRoot())), 'value');
     }
 
     /**
@@ -233,7 +274,7 @@ enum Permission: string
     /**
      * Catalog grouped by module for the permission matrix.
      *
-     * @return list<array{value: string, label: string, permissions: list<array{value: string, label: string, available: bool, sensitive: bool, global_only: bool}>}>
+     * @return list<array{value: string, label: string, permissions: list<array{value: string, label: string, available: bool, sensitive: bool, global_only: bool, reserved: bool}>}>
      */
     public static function catalog(): array
     {
@@ -248,6 +289,7 @@ enum Permission: string
                 'available' => $permission->isAvailable(),
                 'sensitive' => $permission->isSensitive(),
                 'global_only' => $permission->requiresGlobalScope(),
+                'reserved' => $permission->isReservedToRoot(),
             ];
         }
 

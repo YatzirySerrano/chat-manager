@@ -13,7 +13,9 @@ use Illuminate\Database\Eloquent\Builder;
  * or email exists elsewhere in the company. Email matching is
  * case-insensitive: emails are stored lowercased and the column uses a
  * case-insensitive collation (so its index is used). Contacts are never
- * merged.
+ * merged. Deleted contacts are only shown to people who can consult deleted
+ * records; for everybody else they count as hidden duplicates (see
+ * FlagHiddenDuplicates).
  */
 class FindDuplicateContacts
 {
@@ -30,6 +32,7 @@ class FindDuplicateContacts
 
         $matches = Contact::query()
             ->visibleTo($actor)
+            ->hidingDeletedFrom($actor)
             ->where(fn (Builder $query) => $query
                 ->when($phone !== null, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', $phone))
                 ->when($email !== null, fn (Builder $byEmail) => $byEmail->orWhere('email', $email)))

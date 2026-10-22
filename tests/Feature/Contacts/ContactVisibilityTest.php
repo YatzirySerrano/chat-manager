@@ -7,7 +7,7 @@ use App\Models\Department;
 use App\Models\User;
 
 test('global users see every contact, archived ones included', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create();
     Contact::factory()->archived()->create();
 

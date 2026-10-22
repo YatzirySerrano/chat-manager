@@ -45,7 +45,7 @@ test('a custom role cannot read or change a contact outside its scope by guessin
     $role = Role::factory()->scope(DataScope::Departments)->withPermissions([
         Permission::ViewContacts,
         Permission::UpdateContacts,
-        Permission::ArchiveContacts,
+        Permission::DeleteContacts,
         Permission::ManageContactNotes,
         Permission::ClassifyContactOrigin,
     ])->create();
@@ -54,13 +54,13 @@ test('a custom role cannot read or change a contact outside its scope by guessin
 
     $this->actingAs($user)->get(route('contacts.show', $outside))->assertNotFound();
     $this->actingAs($user)->put(route('contacts.update', $outside), ['name' => 'Hackeado', 'phone' => '5512345678'])->assertNotFound();
-    $this->actingAs($user)->patch(route('contacts.status.update', $outside), ['status' => 'archived'])->assertNotFound();
+    $this->actingAs($user)->delete(route('contacts.destroy', $outside))->assertNotFound();
     $this->actingAs($user)->post(route('contacts.notes.store', $outside), ['body' => 'x'])->assertNotFound();
     $this->actingAs($user)->post(route('contacts.attributions.store', $outside), ['origin_type' => 'website'])->assertNotFound();
 
     expect($outside->refresh())
         ->name->not->toBe('Hackeado')
-        ->isArchived()->toBeFalse();
+        ->isDeleted()->toBeFalse();
 });
 
 test('the conversation history only lists conversations the actor can view', function () {

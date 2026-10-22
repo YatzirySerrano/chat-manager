@@ -23,7 +23,7 @@ function departmentContactEditor(Department $department): User
 }
 
 test('creating a contact with a phone already in use asks for confirmation and lists the visible duplicate', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $existing = Contact::factory()->create(['name' => 'Ya Registrado', 'phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -46,7 +46,7 @@ test('creating a contact with a phone already in use asks for confirmation and l
 });
 
 test('email duplicates are detected ignoring case', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['email' => 'Cliente@Example.com']);
 
     $this->actingAs($admin)
@@ -57,7 +57,7 @@ test('email duplicates are detected ignoring case', function () {
 });
 
 test('confirming the duplicate creates a separate contact without merging', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $existing = Contact::factory()->create(['name' => 'Original', 'phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -89,7 +89,7 @@ test('a contact outside the actor scope is never reported as a duplicate', funct
 });
 
 test('editing a contact only warns when the phone or email changes to one already in use', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $first = Contact::factory()->create(['phone_e164' => '+525511111111']);
     $twin = Contact::factory()->create(['phone_e164' => '+525511111111']);
     $other = Contact::factory()->create(['phone_e164' => '+525522222222']);

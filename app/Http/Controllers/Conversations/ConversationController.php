@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Conversations;
 
+use App\Actions\Conversations\ConversationInboxQuery;
 use App\Enums\AgentAvailability;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
+use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ContactAttributionResource;
 use App\Http\Resources\ConversationEventResource;
@@ -17,21 +19,16 @@ use App\Models\Department;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ConversationController extends Controller
 {
-    /**
-     * Filter value meaning "without department" or "without agent".
-     */
-    private const NONE = 'none';
-
     /**
      * Messages shown in the operational view; the advanced inbox pages them.
      */
@@ -56,85 +53,89 @@ class ConversationController extends Controller
 
     /**
      * Conversations the actor can see, filtered and paginated, with the
-     * number of conversations per status inside the actor's scope.
+     * number of conversations per status inside the actor's scope. The inbox
+     * rules (views by reach, ignored filters) live in ConversationInboxQuery,
+     * shared with the conversations report.
      */
-    public function index(Request $request): Response
+    public function index(Request $request, ConversationInboxQuery $inbox, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', Conversation::class);
 
         /** @var User $actor */
         $actor = $request->user();
 
-        $filters = $request->validate([
-            'status' => ['nullable', Rule::in(['active', 'all', ...array_column(ConversationStatus::cases(), 'value')])],
-            'department' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
-            'agent' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
-            'connection' => ['nullable', 'integer'],
-            'search' => ['nullable', 'string', 'max:100'],
-            'mine' => ['nullable', 'boolean'],
-        ]);
+        $validated = $request->validate(ConversationInboxQuery::rules());
+        $filters = $inbox->filters($actor, $validated);
+        $views = $filters['views'];
+        $view = $filters['view'];
+        $personal = $filters['personal'];
+
+        // Personal inboxes never filter by agent: they only hold their own work.
+        if ($personal) {
+            unset($validated['agent']);
+        }
 
         $request->session()->put(self::LIST_QUERY, array_filter([
-            ...$filters,
+            ...$validated,
+            'view' => $view === $views[0] ? null : $view,
             'page' => $request->integer('page') > 1 ? $request->integer('page') : null,
         ], fn (mixed $value): bool => $value !== null && $value !== ''));
 
-        $status = $filters['status'] ?? 'active';
-        $search = trim((string) ($filters['search'] ?? ''));
-
-        $filtered = fn (): Builder => Conversation::query()
-            ->visibleTo($actor)
-            ->when(($filters['department'] ?? null) === self::NONE, fn (Builder $query) => $query->whereNull('department_id'))
-            ->when(ctype_digit((string) ($filters['department'] ?? '')), fn (Builder $query) => $query->where('department_id', (int) $filters['department']))
-            ->when(($filters['agent'] ?? null) === self::NONE, fn (Builder $query) => $query->whereNull('assigned_user_id'))
-            ->when(ctype_digit((string) ($filters['agent'] ?? '')), fn (Builder $query) => $query->where('assigned_user_id', (int) $filters['agent']))
-            ->when(isset($filters['connection']), fn (Builder $query) => $query->where('connection_id', (int) $filters['connection']))
-            ->when((bool) ($filters['mine'] ?? false), fn (Builder $query) => $query->where('assigned_user_id', $actor->id))
-            ->when($search !== '', fn (Builder $query) => $query->whereHas('contact', fn (Builder $contact) => $contact
-                ->where('name', 'like', '%'.addcslashes($search, '%_\\').'%')
-                ->orWhere('profile_name', 'like', '%'.addcslashes($search, '%_\\').'%')
-                ->orWhere('phone_e164', 'like', '%'.addcslashes(preg_replace('/\D+/', '', $search) ?: $search, '%_\\').'%')));
-
-        $counts = $filtered()
+        $counts = $inbox->filtered($actor, $filters)
             ->toBase()
             ->selectRaw('status, COUNT(*) AS total')
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        $conversations = $filtered()
+        $conversations = $inbox->handle($actor, $filters)
             ->with(['contact', 'channelConnection', 'department', 'assignee'])
-            ->when($status === 'active', fn (Builder $query) => $query->notClosed())
-            ->when(! in_array($status, ['active', 'all'], true), fn (Builder $query) => $query->where('status', $status))
-            ->orderByRaw("FIELD(status, 'pending', 'open', 'on_hold', 'closed')")
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
 
         return Inertia::render('conversations/Index', [
             'conversations' => ConversationResource::collection($conversations),
             'filters' => [
-                'status' => $status,
-                'department' => $filters['department'] ?? null,
-                'agent' => $filters['agent'] ?? null,
-                'connection' => isset($filters['connection']) ? (int) $filters['connection'] : null,
-                'search' => $search,
-                'mine' => (bool) ($filters['mine'] ?? false),
+                'view' => $view,
+                'status' => $filters['status'],
+                'department' => $filters['department'],
+                'agent' => $filters['agent'],
+                'connection' => $filters['connection'],
+                'search' => $filters['search'],
             ],
             'counts' => collect(ConversationStatus::cases())->mapWithKeys(fn (ConversationStatus $case): array => [
                 $case->value => (int) ($counts[$case->value] ?? 0),
             ]),
-            'statuses' => ConversationStatus::options(),
-            'departments' => Department::query()->visibleTo($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
-            'agents' => User::query()->visibleTo($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
-            'connections' => Connection::query()->visibleTo($actor)->orderBy('name')->get(['id', 'name']),
-            'availability' => [
-                'value' => $actor->availability->value,
-                'label' => $actor->availability->label(),
-                'options' => array_map(fn (AgentAvailability $option): array => ['value' => $option->value, 'label' => $option->label()], AgentAvailability::cases()),
+            'inbox' => [
+                'personal' => $personal,
+                'views' => $views,
             ],
+            // Active conversations per view, with the same filters, so the view
+            // switcher tells where work is waiting. Always within the actor's reach.
+            'viewCounts' => collect($views)->mapWithKeys(fn (string $option): array => [
+                $option => $inbox->filtered($actor, $filters, $option)->notClosed()->count(),
+            ]),
+            'statuses' => ConversationStatus::options(),
+            'departments' => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
+            'agents' => $personal ? [] : User::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
+            'connections' => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name']),
+            'availability' => $this->availability($actor),
             'canSeeUnrouted' => $actor->dataScope() === DataScope::Global,
+            'canExport' => $exporter->allowsReport('conversations', $actor),
         ]);
+    }
+
+    /**
+     * The actor's declared availability and the options to change it.
+     *
+     * @return array{value: string, label: string, options: list<array{value: string, label: string}>}
+     */
+    private function availability(User $actor): array
+    {
+        return [
+            'value' => $actor->availability->value,
+            'label' => $actor->availability->label(),
+            'options' => array_map(fn (AgentAvailability $option): array => ['value' => $option->value, 'label' => $option->label()], AgentAvailability::cases()),
+        ];
     }
 
     /**
@@ -172,6 +173,7 @@ class ConversationController extends Controller
             'contactUrl' => $actor->can('view', $conversation->contact) ? route('contacts.show', $conversation->contact) : null,
             'transferOptions' => Inertia::optional(fn (): array => $this->transferOptions($conversation, $actor, $access)),
             'transferReasonRequired' => (bool) $settings->get('operations.transfer_reason_required'),
+            'availability' => $this->availability($actor),
         ]);
     }
 

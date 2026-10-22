@@ -7,7 +7,16 @@ import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useFormValidation } from '@/composables/useFormValidation';
 import { formatPhone, normalizePhone } from '@/lib/phone';
+import {
+    email,
+    maxLength,
+    normalizers,
+    phone,
+    required,
+} from '@/lib/validation';
+import type { FieldRule, FieldRules } from '@/lib/validation';
 import { show, store, update } from '@/routes/contacts';
 import type { Contact, DuplicateCheck } from '@/types';
 
@@ -45,8 +54,7 @@ watch(open, (isOpen) => {
     }
 
     duplicates.value = null;
-    form.clearErrors();
-    form.defaults({
+    validation.load({
         name: props.contact?.name ?? '',
         phone: props.contact?.phone_e164 ?? '',
         email: props.contact?.email ?? '',
@@ -55,7 +63,6 @@ watch(open, (isOpen) => {
         ),
         confirm_duplicate: false,
     });
-    form.reset();
 });
 
 /**
@@ -67,14 +74,6 @@ watch(
         duplicates.value = null;
         form.confirm_duplicate = false;
     },
-);
-
-/**
- * Editing the phone replaces its server error with the live preview.
- */
-watch(
-    () => form.phone,
-    () => form.clearErrors('phone'),
 );
 
 const stopFlashListener = router.on('flash', (event) => {
@@ -90,6 +89,61 @@ onUnmounted(stopFlashListener);
 const normalizedPhone = computed(() => normalizePhone(form.phone));
 const phoneTyped = computed(() => form.phone.trim() !== '');
 
+const squish = (value: string): string => value.trim().replace(/\s+/g, ' ');
+
+const phoneOrEmail: FieldRule = (_value, data) =>
+    String(data.phone ?? '').trim() === '' &&
+    String(data.email ?? '').trim() === ''
+        ? 'Captura al menos un teléfono o un correo electrónico.'
+        : null;
+
+const validation = useFormValidation(form, {
+    rules: () => {
+        const rules: FieldRules = {
+            name: [required('Escribe el nombre.'), maxLength(160)],
+            phone: [phoneOrEmail, maxLength(32), phone()],
+            email: [phoneOrEmail, email(), maxLength(255)],
+        };
+
+        form.custom_fields.forEach((_field, index) => {
+            rules[`custom_fields.${index}.label`] = [
+                required('Escribe el nombre del campo.'),
+                maxLength(60),
+                (value) => {
+                    const label = squish(String(value)).toLowerCase();
+                    const firstIndex = form.custom_fields.findIndex(
+                        (field) => squish(field.label).toLowerCase() === label,
+                    );
+
+                    return firstIndex !== index
+                        ? 'Cada campo personalizado debe tener un nombre distinto.'
+                        : null;
+                },
+            ];
+            rules[`custom_fields.${index}.value`] = [
+                required('Escribe el valor del campo.'),
+                maxLength(500),
+            ];
+        });
+
+        return rules;
+    },
+    normalize: {
+        name: normalizers.squish,
+        phone: normalizers.phone,
+        email: normalizers.email,
+        custom_fields: (value) =>
+            normalizers.ordered(
+                (value as CustomFieldRow[]).map((field) => ({
+                    label: squish(field.label),
+                    value: squish(field.value),
+                })),
+            ),
+    },
+    ignore: ['confirm_duplicate'],
+    requireChanges: isEditing,
+});
+
 function addCustomField(): void {
     if (form.custom_fields.length < MAX_CUSTOM_FIELDS) {
         form.custom_fields.push({ label: '', value: '' });
@@ -98,15 +152,6 @@ function addCustomField(): void {
 
 function removeCustomField(index: number): void {
     form.custom_fields.splice(index, 1);
-}
-
-function customFieldError(
-    index: number,
-    key: 'label' | 'value',
-): string | undefined {
-    return (form.errors as Record<string, string | undefined>)[
-        `custom_fields.${index}.${key}`
-    ];
 }
 
 function submit(confirmDuplicate = false): void {
@@ -134,7 +179,7 @@ function submit(confirmDuplicate = false): void {
         :title="isEditing ? 'Editar contacto' : 'Nuevo contacto'"
         description="Registra a la persona con su teléfono o correo. Si ya existe, te avisaremos antes de guardar."
         :processing="form.processing"
-        :dirty="form.isDirty"
+        :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear contacto'"
         @submit="submit(false)"
     >
@@ -173,7 +218,7 @@ function submit(confirmDuplicate = false): void {
                                 <span
                                     v-if="duplicate.status === 'archived'"
                                     class="text-xs font-normal text-muted-foreground"
-                                    >(archivado)</span
+                                    >(eliminado)</span
                                 >
                             </p>
                             <p class="truncate text-xs text-muted-foreground">
@@ -221,14 +266,14 @@ function submit(confirmDuplicate = false): void {
             <FormField
                 id="contact-name"
                 label="Nombre"
-                :error="form.errors.name"
+                :error="validation.error('name')"
             >
                 <Input
                     id="contact-name"
                     v-model="form.name"
                     maxlength="160"
                     autocomplete="off"
-                    :aria-invalid="!!form.errors.name"
+                    v-bind="validation.field('name', 'contact-name')"
                 />
             </FormField>
 
@@ -236,7 +281,7 @@ function submit(confirmDuplicate = false): void {
                 <FormField
                     id="contact-phone"
                     label="Teléfono"
-                    :error="form.errors.phone"
+                    :error="validation.error('phone')"
                     :help="{
                         description:
                             'Se guarda en formato internacional (E.164) para reconocer a la persona cuando escriba por WhatsApp.',
@@ -253,18 +298,18 @@ function submit(confirmDuplicate = false): void {
                         inputmode="tel"
                         maxlength="32"
                         autocomplete="off"
-                        :aria-invalid="!!form.errors.phone"
-                        aria-describedby="contact-phone-preview"
+                        v-bind="
+                            validation.field(
+                                'phone',
+                                'contact-phone',
+                                'contact-phone-preview',
+                            )
+                        "
                     />
                     <p
-                        v-if="phoneTyped && !form.errors.phone"
+                        v-if="phoneTyped && !validation.error('phone')"
                         id="contact-phone-preview"
-                        class="flex items-center gap-1.5 text-xs"
-                        :class="
-                            normalizedPhone
-                                ? 'text-muted-foreground'
-                                : 'text-destructive'
-                        "
+                        class="flex items-center gap-1.5 text-xs text-muted-foreground"
                         aria-live="polite"
                     >
                         <template v-if="normalizedPhone">
@@ -278,7 +323,8 @@ function submit(confirmDuplicate = false): void {
                             }}</span>
                         </template>
                         <template v-else>
-                            No es un número válido todavía.
+                            Escribe 10 dígitos para México, o + y la lada
+                            internacional para otros países.
                         </template>
                     </p>
                 </FormField>
@@ -286,7 +332,7 @@ function submit(confirmDuplicate = false): void {
                 <FormField
                     id="contact-email"
                     label="Correo electrónico"
-                    :error="form.errors.email"
+                    :error="validation.error('email')"
                     hint="Opcional si capturas un teléfono."
                 >
                     <Input
@@ -295,7 +341,7 @@ function submit(confirmDuplicate = false): void {
                         type="email"
                         maxlength="255"
                         autocomplete="off"
-                        :aria-invalid="!!form.errors.email"
+                        v-bind="validation.field('email', 'contact-email')"
                     />
                 </FormField>
             </div>
@@ -324,26 +370,44 @@ function submit(confirmDuplicate = false): void {
                 >
                     <div class="grid gap-1">
                         <Input
+                            :id="`contact-field-${index}-label`"
                             v-model="field.label"
                             maxlength="60"
                             placeholder="Nombre del campo"
                             :aria-label="`Nombre del campo ${index + 1}`"
-                            :aria-invalid="!!customFieldError(index, 'label')"
+                            v-bind="
+                                validation.field(
+                                    `custom_fields.${index}.label`,
+                                    `contact-field-${index}-label`,
+                                )
+                            "
                         />
                         <InputError
-                            :message="customFieldError(index, 'label')"
+                            :id="`contact-field-${index}-label-error`"
+                            :message="
+                                validation.error(`custom_fields.${index}.label`)
+                            "
                         />
                     </div>
                     <div class="grid gap-1">
                         <Input
+                            :id="`contact-field-${index}-value`"
                             v-model="field.value"
                             maxlength="500"
                             placeholder="Valor"
                             :aria-label="`Valor del campo ${index + 1}`"
-                            :aria-invalid="!!customFieldError(index, 'value')"
+                            v-bind="
+                                validation.field(
+                                    `custom_fields.${index}.value`,
+                                    `contact-field-${index}-value`,
+                                )
+                            "
                         />
                         <InputError
-                            :message="customFieldError(index, 'value')"
+                            :id="`contact-field-${index}-value-error`"
+                            :message="
+                                validation.error(`custom_fields.${index}.value`)
+                            "
                         />
                     </div>
                     <Button
@@ -356,7 +420,7 @@ function submit(confirmDuplicate = false): void {
                         <Trash2 />
                     </Button>
                 </div>
-                <InputError :message="form.errors.custom_fields" />
+                <InputError :message="validation.error('custom_fields')" />
                 <div>
                     <Button
                         type="button"

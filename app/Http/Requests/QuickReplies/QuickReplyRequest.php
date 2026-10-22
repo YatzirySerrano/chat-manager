@@ -3,6 +3,7 @@
 namespace App\Http\Requests\QuickReplies;
 
 use App\Enums\DataScope;
+use App\Enums\RecordState;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
@@ -77,7 +78,7 @@ class QuickReplyRequest extends FormRequest
     /**
      * Scope checks that depend on the actor: only global users can make a
      * reply available to everyone, others only choose their own departments;
-     * inactive departments cannot be newly added.
+     * deleted departments cannot be newly added.
      *
      * @return array<int, callable(Validator): void>
      */
@@ -113,14 +114,14 @@ class QuickReplyRequest extends FormRequest
                     ? array_map('intval', $quickReply->departments()->pluck('departments.id')->all())
                     : [];
 
-                $inactive = Department::query()
+                $deleted = Department::query()
                     ->whereKey(array_diff($departmentIds, $currentIds))
-                    ->where('is_active', false)
+                    ->inRecordState(RecordState::Deleted)
                     ->orderBy('name')
                     ->pluck('name');
 
-                if ($inactive->isNotEmpty()) {
-                    $validator->errors()->add('department_ids', 'No puedes agregar departamentos inactivos: '.$inactive->join(', ').'.');
+                if ($deleted->isNotEmpty()) {
+                    $validator->errors()->add('department_ids', 'No puedes agregar departamentos eliminados: '.$deleted->join(', ').'.');
                 }
             },
         ];
@@ -159,18 +160,25 @@ class QuickReplyRequest extends FormRequest
     }
 
     /**
+     * Departments of the reply that are deleted are kept (they are not offered
+     * in the form): they become effective again when restored.
+     *
      * @return array{title: string, shortcut: string, body: string, is_global: bool, department_ids: list<int>}
      */
     public function payload(): array
     {
         $isGlobal = $this->boolean('is_global');
+        $quickReply = $this->route('quickReply');
+        $keptDeleted = $quickReply instanceof QuickReply && ! $isGlobal
+            ? array_map('intval', $quickReply->departments()->inRecordState(RecordState::Deleted)->pluck('departments.id')->all())
+            : [];
 
         return [
             'title' => (string) $this->validated('title'),
             'shortcut' => (string) $this->validated('shortcut'),
             'body' => (string) $this->validated('body'),
             'is_global' => $isGlobal,
-            'department_ids' => $isGlobal ? [] : $this->departmentIds(),
+            'department_ids' => $isGlobal ? [] : array_values(array_unique([...$this->departmentIds(), ...$keptDeleted])),
         ];
     }
 

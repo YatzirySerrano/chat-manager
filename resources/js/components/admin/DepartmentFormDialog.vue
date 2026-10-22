@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
-import ColorSwatchPicker from '@/components/ColorSwatchPicker.vue';
+import ColorPicker from '@/components/ColorPicker.vue';
 import FormField from '@/components/FormField.vue';
 import FormDialog from '@/components/FormDialog.vue';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, required } from '@/lib/validation';
 import { store, update } from '@/routes/departments';
-import type { ColorSwatch, DepartmentSummary } from '@/types';
+import type { AppColor, ColorSwatch, DepartmentSummary } from '@/types';
 
 const props = defineProps<{
     department: DepartmentSummary | null;
@@ -21,11 +23,20 @@ const isEditing = computed(() => props.department !== null);
 const form = useForm<{
     name: string;
     description: string;
-    color: ColorSwatch;
+    color: AppColor;
 }>({
     name: '',
     description: '',
     color: 'teal',
+});
+
+const validation = useFormValidation(form, {
+    rules: {
+        name: [required('Escribe el nombre.'), maxLength(120)],
+        description: [maxLength(500)],
+        color: [required('Elige un color.')],
+    },
+    requireChanges: isEditing,
 });
 
 watch(open, (isOpen) => {
@@ -33,13 +44,11 @@ watch(open, (isOpen) => {
         return;
     }
 
-    form.clearErrors();
-    form.defaults({
+    validation.load({
         name: props.department?.name ?? '',
         description: props.department?.description ?? '',
         color: props.department?.color ?? 'teal',
     });
-    form.reset();
 });
 
 function submit(): void {
@@ -64,7 +73,7 @@ function submit(): void {
         :title="isEditing ? 'Editar departamento' : 'Nuevo departamento'"
         description="Los departamentos agrupan a las personas y las conversaciones que atienden."
         :processing="form.processing"
-        :dirty="form.isDirty"
+        :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear departamento'"
         @submit="submit"
     >
@@ -72,35 +81,41 @@ function submit(): void {
             <FormField
                 id="department-name"
                 label="Nombre"
-                :error="form.errors.name"
+                :error="validation.error('name')"
             >
                 <Input
                     id="department-name"
                     v-model="form.name"
                     maxlength="120"
-                    :aria-invalid="!!form.errors.name"
+                    v-bind="validation.field('name', 'department-name')"
                 />
             </FormField>
 
             <FormField
                 id="department-description"
                 label="Descripción (opcional)"
-                :error="form.errors.description"
+                :error="validation.error('description')"
             >
                 <Textarea
                     id="department-description"
                     v-model="form.description"
                     rows="3"
                     maxlength="500"
+                    v-bind="
+                        validation.field(
+                            'description',
+                            'department-description',
+                        )
+                    "
                     placeholder="¿Qué tipo de solicitudes atiende?"
                 />
             </FormField>
 
-            <ColorSwatchPicker
+            <ColorPicker
                 v-model="form.color"
                 :colors="colors"
                 group-label="Color del departamento"
-                :error="form.errors.color"
+                :error="validation.error('color')"
             />
         </div>
     </FormDialog>

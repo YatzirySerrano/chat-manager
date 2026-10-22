@@ -103,7 +103,7 @@ test('registering by hand a phone of a hidden contact answers exactly like a new
 });
 
 test('matches the employee can see are still warned and never sent to review', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -153,7 +153,7 @@ test('only administrators with organization-wide scope review possible duplicate
 
 test('administrators see each case with the contacts it compares', function () {
     [$case, $automatic, $candidates] = ambiguousWhatsappSender();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('contacts.reviews.index'))
@@ -174,7 +174,7 @@ test('administrators see each case with the contacts it compares', function () {
 
 test('marking them as different people closes the case and changes no contact', function () {
     [$case, $automatic, $candidates] = ambiguousWhatsappSender();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->patch(route('contacts.reviews.update', $case), ['resolution' => 'distinct_people'])
@@ -195,7 +195,7 @@ test('marking them as different people closes the case and changes no contact', 
 
 test('linking moves the WhatsApp identity and its evidence to the chosen contact and archives the automatic one', function () {
     [$case, $automatic, [$chosen]] = ambiguousWhatsappSender();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $tag = Tag::factory()->create();
     $automatic->tags()->attach($tag, ['tagged_by_user_id' => $admin->id, 'created_at' => now()]);
     $automatic->notes()->create(['body' => 'Pidió catálogo.', 'author_user_id' => $admin->id]);
@@ -235,7 +235,7 @@ test('linking moves the WhatsApp identity and its evidence to the chosen contact
 
 test('a decision that does not fit the case is refused', function (Closure $setup, string $field) {
     [$case, $input] = $setup();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->patch(route('contacts.reviews.update', $case), $input)
@@ -263,7 +263,7 @@ test('a decision that does not fit the case is refused', function (Closure $setu
 test('a sender that already has conversations cannot be linked yet', function () {
     [$case, $automatic, [$chosen]] = ambiguousWhatsappSender();
     Conversation::factory()->for($automatic)->create();
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->patch(route('contacts.reviews.update', $case), ['resolution' => 'identity_linked', 'target_contact_id' => $chosen->id])
@@ -277,7 +277,7 @@ test('a manual duplicate can be archived, keeping its history', function () {
     $hidden = Contact::factory()->create();
     $duplicate = Contact::factory()->create();
     $case = ContactReviewCase::factory()->create(['contact_id' => $duplicate->id, 'candidate_contact_ids' => [$hidden->id]]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->patch(route('contacts.reviews.update', $case), ['resolution' => 'duplicate_archived', 'target_contact_id' => $hidden->id])

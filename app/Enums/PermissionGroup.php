@@ -17,6 +17,7 @@ enum PermissionGroup: string
     case Reports = 'reports';
     case Settings = 'settings';
     case Appearance = 'appearance';
+    case Records = 'records';
     case Audit = 'audit';
 
     public function label(): string
@@ -35,6 +36,7 @@ enum PermissionGroup: string
             self::Reports => 'Reportes',
             self::Settings => 'Configuración',
             self::Appearance => 'Personalización',
+            self::Records => 'Registros eliminados',
             self::Audit => 'Auditoría',
         };
     }

@@ -25,12 +25,14 @@ class TagResource extends JsonResource
             'color' => $this->color->value,
             'description' => $this->description,
             'is_active' => $this->is_active,
+            'is_deleted' => $this->isDeleted(),
             'contacts_count' => $this->whenCounted('contacts'),
             'conversations_count' => $this->whenCounted('conversations'),
             'created_at' => $this->created_at?->toIso8601String(),
             'can' => [
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
-                'changeStatus' => $request->user()?->can('changeStatus', $this->resource) ?? false,
+                'delete' => $request->user()?->can('delete', $this->resource) ?? false,
+                'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
         ];
     }

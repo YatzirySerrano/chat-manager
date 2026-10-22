@@ -14,3 +14,5 @@ Artisan::command('conversations:close-inactive', function (CloseInactiveConversa
 })->purpose('Close conversations without messages for the configured number of hours');
 
 Schedule::command('conversations:close-inactive')->hourly()->withoutOverlapping();
+
+Schedule::command('exports:prune')->hourly()->withoutOverlapping();

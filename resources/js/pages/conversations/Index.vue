@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router, usePoll } from '@inertiajs/vue3';
 import {
+    CircleAlert,
     Eye,
     Hand,
     Inbox,
@@ -16,12 +17,14 @@ import ConversationStatusBadge from '@/components/conversations/ConversationStat
 import DataPagination from '@/components/DataPagination.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -45,11 +48,14 @@ import {
 import { update as updateAvailability } from '@/routes/conversations/availability';
 import type {
     ConversationFilters,
+    ConversationInbox,
+    ConversationInboxView,
     ConversationStatusFilter,
     ConversationStatusValue,
     ConversationSummary,
     Paginated,
     RecordAction,
+    ViewerAvailability,
 } from '@/types';
 
 defineOptions({
@@ -61,16 +67,15 @@ defineOptions({
 const props = defineProps<{
     conversations: Paginated<ConversationSummary>;
     filters: ConversationFilters;
+    canExport?: boolean;
     counts: Record<ConversationStatusValue, number>;
     statuses: { value: ConversationStatusValue; label: string }[];
     departments: { id: number; name: string; is_active: boolean }[];
     agents: { id: number; name: string; is_active: boolean }[];
     connections: { id: number; name: string }[];
-    availability: {
-        value: 'available' | 'unavailable';
-        label: string;
-        options: { value: string; label: string }[];
-    };
+    availability: ViewerAvailability;
+    inbox: ConversationInbox;
+    viewCounts: Partial<Record<ConversationInboxView, number>>;
     canSeeUnrouted: boolean;
 }>();
 
@@ -78,11 +83,12 @@ const props = defineProps<{
  * Without WebSockets, the queue refreshes itself in the background; own
  * operations refresh immediately through the redirect that follows them.
  */
-usePoll(15_000, { only: ['conversations', 'counts'] });
+usePoll(15_000, { only: ['conversations', 'counts', 'viewCounts'] });
 
 const ALL = '';
 
 const filterState = reactive({
+    view: props.filters.view,
     status: props.filters.status,
     department: props.filters.department ?? ALL,
     agent: props.filters.agent ?? ALL,
@@ -91,8 +97,53 @@ const filterState = reactive({
             ? ALL
             : String(props.filters.connection),
     search: props.filters.search,
-    mine: props.filters.mine,
 });
+
+const defaultView = computed(() => props.inbox.views[0]);
+
+const viewLabels: Record<
+    ConversationInboxView,
+    { label: string; description: string }
+> = {
+    all: {
+        label: 'Todas las conversaciones autorizadas',
+        description:
+            'Las conversaciones de tu alcance, con filtros por departamento, agente, estado y conexión.',
+    },
+    mine: {
+        label: 'Mis conversaciones',
+        description: 'Las conversaciones de las que eres responsable.',
+    },
+    queue: {
+        label: 'Pendientes de mi departamento',
+        description:
+            'Conversaciones que esperan a que alguien de tu departamento las acepte. No incluye las que atienden tus compañeros.',
+    },
+};
+
+/** Personal inboxes switch between their own work and the queue. */
+const viewTabs = computed(() =>
+    props.inbox.personal
+        ? props.inbox.views.map((view) => ({
+              value: view,
+              label: viewLabels[view].label,
+              count: props.viewCounts[view] ?? 0,
+          }))
+        : [],
+);
+
+/** Team inboxes narrow the authorized list to their own conversations. */
+const canShowOnlyMine = computed(
+    () => !props.inbox.personal && props.inbox.views.includes('mine'),
+);
+
+const onlyMine = computed({
+    get: () => filterState.view === 'mine',
+    set: (value: boolean) => (filterState.view = value ? 'mine' : 'all'),
+});
+
+const isQueue = computed(() => filterState.view === 'queue');
+const isUnavailable = computed(() => props.availability.value !== 'available');
 
 const tabs = computed<
     { value: ConversationStatusFilter; label: string; count: number | null }[]
@@ -116,18 +167,25 @@ const hasFilters = computed(
         filterState.agent !== ALL ||
         filterState.connection !== ALL ||
         filterState.search.trim() !== '' ||
-        filterState.mine,
+        (canShowOnlyMine.value && onlyMine.value),
 );
 
 function applyFilters(): void {
     const query: Record<string, string> = {};
 
-    if (filterState.status !== 'active') {
+    if (filterState.view !== defaultView.value) {
+        query.view = filterState.view;
+    }
+
+    if (filterState.status !== 'active' && !isQueue.value) {
         query.status = filterState.status;
     }
 
     for (const key of ['department', 'agent', 'connection'] as const) {
-        if (filterState[key] !== ALL) {
+        if (
+            filterState[key] !== ALL &&
+            !(key === 'agent' && props.inbox.personal)
+        ) {
             query[key] = filterState[key];
         }
     }
@@ -136,19 +194,21 @@ function applyFilters(): void {
         query.search = filterState.search.trim();
     }
 
-    if (filterState.mine) {
-        query.mine = '1';
-    }
-
     router.get(conversationsIndex.url({ query }), undefined, {
         preserveState: true,
         preserveScroll: true,
         replace: true,
-        only: ['conversations', 'filters', 'counts'],
+        only: ['conversations', 'filters', 'counts', 'viewCounts'],
     });
 }
 
 watchDebounced(() => filterState.search, applyFilters, { debounce: 300 });
+
+function selectView(view: ConversationInboxView): void {
+    filterState.view = view;
+    filterState.status = 'active';
+    applyFilters();
+}
 
 function selectStatus(status: ConversationStatusFilter): void {
     filterState.status = status;
@@ -160,7 +220,11 @@ function clearFilters(): void {
     filterState.agent = ALL;
     filterState.connection = ALL;
     filterState.search = '';
-    filterState.mine = false;
+
+    if (canShowOnlyMine.value) {
+        filterState.view = defaultView.value;
+    }
+
     applyFilters();
 }
 
@@ -209,10 +273,15 @@ function actionsFor(conversation: ConversationSummary): RecordAction[] {
     }
 
     if (conversation.can.accept) {
+        // Unavailable agents keep seeing the queue but cannot take from it;
+        // the label (tooltip and accessible name) explains why.
         actions.push({
             key: 'accept',
-            label: 'Aceptar',
+            label: isUnavailable.value
+                ? 'Aceptar (no disponible: cambia tu disponibilidad para aceptar)'
+                : 'Aceptar',
             icon: Hand,
+            disabled: isUnavailable.value,
             onSelect: () => acceptConversation(conversation),
         });
     }
@@ -261,37 +330,112 @@ function contactPhone(conversation: ConversationSummary): string {
             description="Cola de atención: acepta pendientes, sigue tus conversaciones y consulta las de tu alcance."
         >
             <template #actions>
-                <label
-                    class="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm shadow-card"
+                <ExportMenu
+                    v-if="canExport"
+                    report="conversations"
+                    :filters="filters"
+                />
+                <div
+                    class="flex items-center gap-2 rounded-lg border bg-card py-2 pr-2 pl-3 text-sm shadow-card"
                 >
-                    <span class="grid">
-                        <span class="flex items-center gap-1.5 font-medium">
-                            {{ availability.label }}
-                            <FieldHelp
-                                title="Disponibilidad"
-                                :help="{
-                                    description:
-                                        'Indica si puedes recibir conversaciones por asignación automática. Es independiente de tener la sesión abierta.',
-                                    warning:
-                                        'Ponerte como no disponible no te quita las conversaciones que ya atiendes.',
-                                }"
-                            />
+                    <label class="flex cursor-pointer items-center gap-3">
+                        <span class="grid">
+                            <span class="font-medium">{{
+                                availability.label
+                            }}</span>
+                            <span class="text-xs text-muted-foreground"
+                                >Aceptar y recibir conversaciones</span
+                            >
                         </span>
-                        <span class="text-xs text-muted-foreground"
-                            >Asignación automática</span
-                        >
-                    </span>
-                    <Switch
-                        :model-value="availability.value === 'available'"
-                        :disabled="availabilityProcessing"
-                        aria-label="Disponible para asignación automática"
-                        @update:model-value="toggleAvailability"
+                        <Switch
+                            :model-value="availability.value === 'available'"
+                            :disabled="availabilityProcessing"
+                            aria-label="Disponible para aceptar y recibir conversaciones"
+                            @update:model-value="toggleAvailability"
+                        />
+                    </label>
+                    <span
+                        class="ml-1 h-8 w-px self-center bg-border"
+                        aria-hidden="true"
                     />
-                </label>
+                    <FieldHelp
+                        title="Disponibilidad"
+                        :help="{
+                            description:
+                                'Disponible: puedes aceptar conversaciones pendientes y participas en la asignación automática. No disponible: no aceptas nuevas ni recibes asignaciones automáticas. Es independiente de tener la sesión abierta.',
+                            warning:
+                                'Ponerte como no disponible no te quita las conversaciones que ya atiendes: las sigues gestionando.',
+                        }"
+                    />
+                </div>
             </template>
         </PageHeader>
 
+        <div v-if="inbox.personal" class="grid gap-2">
+            <nav
+                class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
+                aria-label="Bandeja de conversaciones"
+            >
+                <Button
+                    v-for="tab in viewTabs"
+                    :key="tab.value"
+                    :variant="
+                        filterState.view === tab.value ? 'default' : 'outline'
+                    "
+                    class="shrink-0"
+                    :aria-pressed="filterState.view === tab.value"
+                    @click="selectView(tab.value)"
+                >
+                    {{ tab.label }}
+                    <span
+                        class="rounded-full px-1.5 text-xs tabular-nums"
+                        :class="
+                            filterState.view === tab.value
+                                ? 'bg-primary-foreground/20'
+                                : 'bg-muted'
+                        "
+                        >{{ tab.count }}</span
+                    >
+                </Button>
+            </nav>
+            <p class="text-sm text-muted-foreground">
+                {{ viewLabels[filterState.view].description }}
+            </p>
+        </div>
+        <div v-else class="grid gap-1">
+            <h2 class="text-base font-semibold">
+                {{ onlyMine ? viewLabels.mine.label : viewLabels.all.label }}
+            </h2>
+            <p class="text-sm text-muted-foreground">
+                {{
+                    onlyMine
+                        ? viewLabels.mine.description
+                        : viewLabels.all.description
+                }}
+            </p>
+        </div>
+
+        <Alert v-if="isQueue && isUnavailable" role="status">
+            <CircleAlert aria-hidden="true" />
+            <AlertTitle>Estás como No disponible</AlertTitle>
+            <AlertDescription class="grid gap-3">
+                <p>
+                    Mientras no estés disponible no puedes aceptar
+                    conversaciones pendientes ni recibir asignaciones
+                    automáticas. Sigues atendiendo las que ya tienes.
+                </p>
+                <Button
+                    class="w-fit"
+                    :disabled="availabilityProcessing"
+                    @click="toggleAvailability(true)"
+                >
+                    Cambiar a Disponible
+                </Button>
+            </AlertDescription>
+        </Alert>
+
         <nav
+            v-if="!isQueue"
             class="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
             aria-label="Estado de las conversaciones"
         >
@@ -340,7 +484,10 @@ function contactPhone(conversation: ConversationSummary): string {
                 </div>
                 <ViewModeToggle v-model="viewMode" />
                 <div
-                    class="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap"
+                    class="grid w-full grid-cols-1 gap-2 lg:flex lg:w-auto lg:flex-wrap"
+                    :class="
+                        inbox.personal ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+                    "
                 >
                     <select
                         v-model="filterState.department"
@@ -363,6 +510,7 @@ function contactPhone(conversation: ConversationSummary): string {
                         </option>
                     </select>
                     <select
+                        v-if="!inbox.personal"
                         v-model="filterState.agent"
                         :class="selectClass"
                         class="lg:w-44"
@@ -397,10 +545,11 @@ function contactPhone(conversation: ConversationSummary): string {
                     </select>
                 </div>
                 <label
+                    v-if="canShowOnlyMine"
                     class="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"
                 >
                     <Switch
-                        v-model="filterState.mine"
+                        v-model="onlyMine"
                         aria-label="Solo mis conversaciones"
                         @update:model-value="applyFilters"
                     />
@@ -529,7 +678,15 @@ function contactPhone(conversation: ConversationSummary): string {
                     v-for="conversation in conversations.data"
                     :key="conversation.id"
                 >
-                    <RecordCard :muted="conversation.status === 'closed'">
+                    <RecordCard
+                        :muted="conversation.status === 'closed'"
+                        :href="
+                            conversation.can.view
+                                ? show(conversation.id)
+                                : undefined
+                        "
+                        :label="`Ver conversación con ${conversation.contact.name}`"
+                    >
                         <template #leading>
                             <span
                                 class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
@@ -541,13 +698,7 @@ function contactPhone(conversation: ConversationSummary): string {
                             </span>
                         </template>
                         <template #title>
-                            <Link
-                                v-if="conversation.can.view"
-                                :href="show(conversation.id)"
-                                class="block truncate hover:underline"
-                                >{{ conversation.contact.name }}</Link
-                            >
-                            <span v-else class="block truncate">{{
+                            <span class="block truncate">{{
                                 conversation.contact.name
                             }}</span>
                         </template>
@@ -610,7 +761,9 @@ function contactPhone(conversation: ConversationSummary): string {
                 :title="
                     hasFilters
                         ? 'Ninguna conversación coincide con los filtros'
-                        : 'No hay conversaciones aquí'
+                        : isQueue
+                          ? 'No hay conversaciones pendientes en tu departamento'
+                          : 'No hay conversaciones aquí'
                 "
                 description="Las conversaciones aparecen cuando un cliente escribe a una conexión de WhatsApp. Solo ves las que corresponden a tu alcance."
             >

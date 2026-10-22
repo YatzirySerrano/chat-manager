@@ -19,7 +19,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 */
 
 test('connection secrets are not flashed into the session when validation fails', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->from(route('connections.create'))
@@ -96,7 +96,7 @@ test('contacts index does not expose the tag catalog to users without tags.view'
 
 test('the dashboard does not report messaging as connected for an active connection with invalid credentials', function () {
     Connection::factory()->withInvalidCredentials()->create(['is_active' => true]);
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->get(route('dashboard'))
@@ -105,7 +105,7 @@ test('the dashboard does not report messaging as connected for an active connect
 });
 
 test('index pages run a constant number of queries regardless of rows', function (string $routeName, Closure $seed) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $admin->load(['roles.permissions', 'departments']);
 
     $count = function () use ($admin, $routeName): int {
@@ -177,7 +177,7 @@ test('a departments-scoped user cannot change hours or welcome message of anothe
 });
 
 test('deactivated users cannot reach the new json endpoint', function () {
-    $user = User::factory()->administrator()->create(['is_active' => false]);
+    $user = User::factory()->superAdministrator()->create(['is_active' => false]);
 
     $response = $this->actingAs($user)->getJson(route('quick-replies.available'));
 

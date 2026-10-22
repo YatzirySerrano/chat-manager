@@ -28,11 +28,15 @@ class UpdateConnection
     public function __construct(private AuditLogger $audit) {}
 
     /**
+     * Nothing is written (no save, no department sync, no audit entry) when
+     * the attributes, the provided secrets and the departments stay the same.
+     *
      * @param  array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>}  $data
+     * @return bool Whether anything changed.
      */
-    public function handle(Connection $connection, array $data, User $actor): Connection
+    public function handle(Connection $connection, array $data, User $actor): bool
     {
-        return DB::transaction(function () use ($connection, $data, $actor): Connection {
+        return DB::transaction(function () use ($connection, $data, $actor): bool {
             $connection->fill($data['attributes']);
             $changes = $this->changes($connection);
 
@@ -83,7 +87,7 @@ class UpdateConnection
                 ], $actor);
             }
 
-            return $connection;
+            return $changes !== [] || $replacedSecrets !== [];
         });
     }
 

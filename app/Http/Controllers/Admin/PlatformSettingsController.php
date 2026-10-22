@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\UpdatePlatformSettingsRequest;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Services\PlatformSettings;
+use App\Support\SaveToast;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,10 +45,7 @@ class PlatformSettingsController extends Controller
     {
         $changes = $updateSettings->handle($request->payload(), $request->user());
 
-        Inertia::flash('toast', [
-            'type' => $changes === [] ? 'info' : 'success',
-            'message' => $changes === [] ? 'No había cambios por guardar.' : 'Configuración guardada.',
-        ]);
+        SaveToast::flash($changes !== [], 'Configuración guardada.');
 
         return back();
     }

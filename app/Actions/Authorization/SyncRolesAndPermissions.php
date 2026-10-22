@@ -16,9 +16,12 @@ use Spatie\Permission\PermissionRegistrar;
  * - creates the catalog permissions that are missing;
  * - grants the newly created permissions to the root role(s) only, so the
  *   administrative authority keeps total control as modules ship;
- * - creates the initial roles only on an installation without roles;
- * - never changes the scope or state of existing roles, nor the permissions
- *   of any non-root role;
+ * - creates the default roles that do not exist yet (by name, and only when
+ *   their label is free), so an existing installation also receives a new
+ *   default role; roles are never physically deleted, so a missing default
+ *   role was never created;
+ * - never changes the label, scope, state or permissions of an existing
+ *   role, except granting new permissions to the root role(s);
  * - only deletes permissions no longer in the catalog when asked to prune.
  */
 class SyncRolesAndPermissions
@@ -62,19 +65,30 @@ class SyncRolesAndPermissions
                 }
             }
 
-            if (Role::query()->doesntExist()) {
-                foreach (DefaultRole::cases() as $default) {
-                    $role = Role::query()->create([
-                        'name' => $default->value,
-                        'label' => $default->label(),
-                        'description' => $default->description(),
-                        'guard_name' => 'web',
-                        'scope' => $default->scope(),
-                        'is_root' => $default->isRoot(),
-                    ]);
-                    $role->syncPermissions(array_map(fn (Permission $permission): string => $permission->value, $default->permissions()));
-                    $createdRoles[] = $default->label();
+            foreach (DefaultRole::cases() as $default) {
+                // There is a single root authority: it is never created twice.
+                $taken = Role::query()
+                    ->where('guard_name', 'web')
+                    ->where(fn ($query) => $query
+                        ->where('name', $default->value)
+                        ->orWhere('label', $default->label())
+                        ->when($default->isRoot(), fn ($root) => $root->orWhere('is_root', true)))
+                    ->exists();
+
+                if ($taken) {
+                    continue;
                 }
+
+                $role = Role::query()->create([
+                    'name' => $default->value,
+                    'label' => $default->label(),
+                    'description' => $default->description(),
+                    'guard_name' => 'web',
+                    'scope' => $default->scope(),
+                    'is_root' => $default->isRoot(),
+                ]);
+                $role->syncPermissions(array_map(fn (Permission $permission): string => $permission->value, $default->permissions()));
+                $createdRoles[] = $default->label();
             }
 
             return [

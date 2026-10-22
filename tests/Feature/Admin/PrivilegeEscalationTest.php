@@ -19,7 +19,7 @@ function delegatedAdministrator(?Department $department = null): User
         Permission::ViewUsers,
         Permission::CreateUsers,
         Permission::UpdateUsers,
-        Permission::ChangeUserStatus,
+        Permission::DeleteUsers,
         Permission::AssignRoles,
         Permission::ViewDepartments,
         Permission::ManageDepartmentMembers,
@@ -39,7 +39,7 @@ test('nobody can assign a role with more privileges than their own', function ()
         'email' => 'escalado@empresa.test',
         'password' => 'password',
         'password_confirmation' => 'password',
-        'role_id' => role(DefaultRole::Administrator)->id,
+        'role_id' => role(DefaultRole::SuperAdministrator)->id,
         'department_ids' => [$department->id],
     ])->assertSessionHasErrors(['role_id' => 'No puedes asignar un rol con más privilegios de los que administras.']);
 
@@ -111,7 +111,7 @@ test('a role manager cannot grant more than they hold nor edit their own role', 
         'permissions' => ['users.view', 'roles.view', 'roles.create', 'roles.update', 'settings.update'],
     ])->assertForbidden();
 
-    $this->actingAs($manager)->put(route('admin.roles.update', role(DefaultRole::Administrator)), [
+    $this->actingAs($manager)->put(route('admin.roles.update', role(DefaultRole::SuperAdministrator)), [
         'label' => 'Administrador',
         'scope' => 'global',
         'permissions' => array_column(Permission::rootCapabilities(), 'value'),
@@ -124,12 +124,12 @@ test('a delegated administrator cannot manage peers, superiors or users outside 
     $department = Department::factory()->create();
     $coordinator = delegatedAdministrator($department);
     $peer = User::factory()->withRole($coordinator->role())->inDepartments($department)->create();
-    $root = User::factory()->administrator()->create();
+    $root = User::factory()->superAdministrator()->create();
     $outsider = User::factory()->agent()->inDepartments(Department::factory()->create())->create();
 
     foreach ([$peer, $root, $outsider, $coordinator] as $target) {
         $this->actingAs($coordinator)
-            ->patch(route('admin.users.status.update', $target), ['is_active' => false])
+            ->delete(route('admin.users.destroy', $target))
             ->assertForbidden();
     }
 
@@ -148,7 +148,7 @@ test('the user list only shows users within the actor scope', function () {
         ->get(route('admin.users.index'))
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->has('users.data', 2)
-            ->where('stats.total', 2)
+            ->where('stats.active', 2)
             ->where('can.create', true)
         );
 });

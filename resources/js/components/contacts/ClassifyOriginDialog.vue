@@ -12,6 +12,8 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, pattern, required } from '@/lib/validation';
 import { store } from '@/routes/contacts/attributions';
 import type { ContactEnumOption, ContactOriginTypeValue } from '@/types';
 
@@ -52,10 +54,33 @@ const showsAdDetails = computed(
         AD_TYPES.includes(form.origin_type as ContactOriginTypeValue),
 );
 
+const validation = useFormValidation(form, {
+    rules: {
+        origin_type: [required('Selecciona una procedencia.')],
+        ad_platform: [maxLength(40)],
+        campaign_name: [maxLength(255)],
+        page_name: [maxLength(255)],
+        source_url: [
+            maxLength(2048),
+            pattern(
+                /^https?:\/\/[^\s/$.?#][^\s]*$/i,
+                'Pega la dirección completa; debe comenzar con http:// o https://.',
+            ),
+        ],
+        notes: [maxLength(1000)],
+    },
+});
+
 watch(open, (isOpen) => {
     if (isOpen) {
-        form.clearErrors();
-        form.reset();
+        validation.load({
+            origin_type: '',
+            ad_platform: '',
+            campaign_name: '',
+            page_name: '',
+            source_url: '',
+            notes: '',
+        });
     }
 });
 
@@ -75,8 +100,7 @@ function submit(): void {
         title="Registrar procedencia declarada"
         description="Acción administrativa excepcional: registra cómo dice la persona que nos conoció. Quedará como dato declarado por ti y nunca como «Confirmado por Meta»."
         :processing="form.processing"
-        :dirty="form.isDirty"
-        :submit-disabled="form.origin_type === ''"
+        :validation="validation"
         submit-label="Registrar procedencia"
         @submit="submit"
     >
@@ -93,7 +117,7 @@ function submit(): void {
             <FormField
                 id="origin-type"
                 label="Procedencia declarada"
-                :error="form.errors.origin_type"
+                :error="validation.error('origin_type')"
                 :help="{
                     description:
                         'Cómo dice la persona que nos conoció. Es un dato declarado: se muestra como «Declarado por» con tu nombre y la fecha.',
@@ -103,7 +127,11 @@ function submit(): void {
                 }"
             >
                 <Select v-model="form.origin_type">
-                    <SelectTrigger id="origin-type" class="w-full">
+                    <SelectTrigger
+                        id="origin-type"
+                        v-bind="validation.field('origin_type', 'origin-type')"
+                        class="w-full"
+                    >
                         <SelectValue placeholder="Selecciona una procedencia" />
                     </SelectTrigger>
                     <SelectContent>
@@ -122,10 +150,13 @@ function submit(): void {
                 <FormField
                     id="origin-platform"
                     label="Plataforma (opcional)"
-                    :error="form.errors.ad_platform"
+                    :error="validation.error('ad_platform')"
                 >
                     <Input
                         id="origin-platform"
+                        v-bind="
+                            validation.field('ad_platform', 'origin-platform')
+                        "
                         v-model="form.ad_platform"
                         maxlength="40"
                         placeholder="Facebook, Instagram, espectacular…"
@@ -134,10 +165,13 @@ function submit(): void {
                 <FormField
                     id="origin-campaign"
                     label="Campaña (opcional)"
-                    :error="form.errors.campaign_name"
+                    :error="validation.error('campaign_name')"
                 >
                     <Input
                         id="origin-campaign"
+                        v-bind="
+                            validation.field('campaign_name', 'origin-campaign')
+                        "
                         v-model="form.campaign_name"
                         maxlength="255"
                     />
@@ -147,11 +181,12 @@ function submit(): void {
             <FormField
                 id="origin-page"
                 label="Página (opcional)"
-                :error="form.errors.page_name"
+                :error="validation.error('page_name')"
                 hint="Página de Facebook, sitio o lugar donde vio el anuncio."
             >
                 <Input
                     id="origin-page"
+                    v-bind="validation.field('page_name', 'origin-page')"
                     v-model="form.page_name"
                     maxlength="255"
                 />
@@ -160,7 +195,7 @@ function submit(): void {
             <FormField
                 id="origin-url"
                 label="URL de referencia (opcional)"
-                :error="form.errors.source_url"
+                :error="validation.error('source_url')"
                 :help="{
                     description:
                         'Enlace a la publicación, anuncio o página relacionada con el origen.',
@@ -170,6 +205,7 @@ function submit(): void {
             >
                 <Input
                     id="origin-url"
+                    v-bind="validation.field('source_url', 'origin-url')"
                     v-model="form.source_url"
                     type="url"
                     inputmode="url"
@@ -181,10 +217,11 @@ function submit(): void {
             <FormField
                 id="origin-notes"
                 label="Notas (opcional)"
-                :error="form.errors.notes"
+                :error="validation.error('notes')"
             >
                 <Textarea
                     id="origin-notes"
+                    v-bind="validation.field('notes', 'origin-notes')"
                     v-model="form.notes"
                     rows="3"
                     maxlength="1000"

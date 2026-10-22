@@ -168,9 +168,11 @@ return [
             'confirmPassword' => true,
             // 'window' => 0
         ]),
-        Features::passkeys([
-            'confirmPassword' => true,
-        ]),
+        // Passkey sign-in is disabled for now: its routes are not registered.
+        // Existing rows in the passkeys table are kept untouched.
+        // Features::passkeys([
+        //     'confirmPassword' => true,
+        // ]),
     ],
 
 ];

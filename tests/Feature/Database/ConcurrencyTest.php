@@ -8,17 +8,21 @@
 
 use App\Actions\Contacts\RegisterInboundContact;
 use App\Actions\Conversations\AcceptConversation;
+use App\Actions\Conversations\AssignAutomatically;
 use App\Actions\Conversations\AssignConversation;
+use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\CloseConversation;
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Actions\Conversations\ReopenConversation;
 use App\Actions\Conversations\TransferConversation;
 use App\Actions\Departments\RemoveDepartmentMember;
-use App\Actions\Users\ChangeUserStatus;
+use App\Actions\Users\DeleteUser;
+use App\Enums\AgentAvailability;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionProvider;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Enums\DistributionMode;
 use App\Enums\InboundContactOutcome;
 use App\Enums\InboundMessageOutcome;
 use App\Enums\Permission;
@@ -33,6 +37,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\PlatformSettings;
 use App\Support\InboundSender;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -85,26 +90,26 @@ afterEach(function () {
     RefreshDatabaseState::$migrated = false;
 });
 
-test('simultaneous attempts to remove the last two administrators are serialized', function () {
+test('simultaneous attempts to remove the last two superadministrators are serialized', function () {
     $first = concurrentConnection('first');
     concurrentConnection('second');
 
     [$firstAdmin, $secondAdmin, $actor] = throughConnection('first', fn () => [
-        User::factory()->administrator()->create(),
-        User::factory()->administrator()->create(),
+        User::factory()->superAdministrator()->create(),
+        User::factory()->superAdministrator()->create(),
         User::factory()->supervisor()->create(),
     ]);
 
     $first->beginTransaction();
-    throughConnection('first', fn () => app(ChangeUserStatus::class)->handle(User::query()->findOrFail($firstAdmin->id), false, $actor));
+    throughConnection('first', fn () => app(DeleteUser::class)->handle(User::query()->findOrFail($firstAdmin->id), $actor));
 
-    $deactivateSecondAdmin = fn () => throughConnection('second', fn () => app(ChangeUserStatus::class)->handle(User::query()->findOrFail($secondAdmin->id), false, $actor));
+    $deactivateSecondAdmin = fn () => throughConnection('second', fn () => app(DeleteUser::class)->handle(User::query()->findOrFail($secondAdmin->id), $actor));
 
     expect($deactivateSecondAdmin)->toThrow(QueryException::class, 'Lock wait timeout');
 
     $first->commit();
 
-    expect($deactivateSecondAdmin)->toThrow(ValidationException::class, 'Es la última autoridad administrativa activa')
+    expect($deactivateSecondAdmin)->toThrow(ValidationException::class, 'Es el último superadministrador activo')
         ->and(throughConnection('second', fn () => User::query()->withRootAuthority()->pluck('id')->all()))
         ->toBe([$secondAdmin->id]);
 });
@@ -229,8 +234,8 @@ test('two agents accepting the same conversation at once: only one gets it, the 
         $department = Department::factory()->create();
 
         return [
-            User::factory()->agent()->inDepartments($department)->create(),
-            User::factory()->agent()->inDepartments($department)->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
             Conversation::factory()->inDepartment($department)->create(),
         ];
     });
@@ -410,7 +415,7 @@ test('the same message delivered twice at once is stored only once', function ()
         ->and(throughConnection('second', fn () => Message::query()->where('whatsapp_message_id', 'wamid.twice')->count()))->toBe(1);
 });
 
-test('an assignment waiting on an agent being deactivated is refused once the deactivation commits', function () {
+test('an assignment waiting on an agent being deleted is refused once the deletion commits', function () {
     $first = concurrentConnection('first');
     concurrentConnection('second');
 
@@ -428,13 +433,13 @@ test('an assignment waiting on an agent being deactivated is refused once the de
     );
 
     $first->beginTransaction();
-    throughConnection('first', fn () => app(ChangeUserStatus::class)->handle(User::query()->findOrFail($agent->id), false, User::query()->findOrFail($admin->id)));
+    throughConnection('first', fn () => app(DeleteUser::class)->handle(User::query()->findOrFail($agent->id), User::query()->findOrFail($admin->id)));
 
     expect(fn () => throughConnection('second', $assign))->toThrow(QueryException::class, 'Lock wait timeout');
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $assign))->toThrow(ConversationConflict::class, 'Ana está desactivado.')
+    expect(fn () => throughConnection('second', $assign))->toThrow(ConversationConflict::class, 'La cuenta de Ana está eliminada.')
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->toBeNull();
 });
 
@@ -444,7 +449,7 @@ test('a permission revoked while an operation waits is honored when it proceeds'
 
     [$agent, $conversation] = throughConnection('first', function () {
         $department = Department::factory()->create();
-        $agent = User::factory()->agent()->inDepartments($department)->create();
+        $agent = User::factory()->agent()->available()->inDepartments($department)->create();
 
         return [$agent, Conversation::factory()->inDepartment($department)->create()];
     });
@@ -492,4 +497,152 @@ test('an operation whose snapshot predates a membership removal decides on the c
         ->and(app(ConversationAccess::class)->canAttend($fresh, Department::query()->findOrFail($department->id)))->toBeFalse();
 
     $second->rollBack();
+});
+
+test('an agent switching to unavailable while their accept waits is refused once the change commits', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$agent, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $accept = fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($agent->id));
+
+    $first->beginTransaction();
+    throughConnection('first', fn () => app(ChangeAgentAvailability::class)->handle(User::query()->findOrFail($agent->id), AgentAvailability::Unavailable));
+
+    expect(fn () => throughConnection('second', $accept))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(fn () => throughConnection('second', $accept))->toThrow(ConversationConflict::class, 'Estás como No disponible.')
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
+        ->assigned_user_id->toBeNull()
+        ->status->toBe(ConversationStatus::Pending)
+        ->and(throughConnection('second', fn () => ConversationEvent::query()->count()))->toBe(0);
+});
+
+test('automatic and manual assignment at the same time leave a single responsible', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$admin, $ana, $beto, $department, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
+
+        return [
+            User::factory()->administrator()->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            User::factory()->agent()->inDepartments($department)->create(['availability' => AgentAvailability::Unavailable]),
+            $department,
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $assignByHand = fn () => app(AssignConversation::class)->handle(
+        Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($beto->id), User::query()->findOrFail($admin->id), 0, confirmUnavailable: true,
+    );
+
+    // The distribution holds the conversation while the supervisor assigns it by hand.
+    $first->beginTransaction();
+    expect(throughConnection('first', fn () => app(AssignAutomatically::class)->distributeQueue(Department::query()->findOrFail($department->id))))->toBe(1);
+
+    expect(fn () => throughConnection('second', $assignByHand))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(fn () => throughConnection('second', $assignByHand))->toThrow(ConversationConflict::class, 'La conversación cambió mientras la consultabas')
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
+        ->assigned_user_id->toBe($ana->id)
+        ->version->toBe(1)
+        ->and(throughConnection('second', fn () => ConversationEvent::query()->pluck('type')->all()))->toBe([ConversationEventType::AutoAssigned]);
+});
+
+test('a manual assignment that wins the race is not distributed again', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$admin, $ana, $department, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
+        User::factory()->agent()->available()->inDepartments($department)->create();
+
+        return [
+            User::factory()->administrator()->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            $department,
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $distribute = fn () => app(AssignAutomatically::class)->distributeQueue(Department::query()->findOrFail($department->id));
+
+    $first->beginTransaction();
+    throughConnection('first', fn () => app(AssignConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($ana->id), User::query()->findOrFail($admin->id), 0));
+
+    expect(fn () => throughConnection('second', $distribute))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(throughConnection('second', $distribute))->toBe(0)
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->toBe($ana->id)
+        ->and(throughConnection('second', fn () => ConversationEvent::query()->pluck('type')->all()))->toBe([ConversationEventType::Assigned]);
+});
+
+test('a transfer waiting on the receiver being removed from the department is refused once the removal commits', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$admin, $receiver, $department, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->create(['name' => 'Ventas']);
+        $owner = User::factory()->agent()->available()->inDepartments($department)->create();
+
+        return [
+            User::factory()->administrator()->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(['name' => 'Ana']),
+            $department,
+            Conversation::factory()->inDepartment($department)->assignedTo($owner)->create(),
+        ];
+    });
+    $transfer = fn () => app(TransferConversation::class)->handle(
+        Conversation::query()->findOrFail($conversation->id), null, User::query()->findOrFail($receiver->id), User::query()->findOrFail($admin->id), null, 0,
+    );
+
+    $first->beginTransaction();
+    throughConnection('first', fn () => app(RemoveDepartmentMember::class)->handle(Department::query()->findOrFail($department->id), User::query()->findOrFail($receiver->id), User::query()->findOrFail($admin->id)));
+
+    expect(fn () => throughConnection('second', $transfer))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(fn () => throughConnection('second', $transfer))->toThrow(ConversationConflict::class, 'Ana no pertenece al departamento Ventas.')
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->not->toBe($receiver->id);
+});
+
+test('two accepts by the same agent at once never exceed the attention limit', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$agent, $one, $two] = throughConnection('first', function () {
+        app(PlatformSettings::class)->update(['operations' => ['max_open_conversations_per_agent' => 1]]);
+        $department = Department::factory()->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $accept = fn (Conversation $conversation) => fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($agent->id));
+
+    $first->beginTransaction();
+    throughConnection('first', $accept($one));
+
+    expect(fn () => throughConnection('second', $accept($two)))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(fn () => throughConnection('second', $accept($two)))->toThrow(ConversationConflict::class, 'Ya atiendes el máximo de 1 conversaciones permitido.')
+        ->and(throughConnection('second', fn () => Conversation::query()->where('assigned_user_id', $agent->id)->count()))->toBe(1);
 });

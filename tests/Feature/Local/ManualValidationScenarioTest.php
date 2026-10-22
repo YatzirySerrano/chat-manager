@@ -21,7 +21,7 @@ use Database\Seeders\Local\ManualValidationSeeder;
 */
 
 beforeEach(function () {
-    $this->admin = User::factory()->administrator()->create();
+    $this->admin = User::factory()->superAdministrator()->create();
     $this->credentials = storage_path('framework/testing/demo-b-credentials.txt');
     @unlink($this->credentials);
 });

@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -18,15 +19,24 @@ use function Laravel\Prompts\password;
 use function Laravel\Prompts\text;
 
 #[Signature('app:create-administrator {--name= : Full name} {--email= : Login email}')]
-#[Description('Create an account with the root administrative role (public registration is disabled)')]
+#[Description('Provision the first Superadministrador (root authority) of a new installation; further ones are created from the interface')]
 class CreateAdministrator extends Command
 {
     /**
-     * Execute the console command.
+     * One-time provisioning: it refuses to run once any account holds the
+     * root role (active or deleted), so the console can never be used to
+     * mint extra superadministrators. Additional ones are created by an
+     * existing Superadministrador from the interface, audited.
      */
     public function handle(CreateUser $createUser, SyncRolesAndPermissions $syncPermissions): int
     {
         $syncPermissions->handle();
+
+        if (User::query()->whereHas('roles', fn (Builder $roles) => $roles->where('is_root', true))->exists()) {
+            $this->components->error('Ya existe un superadministrador. Este comando solo aprovisiona el primero; los demás los crea un superadministrador desde la interfaz (Usuarios). Si su cuenta está eliminada, otro superadministrador puede restaurarla.');
+
+            return self::FAILURE;
+        }
 
         $name = $this->option('name');
         $email = $this->option('email');
@@ -54,7 +64,7 @@ class CreateAdministrator extends Command
         $rootRole = Role::query()->with('permissions')->where('is_root', true)->first();
 
         if ($rootRole === null) {
-            $this->components->error('No existe un rol con autoridad administrativa. Ejecuta php artisan app:sync-permissions en una instalación nueva.');
+            $this->components->error('No existe el rol de superadministrador. Ejecuta php artisan app:sync-permissions en una instalación nueva.');
 
             return self::FAILURE;
         }
@@ -66,7 +76,7 @@ class CreateAdministrator extends Command
             'role' => $rootRole,
         ]);
 
-        $this->components->info("Administrador {$user->email} creado correctamente.");
+        $this->components->info("Superadministrador {$user->email} creado correctamente.");
 
         return self::SUCCESS;
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { Zap } from '@lucide/vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import type { DepartmentQuickReplies } from '@/types';
 
@@ -50,11 +50,7 @@ defineProps<{
                         /{{ reply.shortcut }}
                     </p>
                 </div>
-                <StatusBadge
-                    :active="reply.is_active"
-                    active-label="Activa"
-                    inactive-label="Inactiva"
-                />
+                <DeletedBadge v-if="!reply.is_active" feminine />
             </li>
         </ul>
         <div v-else class="px-5 py-8 text-center">

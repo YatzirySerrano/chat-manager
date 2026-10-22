@@ -8,6 +8,9 @@ import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, minLength, required } from '@/lib/validation';
+import type { FieldRules } from '@/lib/validation';
 import { store, update } from '@/routes/admin/roles';
 import type {
     DataScopeValue,
@@ -47,6 +50,22 @@ const form = useForm<{
     permissions: [],
 });
 
+const validation = useFormValidation(form, {
+    rules: (): FieldRules =>
+        props.readonly
+            ? {}
+            : {
+                  label: [
+                      required('Escribe el nombre del rol.'),
+                      minLength(3),
+                      maxLength(80),
+                  ],
+                  description: [maxLength(255)],
+                  scope: [required('Elige el alcance de los datos.')],
+              },
+    requireChanges: () => isEditing.value && !props.readonly,
+});
+
 /** Permissions the role had when the dialog opened, to summarize the changes. */
 const baseline = ref<string[]>([]);
 
@@ -62,14 +81,12 @@ watch(open, (isOpen) => {
     baseline.value = (props.role?.permissions ?? []).filter((name) =>
         availableNames.includes(name),
     );
-    form.clearErrors();
-    form.defaults({
+    validation.load({
         label: props.role?.label ?? '',
         description: props.role?.description ?? '',
         scope: props.role?.scope ?? 'assigned',
         permissions: [...baseline.value],
     });
-    form.reset();
 });
 
 const locked = computed(() =>
@@ -123,15 +140,6 @@ const changes = computed(() => {
     };
 });
 
-const permissionError = computed(() => {
-    const errors = form.errors as Record<string, string | undefined>;
-    const key = Object.keys(errors).find((name) =>
-        name.startsWith('permissions'),
-    );
-
-    return key ? errors[key] : undefined;
-});
-
 const title = computed(() => {
     if (props.readonly) {
         return `Permisos de ${props.role?.label ?? ''}`;
@@ -173,7 +181,7 @@ function submit(): void {
         "
         size="xl"
         :processing="form.processing"
-        :dirty="!readonly && form.isDirty"
+        :validation="validation"
         :submit-label="
             readonly ? 'Cerrar' : isEditing ? 'Guardar rol' : 'Crear rol'
         "
@@ -186,10 +194,11 @@ function submit(): void {
             >
                 <ShieldCheck class="mt-0.5 size-4 shrink-0" />
                 <p>
-                    Este rol es la <strong>autoridad administrativa</strong> de
-                    la plataforma: siempre tiene alcance sobre toda la
-                    organización y conserva los permisos para administrar
-                    usuarios y roles. Puedes ajustar el resto de sus permisos.
+                    Este rol es el <strong>superadministrador</strong>, la
+                    autoridad raíz de la plataforma: siempre tiene alcance sobre
+                    toda la organización, conserva los permisos para administrar
+                    usuarios y roles y es el único que puede tener los permisos
+                    reservados. Puedes ajustar el resto de sus permisos.
                 </p>
             </div>
 
@@ -197,19 +206,20 @@ function submit(): void {
                 <FormField
                     id="role-label"
                     label="Nombre del rol"
-                    :error="form.errors.label"
+                    :error="validation.error('label')"
                 >
                     <Input
                         id="role-label"
                         v-model="form.label"
                         maxlength="80"
                         placeholder="Ej. Coordinador de Atención"
+                        v-bind="validation.field('label', 'role-label')"
                     />
                 </FormField>
                 <FormField
                     id="role-description"
                     label="Descripción (opcional)"
-                    :error="form.errors.description"
+                    :error="validation.error('description')"
                 >
                     <Textarea
                         id="role-description"
@@ -217,6 +227,9 @@ function submit(): void {
                         rows="2"
                         maxlength="255"
                         placeholder="¿Qué responsabilidades tiene?"
+                        v-bind="
+                            validation.field('description', 'role-description')
+                        "
                     />
                 </FormField>
             </div>
@@ -264,7 +277,7 @@ function submit(): void {
                         }}</span>
                     </button>
                 </div>
-                <InputError :message="form.errors.scope" />
+                <InputError :message="validation.error('scope')" />
             </fieldset>
 
             <div class="space-y-2">
@@ -278,7 +291,7 @@ function submit(): void {
                     :readonly="readonly"
                     :current="role?.permissions ?? []"
                 />
-                <InputError :message="permissionError" />
+                <InputError :message="validation.error('permissions')" />
             </div>
 
             <div

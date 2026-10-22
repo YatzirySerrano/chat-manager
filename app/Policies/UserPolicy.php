@@ -25,29 +25,42 @@ class UserPolicy
     }
 
     /**
-     * Profile data can be edited on one's own account or on accounts the actor manages.
+     * Profile data can be edited on one's own account or on accounts the
+     * actor manages. A deleted account is restored first.
      */
     public function update(User $actor, User $user): bool
     {
-        return $actor->holdsPermission(Permission::UpdateUsers)
+        return ! $user->isDeleted()
+            && $actor->holdsPermission(Permission::UpdateUsers)
             && ($actor->is($user) || $this->guard->canManageUser($actor, $user));
     }
 
     public function assignRole(User $actor, User $user): bool
     {
-        return $actor->holdsPermission(Permission::AssignRoles)
+        return ! $user->isDeleted()
+            && $actor->holdsPermission(Permission::AssignRoles)
             && $this->guard->canManageUser($actor, $user);
     }
 
-    public function changeStatus(User $actor, User $user): bool
-    {
-        return $actor->holdsPermission(Permission::ChangeUserStatus)
-            && $this->guard->canManageUser($actor, $user);
-    }
-
+    /**
+     * Logical deletion. Never one's own account, and only accounts the actor
+     * manages: a non-root actor never reaches a Superadministrador.
+     */
     public function delete(User $actor, User $user): bool
     {
-        return $actor->holdsPermission(Permission::DeleteUsers)
+        return ! $user->isDeleted()
+            && $actor->holdsPermission(Permission::DeleteUsers)
+            && $this->guard->canManageUser($actor, $user);
+    }
+
+    /**
+     * Restoring requires seeing deleted records besides the delete permission.
+     */
+    public function restore(User $actor, User $user): bool
+    {
+        return $user->isDeleted()
+            && $actor->holdsPermission(Permission::DeleteUsers)
+            && $actor->canViewDeletedRecords()
             && $this->guard->canManageUser($actor, $user);
     }
 }

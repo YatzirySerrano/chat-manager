@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { integerBetween, maxLength, required } from '@/lib/validation';
+import type { FieldRules } from '@/lib/validation';
 import { edit, update } from '@/routes/admin/settings';
 import type { PlatformSettings, Weekday } from '@/types';
 
@@ -50,9 +53,47 @@ const form = useForm<PlatformSettings>(
     JSON.parse(JSON.stringify(props.settings)) as PlatformSettings,
 );
 
-const errors = computed(
-    () => form.errors as Record<string, string | undefined>,
-);
+const validation = useFormValidation(form, {
+    rules: () => {
+        const rules: FieldRules = {
+            'general.platform_name': [
+                required('Escribe el nombre de la plataforma.'),
+                maxLength(60),
+            ],
+            'general.timezone': [required('Elige la zona horaria.')],
+            'operations.max_open_conversations_per_agent': [
+                integerBetween(1, 200),
+            ],
+            'operations.auto_close_after_hours': [integerBetween(1, 720)],
+        };
+
+        for (const day of props.weekdays) {
+            rules[`business_hours.days.${day}.end`] = [
+                required('Indica la hora de cierre.'),
+                (end) => {
+                    const hours = form.business_hours.days[day];
+
+                    return hours.open && String(end) <= hours.start
+                        ? 'La hora de cierre debe ser posterior a la hora de apertura.'
+                        : null;
+                },
+            ];
+            rules[`business_hours.days.${day}.start`] = [
+                required('Indica la hora de apertura.'),
+            ];
+        }
+
+        return rules;
+    },
+    requireChanges: true,
+});
+
+function hoursError(day: Weekday): string | undefined {
+    return (
+        validation.error(`business_hours.days.${day}.end`) ??
+        validation.error(`business_hours.days.${day}.start`)
+    );
+}
 
 const nativeSelectClass =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
@@ -68,13 +109,16 @@ function toNullableNumber(value: string | number): number | null {
 }
 
 function submit(): void {
+    if (!validation.validate()) {
+        return;
+    }
+
     form.submit(update(), {
         preserveScroll: true,
         onSuccess: () => {
-            form.defaults(
+            validation.load(
                 JSON.parse(JSON.stringify(props.settings)) as PlatformSettings,
             );
-            form.reset();
         },
     });
 }
@@ -87,7 +131,7 @@ const integrationConnected = computed(
 <template>
     <Head title="Configuración" />
 
-    <form class="flex flex-1 flex-col" @submit.prevent="submit">
+    <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
         <fieldset
             :disabled="!can.update"
             class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 p-4 md:p-6 lg:p-8"
@@ -122,11 +166,17 @@ const integrationConnected = computed(
                     <FormField
                         id="platform-name"
                         label="Nombre de la plataforma"
-                        :error="errors['general.platform_name']"
+                        :error="validation.error('general.platform_name')"
                     >
                         <Input
                             id="platform-name"
                             v-model="form.general.platform_name"
+                            v-bind="
+                                validation.field(
+                                    'general.platform_name',
+                                    'platform-name',
+                                )
+                            "
                             required
                             maxlength="60"
                         />
@@ -134,10 +184,16 @@ const integrationConnected = computed(
                     <FormField
                         id="platform-timezone"
                         label="Zona horaria"
-                        :error="errors['general.timezone']"
+                        :error="validation.error('general.timezone')"
                     >
                         <select
                             id="platform-timezone"
+                            v-bind="
+                                validation.field(
+                                    'general.timezone',
+                                    'platform-timezone',
+                                )
+                            "
                             v-model="form.general.timezone"
                             :class="nativeSelectClass"
                         >
@@ -226,6 +282,13 @@ const integrationConnected = computed(
                                         class="w-32"
                                         :disabled="!form.business_hours.enabled"
                                         :aria-label="`Cierre ${weekdayLabels[day]}`"
+                                        v-bind="
+                                            validation.field(
+                                                `business_hours.days.${day}.end`,
+                                                `hours-${day}-end`,
+                                            )
+                                        "
+                                        :id="`hours-${day}-end`"
                                     />
                                 </template>
                                 <span
@@ -234,15 +297,9 @@ const integrationConnected = computed(
                                     >Cerrado</span
                                 >
                                 <InputError
+                                    :id="`hours-${day}-end-error`"
                                     class="w-full sm:text-right"
-                                    :message="
-                                        errors[
-                                            `business_hours.days.${day}.end`
-                                        ] ??
-                                        errors[
-                                            `business_hours.days.${day}.start`
-                                        ]
-                                    "
+                                    :message="hoursError(day)"
                                 />
                             </div>
                         </li>
@@ -278,7 +335,9 @@ const integrationConnected = computed(
                             warning:
                                 'Nunca se adivina el departamento a partir del contenido de los mensajes.',
                         }"
-                        :error="errors['operations.default_department_id']"
+                        :error="
+                            validation.error('operations.default_department_id')
+                        "
                     >
                         <select
                             id="default-department"
@@ -307,13 +366,19 @@ const integrationConnected = computed(
                                 'Quien tiene permiso de asignar puede entregar conversaciones por encima de este límite, porque es una decisión de supervisión.',
                         }"
                         :error="
-                            errors[
-                                'operations.max_open_conversations_per_agent'
-                            ]
+                            validation.error(
+                                'operations.max_open_conversations_per_agent',
+                            )
                         "
                     >
                         <Input
                             id="max-open"
+                            v-bind="
+                                validation.field(
+                                    'operations.max_open_conversations_per_agent',
+                                    'max-open',
+                                )
+                            "
                             :model-value="
                                 form.operations
                                     .max_open_conversations_per_agent ?? ''
@@ -340,10 +405,20 @@ const integrationConnected = computed(
                             warning:
                                 'Cerrar no envía nada al cliente. Si el cliente vuelve a escribir, se aplica la ventana de reapertura de la conexión.',
                         }"
-                        :error="errors['operations.auto_close_after_hours']"
+                        :error="
+                            validation.error(
+                                'operations.auto_close_after_hours',
+                            )
+                        "
                     >
                         <Input
                             id="auto-close"
+                            v-bind="
+                                validation.field(
+                                    'operations.auto_close_after_hours',
+                                    'auto-close',
+                                )
+                            "
                             :model-value="
                                 form.operations.auto_close_after_hours ?? ''
                             "
@@ -394,7 +469,9 @@ const integrationConnected = computed(
                         </label>
                         <InputError
                             :message="
-                                errors['operations.transfer_reason_required']
+                                validation.error(
+                                    'operations.transfer_reason_required',
+                                )
                             "
                         />
                     </div>
@@ -465,18 +542,23 @@ const integrationConnected = computed(
             v-if="can.update"
             class="sticky bottom-0 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
         >
-            <span v-if="form.isDirty" class="text-sm text-muted-foreground"
-                >Cambios sin guardar</span
-            >
+            <span class="text-sm text-muted-foreground" aria-live="polite">{{
+                validation.hasChanges
+                    ? 'Cambios sin guardar'
+                    : 'Sin cambios por guardar'
+            }}</span>
             <Button
                 type="button"
                 variant="outline"
-                :disabled="!form.isDirty || form.processing"
+                :disabled="!validation.hasChanges || form.processing"
                 @click="form.reset()"
             >
                 Descartar
             </Button>
-            <Button type="submit" :disabled="form.processing || !form.isDirty">
+            <Button
+                type="submit"
+                :disabled="form.processing || !validation.hasChanges"
+            >
                 <Spinner v-if="form.processing" />
                 Guardar configuración
             </Button>

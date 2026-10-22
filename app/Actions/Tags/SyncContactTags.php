@@ -33,13 +33,13 @@ class SyncContactTags
             $removedIds = array_values(array_diff($currentIds, $requestedIds));
 
             $added = Tag::query()->whereKey($addedIds)->orderBy('name')->get(['id', 'name', 'is_active']);
-            $inactive = $added->reject(fn (Tag $tag): bool => $tag->is_active);
+            $deleted = $added->filter(fn (Tag $tag): bool => $tag->isDeleted());
 
-            if ($inactive->isNotEmpty()) {
+            if ($deleted->isNotEmpty()) {
                 throw ValidationException::withMessages([
-                    'tag_ids' => $inactive->count() === 1
-                        ? "La etiqueta «{$inactive->first()->name}» está inactiva y no puede asignarse."
-                        : 'Las etiquetas «'.$inactive->pluck('name')->join('», «', '» y «').'» están inactivas y no pueden asignarse.',
+                    'tag_ids' => $deleted->count() === 1
+                        ? "La etiqueta «{$deleted->first()->name}» está eliminada y no puede asignarse."
+                        : 'Las etiquetas «'.$deleted->pluck('name')->join('», «', '» y «').'» están eliminadas y no pueden asignarse.',
                 ]);
             }
 

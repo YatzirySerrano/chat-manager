@@ -1,32 +1,38 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 import {
-    Archive,
-    ArchiveRestore,
     Fingerprint,
     MessagesSquare,
     Pencil,
+    RotateCcw,
+    Trash2,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import ClassifyOriginDialog from '@/components/contacts/ClassifyOriginDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
 import ContactNotesCard from '@/components/contacts/ContactNotesCard.vue';
 import ContactOriginCard from '@/components/contacts/ContactOriginCard.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
+import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { getInitials } from '@/composables/useInitials';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import { contactDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
-import { index as contactsIndex, show } from '@/routes/contacts';
-import { update as updateStatus } from '@/routes/contacts/status';
+import {
+    destroy as destroyContact,
+    index as contactsIndex,
+    restore as restoreContact,
+    show,
+} from '@/routes/contacts';
 import type {
     Contact,
     ContactAttribution,
@@ -51,7 +57,8 @@ const props = defineProps<{
     availableTags: ContactTag[];
     can: {
         update: boolean;
-        archive: boolean;
+        delete: boolean;
+        restore: boolean;
         manageNotes: boolean;
         classifyOrigin: boolean;
         assignTags: boolean;
@@ -69,10 +76,12 @@ defineOptions({
 
 const editOpen = ref(false);
 const classifyOpen = ref(false);
-const confirmArchiveOpen = ref(false);
-const processing = ref(false);
 
-const isArchived = computed(() => props.contact.status === 'archived');
+const deletion = useRecordDeletion<Contact>({
+    destroy: (contact) => destroyContact(contact.id),
+    restore: (contact) => restoreContact(contact.id),
+    copy: contactDeletionCopy,
+});
 
 const channels = computed(() => [
     ...new Set((props.contact.identities ?? []).map((i) => i.channel_label)),
@@ -93,25 +102,6 @@ const conversationTone: Record<ContactConversation['status'], string> = {
     open: 'bg-success/10 text-success',
     closed: 'bg-muted text-muted-foreground',
 };
-
-function changeStatus(status: 'active' | 'archived'): void {
-    router.visit(updateStatus(props.contact.id), {
-        data: { status },
-        preserveScroll: true,
-        onStart: () => (processing.value = true),
-        onFinish: () => {
-            processing.value = false;
-            confirmArchiveOpen.value = false;
-        },
-        onError: (errors) => {
-            const message = Object.values(errors)[0];
-
-            if (message) {
-                toast.error(message);
-            }
-        },
-    });
-}
 </script>
 
 <template>
@@ -130,10 +120,7 @@ function changeStatus(status: 'active' | 'archived'): void {
                             {{ getInitials(contact.name) }}
                         </AvatarFallback>
                     </Avatar>
-                    <StatusBadge
-                        :active="!isArchived"
-                        inactive-label="Archivado"
-                    />
+                    <DeletedBadge v-if="contact.is_deleted" />
                     <span class="text-xs text-muted-foreground">
                         {{ contact.source_label }}
                     </span>
@@ -148,37 +135,34 @@ function changeStatus(status: 'active' | 'archived'): void {
                     <Pencil />
                     Editar
                 </Button>
-                <template v-if="can.archive">
-                    <Button
-                        v-if="isArchived"
-                        variant="outline"
-                        :disabled="processing"
-                        @click="changeStatus('active')"
-                    >
-                        <ArchiveRestore />
-                        Restaurar
-                    </Button>
-                    <Button
-                        v-else
-                        variant="outline"
-                        @click="confirmArchiveOpen = true"
-                    >
-                        <Archive />
-                        Archivar
-                    </Button>
-                </template>
+                <Button
+                    v-if="can.delete"
+                    variant="outline"
+                    class="text-destructive hover:text-destructive"
+                    @click="deletion.ask('delete', contact)"
+                >
+                    <Trash2 />
+                    Eliminar
+                </Button>
+                <Button
+                    v-if="can.restore"
+                    variant="outline"
+                    @click="deletion.ask('restore', contact)"
+                >
+                    <RotateCcw />
+                    Restaurar
+                </Button>
             </template>
         </PageHeader>
 
-        <p
-            v-if="isArchived"
-            class="rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
-            role="status"
+        <DeletedRecordNotice
+            v-if="contact.is_deleted"
+            title="Este contacto está eliminado"
+            :deleted-at="contact.deleted_at"
         >
-            Este contacto está archivado desde
-            {{ formatDateTime(contact.archived_at) }}. No aparece en la lista
-            principal, pero conserva todo su historial.
-        </p>
+            No aparece en las listas, pero conserva todo su historial. Si vuelve
+            a escribir, se sigue usando este mismo contacto.
+        </DeletedRecordNotice>
 
         <div class="grid items-start gap-6 lg:grid-cols-3">
             <div class="flex flex-col gap-6 lg:col-span-2">
@@ -425,13 +409,9 @@ function changeStatus(status: 'active' | 'archived'): void {
         />
 
         <ConfirmDialog
-            v-model:open="confirmArchiveOpen"
-            :title="`¿Archivar a ${contact.name}?`"
-            description="Dejará de aparecer en la lista principal de contactos. Su historial, notas y origen se conservan y podrás restaurarlo cuando quieras."
-            confirm-label="Archivar"
-            destructive
-            :processing="processing"
-            @confirm="changeStatus('archived')"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

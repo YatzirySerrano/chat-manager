@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\Tags;
 
 use App\Actions\Tags\CreateTag;
+use App\Actions\Tags\DeleteTag;
+use App\Actions\Tags\RestoreTag;
+use App\Actions\Tags\TagCatalogQuery;
 use App\Actions\Tags\UpdateTag;
 use App\Enums\ColorSwatch;
+use App\Enums\RecordState;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tags\TagRequest;
 use App\Http\Resources\TagResource;
-use App\Models\Contact;
-use App\Models\Conversation;
 use App\Models\Tag;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\Exports\ReportExporter;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,9 +26,10 @@ use Inertia\Response;
 class TagController extends Controller
 {
     /**
-     * Tag catalog with how many contacts and conversations use each tag.
+     * Tag catalog with how many contacts and conversations use each tag
+     * (the same query as the tags report).
      */
-    public function index(Request $request): Response
+    public function index(Request $request, TagCatalogQuery $catalog, ReportExporter $exporter): Response
     {
         Gate::authorize('viewAny', Tag::class);
 
@@ -34,26 +38,13 @@ class TagController extends Controller
 
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'record' => ['nullable', Rule::enum(RecordState::class)],
         ]);
 
         $search = trim((string) ($filters['search'] ?? ''));
-        $status = $filters['status'] ?? null;
+        $record = RecordState::resolveFor($actor, $filters['record'] ?? null);
 
-        $tags = Tag::query()
-            // Usage is counted only over the records the actor is allowed to see.
-            ->withCount([
-                'contacts' => fn (Builder $query) => $this->visibleContacts($query, $actor),
-                'conversations' => fn (Builder $query) => $this->visibleConversations($query, $actor),
-            ])
-            ->when($search !== '', function (Builder $query) use ($search): void {
-                $term = '%'.addcslashes($search, '\\%_').'%';
-                $query->where(fn (Builder $match) => $match->where('name', 'like', $term)->orWhere('description', 'like', $term));
-            })
-            ->when($status !== null, fn (Builder $query) => $query->where('is_active', $status === 'active'))
-            ->orderByDesc('is_active')
-            ->orderBy('name')
-            ->orderBy('id')
+        $tags = $catalog->handle($actor, ['search' => $search, 'record' => $record->value])
             ->paginate(20)
             ->withQueryString();
 
@@ -61,12 +52,14 @@ class TagController extends Controller
             'tags' => TagResource::collection($tags),
             'filters' => [
                 'search' => $search,
-                'status' => $status,
+                'record' => $record->value,
             ],
+            'recordStates' => RecordState::optionsFor($actor),
             'colors' => ColorSwatch::values(),
             'can' => [
                 'manage' => $actor->can('create', Tag::class),
             ],
+            'canExport' => $exporter->allowsReport('tags', $actor),
         ]);
     }
 
@@ -81,26 +74,36 @@ class TagController extends Controller
 
     public function update(TagRequest $request, Tag $tag, UpdateTag $updateTag): RedirectResponse
     {
-        $updateTag->handle($tag, $request->payload(), $request->user());
+        $changed = $updateTag->handle($tag, $request->payload(), $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Etiqueta actualizada.']);
+        SaveToast::flash($changed, 'Etiqueta actualizada.');
 
         return back();
     }
 
     /**
-     * @param  Builder<Contact>  $query
+     * Logical deletion: the tag can no longer be assigned and stays where it
+     * was applied.
      */
-    private function visibleContacts(Builder $query, User $actor): void
+    public function destroy(Request $request, Tag $tag, DeleteTag $deleteTag): RedirectResponse
     {
-        $query->visibleTo($actor);
+        Gate::authorize('delete', $tag);
+
+        $deleteTag->handle($tag, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Etiqueta {$tag->name} eliminada. Se conserva donde ya estaba aplicada."]);
+
+        return back();
     }
 
-    /**
-     * @param  Builder<Conversation>  $query
-     */
-    private function visibleConversations(Builder $query, User $actor): void
+    public function restore(Request $request, Tag $tag, RestoreTag $restoreTag): RedirectResponse
     {
-        $query->visibleTo($actor);
+        Gate::authorize('restore', $tag);
+
+        $restoreTag->handle($tag, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Etiqueta {$tag->name} restaurada."]);
+
+        return back();
     }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { useForm } from '@inertiajs/vue3';
+import { watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +13,8 @@ import {
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { maxLength, required, when } from '@/lib/validation';
 
 /**
  * Confirms an operation that may carry a reason (hold, release, close).
@@ -33,27 +36,51 @@ const open = defineModel<boolean>('open', { required: true });
 
 const emit = defineEmits<{ confirm: [reason: string] }>();
 
-const reason = ref('');
+/** Local draft: the parent sends the request and passes back its error. */
+const form = useForm({ reason: '' });
+
+const validation = useFormValidation(form, {
+    rules: () => ({
+        reason: [
+            when(
+                () => Boolean(props.reasonRequired),
+                [required('Escribe el motivo.')],
+            ),
+            maxLength(255),
+        ],
+    }),
+});
 
 watch(open, (isOpen) => {
     if (isOpen) {
-        reason.value = '';
+        validation.load({ reason: '' });
     }
 });
 
+watch(
+    () => props.error,
+    (message) => {
+        if (message) {
+            form.setError('reason', message);
+        } else {
+            form.clearErrors('reason');
+        }
+    },
+);
+
 function submit(): void {
-    if (props.reasonRequired && reason.value.trim() === '') {
+    if (props.processing || !validation.validate()) {
         return;
     }
 
-    emit('confirm', reason.value.trim());
+    emit('confirm', form.reason.trim());
 }
 </script>
 
 <template>
     <Dialog v-model:open="open">
         <DialogContent class="sm:max-w-md">
-            <form class="grid gap-4" @submit.prevent="submit">
+            <form class="grid gap-4" novalidate @submit.prevent="submit">
                 <DialogHeader>
                     <DialogTitle>{{ title }}</DialogTitle>
                     <DialogDescription>{{ description }}</DialogDescription>
@@ -66,15 +93,18 @@ function submit(): void {
                             ? reasonLabel
                             : `${reasonLabel} (opcional)`
                     "
-                    :error="error"
+                    :error="validation.error('reason')"
                     hint="Queda en el historial interno; el cliente no lo ve."
                 >
                     <Textarea
                         id="conversation-reason"
-                        v-model="reason"
+                        v-model="form.reason"
                         rows="3"
                         maxlength="255"
                         :required="reasonRequired"
+                        v-bind="
+                            validation.field('reason', 'conversation-reason')
+                        "
                     />
                 </FormField>
                 <DialogFooter class="gap-2">
@@ -89,10 +119,7 @@ function submit(): void {
                     <Button
                         type="submit"
                         :variant="destructive ? 'destructive' : 'default'"
-                        :disabled="
-                            processing ||
-                            (reasonRequired && reason.trim() === '')
-                        "
+                        :disabled="processing"
                     >
                         <Spinner v-if="processing" />
                         {{ confirmLabel }}

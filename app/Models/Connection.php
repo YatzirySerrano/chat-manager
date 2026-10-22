@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\DeletesLogically;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
 use App\Enums\ConnectionProvider;
@@ -23,6 +24,12 @@ use Illuminate\Support\Carbon;
  * phone number registered in Meta. Credentials are encrypted at rest and never
  * serialized; the health of a connection is derived from recorded evidence
  * (see ConnectionHealth), never stored as a claim.
+ *
+ * Two independent states: `is_active` is the operational activation with
+ * Meta (Activar/Desactivar) and `deleted_at` the logical deletion
+ * (Eliminar/Restaurar). A deleted connection is always inactive, keeps its
+ * conversations and history and keeps its Phone number ID reserved. Only an
+ * operational connection (see isOperational) may receive or send traffic.
  *
  * @property int $id
  * @property string $name
@@ -57,6 +64,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_error_at
  * @property string|null $last_error_message
  * @property Carbon|null $last_activity_at
+ * @property Carbon|null $deleted_at Logical deletion; explicit, never a global scope (history relations must keep resolving it).
  * @property int|null $created_by_user_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -71,7 +79,7 @@ use Illuminate\Support\Carbon;
 class Connection extends Model
 {
     /** @use HasFactory<ConnectionFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.
@@ -111,6 +119,7 @@ class Connection extends Model
             'last_outbound_at' => 'datetime',
             'last_error_at' => 'datetime',
             'last_activity_at' => 'datetime',
+            'deleted_at' => 'datetime',
         ];
     }
 
@@ -186,6 +195,20 @@ class Connection extends Model
         return filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token);
     }
 
+    public function isDeleted(): bool
+    {
+        return $this->deleted_at !== null;
+    }
+
+    /**
+     * Whether the connection may exchange traffic with the provider: active
+     * and not deleted. Inbound processing and outbound delivery must check it.
+     */
+    public function isOperational(): bool
+    {
+        return $this->is_active && ! $this->isDeleted();
+    }
+
     /**
      * @param  Builder<Connection>  $query
      */
@@ -193,6 +216,16 @@ class Connection extends Model
     protected function active(Builder $query): void
     {
         $query->where('is_active', true);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     */
+    protected function constrainDeletion(Builder $query, bool $deleted): void
+    {
+        $deleted
+            ? $query->whereNotNull($query->qualifyColumn('deleted_at'))
+            : $query->whereNull($query->qualifyColumn('deleted_at'));
     }
 
     /**

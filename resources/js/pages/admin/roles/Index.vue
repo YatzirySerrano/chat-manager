@@ -1,26 +1,17 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import {
-    Eye,
-    Globe2,
-    Pencil,
-    Plus,
-    Power,
-    PowerOff,
-    ShieldCheck,
-    Trash2,
-    Users,
-} from '@lucide/vue';
+import { Eye, Globe2, Pencil, Plus, ShieldCheck, Users } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import RoleFormDialog from '@/components/admin/RoleFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -33,19 +24,23 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useRecordHighlight } from '@/composables/useRecordHighlight';
+import { useRecordStateFilter } from '@/composables/useRecordStateFilter';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
 import {
     destroy as destroyRole,
     index as rolesIndex,
+    restore as restoreRole,
 } from '@/routes/admin/roles';
-import { update as updateStatus } from '@/routes/admin/roles/status';
 import { index as usersIndex } from '@/routes/admin/users';
 import type {
     ManagedRole,
     PermissionGroupCatalog,
     RecordAction,
+    RecordStateOption,
+    RecordStateValue,
     ScopeOption,
 } from '@/types';
 
@@ -57,11 +52,14 @@ defineOptions({
 
 const props = defineProps<{
     roles: ManagedRole[];
+    filters: { record: RecordStateValue };
+    recordStates: RecordStateOption[];
     catalog: PermissionGroupCatalog[];
     scopes: ScopeOption[];
     grantablePermissions: string[];
     rootCapabilities: string[];
     can: { create: boolean };
+    canExport?: boolean;
 }>();
 
 const { highlightedId } = useRecordHighlight(() =>
@@ -123,22 +121,34 @@ function openRole(role: ManagedRole, readonly: boolean): void {
     formOpen.value = true;
 }
 
-type PendingAction = { type: 'deactivate' | 'delete'; role: ManagedRole };
+const { record, apply: applyRecordState } = useRecordStateFilter(
+    rolesIndex,
+    props.filters.record,
+    ['roles', 'filters'],
+);
 
-const pendingAction = ref<PendingAction | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
-
-function askConfirmation(action: PendingAction): void {
-    pendingAction.value = action;
-    confirmOpen.value = true;
-}
+const deletion = useRecordDeletion<ManagedRole>({
+    destroy: (role) => destroyRole(role.id),
+    restore: (role) => restoreRole(role.id),
+    copy: (role, step) =>
+        step === 'delete'
+            ? {
+                  title: `¿Eliminar el rol ${role.label}?`,
+                  description:
+                      'El rol dejará de otorgar permisos y ya no podrá asignarse. Solo puede eliminarse si nadie lo tiene asignado (incluidos usuarios eliminados). Podrás restaurarlo.',
+              }
+            : {
+                  title: `¿Restaurar el rol ${role.label}?`,
+                  description:
+                      'Volverá a otorgar sus permisos y podrá asignarse de nuevo.',
+              },
+});
 
 const { mode: viewMode } = useViewMode('admin.roles');
 
 /**
- * A role can only be deleted while nobody has it, so the button is offered
- * only then (the server rejects it otherwise).
+ * A role can only be deleted while nobody has it (deleted users included);
+ * the server explains it when someone still holds it.
  */
 function actionsFor(role: ManagedRole): RecordAction[] {
     return recordActions(
@@ -154,106 +164,13 @@ function actionsFor(role: ManagedRole): RecordAction[] {
             icon: Pencil,
             onSelect: () => openRole(role, false),
         },
-        role.can.changeStatus &&
-            !role.is_active && {
-                key: 'activate',
-                label: 'Activar',
-                icon: Power,
-                onSelect: () => activate(role),
-            },
-        role.can.changeStatus &&
-            role.is_active && {
-                key: 'deactivate',
-                label: 'Desactivar',
-                icon: PowerOff,
-                onSelect: () => askConfirmation({ type: 'deactivate', role }),
-            },
-        role.can.delete &&
-            role.users_count === 0 && {
-                key: 'delete',
-                label: 'Eliminar',
-                icon: Trash2,
-                destructive: true,
-                secondary: true,
-                onSelect: () => askConfirmation({ type: 'delete', role }),
-            },
+        ...deletion.actionsFor(role),
     );
 }
 
 function usersLabel(role: ManagedRole): string {
     return `${role.users_count} ${role.users_count === 1 ? 'usuario' : 'usuarios'}`;
 }
-
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
-
-function activate(role: ManagedRole): void {
-    router.visit(updateStatus(role.id), {
-        data: { is_active: true },
-        preserveScroll: true,
-        onStart: () => (processingId.value = role.id),
-        onFinish: () => (processingId.value = null),
-        onError: showFirstError,
-    });
-}
-
-function confirmPendingAction(): void {
-    const action = pendingAction.value;
-
-    if (!action) {
-        return;
-    }
-
-    const options = {
-        preserveScroll: true,
-        onStart: () => (processingId.value = action.role.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: (errors: Record<string, string>) => {
-            confirmOpen.value = false;
-            showFirstError(errors);
-        },
-    };
-
-    if (action.type === 'deactivate') {
-        router.visit(updateStatus(action.role.id), {
-            ...options,
-            data: { is_active: false },
-        });
-
-        return;
-    }
-
-    router.visit(destroyRole(action.role.id), options);
-}
-
-const confirmCopy = computed(() => {
-    const action = pendingAction.value;
-    const users = action?.role.users_count ?? 0;
-
-    if (action?.type === 'delete') {
-        return {
-            title: `¿Eliminar el rol ${action.role.label}?`,
-            description:
-                'El rol no tiene usuarios asignados. Esta acción no se puede deshacer.',
-            confirmLabel: 'Eliminar rol',
-        };
-    }
-
-    return {
-        title: `¿Desactivar el rol ${action?.role.label ?? ''}?`,
-        description:
-            users > 0
-                ? `${users} ${users === 1 ? 'usuario perderá' : 'usuarios perderán'} todos los permisos de este rol en su siguiente acción. Conservarán su cuenta e historial.`
-                : 'No podrá asignarse a nuevos usuarios mientras esté desactivado.',
-        confirmLabel: 'Desactivar rol',
-    };
-});
 </script>
 
 <template>
@@ -266,27 +183,47 @@ const confirmCopy = computed(() => {
             title="Roles y permisos"
             description="Define qué puede hacer cada persona (permisos) y sobre qué datos (alcance). Los cambios se aplican de inmediato."
         >
-            <template v-if="can.create" #actions>
-                <Button @click="openCreate">
+            <template v-if="can.create || canExport" #actions>
+                <ExportMenu
+                    v-if="canExport"
+                    report="roles"
+                    :filters="filters"
+                />
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo rol
                 </Button>
             </template>
         </PageHeader>
 
-        <SurfaceCard v-if="roles.length > 0">
+        <SurfaceCard v-if="roles.length > 0 || record !== 'active'">
             <div
-                class="flex items-center justify-between gap-2 border-b px-4 py-3"
+                class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
             >
                 <p class="text-sm text-muted-foreground">
                     {{ roles.length }}
                     {{ roles.length === 1 ? 'rol' : 'roles' }} ·
                     {{ availableTotal }} permisos disponibles
                 </p>
-                <ViewModeToggle v-model="viewMode" />
+                <div class="flex items-center gap-2">
+                    <RecordStateFilter
+                        v-model="record"
+                        :options="recordStates"
+                        @change="applyRecordState"
+                    />
+                    <ViewModeToggle v-model="viewMode" />
+                </div>
             </div>
 
-            <Table v-if="viewMode === 'table'">
+            <EmptyState
+                v-if="roles.length === 0"
+                class="m-4 border-none"
+                :icon="ShieldCheck"
+                title="Ningún rol en este estado"
+                description="Prueba con otro estado del registro."
+            />
+
+            <Table v-else-if="viewMode === 'table'">
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Rol</TableHead>
@@ -311,7 +248,7 @@ const confirmCopy = computed(() => {
                         :key="role.id"
                         class="transition-colors duration-700"
                         :class="[
-                            !role.is_active && 'text-muted-foreground',
+                            role.is_deleted && 'text-muted-foreground',
                             highlightedId === role.id && 'bg-primary-soft/70',
                         ]"
                     >
@@ -349,7 +286,7 @@ const confirmCopy = computed(() => {
                                     >
                                         {{
                                             role.is_root
-                                                ? 'Autoridad administrativa'
+                                                ? 'Superadministrador: autoridad raíz de la plataforma'
                                                 : role.description ||
                                                   'Sin descripción.'
                                         }}
@@ -376,13 +313,16 @@ const confirmCopy = computed(() => {
                             </Link>
                         </TableCell>
                         <TableCell>
-                            <StatusBadge :active="role.is_active" />
+                            <DeletedBadge v-if="role.is_deleted" />
+                            <span v-else class="text-xs text-muted-foreground"
+                                >Activo</span
+                            >
                         </TableCell>
                         <TableCell class="w-px pr-5 text-right">
                             <RecordActions
                                 :actions="actionsFor(role)"
                                 :record="`el rol ${role.label}`"
-                                :busy="processingId === role.id"
+                                :busy="deletion.processingId === role.id"
                             />
                         </TableCell>
                     </TableRow>
@@ -392,7 +332,7 @@ const confirmCopy = computed(() => {
             <RecordGrid v-else>
                 <li v-for="role in roles" :key="role.id">
                     <RecordCard
-                        :muted="!role.is_active"
+                        :muted="role.is_deleted"
                         :highlighted="highlightedId === role.id"
                     >
                         <template #leading>
@@ -420,12 +360,12 @@ const confirmCopy = computed(() => {
                             </span>
                         </template>
                         <template #badges>
-                            <StatusBadge :active="role.is_active" />
+                            <DeletedBadge v-if="role.is_deleted" />
                             <Badge
                                 v-if="role.is_root"
                                 variant="secondary"
                                 class="font-normal"
-                                >Autoridad administrativa</Badge
+                                >Superadministrador</Badge
                             >
                             <Badge
                                 v-if="role.is_current_user_role"
@@ -492,7 +432,7 @@ const confirmCopy = computed(() => {
                             <RecordActions
                                 :actions="actionsFor(role)"
                                 :record="`el rol ${role.label}`"
-                                :busy="processingId === role.id"
+                                :busy="deletion.processingId === role.id"
                             />
                         </template>
                     </RecordCard>
@@ -518,13 +458,9 @@ const confirmCopy = computed(() => {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="confirmCopy.title"
-            :description="confirmCopy.description"
-            :confirm-label="confirmCopy.confirmLabel"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmPendingAction"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

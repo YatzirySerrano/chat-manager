@@ -73,7 +73,7 @@ class AssessRoleChange
         }
 
         if (! $to->is_active) {
-            $blockers[] = "El rol {$to->label} está desactivado. Actívalo antes de asignarlo.";
+            $blockers[] = "El rol {$to->label} está eliminado. Restáuralo antes de asignarlo.";
         }
 
         if (! $this->guard->canAssignRole($actor, $to)) {
@@ -82,7 +82,7 @@ class AssessRoleChange
 
         if (($from->is_root ?? false) && ! $to->is_root && $user->hasRootAuthority()
             && User::query()->withRootAuthority()->whereKeyNot($user->id)->doesntExist()) {
-            $blockers[] = 'Es la última autoridad administrativa activa. Asigna el rol administrador a otra persona antes de cambiarle el rol.';
+            $blockers[] = 'Es el último superadministrador activo. Asigna el rol de superadministrador a otra persona antes de cambiarle el rol.';
         }
 
         return $blockers;

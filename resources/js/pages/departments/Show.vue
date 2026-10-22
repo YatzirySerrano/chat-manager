@@ -3,17 +3,18 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     Building2,
     Pencil,
-    Power,
-    PowerOff,
+    RotateCcw,
+    Trash2,
     UserMinus,
     UserPlus,
     Users,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import AddMemberDialog from '@/components/admin/AddMemberDialog.vue';
 import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
+import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import DepartmentConnectionsCard from '@/components/departments/DepartmentConnectionsCard.vue';
 import DepartmentHoursCard from '@/components/departments/DepartmentHoursCard.vue';
 import DepartmentDistributionCard from '@/components/departments/DepartmentDistributionCard.vue';
@@ -23,7 +24,6 @@ import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWel
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,11 +35,18 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { getInitials } from '@/composables/useInitials';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import { colorPresentations } from '@/lib/colors';
+import { departmentDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
-import { swatchClasses } from '@/lib/swatches';
-import { index as departmentsIndex, show } from '@/routes/departments';
+import { toastFirstError } from '@/lib/toastErrors';
+import {
+    destroy as destroyDepartment,
+    index as departmentsIndex,
+    restore as restoreDepartment,
+    show,
+} from '@/routes/departments';
 import { destroy as destroyMember } from '@/routes/departments/members';
-import { update as updateStatus } from '@/routes/departments/status';
 import type {
     ColorSwatch,
     DepartmentConnection,
@@ -71,7 +78,12 @@ const props = defineProps<{
         label: string;
         description: string;
     }[];
-    can: { update: boolean; changeStatus: boolean; manageMembers: boolean };
+    can: {
+        update: boolean;
+        delete: boolean;
+        restore: boolean;
+        manageMembers: boolean;
+    };
 }>();
 
 defineOptions({
@@ -116,89 +128,41 @@ const memberGroups = computed(() => {
     );
 });
 
-type PendingAction =
-    | { type: 'remove'; member: DepartmentMember }
-    | { type: 'deactivate' };
+const deletion = useRecordDeletion<DepartmentSummary>({
+    destroy: (department) => destroyDepartment(department.id),
+    restore: (department) => restoreDepartment(department.id),
+    copy: departmentDeletionCopy,
+});
 
-const pendingAction = ref<PendingAction | null>(null);
-const confirmOpen = ref(false);
-const processing = ref(false);
+const pendingRemoval = ref<DepartmentMember | null>(null);
+const removalOpen = ref(false);
+const removing = ref(false);
 
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
+function askRemoval(member: DepartmentMember): void {
+    pendingRemoval.value = member;
+    removalOpen.value = true;
 }
 
-function askConfirmation(action: PendingAction): void {
-    pendingAction.value = action;
-    confirmOpen.value = true;
-}
+function confirmRemoval(): void {
+    const member = pendingRemoval.value;
 
-function activate(): void {
-    router.visit(updateStatus(props.department.id), {
-        data: { is_active: true },
-        preserveScroll: true,
-        onError: showFirstError,
-    });
-}
-
-function confirmPendingAction(): void {
-    const action = pendingAction.value;
-
-    if (!action) {
-        return;
-    }
-
-    const options = {
-        preserveScroll: true,
-        onStart: () => (processing.value = true),
-        onFinish: () => {
-            processing.value = false;
-            confirmOpen.value = false;
-        },
-        onError: showFirstError,
-    };
-
-    if (action.type === 'deactivate') {
-        router.visit(updateStatus(props.department.id), {
-            ...options,
-            data: { is_active: false },
-        });
-
+    if (!member) {
         return;
     }
 
     router.visit(
-        destroyMember({
-            department: props.department.id,
-            member: action.member.id,
-        }),
-        options,
+        destroyMember({ department: props.department.id, member: member.id }),
+        {
+            preserveScroll: true,
+            onStart: () => (removing.value = true),
+            onFinish: () => {
+                removing.value = false;
+                removalOpen.value = false;
+            },
+            onError: toastFirstError,
+        },
     );
 }
-
-const confirmCopy = computed(() => {
-    const action = pendingAction.value;
-
-    if (action?.type === 'remove') {
-        return {
-            title: `¿Retirar a ${action.member.name}?`,
-            description:
-                'Dejará de ver las conversaciones del departamento y sus conversaciones abiertas en él regresarán a la cola.',
-            confirmLabel: 'Retirar',
-        };
-    }
-
-    return {
-        title: `¿Desactivar ${props.department.name}?`,
-        description:
-            'No se podrán agregar miembros ni recibir nuevas conversaciones. Solo es posible si no tiene conversaciones abiertas.',
-        confirmLabel: 'Desactivar',
-    };
-});
 </script>
 
 <template>
@@ -215,11 +179,11 @@ const confirmCopy = computed(() => {
                 <div class="flex items-center gap-2">
                     <span
                         class="flex size-6 items-center justify-center rounded"
-                        :class="swatchClasses[department.color].soft"
+                        v-bind="colorPresentations(department.color).soft"
                     >
                         <Building2 class="size-3.5" aria-hidden="true" />
                     </span>
-                    <StatusBadge :active="department.is_active" />
+                    <DeletedBadge v-if="department.is_deleted" />
                 </div>
             </template>
             <template #actions>
@@ -231,29 +195,38 @@ const confirmCopy = computed(() => {
                     <Pencil />
                     Editar
                 </Button>
-                <template v-if="can.changeStatus">
-                    <Button
-                        v-if="department.is_active"
-                        variant="outline"
-                        @click="askConfirmation({ type: 'deactivate' })"
-                    >
-                        <PowerOff />
-                        Desactivar
-                    </Button>
-                    <Button v-else variant="outline" @click="activate">
-                        <Power />
-                        Activar
-                    </Button>
-                </template>
                 <Button
-                    v-if="can.manageMembers && department.is_active"
-                    @click="addOpen = true"
+                    v-if="can.delete"
+                    variant="outline"
+                    class="text-destructive hover:text-destructive"
+                    @click="deletion.ask('delete', department)"
                 >
+                    <Trash2 />
+                    Eliminar
+                </Button>
+                <Button
+                    v-if="can.restore"
+                    variant="outline"
+                    @click="deletion.ask('restore', department)"
+                >
+                    <RotateCcw />
+                    Restaurar
+                </Button>
+                <Button v-if="can.manageMembers" @click="addOpen = true">
                     <UserPlus />
                     Agregar miembros
                 </Button>
             </template>
         </PageHeader>
+
+        <DeletedRecordNotice
+            v-if="department.is_deleted"
+            title="Este departamento está eliminado"
+        >
+            No recibe ni atiende conversaciones. Sus miembros conservan la
+            membresía sin efecto y el historial mantiene el departamento
+            original. Restáuralo para volver a operar con él.
+        </DeletedRecordNotice>
 
         <DepartmentMetricsCard
             :metrics="metrics"
@@ -299,10 +272,7 @@ const confirmCopy = computed(() => {
                     : 'Un administrador debe asignar miembros.'
             "
         >
-            <Button
-                v-if="can.manageMembers && department.is_active"
-                @click="addOpen = true"
-            >
+            <Button v-if="can.manageMembers" @click="addOpen = true">
                 <UserPlus />
                 Agregar miembros
             </Button>
@@ -349,6 +319,9 @@ const confirmCopy = computed(() => {
                             <TableRow
                                 v-for="member in group.members"
                                 :key="member.id"
+                                :class="
+                                    member.is_deleted && 'text-muted-foreground'
+                                "
                             >
                                 <TableCell>
                                     <div class="flex items-center gap-3">
@@ -375,7 +348,12 @@ const confirmCopy = computed(() => {
                                     <RoleBadge :role="member.role" />
                                 </TableCell>
                                 <TableCell>
-                                    <StatusBadge :active="member.is_active" />
+                                    <DeletedBadge v-if="member.is_deleted" />
+                                    <span
+                                        v-else
+                                        class="text-xs text-muted-foreground"
+                                        >Activo</span
+                                    >
                                 </TableCell>
                                 <TableCell class="hidden md:table-cell">
                                     <span
@@ -405,12 +383,7 @@ const confirmCopy = computed(() => {
                                         variant="ghost"
                                         size="sm"
                                         :aria-label="`Retirar a ${member.name}`"
-                                        @click="
-                                            askConfirmation({
-                                                type: 'remove',
-                                                member,
-                                            })
-                                        "
+                                        @click="askRemoval(member)"
                                     >
                                         <UserMinus />
                                         <span class="hidden sm:inline"
@@ -450,13 +423,19 @@ const confirmCopy = computed(() => {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="confirmCopy.title"
-            :description="confirmCopy.description"
-            :confirm-label="confirmCopy.confirmLabel"
+            v-model:open="removalOpen"
+            :title="`¿Retirar a ${pendingRemoval?.name ?? ''}?`"
+            description="Dejará de ver las conversaciones del departamento y sus conversaciones abiertas en él regresarán a la cola."
+            confirm-label="Retirar"
             destructive
-            :processing="processing"
-            @confirm="confirmPendingAction"
+            :processing="removing"
+            @confirm="confirmRemoval"
+        />
+
+        <ConfirmDialog
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

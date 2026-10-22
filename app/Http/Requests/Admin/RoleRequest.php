@@ -7,6 +7,7 @@ use App\Enums\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\PrivilegeGuard;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -48,7 +49,19 @@ class RoleRequest extends FormRequest
             ],
             'description' => ['nullable', 'string', 'max:255'],
             'scope' => ['required', Rule::enum(DataScope::class)],
-            'permissions' => ['array'],
+            'permissions' => [
+                'array',
+                function (string $attribute, mixed $value, Closure $fail) use ($role): void {
+                    $reserved = app(PrivilegeGuard::class)->reservedPermissionsOutsideRoot(
+                        $role instanceof Role ? $role : null,
+                        $this->permissionNames(),
+                    );
+
+                    if ($reserved !== []) {
+                        $fail('Estos permisos están reservados al superadministrador y no pueden otorgarse a otro rol: '.$this->labels($reserved).'.');
+                    }
+                },
+            ],
             'permissions.*' => ['string', 'distinct', Rule::in(array_column(Permission::available(), 'value'))],
         ];
     }
@@ -91,13 +104,13 @@ class RoleRequest extends FormRequest
 
                 if ($role instanceof Role && $role->is_root) {
                     if ($scope !== DataScope::Global) {
-                        $validator->errors()->add('scope', 'La autoridad administrativa siempre tiene alcance sobre toda la organización.');
+                        $validator->errors()->add('scope', 'El superadministrador siempre tiene alcance sobre toda la organización.');
                     }
 
                     $missing = array_diff(array_column(Permission::rootCapabilities(), 'value'), $permissions);
 
                     if ($missing !== []) {
-                        $validator->errors()->add('permissions', 'La autoridad administrativa no puede perder estos permisos: '.$this->labels($missing).'.');
+                        $validator->errors()->add('permissions', 'El superadministrador no puede perder estos permisos: '.$this->labels($missing).'.');
                     }
                 }
             },

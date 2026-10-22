@@ -5,6 +5,7 @@ namespace App\Policies;
 use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 /**
  * Connections hold company-wide credentials, so both permissions require the
@@ -20,9 +21,17 @@ class ConnectionPolicy
             || $actor->holdsPermission(Permission::ManageConnections);
     }
 
-    public function view(User $actor, Connection $connection): bool
+    /**
+     * A deleted connection answers as nonexistent to people who cannot
+     * consult deleted records.
+     */
+    public function view(User $actor, Connection $connection): Response
     {
-        return $this->viewAny($actor);
+        if (! $this->viewAny($actor)) {
+            return Response::deny();
+        }
+
+        return $connection->isDeleted() && ! $actor->canViewDeletedRecords() ? Response::denyAsNotFound() : Response::allow();
     }
 
     public function create(User $actor): bool
@@ -30,18 +39,33 @@ class ConnectionPolicy
         return $actor->holdsPermission(Permission::ManageConnections);
     }
 
+    /**
+     * A deleted connection is read-only until it is restored.
+     */
     public function update(User $actor, Connection $connection): bool
     {
-        return $actor->holdsPermission(Permission::ManageConnections);
+        return ! $connection->isDeleted() && $actor->holdsPermission(Permission::ManageConnections);
     }
 
     public function changeStatus(User $actor, Connection $connection): bool
     {
-        return $actor->holdsPermission(Permission::ManageConnections);
+        return $this->update($actor, $connection);
     }
 
     public function verify(User $actor, Connection $connection): bool
     {
-        return $actor->holdsPermission(Permission::ManageConnections);
+        return $this->update($actor, $connection);
+    }
+
+    public function delete(User $actor, Connection $connection): bool
+    {
+        return $this->update($actor, $connection);
+    }
+
+    public function restore(User $actor, Connection $connection): bool
+    {
+        return $connection->isDeleted()
+            && $actor->holdsPermission(Permission::ManageConnections)
+            && $actor->canViewDeletedRecords();
     }
 }

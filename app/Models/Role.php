@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\DeletesLogically;
 use App\Enums\DataScope;
 use App\Enums\Permission;
 use Database\Factories\RoleFactory;
@@ -12,7 +13,9 @@ use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role as SpatieRole;
 
 /**
- * An authorization role managed from the interface.
+ * An authorization role managed from the interface. Deleting it is logical
+ * (see DeletesLogically): an inactive role grants nothing and is no longer
+ * offered, while the history keeps referencing it.
  *
  * @property int $id
  * @property string $name
@@ -29,7 +32,7 @@ use Spatie\Permission\Models\Role as SpatieRole;
 class Role extends SpatieRole
 {
     /** @use HasFactory<RoleFactory> */
-    use HasFactory;
+    use DeletesLogically, HasFactory;
 
     /**
      * The model's default values for attributes.

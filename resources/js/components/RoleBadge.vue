@@ -28,7 +28,7 @@ const classes = computed(() => {
         :class="classes"
         :title="
             role?.is_active === false
-                ? 'Rol desactivado: no otorga permisos'
+                ? 'Rol eliminado: no otorga permisos'
                 : undefined
         "
     >

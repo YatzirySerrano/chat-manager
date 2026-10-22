@@ -3,6 +3,7 @@ import { KeyRound, LockKeyhole, RefreshCw } from '@lucide/vue';
 import { nextTick, ref, useTemplateRef, watch } from 'vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import { Button } from '@/components/ui/button';
+import type { FieldBindings } from '@/composables/useFormValidation';
 
 /**
  * Write-only credential field. A saved secret is never sent to the browser:
@@ -14,6 +15,8 @@ const props = defineProps<{
     saved: boolean;
     disabled?: boolean;
     invalid?: boolean;
+    /** ARIA attributes and blur handler from useFormValidation. */
+    fieldAttrs?: FieldBindings;
     placeholder?: string;
     maxlength?: number;
     /** Offer to generate a random value (for tokens chosen by the company). */
@@ -88,7 +91,8 @@ function generate(): void {
                 :maxlength="maxlength"
                 :disabled="disabled"
                 :placeholder="placeholder"
-                :aria-invalid="invalid"
+                v-bind="fieldAttrs"
+                :aria-invalid="invalid || fieldAttrs?.['aria-invalid']"
             />
             <Button
                 v-if="generatable"

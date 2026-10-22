@@ -1,5 +1,6 @@
-import type { ColorSwatch } from './admin';
+import type { AppColor } from './admin';
 import type { TagOption } from './tags';
+import type { RecordStateValue } from './ui';
 
 export type ContactStatusValue = 'active' | 'archived';
 
@@ -51,7 +52,8 @@ export type Contact = {
     phone_e164: string | null;
     email: string | null;
     status: ContactStatusValue;
-    archived_at: string | null;
+    is_deleted: boolean;
+    deleted_at: string | null;
     source: ContactSourceValue;
     source_label: string;
     custom_fields: Record<string, string>;
@@ -63,7 +65,7 @@ export type Contact = {
     identities?: ContactIdentitySummary[];
     origin?: ContactOriginSummary | null;
     /** What the viewer may do with this contact (resolved by the server). */
-    can?: { view: boolean; update: boolean; archive: boolean };
+    can?: { view: boolean; update: boolean; delete: boolean; restore: boolean };
 };
 
 /** A connection (number) through which the contact wrote to the company. */
@@ -80,7 +82,7 @@ export type ContactSort = 'recent' | 'name' | 'newest';
 
 export type ContactFilters = {
     search: string;
-    status: ContactStatusValue | 'all';
+    record: RecordStateValue;
     tags: number[];
     source: ContactSourceValue | null;
     origin: ContactOriginTypeValue | null;
@@ -127,7 +129,7 @@ export type ContactConversation = {
     department: {
         id: number;
         name: string;
-        color: ColorSwatch;
+        color: AppColor;
         is_active: boolean;
     } | null;
     assignee: { id: number; name: string } | null;

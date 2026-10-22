@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
-import TextLink from '@/components/TextLink.vue';
+import { ref } from 'vue';
+import LogoutConfirmDialog from '@/components/LogoutConfirmDialog.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { logout } from '@/routes';
 import { send } from '@/routes/verification';
 
 defineOptions({
@@ -17,6 +17,8 @@ defineOptions({
 defineProps<{
     status?: string;
 }>();
+
+const logoutDialogOpen = ref(false);
 </script>
 
 <template>
@@ -39,8 +41,15 @@ defineProps<{
             Reenviar correo de verificación
         </Button>
 
-        <TextLink :href="logout()" as="button" class="mx-auto block text-sm">
+        <button
+            type="button"
+            class="mx-auto block cursor-pointer text-sm text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
+            data-test="logout-button"
+            @click="logoutDialogOpen = true"
+        >
             Cerrar sesión
-        </TextLink>
+        </button>
+
+        <LogoutConfirmDialog v-model:open="logoutDialogOpen" />
     </Form>
 </template>

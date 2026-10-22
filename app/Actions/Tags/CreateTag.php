@@ -8,6 +8,7 @@ use App\Http\Requests\Tags\TagRequest;
 use App\Models\Tag;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\AppColor;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -20,7 +21,7 @@ class CreateTag
     ) {}
 
     /**
-     * @param  array{name: string, description?: string|null, color: ColorSwatch}  $data
+     * @param  array{name: string, description?: string|null, color: AppColor|ColorSwatch|string}  $data
      */
     public function handle(array $data, User $actor): Tag
     {

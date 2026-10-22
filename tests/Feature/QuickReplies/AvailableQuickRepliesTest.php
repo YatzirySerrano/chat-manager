@@ -35,7 +35,7 @@ test('only active replies that are global or shared with the user departments ar
 });
 
 test('replies are filtered by what was typed after the slash', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     QuickReply::factory()->create(['shortcut' => 'envio', 'title' => 'Costo de envío']);
     QuickReply::factory()->create(['shortcut' => 'horario', 'title' => 'Horario de envíos']);
     QuickReply::factory()->create(['shortcut' => 'saludo', 'title' => 'Saludo']);

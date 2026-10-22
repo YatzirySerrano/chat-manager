@@ -17,6 +17,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('connections', [ConnectionController::class, 'store'])->name('connections.store');
     Route::get('connections/{connection}', [ConnectionController::class, 'show'])->name('connections.show');
     Route::put('connections/{connection}', [ConnectionController::class, 'update'])->name('connections.update');
+    Route::delete('connections/{connection}', [ConnectionController::class, 'destroy'])->name('connections.destroy');
+    Route::patch('connections/{connection}/restore', [ConnectionController::class, 'restore'])->name('connections.restore');
     Route::patch('connections/{connection}/status', [ConnectionStatusController::class, 'update'])->name('connections.status.update');
     Route::post('connections/{connection}/verify', [ConnectionVerificationController::class, 'store'])->name('connections.verify');
 });

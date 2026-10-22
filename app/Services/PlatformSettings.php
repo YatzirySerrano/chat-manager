@@ -78,19 +78,26 @@ class PlatformSettings
             }
 
             $merged = array_replace($current[$group], $values);
+            $groupChanged = false;
 
             foreach (Arr::dot($merged) as $path => $value) {
                 $previous = Arr::get($current[$group], $path);
 
                 if ($previous !== $value) {
                     $changes["{$group}.{$path}"] = ['old' => $previous, 'new' => $value];
+                    $groupChanged = true;
                 }
             }
 
-            Setting::query()->updateOrCreate(['key' => $group], ['value' => $merged]);
+            // A group that keeps its values is not written at all.
+            if ($groupChanged) {
+                Setting::query()->updateOrCreate(['key' => $group], ['value' => $merged]);
+            }
         }
 
-        Cache::forget(self::CACHE_KEY);
+        if ($changes !== []) {
+            Cache::forget(self::CACHE_KEY);
+        }
 
         return $changes;
     }

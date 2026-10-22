@@ -61,7 +61,7 @@ test('+52 numbers whose national part is not 10 digits are rejected', function (
 ]);
 
 test('a contact can be created with only an email and optional fields stored as null', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
         ->post(route('contacts.store'), ['name' => 'Solo Correo', 'phone' => '', 'email' => '  Solo@Example.COM ', 'custom_fields' => []])
@@ -74,7 +74,7 @@ test('a contact can be created with only an email and optional fields stored as 
 });
 
 test('editing clears optional data when it is sent empty', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create([
         'phone_e164' => '+525512345678',
         'email' => 'a@example.com',
@@ -92,7 +92,7 @@ test('editing clears optional data when it is sent empty', function () {
 });
 
 test('the same phone typed in a different format is detected as duplicate, including archived contacts', function (string $typed) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $existing = Contact::factory()->archived()->create(['phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -108,7 +108,7 @@ test('the same phone typed in a different format is detected as duplicate, inclu
 ]);
 
 test('re-saving a contact with its own phone in another format does not ask for duplicate confirmation', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create(['phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -128,7 +128,7 @@ test('a provider identity can belong to only one contact per channel', function 
 });
 
 test('searching the full number in WhatsApp or 00 format finds the contact', function (string $search) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['name' => 'Rosa', 'phone_e164' => '+525512345678']);
 
     $this->actingAs($admin)
@@ -140,35 +140,35 @@ test('searching the full number in WhatsApp or 00 format finds the contact', fun
     '00 prefix' => '0052 55 1234 5678',
 ]);
 
-test('archived contacts are hidden from the default search and reappear after restore', function () {
-    $admin = User::factory()->administrator()->create();
+test('deleted contacts are hidden from the default search and reappear after restore', function () {
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->archived()->create(['name' => 'Zoe Archivada']);
 
     $search = fn () => $this->actingAs($admin)->get(route('contacts.index', ['search' => 'Zoe']))->inertiaProps('contacts.data');
 
     expect($search())->toHaveCount(0);
 
-    $this->actingAs($admin)->patch(route('contacts.status.update', $contact), ['status' => 'active'])->assertSessionHasNoErrors();
+    $this->actingAs($admin)->patch(route('contacts.restore', $contact))->assertSessionHasNoErrors();
 
     expect($search())->toHaveCount(1);
 });
 
-test('archived contacts keep accepting edits, notes and tags (no read-only lock by design)', function () {
-    $admin = User::factory()->administrator()->create();
-    $contact = Contact::factory()->archived()->create();
+test('deleted contacts refuse profile edits until restored but keep accepting notes and tags', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $contact = Contact::factory()->archived()->create(['name' => 'Original']);
     $tag = Tag::factory()->create();
 
-    $this->actingAs($admin)->put(route('contacts.update', $contact), ['name' => 'Editado', 'phone' => $contact->phone_e164])->assertSessionHasNoErrors();
+    $this->actingAs($admin)->put(route('contacts.update', $contact), ['name' => 'Editado', 'phone' => $contact->phone_e164])->assertForbidden();
     $this->actingAs($admin)->post(route('contacts.notes.store', $contact), ['body' => 'Nota'])->assertSessionHasNoErrors();
     $this->actingAs($admin)->put(route('contacts.tags.sync', $contact), ['tag_ids' => [$tag->id]])->assertSessionHasNoErrors();
 
-    expect($contact->refresh())->name->toBe('Editado')->isArchived()->toBeTrue()
+    expect($contact->refresh())->name->toBe('Original')->isDeleted()->toBeTrue()
         ->and($contact->notes()->count())->toBe(1)
         ->and($contact->tags()->count())->toBe(1);
 });
 
 test('a note made only of control characters is rejected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->create();
 
     $this->actingAs($admin)
@@ -179,7 +179,7 @@ test('a note made only of control characters is rejected', function () {
 });
 
 test('out of range or malformed pages answer an empty page instead of an error', function (mixed $page) {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->count(3)->create();
 
     $response = $this->actingAs($admin)->get(route('contacts.index', ['page' => $page]))->assertOk();
@@ -200,7 +200,8 @@ test('outside the scope every contact endpoint answers exactly like a nonexisten
 })->with([
     'show' => ['get', 'contacts.show', []],
     'update' => ['put', 'contacts.update', ['name' => 'X', 'phone' => '5512345678']],
-    'status' => ['patch', 'contacts.status.update', ['status' => 'archived']],
+    'delete' => ['delete', 'contacts.destroy', []],
+    'restore' => ['patch', 'contacts.restore', []],
     'notes' => ['post', 'contacts.notes.store', ['body' => 'x']],
     'origin' => ['post', 'contacts.attributions.store', ['origin_type' => 'website']],
     'tags' => ['put', 'contacts.tags.sync', ['tag_ids' => []]],
@@ -217,7 +218,7 @@ test('a departments user without contacts.update gets 403 inside the scope and 4
 });
 
 test('tag sync accepts an empty list to remove every tag and usage counts follow assign and unassign', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $tag = Tag::factory()->create(['name' => 'VIP']);
     $other = Tag::factory()->create(['name' => 'Mayorista']);
     $contact = Contact::factory()->create();
@@ -250,8 +251,8 @@ test('tag usage counts only include contacts within the actor scope', function (
         ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.contacts_count', 1));
 });
 
-test('tag edits only accept palette colors and valid names', function (array $input, string $error) {
-    $admin = User::factory()->administrator()->create();
+test('tag edits only accept palette or hex colors and valid names', function (array $input, string $error) {
+    $admin = User::factory()->superAdministrator()->create();
     $tag = Tag::factory()->create(['name' => 'VIP', 'color' => 'blue']);
     Tag::factory()->create(['name' => 'Mayorista']);
 
@@ -261,7 +262,7 @@ test('tag edits only accept palette colors and valid names', function (array $in
 
     expect($tag->refresh())->name->toBe('VIP')->color->value->toBe('blue');
 })->with([
-    'hex color' => [['color' => '#ff0000'], 'color'],
+    'shorthand hex color' => [['color' => '#f00'], 'color'],
     'unknown swatch' => [['color' => 'neon'], 'color'],
     'missing color' => [['color' => ''], 'color'],
     'name of another tag in other case' => [['name' => 'MAYORISTA'], 'name'],
@@ -270,7 +271,7 @@ test('tag edits only accept palette colors and valid names', function (array $in
 ]);
 
 test('a long tag name with symbols that expand in the slug is saved without a server error', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     $name = trim(str_repeat('@ ', 30));
 
     $response = $this->actingAs($admin)->post(route('tags.store'), ['name' => $name, 'color' => 'blue']);

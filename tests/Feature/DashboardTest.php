@@ -26,7 +26,7 @@ test('authenticated users can visit the dashboard', function () {
 });
 
 test('conversation metrics are unavailable until a WhatsApp number is connected', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
     Department::factory()->count(2)->create();
 
     $this->actingAs($admin)

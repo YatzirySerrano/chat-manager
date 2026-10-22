@@ -23,6 +23,7 @@ import ConversationStatusBadge from '@/components/conversations/ConversationStat
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -30,8 +31,11 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import WhatsAppText from '@/components/WhatsAppText.vue';
+import { useFormValidation } from '@/composables/useFormValidation';
+import { usePermissions } from '@/composables/usePermissions';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
+import { maxLength, required } from '@/lib/validation';
 import {
     accept,
     assign,
@@ -43,6 +47,7 @@ import {
     show,
     transfer,
 } from '@/routes/conversations';
+import { update as updateAvailability } from '@/routes/conversations/availability';
 import {
     store as storeNote,
     update as updateNote,
@@ -55,6 +60,7 @@ import type {
     ConversationSummary,
     CustomerWindow,
     TransferOptions,
+    ViewerAvailability,
 } from '@/types';
 
 const props = defineProps<{
@@ -69,7 +75,15 @@ const props = defineProps<{
     contactUrl: string | null;
     transferOptions?: TransferOptions;
     transferReasonRequired: boolean;
+    availability: ViewerAvailability;
 }>();
+
+/**
+ * The dossier is authorized like this page (it is already visible) plus the
+ * generic export permission; the server checks both again.
+ */
+const { can: holdsPermission } = usePermissions();
+const canExportDossier = computed(() => holdsPermission('reports.export'));
 
 defineOptions({
     layout: (pageProps: {
@@ -226,11 +240,15 @@ function submitRoute(payload: {
     department_id: number | null;
     user_id: number | null;
     reason: string;
+    confirm_unavailable: boolean;
 }): void {
     if (routeDialog.value === 'assign') {
         operate(
             assign.url(id.value),
-            { user_id: payload.user_id },
+            {
+                user_id: payload.user_id,
+                confirm_unavailable: payload.confirm_unavailable,
+            },
             () => (routeDialog.value = null),
         );
 
@@ -246,7 +264,25 @@ type ToolbarAction = {
     icon: typeof Hand;
     run: () => void;
     variant?: 'default' | 'outline' | 'destructive';
+    disabled?: boolean;
+    describedBy?: string;
 };
+
+/** Unavailable agents cannot take pending conversations (the server refuses it too). */
+const isUnavailable = computed(() => props.availability.value !== 'available');
+
+function becomeAvailable(): void {
+    router.put(
+        updateAvailability.url(),
+        { availability: 'available' },
+        {
+            preserveScroll: true,
+            onStart: () => (processing.value = true),
+            onFinish: () => (processing.value = false),
+            onError: showFirstError,
+        },
+    );
+}
 
 const toolbar = computed<ToolbarAction[]>(() => {
     const actions: ToolbarAction[] = [];
@@ -257,6 +293,10 @@ const toolbar = computed<ToolbarAction[]>(() => {
             label: 'Aceptar',
             icon: Hand,
             variant: 'default',
+            disabled: isUnavailable.value,
+            describedBy: isUnavailable.value
+                ? 'accept-unavailable-hint'
+                : undefined,
             run: () => operate(accept.url(id.value)),
         });
     }
@@ -329,26 +369,42 @@ const toolbar = computed<ToolbarAction[]>(() => {
     return actions;
 });
 
+const NOTE_MAX_LENGTH = 2000;
+const noteRules = {
+    body: [required('Escribe la nota.'), maxLength(NOTE_MAX_LENGTH)],
+};
+
 const noteForm = useForm({ body: '' });
+const noteValidation = useFormValidation(noteForm, { rules: noteRules });
 
 function addNote(): void {
+    if (!noteValidation.validate()) {
+        return;
+    }
+
     noteForm.post(storeNote.url(id.value), {
         preserveScroll: true,
-        onSuccess: () => noteForm.reset(),
+        onSuccess: () => noteValidation.load({ body: '' }),
     });
 }
 
 const editingNoteId = ref<number | null>(null);
 const editForm = useForm({ body: '' });
+const editValidation = useFormValidation(editForm, {
+    rules: noteRules,
+    requireChanges: true,
+});
 
 function startEditing(note: ConversationNote): void {
     editingNoteId.value = note.id;
-    editForm.defaults({ body: note.body });
-    editForm.reset();
-    editForm.clearErrors();
+    editValidation.load({ body: note.body });
 }
 
 function saveNote(note: ConversationNote): void {
+    if (!editValidation.validate()) {
+        return;
+    }
+
     editForm.put(updateNote.url({ conversation: id.value, note: note.id }), {
         preserveScroll: true,
         onSuccess: () => (editingNoteId.value = null),
@@ -397,6 +453,13 @@ const isClosed = computed(() => props.conversation.status === 'closed');
             :description="`${conversation.contact.phone_e164 ? formatPhone(conversation.contact.phone_e164) : 'Sin teléfono'} · ${conversation.connection.name}`"
         >
             <template #actions>
+                <ExportMenu
+                    v-if="canExportDossier"
+                    report="conversation-dossier"
+                    :filters="{ conversation: conversation.id }"
+                    label="Exportar expediente"
+                    heading="Expediente de esta conversación"
+                />
                 <Button v-if="contactUrl" variant="outline" as-child>
                     <Link :href="contactUrl">Ver contacto</Link>
                 </Button>
@@ -454,11 +517,34 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                     :key="action.key"
                     size="sm"
                     :variant="action.variant ?? 'outline'"
-                    :disabled="processing"
+                    :disabled="processing || action.disabled"
+                    :aria-describedby="action.describedBy"
+                    :title="
+                        action.describedBy
+                            ? 'Cambia tu disponibilidad a Disponible para aceptar conversaciones.'
+                            : undefined
+                    "
                     @click="action.run"
                 >
                     <component :is="action.icon" aria-hidden="true" />
                     {{ action.label }}
+                </Button>
+            </div>
+            <div
+                v-if="can.accept && isUnavailable"
+                class="flex flex-wrap items-center gap-3 rounded-md border border-dashed px-3 py-2 text-sm"
+            >
+                <p id="accept-unavailable-hint" class="text-muted-foreground">
+                    Estás como No disponible: cambia tu disponibilidad a
+                    Disponible para aceptar conversaciones.
+                </p>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="processing"
+                    @click="becomeAvailable"
+                >
+                    Cambiar a Disponible
                 </Button>
             </div>
         </SurfaceCard>
@@ -556,6 +642,7 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                     <form
                         v-if="can.addNote"
                         class="grid gap-2"
+                        novalidate
                         @submit.prevent="addNote"
                     >
                         <label for="new-note" class="sr-only"
@@ -565,10 +652,14 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                             id="new-note"
                             v-model="noteForm.body"
                             rows="3"
-                            maxlength="2000"
+                            :maxlength="NOTE_MAX_LENGTH"
                             placeholder="Escribe una nota para el equipo"
+                            v-bind="noteValidation.field('body', 'new-note')"
                         />
-                        <InputError :message="noteForm.errors.body" />
+                        <InputError
+                            id="new-note-error"
+                            :message="noteValidation.error('body')"
+                        />
                         <Button
                             type="submit"
                             size="sm"
@@ -597,6 +688,7 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                             <form
                                 v-if="editingNoteId === note.id"
                                 class="grid gap-2"
+                                novalidate
                                 @submit.prevent="saveNote(note)"
                             >
                                 <label :for="`note-${note.id}`" class="sr-only"
@@ -606,9 +698,18 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                                     :id="`note-${note.id}`"
                                     v-model="editForm.body"
                                     rows="3"
-                                    maxlength="2000"
+                                    :maxlength="NOTE_MAX_LENGTH"
+                                    v-bind="
+                                        editValidation.field(
+                                            'body',
+                                            `note-${note.id}`,
+                                        )
+                                    "
                                 />
-                                <InputError :message="editForm.errors.body" />
+                                <InputError
+                                    :id="`note-${note.id}-error`"
+                                    :message="editValidation.error('body')"
+                                />
                                 <div class="flex justify-end gap-2">
                                     <Button
                                         type="button"
@@ -620,7 +721,10 @@ const isClosed = computed(() => props.conversation.status === 'closed');
                                     <Button
                                         type="submit"
                                         size="sm"
-                                        :disabled="editForm.processing"
+                                        :disabled="
+                                            editForm.processing ||
+                                            !editValidation.hasChanges
+                                        "
                                         >Guardar</Button
                                     >
                                 </div>

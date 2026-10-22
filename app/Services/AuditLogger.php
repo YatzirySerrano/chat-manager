@@ -17,7 +17,9 @@ use Illuminate\Support\Str;
 
 /**
  * Records administrative actions. Sensitive values (passwords, tokens and
- * secrets) are always stripped before persisting.
+ * secrets) are always stripped before persisting. Every action is recorded,
+ * those of the root authority included; what changes is who can read it
+ * (see isRestricted and AuditLog::visibleTo).
  */
 class AuditLogger
 {
@@ -50,8 +52,24 @@ class AuditLogger
             'properties' => $properties === [] ? null : $this->sanitize($properties),
             'ip_address' => $request?->ip(),
             'user_agent' => $request === null ? null : Str::limit((string) $request->userAgent(), 500, ''),
+            'restricted' => $action->isAlwaysRestricted() || $this->isRestricted($subject, $actor),
             'created_at' => now(),
         ]);
+    }
+
+    /**
+     * Entries only the root authority may read, decided when they are written
+     * (roles change later): actions performed by a Superadministrador and
+     * actions about a root user or the root role. Changes involving
+     * permissions reserved to the root authority always concern the root
+     * role, and root provisioning always concerns a root user, so both are
+     * covered by the subject.
+     */
+    private function isRestricted(?Model $subject, ?User $actor): bool
+    {
+        return ($actor?->hasRootAuthority() ?? false)
+            || ($subject instanceof Role && $subject->is_root)
+            || ($subject instanceof User && ($subject->role()->is_root ?? false));
     }
 
     /**

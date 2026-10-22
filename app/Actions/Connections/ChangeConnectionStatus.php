@@ -30,6 +30,12 @@ class ChangeConnectionStatus
                 return $connection;
             }
 
+            if ($active && $connection->isDeleted()) {
+                throw ValidationException::withMessages([
+                    'is_active' => 'La conexión está eliminada. Restáurala antes de activarla.',
+                ]);
+            }
+
             if ($active && ! $connection->hasRequiredCredentials()) {
                 throw ValidationException::withMessages([
                     'is_active' => 'Para activar la conexión guarda primero el Phone number ID, el WABA ID y el token de acceso.',

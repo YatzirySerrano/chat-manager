@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Tags\ContactTagController;
 use App\Http\Controllers\Tags\TagController;
-use App\Http\Controllers\Tags\TagStatusController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,7 +14,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('tags', [TagController::class, 'index'])->name('tags.index');
     Route::post('tags', [TagController::class, 'store'])->name('tags.store');
     Route::put('tags/{tag}', [TagController::class, 'update'])->name('tags.update');
-    Route::patch('tags/{tag}/status', [TagStatusController::class, 'update'])->name('tags.status.update');
+    Route::delete('tags/{tag}', [TagController::class, 'destroy'])->name('tags.destroy');
+    Route::patch('tags/{tag}/restore', [TagController::class, 'restore'])->name('tags.restore');
 
     Route::put('contacts/{contact}/tags', [ContactTagController::class, 'update'])->name('contacts.tags.sync');
 });

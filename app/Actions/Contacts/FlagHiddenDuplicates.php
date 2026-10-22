@@ -13,7 +13,8 @@ use Illuminate\Database\Eloquent\Builder;
  * phone or email matches contacts the employee cannot see. The employee gets
  * exactly the same answer as when nothing matches, so the form cannot be used
  * to find out whether a phone belongs to another department's customer; an
- * administrator with organization-wide scope decides instead.
+ * administrator with organization-wide scope decides instead. Deleted
+ * contacts the employee may not consult count as hidden.
  */
 class FlagHiddenDuplicates
 {
@@ -41,7 +42,7 @@ class FlagHiddenDuplicates
             return null;
         }
 
-        $visible = Contact::query()->visibleTo($actor)->whereKey($matches)->pluck('id')->all();
+        $visible = Contact::query()->visibleTo($actor)->hidingDeletedFrom($actor)->whereKey($matches)->pluck('id')->all();
         $hidden = array_values(array_diff($matches, $visible));
 
         if ($hidden === []) {

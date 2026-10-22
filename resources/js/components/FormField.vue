@@ -24,6 +24,6 @@ defineProps<{
         <p v-if="hint && !error" class="text-xs text-muted-foreground">
             {{ hint }}
         </p>
-        <InputError :message="error" />
+        <InputError :id="id ? `${id}-error` : undefined" :message="error" />
     </div>
 </template>

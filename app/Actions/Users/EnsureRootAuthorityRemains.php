@@ -6,8 +6,10 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Guarantees the platform never loses its last root authority: an active
- * user holding the active root role, able to manage users and permissions.
+ * Guarantees the platform never loses its last root authority (the last
+ * active Superadministrador): an active user holding the active root role,
+ * able to manage users and permissions. Deleting or demoting that user is
+ * refused.
  *
  * Must be called inside a database transaction. Every root user row is locked
  * in primary key order, so concurrent attempts are serialized (instead of
@@ -32,7 +34,7 @@ class EnsureRootAuthorityRemains
 
         if ($rootUserIds->count() === 1) {
             throw ValidationException::withMessages([
-                $errorKey => 'Es la última autoridad administrativa activa. Asigna el rol administrador a otra persona antes de continuar.',
+                $errorKey => 'Es el último superadministrador activo. Asigna el rol de superadministrador a otra persona antes de continuar.',
             ]);
         }
     }

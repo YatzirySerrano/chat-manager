@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\Permission;
 use App\Models\User;
 use App\Services\DashboardMetrics;
+use App\Services\Exports\ReportExporter;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,7 +20,7 @@ class DashboardController extends Controller
      * renders; without dashboard.view no metric is computed nor sent, not even
      * through a partial reload asking for "overview".
      */
-    public function __invoke(Request $request, DashboardMetrics $metrics): Response
+    public function __invoke(Request $request, DashboardMetrics $metrics, ReportExporter $exporter): Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -28,6 +29,7 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'canViewMetrics' => $canViewMetrics,
             'overview' => $canViewMetrics ? Inertia::defer(fn () => $metrics->overviewFor($user)) : null,
+            'canExport' => $exporter->allowsReport('dashboard', $user),
         ]);
     }
 }

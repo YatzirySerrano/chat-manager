@@ -17,11 +17,15 @@ class UpdateQuickReply
     ) {}
 
     /**
+     * Nothing is written (no save, no department sync, no audit entry) when
+     * the data and the set of departments stay the same.
+     *
      * @param  array{title: string, shortcut: string, body: string, is_global: bool, department_ids: list<int>}  $data
+     * @return bool Whether anything changed.
      */
-    public function handle(QuickReply $quickReply, array $data, User $actor): QuickReply
+    public function handle(QuickReply $quickReply, array $data, User $actor): bool
     {
-        return DB::transaction(function () use ($quickReply, $data, $actor): QuickReply {
+        return DB::transaction(function () use ($quickReply, $data, $actor): bool {
             // Serializes concurrent edits of this reply, even when only its departments change.
             QuickReply::query()->whereKey($quickReply->id)->lockForUpdate()->value('id');
 
@@ -41,7 +45,7 @@ class UpdateQuickReply
             $departmentsChanged = $departmentIds !== $currentDepartmentIds;
 
             if (! $quickReply->isDirty() && ! $departmentsChanged) {
-                return $quickReply;
+                return false;
             }
 
             if ($departmentsChanged || $quickReply->isDirty(['shortcut', 'is_global'])) {
@@ -80,7 +84,7 @@ class UpdateQuickReply
 
             $this->audit->record(AuditAction::QuickReplyUpdated, $quickReply, ['changes' => $changes], $actor);
 
-            return $quickReply;
+            return true;
         }, 3);
     }
 }

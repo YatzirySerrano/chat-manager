@@ -26,16 +26,23 @@ export type Auth = {
     permissions: string[];
 };
 
-export type Passkey = {
-    id: number;
-    name: string;
-    authenticator: string | null;
-    created_at_diff: string;
-    last_used_at_diff: string | null;
-};
-
 export type TwoFactorConfigContent = {
     title: string;
     description: string;
     buttonText: string;
+};
+
+/**
+ * Effective password policy (Password::defaults()) shared by the server so
+ * forms can check it while typing. "uncompromised" is only checked by the
+ * server.
+ */
+export type PasswordPolicy = {
+    min: number;
+    max: number | null;
+    letters: boolean;
+    mixed_case: boolean;
+    numbers: boolean;
+    symbols: boolean;
+    uncompromised: boolean;
 };

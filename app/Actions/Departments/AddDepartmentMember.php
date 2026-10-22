@@ -20,11 +20,11 @@ class AddDepartmentMember
             $role = $member->role();
 
             if (! $department->is_active) {
-                throw ValidationException::withMessages(['user_id' => 'No es posible agregar miembros a un departamento inactivo.']);
+                throw ValidationException::withMessages(['user_id' => 'No es posible agregar miembros a un departamento eliminado.']);
             }
 
             if (! $member->is_active) {
-                throw ValidationException::withMessages(['user_id' => 'No es posible agregar un usuario inactivo.']);
+                throw ValidationException::withMessages(['user_id' => 'No es posible agregar un usuario eliminado.']);
             }
 
             if ($role === null || ! $role->is_active) {

@@ -41,6 +41,17 @@ class ProcessInboundMessages
                 continue;
             }
 
+            // A deleted connection no longer operates: its history is kept,
+            // but new traffic is not attached to it.
+            if ($connections[$message->phoneNumberId]->isDeleted()) {
+                Log::warning('Inbound message ignored: the connection of this phone number id was deleted.', [
+                    'connection_id' => $connections[$message->phoneNumberId]->id,
+                    'message_id' => $message->sender->messageId,
+                ]);
+
+                continue;
+            }
+
             $receipts[] = $this->receiveInboundMessage->handle($connections[$message->phoneNumberId], $message);
         }
 

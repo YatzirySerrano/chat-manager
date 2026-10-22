@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use App\Services\PlatformSettings;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -55,6 +56,7 @@ class HandleInertiaRequests extends Middleware
                 'role' => $user instanceof User ? $this->roleSummary($user) : null,
                 'permissions' => $user instanceof User ? $user->effectivePermissions() : [],
             ],
+            'passwordPolicy' => fn (): array => PasswordPolicy::current(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

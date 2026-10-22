@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import AuditRestrictedBadge from '@/components/admin/AuditRestrictedBadge.vue';
 import {
     Sheet,
     SheetContent,
@@ -70,7 +71,10 @@ function display(value: unknown): string {
         <SheetContent class="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
             <template v-if="entry">
                 <SheetHeader class="border-b p-5">
-                    <SheetTitle>{{ entry.action.label }}</SheetTitle>
+                    <SheetTitle class="flex items-center gap-2">
+                        {{ entry.action.label }}
+                        <AuditRestrictedBadge v-if="entry.restricted" />
+                    </SheetTitle>
                     <SheetDescription>
                         {{
                             formatDateTime(entry.created_at, {

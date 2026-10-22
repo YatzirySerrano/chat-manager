@@ -6,6 +6,7 @@ use App\Actions\Departments\UpdateDepartmentDistribution;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateDepartmentDistributionRequest;
 use App\Models\Department;
+use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
@@ -19,7 +20,7 @@ class DepartmentDistributionController extends Controller
         $assigned = $updateDistribution->handle($department, $request->mode(), $request->user());
 
         Inertia::flash('toast', match (true) {
-            $assigned === null => ['type' => 'info', 'message' => 'No había cambios por guardar.'],
+            $assigned === null => ['type' => 'info', 'message' => SaveToast::NO_CHANGES],
             $assigned > 0 => ['type' => 'success', 'message' => "Distribución actualizada. Se asignaron {$assigned} conversaciones que esperaban en la cola."],
             default => ['type' => 'success', 'message' => 'Distribución actualizada.'],
         });

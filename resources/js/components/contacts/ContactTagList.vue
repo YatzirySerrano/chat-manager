@@ -3,7 +3,7 @@ import TagBadge from '@/components/tags/TagBadge.vue';
 import type { ContactTag } from '@/types';
 
 /**
- * Compact read-only list of a contact's tags for tables. Inactive tags stay
+ * Compact read-only list of a contact's tags for tables. Deleted tags stay
  * visible (muted).
  */
 withDefaults(
@@ -22,7 +22,7 @@ withDefaults(
             :key="tag.id"
             :name="tag.name"
             :color="tag.color"
-            :inactive="!tag.is_active"
+            :deleted="!tag.is_active"
         />
         <span
             v-if="limit && tags.length > limit"

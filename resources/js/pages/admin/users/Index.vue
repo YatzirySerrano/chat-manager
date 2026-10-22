@@ -3,33 +3,30 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     Pencil,
     Plus,
-    Power,
-    PowerOff,
     Search,
     SearchCheck,
     ShieldCheck,
     Trash2,
     UserCheck,
-    UserMinus,
-    Users,
     UserX,
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
-import { toast } from 'vue-sonner';
 import UserFormDialog from '@/components/admin/UserFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
+import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
 import StatCard from '@/components/StatCard.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -56,6 +53,7 @@ import {
 } from '@/components/ui/tooltip';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { getInitials } from '@/composables/useInitials';
+import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useRecordHighlight } from '@/composables/useRecordHighlight';
 import { useViewMode } from '@/composables/useViewMode';
 import { formatDateTime, formatRelative } from '@/lib/format';
@@ -63,13 +61,14 @@ import { recordActions } from '@/lib/recordActions';
 import {
     destroy as destroyUser,
     index as usersIndex,
+    restore as restoreUser,
 } from '@/routes/admin/users';
-import { update as updateStatus } from '@/routes/admin/users/status';
 import type {
     AdminUser,
     DepartmentOption,
     Paginated,
     RecordAction,
+    RecordStateOption,
     RoleOption,
     UserFilters,
     UserSort,
@@ -85,10 +84,12 @@ defineOptions({
 const props = defineProps<{
     users: Paginated<AdminUser>;
     filters: UserFilters;
+    recordStates: RecordStateOption[];
     stats: UserStats;
     roles: RoleOption[];
     departments: DepartmentOption[];
     can: { create: boolean };
+    canExport?: boolean;
 }>();
 
 const ALL = 'all';
@@ -106,7 +107,7 @@ const filterState = reactive({
         props.filters.department === null
             ? ALL
             : String(props.filters.department),
-    status: props.filters.status ?? ALL,
+    record: props.filters.record,
     sort: props.filters.sort ?? 'name',
 });
 
@@ -115,7 +116,7 @@ const hasFilters = computed(
         filterState.search !== '' ||
         filterState.role !== ALL ||
         filterState.department !== ALL ||
-        filterState.status !== ALL,
+        filterState.record !== 'active',
 );
 
 const { highlightedId, missing, dismissMissing } = useRecordHighlight(() =>
@@ -129,10 +130,14 @@ function applyFilters(): void {
         query.search = filterState.search.trim();
     }
 
-    for (const key of ['role', 'department', 'status'] as const) {
+    for (const key of ['role', 'department'] as const) {
         if (filterState[key] !== ALL) {
             query[key] = filterState[key];
         }
+    }
+
+    if (filterState.record !== 'active') {
+        query.record = filterState.record;
     }
 
     if (filterState.sort !== 'name') {
@@ -157,7 +162,7 @@ function clearFilters(): void {
     filterState.search = '';
     filterState.role = ALL;
     filterState.department = ALL;
-    filterState.status = ALL;
+    filterState.record = 'active';
     applyFilters();
 }
 
@@ -168,7 +173,7 @@ function locateMissing(): void {
 
     filterState.role = ALL;
     filterState.department = ALL;
-    filterState.status = ALL;
+    filterState.record = props.recordStates.length > 0 ? 'all' : 'active';
     filterState.search = missing.value.email;
 }
 
@@ -185,83 +190,21 @@ function openEdit(user: AdminUser): void {
     formOpen.value = true;
 }
 
-type PendingAction = { type: 'deactivate' | 'delete'; user: AdminUser };
-
-const pendingAction = ref<PendingAction | null>(null);
-const confirmOpen = ref(false);
-const processingId = ref<number | null>(null);
-
-function askConfirmation(action: PendingAction): void {
-    pendingAction.value = action;
-    confirmOpen.value = true;
-}
-
-function showFirstError(errors: Record<string, string>): void {
-    const message = Object.values(errors)[0];
-
-    if (message) {
-        toast.error(message);
-    }
-}
-
-function activate(user: AdminUser): void {
-    router.visit(updateStatus(user.id), {
-        data: { is_active: true },
-        preserveScroll: true,
-        onStart: () => (processingId.value = user.id),
-        onFinish: () => (processingId.value = null),
-        onError: showFirstError,
-    });
-}
-
-function confirmPendingAction(): void {
-    const action = pendingAction.value;
-
-    if (!action) {
-        return;
-    }
-
-    const options = {
-        preserveScroll: true,
-        onStart: () => (processingId.value = action.user.id),
-        onSuccess: () => (confirmOpen.value = false),
-        onFinish: () => (processingId.value = null),
-        onError: (errors: Record<string, string>) => {
-            confirmOpen.value = false;
-            showFirstError(errors);
-        },
-    };
-
-    if (action.type === 'deactivate') {
-        router.visit(updateStatus(action.user.id), {
-            ...options,
-            data: { is_active: false },
-        });
-
-        return;
-    }
-
-    router.visit(destroyUser(action.user.id), options);
-}
-
-const confirmCopy = computed(() => {
-    const action = pendingAction.value;
-
-    if (action?.type === 'delete') {
-        return {
-            title: `¿Eliminar a ${action.user.name}?`,
-            description:
-                'La cuenta se eliminará de forma permanente. Si el usuario ya tiene historial operativo, desactívalo en su lugar.',
-            confirmLabel: 'Eliminar usuario',
-        };
-    }
-
-    return {
-        title: `¿Desactivar a ${action?.user.name ?? ''}?`,
-        description:
-            'Se cerrarán sus sesiones, no podrá iniciar sesión y sus conversaciones abiertas regresarán a la cola de su departamento. Su historial se conserva.',
-        confirmLabel: 'Desactivar',
-    };
+const deletion = useRecordDeletion<AdminUser>({
+    destroy: (user) => destroyUser(user.id),
+    restore: (user) => restoreUser(user.id),
+    copy: (user, step) =>
+        step === 'delete'
+            ? {
+                  title: `¿Eliminar a ${user.name}?`,
+                  description:
+                      'El usuario perderá el acceso de inmediato y sus conversaciones abiertas regresarán a la cola de su departamento. Su historial se conserva y podrás restaurarlo.',
+              }
+            : {
+                  title: `¿Restaurar a ${user.name}?`,
+                  description:
+                      'Podrá iniciar sesión de nuevo con su rol y sus departamentos. Las conversaciones que se liberaron al eliminarlo no se le reasignan automáticamente.',
+              },
 });
 
 const { mode: viewMode } = useViewMode('admin.users');
@@ -274,27 +217,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(user),
         },
-        user.can.changeStatus &&
-            !user.is_active && {
-                key: 'activate',
-                label: 'Activar',
-                icon: Power,
-                onSelect: () => activate(user),
-            },
-        user.can.changeStatus &&
-            user.is_active && {
-                key: 'deactivate',
-                label: 'Desactivar',
-                icon: PowerOff,
-                onSelect: () => askConfirmation({ type: 'deactivate', user }),
-            },
-        user.can.delete && {
-            key: 'delete',
-            label: 'Eliminar',
-            icon: Trash2,
-            destructive: true,
-            onSelect: () => askConfirmation({ type: 'delete', user }),
-        },
+        ...deletion.actionsFor(user),
     );
 }
 </script>
@@ -309,8 +232,13 @@ function actionsFor(user: AdminUser): RecordAction[] {
             title="Usuarios"
             description="Administra las cuentas de los empleados, sus roles y departamentos."
         >
-            <template v-if="can.create" #actions>
-                <Button @click="openCreate">
+            <template v-if="can.create || canExport" #actions>
+                <ExportMenu
+                    v-if="canExport"
+                    report="users"
+                    :filters="filters"
+                />
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo usuario
                 </Button>
@@ -319,22 +247,23 @@ function actionsFor(user: AdminUser): RecordAction[] {
 
         <div class="grid gap-4 sm:grid-cols-3">
             <StatCard
-                label="Usuarios"
-                :value="stats.total"
-                :icon="Users"
-                hint="Dentro de tu alcance"
-            />
-            <StatCard
                 label="Activos"
                 :value="stats.active"
                 :icon="UserCheck"
-                hint="Pueden iniciar sesión"
+                hint="Dentro de tu alcance; pueden iniciar sesión"
             />
             <StatCard
-                label="Inactivos"
-                :value="stats.inactive"
-                :icon="UserMinus"
-                hint="Conservan su historial"
+                label="Con verificación en dos pasos"
+                :value="stats.two_factor"
+                :icon="ShieldCheck"
+                hint="Usuarios activos que la tienen configurada"
+            />
+            <StatCard
+                v-if="stats.deleted !== null"
+                label="Eliminados"
+                :value="stats.deleted"
+                :icon="Trash2"
+                hint="Conservan su historial y pueden restaurarse"
             />
         </div>
 
@@ -429,22 +358,11 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             </SelectItem>
                         </SelectContent>
                     </Select>
-                    <Select
-                        v-model="filterState.status"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-32"
-                            aria-label="Filtrar por estado"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL">Todos</SelectItem>
-                            <SelectItem value="active">Activos</SelectItem>
-                            <SelectItem value="inactive">Inactivos</SelectItem>
-                        </SelectContent>
-                    </Select>
+                    <RecordStateFilter
+                        v-model="filterState.record"
+                        :options="recordStates"
+                        @change="applyFilters"
+                    />
                     <Select
                         v-model="filterState.sort"
                         @update:model-value="applyFilters"
@@ -502,7 +420,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                         :key="user.id"
                         class="transition-colors duration-700"
                         :class="[
-                            !user.is_active && 'text-muted-foreground',
+                            user.is_deleted && 'text-muted-foreground',
                             highlightedId === user.id && 'bg-primary-soft/70',
                         ]"
                     >
@@ -543,10 +461,9 @@ function actionsFor(user: AdminUser): RecordAction[] {
                                     >
                                         {{ user.email }}
                                     </p>
-                                    <StatusBadge
-                                        v-if="!user.is_active"
+                                    <DeletedBadge
+                                        v-if="user.is_deleted"
                                         class="mt-1 sm:hidden"
-                                        :active="false"
                                     />
                                 </div>
                             </div>
@@ -585,7 +502,10 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             </span>
                         </TableCell>
                         <TableCell class="hidden sm:table-cell">
-                            <StatusBadge :active="user.is_active" />
+                            <DeletedBadge v-if="user.is_deleted" />
+                            <span v-else class="text-xs text-muted-foreground"
+                                >Activo</span
+                            >
                         </TableCell>
                         <TableCell class="hidden xl:table-cell">
                             <span
@@ -603,7 +523,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             <RecordActions
                                 :actions="actionsFor(user)"
                                 :record="user.name"
-                                :busy="processingId === user.id"
+                                :busy="deletion.processingId === user.id"
                             />
                         </TableCell>
                     </TableRow>
@@ -613,7 +533,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
             <RecordGrid v-else-if="users.data.length > 0">
                 <li v-for="user in users.data" :key="user.id">
                     <RecordCard
-                        :muted="!user.is_active"
+                        :muted="user.is_deleted"
                         :highlighted="highlightedId === user.id"
                     >
                         <template #leading>
@@ -643,7 +563,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                         <template #subtitle>{{ user.email }}</template>
                         <template #badges>
                             <RoleBadge :role="user.role" />
-                            <StatusBadge :active="user.is_active" />
+                            <DeletedBadge v-if="user.is_deleted" />
                         </template>
                         <div
                             v-if="user.departments.length > 0"
@@ -686,7 +606,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             <RecordActions
                                 :actions="actionsFor(user)"
                                 :record="user.name"
-                                :busy="processingId === user.id"
+                                :busy="deletion.processingId === user.id"
                             />
                         </template>
                     </RecordCard>
@@ -736,13 +656,9 @@ function actionsFor(user: AdminUser): RecordAction[] {
         />
 
         <ConfirmDialog
-            v-model:open="confirmOpen"
-            :title="confirmCopy.title"
-            :description="confirmCopy.description"
-            :confirm-label="confirmCopy.confirmLabel"
-            destructive
-            :processing="processingId !== null"
-            @confirm="confirmPendingAction"
+            v-model:open="deletion.open"
+            v-bind="deletion.dialog"
+            @confirm="deletion.confirm"
         />
     </div>
 </template>

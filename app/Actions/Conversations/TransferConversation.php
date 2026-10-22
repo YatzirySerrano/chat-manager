@@ -2,8 +2,10 @@
 
 namespace App\Actions\Conversations;
 
+use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Enums\Permission;
 use App\Exceptions\ConversationConflict;
 use App\Models\Conversation;
 use App\Models\Department;
@@ -23,6 +25,10 @@ use Illuminate\Validation\ValidationException;
  * Without a receiving agent it waits in the destination queue (and is
  * distributed automatically when that department does so). No message is
  * ever sent to the customer.
+ *
+ * Handing it to an agent declared unavailable is an exception reserved to
+ * users who can assign, with explicit confirmation; it is recorded in the
+ * event and never changes the agent's availability.
  */
 class TransferConversation
 {
@@ -36,10 +42,11 @@ class TransferConversation
     /**
      * @param  Department|null  $department  Destination department; null keeps the current one.
      * @param  User|null  $agent  Receiving agent; null leaves it pending in the destination queue.
+     * @param  bool  $confirmUnavailable  The actor confirmed handing it to an unavailable agent.
      *
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null): Conversation
+    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $confirmUnavailable = false): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
@@ -47,7 +54,7 @@ class TransferConversation
             throw ValidationException::withMessages(['reason' => 'Indica el motivo de la transferencia.']);
         }
 
-        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion): Conversation {
+        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmUnavailable): Conversation {
             $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
             $actor = $this->lifecycle->authorize($actor, 'transfer', $conversation);
 
@@ -76,6 +83,16 @@ class TransferConversation
                 throw new ConversationConflict('Elige un destino distinto al actual.');
             }
 
+            $unavailable = $agent !== null && $agent->availability !== AgentAvailability::Available;
+
+            if ($unavailable && ! $actor->holdsPermission(Permission::AssignConversations)) {
+                throw ValidationException::withMessages(['user_id' => "{$agent->name} está como No disponible. Transfiérela a la cola del departamento o pide a quien asigna conversaciones que lo autorice."]);
+            }
+
+            if ($unavailable && ! $confirmUnavailable) {
+                throw ValidationException::withMessages(['user_id' => $this->access->unavailableConfirmation($agent)]);
+            }
+
             $this->lifecycle->apply(
                 $conversation,
                 $agent === null ? ConversationStatus::Pending : ConversationStatus::Open,
@@ -95,6 +112,7 @@ class TransferConversation
                 'from_department_id' => $fromDepartment,
                 'to_department_id' => $destination?->id,
                 'note' => $reason,
+                'metadata' => $unavailable ? ['assigned_while_unavailable' => true] : null,
             ]);
 
             if ($agent === null) {

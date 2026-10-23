@@ -54,7 +54,8 @@ test('supervisors only see the departments they belong to', function () {
         );
 
     $this->actingAs($supervisor)->get(route('departments.show', $own))->assertOk();
-    $this->actingAs($supervisor)->get(route('departments.show', $other))->assertForbidden();
+    // Outside the supervisor's scope it answers like an id that does not exist.
+    $this->actingAs($supervisor)->get(route('departments.show', $other))->assertNotFound();
 });
 
 test('administrators can create a department', function () {

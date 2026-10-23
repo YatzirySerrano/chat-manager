@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, useForm } from '@inertiajs/vue3';
-import { BellRing, Volume2 } from '@lucide/vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { BellRing, MonitorSmartphone, Trash2, Volume2 } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,24 @@ import {
     requestBrowserNotificationPermission,
 } from '@/lib/notifications/alerts';
 import type { BrowserPermission } from '@/lib/notifications/alerts';
+import {
+    currentPushSubscription,
+    endpointHash,
+    pushSupport,
+    subscribeToPush,
+    unsubscribeFromPush,
+} from '@/lib/notifications/push';
+import type {
+    PushDevice,
+    PushSettings,
+    PushSupport,
+} from '@/lib/notifications/push';
+import { formatDate } from '@/lib/format';
 import { edit, update } from '@/routes/notifications/preferences';
+import {
+    destroy as destroyPushSubscription,
+    store as storePushSubscription,
+} from '@/routes/notifications/push-subscriptions';
 import type { NotificationKindOption, NotificationPreference } from '@/types';
 
 defineOptions({
@@ -23,6 +40,7 @@ defineOptions({
 
 const props = defineProps<{
     kinds: NotificationKindOption[];
+    push: PushSettings;
 }>();
 
 type PreferenceRow = NotificationPreference & { kind: string };
@@ -40,9 +58,126 @@ const form = useForm<{ preferences: PreferenceRow[] }>({
 
 const permission = ref<BrowserPermission>('default');
 
-onMounted(() => {
+const support = ref<PushSupport>('unsupported');
+const currentHash = ref<string | null>(null);
+const pushBusy = ref(false);
+const pushError = ref<string | null>(null);
+
+onMounted(async () => {
     permission.value = browserNotificationPermission();
+    support.value = pushSupport();
+
+    const subscription = await currentPushSubscription();
+
+    currentHash.value = subscription
+        ? await endpointHash(subscription.endpoint)
+        : null;
 });
+
+const currentDevice = computed<PushDevice | null>(
+    () =>
+        props.push.subscriptions.find(
+            (device) => device.endpoint_hash === currentHash.value,
+        ) ?? null,
+);
+
+const pushText = computed(() => {
+    if (props.push.public_key === null) {
+        return 'El servidor no tiene configuradas las notificaciones push (claves VAPID). Pide a un administrador que las configure.';
+    }
+
+    if (support.value === 'insecure') {
+        return 'Las notificaciones push solo funcionan con una conexión segura (HTTPS).';
+    }
+
+    if (support.value === 'unsupported') {
+        return 'Este navegador no admite notificaciones push.';
+    }
+
+    if (permission.value === 'denied') {
+        return 'Bloqueaste las notificaciones de este sitio. Para activar las notificaciones push cámbialo en la configuración del navegador.';
+    }
+
+    return currentDevice.value
+        ? 'Este navegador recibe avisos aunque la plataforma esté cerrada. Solo indican cuántas notificaciones tienes sin leer, nunca su contenido.'
+        : 'Recibe avisos aunque la plataforma esté cerrada, para los tipos con «Navegador» activado. Solo indican cuántas notificaciones tienes sin leer, nunca su contenido.';
+});
+
+const canOfferPush = computed(
+    () =>
+        props.push.public_key !== null &&
+        support.value === 'supported' &&
+        permission.value !== 'denied',
+);
+
+async function enablePush(): Promise<void> {
+    const publicKey = props.push.public_key;
+
+    if (publicKey === null || pushBusy.value) {
+        return;
+    }
+
+    pushBusy.value = true;
+    pushError.value = null;
+
+    try {
+        const endpoint = await subscribeToPush(publicKey);
+
+        permission.value = browserNotificationPermission();
+
+        if (endpoint === null) {
+            pushBusy.value = false;
+
+            return;
+        }
+
+        const hash = await endpointHash(endpoint);
+
+        router.post(
+            storePushSubscription.url(),
+            { endpoint },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    currentHash.value = hash;
+                },
+                onError: (errors) => {
+                    pushError.value =
+                        errors.endpoint ??
+                        'No se pudieron activar las notificaciones push.';
+                },
+                onFinish: () => {
+                    pushBusy.value = false;
+                },
+            },
+        );
+    } catch {
+        pushError.value =
+            'El navegador no pudo activar las notificaciones push. Inténtalo de nuevo.';
+        pushBusy.value = false;
+    }
+}
+
+async function removeDevice(device: PushDevice): Promise<void> {
+    if (pushBusy.value) {
+        return;
+    }
+
+    pushBusy.value = true;
+    pushError.value = null;
+
+    if (device.endpoint_hash === currentHash.value) {
+        await unsubscribeFromPush();
+        currentHash.value = null;
+    }
+
+    router.delete(destroyPushSubscription.url(device.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            pushBusy.value = false;
+        },
+    });
+}
 
 const browserAllowed = computed(() => permission.value === 'granted');
 
@@ -120,6 +255,90 @@ function submit(): void {
                             Probar sonido
                         </Button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="rounded-xl border bg-card p-4 shadow-card">
+            <div class="flex items-start gap-3">
+                <MonitorSmartphone
+                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1 space-y-3">
+                    <div>
+                        <p class="text-sm font-medium">Notificaciones push</p>
+                        <p class="text-sm text-muted-foreground">
+                            {{ pushText }}
+                        </p>
+                        <p
+                            v-if="pushError"
+                            class="mt-1 text-sm text-destructive"
+                            role="alert"
+                        >
+                            {{ pushError }}
+                        </p>
+                    </div>
+                    <div v-if="canOfferPush" class="flex flex-wrap gap-2">
+                        <Button
+                            v-if="currentDevice"
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            :disabled="pushBusy"
+                            @click="removeDevice(currentDevice)"
+                        >
+                            <Spinner v-if="pushBusy" />
+                            Desactivar en este navegador
+                        </Button>
+                        <Button
+                            v-else
+                            type="button"
+                            size="sm"
+                            :disabled="pushBusy"
+                            @click="enablePush"
+                        >
+                            <Spinner v-if="pushBusy" />
+                            Activar en este navegador
+                        </Button>
+                    </div>
+                    <ul
+                        v-if="push.subscriptions.length > 0"
+                        class="divide-y rounded-lg border"
+                        aria-label="Dispositivos con notificaciones push"
+                    >
+                        <li
+                            v-for="device in push.subscriptions"
+                            :key="device.id"
+                            class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                        >
+                            <div class="min-w-0">
+                                <p class="truncate">
+                                    {{ device.user_agent ?? 'Navegador' }}
+                                    <span
+                                        v-if="device.id === currentDevice?.id"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        (este navegador)
+                                    </span>
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    Activado el
+                                    {{ formatDate(device.created_at) }}
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                :disabled="pushBusy"
+                                :aria-label="`Eliminar ${device.user_agent ?? 'navegador'}`"
+                                @click="removeDevice(device)"
+                            >
+                                <Trash2 />
+                            </Button>
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>

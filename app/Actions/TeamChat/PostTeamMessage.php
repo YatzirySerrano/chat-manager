@@ -9,8 +9,10 @@ use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\TeamChat\TeamAttachmentInspector;
 use App\Services\TeamChat\TeamThreadActivity;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -22,6 +24,13 @@ use Throwable;
  * under a random name before the transaction, and removed again if it
  * fails, so no orphan rows or files remain. The author's own message counts
  * as read for them. Internal messages never reach Meta.
+ *
+ * Permission to post was checked by the request, but a removal, a departure
+ * or an archive may commit in between: the check is repeated here while
+ * holding the thread row, the same lock those operations take, so a message
+ * never lands after the author lost access or the group became read-only.
+ * Mentions keep only current participants of the group other than the
+ * author (nobody else is ever notified).
  */
 class PostTeamMessage
 {
@@ -32,8 +41,11 @@ class PostTeamMessage
 
     /**
      * @param  list<UploadedFile>  $files
+     * @param  list<int>  $mentionedUserIds
+     *
+     * @throws AuthorizationException when the author may no longer post.
      */
-    public function handle(TeamThread $thread, User $author, ?string $body, ?int $replyToMessageId, array $files = []): TeamMessage
+    public function handle(TeamThread $thread, User $author, ?string $body, ?int $replyToMessageId, array $files = [], array $mentionedUserIds = []): TeamMessage
     {
         $disk = (string) config('team-chat.attachments.disk');
         $stored = [];
@@ -63,11 +75,17 @@ class PostTeamMessage
                 ];
             }
 
-            return DB::transaction(function () use ($thread, $author, $body, $replyToMessageId, $stored): TeamMessage {
+            return DB::transaction(function () use ($thread, $author, $body, $replyToMessageId, $stored, $mentionedUserIds): TeamMessage {
+                $locked = TeamThread::query()->whereKey($thread->id)->lockForUpdate()->firstOrFail();
+                Gate::forUser($author)->authorize('post', $locked);
+
+                $mentions = $this->mentionableAmong($locked, $author, $mentionedUserIds);
+
                 $message = new TeamMessage([
                     'user_id' => $author->id,
                     'body' => $body,
                     'reply_to_message_id' => $replyToMessageId,
+                    'metadata' => $mentions === [] ? null : ['mentions' => $mentions],
                 ]);
                 $message->team_thread_id = $thread->id;
                 $message->save();
@@ -94,5 +112,29 @@ class PostTeamMessage
 
             throw $exception;
         }
+    }
+
+    /**
+     * The requested ids that are current participants of the group, the
+     * author excluded.
+     *
+     * @param  list<int>  $userIds
+     * @return list<int>
+     */
+    private function mentionableAmong(TeamThread $thread, User $author, array $userIds): array
+    {
+        $userIds = array_values(array_diff(array_unique($userIds), [$author->id]));
+
+        if ($userIds === [] || ! $thread->isGroup()) {
+            return [];
+        }
+
+        return array_values(array_map('intval', TeamParticipant::query()
+            ->where('team_thread_id', $thread->id)
+            ->whereNull('left_at')
+            ->whereIn('user_id', $userIds)
+            ->orderBy('user_id')
+            ->pluck('user_id')
+            ->all()));
     }
 }

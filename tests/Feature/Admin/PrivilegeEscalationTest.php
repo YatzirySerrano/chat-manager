@@ -127,10 +127,17 @@ test('a delegated administrator cannot manage peers, superiors or users outside 
     $root = User::factory()->superAdministrator()->create();
     $outsider = User::factory()->agent()->inDepartments(Department::factory()->create())->create();
 
-    foreach ([$peer, $root, $outsider, $coordinator] as $target) {
+    foreach ([$peer, $coordinator] as $target) {
         $this->actingAs($coordinator)
             ->delete(route('admin.users.destroy', $target))
             ->assertForbidden();
+    }
+
+    // Accounts outside the coordinator's departments answer like ids that do not exist.
+    foreach ([$root, $outsider] as $target) {
+        $this->actingAs($coordinator)
+            ->delete(route('admin.users.destroy', $target))
+            ->assertNotFound();
     }
 
     expect($peer->refresh()->is_active)->toBeTrue()

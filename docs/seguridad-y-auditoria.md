@@ -35,13 +35,28 @@ autentican con contraseña y, opcionalmente, verificación en dos pasos (las pas
 - Fortify con limitador `login` (5 intentos por minuto por correo e IP) y `two-factor` (5 por minuto por sesión de
   inicio). Cada bloqueo se audita (`auth.lockout`, una entrada por correo e IP y minuto, sin contraseña).
 - El formulario «¿Olvidaste tu contraseña?» responde exactamente igual para correos con y sin cuenta, y para un enlace
-  pedido hace un momento (mensaje neutral). El broker limita un enlace por usuario cada 60 s.
+  pedido hace un momento (mensaje neutral). El broker limita un enlace por usuario cada 60 s y, además, `POST
+forgot-password` y `POST reset-password` aceptan 5 solicitudes por minuto por IP en cada ruta (limitador
+  `password-reset`, que `FortifyServiceProvider` agrega a las rutas de Fortify y queda incluido en `route:cache`).
+- Cambiar la contraseña cierra las demás sesiones de la cuenta: el cambio propio (Configuración > Seguridad, con la
+  contraseña actual) conserva solo la sesión en curso; el restablecimiento por un administrador y el restablecimiento por
+  enlace cierran todas y anulan el token «recordarme». Con `SESSION_DRIVER=database` se borran las filas de `sessions`
+  (`User::closeSessions`); con cualquier driver, la cookie «recordarme» de otros equipos deja de valer porque lleva un hash
+  de la contraseña. Con otro driver (`redis`, `file`) las sesiones abiertas sin «recordarme» no se cierran, porque no se
+  usa `AuthenticateSession`. La entrada de auditoría guarda `sessions_closed`.
+- Desde Administración > Usuarios nadie cambia **su propia** contraseña ni su propio correo (422 con un mensaje que remite
+  a Configuración): así se exige la contraseña actual y el correo nuevo se vuelve a verificar. El formulario muestra el
+  correo propio de solo lectura y un enlace a Configuración > Seguridad.
 - Cuentas desactivadas (baja lógica) no inician sesión y `EnsureUserIsActive` cierra cualquier sesión abierta en la
   siguiente petición (también en `broadcasting/auth`).
 - Cookies de sesión `HttpOnly`, `SameSite=lax` y `Secure` automáticamente cuando `APP_URL` es https
   (`SESSION_SECURE_COOKIE`). El preflight (`php artisan app:preflight`) falla en producción con `APP_DEBUG=true`, sin https o
   con cookies no seguras.
-- El cierre de sesión pide confirmación en la interfaz y es POST con CSRF.
+- El cierre de sesión pide confirmación en la interfaz y es POST con CSRF. Además limpia el historial que guarda Inertia
+  (`router.clearHistory()` en el cliente y `Inertia::clearHistory()` en `App\Http\Responses\LogoutResponse`), y las props
+  guardadas en el historial del navegador se cifran (`INERTIA_ENCRYPT_HISTORY=true` por defecto, `config/inertia.php`):
+  tras cerrar sesión, «Atrás» no muestra datos de la sesión cerrada. El cifrado necesita un contexto seguro (https o
+  localhost); por http plano el navegador guarda el historial sin cifrar y solo deja un aviso en la consola.
 - Se auditan el cambio de contraseña propio, el restablecimiento por enlace, la activación (confirmada) y desactivación de
   la verificación en dos pasos y la regeneración de códigos de recuperación.
 
@@ -54,7 +69,15 @@ autentican con contraseña y, opcionalmente, verificación en dos pasos (las pas
   403/404 en todas las rutas con ids anidados (conversación, mensaje, adjunto, nota, hilo, importación, contacto). Una ruta
   nueva queda cubierta automáticamente; una ruta de autoservicio debe declararse explícitamente en la prueba.
 - Las políticas devuelven `denyAsNotFound()` para registros fuera de alcance: un registro ajeno es indistinguible de uno
-  inexistente, también en JSON (`{"message":"Not Found"}` sin modelo ni id).
+  inexistente, también en JSON (`{"message":"Not Found"}` sin modelo ni id). La regla es la misma en todos los módulos:
+  sin el permiso del módulo, 403; con el permiso, un registro fuera del alcance de datos (o eliminado, para quien no tiene
+  `records.view-deleted`) responde 404 igual que un id inexistente; uno visible sobre el que no se puede actuar (un par o
+  un superior, una respuesta rápida global para un gestor departamental) responde 403. Departamentos, usuarios y
+  respuestas rápidas siguen esta regla también en sus form requests (`Gate::inspect`), que antes respondían 403 siempre.
+- Descargar una exportación ya generada vuelve a comprobar, con los permisos actuales del dueño, el permiso de exportación
+  de **ese** reporte (`reports.export` o `audit.export`), el del módulo y, en reportes de un registro, el registro
+  (`ReportExporter::allowsStored`, el mismo criterio que usa el trabajo en cola). Perder cualquiera de ellos bloquea la
+  descarga (403); de otro usuario, 404.
 - Las operaciones de conversación comprueban la visibilidad **antes** de validar la entrada (ver hallazgo H-1) y el motor
   vuelve a autorizar bajo bloqueo con datos frescos.
 - Ids anidados: los adjuntos comprueban que conversación, mensaje y adjunto se correspondan; el chat interno usa
@@ -68,7 +91,11 @@ autentican con contraseña y, opcionalmente, verificación en dos pasos (las pas
 ### Protección contra ataques web
 
 - **CSRF:** todas las rutas que cambian estado son POST/PUT/PATCH/DELETE dentro del grupo `web` con
-  `ValidateCsrfToken`; no hay excepciones. El webhook está fuera del grupo `web` (sin sesión ni cookies).
+  `ValidateCsrfToken`; no hay excepciones. El webhook está fuera del grupo `web` (sin sesión ni cookies). Generar una
+  exportación es `POST exports/{report}/{format}`: el menú «Exportar» (`ExportMenu.vue`) envía un formulario nativo
+  oculto con `_token` (prop compartida `csrfToken`) y los filtros, así el navegador sigue descargando el archivo o vuelve
+  a la página con el aviso de que se prepara en segundo plano. Solo la descarga de un archivo ya generado
+  (`exports/transfers/{transfer}/download`) es GET.
 - **XSS:** ningún contenido de usuario se renderiza con `v-html` (el único `v-html` es el SVG del QR de 2FA, generado por
   el servidor). `WhatsAppText.vue` usa interpolación y solo enlaza `http(s)`; los enlaces de procedencia pasan por
   `safeUrl`. Las vistas Blade no usan `{!! !!}`. La cookie `appearance` (sin cifrar) solo se acepta si vale
@@ -86,21 +113,23 @@ autentican con contraseña y, opcionalmente, verificación en dos pasos (las pas
 
 ### Límites de frecuencia
 
-| Superficie                                                                     | Límite                                           |
-| ------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Inicio de sesión / 2FA                                                         | 5/min por correo+IP / por sesión                 |
-| Cambio de contraseña                                                           | 6/min                                            |
-| Webhook WhatsApp                                                               | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL |
-| Envío de mensajes / plantillas / reintentos                                    | 60/min, 30/min, 30/min                           |
-| Lectura de línea de tiempo y marcadores de lectura                             | 120/min                                          |
-| Exportaciones, importaciones, reversión de importación                         | 10/min                                           |
-| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta) | 10/min (hallazgo H-6)                            |
-| `broadcasting/auth`                                                            | 180/min                                          |
-| Sondeo `/health/ready`                                                         | 60/min por IP y veredicto en caché 10 s          |
+| Superficie                                                                     | Límite                                            |
+| ------------------------------------------------------------------------------ | ------------------------------------------------- |
+| Inicio de sesión / 2FA                                                         | 5/min por correo+IP / por sesión                  |
+| Cambio de contraseña                                                           | 6/min                                             |
+| Recuperación de contraseña (`forgot-password`, `reset-password`)               | 5/min por IP y ruta, más 1 enlace/60 s por cuenta |
+| Webhook WhatsApp                                                               | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL  |
+| Envío de mensajes / plantillas / reintentos                                    | 60/min, 30/min, 30/min                            |
+| Lectura de línea de tiempo y marcadores de lectura                             | 120/min                                           |
+| Exportaciones, importaciones, reversión de importación                         | 10/min                                            |
+| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta) | 10/min (hallazgo H-6)                             |
+| `broadcasting/auth`                                                            | 180/min                                           |
+| Sondeo `/health/ready`                                                         | 60/min por IP y veredicto en caché 10 s           |
 
 Cada `throttle:N,M` cuenta por usuario (o IP) **y ruta** (`App\Http\Middleware\ThrottleRequestsPerRoute`, registrado como
 alias `throttle`): el sondeo de la campana o las autorizaciones de canales ya no agotan el límite de exportaciones o
-importaciones. Los limitadores con nombre (`login`, `two-factor`, `whatsapp-webhooks`) conservan sus propias claves.
+importaciones. Los limitadores con nombre (`login`, `two-factor`, `password-reset`, `whatsapp-webhooks`) conservan sus
+propias claves.
 
 ### Webhook de WhatsApp
 
@@ -112,7 +141,15 @@ importaciones. Los limitadores con nombre (`login`, `two-factor`, `whatsapp-webh
 - Tamaño máximo `WHATSAPP_WEBHOOK_MAX_BYTES` (3 MB) además de `client_max_body_size` de Nginx; respuesta inmediata y
   procesamiento en la cola `webhooks`.
 - Repetición: almacenamiento idempotente por hash del cuerpo, mensajes únicos por `wamid` y estados que solo avanzan.
-  Meta no firma una marca de tiempo, así que la protección contra repetición es la idempotencia.
+  Meta no firma una marca de tiempo, así que la protección contra repetición es la idempotencia, también cuando el
+  registro del webhook ya se purgó (30/90 días):
+    - las actualizaciones de estado de plantillas usan la hora de la entrada (`entry.time`): una más antigua que el estado
+      registrado (`status_updated_at`) se ignora, así que una entrega tardía o repetida no devuelve una plantilla a un
+      estado anterior; una plantilla que Meta vuelve a informar con un estado distinto de `DELETED` deja de estar eliminada,
+      igual que en la sincronización;
+    - los errores de conexión y las señales del proveedor cuya entrada tiene más de `WHATSAPP_WEBHOOK_MAX_AGE_DAYS` (7, la
+      ventana de reintentos de Meta) no se aplican de nuevo a la salud de la conexión.
+      Las actualizaciones de calidad de plantillas no tienen marca propia y se aplican tal como llegan.
 - Los rechazos no explican el motivo y los registros solo llevan el id de la conexión.
 
 ### Archivos y multimedia
@@ -164,6 +201,48 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
 - Cambios de permisos y membresías surten efecto en la siguiente petición de las sesiones abiertas (pruebas en
   `tests/Feature/Auth/PermissionRevocationTest.php` y `tests/Feature/Validation/SecurityProbeTest.php`).
 
+### 3.1 Permisos por rol tras la actualización de la estabilización
+
+`app:sync-permissions` nunca modifica roles existentes. Para poner al día los roles por defecto con su definición
+actual (`App\Enums\DefaultRole`) existe una actualización explícita, aditiva y auditada:
+
+```bash
+php artisan app:sync-permissions --upgrade-default-roles             # vista previa: no escribe nada
+php artisan app:sync-permissions --upgrade-default-roles --apply     # aplica; cada rol cambiado → role.permissions_changed
+#   --demo-b              también el rol local «Demo B · Agente» (definición del Agente)
+#   --include-sensitive   también los permisos sensibles de la definición (system.view, system.manage)
+#   --actor=<correo>      Superadministrador activo que figura como autor (por defecto el primero)
+```
+
+Solo considera los roles no raíz `administrator`, `supervisor` y `agent` (y el demo con `--demo-b`); nunca concede
+permisos reservados a la raíz (`contacts.import`) ni permisos globales a roles de alcance Departamentos o Asignado;
+solo quita lo que el rol nunca podría ejercer y conserva los permisos extra. **No recuerda las retiradas manuales**:
+vuelve a añadir un permiso de la definición que un administrador quitó a propósito, por eso hay que revisar la vista
+previa antes de `--apply`. Una segunda ejecución no escribe nada.
+
+En la base local `chatmanager` el coordinador ejecutó el 2026-10-22 `app:sync-permissions` (catálogo completo, 55
+permisos) y `app:sync-permissions --upgrade-default-roles --demo-b --apply`, con este resultado (comprobado después con
+una consulta de solo lectura):
+
+| Rol (alcance)                                | Añadido en la actualización                                                                                                                                                                                                   | Permisos tras la actualización                                                                                                                                                                                                                                                        |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Superadministrador (`admin`, raíz, global)   | — (siempre tiene todo el catálogo)                                                                                                                                                                                            | Los 55, incluidos `contacts.import`, `system.view` y `system.manage`                                                                                                                                                                                                                  |
+| Administrador (`administrator`, global)      | `templates.view`, `templates.manage`                                                                                                                                                                                          | 52: todo salvo `contacts.import` (reservado a la raíz), `system.view` y `system.manage` (sensibles, **no concedidos**: decisión pendiente)                                                                                                                                            |
+| Supervisor (`supervisor`, sus departamentos) | `conversations.reopen`, `conversations.accept`, `conversations.notes`, `contacts.view`, `tags.view`, `tags.assign`, `team-chat.use`, `team-chat.create-groups`, `team-chat.manage-groups`, `team-chat.cross-department` (+10) | 21: `conversations.{view,reply,accept,assign,transfer,close,reopen,history,notes}`, `contacts.view`, `dashboard.view`, `departments.{view,manage-members}`, `quick-replies.use`, `reports.view`, `tags.{view,assign}`, `team-chat.{use,create-groups,manage-groups,cross-department}` |
+| Agente (`agent`, solo lo asignado)           | `conversations.accept`, `conversations.transfer`, `conversations.notes`, `contacts.view`, `tags.view`, `tags.assign`, `reports.view`, `team-chat.use` (+8)                                                                    | 14: `conversations.{view,reply,accept,transfer,close,history,notes}`, `contacts.view`, `dashboard.view`, `quick-replies.use`, `reports.view` (solo sus cifras), `tags.{view,assign}` (solo sus conversaciones), `team-chat.use`                                                       |
+| Demo B · Agente (`demo-b-agente`, asignado)  | `tags.view`, `tags.assign`, `reports.view`, `team-chat.use`                                                                                                                                                                   | Los mismos 14 que el Agente                                                                                                                                                                                                                                                           |
+
+Ningún rol no raíz tiene `contacts.import` ni permisos globales fuera del alcance global. El Agente no recibe
+`conversations.assign`, `tags.manage` ni `contacts.import`: solo transfiere a la cola o a quien esté Disponible y con
+capacidad.
+
+**Decisión pendiente del usuario — `system.view` / `system.manage` para el Administrador.** Ambos son
+`Permission::isSensitive()`: dan acceso a Administración → Sistema (estado de colas, trabajos fallidos, salud, alertas)
+y, con `system.manage`, a reintentar o descartar trabajos. Hoy solo los tiene el Superadministrador. Si se decide
+concederlos: `php artisan app:sync-permissions --upgrade-default-roles --include-sensitive` (vista previa) y después
+con `--apply`, o asignarlos a mano en Roles; ambos caminos quedan auditados (`role.permissions_changed`). Mientras no
+se decida, el Administrador no ve la página de Sistema ni recibe las alertas dirigidas a `system.view`.
+
 ## 4. Auditoría
 
 - `App\Services\AuditLogger` escribe en `audit_logs` (solo inserción; no hay ruta para editar ni borrar entradas). Guarda
@@ -175,6 +254,11 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
   trabajos fallidos y, desde esta auditoría, eventos de seguridad de cuenta (`auth.*`).
 - **Visibilidad restringida:** ver la bitácora requiere `audit.view`; las entradas `restricted` (acciones del rol raíz o
   sobre él, y todo el importador) solo las ve el rol raíz. Exportarla requiere `audit.export`.
+- Los valores de `App\Enums\AuditAction` son permanentes: quitar un caso rompe la lectura de las filas que lo llevan. En
+  la estabilización se quitaron los casos que nada emitía y que no aparecían en la bitácora (consulta de solo lectura):
+  activación y desactivación de roles, etiquetas y respuestas rápidas, activación de departamentos, archivado de
+  contactos y cambio de conexiones de un departamento (este se audita como `connection.updated`). Se conservan
+  `user.activated`, `user.deactivated` y `department.deactivated` porque hay entradas históricas con esos valores.
 - El contenido de mensajes privados del chat interno no se audita ni se expone a administradores.
 
 ## 5. Reglas de privacidad
@@ -189,7 +273,9 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
   solo los ve quien tiene `records.view-deleted`.
 - Los registros de aplicación no contienen cuerpos de mensajes, teléfonos completos ni secretos.
 
-## 6. Hallazgos corregidos en esta auditoría
+## 6. Hallazgos corregidos
+
+### En la auditoría de la etapa de finalización
 
 | Id  | Síntoma                                                                                                                                                 | Causa                                                                                                        | Corrección                                                                                                       | Prueba                                                                      |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -201,21 +287,31 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
 | H-6 | Las rutas que llaman a Meta (verificar conexión, consultar/crear suscripción, sincronizar plantillas) no tenían límite.                                 | Faltaba `throttle`.                                                                                          | `throttle:10,1` en las cuatro rutas.                                                                             | Barrido de rutas (sin regresiones) y pruebas de conexiones y plantillas     |
 | H-7 | No se auditaban eventos de seguridad de cuenta y el bloqueo por fuerza bruta no generaba ningún evento.                                                 | Faltaba un listener; el limitador con nombre de Fortify sustituye al que dispara `Lockout`.                  | `App\Listeners\Security\AuditSecurityEvents`, nuevas acciones `auth.*` y el limitador `login` dispara `Lockout`. | `SecurityHardeningTest` (6 casos)                                           |
 
+### En la estabilización
+
+| Id     | Síntoma                                                                                                                           | Corrección                                                                                                                                                                                    | Prueba                                                                                                             |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| SEC-02 | Desde `/admin/users/{yo}` se cambiaba la propia contraseña sin dar la actual y el correo nuevo quedaba verificado.                | `UpdateUserRequest`: para la propia cuenta `password` es `prohibited` y el correo debe ser el actual; la interfaz remite a Configuración.                                                     | `UserManagementTest` («one's own password and e-mail…»)                                                            |
+| SEC-03 | Restablecer la contraseña (administración, enlace o cambio propio) no cerraba las sesiones abiertas.                              | `User::closeSessions()` en `UpdateUser`, `ResetUserPassword` y `SecurityController` (este conserva la sesión actual); se audita el número.                                                    | `UserManagementTest`, `PasswordResetTest`, `Settings/SecurityTest`                                                 |
+| SEC-04 | Las exportaciones se generaban con GET (navegación de otro sitio podía iniciarlas).                                               | `POST exports/{report}/{format}` con CSRF; formulario nativo en `ExportMenu.vue`; GET responde 405.                                                                                           | `ReportExportTest` (405, CSRF 419/200 con el token compartido), `SecurityProbeTest`                                |
+| SEC-05 | `forgot-password` y `reset-password` sin límite por IP.                                                                           | Limitador `password-reset` (5/min por IP y ruta).                                                                                                                                             | `RouteThrottleTest`                                                                                                |
+| SEC-07 | Una actualización de plantilla tardía o repetida tras la purga aplicaba un estado obsoleto; errores antiguos degradaban la salud. | Orden por `entry.time` en `RecordTemplateUpdate`, limpieza de `deleted_at`, y `whatsapp.webhooks.max_age_days` para errores y señales.                                                        | `TemplateSyncTest` (3 casos)                                                                                       |
+| SEC-08 | La descarga de una exportación solo revisaba un permiso genérico de exportación.                                                  | `DataTransferPolicy::download` usa `ReportExporter::allowsStored` del reporte concreto.                                                                                                       | `ReportExportTest` («downloading a finished export checks…»)                                                       |
+| SEC-09 | Departamentos, usuarios y respuestas rápidas respondían 403 a registros existentes fuera de alcance y 404 a ids inexistentes.     | Políticas con `Response` (`denyAsNotFound` fuera de alcance) y form requests con `Gate::inspect`; `email-availability` resuelve `user_id` sin `exists` (inexistente y fuera de alcance: 404). | Pruebas de departamentos, usuarios, respuestas rápidas y sondas de `tests/Feature/Validation`                      |
+| SEC-11 | Historial de Inertia sin cifrar y sin limpiar al cerrar sesión.                                                                   | `inertia.history.encrypt` (por defecto `true`) y `clearHistory` en el cierre de sesión (cliente y servidor).                                                                                  | `AuthenticationTest` («signing out clears the browser history…»)                                                   |
+| DEL-02 | Casos de `AuditAction` sin emisor.                                                                                                | Eliminados los que no tenían registros; documentados los que se conservan.                                                                                                                    | `AuditLogTest` (sin cambios)                                                                                       |
+| SEC-01 | Un mensaje en cola salía aunque su autor ya no pudiera responder (transferida, cerrada, en espera, cuenta desactivada).           | `DeliverOutboundMessage::claim` revalida bajo bloqueo `ConversationPolicy::reply` con el autor (o quien reintentó); si no, `sender_not_allowed` sin llamar a Meta. Automáticos exentos.       | `CustomerServiceWindowTest`, `MessageRetryTest`                                                                    |
+| SEC-06 | `presence-team` entregaba id, nombre y disponibilidad de todos los usuarios del chat interno, sin alcance por departamento.       | `presence-team` solo para quien llega a todos y `presence-team.departments.{id}` para miembros; carga útil `{id}`.                                                                            | `TeamChatAccessTest` (canales y `POST /broadcasting/auth`)                                                         |
+| SEC-10 | La descarga de multimedia entrante no tenía tope durante el _streaming_ si Meta no informaba `file_size`.                         | `MetaGraphClient::download(..., $maxBytes)`: el sumidero cuenta bytes y aborta en el primer bloque que excede; `MediaRejected('too_large')`.                                                  | `InboundMediaTest` (2 casos)                                                                                       |
+| TC-07  | Se podía publicar en el chat interno justo después de una expulsión o un archivado.                                               | `PostTeamMessage` y las reacciones bloquean el hilo (y el mensaje) y vuelven a autorizar dentro de la transacción.                                                                            | `TeamMessagesTest`, `TeamReactionsTest`                                                                            |
+| DEL-01 | Marca de eliminación heterogénea (varias entidades no guardan cuándo ni quién eliminó).                                           | **Sin cambio de esquema, por decisión**: se mantiene el modelo (`is_active` o `deleted_at` según la entidad); la fuente de quién y cuándo es la auditoría (`*.deleted` / `*.restored`).       | — (documentado; [ADR-SEC-8](decisiones.md#adr-sec-8--eliminación-lógica-heterogénea-con-la-auditoría-como-fuente)) |
+
 ## 7. Riesgos residuales y recomendaciones
 
 - **No validado contra Meta real:** firma, handshake de verificación, descarga de multimedia y límites reales de Meta
   (pendiente de validación externa con una cuenta de WhatsApp Business real).
 - **PDF en vista previa sin `sandbox`:** los navegadores no muestran PDF en documentos con CSP `sandbox`; se sirven en línea
   con `nosniff` y con el visor del navegador. Un PDF malicioso queda limitado por el visor del navegador.
-- **GET con efectos:** `exports/{report}/{format}` genera la exportación con GET (limitada a 10/min, archivo solo para el
-  solicitante). `SameSite=lax` impide que subrecursos de otros sitios la disparen, pero una navegación de nivel superior
-  sí podría iniciar una exportación para el propio usuario.
-- **Recuperación de contraseña sin límite por IP:** solo existe el límite del broker (un enlace por usuario cada 60 s).
-- **Cambiar la contraseña no cierra otras sesiones abiertas** del mismo usuario; desactivar la cuenta sí las cierra.
-- **Historial del navegador:** Inertia guarda las props de las páginas visitadas en el historial del navegador; tras
-  cerrar sesión en un equipo compartido, «Atrás» puede mostrar datos en caché. En producción con https se recomienda
-  `INERTIA_ENCRYPT_HISTORY=true` junto con `Inertia::clearHistory()` al cerrar sesión (no se activó porque requiere un
-  contexto seguro y no se pudo probar en navegador en esta etapa).
 - **Herramientas de desarrollo:** con `APP_ENV=local`, Inertia DevTools registra las props de cada página en
   `storage/inertia-devtools` y las sirve sin autenticación en `/_inertia/devtools/entries`. Nunca usar `APP_ENV=local` con
   datos reales; en producción está desactivado por defecto (`INERTIA_DEVTOOLS_ENABLED`). `laravel/boost` es dependencia de
@@ -223,6 +319,34 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
 - **Proxies:** si se coloca un balanceador delante de Nginx, hay que configurar `trustProxies` para que `https` y la IP
   real se detecten (el preflight lo advierte).
 - **Diagnóstico de conexiones:** usuarios con `connections.view` ven el último error del webhook (mensaje saneado).
-- **Descarga de multimedia sin tope en streaming** cuando Meta no envía `file_size` (archivo temporal borrado siempre).
+- **Web Push:** la clave privada VAPID es un secreto (`.env`); el servidor solo llama a endpoints HTTPS de servicios
+  push conocidos (`WEBPUSH_ALLOWED_HOSTS`, sin credenciales en la URL) para evitar SSRF; el push no lleva contenido y
+  el _service worker_ pide el resumen con la sesión del usuario. Al cerrar sesión la suscripción del navegador se
+  conserva (los avisos siguientes son genéricos, sin datos); en un equipo compartido puede mostrar los contadores de
+  quien tenga la sesión abierta ([notificaciones-y-horarios.md §5](notificaciones-y-horarios.md#5-pendiente--limitaciones)).
+- **Destinos de transferencia:** un agente con permiso de transferir ve el nombre y la disponibilidad de las personas
+  de otros departamentos que pueden atender esa conexión (nunca correo, rol, cifras de carga ni conversaciones); es
+  la regla `canAttend` que el backend ya aplicaba y responde igual a un id inexistente que a uno fuera de alcance.
 - **La señal de tiempo real** de bandejas de equipo puede anunciar ids de conversaciones cerradas a usuarios sin permiso de
-  historial; toda recarga vuelve a autorizar.
+  historial; toda recarga vuelve a autorizar. Se acepta como riesgo residual: la señal solo lleva el id y el motivo, el
+  aviso de cierre es justo lo que esos usuarios necesitan para quitar la conversación de su lista (ya conocían el id
+  cuando estaba abierta), y separarla exigiría canales distintos para quien tiene historial, a costa de más mensajes y
+  más complejidad en el cliente.
+- **Dependencias de npm (solo desarrollo):** `npm audit --omit=dev` no reporta nada; el bundle de producción
+  (`public/build`) no contiene `vitest`, `tinypool` ni `launch-editor`. Todas las alertas vienen de `vite-plus` 0.3.0
+  (`devDependencies`, versión exacta). Se aplicó la única corrección no rompedora disponible: `overrides` de npm con
+  `tinypool` 2.1.2 (alerta crítica de `oxfmt`, publicada hace dos meses); `npm run build`, `vp check` y `vue-tsc` siguen
+  funcionando. Quedan 5 alertas (4 moderadas, 1 alta): `vitest` y `@vitest/*` 4.1.11 (registro de mocks del modo
+  navegador, que el proyecto no usa: no hay pruebas de Vitest) y las propias de `vite-plus` <=1.0.0 (servidor de
+  desarrollo de Vite y `launch-editor`). La versión parcheada 4.1.12 de Vitest se publicó hace solo una semana y la
+  corrección de `vite-plus` es un salto mayor (1.x), así que se dejan para un cambio aparte que valide `vp build`,
+  `vp check` y `vp dev`. Mientras tanto, el servidor de desarrollo (`npm run dev`) solo debe escuchar en local y nunca
+  exponerse a la red ni usarse en producción.
+- **Dependencias de Composer:** `composer audit` no reporta nada. Guzzle está en 7.16.0 (rama 7 mantenida, publicada
+  esta semana) porque `laravel/reverb` exige `guzzlehttp/psr7 ^2.6` y Guzzle 8 necesita psr7 ^3 (`composer why-not
+guzzlehttp/guzzle 8.0`); el framework, Pusher y Boost aceptan 7.x. Se podrá volver a Guzzle 8 cuando Reverb admita psr7
+  ^3.
+- **Dependencias sin uso (recomendación, requiere aprobación):** `laravel/chisel` está en `require` de producción y nada
+  lo usa (`composer remove laravel/chisel`); `laravel/sail` en `require-dev` sin `compose.yaml` (`composer remove --dev
+laravel/sail`); `@laravel/passkeys` sin ningún import, con las passkeys desactivadas (`npm uninstall
+@laravel/passkeys`). No se eliminaron.

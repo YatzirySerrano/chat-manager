@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePage } from '@inertiajs/vue3';
 import { Download, FileSpreadsheet, FileText } from '@lucide/vue';
 import { computed } from 'vue';
 import { toast } from 'vue-sonner';
@@ -23,6 +24,8 @@ import type { ExportFilters, ExportFormat } from '@/types';
  * "Exportar" menu of a module list. The file is generated from the same
  * filters as the screen; the server validates them and decides whether to
  * download it now or prepare it in the background (Exportaciones page).
+ * Generating a file has effects (audit, background job), so it is a POST
+ * with the CSRF token, sent as a native form so the browser downloads it.
  */
 const props = defineProps<{
     /** Report key registered in config/exports.php, e.g. "tags". */
@@ -58,7 +61,9 @@ const formats: {
     },
 ];
 
-const query = computed(() => {
+const page = usePage();
+
+const fields = computed(() => {
     const result: Record<string, string | number | (string | number)[]> = {};
 
     for (const [key, value] of Object.entries(props.filters ?? {})) {
@@ -80,20 +85,40 @@ const query = computed(() => {
     return result;
 });
 
+function hiddenInput(name: string, value: string | number): HTMLInputElement {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = String(value);
+
+    return input;
+}
+
 function exportAs(format: ExportFormat, label: string): void {
-    const url = generate.url(
-        { report: props.report, format },
-        { query: query.value },
-    );
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = generate.url({ report: props.report, format });
+    form.hidden = true;
+    form.appendChild(hiddenInput('_token', page.props.csrfToken ?? ''));
+
+    for (const [key, value] of Object.entries(fields.value)) {
+        for (const item of Array.isArray(value) ? value : [value]) {
+            form.appendChild(
+                hiddenInput(Array.isArray(value) ? `${key}[]` : key, item),
+            );
+        }
+    }
 
     toast.info(`Preparando ${label}…`, {
         description:
             'La descarga iniciará en unos segundos. Si el archivo es grande, lo encontrarás en Exportaciones.',
     });
 
-    // A regular navigation: the browser downloads the file, or the server
-    // redirects back with a notice when the export was queued.
-    window.location.assign(url);
+    // A regular form submission: the browser downloads the file, or the
+    // server redirects back with a notice when the export was queued.
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
 }
 </script>
 

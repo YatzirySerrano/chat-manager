@@ -4,18 +4,19 @@ namespace App\Http\Requests\Admin;
 
 use App\Models\Department;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 class StoreDepartmentMemberRequest extends FormRequest
 {
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $department = $this->route('department');
 
-        return $department instanceof Department
-            && ($this->user()?->can('manageMembers', $department) ?? false);
+        return $department instanceof Department ? Gate::inspect('manageMembers', $department) : Response::deny();
     }
 
     /**

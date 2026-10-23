@@ -64,7 +64,11 @@ importaciones sin modificar los jobs). Todos los listeners van en cola `notifica
 Cada notificación guardada o actualizada emite, después del commit, `App\Notifications\NotificationSignal` en el
 canal privado `users.{id}` con nombre `.notification` y carga `{id, kind}` (sin contenido). La campana vuelve a pedir
 la lista al servidor. Si el tiempo real no está disponible, la campana se actualiza cada 60 segundos y al reconectar.
-La señal se intenta una sola vez (es solo una pista).
+La señal se intenta una sola vez (es solo una pista): `NotificationSignal` ya no es una difusión en cola, sino un
+evento que el listener síncrono `BroadcastNotificationSignal` publica en el mismo worker que guardó la notificación.
+Si Reverb falla o está lento, se registra un `warning`, las demás señales `.notification` de ese mismo trabajo se
+omiten (como mucho un _timeout_ por trabajo) y la notificación nunca se pierde ni se reintenta por ello
+([tiempo-real.md](tiempo-real.md)).
 
 ### 1.5 Interfaz
 
@@ -75,7 +79,11 @@ La señal se intenta una sola vez (es solo una pista).
   navegador. Solo se listan los tipos que pueden afectar al usuario por sus permisos actuales.
 - **Navegador**: el permiso de notificaciones del sistema solo se solicita al pulsar «Permitir en este navegador».
   Se muestran únicamente cuando la pestaña no está visible; con la pestaña visible, las urgentes aparecen como aviso
-  dentro de la página. El sonido es un tono generado con Web Audio (sin archivos).
+  dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
+  del sistema (`useNotificationCenter`, `showUnlessPushed`): el aviso lo da el _service worker_, así que no se duplica
+  pestaña + push. El sonido es un tono generado con Web Audio (sin archivos).
+- **Notificaciones push**: en la misma página, «Activar en este navegador» y la lista de dispositivos suscritos
+  (ver 1.8).
 - Si la notificación es de la conversación que el usuario tiene abierta, no suena ni avisa: se marca leída.
 
 ### 1.6 Endpoints
@@ -88,11 +96,71 @@ La señal se intenta una sola vez (es solo una pista).
 | POST      | `/notifications/read-all`                           | `notifications.read-all`                                                       |
 | POST      | `/notifications/conversations/{id}/read`            | `notifications.conversations.read`                                             |
 | GET / PUT | `/settings/notifications`                           | `notifications.preferences.edit` / `.update`                                   |
+| POST      | `/settings/notifications/push-subscriptions`        | `notifications.push-subscriptions.store` (Web Push, ver 1.8)                   |
+| DELETE    | `/settings/notifications/push-subscriptions/{id}`   | `notifications.push-subscriptions.destroy` (solo las propias; ajena = 404)     |
 
 ### 1.7 Retención
 
 `notifications:prune` (diario 04:10): borra notificaciones leídas con más de 90 días, cualquiera sin actualizar en
-180 días y recibos de deduplicación con más de 30 días.
+180 días, recibos de deduplicación con más de 30 días y suscripciones Web Push sin registro ni envío correcto en
+`WEBPUSH_RETENTION_DAYS` días (120 por defecto).
+
+### 1.8 Web Push (avisos con la plataforma cerrada)
+
+Web Push **no tiene relación con la recepción de WhatsApp**: los mensajes de clientes siguen llegando por el webhook
+de Meta. Web Push solo despierta el navegador del empleado cuando se guarda una notificación in-app para él.
+
+**Push sin carga útil.** El servidor envía a cada servicio push del navegador (FCM de Chrome/Edge/Opera, Mozilla
+autopush, Apple, WNS) un `POST` vacío (`Content-Length: 0`) firmado con VAPID. No hay cifrado `aes128gcm` porque no
+viaja contenido: el servicio push solo sabe que «hay algo nuevo». No se usa ninguna dependencia ni servicio de pago;
+solo `ext-openssl` (par EC P-256 y JWT ES256 en `App\Notifications\Push\Vapid`). Encabezados:
+`Authorization: vapid t=<jwt>, k=<clave pública>`, `TTL` (`WEBPUSH_TTL`, 3600 s), `Urgency` (`high` para tipos
+urgentes, `normal` el resto) y `Topic: notifications` (el servicio push sustituye un aviso aún no entregado).
+
+**Flujo.**
+
+1. `InAppChannel` guarda la notificación y emite `NotificationSignal` después del commit (sin cambios en el canal ni
+   en su transacción). El listener `QueueWebPush` comprueba que haya claves VAPID, que el usuario tenga
+   suscripciones, que siga activo y que tenga «Navegador» activado para ese tipo.
+2. Límite por usuario: como máximo un push cada `WEBPUSH_THROTTLE_SECONDS` (60 s) con `Cache::add` atómico. Una ráfaga
+   o una notificación agregada despierta cada navegador una sola vez.
+3. Un trabajo `App\Jobs\SendWebPush` por suscripción en la cola `notifications` (nunca en las críticas), con
+   _timeout_ de `WEBPUSH_TIMEOUT` (5 s) y sin seguir redirecciones. 2xx actualiza `updated_at`; 404/410 borra la
+   suscripción; 429/5xx o error de conexión se reintentan hasta 3 veces (respetando `Retry-After` hasta 5 min) y
+   después se descartan con un aviso en el log; otros 4xx (claves VAPID incorrectas) se registran sin reintento. El
+   log nunca incluye el endpoint.
+4. El _service worker_ (`public/sw.js`, alcance `/`) recibe el push y pide `GET /notifications/summary` al mismo
+   origen con la cookie de sesión del usuario. Muestra un texto genérico («Tienes 3 notificaciones sin leer (1
+   urgente).») con _tag_ único `chat-manager-push` y `renotify: false`. Si hay una ventana de la plataforma visible y
+   enfocada, no muestra nada. Si la sesión ya no es válida (401), muestra «Tienes notificaciones nuevas. Inicia
+   sesión para verlas.», sin datos (Chrome exige mostrar algo por cada push). Al pulsarlo enfoca una pestaña abierta o
+   abre `/dashboard`.
+
+**Suscripciones.** Se activan solo desde _Mi cuenta › Notificaciones_ con «Activar en este navegador», que pide el
+permiso (`Notification.requestPermission`) tras el clic, registra el _service worker_ y la suscripción con la clave
+pública VAPID. La tabla `push_subscriptions` guarda solo `endpoint`, `endpoint_hash` (SHA-256, único), una etiqueta
+corta del navegador («Chrome en Windows», nunca el User-Agent completo) y fechas; no guarda las claves `p256dh`/`auth`
+porque no se cifra nada. Registrar de nuevo el mismo navegador es un _upsert_ por hash y lo deja ligado al último
+usuario que lo registró. Máximo 10 navegadores por usuario (se descarta el más antiguo). Solo se aceptan endpoints
+HTTPS de servicios push conocidos (`WEBPUSH_ALLOWED_HOSTS`), así el servidor nunca llama a una URL arbitraria. La
+página lista los dispositivos del propio usuario (navegador y fecha), marca «este navegador» y permite eliminarlos.
+
+**Limpieza.** Al desactivar o eliminar un usuario (`UserAccessChanged`), `RevokePushSubscriptions` borra sus
+suscripciones; al restaurarlo debe volver a activarlas. `SendWebPush` descarta también la de un usuario inactivo.
+`notifications:prune` borra las antiguas (1.7).
+
+**Requisitos y configuración.**
+
+- HTTPS (en desarrollo vale `http://localhost`). Sin contexto seguro, sin soporte del navegador o sin claves, la
+  página lo explica y no ofrece activar.
+- `php artisan webpush:vapid` imprime `VAPID_PUBLIC_KEY` y `VAPID_PRIVATE_KEY` (base64url); copiarlas a `.env` (el
+  comando nunca escribe el archivo). `VAPID_SUBJECT`: `mailto:` o URL https del operador (vacío = `APP_URL`). La
+  clave privada es secreta. Cambiar las claves invalida todas las suscripciones: cada usuario debe activarlas de nuevo.
+- Navegadores: Chrome, Edge, Firefox y Opera de escritorio y Android; Safari 16.4+ en macOS. En iOS/iPadOS solo
+  funciona con la plataforma instalada como app en la pantalla de inicio, lo que requiere un _manifest_ que no existe
+  todavía.
+- El servidor necesita salida HTTPS hacia los servicios push (`*.googleapis.com`, `*.push.services.mozilla.com`,
+  `*.push.apple.com`, `*.notify.windows.com`) y la CSP ya permite `worker-src 'self'`.
 
 ## 2. Horario de atención
 
@@ -172,12 +240,25 @@ automática y, ahora, quién recibe avisos de cola.
 
 ## 5. Pendiente / limitaciones
 
-- **Límite de carga por departamento**: no implementado; requeriría cambiar `ConversationAccess` (propiedad del
-  módulo de bandeja). Queda como mejora futura; hoy solo existe el límite global.
-- **Menciones del chat interno**: el chat interno todavía no registra menciones; el listener ya lee
-  `team_messages.metadata.mentions` (lista de ids de usuario) en cuanto exista.
+- **Límite de carga**: resuelto en la estabilización con la precedencia agente > departamento > plataforma
+  ([bandejas-y-asignacion.md §4 «Capacidad»](bandejas-y-asignacion.md#capacidad)); los avisos de cola siguen
+  dirigiéndose solo a quien está Disponible.
+- **Menciones del chat interno**: resueltas; el compositor y el servidor guardan `team_messages.metadata.mentions` y
+  el listener envía `TeamChatMention` ([chat-interno.md](chat-interno.md#funciones)).
+- **Alertas operativas** (log y correo) siguen fuera del centro de notificaciones.
 - **Envío real**: los mensajes automáticos se encolan igual que los de un agente; su entrega depende del transporte
   de WhatsApp configurado (ver [mensajeria-whatsapp.md](mensajeria-whatsapp.md)). Sin credenciales reales de Meta
   la validación es con pruebas automatizadas y el transporte simulado.
-- Las notificaciones del navegador usan la API `Notification` de la pestaña abierta (no hay _service worker_ ni Web
-  Push): con todas las pestañas cerradas no llegan avisos.
+- El aviso duplicado pestaña + push (pestaña abierta pero oculta) quedó resuelto: con una suscripción push activa en
+  ese navegador la página no muestra su aviso del sistema y solo aparece el aviso genérico del _service worker_. En
+  un navegador sin suscripción push se mantiene el aviso de la pestaña.
+- iOS/iPadOS necesitaría instalar la plataforma como app (PWA con _manifest_), que no existe. El título del aviso
+  push es genérico («Notificaciones nuevas») y no usa el nombre configurable de la plataforma.
+- Al cerrar sesión la suscripción del navegador se conserva: los siguientes push muestran el aviso genérico sin datos.
+  Cada envío correcto renueva la suscripción, así que la poda no la elimina mientras el usuario siga recibiendo
+  notificaciones; se conserva hasta que se desactive desde _Preferencias_, el servicio push la invalide (404/410) o
+  se desactive o elimine el usuario. En un equipo compartido, si otro usuario inicia sesión en ese navegador sin
+  pulsar «Activar en este navegador», los avisos del primero muestran los contadores del usuario con la sesión
+  abierta (texto genérico, sin contenido); la suscripción solo cambia de dueño cuando el segundo la activa.
+- Web Push no se probó contra los servicios push reales en este entorno; la firma VAPID, los encabezados y las
+  respuestas 404/410/429/5xx están cubiertos con pruebas automáticas (`tests/Feature/Notifications/WebPushTest.php`).

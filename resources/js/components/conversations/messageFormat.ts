@@ -36,7 +36,19 @@ export const messageTypeLabels: Record<MessageTypeValue, string> = {
     button: 'Respuesta de botón',
 };
 
-export function statusLabel(status: string): string {
+/**
+ * Error code of a reply whose outcome is unknown: Meta may have received
+ * it. It is a failure of confirmation, not a definitive refusal.
+ */
+export const DELIVERY_UNKNOWN = 'delivery_unknown';
+
+export const deliveryUnknownLabel = 'Entrega sin confirmar';
+
+export function statusLabel(status: string, errorCode?: string | null): string {
+    if (status === 'failed' && errorCode === DELIVERY_UNKNOWN) {
+        return deliveryUnknownLabel;
+    }
+
     return messageStatusLabels[status as MessageStatusValue] ?? status;
 }
 
@@ -57,18 +69,6 @@ export function previewText(message: ConversationMessagePreview): string {
     return body
         ? `${typeLabel(message.type)}: ${body}`
         : typeLabel(message.type);
-}
-
-export function formatFileSize(bytes: number | null | undefined): string {
-    if (bytes === null || bytes === undefined) {
-        return '';
-    }
-
-    if (bytes >= 1024 * 1024) {
-        return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`;
-    }
-
-    return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
 }
 
 /** Calendar day of an instant in the platform time zone (grouping key). */

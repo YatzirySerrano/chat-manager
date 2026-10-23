@@ -174,3 +174,20 @@ test('nothing is queued or published when broadcasting is disabled', function ()
 
     Event::assertNotDispatched(RealtimeSignal::class);
 });
+
+test('a customer message signals each inbox once and the open chat once', function () {
+    $department = Department::factory()->create();
+    $connection = Connection::factory()->create(['default_department_id' => $department->id]);
+    receiveWhatsapp($connection, '5215512345678', 'Hola');
+    Event::fake([RealtimeSignal::class]);
+
+    $receipt = receiveWhatsapp($connection, '5215512345678', '¿Siguen ahí?');
+
+    $inboxChannels = publishedSignals()->where('event', 'inbox.changed')->flatMap(fn (RealtimeSignal $signal): array => $signal->channels);
+
+    expect($inboxChannels->all())->toBe($inboxChannels->unique()->values()->all())
+        ->toContain('inbox.global', "inbox.departments.{$department->id}")
+        ->and(channelsOf('message.recorded'))->toBe(["conversations.{$receipt->conversation->id}"])
+        ->and(publishedSignals()->where('event', 'message.recorded'))->toHaveCount(1)
+        ->and(channelsOf('conversation.changed'))->toBe([]);
+});

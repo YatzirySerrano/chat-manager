@@ -15,8 +15,11 @@ use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Meta\SendResult;
 use App\Services\Meta\WhatsAppTransport;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 
 /*
 | WhatsApp's 24 hour customer service window. It depends only on the last
@@ -214,6 +217,105 @@ test('a reply queued before its connection was deleted or deactivated is never s
     'deleted' => [['deleted_at' => now(), 'is_active' => false]],
     'deactivated' => [['is_active' => false]],
 ]);
+
+test('a reply or file is refused before queueing when the connection cannot send', function (array $state, string $reason) {
+    Queue::fake();
+    Storage::fake('local');
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $conversation->channelConnection()->firstOrFail()->forceFill($state)->save();
+
+    $this->actingAs($this->agent)
+        ->postJson(route('conversations.messages.store', $conversation), [
+            'body' => 'Le comparto el archivo',
+            'client_reference' => (string) Str::uuid(),
+            'attachment' => UploadedFile::fake()->image('foto.png', 40, 40),
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('message', fn (string $message): bool => str_contains($message, $reason));
+
+    expect(Message::query()->count())->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+    Queue::assertNothingPushed();
+})->with([
+    'paused' => [['is_active' => false], 'está desactivada'],
+    'deleted' => [['deleted_at' => now(), 'is_active' => false], 'fue eliminada'],
+    'credentials rejected by Meta' => [['credentials_error' => 'Invalid OAuth access token.'], 'Meta rechazó las credenciales'],
+]);
+
+test('a reply already stored is returned again after the connection is paused', function () {
+    Queue::fake();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $reference = (string) Str::uuid();
+    $send = fn () => $this->actingAs($this->agent)->postJson(route('conversations.messages.store', $conversation), ['body' => 'Hola', 'client_reference' => $reference]);
+
+    $send()->assertAccepted();
+    $conversation->channelConnection()->firstOrFail()->forceFill(['is_active' => false])->save();
+
+    $send()->assertAccepted();
+    expect(Message::query()->count())->toBe(1);
+});
+
+test('the conversation tells the composer whether its connection can send', function (array $state, string $expected, bool $canSend) {
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $conversation->channelConnection()->firstOrFail()->forceFill($state)->save();
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('conversation.connection.state', $expected)
+            ->where('conversation.connection.can_send', $canSend)
+            ->where('conversation.connection.send_block_reason', fn (?string $reason): bool => ($reason === null) === $canSend)
+            ->where('conversation.connection.credentials_verified', false));
+})->with([
+    'active' => [[], 'active', true],
+    'paused' => [['is_active' => false], 'inactive', false],
+    'deleted' => [['deleted_at' => now(), 'is_active' => false], 'deleted', false],
+]);
+
+test('a queued reply is not sent when its author can no longer reply', function (Closure $change) {
+    $transport = recordingTransport();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $message = Message::factory()->create([
+        'conversation_id' => $conversation->id,
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Queued,
+        'sender_user_id' => $this->agent->id,
+        'client_reference' => (string) Str::uuid(),
+    ]);
+
+    $change($conversation, $this->agent, $this->department);
+    app()->call([new DeliverOutboundMessage($message->id), 'handle']);
+
+    expect($message->refresh())
+        ->status->toBe(MessageStatus::Failed)
+        ->error_code->toBe('sender_not_allowed')
+        ->and($transport->sent)->toBe([])
+        ->and($conversation->events()->where('type', ConversationEventType::OutboundBlocked)->exists())->toBeTrue();
+})->with([
+    'author deactivated' => [fn (Conversation $conversation, User $agent) => $agent->forceFill(['is_active' => false])->save()],
+    'transferred to someone else' => [fn (Conversation $conversation, User $agent, Department $department) => $conversation->forceFill([
+        'assigned_user_id' => User::factory()->agent()->inDepartments($department)->create()->id,
+    ])->save()],
+    'conversation closed' => [fn (Conversation $conversation) => $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save()],
+]);
+
+test('automatic messages without a human author are still delivered', function () {
+    $transport = recordingTransport();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
+    $message = Message::factory()->create([
+        'conversation_id' => $conversation->id,
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Queued,
+        'sender_user_id' => null,
+        'metadata' => ['automatic' => true],
+        'client_reference' => (string) Str::uuid(),
+    ]);
+
+    app()->call([new DeliverOutboundMessage($message->id), 'handle']);
+
+    expect($message->refresh()->status)->toBe(MessageStatus::Accepted)
+        ->and($transport->sent)->toBe([$message->id]);
+});
 
 test('without the WhatsApp integration a reply is marked as not sent instead of pretending delivery', function () {
     $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());

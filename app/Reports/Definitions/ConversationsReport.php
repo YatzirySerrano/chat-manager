@@ -117,7 +117,11 @@ class ConversationsReport extends ReportDefinition
             $descriptions[] = 'Conexión: '.(Connection::query()->visibleTo($actor)->whereKey($filters['connection'])->value('name') ?? 'No disponible');
         }
 
-        $this->describeSearch($descriptions, $context);
+        if ($filters['search'] !== '') {
+            $descriptions[] = (($filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT) === ConversationInboxQuery::SEARCH_MESSAGES
+                ? 'Búsqueda en el contenido de los mensajes: «'
+                : 'Búsqueda: «').$filters['search'].'»';
+        }
 
         return $descriptions;
     }

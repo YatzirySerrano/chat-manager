@@ -66,6 +66,8 @@ const validation = useFormValidation(form, {
                 integerBetween(1, 200),
             ],
             'operations.auto_close_after_hours': [integerBetween(1, 720)],
+            'sla.first_response_minutes': [integerBetween(1, 43200)],
+            'sla.resolution_minutes': [integerBetween(1, 43200)],
         };
 
         for (const day of props.weekdays) {
@@ -495,6 +497,92 @@ const integrationConnected = computed(
                             "
                         />
                     </div>
+                </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="sla-heading"
+            >
+                <div>
+                    <h2 id="sla-heading" class="font-medium">
+                        Objetivos de servicio
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Opcionales. Con un objetivo, Reportes muestra el
+                        porcentaje de conversaciones que lo cumplieron en tiempo
+                        hábil; sin objetivo, solo se muestran los tiempos.
+                    </p>
+                </div>
+                <div
+                    class="grid gap-5 rounded-xl border bg-card p-5 shadow-card sm:grid-cols-2"
+                >
+                    <FormField
+                        id="sla-first-response"
+                        label="Objetivo de primera respuesta (minutos)"
+                        hint="Déjalo vacío para no medir cumplimiento."
+                        :help="{
+                            description:
+                                'Tiempo hábil máximo desde que llega la conversación hasta la primera respuesta de una persona aceptada por WhatsApp.',
+                            example: '15',
+                            warning:
+                                'El tiempo hábil solo cuenta las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
+                        }"
+                        :error="validation.error('sla.first_response_minutes')"
+                    >
+                        <Input
+                            id="sla-first-response"
+                            v-bind="
+                                validation.field(
+                                    'sla.first_response_minutes',
+                                    'sla-first-response',
+                                )
+                            "
+                            :model-value="form.sla.first_response_minutes ?? ''"
+                            @update:model-value="
+                                (value) =>
+                                    (form.sla.first_response_minutes =
+                                        toNullableNumber(value))
+                            "
+                            type="number"
+                            min="1"
+                            max="43200"
+                            inputmode="numeric"
+                        />
+                    </FormField>
+                    <FormField
+                        id="sla-resolution"
+                        label="Objetivo de resolución (minutos)"
+                        hint="Déjalo vacío para no medir cumplimiento."
+                        :help="{
+                            description:
+                                'Tiempo hábil máximo desde que llega la conversación hasta su primer cierre.',
+                            example: '480',
+                            warning:
+                                'El tiempo hábil solo cuenta las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
+                        }"
+                        :error="validation.error('sla.resolution_minutes')"
+                    >
+                        <Input
+                            id="sla-resolution"
+                            v-bind="
+                                validation.field(
+                                    'sla.resolution_minutes',
+                                    'sla-resolution',
+                                )
+                            "
+                            :model-value="form.sla.resolution_minutes ?? ''"
+                            @update:model-value="
+                                (value) =>
+                                    (form.sla.resolution_minutes =
+                                        toNullableNumber(value))
+                            "
+                            type="number"
+                            min="1"
+                            max="43200"
+                            inputmode="numeric"
+                        />
+                    </FormField>
                 </div>
             </section>
 

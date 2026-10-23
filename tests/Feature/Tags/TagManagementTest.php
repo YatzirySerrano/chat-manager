@@ -12,7 +12,7 @@ use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the catalog requires permission to view tags', function () {
-    $agent = User::factory()->agent()->create();
+    $agent = conversationUser([Permission::ViewConversations, Permission::ReplyConversations]);
 
     $this->actingAs($agent)->get(route('tags.index'))->assertForbidden();
 });

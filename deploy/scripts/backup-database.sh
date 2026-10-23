@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Chat Manager — consistent MariaDB backup with checksum and rotation.
 #
+# Runs as root: install a reviewed copy owned by root, never run it from the
+# releases (they belong to the deploy user, see deploy/sudoers/chat-manager):
+#   sudo install -o root -g root -m 0755 deploy/scripts/backup-database.sh /usr/local/sbin/chat-manager-backup-database
+#
 # Credentials are read from an option file, never from the command line:
 #   /etc/chat-manager/backup.cnf  (chmod 600, owner root)
 #     [client]

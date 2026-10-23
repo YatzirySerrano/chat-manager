@@ -8,11 +8,11 @@ use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Enums\DistributionMode;
 use App\Enums\Permission;
-use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\PlatformSettings;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -138,22 +138,30 @@ test('only users who can assign may hand a conversation to an unavailable collea
         ->and($conversation->events()->count())->toBe(0);
 });
 
-test('the transfer options show each agent\'s availability and load', function () {
+test('the destinations show each agent\'s availability and whether they reached their limit', function () {
+    app(PlatformSettings::class)->update(['operations' => ['max_open_conversations_per_agent' => 1]]);
     $available = User::factory()->agent()->available()->inDepartments($this->department)->create();
     Conversation::factory()->inDepartment($this->department)->assignedTo($this->unavailable)->create();
     $conversation = Conversation::factory()->inDepartment($this->department)->create();
 
     $this->actingAs($this->admin)
-        ->get(route('conversations.index', ['c' => $conversation->id]), [
-            'X-Inertia' => 'true',
-            'X-Inertia-Partial-Component' => 'conversations/Index',
-            'X-Inertia-Partial-Data' => 'transferOptions',
-            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
-        ])
-        ->assertJsonPath('props.transferOptions.departments.0.agents', fn ($agents) => collect($agents)->keyBy('id')->map(fn ($agent) => [$agent['availability'], $agent['load']])->only([$this->unavailable->id, $available->id])->all() == [
-            $this->unavailable->id => ['unavailable', 1],
-            $available->id => ['available', 0],
+        ->getJson(route('conversations.destinations', $conversation))
+        ->assertOk()
+        ->assertJsonPath('allows_exceptions', true)
+        ->assertJsonPath('departments.0.agents', fn ($agents) => collect($agents)->keyBy('id')->map(fn ($agent) => [$agent['availability'], $agent['at_capacity']])->only([$this->unavailable->id, $available->id])->all() == [
+            $this->unavailable->id => ['unavailable', true],
+            $available->id => ['available', false],
         ]);
+});
+
+test('the destinations tell someone who cannot assign that unavailable colleagues are not an option', function () {
+    $responsible = User::factory()->agent()->available()->inDepartments($this->department)->create();
+    $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($responsible)->create();
+
+    $this->actingAs($responsible)
+        ->getJson(route('conversations.destinations', $conversation))
+        ->assertOk()
+        ->assertJsonPath('allows_exceptions', false);
 });
 
 test('inactive users and non-members never receive a conversation, confirmed or not', function (Closure $makeTarget, string $message) {

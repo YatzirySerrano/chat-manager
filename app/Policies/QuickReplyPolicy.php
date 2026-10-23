@@ -6,6 +6,7 @@ use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\QuickReply;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 /**
  * quick-replies.manage is not global-only: a manager with a narrower scope
@@ -36,24 +37,26 @@ class QuickReplyPolicy
     /**
      * A deleted reply is read-only until it is restored.
      */
-    public function update(User $actor, QuickReply $quickReply): bool
+    public function update(User $actor, QuickReply $quickReply): Response
     {
-        return ! $quickReply->isDeleted() && $this->manages($actor, $quickReply);
+        $response = $this->manages($actor, $quickReply);
+
+        return $response->allowed() && $quickReply->isDeleted() ? Response::deny() : $response;
     }
 
     /**
      * Logical deletion: the shortcut stays reserved.
      */
-    public function delete(User $actor, QuickReply $quickReply): bool
+    public function delete(User $actor, QuickReply $quickReply): Response
     {
         return $this->update($actor, $quickReply);
     }
 
-    public function restore(User $actor, QuickReply $quickReply): bool
+    public function restore(User $actor, QuickReply $quickReply): Response
     {
-        return $quickReply->isDeleted()
-            && $actor->canViewDeletedRecords()
-            && $this->manages($actor, $quickReply);
+        $response = $this->manages($actor, $quickReply);
+
+        return $response->allowed() && ! $quickReply->isDeleted() ? Response::deny() : $response;
     }
 
     /**
@@ -65,18 +68,28 @@ class QuickReplyPolicy
             && $actor->dataScope() === DataScope::Global;
     }
 
-    private function manages(User $actor, QuickReply $quickReply): bool
+    /**
+     * Without quick-replies.manage the answer is 403. A reply the actor
+     * cannot even use (shared only with other departments, or deleted for
+     * someone who cannot consult deleted records) answers like an id that
+     * does not exist; a visible one outside the actor's reach is a 403.
+     */
+    private function manages(User $actor, QuickReply $quickReply): Response
     {
         if (! $actor->holdsPermission(Permission::ManageQuickReplies)) {
-            return false;
+            return Response::deny();
+        }
+
+        if ($quickReply->isDeleted() && ! $actor->canViewDeletedRecords()) {
+            return Response::denyAsNotFound();
         }
 
         if ($actor->dataScope() === DataScope::Global) {
-            return true;
+            return Response::allow();
         }
 
         if ($quickReply->is_global) {
-            return false;
+            return Response::deny();
         }
 
         $departmentIds = $quickReply->relationLoaded('departments')
@@ -84,7 +97,12 @@ class QuickReplyPolicy
             : $quickReply->departments()->pluck('departments.id')->all();
 
         $departmentIds = array_map('intval', $departmentIds);
+        $actorDepartmentIds = $actor->departmentIds();
 
-        return $departmentIds !== [] && array_diff($departmentIds, $actor->departmentIds()) === [];
+        if (array_intersect($departmentIds, $actorDepartmentIds) === []) {
+            return Response::denyAsNotFound();
+        }
+
+        return array_diff($departmentIds, $actorDepartmentIds) === [] ? Response::allow() : Response::deny();
     }
 }

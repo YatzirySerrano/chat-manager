@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Models\PushSubscription;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,7 +22,11 @@ class PruneNotifications
     public const RECEIPT_RETENTION_DAYS = 30;
 
     /**
-     * @return array{notifications: int, receipts: int}
+     * Web Push subscriptions without a registration or successful push in
+     * `webpush.retention_days` are deleted too (the browser registers again
+     * when the user activates push).
+     *
+     * @return array{notifications: int, receipts: int, push_subscriptions: int}
      */
     public function handle(): array
     {
@@ -47,6 +52,10 @@ class PruneNotifications
             $receipts += $deleted;
         } while ($deleted === 1000);
 
-        return ['notifications' => $notifications, 'receipts' => $receipts];
+        $pushSubscriptions = PushSubscription::query()
+            ->where('updated_at', '<', now()->subDays(max(1, (int) config('webpush.retention_days', 120))))
+            ->delete();
+
+        return ['notifications' => $notifications, 'receipts' => $receipts, 'push_subscriptions' => $pushSubscriptions];
     }
 }

@@ -69,5 +69,7 @@ export type DepartmentAutomation = {
     };
     holidays: { date: string; label: string; recurring: boolean }[];
     load_limit: number | null;
+    /** The department's own per agent limit; takes precedence over load_limit. */
+    department_limit: number | null;
     settings_url: string | null;
 };

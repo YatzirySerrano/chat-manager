@@ -11,6 +11,7 @@ use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Feature\Realtime\RealtimeTestSupport;
 
 beforeEach(function () {
     Storage::fake('local');
@@ -43,6 +44,9 @@ dataset('thread endpoints', [
     'remove participant' => ['deleteJson', 'remove', []],
     'change role' => ['putJson', 'role', ['role' => 'admin']],
     'download' => ['getJson', 'download', []],
+    'typing' => ['postJson', 'typing', []],
+    'react' => ['putJson', 'react', ['emoji' => '👍']],
+    'unreact' => ['deleteJson', 'unreact', ['emoji' => '👍']],
 ]);
 
 function teamChatEndpoint(string $endpoint, TeamThread $thread, TeamMessage $message, TeamAttachment $attachment, User $participant): string
@@ -62,6 +66,9 @@ function teamChatEndpoint(string $endpoint, TeamThread $thread, TeamMessage $mes
         'remove' => route('team-chat.threads.participants.destroy', [$thread, $participant]),
         'role' => route('team-chat.threads.participants.update', [$thread, $participant]),
         'download' => route('team-chat.attachments.show', [$thread, $message, $attachment]),
+        'typing' => route('team-chat.threads.typing', $thread),
+        'react' => route('team-chat.threads.messages.reactions.store', [$thread, $message]),
+        'unreact' => route('team-chat.threads.messages.reactions.destroy', [$thread, $message]),
     };
 }
 
@@ -160,10 +167,38 @@ test('only current participants may subscribe to a thread channel', function () 
     expect($channel->join($this->beto, (string) $this->thread->id))->toBeFalse();
 });
 
-test('the presence channel only exposes id, name and availability of chat users', function () {
+test('presence channels only gather people who may chat with each other and expose nothing but the id', function () {
     $channel = app(TeamPresenceChannel::class);
+    $root = User::factory()->superAdministrator()->create();
+    $elsewhere = User::factory()->agent()->inDepartments(Department::factory()->create())->create();
     $withoutChat = conversationUser([Permission::ViewDashboard]);
 
-    expect($channel->join($this->ana))->toBe(['id' => $this->ana->id, 'name' => 'Ana', 'availability' => 'unavailable'])
-        ->and($channel->join($withoutChat))->toBeFalse();
+    expect($channel->joinDepartment($this->ana, $this->department->id))->toBe(['id' => $this->ana->id])
+        ->and($channel->joinDepartment($elsewhere, $this->department->id))->toBeFalse()
+        ->and($channel->join($this->ana))->toBeFalse()
+        ->and($channel->join($root))->toBe(['id' => $root->id])
+        ->and($channel->join($withoutChat))->toBeFalse()
+        ->and($channel->channelsFor($this->ana))->toBe(["team.departments.{$this->department->id}"])
+        ->and($channel->channelsFor($withoutChat))->toBe([]);
+
+    $this->ana->forceFill(['is_active' => false])->save();
+
+    expect($channel->joinDepartment($this->ana, $this->department->id))->toBeFalse();
+});
+
+test('subscribing to a presence channel answers only the member id', function () {
+    RealtimeTestSupport::useReverb();
+    $presence = fn (string $channel): array => ['socket_id' => '1234.5678', 'channel_name' => "presence-{$channel}"];
+
+    $response = $this->actingAs($this->ana)
+        ->postJson('/broadcasting/auth', $presence("team.departments.{$this->department->id}"))
+        ->assertOk();
+
+    expect(json_decode((string) $response->json('channel_data'), true))->toBe(['user_id' => (string) $this->ana->id, 'user_info' => ['id' => $this->ana->id]]);
+
+    $elsewhere = Department::factory()->create();
+
+    $this->actingAs($this->ana)->postJson('/broadcasting/auth', $presence("team.departments.{$elsewhere->id}"))->assertForbidden();
+    $this->actingAs($this->ana)->postJson('/broadcasting/auth', $presence('team'))->assertForbidden();
+    $this->actingAs($this->ana)->postJson('/broadcasting/auth', $presence("team.departments.0{$this->department->id}"))->assertForbidden();
 });

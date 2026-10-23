@@ -87,6 +87,34 @@ class PhoneNumber
     }
 
     /**
+     * Digits (without "+") an E.164 number may start with when someone types
+     * the beginning of it in a search: the digits as written and, unless
+     * written with an international prefix ("+" or "00"), also preceded by
+     * the default country's calling code ("55 1234" → "551234", "52551234").
+     * Empty when the term is not a phone number (it has letters or other
+     * symbols) or has fewer than 3 digits, so "Juan 5" never searches "5".
+     *
+     * @return list<string>
+     */
+    public static function searchPrefixes(string $term, string $defaultCountry = 'MX'): array
+    {
+        $compact = preg_replace('/[\s().\-\x{00A0}]+/u', '', trim($term)) ?? '';
+
+        if (preg_match('/^(\+|00)?(\d{3,'.self::MAX_DIGITS.'})$/', $compact, $matches) !== 1) {
+            return [];
+        }
+
+        $digits = $matches[2];
+        $callingCode = self::COUNTRIES[strtoupper($defaultCountry)]['calling_code'] ?? null;
+
+        if ($matches[1] !== '' || $callingCode === null) {
+            return [$digits];
+        }
+
+        return [$digits, $callingCode.$digits];
+    }
+
+    /**
      * Whether the number can be normalized.
      */
     public static function isValid(?string $number, string $defaultCountry = 'MX'): bool

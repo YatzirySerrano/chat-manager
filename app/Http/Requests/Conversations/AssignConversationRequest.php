@@ -15,6 +15,7 @@ class AssignConversationRequest extends ConversationOperationRequest
             ...parent::rules(),
             'user_id' => ['required', 'integer'],
             'confirm_unavailable' => ['sometimes', 'boolean'],
+            'confirm_over_capacity' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -23,7 +24,7 @@ class AssignConversationRequest extends ConversationOperationRequest
      */
     public function attributes(): array
     {
-        return [...parent::attributes(), 'user_id' => 'agente', 'confirm_unavailable' => 'confirmación'];
+        return [...parent::attributes(), 'user_id' => 'agente', 'confirm_unavailable' => 'confirmación', 'confirm_over_capacity' => 'confirmación'];
     }
 
     /**
@@ -33,5 +34,14 @@ class AssignConversationRequest extends ConversationOperationRequest
     public function confirmsUnavailable(): bool
     {
         return $this->boolean('confirm_unavailable');
+    }
+
+    /**
+     * Whether the actor explicitly confirmed handing the conversation to an
+     * agent who already attends their maximum of conversations.
+     */
+    public function confirmsOverCapacity(): bool
+    {
+        return $this->boolean('confirm_over_capacity');
     }
 }

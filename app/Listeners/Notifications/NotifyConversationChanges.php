@@ -46,6 +46,34 @@ class NotifyConversationChanges implements ShouldQueue
         return Queues::name(Queues::NOTIFICATIONS);
     }
 
+    /**
+     * Lifecycle events that can produce a notification (see handle()).
+     *
+     * @var list<ConversationEventType>
+     */
+    private const NOTIFYING_EVENTS = [
+        ConversationEventType::Created,
+        ConversationEventType::Unassigned,
+        ConversationEventType::Transferred,
+        ConversationEventType::Reopened,
+        ConversationEventType::Assigned,
+        ConversationEventType::AutoAssigned,
+    ];
+
+    /**
+     * Messages, tags and the other changes that never notify do not queue
+     * a job (handle() keeps the same filter as a safeguard).
+     */
+    public function shouldQueue(ConversationChanged $event): bool
+    {
+        if ($event->reason === 'read') {
+            return true;
+        }
+
+        return $event->eventId !== null
+            && in_array(ConversationEventType::tryFrom($event->reason), self::NOTIFYING_EVENTS, true);
+    }
+
     public function handle(ConversationChanged $event): void
     {
         if ($event->reason === 'read') {

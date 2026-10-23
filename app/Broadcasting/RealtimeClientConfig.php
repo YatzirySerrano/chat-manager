@@ -2,6 +2,7 @@
 
 namespace App\Broadcasting;
 
+use App\Broadcasting\TeamChat\TeamPresenceChannel;
 use App\Models\User;
 
 /**
@@ -17,7 +18,10 @@ use App\Models\User;
  */
 class RealtimeClientConfig
 {
-    public function __construct(private RealtimeAudience $audience) {}
+    public function __construct(
+        private RealtimeAudience $audience,
+        private TeamPresenceChannel $teamPresence,
+    ) {}
 
     public function isEnabled(): bool
     {
@@ -26,7 +30,7 @@ class RealtimeClientConfig
     }
 
     /**
-     * @return array{enabled: bool, key: string|null, host: string|null, port: int|null, scheme: string|null, path: string|null, user_channel: string|null, inbox_channels: list<string>}
+     * @return array{enabled: bool, key: string|null, host: string|null, port: int|null, scheme: string|null, path: string|null, user_channel: string|null, inbox_channels: list<string>, presence_channels: list<string>}
      */
     public function for(?User $user): array
     {
@@ -40,6 +44,7 @@ class RealtimeClientConfig
                 'path' => null,
                 'user_channel' => null,
                 'inbox_channels' => [],
+                'presence_channels' => [],
             ];
         }
 
@@ -57,6 +62,7 @@ class RealtimeClientConfig
             'path' => $path === '' ? null : '/'.$path,
             'user_channel' => RealtimeChannels::user($user->id),
             'inbox_channels' => $this->audience->inboxChannels($user),
+            'presence_channels' => $this->teamPresence->channelsFor($user),
         ];
     }
 }

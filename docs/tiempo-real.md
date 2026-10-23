@@ -16,7 +16,7 @@ Documentos relacionados: [bandejas-y-asignacion.md](bandejas-y-asignacion.md), [
 Acción de dominio (transacción) ──commit──▶ Evento de dominio (App\Events\**, ShouldDispatchAfterCommit, solo IDs)
         │
         ▼
-Listener en cola app/Listeners/Realtime/* (cola "notifications", 3 intentos)
+Listener en cola app/Listeners/Realtime/* (cola dedicada "realtime", 3 intentos)
         │  lee el estado actual de la BD y decide destinatarios (App\Broadcasting\RealtimeSignals)
         ▼
 RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket──▶ navegadores suscritos al canal privado
@@ -26,8 +26,23 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
 ```
 
 - Los eventos se emiten **después del commit** (`ShouldDispatchAfterCommit`): nunca se anuncia algo que luego se revierte.
-- Los listeners se ejecutan **fuera de la petición**, en la cola `notifications` (configurable con `REALTIME_QUEUE` /
-  `REALTIME_QUEUE_CONNECTION`). Si `BROADCAST_CONNECTION=null` no se encolan (sin costo en instalaciones sin tiempo real).
+- Los listeners se ejecutan **fuera de la petición**, en la cola dedicada `realtime` (`Queues::REALTIME`; nombre
+  configurable con `QUEUE_NAME_REALTIME` o `REALTIME_QUEUE`, que tiene prioridad; conexión con
+  `REALTIME_QUEUE_CONNECTION`). Tiene workers propios, así que nunca espera detrás de notificaciones in-app,
+  métricas o exportaciones. Si `BROADCAST_CONNECTION=null` no se encolan (sin costo en instalaciones sin tiempo real).
+- Las difusiones del chat interno (`TeamThreadSignal`, `TeamChatUserSignal`) usan la misma cola `realtime`.
+- La señal de notificación (`NotificationSignal`) no genera un trabajo propio: `BroadcastNotificationSignal` (listener
+  síncrono) la publica con `RealtimeSignals` en el mismo worker que guardó la notificación, tras el commit. Si una
+  publicación falla (Reverb detenido o lento), el resto de señales `.notification` del mismo trabajo se omiten: un
+  envío a muchos destinatarios cuesta como mucho un timeout del cliente de Reverb por trabajo, nunca uno por
+  destinatario, y no supera el `--timeout` del worker de `notifications`. El trabajo siguiente vuelve a intentarlo; los
+  usuarios omitidos ven la notificación con la actualización periódica de la campana.
+- Un mensaje produce **un solo** evento de dominio (`MessageRecorded`): un trabajo de tiempo real, una señal
+  `.message.recorded` para el chat abierto y una `.inbox.changed` por canal de bandeja. `ReceiveInboundMessage` y
+  `QueueTemplateMessage` ya no despachan además `ConversationChanged('message')` (solo lo hace `DownloadInboundMedia`
+  cuando termina una descarga, porque no hay mensaje nuevo). Los listeners en cola que no harían nada con un evento
+  (`NotifyInboundMessage` con mensajes salientes, `NotifyConversationChanges` y `SendAutomaticMessages` con cambios que
+  no notifican ni abren/cierran ciclo) lo descartan en `shouldQueue()` y no encolan trabajos vacíos.
 - Publicar en Reverb es _best effort_: si Reverb está detenido o lento (timeout 5 s, conexión 2 s), se registra un
   `warning` sin datos sensibles y la operación de negocio no falla.
 
@@ -45,7 +60,8 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
 
 ## Canales
 
-Todos son **privados** (prefijo `private-` en el protocolo). Cada suscripción pasa por `POST /broadcasting/auth`
+Todos son **privados** (prefijo `private-` en el protocolo), salvo los dos de presencia del chat interno (prefijo
+`presence-`, también autorizados por el servidor). Cada suscripción pasa por `POST /broadcasting/auth`
 (middleware `web`, `auth`, `verified`, `throttle:180,1`; `EnsureUserIsActive` cierra la sesión de cuentas eliminadas).
 
 | Canal                              | Quién puede suscribirse (evaluado en cada suscripción)                                                                                                                                 |
@@ -56,6 +72,8 @@ Todos son **privados** (prefijo `private-` en el protocolo). Cada suscripción p
 | `inbox.queues.{departmentId}`      | Cola de pendientes: quien puede aceptar de ese departamento (`ConversationAccess::acceptableDepartmentIds`: departamento activo, distribución distinta de manual, permiso de aceptar). |
 | `inbox.global`                     | Alcance global con permiso de ver conversaciones.                                                                                                                                      |
 | `team-chat.threads.{threadId}`     | Registrado por el módulo de chat interno en `routes/channels/team-chat.php` (ver [chat-interno.md](chat-interno.md)).                                                                  |
+| `presence-team`                    | Presencia del chat interno para quien llega a todos (alcance global o `team-chat.cross-department`), con `team-chat.use` y cuenta activa. Carga `{id}`.                                |
+| `presence-team.departments.{id}`   | Presencia del chat interno para los miembros de ese departamento, con `team-chat.use` y cuenta activa. Carga `{id}`.                                                                   |
 
 La prop compartida `realtime.inbox_channels` indica qué canales de bandeja corresponden al usuario según su alcance:
 global → `inbox.global`; departamentos → `inbox.departments.{id}` de sus departamentos; personal (asignado) →
@@ -71,20 +89,28 @@ atiende un compañero (política de visibilidad, sección 7 de la especificació
 Nombres tal como los escucha el cliente (`.nombre`). Las cargas útiles solo llevan IDs y metadatos mínimos: **nunca**
 cuerpos de mensaje, teléfonos, texto de notas ni nombres de archivo.
 
-| Canal                                    | Evento                                | Carga                                       | Origen                                                                                                                     |
-| ---------------------------------------- | ------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `conversations.{id}`                     | `.conversation.changed`               | `{reason, version}`                         | `ConversationChanged` (todo `conversation_event` + `tags`, `routing`, `message`)                                           |
-| `conversations.{id}`                     | `.message.recorded`                   | `{message_id, direction}`                   | `MessageRecorded`                                                                                                          |
-| `conversations.{id}`                     | `.message.status`                     | `{message_id, status}`                      | `MessageStatusChanged`                                                                                                     |
-| `conversations.{id}`                     | `.note.saved`                         | `{note_id}`                                 | `ConversationNoteSaved`                                                                                                    |
-| bandejas + `users.{id}`                  | `.inbox.changed`                      | `{conversation_id, reason}`                 | `ConversationChanged`, `MessageRecorded` (`reason: message`)                                                               |
-| `users.{id}`                             | `.inbox.changed`                      | `{conversation_id, reason: read}`           | `ConversationChanged` con `reason=read` (solo al lector)                                                                   |
-| `users.{id}`                             | `.inbox.changed`                      | `{conversation_id, reason: message_failed}` | `MessageStatusChanged` con `failed` (al responsable)                                                                       |
-| `users.{id}`                             | `.availability.changed`               | `{availability}`                            | `AgentAvailabilityChanged`                                                                                                 |
-| `inbox.global`, `inbox.departments.{id}` | `.availability.changed`               | `{user_id, availability}`                   | `AgentAvailabilityChanged` (departamentos del agente)                                                                      |
-| `users.{id}`                             | `.access.changed`                     | `{reason}`                                  | `UserAccessChanged`                                                                                                        |
-| `users.{id}`                             | `.transfer.changed`                   | `{transfer_id, type, status}`               | `DataTransfers\DataTransferFinished` (exportación/importación terminada; lo emite el modelo `DataTransfer` tras confirmar) |
-| `users.{id}`                             | `.notification`, `.team-chat.changed` | ver módulos dueños                          | notificaciones / chat interno                                                                                              |
+| Canal                                             | Evento                                 | Carga                                       | Origen                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `conversations.{id}`                              | `.conversation.changed`                | `{reason, version}`                         | `ConversationChanged` (todo `conversation_event` + `tags`, `routing`; `message` solo al terminar una descarga multimedia)      |
+| `conversations.{id}`                              | `.message.recorded`                    | `{message_id, direction}`                   | `MessageRecorded` (con `inbound` el chat recarga también la cabecera: ventana de 24 h)                                         |
+| `conversations.{id}`                              | `.message.status`                      | `{message_id, status}`                      | `MessageStatusChanged`                                                                                                         |
+| `conversations.{id}`                              | `.note.saved`                          | `{note_id}`                                 | `ConversationNoteSaved`                                                                                                        |
+| bandejas + `users.{id}`                           | `.inbox.changed`                       | `{conversation_id, reason}`                 | `ConversationChanged`, `MessageRecorded` (`reason: message`)                                                                   |
+| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: read}`           | `ConversationChanged` con `reason=read` (solo al lector)                                                                       |
+| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: message_failed}` | `MessageStatusChanged` con `failed` (al responsable)                                                                           |
+| `users.{id}`                                      | `.availability.changed`                | `{availability}`                            | `AgentAvailabilityChanged`                                                                                                     |
+| `inbox.global`, `inbox.departments.{id}`          | `.availability.changed`                | `{user_id, availability}`                   | `AgentAvailabilityChanged` (departamentos del agente)                                                                          |
+| `users.{id}`                                      | `.access.changed`                      | `{reason}`                                  | `UserAccessChanged`                                                                                                            |
+| `users.{id}`                                      | `.transfer.changed`                    | `{transfer_id, type, status}`               | `DataTransfers\DataTransferFinished` (exportación/importación terminada; lo emite el modelo `DataTransfer` tras confirmar)     |
+| `users.{id}`                                      | `.notification`                        | `{id, kind}`                                | `NotificationSignal` → `BroadcastNotificationSignal` (sin trabajo en cola propio)                                              |
+| `users.{id}`                                      | `.team-chat.changed`                   | ver [chat-interno.md](chat-interno.md)      | chat interno (cola `realtime`)                                                                                                 |
+| `conversations.{id}`                              | `.conversation.changed`                | `{reason: connection_changed}`              | `ConnectionStatusChanged` / `ConnectionHealthChanged` → `BroadcastConnectionChange` (conversaciones no cerradas, lotes de 100) |
+| `team-chat.threads.{id}`                          | `.typing`                              | `{user_id}` (lo pone el servidor)           | `POST team-chat/threads/{id}/typing`: única señal síncrona, emitida en la propia petición y protegida con `rescue`             |
+| `presence-team`, `presence-team.departments.{id}` | presencia (`here`/`joining`/`leaving`) | `{id}`                                      | Canales de presencia del chat interno (ver [chat-interno.md](chat-interno.md#tiempo-real))                                     |
+
+La señal `connection_changed` se emite al activar, desactivar, eliminar, restaurar, verificar o reemplazar las
+credenciales de una conexión y cuando cambia su salud; el chat abierto recarga su estado y el compositor se bloquea o
+desbloquea sin recargar la página.
 
 Destinatarios de `.inbox.changed` por un cambio de conversación: `inbox.global`; bandeja de equipo del departamento
 actual y de los departamentos de origen/destino del evento; cola del departamento si está en cola (o si acaba de salir
@@ -158,14 +184,14 @@ Variables (ver `.env.example`):
 | `REVERB_SERVER_HOST`, `REVERB_SERVER_PORT`                                               | Dónde escucha el proceso Reverb (`127.0.0.1` detrás de un proxy).                                                                                                                                                               |
 | `REVERB_CLIENT_HOST`, `REVERB_CLIENT_PORT`, `REVERB_CLIENT_SCHEME`, `REVERB_CLIENT_PATH` | Dirección pública para **el navegador** (p. ej. `chat.empresa.com`, `443`, `https`). Por omisión usa `REVERB_HOST/PORT/SCHEME`. Se entrega por la prop `realtime`, no por `VITE_*`: el mismo build sirve en todos los entornos. |
 | `REVERB_ALLOWED_ORIGINS`                                                                 | Hosts permitidos separados por comas.                                                                                                                                                                                           |
-| `REALTIME_QUEUE`, `REALTIME_QUEUE_CONNECTION`                                            | Cola/conexión de los listeners (por omisión `notifications` en la conexión por defecto).                                                                                                                                        |
+| `REALTIME_QUEUE`, `REALTIME_QUEUE_CONNECTION`                                            | Cola de las señales (por omisión `realtime`, o `QUEUE_NAME_REALTIME`) y conexión de los listeners (por omisión la de `QUEUE_CONNECTION`; otra conexión necesita su propio worker).                                              |
 | `REVERB_SCALING_ENABLED`, `REVERB_SCALING_CHANNEL`, `REDIS_*`                            | Escalado horizontal (ver abajo).                                                                                                                                                                                                |
 
 ### Desarrollo local
 
 `.env` local usa `BROADCAST_CONNECTION=reverb`, Reverb en `127.0.0.1:8080`, credenciales aleatorias locales
 (`.env` no se versiona). `composer run dev` ya incluye el proceso `reverb` (Reverb lo registra) y un proceso `queue`
-que escucha todas las colas, `notifications` incluida (ver
+que escucha todas las colas en orden de prioridad (`QueueMonitor::queueNames()`), `realtime` incluida (ver
 [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md)). `REALTIME_QUEUE_CONNECTION=sync` ejecuta los
 listeners de señales al momento (solo para desarrollo). Sin worker, la página sigue funcionando con la recarga de
 seguridad y la recarga al enfocar la ventana.
@@ -196,9 +222,29 @@ redirect_stderr=true
 ```
 
 - Tras desplegar: `php artisan reverb:restart` (cierre ordenado; supervisor lo vuelve a levantar).
-- Las señales se procesan en la cola `notifications`, que atiende el grupo `general` de
-  `deploy/supervisor/chat-manager.conf` (`--queue=notifications,default`); ver
-  [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md) para el resto de colas.
+- Las señales se procesan en la cola `realtime`, que atiende su propio grupo de workers (`chatmanager-queue-realtime`
+  en `deploy/supervisor/chat-manager.conf`, `chat-manager-worker@realtime-N` en systemd): 2 procesos,
+  `--sleep=1 --tries=3 --backoff=2 --timeout=60`. `--timeout=60` cubre varias publicaciones por trabajo (timeout de
+  Reverb 5 s + conexión 2 s cada una) y queda por debajo de `retry_after` (900 s).
+- Topología de colas (un grupo de workers por cola, prioridad de mayor a menor):
+
+    | Grupo           | Cola                | Procesos | Uso                                                                    |
+    | --------------- | ------------------- | -------- | ---------------------------------------------------------------------- |
+    | `critical`      | `webhooks,messages` | 4        | Procesamiento del webhook (recepción) y mensajes salientes             |
+    | `realtime`      | `realtime`          | 2        | Señales de tiempo real (mensaje nuevo, bandejas, chat interno)         |
+    | `notifications` | `notifications`     | 2        | Notificaciones in-app y administrativas (con su señal `.notification`) |
+    | `media`         | `media`             | 2        | Descargas y subidas de multimedia                                      |
+    | `default`       | `default`           | 1        | Métricas, sincronización de plantillas, mantenimiento                  |
+    | `exports`       | `exports`           | 1        | Exportaciones Excel/PDF, importaciones (baja prioridad, timeout largo) |
+
+    Los workers no fijan conexión (`queue:work --queue=...`): usan `QUEUE_CONNECTION` (`database` o `redis`).
+    `tests/Feature/Integration/QueueTopologyTest.php` comprueba, a partir de `App\Support\Queues::all()`, que cada cola
+    tiene worker en ambas plantillas, que las críticas no comparten worker con trabajo pesado, que ningún worker fija
+    conexión, que `--timeout` < `retry_after` y que Supervisor reintenta el arranque (`startretries=20`). Las unidades
+    systemd arrancan después de MariaDB/Redis (`After=`/`Wants=`) y no dejan de reintentar (`StartLimitIntervalSec=0`).
+
+- El polling es solo respaldo: las páginas lo usan cuando el WebSocket no está disponible (20 s) y como recarga de
+  seguridad lenta con conexión (120 s); el mecanismo principal son las señales.
 - Límite de descriptores: cada conexión usa uno; ajustar `ulimit -n`/`minfds`. Para más de ~1 000 conexiones
   simultáneas instalar la extensión `ev` (`pecl install ev`), que Reverb usa automáticamente.
 
@@ -236,21 +282,43 @@ Con este esquema: `REVERB_HOST=127.0.0.1`, `REVERB_PORT=8080`, `REVERB_SCHEME=ht
 
 ## Limitaciones conocidas
 
-- Presencia: el servidor autoriza `presence-team` (módulo de chat interno), pero `resources/js/lib/realtime` no ofrece
-  unirse a canales de presencia, así que ningún cliente lo usa; tampoco hay indicador "escribiendo" (ambos opcionales
-  en el contrato).
+- Presencia del chat interno: el cliente se une con `joinPresence()` (conteo de referencias, se vuelve a unir al
+  reconectar) a los canales que publica `realtime.presence_channels`; la carga útil es solo `{id}` y cada canal reúne
+  únicamente a personas que pueden chatear entre sí. Es por pestaña conectada y Reverb tarda unos segundos en notar
+  una desconexión abrupta; quien llega a todos no ve en línea a usuarios departamentales de otros departamentos
+  ([chat-interno.md](chat-interno.md#limitaciones-y-pendientes)).
+- «Escribiendo…» es una señal del servidor, no un _whisper_: Reverb sigue sin aceptar eventos de cliente
+  ([ADR-TC-4](decisiones.md#adr-tc-4--escribiendo-por-señal-efímera-del-servidor-en-lugar-de-whisper)). Un fallo de
+  Reverb se ignora (la petición responde 204), pero un Reverb lento puede retrasar esa petición hasta el _timeout_ del
+  cliente HTTP del broadcaster.
+- Web Push es independiente del WebSocket: despierta el navegador cuando se guarda una notificación in-app aunque no
+  haya pestañas abiertas ([notificaciones-y-horarios.md §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada)).
+  Si el navegador tiene una suscripción push activa, la página no muestra además su propio aviso del sistema.
 - La revocación de acceso es por re-autorización del cliente (ver Seguridad); el protocolo no permite expulsión forzada.
 - Las liberaciones masivas (`ReleaseAssignedConversations`, al eliminar un usuario, cambiarle el rol, retirarlo de un
   departamento o quitar «responder» a su rol) registran cada evento con `ConversationLifecycle::record()`, así que
   emiten las mismas señales que una operación individual.
-- Solo las señales de este módulo se publican en modo _best effort_. Las del chat interno (`TeamThreadSignal`,
-  `TeamChatUserSignal`) y la de notificaciones (`NotificationSignal`) son difusiones en cola: con Reverb detenido
-  fallan como trabajos (log de nivel ERROR, que incluye la URL de publicación y la clave pública, nunca el secreto) y
-  pueden activar la alerta de trabajos fallidos.
+- Las señales de este módulo y la de notificaciones se publican en modo _best effort_ (con Reverb detenido se registra
+  un `warning` y la notificación queda guardada). Las del chat interno (`TeamThreadSignal`, `TeamChatUserSignal`)
+  siguen siendo difusiones en cola (cola `realtime`): con Reverb detenido fallan como trabajos (log de nivel ERROR,
+  que incluye la URL de publicación y la clave pública, nunca el secreto) y pueden activar la alerta de trabajos
+  fallidos. `REALTIME_QUEUE_CONNECTION` solo aplica a los listeners; esas difusiones usan la conexión por defecto.
 - Tras reiniciar Reverb, pusher-js tarda unos 25 s en reconectar (medido en `tests/e2e/realtime.mjs`); mientras tanto
   las páginas usan el sondeo de 20 s y al reconectar se ponen al día sin duplicados.
-- Latencia: en `realtime.mjs` (listeners de este módulo síncronos) las señales de bandeja llegan en < 0,2 s y las del
-  chat interno y notificaciones, que siempre pasan por la cola `notifications`, en 0,3–0,6 s. En producción todas pasan
-  por esa cola; en ráfagas grandes con 2 workers llegaron con 15–35 s de retraso
-  ([rendimiento-y-carga.md](rendimiento-y-carga.md)).
+- Latencia medida antes de separar las colas: en `realtime.mjs` (listeners síncronos) las señales de bandeja llegaban en
+  < 0,2 s y las del chat interno y notificaciones, por la cola `notifications`, en 0,3–0,6 s; en ráfagas grandes, con
+  señales y notificaciones compartiendo 2 workers, llegaron con 15–35 s de retraso
+  ([rendimiento-y-carga.md](rendimiento-y-carga.md)). Esas cifras son anteriores a la cola `realtime`.
+- Medición local tras separar las colas (2026-10-22, portátil compartido, colas en base de datos; detalle en
+  [rendimiento-y-carga.md §10](rendimiento-y-carga.md)), contada desde el POST del webhook (cota superior del objetivo):
+  a 10 webhooks/s, `.message.recorded` p95 1,88 s y `.notification` p95 1,79 s (se cumplen los objetivos); en la ráfaga
+  de 3 000 webhooks, `.message.recorded` p95 2,46 s (antes ~7 s) y `.notification` p95 7,97 s, máximo 31 s (no se
+  cumplen en ráfaga). El suelo de ~0,3–1 s procede de las colas en base de datos con `--sleep=1`. No son cifras del VPS.
+- Objetivos de latencia (metas de diseño), desde el
+  commit del cambio hasta que el navegador recibe la señal, con los workers del grupo `realtime` activos y sin
+  acumulación: mensaje nuevo del cliente (`.message.recorded` / `.inbox.changed`) p95 ≤ 2 s; cambios de bandeja y chat
+  interno p95 ≤ 2 s; campana de notificaciones (`.notification`) p95 ≤ 5 s, porque depende además de la cola
+  `notifications`. La página de Sistema avisa cuando el trabajo más antiguo de `realtime` espera ≥ 30 s (crítico
+  ≥ 120 s; `config/operations.php`, `queues.overrides.realtime`). Sin señal, el respaldo garantiza como máximo
+  20 s (sin conexión) o 120 s (recarga de seguridad).
 - El progreso por filas de las importaciones sigue usando sondeo mientras se ejecutan.

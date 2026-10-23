@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -346,4 +347,65 @@ test('a real change to a user is saved, audited and confirmed', function () {
     expect($user->refresh()->name)->toBe('Laura Pérez Gómez')
         ->and(AuditLog::query()->where('action', AuditAction::UserUpdated)->sole()->properties['changes']['name'])
         ->toBe(['old' => 'Laura Pérez', 'new' => 'Laura Pérez Gómez']);
+});
+
+test('one\'s own password and e-mail are not changed from administration', function () {
+    $admin = User::factory()->superAdministrator()->create(['name' => 'Ana', 'email' => 'ana@empresa.test']);
+    $verifiedAt = $admin->email_verified_at?->toDateTimeString();
+
+    $this->actingAs($admin)->put(route('admin.users.update', $admin), [
+        'name' => 'Ana López',
+        'email' => 'nueva@empresa.test',
+        'password' => 'nueva-contraseña-1',
+        'password_confirmation' => 'nueva-contraseña-1',
+    ])->assertSessionHasErrors([
+        'email' => 'Cambia tu propio correo en Configuración > Perfil, donde se verifica de nuevo.',
+        'password' => 'Cambia tu propia contraseña en Configuración > Seguridad, donde se pide la contraseña actual.',
+    ]);
+
+    $this->actingAs($admin)
+        ->put(route('admin.users.update', $admin), ['name' => 'Ana López', 'email' => 'ana@empresa.test'])
+        ->assertSessionHasNoErrors();
+
+    $admin->refresh();
+
+    expect($admin->name)->toBe('Ana López')
+        ->and($admin->email)->toBe('ana@empresa.test')
+        ->and($admin->email_verified_at?->toDateTimeString())->toBe($verifiedAt)
+        ->and(Hash::check('password', $admin->password))->toBeTrue()
+        ->and(AuditLog::query()->where('action', AuditAction::UserPasswordReset)->exists())->toBeFalse();
+});
+
+test('one\'s own e-mail saved with capitals does not block editing one\'s own account', function () {
+    $admin = User::factory()->superAdministrator()->create(['name' => 'Ana', 'email' => 'Ana.Lopez@Empresa.test']);
+
+    $this->actingAs($admin)
+        ->put(route('admin.users.update', $admin), ['name' => 'Ana López', 'email' => 'Ana.Lopez@Empresa.test'])
+        ->assertSessionHasNoErrors();
+
+    expect($admin->refresh()->name)->toBe('Ana López')
+        ->and($admin->email)->toBe('Ana.Lopez@Empresa.test');
+});
+
+test('resetting a password signs the account out of all its sessions', function () {
+    config(['session.driver' => 'database']);
+    $admin = User::factory()->superAdministrator()->create();
+    $user = User::factory()->agent()->create(['remember_token' => 'token']);
+    $colleague = User::factory()->agent()->create();
+
+    foreach (['user-laptop' => $user, 'user-phone' => $user, 'colleague-laptop' => $colleague] as $id => $owner) {
+        DB::table('sessions')->insert(['id' => $id, 'user_id' => $owner->id, 'payload' => '', 'last_activity' => now()->getTimestamp()]);
+    }
+
+    $this->actingAs($admin)->put(route('admin.users.update', $user), [
+        'name' => $user->name,
+        'email' => $user->email,
+        'password' => 'nueva-contraseña-1',
+        'password_confirmation' => 'nueva-contraseña-1',
+    ])->assertSessionHasNoErrors();
+
+    expect(DB::table('sessions')->where('user_id', $user->id)->exists())->toBeFalse()
+        ->and(DB::table('sessions')->where('id', 'colleague-laptop')->exists())->toBeTrue()
+        ->and($user->refresh()->remember_token)->toBeNull()
+        ->and(AuditLog::query()->where('action', AuditAction::UserPasswordReset)->sole()->properties)->toBe(['sessions_closed' => 2]);
 });

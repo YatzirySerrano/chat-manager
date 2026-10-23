@@ -129,6 +129,8 @@ export type ConnectionDiagnostics = {
     transport: {
         mode: 'meta' | 'simulated' | 'unavailable';
         label: string;
+        /** Recipients of the controlled pilot (0: no restriction). */
+        pilot_recipients: number;
     };
     webhook: {
         url: string | null;
@@ -147,6 +149,18 @@ export type ConnectionDiagnostics = {
         meta_app_id_saved: boolean;
     };
     templates: { approved: number; last_synced_at: string | null };
-    outbound: { unconfirmed: number };
+    outbound: {
+        unconfirmed: number;
+        /** Replies of unknown delivery in the last `unknown_days` days. */
+        unknown: number;
+        unknown_days: number;
+        /** Affected conversations the viewer can open (at most 10). */
+        unknown_conversations: {
+            id: number;
+            contact: string | null;
+            messages: number;
+            last_failed_at: string | null;
+        }[];
+    };
     signals: { field: string; at: string | null; event: string | null }[];
 };

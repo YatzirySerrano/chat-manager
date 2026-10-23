@@ -78,8 +78,8 @@ class ManualValidationSeeder extends Seeder
         $support = $this->department('support', 'Soporte', 'Soporte técnico y facturación (datos de la validación Demo B).', ColorSwatch::Blue, $admin);
 
         $accounts = [
-            'valeria' => ['name' => ManualValidation::PREFIX.'Valeria Ríos (Ventas)', 'email' => 'valeria.ventas@'.ManualValidation::EMAIL_DOMAIN, 'department' => $sales],
-            'oscar' => ['name' => ManualValidation::PREFIX.'Óscar Lima (Soporte)', 'email' => 'oscar.soporte@'.ManualValidation::EMAIL_DOMAIN, 'department' => $support],
+            'valeria' => ['name' => ManualValidation::PREFIX.'Valeria Ríos (Ventas)', 'email' => ManualValidation::AGENT_EMAILS['sales'], 'department' => $sales],
+            'oscar' => ['name' => ManualValidation::PREFIX.'Óscar Lima (Soporte)', 'email' => ManualValidation::AGENT_EMAILS['support'], 'department' => $support],
         ];
         [$agents, $credentials] = $this->agents($accounts, $role, $admin, $credentialsPath ?? ManualValidation::credentialsPath());
 
@@ -111,6 +111,32 @@ class ManualValidationSeeder extends Seeder
     }
 
     /**
+     * The second demo line (Phone number ID 990000000000101), whose default
+     * department is support, so the simulator can address a message to
+     * support through the real routing. Only created when it is asked for
+     * (chat-manager:simulate-inbound --department=soporte --create-support-line)
+     * and found by its marker afterwards. It requires the scenario.
+     */
+    public function supportLine(): Connection
+    {
+        $support = ManualValidation::department('support')
+            ?? throw new RuntimeException('The demo support department does not exist yet. Run: php artisan db:seed --class="Database\Seeders\Local\ManualValidationSeeder"');
+
+        return Connection::query()->where('phone_number_id', ManualValidation::SUPPORT_PHONE_NUMBER_ID)->first()
+            ?? app(CreateConnection::class)->handle([
+                'attributes' => [
+                    'name' => ManualValidation::PREFIX.'WhatsApp simulado (Soporte)',
+                    'display_phone_number' => ManualValidation::SUPPORT_DISPLAY_PHONE_NUMBER,
+                    'phone_number_id' => ManualValidation::SUPPORT_PHONE_NUMBER_ID,
+                    'default_department_id' => $support->id,
+                    'reopen_window_minutes' => 120,
+                ],
+                'secrets' => [],
+                'department_ids' => [$support->id],
+            ], $this->administrator());
+    }
+
+    /**
      * The existing root administrator acts on behalf of the scenario; it is never modified.
      */
     private function administrator(): User
@@ -136,7 +162,7 @@ class ManualValidationSeeder extends Seeder
 
     private function department(string $key, string $name, string $description, ColorSwatch $color, User $admin): Department
     {
-        return Department::query()->where('slug', ManualValidation::DEPARTMENTS[$key])->first()
+        return ManualValidation::department($key)
             ?? app(CreateDepartment::class)->handle([
                 'name' => ManualValidation::PREFIX.$name,
                 'description' => $description,

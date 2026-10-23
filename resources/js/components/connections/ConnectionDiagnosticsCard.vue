@@ -20,6 +20,7 @@ import {
     check as checkSubscription,
     store as subscribeApp,
 } from '@/routes/connections/subscription';
+import { show as showConversation } from '@/routes/conversations';
 import {
     index as templatesIndex,
     sync as syncTemplates,
@@ -167,6 +168,22 @@ const checks = computed<
             </p>
         </div>
 
+        <p
+            v-if="diagnostics.transport.pilot_recipients > 0"
+            class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+        >
+            <FlaskConical
+                class="mt-0.5 size-4 shrink-0 text-warning"
+                aria-hidden="true"
+            />
+            <span>
+                <strong>Piloto controlado</strong> · solo se envían mensajes a
+                {{ diagnostics.transport.pilot_recipients }}
+                destinatario(s) autorizados (WHATSAPP_PILOT_RECIPIENTS); los
+                demás fallan sin llegar a Meta.
+            </span>
+        </p>
+
         <div class="grid min-w-0 grid-cols-1 gap-1.5">
             <p class="text-xs font-medium">
                 URL de devolución de llamada (webhook)
@@ -238,8 +255,46 @@ const checks = computed<
         >
             {{ diagnostics.outbound.unconfirmed }} mensaje(s) enviados sin
             confirmación de Meta. Si no llega la confirmación se marcarán como
-            «entrega desconocida».
+            «entrega sin confirmar».
         </p>
+
+        <div
+            v-if="diagnostics.outbound.unknown > 0"
+            class="grid gap-1.5 rounded-lg bg-warning/10 p-3 text-xs"
+            role="status"
+        >
+            <p>
+                <strong
+                    >{{ diagnostics.outbound.unknown }} mensaje(s) con entrega
+                    sin confirmar</strong
+                >
+                en los últimos {{ diagnostics.outbound.unknown_days }} días:
+                WhatsApp pudo haberlos recibido o no. El agente responsable debe
+                verificarlo con el cliente antes de reintentarlos.
+            </p>
+            <ul
+                v-if="diagnostics.outbound.unknown_conversations.length > 0"
+                class="grid gap-1"
+            >
+                <li
+                    v-for="item in diagnostics.outbound.unknown_conversations"
+                    :key="item.id"
+                >
+                    <Link
+                        :href="showConversation(item.id)"
+                        class="font-medium text-primary hover:underline"
+                        >Conversación #{{ item.id
+                        }}{{ item.contact ? ` · ${item.contact}` : '' }}</Link
+                    >
+                    <span class="text-muted-foreground">
+                        · {{ item.messages }} mensaje(s)
+                        <template v-if="item.last_failed_at">
+                            · {{ formatRelative(item.last_failed_at) }}
+                        </template>
+                    </span>
+                </li>
+            </ul>
+        </div>
 
         <div v-if="diagnostics.signals.length > 0" class="grid gap-1 text-xs">
             <p class="font-medium">Avisos recientes de Meta</p>

@@ -1,0 +1,18 @@
+# Chat Manager — sudo rules of the deploy user (deploy/scripts/deploy.sh and
+# rollback.sh). Install, validating the syntax first:
+#   sudo visudo -cf deploy/sudoers/chat-manager
+#   sudo install -o root -g root -m 0440 deploy/sudoers/chat-manager /etc/sudoers.d/chat-manager
+#
+# Only exact commands with exact arguments. Never allow a path under
+# /var/www (the releases belong to the deploy user, who could change the
+# script and run anything as root): the backup script is the root-owned copy
+# in /usr/local/sbin (docs/infraestructura-y-despliegue.md §16). Adjust
+# "deploy", the PHP-FPM service and the paths of systemctl/supervisorctl
+# (command -v systemctl supervisorctl) to the server.
+
+Cmnd_Alias CHATMANAGER_DEPLOY = \
+    /usr/local/sbin/chat-manager-backup-database "", \
+    /usr/bin/systemctl reload php8.4-fpm, \
+    /usr/bin/supervisorctl restart chatmanager-scheduler
+
+deploy ALL=(root) NOPASSWD: CHATMANAGER_DEPLOY

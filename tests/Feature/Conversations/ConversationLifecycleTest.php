@@ -154,7 +154,7 @@ test('a supervisor who can see the queue gets the explanation when the conversat
         ->assertExactJson(['message' => 'Otra persona ya aceptó esta conversación.']);
 });
 
-test('the attention limit stops self service but not an assignment by a supervisor', function () {
+test('the attention limit stops self service; a supervisor assigns past it only after confirming', function () {
     app(PlatformSettings::class)->update(['operations' => ['max_open_conversations_per_agent' => 1]]);
     Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
     $conversation = pendingIn($this->department);
@@ -165,10 +165,18 @@ test('the attention limit stops self service but not an assignment by a supervis
         ->assertSessionHasErrors(['conversation' => 'Ya atiendes el máximo de 1 conversaciones permitido. Cierra o libera alguna antes de aceptar otra.']);
 
     $this->actingAs($this->admin)
+        ->from(route('conversations.show', $conversation))
         ->post(route('conversations.assign', $conversation), ['user_id' => $this->agent->id, 'version' => 0])
+        ->assertSessionHasErrors(['user_id' => "{$this->agent->name} ya atiende el máximo de 1 conversaciones. Confirma que quieres asignársela de todas formas."]);
+
+    expect($conversation->refresh()->assigned_user_id)->toBeNull();
+
+    $this->actingAs($this->admin)
+        ->post(route('conversations.assign', $conversation), ['user_id' => $this->agent->id, 'version' => 0, 'confirm_over_capacity' => true])
         ->assertSessionHasNoErrors();
 
-    expect($conversation->refresh()->assigned_user_id)->toBe($this->agent->id);
+    expect($conversation->refresh()->assigned_user_id)->toBe($this->agent->id)
+        ->and($conversation->events()->where('type', ConversationEventType::Assigned)->sole()->metadata)->toBe(['assigned_over_limit' => true, 'limit' => 1]);
 });
 
 test('departments that distribute manually do not let agents accept', function () {

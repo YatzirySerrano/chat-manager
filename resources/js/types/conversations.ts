@@ -38,7 +38,19 @@ export type ConversationSummary = {
         profile_name: string | null;
         phone_e164: string | null;
     };
-    connection: { id: number; name: string; phone: string | null };
+    connection: {
+        id: number;
+        name: string;
+        phone: string | null;
+        /** Paused (inactive) and deleted connections are told apart. */
+        state: 'active' | 'inactive' | 'deleted';
+        /** Whether a reply can be sent now; the server checks it again. */
+        can_send: boolean;
+        /** Why nothing can be sent through the connection, if so. */
+        send_block_reason: string | null;
+        /** Credentials accepted by Meta (a restored connection is not). */
+        credentials_verified: boolean;
+    };
     department: {
         id: number;
         name: string;
@@ -75,11 +87,18 @@ export type ConversationMessagePreview = {
 
 export type ConversationSort = 'priority' | 'recent' | 'oldest';
 
+/**
+ * A page of the inbox list. `next_cursor` points after its last row; the
+ * rows that follow come from the list endpoint with `after`.
+ */
 export type ConversationList = {
     data: ConversationSummary[];
     has_more: boolean;
-    limit: number;
+    next_cursor: string | null;
 };
+
+/** Where the inbox search looks: the contact, or the messages' content. */
+export type ConversationSearchScope = 'contact' | 'messages';
 
 /**
  * Views of the inbox: every authorized conversation (team inboxes), the
@@ -110,6 +129,9 @@ export type ConversationFilters = {
     agent: string | null;
     connection: number | null;
     search: string;
+    search_in: ConversationSearchScope;
+    /** The message search has no word it can look for (short words, stopwords). */
+    search_ignored: boolean;
     tag: number | null;
     sort: ConversationSort;
 };
@@ -217,6 +239,8 @@ export type ConversationEvent = {
     note: string | null;
     trigger: string | null;
     message_id: number | null;
+    /** Error code of a failed or blocked message (e.g. delivery_unknown). */
+    reason: string | null;
     created_at: string;
 };
 
@@ -226,6 +250,11 @@ export type ConversationTimelinePage = {
     notes: ConversationNote[];
     events: ConversationEvent[];
     has_more: boolean;
+    /**
+     * Set when the page was shortened because its span held too many notes
+     * or events: the next older page must be asked with it.
+     */
+    until?: string | null;
 };
 
 export type ConversationDetails = {
@@ -289,14 +318,22 @@ export type CustomerWindow = {
     block_reason: string | null;
 };
 
+/**
+ * A person who could receive the conversation. Only what is needed to
+ * choose: never their conversations, email, role or load figures.
+ */
 export type TransferAgentOption = {
     id: number;
     name: string;
     availability: AgentAvailabilityValue;
-    load: number;
+    /** Already attends their maximum of conversations for that department. */
+    at_capacity: boolean;
 };
 
+/** Response of GET conversations/{id}/destinations. */
 export type TransferOptions = {
+    /** The viewer may hand it to someone unavailable or at their limit (with confirmation). */
+    allows_exceptions: boolean;
     departments: { id: number; name: string; agents: TransferAgentOption[] }[];
     unrouted_agents: TransferAgentOption[];
 };

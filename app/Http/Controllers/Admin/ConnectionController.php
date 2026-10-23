@@ -134,7 +134,7 @@ class ConnectionController extends Controller
 
         return Inertia::render('connections/Form', [
             'connection' => ConnectionResource::make($connection)->resolve($request),
-            'diagnostics' => fn () => app(ConnectionDiagnostics::class)->for($connection),
+            'diagnostics' => fn () => app(ConnectionDiagnostics::class)->for($connection, $actor),
             ...$this->formOptions($connection),
             'can' => [
                 'update' => $actor->can('update', $connection),

@@ -24,368 +24,96 @@
  * Each step prints PASSED/FAILED with the observed latency and whether the
  * signal frame was seen on the browser's WebSocket before the UI changed.
  */
-import { execFile, spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, openSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
+import {
+    AVAILABILITY_SWITCH,
+    BASE,
+    FALLBACK_MS,
+    HERE,
+    LIVE_BUDGET_MS,
+    USERS,
+    chromium,
+    downIndicator,
+    frameSince,
+    inboundAsync,
+    liveIndicator,
+    login as signIn,
+    measure,
+    openInboxView,
+    openRealtimeSession,
+    php,
+    printLatencies,
+    printProblems,
+    record,
+    results,
+    requireRealtimeEnvironment,
+    shot as saveShot,
+    startReverb,
+    startWorker,
+    step as runStep,
+    stopChildren,
+    stopReverb,
+    trackWebSocket,
+    unavailableSelection,
+    waitFor,
+} from './lib.mjs';
 
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
-const execFileAsync = promisify(execFile);
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8020';
-const SEED = join(ROOT, 'tests', 'e2e', 'increment-b-seed.php');
-const REALTIME_SEED = join(ROOT, 'tests', 'e2e', 'realtime-seed.php');
-const SHOTS = process.env.E2E_SCREENSHOTS ?? null;
-const REVERB_PORT = Number(process.env.E2E_REVERB_PORT ?? 0);
-const PASSWORD = 'e2e-password';
-const USERS = {
-    admin: 'e2e-admin@example.test',
-    ana: 'e2e-ana@example.test',
-    beto: 'e2e-beto@example.test',
-};
-/** Polling fallback of the inbox pages: a live update must beat it. */
-const FALLBACK_MS = 20_000;
-/** A live update must arrive well before the fallback would refresh. */
-const LIVE_BUDGET_MS = 8_000;
-
-if (SHOTS) {
-    mkdirSync(SHOTS, { recursive: true });
-}
-
-const results = [];
-const latencies = [];
-const problems = { console: [], pageerror: [], server: [] };
-const children = new Set();
-
-function record(id, ok, note = '') {
-    results.push({ id, ok, note });
-    console.log(`${ok ? 'PASSED' : 'FAILED'} | ${id} | ${note}`);
-}
+const REALTIME_SEED = join(HERE, 'realtime-seed.php');
 
 const sessions = [];
 
-async function step(id, scenario) {
-    let ok = false;
-
-    try {
-        const [passed, note] = await scenario();
-        ok = passed;
-        record(id, passed, note);
-    } catch (error) {
-        record(id, false, String(error).split('\n')[0]);
-    }
-
-    if (!ok) {
-        await Promise.all(
+/** A failed step leaves a screenshot of every session. */
+const step = (id, scenario) =>
+    runStep(id, null, scenario, () =>
+        Promise.all(
             sessions.map((page) => shot(page, `${id}-${page.session}`)),
-        );
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* Processes started by this scenario (always stopped at the end).     */
-/* ------------------------------------------------------------------ */
-
-function startProcess(args, logName = null) {
-    const log =
-        SHOTS && logName
-            ? openSync(join(SHOTS, `${String(logName)}.log`), 'a')
-            : 'ignore';
-    const child = spawn('php', args, {
-        cwd: ROOT,
-        env: process.env,
-        stdio: ['ignore', log, log],
-    });
-    children.add(child);
-    child.on('exit', () => children.delete(child));
-
-    return child;
-}
-
-function stopChildren() {
-    for (const child of children) {
-        try {
-            child.kill('SIGTERM');
-        } catch {
-            // Already gone.
-        }
-    }
-}
-
-process.on('exit', stopChildren);
-process.on('SIGINT', () => {
-    stopChildren();
-    process.exit(130);
-});
-
-function reverbListenerPids() {
-    try {
-        return execFileSync(
-            'lsof',
-            ['-nP', '-t', `-iTCP:${REVERB_PORT}`, '-sTCP:LISTEN'],
-            { encoding: 'utf8' },
-        )
-            .split('\n')
-            .map((line) => Number(line.trim()))
-            .filter((pid) => pid > 0);
-    } catch {
-        return [];
-    }
-}
-
-async function waitFor(predicate, timeoutMs, intervalMs = 200) {
-    const started = Date.now();
-
-    while (Date.now() - started < timeoutMs) {
-        if (await predicate()) {
-            return true;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-
-    return false;
-}
-
-/** Stops the Reverb server (the one the runner started, or ours). */
-async function stopReverb() {
-    const pids = reverbListenerPids();
-
-    for (const pid of pids) {
-        process.kill(pid, 'SIGTERM');
-    }
-
-    const stopped = await waitFor(
-        () => reverbListenerPids().length === 0,
-        10_000,
+        ),
     );
 
-    if (!stopped) {
-        for (const pid of reverbListenerPids()) {
-            process.kill(pid, 'SIGKILL');
-        }
-    }
+const shot = (page, name) =>
+    saveShot(page, `realtime-${name}`, { fullPage: false });
 
-    return pids.length > 0;
-}
-
-async function startReverb() {
-    startProcess(
-        [
-            'artisan',
-            'reverb:start',
-            '--host=127.0.0.1',
-            `--port=${REVERB_PORT}`,
-        ],
-        'reverb',
-    );
-
-    return waitFor(() => reverbListenerPids().length > 0, 15_000);
-}
+const login = (page, email) => signIn(page, email, { settle: false });
 
 /* ------------------------------------------------------------------ */
 /* Browser helpers.                                                    */
 /* ------------------------------------------------------------------ */
 
 async function newSession(browser, name) {
-    const context = await browser.newContext({
-        viewport: { width: 1440, height: 900 },
-        locale: 'es-MX',
-    });
-    // The Vite dev server (public/hot) would push full-page reloads while
-    // other people edit sources; the HMR socket is answered locally and kept
-    // silent so only the application's own behaviour is observed.
-    await context.routeWebSocket(
-        (url) => url.port === '5173',
-        () => {},
-    );
-    const page = await context.newPage();
-    page.setDefaultTimeout(15_000);
-    page.session = name;
+    const page = await openRealtimeSession(browser, name);
     sessions.push(page);
-    page.frames$ = [];
-    page.auth$ = [];
-    page.on('websocket', (socket) => {
-        page.frames$.push({ t: Date.now(), event: '__open' });
-        socket.on('framereceived', ({ payload }) => {
-            try {
-                const frame = JSON.parse(String(payload));
-                page.frames$.push({
-                    t: Date.now(),
-                    event: frame.event,
-                    channel: frame.channel ?? null,
-                });
-            } catch {
-                // Not JSON: ignore.
-            }
-        });
-        socket.on('close', () =>
-            page.frames$.push({ t: Date.now(), event: '__close' }),
-        );
-    });
-    page.on('console', (message) => {
-        if (
-            message.type() === 'error' &&
-            !/status of (403|404|409|422|429)|WebSocket connection to|ERR_CONNECTION_REFUSED/.test(
-                message.text(),
-            )
-        ) {
-            problems.console.push(
-                `[${name}] ${message.text()} @ ${page.url()}`,
-            );
-        }
-    });
-    page.on('pageerror', (error) =>
-        problems.pageerror.push(`[${name}] ${String(error)}`),
-    );
-    page.on('response', (response) => {
-        if (response.url().includes('/broadcasting/auth')) {
-            let channel = '';
-
-            try {
-                channel = JSON.parse(
-                    response.request().postData() ?? '{}',
-                ).channel_name;
-            } catch {
-                channel = '?';
-            }
-
-            page.auth$.push({
-                t: Date.now(),
-                status: response.status(),
-                channel,
-            });
-        }
-
-        if (response.status() >= 500) {
-            problems.server.push(
-                `[${name}] ${response.status()} ${response.url()}`,
-            );
-        }
-    });
 
     return page;
 }
 
-async function login(page, email) {
-    await page.goto(`${BASE}/login`);
-    await page.locator('#email').click();
-    await page.keyboard.type(email);
-    await page.locator('#password').click();
-    await page.keyboard.type(PASSWORD);
-    await page.keyboard.press('Enter');
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'));
-}
-
-async function shot(page, name) {
-    if (SHOTS) {
-        await page
-            .screenshot({ path: join(SHOTS, `realtime-${name}.png`) })
-            .catch(() => {});
-    }
-}
-
-const liveIndicator = (page) =>
-    page.locator('[role="status"][aria-label="Tiempo real activo"]');
-const downIndicator = (page) =>
-    page.locator('[role="status"][aria-label^="Tiempo real no disponible"]');
 const row = (page, name) =>
     page.locator('[data-inbox-item]', { hasText: name });
-const unavailableSelection = (page) =>
-    page.getByText('La conversación no está disponible');
 const bubble = (page, text) =>
     page.locator('[data-message-id]', { hasText: text });
 
-/** First frame of the event received by the page since the given time. */
-function frameSince(page, event, since, channel = null) {
-    return page.frames$.find(
-        (frame) =>
-            frame.t >= since &&
-            frame.event === event &&
-            (channel === null || (frame.channel ?? '').includes(channel)),
-    );
-}
-
-/**
- * Waits for the locator in another session and measures the delay from the
- * action. The update counts as live only when it arrived within the budget
- * (well before the fallback) and the WebSocket delivered the signal first.
- */
-async function measure(label, page, locator, since, event, options = {}) {
-    const state = options.state ?? 'visible';
-    const timeout = options.timeout ?? LIVE_BUDGET_MS + 4_000;
-    await locator.first().waitFor({ state, timeout });
-    const elapsed = Date.now() - since;
-    const frame = frameSince(page, event, since, options.channel ?? null);
-    const frameMs = frame ? frame.t - since : null;
-    latencies.push({ label, session: page.session, elapsed, frameMs, event });
-    const live =
-        elapsed <= (options.budget ?? LIVE_BUDGET_MS) && frame !== undefined;
-    const received = frame
-        ? ''
-        : ` (frames since: ${[...new Set(page.frames$.filter((f) => f.t >= since).map((f) => f.event))].join(',') || 'none'})`;
-
-    return {
-        live,
-        elapsed,
-        frameMs,
-        note: `${page.session}: UI ${elapsed} ms, WS ${event} ${frameMs === null ? 'not seen' : `${frameMs} ms`}${received}`,
-    };
-}
-
 async function inbound(waId, name, text) {
-    const { stdout } = await execFileAsync(
-        'php',
-        [SEED, 'inbound', waId, name, text],
-        { env: process.env, cwd: ROOT },
-    );
-
-    return JSON.parse(stdout)[0];
+    return (await inboundAsync(waId, name, text))[0];
 }
 
-async function openQueueView(page) {
-    const button = page
-        .getByRole('navigation', { name: 'Bandejas' })
-        .getByRole('button', { name: /Pendientes/ });
-    await button.click();
-    await page.waitForFunction(
-        () =>
-            document
-                .querySelector(
-                    'nav[aria-label="Bandejas"] button[aria-pressed="true"]',
-                )
-                ?.textContent?.includes('Pendientes') ?? false,
-    );
-}
-
-async function openMineView(page) {
-    await page
-        .getByRole('navigation', { name: 'Bandejas' })
-        .getByRole('button', { name: /Mis conversaciones/ })
-        .click();
-}
+const openQueueView = (page) => openInboxView(page, 'Pendientes');
+const openMineView = (page) => openInboxView(page, 'Mis conversaciones');
 
 async function availabilityChecked(page) {
     return (
         (await page
-            .getByRole('switch', {
-                name: 'Disponible para aceptar y recibir conversaciones',
-            })
+            .getByRole('switch', { name: AVAILABILITY_SWITCH })
             .getAttribute('aria-checked')) === 'true'
     );
 }
 
-async function becomeAvailable(page) {
+/**
+ * Turns the availability switch on and returns as soon as it is checked:
+ * unlike becomeAvailable of lib.mjs it does not wait for the toast and the
+ * network to settle, so the live measurement that follows starts right away.
+ */
+async function switchToAvailable(page) {
     if (!(await availabilityChecked(page))) {
-        await page
-            .getByRole('switch', {
-                name: 'Disponible para aceptar y recibir conversaciones',
-            })
-            .click();
+        await page.getByRole('switch', { name: AVAILABILITY_SWITCH }).click();
         await waitFor(() => availabilityChecked(page), 8_000);
     }
 
@@ -410,40 +138,10 @@ function bellCount(label) {
 /* ------------------------------------------------------------------ */
 
 const main = async () => {
-    if (!REVERB_PORT || process.env.BROADCAST_CONNECTION !== 'reverb') {
-        console.error(
-            'Run with E2E_REVERB=1 through tests/e2e/run.php (Reverb is required).',
-        );
-        process.exit(2);
-    }
+    requireRealtimeEnvironment();
+    startWorker();
 
-    if (process.env.WHATSAPP_TRANSPORT !== 'simulated') {
-        console.error(
-            'Run with WHATSAPP_TRANSPORT=simulated (outbound messages are simulated).',
-        );
-        process.exit(2);
-    }
-
-    startProcess(
-        [
-            'artisan',
-            'queue:work',
-            '--queue=webhooks,messages,media,notifications,default,exports',
-            '--sleep=1',
-            '--tries=3',
-            '--timeout=60',
-            '--max-time=900',
-        ],
-        'worker',
-    );
-
-    const prepared = JSON.parse(
-        execFileSync('php', [REALTIME_SEED, 'prepare'], {
-            env: process.env,
-            cwd: ROOT,
-            encoding: 'utf8',
-        }),
-    );
+    const prepared = JSON.parse(php(REALTIME_SEED, 'prepare'));
     const departments = prepared.departments;
     const browser = await chromium.launch();
     const conversations = {};
@@ -586,7 +284,7 @@ const main = async () => {
             await option.waitFor({ state: 'attached' });
             const before = await option.innerText();
             const since = Date.now();
-            await becomeAvailable(ana);
+            await switchToAvailable(ana);
             const measured = await measure(
                 'availability→admin dialog',
                 admin,
@@ -610,25 +308,11 @@ const main = async () => {
             // Beto's second tab follows the change made in the first one.
             const second = await beto.context().newPage();
             second.session = 'beto-tab2';
-            second.frames$ = [];
-            second.on('websocket', (socket) =>
-                socket.on('framereceived', ({ payload }) => {
-                    try {
-                        const frame = JSON.parse(String(payload));
-                        second.frames$.push({
-                            t: Date.now(),
-                            event: frame.event,
-                            channel: frame.channel ?? null,
-                        });
-                    } catch {
-                        // ignore
-                    }
-                }),
-            );
+            trackWebSocket(second);
             await second.goto(`${BASE}/conversations`);
             await liveIndicator(second).waitFor();
             const since = Date.now();
-            const available = await becomeAvailable(beto);
+            const available = await switchToAvailable(beto);
             const measured = await measure(
                 'availability→own other tab',
                 second,
@@ -1233,24 +917,11 @@ const main = async () => {
 };
 
 await main().catch((error) => {
-    record('scenario', false, String(error).split('\n')[0]);
+    record('scenario', null, false, String(error).split('\n')[0]);
 });
 
-console.log(
-    '\nLatencies (ms from action to UI; WS = signal frame on the socket):',
-);
-for (const entry of latencies) {
-    console.log(
-        `  ${entry.label} [${entry.session}]: UI ${entry.elapsed}, WS ${entry.frameMs ?? '—'} (${entry.event})`,
-    );
-}
-
-console.log(
-    `\nconsole errors: ${problems.console.length}, page errors: ${problems.pageerror.length}, 5xx: ${problems.server.length}`,
-);
-[...problems.console, ...problems.pageerror, ...problems.server]
-    .slice(0, 20)
-    .forEach((line) => console.log(`  ${String(line)}`));
+printLatencies();
+printProblems();
 
 const failed = results.filter((result) => !result.ok).length;
 console.log(`\n${results.length - failed} passed, ${failed} failed`);

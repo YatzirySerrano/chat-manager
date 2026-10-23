@@ -16,8 +16,10 @@ use App\Reports\Definitions\TagsReport;
 use App\Reports\Rendering\PdfRenderer;
 use App\Reports\Rendering\ReportPalette;
 use App\Services\Exports\ReportExporter;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -55,8 +57,8 @@ test('exporting requires the export permission and the module permission', funct
         Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ExportReports])->create(),
     )->create();
 
-    $this->actingAs($supervisor)->get(route('exports.generate', ['tags', 'xlsx']))->assertForbidden();
-    $this->actingAs($exportOnly)->get(route('exports.generate', ['tags', 'pdf']))->assertForbidden();
+    $this->actingAs($supervisor)->post(route('exports.generate', ['tags', 'xlsx']))->assertForbidden();
+    $this->actingAs($exportOnly)->post(route('exports.generate', ['tags', 'pdf']))->assertForbidden();
 
     expect(AuditLog::query()->where('action', AuditAction::ExportGenerated)->exists())->toBeFalse();
 });
@@ -64,8 +66,8 @@ test('exporting requires the export permission and the module permission', funct
 test('unknown reports and formats are not found', function () {
     $exporter = tagExporter();
 
-    $this->actingAs($exporter)->get('/exports/unknown/xlsx')->assertNotFound();
-    $this->actingAs($exporter)->get('/exports/tags/csv')->assertNotFound();
+    $this->actingAs($exporter)->post('/exports/unknown/xlsx')->assertNotFound();
+    $this->actingAs($exporter)->post('/exports/tags/csv')->assertNotFound();
 });
 
 test('a small export downloads a styled workbook that never evaluates formulas', function () {
@@ -74,7 +76,7 @@ test('a small export downloads a styled workbook that never evaluates formulas',
     Tag::factory()->create(['name' => 'Mayorista'])->contacts()->attach($contacts->pluck('id'));
     Tag::factory()->create(['name' => '=HYPERLINK("http://x")', 'description' => '+cmd|calc']);
 
-    $response = $this->actingAs($exporter)->get(route('exports.generate', ['tags', 'xlsx']));
+    $response = $this->actingAs($exporter)->post(route('exports.generate', ['tags', 'xlsx']));
 
     $response->assertOk()
         ->assertHeader('Content-Type', ExportFormat::Xlsx->mimeType())
@@ -117,7 +119,7 @@ test('the export applies the filters and record state of the tags screen', funct
 
     // Without records.view-deleted, asking for deleted tags still exports the active ones.
     $response = $this->actingAs($exporter)
-        ->get(route('exports.generate', ['tags', 'xlsx', 'search' => 'mayor', 'record' => 'deleted']))
+        ->post(route('exports.generate', ['tags', 'xlsx', 'search' => 'mayor', 'record' => 'deleted']))
         ->assertOk();
 
     $sheet = downloadedWorkbook($response->baseResponse)->getSheetByName('Etiquetas');
@@ -131,7 +133,7 @@ test('the export applies the filters and record state of the tags screen', funct
     )->create();
 
     $response = $this->actingAs($auditor)
-        ->get(route('exports.generate', ['tags', 'xlsx', 'search' => 'mayor', 'record' => 'deleted']))
+        ->post(route('exports.generate', ['tags', 'xlsx', 'search' => 'mayor', 'record' => 'deleted']))
         ->assertOk();
 
     $sheet = downloadedWorkbook($response->baseResponse)->getSheetByName('Etiquetas');
@@ -141,7 +143,7 @@ test('the export applies the filters and record state of the tags screen', funct
         ->and($sheet->getCell('A4')->getValue())->toBe('Filtros: Búsqueda: «mayor» · Estado del registro: Eliminadas');
 
     $this->actingAs($exporter)
-        ->get(route('exports.generate', ['tags', 'xlsx', 'record' => 'archived']))
+        ->post(route('exports.generate', ['tags', 'xlsx', 'record' => 'archived']))
         ->assertSessionHasErrors('record');
 });
 
@@ -151,7 +153,7 @@ test('usage counts only include contacts within the actor scope', function () {
     $tag = Tag::factory()->create();
     $tag->contacts()->attach(Contact::factory()->count(3)->create()->pluck('id'));
 
-    $response = $this->actingAs($agent)->get(route('exports.generate', ['tags', 'xlsx']))->assertOk();
+    $response = $this->actingAs($agent)->post(route('exports.generate', ['tags', 'xlsx']))->assertOk();
 
     expect(downloadedWorkbook($response->baseResponse)->getSheetByName('Etiquetas')->getCell('F7')->getValue())->toEqual(0);
 });
@@ -163,7 +165,7 @@ test('exports above the hard limit are refused with an explanation', function ()
 
     $this->actingAs($exporter)
         ->from(route('tags.index'))
-        ->get(route('exports.generate', ['tags', 'xlsx']))
+        ->post(route('exports.generate', ['tags', 'xlsx']))
         ->assertRedirect(route('tags.index'))
         ->assertSessionHasErrors(['export' => 'El reporte tiene 2 registros y el máximo para Excel (.xlsx) es 1. Aplica filtros para reducirlo e inténtalo de nuevo.']);
 
@@ -178,7 +180,7 @@ test('large exports are queued for the requester', function () {
 
     $this->actingAs($exporter)
         ->from(route('tags.index'))
-        ->get(route('exports.generate', ['tags', 'xlsx', 'search' => 'Clientes']))
+        ->post(route('exports.generate', ['tags', 'xlsx', 'search' => 'Clientes']))
         ->assertRedirect(route('tags.index'));
 
     $transfer = DataTransfer::query()->sole();
@@ -325,7 +327,7 @@ test('a real PDF is printed with Chrome', function () {
     $exporter = tagExporter();
     Tag::factory()->count(3)->create();
 
-    $response = $this->actingAs($exporter)->get(route('exports.generate', ['tags', 'pdf']))->assertOk();
+    $response = $this->actingAs($exporter)->post(route('exports.generate', ['tags', 'pdf']))->assertOk();
     $path = $response->baseResponse->getFile()->getPathname();
 
     expect(file_get_contents($path, length: 4))->toBe('%PDF');
@@ -334,3 +336,91 @@ test('a real PDF is printed with Chrome', function () {
     fn () => ! is_executable((string) config('exports.pdf.node_binary')) || ! is_executable((string) config('exports.pdf.chrome_path')),
     'Node or Chrome are not configured for this environment (EXPORTS_NODE_BINARY, EXPORTS_CHROME_PATH).',
 )->group('chrome');
+
+test('the PDF totals row shares an unbreakable group with the last data rows', function () {
+    $exporter = tagExporter();
+    Tag::factory()->count(5)->sequence(fn ($sequence) => ['name' => 'Etiqueta '.($sequence->index + 1)])->create();
+    $definition = app(TagsReport::class);
+
+    $html = app(PdfRenderer::class)->html($definition, app(ReportExporter::class)->prepare($definition, $exporter, []));
+
+    expect($html)->not->toContain('<tfoot')
+        ->and(preg_match('#<tbody class="table-end">(.*?)</tbody>#s', $html, $tail))->toBe(1)
+        ->and(substr_count($tail[1], '<tr class="row'))->toBe(2)
+        ->and($tail[1])->toContain('<tr class="totals">')
+        ->and(substr_count($html, '<tr class="row is-even">'))->toBe(2);
+});
+
+test('wide workbooks are limited by cells so the worker memory is never exhausted', function () {
+    config(['exports.formats.xlsx.max_cells' => 20]);
+    $exporter = tagExporter();
+    Tag::factory()->count(3)->create();
+    $definition = app(TagsReport::class);
+    $rowsAllowed = intdiv(20, count($definition->columns()));
+
+    $service = app(ReportExporter::class);
+
+    expect($service->maxRows($definition, ExportFormat::Xlsx))->toBe($rowsAllowed)
+        ->and($service->maxRows($definition, ExportFormat::Pdf))->toBe(ExportFormat::Pdf->maxRows())
+        ->and(fn () => $service->export($definition, $service->prepare($definition, $exporter, []), ExportFormat::Xlsx))
+        ->toThrow(ValidationException::class, "El reporte tiene 3 registros y el máximo para Excel (.xlsx) es {$rowsAllowed}.");
+});
+
+test('generating a file is a form post; a plain visit to the URL generates nothing', function () {
+    $exporter = tagExporter();
+    Tag::factory()->create(['name' => 'Mayorista']);
+    Tag::factory()->create(['name' => 'Prospecto']);
+
+    $this->actingAs($exporter)->get('/exports/tags/xlsx')->assertMethodNotAllowed();
+
+    expect(AuditLog::query()->where('action', AuditAction::ExportGenerated)->exists())->toBeFalse();
+
+    $response = $this->actingAs($exporter)
+        ->post(route('exports.generate', ['tags', 'xlsx']), ['_token' => 'ignored', 'search' => 'mayor'])
+        ->assertOk();
+
+    $sheet = downloadedWorkbook($response->baseResponse)->getSheetByName('Etiquetas');
+
+    expect($sheet->getCell('A7')->getValue())->toBe('Mayorista')
+        ->and($sheet->getCell('A8')->getValue())->toBe('Total');
+});
+
+test('downloading a finished export checks the permission of that report again', function () {
+    Storage::fake('local');
+    $role = Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewAuditLog, Permission::ExportAuditLog, Permission::ExportReports])->create();
+    $owner = User::factory()->withRole($role)->create();
+    $transfer = DataTransfer::factory()->for($owner)->completed('exports/auditoria.xlsx')->create(['report' => 'audit']);
+    Storage::disk('local')->put('exports/auditoria.xlsx', 'contenido');
+
+    $this->actingAs($owner)->get(route('exports.transfers.download', $transfer))->assertOk();
+
+    // Still holding reports.export does not keep an audit export downloadable.
+    $role->revokePermissionTo(Permission::ExportAuditLog->value);
+    $owner = User::query()->findOrFail($owner->id);
+
+    $this->actingAs($owner)->get(route('exports.transfers.download', $transfer))->assertForbidden();
+});
+
+test('the export form passes the CSRF check with the token shared with every page', function () {
+    $this->app->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app['encrypter']) extends PreventRequestForgery
+    {
+        protected function runningUnitTests()
+        {
+            return false;
+        }
+    });
+    $exporter = tagExporter();
+    Tag::factory()->create();
+
+    $token = null;
+    $this->actingAs($exporter)
+        ->get(route('exports.index'))
+        ->assertInertia(function (Assert $page) use (&$token): void {
+            $token = $page->toArray()['props']['csrfToken'];
+        });
+
+    $this->actingAs($exporter)->post(route('exports.generate', ['tags', 'xlsx']))->assertStatus(419);
+
+    $response = $this->actingAs($exporter)->post(route('exports.generate', ['tags', 'xlsx']), ['_token' => $token])->assertOk();
+    @unlink($response->baseResponse->getFile()->getPathname());
+});

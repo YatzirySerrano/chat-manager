@@ -7,6 +7,7 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Enums\Permission;
 use App\Models\Conversation;
+use App\Models\ConversationEvent;
 use App\Models\ConversationNote;
 use App\Models\Department;
 use App\Models\Message;
@@ -267,4 +268,122 @@ test('a team scope user only opens conversations of their departments', function
 
     $this->actingAs($supervisor)->getJson(route('conversations.timeline', $this->conversation))->assertOk();
     $this->actingAs($supervisor)->getJson(route('conversations.timeline', $elsewhere))->assertNotFound();
+});
+
+test('notes and events beyond the per-page limit are never lost: every one arrives once across the pages', function () {
+    $messages = storeMessages($this->conversation, 3, CarbonImmutable::parse('2026-10-20 08:00:00', 'UTC'));
+    $start = CarbonImmutable::parse('2026-10-20 07:50:00', 'UTC');
+    $total = ConversationTimeline::SIDE_LIMIT + 50;
+
+    ConversationNote::query()->insert(array_map(fn (int $second): array => [
+        'conversation_id' => $this->conversation->id,
+        'user_id' => $this->agent->id,
+        'body' => "Nota {$second}",
+        'created_at' => $start->addSeconds($second),
+        'updated_at' => $start->addSeconds($second),
+    ], range(0, $total - 1)));
+    foreach (range(1, 5) as $minute) {
+        $this->conversation->events()->create(['type' => ConversationEventType::Accepted, 'actor_user_id' => $this->agent->id, 'created_at' => $start->addMinutes($minute)]);
+    }
+
+    $notes = [];
+    $events = [];
+    $seenMessages = [];
+    $until = null;
+    $pages = 0;
+
+    do {
+        $before = $seenMessages === [] ? null : min($seenMessages);
+        $page = $this->actingAs($this->agent)
+            ->getJson(route('conversations.timeline', [$this->conversation, ...array_filter(['before' => $before, 'until' => $until])]))
+            ->assertOk()
+            ->json();
+
+        expect(count($page['notes']))->toBeLessThanOrEqual(ConversationTimeline::SIDE_LIMIT);
+        $notes = [...$notes, ...array_column($page['notes'], 'id')];
+        $events = [...$events, ...array_column($page['events'], 'id')];
+        $seenMessages = [...$seenMessages, ...array_column($page['messages'], 'id')];
+        $until = $page['until'] ?? null;
+        $pages++;
+    } while ($page['has_more'] && $pages < 10);
+
+    expect($pages)->toBe(2)
+        ->and($notes)->toHaveCount($total)
+        ->and(array_unique($notes))->toHaveCount($total)
+        ->and($events)->toHaveCount(5)
+        ->and(array_unique($seenMessages))->toEqualCanonicalizing(array_map(fn (Message $message): int => $message->id, $messages));
+});
+
+test('notes and events stored in the same second beyond the per-page limit still arrive once each, page after page', function () {
+    $messages = storeMessages($this->conversation, 2, CarbonImmutable::parse('2026-10-20 08:00:00', 'UTC'));
+    $second = CarbonImmutable::parse('2026-10-20 07:55:00', 'UTC');
+    $noteCount = ConversationTimeline::SIDE_LIMIT * 2 + 10;
+    $eventCount = ConversationTimeline::SIDE_LIMIT + 5;
+
+    ConversationNote::query()->insert(array_map(fn (int $index): array => [
+        'conversation_id' => $this->conversation->id,
+        'user_id' => $this->agent->id,
+        'body' => "Nota {$index}",
+        'created_at' => $second,
+        'updated_at' => $second,
+    ], range(1, $noteCount)));
+    ConversationEvent::query()->insert(array_map(fn (int $index): array => [
+        'conversation_id' => $this->conversation->id,
+        'type' => ConversationEventType::Accepted->value,
+        'actor_user_id' => $this->agent->id,
+        'created_at' => $second,
+    ], range(1, $eventCount)));
+
+    $notes = [];
+    $events = [];
+    $seenMessages = [];
+    $until = null;
+    $pages = 0;
+
+    do {
+        $before = $seenMessages === [] ? null : min($seenMessages);
+        $page = $this->actingAs($this->agent)
+            ->getJson(route('conversations.timeline', [$this->conversation, ...array_filter(['before' => $before, 'until' => $until])]))
+            ->assertOk()
+            ->json();
+
+        $notes = [...$notes, ...array_column($page['notes'], 'id')];
+        $events = [...$events, ...array_column($page['events'], 'id')];
+        $seenMessages = [...$seenMessages, ...array_column($page['messages'], 'id')];
+        $until = $page['until'] ?? null;
+        $pages++;
+    } while ($page['has_more'] && $pages < 10);
+
+    expect($pages)->toBe(3)
+        ->and($notes)->toHaveCount($noteCount)
+        ->and(array_unique($notes))->toHaveCount($noteCount)
+        ->and($events)->toHaveCount($eventCount)
+        ->and(array_unique($events))->toHaveCount($eventCount)
+        ->and(array_unique($seenMessages))->toEqualCanonicalizing(array_map(fn (Message $message): int => $message->id, $messages));
+});
+
+test('a malformed until is rejected', function (string $until) {
+    $this->actingAs($this->agent)
+        ->getJson(route('conversations.timeline', [$this->conversation, 'until' => $until]))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('until');
+})->with(['2026-13-40 10:00:00', '2026-10-20 10:00:00,x,1', 'ayer']);
+
+test('catching up says there is more when a stream reached its limit, and the rest follows', function () {
+    $now = now();
+    $rows = Message::factory()->count(ConversationTimeline::AFTER_LIMIT + 1)->make(['conversation_id' => $this->conversation->id]);
+    Message::query()->insert($rows->map(fn (Message $message): array => [...$message->getAttributes(), 'created_at' => $now, 'updated_at' => $now])->all());
+
+    $first = $this->actingAs($this->agent)
+        ->getJson(route('conversations.timeline', [$this->conversation, 'after_message' => 0, 'after_note' => 0, 'after_event' => 0]))
+        ->assertOk()
+        ->assertJsonCount(ConversationTimeline::AFTER_LIMIT, 'messages')
+        ->assertJsonPath('has_more', true)
+        ->json();
+
+    $this->actingAs($this->agent)
+        ->getJson(route('conversations.timeline', [$this->conversation, 'after_message' => max(array_column($first['messages'], 'id')), 'after_note' => 0, 'after_event' => 0]))
+        ->assertOk()
+        ->assertJsonCount(1, 'messages')
+        ->assertJsonPath('has_more', false);
 });

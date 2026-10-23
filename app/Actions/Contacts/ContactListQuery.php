@@ -8,7 +8,6 @@ use App\Enums\RecordState;
 use App\Models\Contact;
 use App\Models\User;
 use App\Services\ResolveContactOrigin;
-use App\Support\PhoneNumber;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 
@@ -16,7 +15,8 @@ use Illuminate\Validation\Rule;
  * The contacts list as the contacts screen shows it: within the actor's
  * data scope, the record state (deleted contacts only for people who can
  * consult deleted records), search over name, profile name, email and
- * phone, tags, source, origin and the chosen order.
+ * phone (ContactSearch), tags, source, origin and the chosen order, always
+ * ending in the id so pages never repeat or skip a contact.
  *
  * Shared by the contacts screen and the contacts report, so both always
  * agree on what "these contacts" means.
@@ -37,7 +37,7 @@ class ContactListQuery
      */
     public const UNIDENTIFIED_ORIGIN = 'unknown';
 
-    public function __construct(private ResolveContactOrigin $resolveOrigin) {}
+    public function __construct(private ResolveContactOrigin $resolveOrigin, private ContactSearch $search) {}
 
     /**
      * Validation rules of the list filters (query string).
@@ -92,7 +92,7 @@ class ContactListQuery
         return Contact::query()
             ->visibleTo($actor)
             ->inRecordState($filters['record'])
-            ->when($search !== '', fn (Builder $query) => $this->applySearch($query, $search))
+            ->when($search !== '', fn (Builder $query) => $this->search->constrain($query, $search))
             ->when($filters['tags'] !== [], fn (Builder $query) => $query->whereHas(
                 'tags',
                 fn (Builder $tags) => $tags->whereIn('tags.id', $filters['tags']),
@@ -102,29 +102,12 @@ class ContactListQuery
                 $query,
                 $filters['origin'] === self::UNIDENTIFIED_ORIGIN ? null : $filters['origin'],
             ))
+            // Without interaction last (MariaDB sorts NULL last in descending
+            // order), backed by the (last_interaction_at, id) index.
             ->when($sort === 'recent', fn (Builder $query) => $query
-                ->orderByRaw('last_interaction_at IS NULL')
                 ->orderByDesc('last_interaction_at')
-                ->orderByDesc('created_at'))
-            ->when($sort === 'name', fn (Builder $query) => $query->orderBy('name'))
-            ->when($sort === 'newest', fn (Builder $query) => $query->orderByDesc('created_at'))
-            ->orderBy('id');
-    }
-
-    /**
-     * @param  Builder<Contact>  $query
-     */
-    private function applySearch(Builder $query, string $search): void
-    {
-        $term = '%'.addcslashes($search, '\\%_').'%';
-        $digits = preg_replace('/\D+/', '', $search) ?? '';
-        $normalizedPhone = PhoneNumber::normalize($search) ?? PhoneNumber::normalize('+'.$digits);
-
-        $query->where(fn (Builder $match) => $match
-            ->where('name', 'like', $term)
-            ->orWhere('profile_name', 'like', $term)
-            ->orWhere('email', 'like', $term)
-            ->when(strlen($digits) >= 3, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', 'like', "%{$digits}%"))
-            ->when($normalizedPhone !== null, fn (Builder $byPhone) => $byPhone->orWhere('phone_e164', $normalizedPhone)));
+                ->orderByDesc('id'))
+            ->when($sort === 'name', fn (Builder $query) => $query->orderBy('name')->orderBy('id'))
+            ->when($sort === 'newest', fn (Builder $query) => $query->orderByDesc('created_at')->orderByDesc('id'));
     }
 }

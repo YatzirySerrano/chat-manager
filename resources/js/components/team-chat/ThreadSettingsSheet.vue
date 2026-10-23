@@ -36,6 +36,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
+import { useTeamPresence } from '@/composables/useTeamPresence';
 import { formatDate } from '@/lib/format';
 import { maxLength, minLength, normalizers, required } from '@/lib/validation';
 import {
@@ -62,6 +63,7 @@ const props = defineProps<{
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
+const { isOnline } = useTeamPresence();
 
 type PendingAction =
     | { kind: 'remove'; participant: TeamParticipant }
@@ -413,6 +415,7 @@ function restoreGroup(): void {
                                 :name="participant.name"
                                 :deleted="participant.deleted"
                                 :availability="participant.availability"
+                                :online="isOnline(participant.id)"
                                 size="sm"
                             />
                             <div class="min-w-0 flex-1">
@@ -432,7 +435,14 @@ function restoreGroup(): void {
                                                 'available'
                                               ? 'Disponible'
                                               : 'No disponible'
-                                    }}
+                                    }}<template
+                                        v-if="
+                                            !participant.deleted &&
+                                            isOnline(participant.id)
+                                        "
+                                    >
+                                        · En línea</template
+                                    >
                                 </p>
                             </div>
                             <Badge

@@ -112,7 +112,8 @@ test('deleting and restoring require their permissions', function () {
 
     $withoutViewDeleted = userManager([Permission::DeleteUsers]);
 
-    $this->actingAs($withoutViewDeleted)->patch(route('admin.users.restore', $deleted))->assertForbidden();
+    // Without records.view-deleted a deleted account answers like an id that does not exist.
+    $this->actingAs($withoutViewDeleted)->patch(route('admin.users.restore', $deleted))->assertNotFound();
     $this->actingAs(userManager([Permission::ViewDeletedRecords]))->patch(route('admin.users.restore', $deleted))->assertForbidden();
     $this->actingAs(userManager([Permission::DeleteUsers, Permission::ViewDeletedRecords]))->patch(route('admin.users.restore', $deleted))->assertSessionHasNoErrors();
 

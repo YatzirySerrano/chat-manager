@@ -138,10 +138,11 @@ class PdfRenderer implements ReportRenderer
     }
 
     /**
-     * Extra sheets printed in the PDF, formatted like the main table.
+     * Extra sheets printed in the PDF, formatted like the main table and
+     * with the same totals row as their worksheet.
      *
      * @param  ReportDefinition<Model>  $definition
-     * @return list<array{title: string, description: string|null, newPage: bool, columns: list<Column>, widths: list<float>, rows: list<list<string>>}>
+     * @return list<array{title: string, description: string|null, newPage: bool, columns: list<Column>, widths: list<float>, entries: list<TableEntry>, totals: list<string>|null, count: int}>
      */
     private function sections(ReportDefinition $definition, ReportContext $context, ValueFormatter $formatter, int $maxRows, bool $beforeTable): array
     {
@@ -152,14 +153,24 @@ class PdfRenderer implements ReportRenderer
                 continue;
             }
 
-            $rows = [];
+            $hasTotals = collect($sheet->columns)->contains(fn (Column $column): bool => $column->total !== ColumnTotal::None);
+            $totals = $this->emptyTotals($sheet->columns);
+            $entries = [];
 
             foreach ($sheet->rows as $row) {
-                if (count($rows) >= $maxRows) {
+                if (count($entries) >= $maxRows) {
                     throw ValidationException::withMessages(['export' => 'El reporte superó el máximo de filas permitido mientras se generaba.']);
                 }
 
-                $rows[] = array_map(fn (Column $column): string => $formatter->format($row[$column->key] ?? null, $column), $sheet->columns);
+                $cells = [];
+
+                foreach ($sheet->columns as $index => $column) {
+                    $value = $row[$column->key] ?? null;
+                    $cells[] = $formatter->format($value, $column);
+                    $totals[$index] = $this->accumulate($totals[$index], $value, $column);
+                }
+
+                $entries[] = ['kind' => 'row', 'cells' => $cells];
             }
 
             $sections[] = [
@@ -168,7 +179,9 @@ class PdfRenderer implements ReportRenderer
                 'newPage' => $sheet->newPage,
                 'columns' => $sheet->columns,
                 'widths' => $this->widths($sheet->columns, $definition->orientation()),
-                'rows' => $rows,
+                'entries' => $entries,
+                'totals' => $hasTotals && $entries !== [] ? $this->formatTotals($sheet->columns, $totals, $formatter) : null,
+                'count' => count($entries),
             ];
         }
 

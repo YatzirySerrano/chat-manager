@@ -23,29 +23,33 @@
  * by the runner: E2E_BASE_URL, APP_ENV=testing, PLAYWRIGHT_MODULE, optional
  * E2E_SCREENSHOTS (screenshots of failed steps and downloaded files).
  */
-import { createHmac } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import {
+    BASE,
+    HERE,
+    SHOTS,
+    USERS,
+    becomeAvailable,
+    chromium,
+    exitWithSummary,
+    listRow,
+    login,
+    openConversation,
+    openPage,
+    operations,
+    overflow,
+    php,
+    recordPageProblems,
+    runOperation,
+    shot,
+    signedWebhook,
+    step as runStep,
+    toastText,
+} from './lib.mjs';
 
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
-
-const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8020';
-const HERE = dirname(fileURLToPath(import.meta.url));
 const SEED = join(HERE, 'finalizacion-seed.php');
-const SHOTS = process.env.E2E_SCREENSHOTS ?? null;
-const PASSWORD = 'e2e-password';
-const USERS = {
-    superadmin: 'e2e-admin@example.test',
-    administrator: 'e2e-administrador@example.test',
-    ana: 'e2e-ana@example.test',
-    beto: 'e2e-beto@example.test',
-    carla: 'e2e-carla@example.test',
-};
 const PNG =
     'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAFElEQVQImWOU64liwAaYsIoOWgkAz+QBFArsdHsAAAAASUVORK5CYII=';
 
@@ -59,208 +63,30 @@ if (
     process.exit(2);
 }
 
-if (SHOTS) {
-    mkdirSync(SHOTS, { recursive: true });
-}
-
-const results = [];
-const problems = { console: [], pageerror: [], server: [] };
-const pages = new Set();
-
-function record(id, input, ok, note = '') {
-    results.push({ id, ok, note });
-    console.log(`${ok ? 'PASSED' : 'FAILED'} | ${id} | ${input} | ${note}`);
-}
-
-async function step(id, input, page, scenario) {
-    try {
-        const [ok, note] = await scenario();
-        record(id, input, ok, note);
-
-        if (!ok) {
-            await failureShot(page, id);
-        }
-    } catch (error) {
-        record(id, input, false, String(error).split('\n')[0]);
-        await failureShot(page, id);
-    }
-}
-
-async function failureShot(page, id) {
-    if (SHOTS && page && !page.isClosed()) {
-        await page
-            .screenshot({ path: join(SHOTS, `fail-${id}.png`), fullPage: true })
-            .catch(() => {});
-    }
-}
+/** A failed step leaves a full-page screenshot of the page it used. */
+const step = (id, input, page, scenario) =>
+    runStep(id, input, scenario, () => shot(page, `fail-${id}`));
 
 function seed(...args) {
-    return execFileSync('php', [SEED, ...args], {
-        env: process.env,
-        encoding: 'utf8',
-    });
+    return php(SEED, ...args);
 }
 
 const data = JSON.parse(seed('setup'));
 
 /** Posts a webhook body signed like Meta does (X-Hub-Signature-256). */
-async function webhook(body, secret = data.app_secret) {
-    const signature = createHmac('sha256', secret).update(body).digest('hex');
-    const response = await fetch(
-        `${BASE}/webhooks/whatsapp/${data.webhook_key}`,
-        {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Hub-Signature-256': `sha256=${signature}`,
-            },
-            body,
-        },
-    );
+const webhook = (body, secret = data.app_secret) =>
+    signedWebhook(data.webhook_key, secret, body);
 
-    return response.status;
-}
-
-async function newPage(browser, options = {}) {
-    const context = await browser.newContext({
-        viewport: { width: 1366, height: 900 },
-        locale: 'es-MX',
-        acceptDownloads: true,
-        ...options,
+const newPage = (browser, options = {}) =>
+    openPage(browser, {
+        context: { acceptDownloads: true, ...options },
+        // Reverb is optional: without it the page falls back to polling.
+        ignoreConsole: /status of (403|404|409|422|429)|WebSocket/,
+        trackToasts: true,
     });
-    const page = await context.newPage();
-    // Every toast shown on the page, also the ones already gone, to tell a
-    // missing toast from one that disappeared before it was read.
-    await page.addInitScript(() => {
-        window.__toasts = [];
-        new MutationObserver(() => {
-            for (const toast of document.querySelectorAll(
-                '[data-sonner-toast]',
-            )) {
-                const text = toast.textContent.trim();
-
-                if (text && !window.__toasts.includes(text)) {
-                    window.__toasts.push(text);
-                }
-            }
-        }).observe(document, { childList: true, subtree: true });
-    });
-    page.setDefaultTimeout(15_000);
-    pages.add(page);
-    page.on('console', (message) => {
-        if (
-            message.type() === 'error' &&
-            !/status of (403|404|409|422|429)/.test(message.text()) &&
-            // Reverb is optional: without it the page falls back to polling.
-            !/WebSocket/.test(message.text())
-        ) {
-            problems.console.push(`${message.text()} @ ${page.url()}`);
-        }
-    });
-    page.on('pageerror', (error) => problems.pageerror.push(String(error)));
-    page.on('response', (response) => {
-        if (response.status() >= 500) {
-            problems.server.push(`${response.status()} ${response.url()}`);
-        }
-    });
-
-    return page;
-}
-
-async function login(page, email) {
-    await page.goto(`${BASE}/login`);
-    await page.locator('#email').click();
-    await page.keyboard.type(email);
-    await page.locator('#password').click();
-    await page.keyboard.type(PASSWORD);
-    await page.keyboard.press('Enter');
-    await page
-        .waitForURL((url) => !url.pathname.startsWith('/login'))
-        .catch(async () => {
-            const typed = await page.locator('#email').inputValue();
-            const errors = await page
-                .locator('[role="alert"], .text-destructive, p.text-red-600')
-                .allInnerTexts();
-
-            throw new Error(
-                `login of ${email} stayed on /login (email field="${typed}", errors=${JSON.stringify(errors)})`,
-            );
-        });
-    await page.waitForLoadState('networkidle');
-}
-
-async function toastText(page, expected) {
-    const toast = page
-        .locator('[data-sonner-toast]', { hasText: expected })
-        .first();
-
-    try {
-        await toast.waitFor({ timeout: 10_000 });
-
-        return (await toast.innerText()).replace(/\s+/g, ' ');
-    } catch {
-        const visible = await page
-            .locator('[data-sonner-toast]')
-            .allInnerTexts();
-
-        const seen = await page
-            .evaluate(() => window.__toasts ?? [])
-            .catch(() => []);
-
-        return `no toast matching ${expected}; visible: ${JSON.stringify(visible)}; seen: ${JSON.stringify(seen.slice(-4))}`;
-    }
-}
-
-const overflow = (page) =>
-    page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
-    );
-
-const listRow = (page, name) =>
-    page.locator('[data-inbox-item]', { hasText: name }).first();
-
-const operations = (page) =>
-    page.getByRole('group', { name: 'Operaciones de la conversación' });
 
 const bubble = (page, text) =>
     page.locator('[data-message-id]', { hasText: text }).last();
-
-async function runOperation(page, label) {
-    const direct = operations(page).getByRole('button', {
-        name: label,
-        exact: true,
-    });
-
-    if ((await direct.count()) > 0) {
-        await direct.click();
-
-        return;
-    }
-
-    await page
-        .getByRole('button', { name: 'Más acciones de la conversación' })
-        .click();
-    await page.getByRole('menuitem', { name: label, exact: true }).click();
-}
-
-async function openConversation(page, id) {
-    await page.goto(`${BASE}/conversations?c=${id}`);
-    await page.waitForLoadState('networkidle');
-}
-
-async function becomeAvailable(page) {
-    const toggle = page.getByRole('switch', {
-        name: 'Disponible para aceptar y recibir conversaciones',
-    });
-
-    if ((await toggle.getAttribute('aria-checked')) !== 'true') {
-        await toggle.click();
-        await toastText(page, /Ahora estás disponible/);
-        await page.waitForLoadState('networkidle');
-    }
-
-    return (await toggle.getAttribute('aria-checked')) === 'true';
-}
 
 /** Accessible status of an outbound bubble ("Entregado", "Leído", …). */
 async function waitStatus(page, text, expected, timeout = 30_000) {
@@ -446,14 +272,16 @@ const run = async () => {
             async () => {
                 const text = 'Con gusto te ayudo con la cotización';
                 await sendReply(ana, text);
-                const simulated =
-                    (await bubble(ana, text).getByText('Simulación').count()) >
-                    0;
                 const delivered = await waitStatus(
                     ana,
                     text,
                     /Entregado|Leído/,
                 );
+                // The badge comes with the delivery result (simulated
+                // transport), so it is read once the status arrived.
+                const simulated =
+                    (await bubble(ana, text).getByText('Simulación').count()) >
+                    0;
                 const id = await bubble(ana, text).getAttribute(
                     'data-message-id',
                 );
@@ -899,27 +727,8 @@ const run = async () => {
         await browser.close();
     }
 
-    record(
-        'no-page-errors',
-        'console',
-        problems.pageerror.length === 0 && problems.console.length === 0,
-        JSON.stringify(problems.pageerror.concat(problems.console)).slice(
-            0,
-            600,
-        ),
-    );
-    record(
-        'no-server-errors',
-        'network',
-        problems.server.length === 0,
-        problems.server.join(', '),
-    );
-
-    const failed = results.filter((result) => !result.ok);
-    console.log(
-        `\n${results.length - failed.length}/${results.length} scenarios passed`,
-    );
-    process.exit(failed.length === 0 ? 0 : 1);
+    recordPageProblems(600);
+    exitWithSummary();
 };
 
 run().catch((error) => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useForm, useHttp, usePage } from '@inertiajs/vue3';
+import { Link, useForm, useHttp, usePage } from '@inertiajs/vue3';
 import { Building2, KeyRound, ShieldCheck, UserRound } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoleChangeImpactDialog from '@/components/admin/RoleChangeImpactDialog.vue';
@@ -33,6 +33,7 @@ import {
     when,
 } from '@/lib/validation';
 import { roleImpact, store, update } from '@/routes/admin/users';
+import { edit as securityEdit } from '@/routes/security';
 import type {
     AdminUser,
     DepartmentOption,
@@ -50,6 +51,8 @@ const open = defineModel<boolean>('open', { required: true });
 
 const isEditing = computed(() => props.user !== null);
 const canChangeRole = computed(() => !props.user || props.user.can.assignRole);
+/** One's own e-mail and password are changed in Configuración, not here. */
+const editsOwnAccount = computed(() => props.user?.is_current_user ?? false);
 const changePassword = ref(false);
 
 const form = useForm<{
@@ -60,6 +63,8 @@ const form = useForm<{
     password: string;
     password_confirmation: string;
     role_change_fingerprint: string | null;
+    /** Own load limit; empty inherits the department and platform limits. */
+    max_open_conversations: number | '';
 }>({
     name: '',
     email: '',
@@ -68,6 +73,7 @@ const form = useForm<{
     password: '',
     password_confirmation: '',
     role_change_fingerprint: null,
+    max_open_conversations: '',
 });
 
 const page = usePage();
@@ -144,6 +150,7 @@ watch(open, (isOpen) => {
         password: '',
         password_confirmation: '',
         role_change_fingerprint: null,
+        max_open_conversations: props.user?.max_open_conversations ?? '',
     });
 });
 
@@ -202,6 +209,10 @@ function send(fingerprint: string | null = null): void {
         ...data,
         role_id: canChangeRole.value ? data.role_id : null,
         department_ids: allowsDepartments.value ? data.department_ids : [],
+        max_open_conversations:
+            data.max_open_conversations === ''
+                ? null
+                : data.max_open_conversations,
         ...(isEditing.value && !changePassword.value
             ? { password: '', password_confirmation: '' }
             : {}),
@@ -318,9 +329,11 @@ function submit(): void {
                         label="Correo electrónico"
                         :error="validation.error('email')"
                         :hint="
-                            availability.checking.value
-                                ? 'Comprobando que el correo esté disponible…'
-                                : undefined
+                            editsOwnAccount
+                                ? 'Cambia tu correo en Configuración > Perfil.'
+                                : availability.checking.value
+                                  ? 'Comprobando que el correo esté disponible…'
+                                  : undefined
                         "
                     >
                         <Input
@@ -329,6 +342,7 @@ function submit(): void {
                             type="email"
                             autocomplete="off"
                             maxlength="255"
+                            :readonly="editsOwnAccount"
                             v-bind="validation.field('email', 'user-email')"
                         />
                     </FormField>
@@ -453,6 +467,30 @@ function submit(): void {
                             : 'Selecciona un rol para elegir sus departamentos.'
                     }}
                 </p>
+                <FormField
+                    v-if="isEditing"
+                    id="user-max-open-conversations"
+                    label="Límite de conversaciones en atención (opcional)"
+                    :error="form.errors.max_open_conversations"
+                    :help="{
+                        description:
+                            'Máximo de conversaciones abiertas o en espera que esta persona puede tener para aceptar o recibir automáticamente una nueva. Se cuentan las de todos sus departamentos.',
+                        howTo: 'Déjalo vacío para usar el límite del departamento o, si no tiene, el de la plataforma.',
+                        warning:
+                            'Bajarlo nunca le quita conversaciones; subirlo le reparte las que esperaban en la cola.',
+                    }"
+                >
+                    <Input
+                        id="user-max-open-conversations"
+                        v-model="form.max_open_conversations"
+                        type="number"
+                        min="1"
+                        max="200"
+                        inputmode="numeric"
+                        placeholder="Usa el límite del departamento o la plataforma"
+                        class="max-w-72"
+                    />
+                </FormField>
             </section>
 
             <section class="space-y-4 border-t pt-5">
@@ -460,8 +498,16 @@ function submit(): void {
                     <KeyRound class="size-4 text-muted-foreground" />
                     Contraseña
                 </h3>
+                <p v-if="editsOwnAccount" class="text-sm text-muted-foreground">
+                    Cambia tu propia contraseña en
+                    <Link
+                        :href="securityEdit()"
+                        class="font-medium text-foreground underline underline-offset-4"
+                        >Configuración > Seguridad</Link
+                    >, donde se pide la contraseña actual.
+                </p>
                 <div
-                    v-if="isEditing"
+                    v-else-if="isEditing"
                     class="flex items-center justify-between gap-4"
                 >
                     <p class="text-sm text-muted-foreground">

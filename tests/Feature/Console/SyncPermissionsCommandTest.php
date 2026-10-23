@@ -1,9 +1,13 @@
 <?php
 
+use App\Enums\AuditAction;
 use App\Enums\DataScope;
 use App\Enums\DefaultRole;
 use App\Enums\Permission;
+use App\Models\AuditLog;
 use App\Models\Role;
+use App\Models\User;
+use App\Support\ManualValidation;
 use Spatie\Permission\Models\Permission as PermissionModel;
 
 test('synchronizing never overwrites roles customized from the interface', function () {
@@ -114,4 +118,105 @@ test('permissions the root role already lacked are not granted again', function 
     $this->artisan('app:sync-permissions')->assertSuccessful();
 
     expect($admin->refresh()->load('permissions')->permissionNames())->not->toContain(Permission::ExportAuditLog->value);
+});
+
+/**
+ * Leave a default role with only the given permissions, as an installation
+ * created before later increments would have it.
+ *
+ * @param  list<string>  $permissions
+ */
+function outdatedRole(DefaultRole $default, array $permissions): Role
+{
+    $role = role($default);
+    $role->syncPermissions($permissions);
+
+    return $role->refresh()->load('permissions');
+}
+
+test('upgrading the default roles only previews the changes by default', function () {
+    $agent = outdatedRole(DefaultRole::Agent, ['dashboard.view', 'conversations.view']);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true])
+        ->expectsOutputToContain('Agente (agent')
+        ->expectsOutputToContain('team-chat.use')
+        ->expectsOutputToContain('Vista previa: no se modificó nada.')
+        ->assertSuccessful();
+
+    expect($agent->refresh()->load('permissions')->permissionNames())->toEqualCanonicalizing(['dashboard.view', 'conversations.view'])
+        ->and(AuditLog::query()->count())->toBe(0);
+});
+
+test('applying the upgrade adds what is missing, keeps customizations, drops what the scope never exercises and is audited once', function () {
+    $root = User::factory()->superAdministrator()->create();
+    $agent = outdatedRole(DefaultRole::Agent, ['dashboard.view', 'audit.view', Permission::ImportContacts->value, Permission::ViewConnections->value]);
+    $supervisor = outdatedRole(DefaultRole::Supervisor, ['dashboard.view']);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true])->assertSuccessful();
+
+    $permissions = $agent->refresh()->load('permissions')->permissionNames();
+    $log = AuditLog::query()->where('action', AuditAction::RolePermissionsChanged)->where('auditable_id', $agent->id)->sole();
+
+    expect($permissions)->toContain('audit.view', ...array_map(fn (Permission $permission): string => $permission->value, DefaultRole::Agent->permissions()))
+        ->and($permissions)->not->toContain(Permission::ImportContacts->value, Permission::ViewConnections->value)
+        ->and($log->user_id)->toBe($root->id)
+        ->and($log->properties['removed'])->toEqualCanonicalizing([Permission::ImportContacts->value, Permission::ViewConnections->value])
+        ->and($supervisor->refresh()->load('permissions')->permissionNames())->toContain(Permission::AssignTags->value, Permission::UseTeamChat->value)
+        ->and($supervisor->permissionNames())->not->toContain(Permission::ManageTags->value);
+
+    $audits = AuditLog::query()->count();
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true])->assertSuccessful();
+
+    expect(AuditLog::query()->count())->toBe($audits);
+});
+
+test('the upgrade never touches the root role nor custom roles, and the demo role only when asked for', function () {
+    User::factory()->superAdministrator()->create();
+    $root = role(DefaultRole::SuperAdministrator);
+    $root->revokePermissionTo(Permission::ExportAuditLog->value);
+    $custom = Role::factory()->create(['label' => 'Agente nocturno', 'scope' => DataScope::Assigned]);
+    $custom->syncPermissions(['dashboard.view']);
+    $demo = Role::factory()->create(['label' => ManualValidation::ROLE_LABEL, 'scope' => DataScope::Assigned]);
+    $demo->syncPermissions(['dashboard.view']);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true])->assertSuccessful();
+
+    expect($root->refresh()->load('permissions')->permissionNames())->not->toContain(Permission::ExportAuditLog->value)
+        ->and($custom->refresh()->load('permissions')->permissionNames())->toBe(['dashboard.view'])
+        ->and($demo->refresh()->load('permissions')->permissionNames())->toBe(['dashboard.view']);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true, '--demo-b' => true])->assertSuccessful();
+
+    expect($demo->refresh()->load('permissions')->permissionNames())
+        ->toContain(Permission::UseTeamChat->value, Permission::AssignTags->value, Permission::ViewReports->value)
+        ->not->toContain(Permission::ImportContacts->value, Permission::AssignConversations->value)
+        ->and($custom->refresh()->load('permissions')->permissionNames())->toBe(['dashboard.view']);
+});
+
+test('sensitive permissions of the definition are only granted when asked for', function () {
+    User::factory()->superAdministrator()->create();
+    $administrator = role(DefaultRole::Administrator);
+    $administrator->revokePermissionTo([Permission::ViewTemplates->value, Permission::ViewSystem->value, Permission::ManageSystem->value]);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true])
+        ->expectsOutputToContain('system.view, system.manage')
+        ->assertSuccessful();
+
+    expect($administrator->refresh()->load('permissions')->permissionNames())->toContain(Permission::ViewTemplates->value)
+        ->not->toContain(Permission::ViewSystem->value, Permission::ManageSystem->value, Permission::ImportContacts->value);
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true, '--include-sensitive' => true])->assertSuccessful();
+
+    expect($administrator->refresh()->load('permissions')->permissionNames())->toContain(Permission::ViewSystem->value, Permission::ManageSystem->value)
+        ->not->toContain(Permission::ImportContacts->value);
+});
+
+test('applying the upgrade requires an active root actor', function () {
+    $agent = outdatedRole(DefaultRole::Agent, ['dashboard.view']);
+    $administrator = User::factory()->administrator()->create();
+
+    $this->artisan('app:sync-permissions', ['--upgrade-default-roles' => true, '--apply' => true, '--actor' => $administrator->email])->assertFailed();
+    $this->artisan('app:sync-permissions', ['--apply' => true])->assertFailed();
+
+    expect($agent->refresh()->load('permissions')->permissionNames())->toBe(['dashboard.view']);
 });

@@ -6,6 +6,7 @@ import { afterUserVisits, trackUserVisits } from './visits';
 
 export {
     configureRealtime,
+    joinPresence,
     onReconnect,
     realtimeState,
     resubscribeAll,

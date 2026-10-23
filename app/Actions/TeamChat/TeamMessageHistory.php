@@ -101,6 +101,8 @@ class TeamMessageHistory
             ->with([
                 'author:id,name,is_active',
                 'attachments',
+                'reactions' => fn ($reactions) => $reactions->orderBy('id'),
+                'reactions.user:id,name,is_active',
                 'replyTo:id,team_thread_id,user_id,body,deleted_at',
                 'replyTo.author:id,name,is_active',
             ]);

@@ -27,13 +27,16 @@ import type {
 
 /**
  * Assigns the conversation to an agent of its department, or transfers it to
- * another department and/or agent. The destinations come from the server
- * (only active, authorized departments and people who can attend them) and
- * are loaded when the dialog opens, so they are always current.
+ * another department and/or agent, or leaves it in a department's queue.
+ * The destinations come from the server (only active, authorized departments
+ * and the people who can attend each one, without needing to see their
+ * conversations) and are loaded when the dialog opens, so they are current.
  *
- * Each agent shows their availability and load. Choosing an agent declared
- * unavailable is an exception: the dialog warns about it and requires an
- * explicit confirmation, which the server checks again and records.
+ * Each agent shows their availability and whether they already attend their
+ * maximum of conversations. Choosing such an agent is an exception reserved
+ * to users who can assign: the dialog warns about it and requires an
+ * explicit confirmation, which the server checks again and records. Anyone
+ * else sees those agents disabled and can still use the department queue.
  */
 const props = defineProps<{
     mode: 'assign' | 'transfer';
@@ -54,6 +57,7 @@ const emit = defineEmits<{
             user_id: number | null;
             reason: string;
             confirm_unavailable: boolean;
+            confirm_over_capacity: boolean;
         },
     ];
 }>();
@@ -63,6 +67,7 @@ const NO_AGENT = '';
 const departmentId = ref<string>('');
 const userId = ref<string>(NO_AGENT);
 const confirmUnavailable = ref(false);
+const confirmOverCapacity = ref(false);
 
 /** Local draft of the reason: the parent sends the request. */
 const reasonForm = useForm({ reason: '' });
@@ -100,13 +105,17 @@ watch(
             userId.value = NO_AGENT;
             validation.load({ reason: '' });
             confirmUnavailable.value = false;
+            confirmOverCapacity.value = false;
         }
     },
     { immediate: true },
 );
 
 watch(departmentId, () => (userId.value = NO_AGENT));
-watch(userId, () => (confirmUnavailable.value = false));
+watch(userId, () => {
+    confirmUnavailable.value = false;
+    confirmOverCapacity.value = false;
+});
 
 const agents = computed<TransferAgentOption[]>(() => {
     if (!props.options) {
@@ -133,6 +142,43 @@ const selectedIsUnavailable = computed(
     () => selectedAgent.value?.availability === 'unavailable',
 );
 
+/**
+ * Whether handing it to the agent goes past their limit. Keeping the current
+ * responsible (e.g. moving it to another department) adds no load, so the
+ * backend does not apply the limit to them.
+ */
+function exceedsCapacity(agent: TransferAgentOption): boolean {
+    return agent.at_capacity && agent.id !== props.conversation.assignee?.id;
+}
+
+const selectedIsAtCapacity = computed(
+    () => selectedAgent.value !== null && exceedsCapacity(selectedAgent.value),
+);
+
+const allowsExceptions = computed(
+    () => props.options?.allows_exceptions === true,
+);
+
+/** Whether choosing the agent would be an exception (unavailable or at their limit). */
+function isException(agent: TransferAgentOption): boolean {
+    return agent.availability === 'unavailable' || exceedsCapacity(agent);
+}
+
+function isCurrentResponsible(agent: TransferAgentOption): boolean {
+    return (
+        agent.id === props.conversation.assignee?.id &&
+        String(props.conversation.department?.id ?? '') === departmentId.value
+    );
+}
+
+const hasBlockedAgents = computed(
+    () =>
+        !allowsExceptions.value &&
+        agents.value.some(
+            (agent) => isException(agent) && !isCurrentResponsible(agent),
+        ),
+);
+
 const selectClass =
     'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
 
@@ -144,6 +190,10 @@ const canSubmit = computed(() => {
     }
 
     if (selectedIsUnavailable.value && !confirmUnavailable.value) {
+        return false;
+    }
+
+    if (selectedIsAtCapacity.value && !confirmOverCapacity.value) {
         return false;
     }
 
@@ -172,6 +222,8 @@ function submit(): void {
         reason: reasonForm.reason.trim(),
         confirm_unavailable:
             selectedIsUnavailable.value && confirmUnavailable.value,
+        confirm_over_capacity:
+            selectedIsAtCapacity.value && confirmOverCapacity.value,
     });
 }
 
@@ -179,7 +231,9 @@ function agentLabel(agent: TransferAgentOption): string {
     const availability =
         agent.availability === 'available' ? 'Disponible' : 'No disponible';
 
-    return `${agent.name} · ${availability} · ${agent.load} en atención`;
+    const capacity = agent.at_capacity ? ' · Al límite de carga' : '';
+
+    return `${agent.name} · ${availability}${capacity}`;
 }
 </script>
 
@@ -253,7 +307,7 @@ function agentLabel(agent: TransferAgentOption): string {
                         :error="errors.user_id"
                         :help="{
                             description:
-                                'Persona que quedará como responsable. Solo aparecen agentes activos que pueden atender el departamento elegido, con su disponibilidad y su carga actual.',
+                                'Persona que quedará como responsable. Solo aparecen personas activas que pueden atender el departamento elegido, con su disponibilidad y si ya atienden su máximo de conversaciones.',
                             howTo: isTransfer
                                 ? 'Elige «Sin agente» para dejarla pendiente en la cola del departamento.'
                                 : 'Elige a quien atenderá la conversación.',
@@ -261,7 +315,9 @@ function agentLabel(agent: TransferAgentOption): string {
                         :hint="
                             agents.length === 0
                                 ? 'No hay personas que puedas elegir en este departamento.'
-                                : undefined
+                                : hasBlockedAgents
+                                  ? 'Quien está No disponible o al límite de carga solo puede recibirla de quien asigna conversaciones. Transfiérela a la cola del departamento.'
+                                  : undefined
                         "
                     >
                         <select
@@ -281,10 +337,8 @@ function agentLabel(agent: TransferAgentOption): string {
                                 :key="agent.id"
                                 :value="String(agent.id)"
                                 :disabled="
-                                    agent.id === conversation.assignee?.id &&
-                                    String(
-                                        conversation.department?.id ?? '',
-                                    ) === departmentId
+                                    isCurrentResponsible(agent) ||
+                                    (isException(agent) && !allowsExceptions)
                                 "
                             >
                                 {{ agentLabel(agent) }}
@@ -313,9 +367,12 @@ function agentLabel(agent: TransferAgentOption): string {
                                     : 'Disponible'
                             }}
                         </Badge>
-                        <span class="text-muted-foreground"
-                            >{{ selectedAgent.load }} en atención</span
+                        <Badge
+                            v-if="selectedIsAtCapacity"
+                            variant="destructive"
                         >
+                            Al límite de carga
+                        </Badge>
                     </div>
 
                     <div
@@ -349,6 +406,40 @@ function agentLabel(agent: TransferAgentOption): string {
                             />
                             Confirmo que quiero asignársela aunque no esté
                             disponible
+                        </label>
+                    </div>
+
+                    <div
+                        v-if="selectedIsAtCapacity"
+                        class="grid gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+                        role="alert"
+                    >
+                        <p class="flex gap-2">
+                            <TriangleAlert
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span
+                                >{{ selectedAgent?.name }} ya atiende el máximo
+                                de conversaciones permitido. Asignársela supera
+                                su límite de carga; es una excepción que quedará
+                                registrada en el historial y su límite no
+                                cambiará.</span
+                            >
+                        </p>
+                        <label
+                            class="flex cursor-pointer items-center gap-2 font-medium"
+                        >
+                            <Checkbox
+                                id="route-confirm-over-capacity"
+                                :model-value="confirmOverCapacity"
+                                @update:model-value="
+                                    (value) =>
+                                        (confirmOverCapacity = value === true)
+                                "
+                            />
+                            Confirmo que quiero asignársela aunque supere su
+                            límite
                         </label>
                     </div>
 

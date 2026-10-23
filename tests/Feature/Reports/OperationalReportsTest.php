@@ -2,8 +2,10 @@
 
 use App\Actions\Analytics\RebuildConversationMetrics;
 use App\Enums\DataScope;
+use App\Enums\DataTransferStatus;
 use App\Enums\ExportFormat;
 use App\Enums\Permission;
+use App\Jobs\GenerateReport;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\ConversationMetric;
@@ -12,8 +14,14 @@ use App\Models\Role;
 use App\Models\User;
 use App\Reports\Rendering\PdfRenderer;
 use App\Reports\ReportRegistry;
+use App\Services\Analytics\AnalyticsFilters;
+use App\Services\Analytics\AnalyticsScope;
+use App\Services\Analytics\OperationalAnalytics;
 use App\Services\Exports\ReportExporter;
+use App\Services\PlatformSettings;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -58,7 +66,7 @@ test('guests are redirected and users without reports.view are refused', functio
         ->get(route('reports.index'))
         ->assertForbidden();
 
-    $this->actingAs(User::factory()->agent()->create())->get(route('reports.index'))->assertForbidden();
+    $this->actingAs(conversationUser([Permission::ViewDashboard, Permission::ViewConversations, Permission::ReplyConversations]))->get(route('reports.index'))->assertForbidden();
 });
 
 test('a global user sees every figure with the previous period comparison', function () {
@@ -189,9 +197,9 @@ test('a long custom range is charted per month and capped', function () {
 });
 
 test('the analytics export requires reports.view and reports.export', function () {
-    $this->actingAs(reportsUser([Permission::ViewReports], DataScope::Global))->get(route('exports.generate', ['analytics', 'xlsx']))->assertForbidden();
-    $this->actingAs(reportsUser([Permission::ExportReports, Permission::ViewDashboard], DataScope::Global))->get(route('exports.generate', ['analytics', 'pdf']))->assertForbidden();
-    $this->actingAs(reportsUser([Permission::ViewReports, Permission::ExportReports], DataScope::Global))->get(route('exports.generate', ['analytics', 'xlsx']))->assertOk();
+    $this->actingAs(reportsUser([Permission::ViewReports], DataScope::Global))->post(route('exports.generate', ['analytics', 'xlsx']))->assertForbidden();
+    $this->actingAs(reportsUser([Permission::ExportReports, Permission::ViewDashboard], DataScope::Global))->post(route('exports.generate', ['analytics', 'pdf']))->assertForbidden();
+    $this->actingAs(reportsUser([Permission::ViewReports, Permission::ExportReports], DataScope::Global))->post(route('exports.generate', ['analytics', 'xlsx']))->assertOk();
 });
 
 test('the export contains the same figures as the screen, within the viewer reach', function () {
@@ -237,7 +245,7 @@ test('a real PDF of the operational report is printed with Chrome', function () 
     app(RebuildConversationMetrics::class)->handle();
 
     $response = $this->actingAs(reportsUser([Permission::ViewReports, Permission::ExportReports], DataScope::Global))
-        ->get(route('exports.generate', ['analytics', 'pdf', 'period' => '7d']))
+        ->post(route('exports.generate', ['analytics', 'pdf', 'period' => '7d']))
         ->assertOk();
     $path = $response->baseResponse->getFile()->getPathname();
 
@@ -247,3 +255,134 @@ test('a real PDF of the operational report is printed with Chrome', function () 
     fn () => ! is_executable((string) config('exports.pdf.node_binary')) || ! is_executable((string) config('exports.pdf.chrome_path')),
     'Node or Chrome are not configured for this environment (EXPORTS_NODE_BINARY, EXPORTS_CHROME_PATH).',
 )->group('chrome');
+
+test('compliance is only rated against a configured objective, in business time', function () {
+    $receivedAt = CarbonImmutable::parse('2026-10-19 10:00', 'America/Mexico_City')->utc();
+    $fast = receivedConversation($this->sales, $this->ana, $receivedAt);
+    $slow = receivedConversation($this->sales, $this->ana, $receivedAt);
+    receivedConversation($this->sales, $this->ana, $receivedAt);
+    app(RebuildConversationMetrics::class)->handle();
+    ConversationMetric::query()->where('conversation_id', $fast->id)->update(['seconds_to_first_human_response' => 600, 'business_seconds_to_first_human_response' => 600]);
+    ConversationMetric::query()->where('conversation_id', $slow->id)->update(['seconds_to_first_human_response' => 90000, 'business_seconds_to_first_human_response' => 1800]);
+    $admin = User::factory()->administrator()->create();
+
+    $this->actingAs($admin)
+        ->get(route('reports.index', ['period' => '7d']))
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('analytics.summary.first_response_business_seconds', ['value' => 1200, 'previous' => null, 'samples' => 2])
+            ->where('analytics.summary.first_response_sla', null)
+            ->where('analytics.summary.resolution_sla', null)));
+
+    app(PlatformSettings::class)->update(['sla' => ['first_response_minutes' => 15]]);
+
+    $this->actingAs($admin)
+        ->get(route('reports.index', ['period' => '7d']))
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            // The unanswered conversation is not rated; the slow one missed the 15 min objective.
+            ->where('analytics.summary.first_response_sla', ['target_seconds' => 900, 'met' => 1, 'samples' => 2, 'rate' => 50, 'previous_rate' => null])
+            ->where('analytics.summary.resolution_sla', null)));
+});
+
+test('days and hours are grouped with the offset in force on each date', function () {
+    app(PlatformSettings::class)->update(['general' => ['timezone' => 'America/New_York']]);
+    // Daylight saving ends on 2026-11-01: 23:30 on 3 November is 04:30 UTC of the 4th.
+    receivedConversation($this->sales, $this->ana, CarbonImmutable::parse('2026-11-03 23:30', 'America/New_York')->utc());
+    receivedConversation($this->sales, $this->ana, CarbonImmutable::parse('2026-11-03 10:15', 'America/New_York')->utc());
+    app(RebuildConversationMetrics::class)->handle();
+
+    $this->actingAs(User::factory()->administrator()->create())
+        ->get(route('reports.index', ['period' => 'custom', 'from' => '2026-10-20', 'to' => '2026-11-10']))
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
+            // Tuesday (1) at 10:00 and 23:00 local time.
+            ->where('analytics.heatmap.cells.1.10', 1)
+            ->where('analytics.heatmap.cells.1.23', 1)
+            ->where('analytics.trend.points', fn ($points) => collect($points)->firstWhere('key', '2026-11-03')['received'] === 2
+                && collect($points)->firstWhere('key', '2026-11-04')['received'] === 0)));
+});
+
+test('the exported agent table follows the screen order and its own snapshot', function () {
+    $now = CarbonImmutable::now();
+    $beto = User::factory()->agent()->inDepartments($this->sales)->create(['name' => 'Beto Ventas']);
+    receivedConversation($this->sales, $this->ana, $now->subDay());
+    receivedConversation($this->sales, $beto, $now->subDay());
+    receivedConversation($this->sales, $beto, $now->subDay());
+    app(RebuildConversationMetrics::class)->handle();
+    $admin = User::factory()->administrator()->create();
+    $exporter = app(ReportExporter::class);
+    $definition = app(ReportRegistry::class)->find('analytics');
+    $context = $exporter->prepare($definition, $admin, ['period' => '7d']);
+
+    // The screen caches its figures; a new agent arrives afterwards.
+    $screen = app(OperationalAnalytics::class)->report($admin, AnalyticsFilters::from(['period' => '7d'], $admin, app(AnalyticsScope::class), 'America/Mexico_City'));
+    receivedConversation($this->sales, $this->carla, $now->subDay());
+    app(RebuildConversationMetrics::class)->handle();
+
+    $path = $exporter->temporaryPath(ExportFormat::Xlsx);
+    $written = $exporter->render($definition, $context, ExportFormat::Xlsx, $path);
+    $names = collect(IOFactory::createReader('Xlsx')->load($path)->getSheetByName('Reporte operativo')->toArray())
+        ->slice(6, $written)->pluck(0)->all();
+    @unlink($path);
+
+    expect(array_column($screen['by_agent'], 'name'))->toBe(['Beto Ventas', 'Ana Ventas'])
+        ->and($written)->toBe($definition->count($context))
+        ->and($names)->toBe(['Beto Ventas', 'Ana Ventas', 'Carla Soporte'])
+        ->and($names)->not->toContain('Sin datos');
+});
+
+test('the PDF keeps the totals with the last rows and totals every section like the workbook', function () {
+    $now = CarbonImmutable::now();
+    receivedConversation($this->sales, $this->ana, $now->subDay());
+    receivedConversation($this->sales, $this->ana, $now->subDay());
+    receivedConversation($this->support, $this->carla, $now->subDay());
+    app(RebuildConversationMetrics::class)->handle();
+    $exporter = app(ReportExporter::class);
+    $definition = app(ReportRegistry::class)->find('analytics');
+    $context = $exporter->prepare($definition, User::factory()->administrator()->create(), ['period' => '7d']);
+
+    $html = app(PdfRenderer::class)->html($definition, $context);
+    $tails = preg_match_all('#<tbody class="table-end">(.*?)</tbody>#s', $html, $matches);
+
+    expect($html)->not->toContain('<tfoot')
+        // Main table, "Por departamento" and "Por conexión".
+        ->and($tails)->toBe(3);
+
+    foreach ($matches[1] as $tail) {
+        expect($tail)->toContain('<tr class="row')
+            ->toContain('<tr class="totals">');
+    }
+
+    // The connection section sums every received conversation.
+    expect(preg_replace('/\s+/', ' ', strip_tags($matches[1][2])))->toMatch('/Total 3 /');
+});
+
+test('a queued export resolves a relative period at the moment it was requested', function () {
+    Queue::fake();
+    Storage::fake('local');
+    config(['exports.formats.xlsx.sync_rows' => 0]);
+    $this->travelTo(CarbonImmutable::parse('2026-10-21 23:59', 'America/Mexico_City')->utc());
+    receivedConversation($this->sales, $this->ana, CarbonImmutable::now()->subHour());
+    app(RebuildConversationMetrics::class)->handle();
+    $exporter = app(ReportExporter::class);
+    $definition = app(ReportRegistry::class)->find('analytics');
+    $context = $exporter->prepare($definition, reportsUser([Permission::ViewReports, Permission::ExportReports], DataScope::Global), ['period' => 'today']);
+
+    $transfer = $exporter->export($definition, $context, ExportFormat::Xlsx);
+
+    // The worker picks it up two minutes later, already on the next day.
+    $this->travelTo(CarbonImmutable::parse('2026-10-22 00:01', 'America/Mexico_City')->utc());
+    // Queued (and holding its unique lock): the worker runs the job itself.
+    Queue::assertPushed(GenerateReport::class);
+    app()->call([new GenerateReport($transfer->id), 'handle']);
+
+    $transfer->refresh();
+    $stored = Storage::disk('local')->path($transfer->path);
+    $text = collect(IOFactory::createReader('Xlsx')->load($stored)->getAllSheets())
+        ->flatMap(fn ($sheet) => collect($sheet->toArray())->flatten())
+        ->implode('|');
+
+    expect($transfer->status)->toBe(DataTransferStatus::Completed)
+        ->and($transfer->rows_total)->toBe(1)
+        ->and($text)->toContain('Periodo: 21 oct 2026')
+        ->and($text)->toContain('Ana Ventas')
+        ->and($text)->not->toContain('Periodo: 22 oct 2026');
+});

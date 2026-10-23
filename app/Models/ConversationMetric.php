@@ -20,13 +20,15 @@ use Illuminate\Support\Carbon;
  * @property int|null $agent_id Current (or last, once closed) responsible agent.
  * @property ConversationStatus $status
  * @property Carbon $received_at When the conversation was created.
- * @property Carbon|null $first_assigned_at First acceptance or assignment to an agent.
+ * @property Carbon|null $first_assigned_at First human attention: acceptance, manual assignment, transfer to an agent or first human reply (automatic distribution excluded).
  * @property Carbon|null $first_human_response_at First agent message accepted by the provider (automatic and failed ones excluded).
  * @property Carbon|null $resolved_at First closing.
  * @property Carbon|null $last_closed_at
  * @property int|null $seconds_to_first_attention
  * @property int|null $seconds_to_first_human_response
  * @property int|null $seconds_to_resolution
+ * @property int|null $business_seconds_to_first_human_response Seconds inside the attention hours of the receiving department (frozen once computed).
+ * @property int|null $business_seconds_to_resolution Seconds inside the attention hours of the receiving department (frozen once computed).
  * @property int $closed_count
  * @property int $reopened_count
  * @property int $transfers_count

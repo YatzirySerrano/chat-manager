@@ -42,6 +42,7 @@ use App\Support\InboundSender;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Connection as DatabaseConnection;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
@@ -645,4 +646,125 @@ test('two accepts by the same agent at once never exceed the attention limit', f
 
     expect(fn () => throughConnection('second', $accept($two)))->toThrow(ConversationConflict::class, 'Ya atiendes el máximo de 1 conversaciones permitido.')
         ->and(throughConnection('second', fn () => Conversation::query()->where('assigned_user_id', $agent->id)->count()))->toBe(1);
+});
+
+test('an accept takes the department row before the agent row, the order of an automatic distribution', function () {
+    $first = concurrentConnection('first');
+    $second = concurrentConnection('second');
+
+    [$agent, $department, $queued] = throughConnection('first', function () {
+        $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            $department,
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+
+    // A new inbound conversation of the department holds its row while it chooses an agent.
+    $first->beginTransaction();
+    throughConnection('first', fn () => Department::query()->lockForUpdate()->findOrFail($department->id));
+
+    // The accept waits for the department (inside an open transaction, so it
+    // surfaces as a concurrency error); the rolled back savepoint would keep
+    // any lock it took before (InnoDB), so the agent row must still be free.
+    $second->beginTransaction();
+    expect(fn () => throughConnection('second', fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($queued->id), User::query()->findOrFail($agent->id))))
+        ->toThrow(DeadlockException::class, 'Lock wait timeout');
+
+    expect(throughConnection('first', fn () => app(ConversationLifecycle::class)->freshUser($agent->id)->id))->toBe($agent->id);
+
+    $first->rollBack();
+    $second->rollBack();
+});
+
+test('a distribution in one department does not hold the other departments of the chosen agent', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$agent, $support, $sales, $conversation] = throughConnection('first', function () {
+        $support = Department::factory()->distribution(DistributionMode::Automatic)->create();
+        $sales = Department::factory()->distribution(DistributionMode::Automatic)->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments([$support, $sales])->create(),
+            $support,
+            $sales,
+            Conversation::factory()->inDepartment($support)->create(),
+        ];
+    });
+
+    $first->beginTransaction();
+    expect(throughConnection('first', fn () => app(AssignAutomatically::class)->distributeQueue(Department::query()->findOrFail($support->id))))->toBe(1);
+
+    // The other department's arrivals lock their own row without waiting;
+    // only the agent row (taken after it, as everywhere) is serialized.
+    $second = DB::connection('second');
+    $second->beginTransaction();
+    expect(throughConnection('second', fn () => Department::query()->lockForUpdate()->findOrFail($sales->id)->id))->toBe($sales->id);
+    $second->rollBack();
+
+    $first->commit();
+
+    expect(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->toBe($agent->id);
+});
+
+test('a transfer and an accept of the same conversation at once leave a single responsible', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$admin, $ana, $beto, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->create();
+
+        return [
+            User::factory()->administrator()->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            User::factory()->agent()->available()->inDepartments($department)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $accept = fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($beto->id));
+
+    $first->beginTransaction();
+    throughConnection('first', fn () => app(TransferConversation::class)->handle(
+        Conversation::query()->findOrFail($conversation->id), null, User::query()->findOrFail($ana->id), User::query()->findOrFail($admin->id), null, 0,
+    ));
+
+    expect(fn () => throughConnection('second', $accept))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(fn () => throughConnection('second', $accept))->toThrow(ConversationConflict::class, 'Otra persona ya aceptó esta conversación.')
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
+        ->assigned_user_id->toBe($ana->id)
+        ->version->toBe(1);
+});
+
+test('an accept and an automatic assignment for the same agent at once never exceed their own limit', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$agent, $department, $accepted, $arrived] = throughConnection('first', function () {
+        $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments($department)->create(['max_open_conversations' => 1]),
+            $department,
+            Conversation::factory()->inDepartment($department)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $distribute = fn () => DB::transaction(fn () => app(AssignAutomatically::class)->handle(Conversation::query()->lockForUpdate()->findOrFail($arrived->id)));
+
+    $first->beginTransaction();
+    throughConnection('first', fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($accepted->id), User::query()->findOrFail($agent->id)));
+
+    expect(fn () => throughConnection('second', $distribute))->toThrow(QueryException::class, 'Lock wait timeout');
+
+    $first->commit();
+
+    expect(throughConnection('second', $distribute))->toBeNull()
+        ->and(throughConnection('second', fn () => Conversation::query()->where('assigned_user_id', $agent->id)->count()))->toBe(1)
+        ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($arrived->id)->status))->toBe(ConversationStatus::Pending);
 });

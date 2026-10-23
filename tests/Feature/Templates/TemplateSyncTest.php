@@ -134,3 +134,61 @@ test('quality updates are applied as reported', function () {
 
     expect($template->refresh()->quality_score)->toBe('YELLOW');
 });
+
+/**
+ * A template webhook with the entry time Meta reports.
+ *
+ * @param  array<string, mixed>  $value
+ * @return array<string, mixed>
+ */
+function timedTemplateWebhook(Connection $connection, array $value, int $time, string $field = 'message_template_status_update'): array
+{
+    $payload = WhatsAppFixtures::envelope($connection, $field, $value);
+    $payload['entry'][0]['time'] = $time;
+
+    return $payload;
+}
+
+test('a template status update older than the recorded one is ignored, and a replay changes nothing', function () {
+    $template = TemplateFixtures::stored($this->connection, ['meta_template_id' => '779']);
+    $process = fn (array $payload) => app(ProcessWebhookPayload::class)->handle($this->connection, $payload);
+    $rejected = timedTemplateWebhook($this->connection, ['event' => 'REJECTED', 'message_template_id' => 779, 'reason' => 'INCORRECT_CATEGORY'], now()->subMinutes(5)->getTimestamp());
+    $approvedEarlier = timedTemplateWebhook($this->connection, ['event' => 'APPROVED', 'message_template_id' => 779], now()->subMinutes(10)->getTimestamp());
+
+    $process($rejected);
+    $process($approvedEarlier);
+    $process($rejected);
+
+    expect($template->refresh())
+        ->status->toBe(MessageTemplateStatus::Rejected)
+        ->rejected_reason->toBe('INCORRECT_CATEGORY')
+        ->status_updated_at->getTimestamp()->toBe(now()->subMinutes(5)->getTimestamp());
+});
+
+test('a template reported again after being deleted is no longer deleted', function () {
+    $template = TemplateFixtures::stored($this->connection, ['meta_template_id' => '780']);
+    $process = fn (array $payload) => app(ProcessWebhookPayload::class)->handle($this->connection, $payload);
+
+    $process(timedTemplateWebhook($this->connection, ['event' => 'DELETED', 'message_template_id' => 780], now()->subMinutes(5)->getTimestamp()));
+    expect($template->refresh()->isDeleted())->toBeTrue();
+
+    $process(timedTemplateWebhook($this->connection, ['event' => 'APPROVED', 'message_template_id' => 780], now()->subMinute()->getTimestamp()));
+
+    expect($template->refresh())
+        ->isDeleted()->toBeFalse()
+        ->status->toBe(MessageTemplateStatus::Approved);
+});
+
+test('a connection error replayed long after Meta reported it is not applied again', function () {
+    $error = ['messaging_product' => 'whatsapp', 'metadata' => ['phone_number_id' => $this->connection->phone_number_id], 'errors' => [['code' => 131000, 'title' => 'Something went wrong']]];
+    $process = fn (int $time) => app(ProcessWebhookPayload::class)->handle($this->connection, timedTemplateWebhook($this->connection, $error, $time, 'messages'));
+
+    $summary = $process(now()->subDays(8)->getTimestamp());
+
+    expect($this->connection->refresh()->last_error_at)->toBeNull()
+        ->and($summary['ignored'])->toBe(1);
+
+    $process(now()->subMinute()->getTimestamp());
+
+    expect($this->connection->refresh()->last_error_at)->not->toBeNull();
+});

@@ -242,7 +242,7 @@ class ConversationDossierReport extends ReportDefinition
             new Column('body', 'Nota', width: 62),
             new Column('edited_at', 'Editada', ColumnType::DateTime, width: 15),
         ], $this->notes($conversation), inPdf: true, beforeTable: true,
-            description: 'Visibles solo para el equipo; nunca se envían al cliente.');
+            description: 'Visibles solo para el equipo; nunca se envían al cliente (las primeras '.number_format(self::MAX_ENTRIES).' notas; el historial completo se consulta en la conversación).');
 
         return $sheets;
     }

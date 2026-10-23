@@ -81,7 +81,8 @@ test('a new message announces itself; a repeated delivery announces nothing and 
         ->and($contact->profile_name)->toBe('Laura');
     Event::assertDispatchedTimes(MessageRecorded::class, 1);
     Event::assertDispatched(MessageRecorded::class, fn (MessageRecorded $event): bool => $event->direction === 'inbound');
-    Event::assertDispatched(ConversationChanged::class, fn (ConversationChanged $event): bool => $event->reason === 'message');
+    // MessageRecorded is the only event of a message (no duplicate "message" change).
+    Event::assertNotDispatched(ConversationChanged::class, fn (ConversationChanged $event): bool => $event->reason === 'message');
 });
 
 test('the connection records inbound traffic as health evidence', function () {

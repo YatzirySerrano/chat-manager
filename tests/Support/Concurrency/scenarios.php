@@ -21,12 +21,17 @@ use App\Actions\Users\UpdateUser;
 use App\Jobs\DeliverOutboundMessage;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\Connection;
+use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\ConversationPendingNotification;
+use App\Notifications\NotificationCenter;
 use App\Services\Meta\WhatsAppTransport;
+use App\Support\ReadCommittedTransaction;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -230,6 +235,61 @@ return [
             '--sleep' => 1,
             '--tries' => 1,
         ]);
+    },
+
+    /*
+     * The notifications worker telling an agent that a conversation entered
+     * the queue of a department (aggregated per department).
+     */
+    'notify-pending' => function (array $arguments): string {
+        User::query()->findOrFail((int) $arguments['user_id'])->notifyNow(new ConversationPendingNotification(
+            (int) $arguments['conversation_id'],
+            (int) $arguments['department_id'],
+            (int) $arguments['event_id'],
+        ));
+
+        return 'notified';
+    },
+
+    /*
+     * The agent marking every notification read from the bell.
+     */
+    'mark-all-read' => function (array $arguments): int {
+        return app(NotificationCenter::class)->markAllRead(User::query()->findOrFail((int) $arguments['user_id']));
+    },
+
+    /*
+     * Counts contacts twice inside one ReadCommittedTransaction, letting the
+     * test commit a new contact in between: READ COMMITTED sees it on the
+     * second read, REPEATABLE READ would not.
+     */
+    'read-committed-probe' => function (array $arguments, Closure $say, Closure $await): array {
+        return app(ReadCommittedTransaction::class)->run('test.probe', function () use ($say, $await): array {
+            $before = Contact::query()->count();
+
+            $say('HOLDING');
+            $await('CONTINUE');
+
+            return [$before, Contact::query()->count()];
+        });
+    },
+
+    /*
+     * A READ COMMITTED transaction chosen as the deadlock victim the given
+     * number of times (simulated); returns the attempt that succeeded.
+     */
+    'read-committed-retry' => function (array $arguments): int {
+        $attempt = 0;
+
+        return app(ReadCommittedTransaction::class)->run('test.retry', function () use ($arguments, &$attempt): int {
+            $attempt++;
+
+            if ($attempt <= (int) $arguments['deadlocks']) {
+                throw new QueryException('mariadb', 'insert into contacts', [], new PDOException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction'));
+            }
+
+            return $attempt;
+        });
     },
 
     'revoke-permission' => function (array $arguments): string {

@@ -26,7 +26,8 @@ use Throwable;
 /**
  * The responsible agent writes an ordinary reply: text, or one file (image,
  * document, audio or video) with an optional caption. It is accepted only
- * while the customer service window is open, stored once per client
+ * while the conversation's connection can send (Connection::
+ * sendingBlockReason) and the customer service window is open, stored once per client
  * reference (double submissions are harmless and never store the file
  * twice) and handed to the delivery job, which checks the window again right
  * before calling the provider. Templates cannot be sent from here. Replies
@@ -68,6 +69,15 @@ class QueueOutboundMessage
                     }
 
                     return $existing;
+                }
+
+                // Checked again by the delivery job right before calling Meta.
+                $connectionBlock = $conversation->channelConnection === null
+                    ? 'La conversación no tiene una conexión de WhatsApp disponible para enviar mensajes.'
+                    : $conversation->channelConnection->sendingBlockReason();
+
+                if ($connectionBlock !== null) {
+                    throw new ConversationConflict($connectionBlock);
                 }
 
                 $window = $this->window->for($conversation);

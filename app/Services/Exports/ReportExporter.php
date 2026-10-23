@@ -47,7 +47,7 @@ class ReportExporter
      * Authorize the actor and validate the filters of the request.
      *
      * @param  ReportDefinition<Model>  $definition
-     * @param  array<string, mixed>  $input  Raw query string.
+     * @param  array<string, mixed>  $input  Raw filters of the export request.
      *
      * @throws AuthorizationException
      * @throws ValidationException
@@ -115,8 +115,9 @@ class ReportExporter
 
     /**
      * @param  array<string, mixed>  $filters  Already validated and normalized.
+     * @param  CarbonImmutable|null  $requestedAt  When a queued export was requested (relative periods resolve against it).
      */
-    public function context(User $actor, array $filters): ReportContext
+    public function context(User $actor, array $filters, ?CarbonImmutable $requestedAt = null): ReportContext
     {
         $timezone = (string) $this->settings->get('general.timezone', config('app.timezone'));
 
@@ -126,6 +127,7 @@ class ReportExporter
             generatedAt: CarbonImmutable::now($timezone),
             platformName: (string) $this->settings->get('general.platform_name', config('app.name')),
             timezone: $timezone,
+            requestedAt: $requestedAt?->setTimezone($timezone),
         );
     }
 
@@ -139,7 +141,7 @@ class ReportExporter
     public function export(ReportDefinition $definition, ReportContext $context, ExportFormat $format): BinaryFileResponse|DataTransfer
     {
         $rows = $definition->count($context);
-        $this->ensureWithinLimit($rows, $format);
+        $this->ensureWithinLimit($rows, $format, $this->maxRows($definition, $format));
 
         if ($rows > $format->syncThreshold()) {
             return $this->queue($definition, $context, $format, $rows);
@@ -182,20 +184,41 @@ class ReportExporter
             $connection->statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         }
 
-        return $connection->transaction(fn (): int => $this->renderer($format)->render($definition, $context, $path, $format->maxRows()));
+        return $connection->transaction(fn (): int => $this->renderer($format)->render($definition, $context, $path, $this->maxRows($definition, $format)));
+    }
+
+    /**
+     * Most rows of the report in the format. The XLSX workbook is built in
+     * memory (about 0.8 KB per cell measured with PhpSpreadsheet), so its
+     * limit is also capped by `max_cells` divided by the report's columns:
+     * a wide report gets fewer rows instead of exhausting the worker memory.
+     *
+     * @param  ReportDefinition<Model>  $definition
+     */
+    public function maxRows(ReportDefinition $definition, ExportFormat $format): int
+    {
+        $maxCells = (int) config("exports.formats.{$format->value}.max_cells", 0);
+
+        if ($maxCells <= 0) {
+            return $format->maxRows();
+        }
+
+        return min($format->maxRows(), max(1, intdiv($maxCells, max(1, count($definition->columns())))));
     }
 
     /**
      * @throws ValidationException
      */
-    public function ensureWithinLimit(int $rows, ExportFormat $format): void
+    public function ensureWithinLimit(int $rows, ExportFormat $format, ?int $maxRows = null): void
     {
-        if ($rows <= $format->maxRows()) {
+        $maxRows ??= $format->maxRows();
+
+        if ($rows <= $maxRows) {
             return;
         }
 
         $count = number_format($rows);
-        $max = number_format($format->maxRows());
+        $max = number_format($maxRows);
 
         throw ValidationException::withMessages([
             'export' => "El reporte tiene {$count} registros y el máximo para {$format->label()} es {$max}. Aplica filtros para reducirlo e inténtalo de nuevo.",
@@ -249,7 +272,10 @@ class ReportExporter
             'status' => DataTransferStatus::Queued,
             'user_id' => $context->actor->id,
             'filters' => $context->filters,
-            'options' => ['filter_labels' => $definition->describeFilters($context)],
+            'options' => [
+                'filter_labels' => $definition->describeFilters($context),
+                'requested_at' => $context->asOf()->toIso8601String(),
+            ],
             'disk' => (string) config('exports.disk'),
             'file_name' => $this->fileName($definition, $context, $format),
             'rows_total' => $rows,

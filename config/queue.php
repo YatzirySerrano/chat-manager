@@ -105,15 +105,17 @@ return [
     |--------------------------------------------------------------------------
     |
     | One queue per responsibility, so a burst of one kind of work never
-    | delays the critical path. Workers are grouped by priority (see
-    | deploy/supervisor and docs/infraestructura-y-despliegue.md):
-    | webhooks + messages, media, notifications + default, exports.
+    | delays the critical path. Every queue has dedicated workers (see
+    | deploy/supervisor, deploy/systemd and docs/tiempo-real.md):
+    | webhooks + messages, realtime, notifications, media, default, exports.
+    | REALTIME_QUEUE and EXPORTS_QUEUE override "realtime" and "exports".
     |
     */
 
     'names' => [
         'webhooks' => env('QUEUE_NAME_WEBHOOKS', 'webhooks'),
         'messages' => env('QUEUE_NAME_MESSAGES', 'messages'),
+        'realtime' => env('QUEUE_NAME_REALTIME', 'realtime'),
         'media' => env('QUEUE_NAME_MEDIA', 'media'),
         'notifications' => env('QUEUE_NAME_NOTIFICATIONS', 'notifications'),
         'exports' => env('QUEUE_NAME_EXPORTS', 'exports'),

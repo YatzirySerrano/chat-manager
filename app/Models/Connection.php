@@ -247,6 +247,24 @@ class Connection extends Model
     }
 
     /**
+     * Why a reply through this connection is known to fail right now, in
+     * Spanish for the agent; null when it may be sent. It covers what is
+     * certain before calling Meta: a deleted or deactivated connection,
+     * missing credentials and credentials Meta rejected in the last
+     * verification. Unverified credentials do not block: Meta decides.
+     */
+    public function sendingBlockReason(): ?string
+    {
+        return match (true) {
+            $this->isDeleted() => "La conexión de WhatsApp «{$this->name}» fue eliminada: ya no se pueden enviar mensajes desde esta conversación. El historial sigue disponible.",
+            ! $this->is_active => "La conexión de WhatsApp «{$this->name}» está desactivada: no se pueden enviar mensajes hasta que un administrador la vuelva a activar.",
+            ! $this->hasRequiredCredentials() => "La conexión de WhatsApp «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
+            filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de WhatsApp «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",
+            default => null,
+        };
+    }
+
+    /**
      * @param  Builder<Connection>  $query
      */
     #[Scope]

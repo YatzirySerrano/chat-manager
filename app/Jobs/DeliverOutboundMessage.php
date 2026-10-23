@@ -10,6 +10,7 @@ use App\Events\Messaging\MessageStatusChanged;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
+use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Meta\ConnectionMonitor;
@@ -22,6 +23,7 @@ use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -33,8 +35,10 @@ use Throwable;
  *    "sending". A second worker holding the same job finds it claimed and
  *    does nothing, so one message is never sent twice by two workers.
  *    Right before claiming, the connection must still be operational, the
- *    customer service window must allow free-form messages (templates are
- *    exempt) and a template must still be approved; otherwise the message
+ *    human author must still be allowed to reply (ConversationPolicy::reply;
+ *    automatic messages have no author), the customer service window must
+ *    allow free-form messages (templates are exempt) and a template must
+ *    still be approved; otherwise the message
  *    fails without reaching Meta.
  * 2. Send, outside any transaction.
  * 3. Record: Meta's message id makes it "accepted" (never "delivered": only
@@ -143,6 +147,15 @@ class DeliverOutboundMessage implements ShouldQueue
                 return null;
             }
 
+            // The person who queued (or last retried) a reply must still be
+            // able to reply now: the conversation may have been transferred,
+            // closed or paused, or the account deactivated, while it waited.
+            if (! $this->senderMayStillReply($message, $conversation)) {
+                $this->block($lifecycle, $conversation, $message, 'sender_not_allowed', 'Quien escribió el mensaje ya no puede responder esta conversación (cambió de responsable, se cerró o se pausó, o la cuenta perdió el permiso); no se envió.');
+
+                return null;
+            }
+
             if ($message->type === MessageType::Template) {
                 $reason = $this->templateRefusal($message, $conversation);
 
@@ -173,6 +186,27 @@ class DeliverOutboundMessage implements ShouldQueue
 
             return $message;
         });
+    }
+
+    /**
+     * Messages without a human author (automatic system messages) are exempt;
+     * a manual retry makes the person who retried it the author.
+     */
+    private function senderMayStillReply(Message $message, Conversation $conversation): bool
+    {
+        $history = $message->metadata['delivery']['history'] ?? null;
+        $lastRetry = is_array($history) && $history !== [] ? end($history) : null;
+        $senderId = is_array($lastRetry) && is_int($lastRetry['retried_by_user_id'] ?? null)
+            ? $lastRetry['retried_by_user_id']
+            : $message->sender_user_id;
+
+        if ($senderId === null) {
+            return true;
+        }
+
+        $sender = User::query()->with(['roles', 'departments'])->find($senderId);
+
+        return $sender !== null && Gate::forUser($sender)->allows('reply', $conversation);
     }
 
     private function templateRefusal(Message $message, Conversation $conversation): ?string

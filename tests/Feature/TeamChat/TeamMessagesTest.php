@@ -1,5 +1,8 @@
 <?php
 
+use App\Actions\TeamChat\PostTeamMessage;
+use App\Actions\TeamChat\TeamChatSearch;
+use App\Actions\TeamChat\TeamThreadListQuery;
 use App\Events\TeamChat\Broadcasts\TeamChatUserSignal;
 use App\Events\TeamChat\Broadcasts\TeamThreadSignal;
 use App\Events\TeamChat\TeamMessagePosted;
@@ -9,7 +12,10 @@ use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\TeamChat\TeamThreadActivity;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -202,6 +208,30 @@ test('the latest message pointer never moves back when messages are recorded out
         ->assertJsonPath('last_read_message_id', $newer->id);
 });
 
+test('a message is not stored when the author was removed after the request was authorized', function () {
+    Storage::fake('local');
+    $group = TeamThread::factory()->withParticipants([$this->beto], [$this->ana])->create(['name' => 'Soporte']);
+    $stale = $group->fresh();
+    $group->participations()->where('user_id', $this->beto->id)->update(['left_at' => now()]);
+
+    expect(fn () => app(PostTeamMessage::class)->handle($stale, $this->beto, 'Tarde', null, [UploadedFile::fake()->createWithContent('nota.txt', 'texto')]))
+        ->toThrow(fn (AuthorizationException $exception) => expect($exception->status())->toBe(404));
+
+    expect(TeamMessage::query()->where('team_thread_id', $group->id)->where('kind', 'message')->count())->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('a message is not stored when the group was archived after the request was authorized', function () {
+    $group = TeamThread::factory()->withParticipants([$this->beto], [$this->ana])->create(['name' => 'Soporte']);
+    $stale = $group->fresh();
+    $group->forceFill(['archived_at' => now()])->save();
+
+    expect(fn () => app(PostTeamMessage::class)->handle($stale, $this->ana, 'Tarde', null))
+        ->toThrow(AuthorizationException::class, 'El grupo está archivado: ya no se pueden enviar mensajes.');
+
+    expect(TeamMessage::query()->where('team_thread_id', $group->id)->count())->toBe(0);
+});
+
 test('the read marker never moves backwards', function () {
     $first = TeamMessage::factory()->in($this->thread, $this->beto)->create();
     $second = TeamMessage::factory()->in($this->thread, $this->beto)->create();
@@ -226,6 +256,37 @@ test('search only matches messages of the viewer threads', function () {
 
     $this->actingAs($this->ana)->getJson(route('team-chat.search', ['q' => '%']))->assertJsonCount(0, 'data');
     $this->actingAs($this->ana)->getJson(route('team-chat.search', ['q' => '100%']))->assertJsonCount(1, 'data');
+});
+
+test('search returns the latest matches and tells when more exist, never counting other threads', function () {
+    $foreign = TeamThread::factory()->withParticipants([$this->beto])->create();
+    TeamMessage::factory()->count(5)->in($foreign, $this->beto)->create(['body' => 'pedido urgente']);
+    TeamMessage::factory()->count(TeamChatSearch::LIMIT)->in($this->thread, $this->beto)->create(['body' => 'pedido normal']);
+
+    $this->actingAs($this->ana)->getJson(route('team-chat.search', ['q' => 'pedido']))
+        ->assertJsonCount(TeamChatSearch::LIMIT, 'data')
+        ->assertJsonPath('has_more', false);
+
+    $newest = TeamMessage::factory()->in($this->thread, $this->ana)->create(['body' => 'pedido nuevo']);
+
+    $this->actingAs($this->ana)->getJson(route('team-chat.search', ['q' => 'pedido']))
+        ->assertJsonCount(TeamChatSearch::LIMIT, 'data')
+        ->assertJsonPath('data.0.message_id', $newest->id)
+        ->assertJsonPath('has_more', true);
+});
+
+test('the thread list pages up to the published maximum', function () {
+    TeamThread::factory()->count(2)->withParticipants([$this->ana])->create();
+
+    $this->actingAs($this->ana)->get(route('team-chat.index', ['limit' => 2]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('threads.threads', 2)
+            ->where('threads.has_more', true)
+            ->where('limits.maxThreads', TeamThreadListQuery::MAX_LIMIT)
+            ->where('limits.reactions', config('team-chat.reactions')));
+
+    $this->actingAs($this->ana)->get(route('team-chat.index', ['limit' => 3]))
+        ->assertInertia(fn (Assert $page) => $page->has('threads.threads', 3)->where('threads.has_more', false));
 });
 
 test('threads are found by group name or participant name', function () {

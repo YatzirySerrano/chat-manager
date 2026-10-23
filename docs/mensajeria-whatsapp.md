@@ -99,6 +99,23 @@ procesados y 90 para fallidos (`whatsapp:maintenance prune-webhooks`, diario).
   tráfico a su historial.
 - **Inactiva (pausada, no eliminada):** se siguen **recibiendo y guardando** los mensajes de clientes para no perder
   ninguno mientras un administrador la pausa; **el envío queda bloqueado** (`connection_unavailable`).
+- **En la bandeja:** la conversación lleva el estado de su conexión (`connection.state` = `active`, `inactive` o
+  `deleted`; `can_send`, `send_block_reason`, `credentials_verified`; regla única en
+  `Connection::sendingBlockReason()`). Con una conexión pausada, eliminada, sin credenciales guardadas o con
+  credenciales rechazadas por Meta, el compositor explica el motivo en lugar del campo de respuesta, no ofrece
+  adjuntos, plantillas ni reintentos, y deja ver el historial y agregar notas internas a quien tenga permiso. Con
+  credenciales sin verificar (p. ej. conexión restaurada y reactivada) el envío se permite, pero el compositor muestra
+  una advertencia.
+- **Al encolar:** `QueueOutboundMessage` (texto o archivo), `QueueTemplateMessage` (plantilla) y
+  `RetryOutboundMessage` (reintento manual) aplican la misma regla y rechazan con `409` y el mismo motivo un envío
+  hacia una conexión que no puede enviar, sin guardar el mensaje ni el archivo, sin encolar nada y, en el reintento,
+  sin registrar la auditoría de riesgo de duplicado; un reenvío de red con un `client_reference` ya guardado
+  devuelve el mensaje existente. Ante un `409` el compositor recarga la conversación y conserva el borrador. El job
+  vuelve a comprobar la conexión en el momento del envío (carrera entre la carga y el envío).
+- **Tiempo real:** activar, desactivar, eliminar, restaurar, verificar o reemplazar credenciales emite
+  `ConnectionStatusChanged`; `BroadcastConnectionChange` (también ante `ConnectionHealthChanged`) envía
+  `conversation.changed` (solo `reason = connection_changed`, sin datos del cliente, en lotes de 100 canales) a cada conversación no
+  cerrada de la conexión, y el chat abierto recarga su estado.
 
 ### 2.6 Salud y diagnóstico
 
@@ -110,7 +127,12 @@ con alto volumen.
 
 La ficha de la conexión muestra la tarjeta «Integración con WhatsApp Cloud API»: modo de transporte, URL del webhook,
 secretos guardados (sí/no), verificación, suscripción de la app, eventos de las últimas 24 h, último error, mensajes
-sin confirmación, avisos de Meta y plantillas. Acciones: **Revisar suscripción** (`GET /{waba}/subscribed_apps`),
+sin confirmación, mensajes con **entrega sin confirmar** (`delivery_unknown`) de los últimos 7 días con enlace a las
+conversaciones afectadas que el usuario puede ver (máximo 10, respetando su visibilidad), el piloto controlado si
+está configurado (§9), avisos de Meta y plantillas.
+
+La salud «Operativa» exige además credenciales verificadas: el tráfico histórico no avala un token cambiado o una
+conexión restaurada (se muestra «Recibiendo mensajes» o «Configurada sin verificar» hasta volver a verificar). Acciones: **Revisar suscripción** (`GET /{waba}/subscribed_apps`),
 **Suscribir app** (`POST /{waba}/subscribed_apps`) y **Sincronizar plantillas**; requieren `connections.manage`
 (y `templates.manage` para sincronizar) y quedan auditadas.
 
@@ -132,7 +154,9 @@ Una conexión es un número de WhatsApp Business registrado en Meta (pantalla **
 - **Dos estados independientes:** `is_active` (Activar/Desactivar; activar exige identificadores y token guardados) y
   `deleted_at` (Eliminar/Restaurar, baja lógica). Desactivada: sigue recibiendo, no envía (§2.5). Eliminada: queda
   inactiva, conserva conversaciones e historial, reserva su Phone number ID, es de solo lectura y su URL de webhook
-  responde 404. Una conexión restaurada vuelve **inactiva y con credenciales por verificar**.
+  responde 404. Una conexión restaurada vuelve **inactiva, con credenciales por verificar y sin la verificación del
+  webhook ni la suscripción de la app** (se conserva el historial de tráfico). Al activarla sin credenciales
+  verificadas el aviso es de advertencia, no de éxito.
 - Un problema de salud (`error`, `credentials_invalid`) notifica a quienes tienen permisos de conexiones
   ([notificaciones-y-horarios.md](notificaciones-y-horarios.md)); la página Administración > Sistema permite probarla.
 
@@ -170,7 +194,9 @@ Tipos admitidos y texto legible guardado en `messages.body` (el contenido origin
 1. Al guardar el mensaje se crea un `message_attachments` con `status = pending`, `whatsapp_media_id`, tipo declarado
    y nombre saneado (solo para mostrar).
 2. `DownloadInboundMedia` (cola `media`, 4 intentos con espera) pide `GET /{media-id}` (URL de corta vida; se pide una
-   nueva en cada intento), revisa el tamaño declarado, y descarga con el token en la cabecera `Authorization` **solo
+   nueva en cada intento), revisa el tamaño declarado y descarga contando los bytes mientras llegan: si el archivo
+   supera el máximo de su tipo (aunque Meta no haya informado el tamaño), la transferencia se corta y el adjunto queda
+   `too_large` sin guardarse; descarga con el token en la cabecera `Authorization` **solo
    desde hosts de Meta** (`*.fbsbx.com`, `*.facebook.com`, `*.fbcdn.net`, `*.whatsapp.net`). El token nunca va en la URL
    ni en logs.
 3. `MediaStorage` valida el tipo real con `finfo` y el tamaño (límites en `config/whatsapp.php`, alineados a Meta:
@@ -226,7 +252,9 @@ Cada cambio emite `MessageStatusChanged(id, conversación, estado, anterior)`.
 
 1. **Reclamo:** bajo bloqueo de la fila, solo un mensaje `queued` pasa a `sending`. Dos workers con el mismo trabajo
    envían una sola vez (prueba de concurrencia incluida). Antes de reclamar se vuelve a comprobar que la conexión
-   esté operativa, que la ventana de 24 h permita texto libre (las plantillas están exentas) y que la plantilla siga
+   esté operativa, que quien escribió el mensaje (o quien lo reintentó por última vez) todavía pueda responder la
+   conversación (`ConversationPolicy::reply`: conversación abierta, responsable y permiso; si no, `sender_not_allowed`;
+   los mensajes automáticos sin autor están exentos), que la ventana de 24 h permita texto libre (las plantillas están exentas) y que la plantilla siga
    aprobada; si no, falla sin llegar a Meta y registra el evento `outbound_blocked`.
 2. **Envío** fuera de transacciones: `POST /{phone-number-id}/messages` con `to`, contenido, `context.message_id` si
    responde a un mensaje y `biz_opaque_callback_data`.
@@ -253,7 +281,9 @@ Los mensajes de error se sanean: nunca contienen el token (`[token]`), ni cadena
 `php artisan whatsapp:maintenance reconcile-deliveries` (cada 5 minutos) marca como `failed / delivery_unknown` los
 mensajes `sending` sin evidencia después de `WHATSAPP_RECONCILE_AFTER_MINUTES` (15). **Nunca se reenvían
 automáticamente**, porque Meta pudo haberlos aceptado. Si después llega un estado de Meta con su callback data, el
-mensaje se corrige solo.
+mensaje se corrige solo. En la conversación se muestran como **«Entrega sin confirmar»** (tono de advertencia, no de
+fallo definitivo) con el motivo y el aviso de que el cliente pudo haberlos recibido; nunca se marcan como entregados o
+leídos sin evidencia. La tarjeta de diagnóstico de la conexión los cuenta (§2.6).
 
 ### 5.5 Reintento manual
 
@@ -263,7 +293,10 @@ la misma fila** (conserva su `client_reference`, por lo que la idempotencia del 
 fallido queda en `metadata.delivery.history` (código, mensaje, `wamid`, quién y cuándo) y se registra el evento de
 conversación `message_retried`. Reglas: solo mensajes `failed` de esa conversación (otra conversación → 404); para
 `delivery_unknown` se exige `confirm=true` (riesgo de duplicado aceptado explícitamente); texto libre solo con la
-ventana abierta; plantillas solo si siguen aprobadas. Cada reintento abre un nuevo ciclo de reintentos automáticos.
+ventana abierta; plantillas solo si siguen aprobadas; la conexión debe poder enviar. Aceptar el riesgo de duplicado
+queda además en la bitácora central (`AuditAction::MessageRetriedWithDuplicateRisk`,
+`conversation.message_retried_duplicate_risk`, con actor, conversación y mensaje). Cada reintento abre un nuevo ciclo
+de reintentos automáticos.
 
 ## 6. Ventana de atención y costos
 
@@ -299,7 +332,9 @@ ventana abierta; plantillas solo si siguen aprobadas. Cada reintento abre un nue
   (`{"header.1": "…", "body.1": "…", "button.0.1": "…", "header.media": "https://…"}`) valida cada variable (todas
   obligatorias, sin saltos de línea, tabuladores ni más de 4 espacios seguidos, encabezado ≤ 60 caracteres, cuerpo ≤
   1024 por variable, sin variables desconocidas), rechaza plantillas no aprobadas o de otra conexión, guarda el texto
-  renderizado como cuerpo del mensaje y funciona fuera de la ventana.
+  renderizado como cuerpo del mensaje y funciona fuera de la ventana. Si la conexión no puede enviar (desactivada,
+  eliminada, sin credenciales guardadas o con credenciales rechazadas por Meta) responde `409` con el motivo de
+  `Connection::sendingBlockReason()` y no guarda ni encola nada (§2.5); la interfaz ni siquiera abre el selector.
 - **No enviables desde la bandeja** (se muestran con el motivo): autenticación (OTP), encabezados de ubicación,
   botones de copiar código, OTP, Flow o catálogo, carruseles y ofertas por tiempo limitado. Los encabezados de imagen,
   video o documento requieren una URL https pública del archivo.
@@ -315,20 +350,49 @@ ventana abierta; plantillas solo si siguen aprobadas. Cada reintento abre un nue
   `unavailable` aunque esté configurado. La ficha de la conexión muestra «Simulación».
 - `unavailable` (por defecto) — todo envío falla explícitamente con `transport_unavailable`.
 
+`WHATSAPP_PILOT_RECIPIENTS` (opcional, vacío = sin restricción): lista de números separados por comas. Con
+`WHATSAPP_TRANSPORT=meta`, solo se envía a esos destinatarios (se comparan solo los dígitos, como los informa Meta en
+`wa_id`); a cualquier otro el mensaje falla con `transport_unavailable` **antes** de subir archivos o llamar a Meta.
+Aplica también a los mensajes automáticos. Ver §9.
+
 ### Simulador de eventos (`chat-manager:simulate-inbound`, solo local)
 
-```
-php artisan chat-manager:simulate-inbound laura "Hola" --confirm
-php artisan chat-manager:simulate-inbound mario "Foto del recibo" --type=image --file=/ruta/recibo.jpg --confirm
-php artisan chat-manager:simulate-inbound sofia "Sucursal Centro" --type=location --confirm
-php artisan chat-manager:simulate-inbound laura --duplicate --confirm
-php artisan chat-manager:simulate-inbound --status=read --message=123 --out-of-order --confirm
-```
+Requiere el escenario Demo B (`php artisan db:seed --class="Database\Seeders\Local\ManualValidationSeeder"`) y
+`--confirm`. Solo funciona con `APP_ENV=local` sobre la base `chatmanager` (nunca en producción ni en pruebas), no expone
+rutas HTTP, no llama a Meta y solo actúa sobre las líneas demo (Phone number ID `990000000000100` y `990000000000101`) y
+los números ficticios `5215500000100`–`5215500000199` (o `laura`, `mario`, `sofia`). Cada llamada crea como mucho un
+contacto. Todo pasa por `ProcessWebhookPayload`, como un webhook real. La lógica está en
+`App\Support\ManualValidationSimulator` y sus ramas tienen pruebas en `tests/Feature/Local/ManualValidationSimulatorTest.php`.
 
-Tipos: text, image, document, audio, video, sticker, location, contacts, interactive, button, reaction, unsupported.
-Sin `--file`, el multimedia simulado queda «no disponible» (`simulated_media`); con `--file` se valida igual que una
-descarga real. `--status` reporta estados de un mensaje saliente de la conexión demo (con `--out-of-order` y
-`--duplicate`). Todo pasa por `ProcessWebhookPayload`.
+| Escenario                          | Comando                                                                                                                                      | Resultado esperado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contacto nuevo                     | `php artisan chat-manager:simulate-inbound 5215500000150 "Quiero una cotización" --name="Ana" --confirm`                                     | «Conversación nueva», contacto «Demo B · Ana (nuevo)», en _Demo B · Ventas_, pendiente                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Mensaje nuevo / contacto existente | `php artisan chat-manager:simulate-inbound laura "Sigo interesada" --confirm`                                                                | «Agregado a la conversación abierta», contacto «(existente)»                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Dirigido a Ventas                  | `... laura "Hola" --department=ventas --confirm` (es el valor por defecto)                                                                   | Conversación en el departamento por defecto de la línea de Ventas                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Dirigido a Soporte                 | `php artisan chat-manager:simulate-inbound mario "Mi pedido llegó dañado" --department=soporte --create-support-line --confirm`              | La primera vez crea la línea _Demo B · WhatsApp simulado (Soporte)_ (auditada como `connection.created`); después basta `--department=soporte`. Conversación nueva en _Demo B · Soporte_                                                                                                                                                                                                                                                                                                           |
+| Multimedia                         | `... mario "Recibo" --type=document --file=/ruta/recibo.pdf --confirm`                                                                       | «Archivo de muestra adjuntado (simulación)», validado como una descarga real. Sin `--file` queda «no disponible» (`simulated_media`)                                                                                                                                                                                                                                                                                                                                                               |
+| Duplicado                          | `php artisan chat-manager:simulate-inbound laura --duplicate --confirm`                                                                      | «Duplicado: no se guardó otra vez» (mismo `wamid` del último mensaje del cliente)                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Entregado / leído                  | `php artisan chat-manager:simulate-inbound --status=read --message=123 --out-of-order --confirm`                                             | Estados `read → delivered`; queda «Leído» con su hora de entrega                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Error de envío                     | `php artisan chat-manager:simulate-inbound --status=failed --message=123 --error-code=131047 --confirm`                                      | Estado «Fallido» con el texto de ventana de 24 h vencida (`meta_131047`). Códigos: 131026 (por defecto), 131047, 131049, 131050, 131056, 130429, 131000, 131031                                                                                                                                                                                                                                                                                                                                    |
+| Ventana de 24 h vencida            | `php artisan chat-manager:simulate-inbound laura --expire-window --confirm`                                                                  | El último mensaje del cliente en su conversación demo de la línea pasa a hace 24 h y 5 min (o `--minutes-ago`, si es mayor); «Ventana 24 h: vencida». Se rechaza si eso alterara el orden del historial. En ese caso usa un número ficticio sin conversación, que abre una conversación nueva con la ventana ya vencida: `php artisan chat-manager:simulate-inbound 5215500000160 "Hola" --minutes-ago=1500 --confirm` (un mensaje atrasado en una conversación existente no retrocede su ventana) |
+| Reapertura                         | Cierra la conversación desde la bandeja y, antes de 120 min (ventana de reapertura de las líneas demo), `... sofia "Una duda más" --confirm` | «Conversación reabierta». Pasada la ventana: «Conversación nueva»                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+En la base local `chatmanager` el departamento demo de Soporte se renombró a «Soporte» (slug `soporte`);
+`ManualValidation::department()` lo sigue reconociendo por el agente demo que pertenece a él, sin renombrar nada ni
+duplicarlo. La conexión demo de Ventas está **desactivada y sin credenciales guardadas**: sigue recibiendo los
+mensajes simulados (política de conexión inactiva, §2.5), pero para responder desde la bandeja hay que guardar
+credenciales desechables y activarla (ver [guia-pruebas-manuales.md](guia-pruebas-manuales.md)). El preflight
+(`demo`) detecta ambas líneas (`ManualValidation::LINES`).
+
+La línea de Soporte existe porque el enrutamiento solo usa el departamento por defecto de la conexión y nunca adivina el
+departamento por el texto: es la opción menos invasiva que no añade atajos al enrutamiento real. `chat-manager:demo-cleanup`
+elimina ambas líneas. `--status` acepta mensajes salientes de cualquiera de las dos líneas demo y `--duplicate` repite
+el último estado.
+
+**Transferencia entre departamentos.** No es un evento de Meta, sino una acción de un agente, así que el simulador no la
+hace: entra como Valeria (_Demo B · Ventas_), acepta la conversación, usa **Transferir** y elige _Demo B · Soporte_
+(cola o persona). Queda el evento `transferred` en la línea de tiempo y en la auditoría. El escenario ya incluye una
+conversación transferida y cerrada (Sofía).
 
 ## 9. Activación real paso a paso
 
@@ -355,12 +419,17 @@ descarga real. `--status` reporta estados de un mensaje saliente de la conexión
 8. **Suscripción de la app a la WABA:** en la ficha pulsa **Revisar suscripción** y, si no está, **Suscribir app**
    (equivale a `POST /{waba}/subscribed_apps`). Sin este paso Meta no envía webhooks de mensajes.
 9. **Plantillas:** créalas en WhatsApp Manager y pulsa **Sincronizar plantillas**.
-10. **Activar** la conexión y asignar departamentos.
-11. **Prueba de ida y vuelta:** escribe al número desde un teléfono; debe crearse la conversación (y la salud pasar a
+10. **Piloto controlado (recomendado):** antes de abrir el canal a todos los clientes, define
+    `WHATSAPP_PILOT_RECIPIENTS` con los números del equipo de prueba (p. ej. `5215511112222,5215533334444`), ejecuta
+    `php artisan config:cache` si la configuración está en caché y comprueba en la ficha el aviso «Piloto controlado».
+    Al terminar la validación deja la variable vacía y vuelve a cachear la configuración.
+11. **Activar** la conexión y asignar departamentos.
+12. **Prueba de ida y vuelta:** escribe al número desde un teléfono; debe crearse la conversación (y la salud pasar a
     «Recibiendo mensajes»). Acepta y responde desde la bandeja: el mensaje debe pasar a «Aceptado por WhatsApp» y
     luego a «Enviado/Entregado/Leído» por los webhooks de estado; la conexión pasa a «Operativa». Envía una imagen
     desde el teléfono (debe descargarse) y prueba una plantilla con la ventana vencida.
-12. Revisa la tarjeta de diagnóstico: eventos procesados, sin errores ni mensajes sin confirmación.
+13. Revisa la tarjeta de diagnóstico: eventos procesados, sin errores ni mensajes sin confirmación o con entrega sin
+    confirmar.
 
 ## 10. Lo que no se ha validado contra Meta real
 
@@ -370,6 +439,9 @@ descarga real. `--status` reporta estados de un mensaje saliente de la conexión
   verificación GET real, la descarga desde `lookaside.fbsbx.com`, la carga multipart de multimedia, los formatos
   exactos de `subscribed_apps`, el comportamiento real de los límites (429/130429) y los códigos de error de cURL
   usados para distinguir «no llegó» de «ambiguo» en el servidor de producción.
+- El corte de la descarga de multimedia al superar el tamaño máximo (cURL aborta con `CURLE_WRITE_ERROR` cuando el
+  sumidero rechaza la escritura) se probó con `Http::fake` y con el cliente directo, no con una descarga real de Meta.
+- El piloto controlado (`WHATSAPP_PILOT_RECIPIENTS`) solo se ha probado con pruebas automáticas.
 - La comparación de `sha256` de Meta con el archivo descargado no se aplica (el formato del hash de Meta no está
   garantizado); se guarda el SHA-256 propio.
 - La creación de plantillas desde la app no está implementada (se crean en WhatsApp Manager).
@@ -386,3 +458,10 @@ cuenta, límites de tamaño y tasa, todos los tipos de mensaje, estados fuera de
 callback data, cada llamada a Graph con `Http::fake` (texto, respuesta, multimedia, plantillas, suscripción,
 sincronización paginada, descarga), clasificación de errores, reintentos acotados, ambigüedad sin reenvío,
 concurrencia de workers, reintento manual con IDOR y confirmación, reglas de plantillas y pantallas con alcance.
+En la estabilización se añadieron: bloqueo por conexión al encolar, reintentar y enviar plantillas
+(`CustomerServiceWindowTest`, `MessageRetryTest`, `ConversationTemplateTest`), revalidación del autor en el job
+(`sender_not_allowed`), auditoría del reintento con riesgo de duplicado, tope de multimedia durante el _streaming_
+(`InboundMediaTest`), piloto controlado (`OutboundDeliveryTest`, `ConnectionDiagnosticsTest`), salud de una conexión
+restaurada (`ConnectionDeletionTest`), señal `connection_changed` (`tests/Feature/Realtime/ConnectionChangeSignalTest.php`),
+orden y antigüedad de las actualizaciones de plantillas (`TemplateSyncTest`) y las ramas del simulador
+(`tests/Feature/Local/ManualValidationSimulatorTest.php`).

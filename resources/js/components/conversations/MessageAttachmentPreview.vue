@@ -7,7 +7,7 @@ import {
     ImageOff,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
-import { formatFileSize } from '@/components/conversations/messageFormat';
+import { formatFileSize } from '@/lib/format';
 import type { MessageAttachment } from '@/types';
 
 /**

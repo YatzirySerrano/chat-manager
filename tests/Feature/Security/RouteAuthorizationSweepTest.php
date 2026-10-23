@@ -10,6 +10,7 @@ use App\Models\DataTransfer;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Models\PushSubscription;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\Tag;
@@ -63,6 +64,7 @@ const SELF_SERVICE_ROUTES = [
     'notifications.conversations.read',
     'notifications.preferences.edit',
     'notifications.preferences.update',
+    'notifications.push-subscriptions.store',
     'conversations.availability.update',
 ];
 
@@ -136,6 +138,7 @@ beforeEach(function () {
         'template' => $template->id,
         'uuid' => (string) Str::uuid(),
         'notification' => (string) Str::uuid(),
+        'subscription' => PushSubscription::factory()->create(['user_id' => $colleague->id])->id,
         'report' => 'contacts',
         'format' => 'xlsx',
         'webhookKey' => (string) $connection->webhook_key,

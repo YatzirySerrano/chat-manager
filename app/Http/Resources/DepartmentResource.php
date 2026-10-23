@@ -30,6 +30,7 @@ class DepartmentResource extends JsonResource
             'welcome_message' => $this->welcome_message,
             'away_message' => $this->away_message,
             'distribution_mode' => $this->distribution_mode->value,
+            'max_open_conversations_per_agent' => $this->max_open_conversations_per_agent,
             'uses_custom_hours' => $this->uses_custom_hours,
             'business_hours' => $this->business_hours,
             'members_count' => $this->whenCounted('members'),

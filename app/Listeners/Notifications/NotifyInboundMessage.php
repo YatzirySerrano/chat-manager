@@ -33,6 +33,14 @@ class NotifyInboundMessage implements ShouldQueue
         return Queues::name(Queues::NOTIFICATIONS);
     }
 
+    /**
+     * Only customer messages notify: outbound ones never queue a job.
+     */
+    public function shouldQueue(MessageRecorded $event): bool
+    {
+        return $event->direction === MessageDirection::Inbound->value;
+    }
+
     public function handle(MessageRecorded $event): void
     {
         if ($event->direction !== MessageDirection::Inbound->value) {

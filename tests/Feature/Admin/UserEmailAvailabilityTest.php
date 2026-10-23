@@ -39,7 +39,7 @@ test('forbids the check to people who cannot create or update users', function (
         ->assertForbidden();
 });
 
-test('forbids checking against an account the actor cannot update', function () {
+test('an account out of reach and a missing one answer the same', function () {
     $department = Department::factory()->create();
     $role = Role::factory()->scope(DataScope::Departments)->withPermissions([Permission::ViewUsers, Permission::UpdateUsers])->create();
     $manager = User::factory()->withRole($role)->inDepartments($department)->create();
@@ -47,7 +47,11 @@ test('forbids checking against an account the actor cannot update', function () 
 
     $this->actingAs($manager)
         ->postJson(route('admin.users.email-availability'), ['email' => 'otra@empresa.test', 'user_id' => $administrator->id])
-        ->assertForbidden();
+        ->assertNotFound();
+
+    $this->actingAs($manager)
+        ->postJson(route('admin.users.email-availability'), ['email' => 'otra@empresa.test', 'user_id' => User::query()->max('id') + 1000])
+        ->assertNotFound();
 });
 
 test('throttles repeated checks', function () {

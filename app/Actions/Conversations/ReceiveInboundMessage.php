@@ -12,7 +12,6 @@ use App\Enums\InboundMessageOutcome;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
-use App\Events\Conversations\ConversationChanged;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
 use App\Models\Connection;
@@ -29,12 +28,9 @@ use App\Services\Meta\MediaFileName;
 use App\Support\InboundContactRegistration;
 use App\Support\InboundMessage;
 use App\Support\InboundMessageReceipt;
+use App\Support\ReadCommittedTransaction;
 use Carbon\CarbonImmutable;
-use Closure;
-use Illuminate\Database\DetectsConcurrencyErrors;
-use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -60,22 +56,19 @@ use Illuminate\Support\Str;
  * idempotent.
  *
  * Two messages of the same contact processed at once race on the database's
- * single-unclosed-conversation key (or deadlock on its gap locks): the loser
- * retries and joins the winner's conversation. Conversations of different connections are never mixed.
+ * single-unclosed-conversation key: the loser retries and joins the
+ * winner's conversation. The receipt runs at READ COMMITTED with bounded,
+ * logged deadlock retries (ReadCommittedTransaction). Conversations of different connections are never mixed.
  */
 class ReceiveInboundMessage
 {
-    use DetectsConcurrencyErrors;
-
-    /** Attempts of the transaction when MariaDB resolves a deadlock between workers. */
-    private const ATTEMPTS = 3;
-
     public function __construct(
         private RegisterInboundContact $registerContact,
         private ConversationLifecycle $lifecycle,
         private ConversationRouter $router,
         private ReopenConversation $reopenConversation,
         private AssignAutomatically $assignAutomatically,
+        private ReadCommittedTransaction $transaction,
     ) {}
 
     public function handle(Connection $connection, InboundMessage $inbound): InboundMessageReceipt
@@ -88,48 +81,16 @@ class ReceiveInboundMessage
 
         $registration = $this->registerContact->handle($connection, $inbound->sender);
 
-        // Deadlocks between workers creating the same conversation are retried
-        // by the transaction itself; a unique violation means another worker
-        // opened the conversation or stored this message first.
+        // At READ COMMITTED (no gap locks) only messages of the same contact
+        // contend; deadlocks left are retried with a pause, and a unique
+        // violation means another worker opened the conversation or stored
+        // this message first.
+        $receive = fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration);
+
         try {
-            return $this->transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration));
+            return $this->transaction->run('inbound.message', $receive);
         } catch (UniqueConstraintViolationException) {
-            return $this->transaction(fn (): InboundMessageReceipt => $this->receive($connection, $inbound, $registration));
-        }
-    }
-
-    /**
-     * Runs the receipt at READ COMMITTED when it is the outermost
-     * transaction. At REPEATABLE READ the locking lookups of a contact
-     * without an unclosed conversation take gap locks, and new contacts
-     * (the highest ids) all share the same gap of the index: simultaneous
-     * first messages of different customers deadlocked on their inserts and
-     * exhausted their attempts under bursts (docs/rendimiento-y-carga.md).
-     * Without gap locks, two messages of the same contact still serialize on
-     * the existing rows, or race on the single-unclosed-conversation unique
-     * key, whose loser is retried by handle(). Deadlocks left are retried
-     * with a short random pause, so the same pair does not collide again.
-     *
-     * @param  Closure(): InboundMessageReceipt  $callback
-     */
-    private function transaction(Closure $callback): InboundMessageReceipt
-    {
-        if (DB::transactionLevel() > 0) {
-            return DB::transaction($callback, self::ATTEMPTS);
-        }
-
-        for ($attempt = 1; ; $attempt++) {
-            DB::statement('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
-
-            try {
-                return DB::transaction($callback);
-            } catch (QueryException $exception) {
-                if ($exception instanceof UniqueConstraintViolationException || $attempt >= self::ATTEMPTS || ! $this->causedByConcurrencyError($exception)) {
-                    throw $exception;
-                }
-
-                usleep(random_int(5_000, 40_000) * $attempt);
-            }
+            return $this->transaction->run('inbound.message', $receive);
         }
     }
 
@@ -176,8 +137,9 @@ class ReceiveInboundMessage
             $this->assignAutomatically->handle($conversation);
         }
 
+        // One event per message: its real-time listener already refreshes the
+        // conversation and every inbox that lists it.
         MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Inbound->value);
-        ConversationChanged::dispatch($conversation->id, 'message');
 
         if ($attachment !== null) {
             DownloadInboundMedia::dispatch($attachment->id)->afterCommit();

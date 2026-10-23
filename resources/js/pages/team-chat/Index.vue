@@ -80,10 +80,23 @@ const newDirectOpen = ref(false);
 const newGroupOpen = ref(false);
 const settingsOpen = ref(false);
 const messageResults = ref<TeamSearchResult[]>([]);
+const moreMessageResults = ref(false);
 const searchingMessages = ref(false);
-const searchHttp = useHttp<Record<string, never>, { data: TeamSearchResult[] }>(
-    {},
+const searchHttp = useHttp<
+    Record<string, never>,
+    { data: TeamSearchResult[]; has_more: boolean }
+>({});
+const reachedListLimit = computed(
+    () =>
+        props.threads.has_more &&
+        props.filters.limit >= props.limits.maxThreads,
 );
+
+function loadMoreThreads(): void {
+    reloadList(
+        Math.min(props.limits.maxThreads, props.filters.limit + PAGE_STEP),
+    );
+}
 
 const currentPath = (): string => window.location.pathname;
 
@@ -169,6 +182,7 @@ async function runMessageSearch(): Promise<void> {
 
     if (term.length < 2) {
         messageResults.value = [];
+        moreMessageResults.value = false;
 
         return;
     }
@@ -181,8 +195,10 @@ async function runMessageSearch(): Promise<void> {
             { onHttpException: () => false },
         );
         messageResults.value = response.data;
+        moreMessageResults.value = response.has_more;
     } catch {
         messageResults.value = [];
+        moreMessageResults.value = false;
     } finally {
         searchingMessages.value = false;
     }
@@ -409,12 +425,22 @@ const emptyListCopy = computed(() => {
                     />
                 </nav>
 
-                <div v-if="threads.has_more" class="flex justify-center py-2">
+                <p
+                    v-if="reachedListLimit"
+                    class="px-3 py-2 text-center text-xs text-muted-foreground"
+                >
+                    Se muestran los {{ limits.maxThreads }} chats más recientes.
+                    Usa la búsqueda o los filtros para encontrar otros.
+                </p>
+                <div
+                    v-else-if="threads.has_more"
+                    class="flex justify-center py-2"
+                >
                     <Button
                         variant="ghost"
                         size="sm"
                         :disabled="loadingList"
-                        @click="reloadList(filters.limit + PAGE_STEP)"
+                        @click="loadMoreThreads"
                     >
                         Ver más chats
                     </Button>
@@ -475,6 +501,14 @@ const emptyListCopy = computed(() => {
                             </button>
                         </li>
                     </ul>
+                    <p
+                        v-if="!searchingMessages && moreMessageResults"
+                        class="px-3 py-2 text-xs text-muted-foreground"
+                    >
+                        Se muestran los {{ messageResults.length }} mensajes más
+                        recientes que coinciden. Escribe más palabras para
+                        acotar la búsqueda.
+                    </p>
                 </section>
             </div>
         </aside>

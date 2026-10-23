@@ -80,7 +80,7 @@ test('a deleted tag cannot be newly attached but may stay where it already was',
 });
 
 test('tagging requires the permission and responsibility or management', function () {
-    $withoutPermission = User::factory()->agent()->inDepartments($this->department)->create();
+    $withoutPermission = conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$this->department]);
     $own = Conversation::factory()->inDepartment($this->department)->assignedTo($withoutPermission)->create();
 
     $this->actingAs($withoutPermission)
@@ -120,7 +120,7 @@ test('the details panel offers the active catalog only to people who can tag', f
             ->where('conversation.can.tag', true)
             ->has('details.availableTags', 2));
 
-    $agent = User::factory()->agent()->inDepartments($this->department)->create();
+    $agent = conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$this->department]);
     $own = Conversation::factory()->inDepartment($this->department)->assignedTo($agent)->create();
 
     $this->actingAs($agent)
@@ -128,4 +128,21 @@ test('the details panel offers the active catalog only to people who can tag', f
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversation.can.tag', false)
             ->where('details.availableTags', []));
+});
+
+test('an agent with the default role tags the conversations it attends but never manages the catalog', function () {
+    $agent = User::factory()->agent()->inDepartments($this->department)->create();
+    $own = Conversation::factory()->inDepartment($this->department)->assignedTo($agent)->create();
+
+    $this->actingAs($agent)
+        ->put(route('conversations.tags.update', $own), ['tag_ids' => [$this->urgent->id]])
+        ->assertSessionHasNoErrors();
+    $this->actingAs($agent)
+        ->put(route('conversations.tags.update', $this->conversation), ['tag_ids' => [$this->urgent->id]])
+        ->assertNotFound();
+
+    expect($own->tags()->pluck('tags.id')->all())->toBe([$this->urgent->id])
+        ->and($this->conversation->tags()->exists())->toBeFalse()
+        ->and($agent->can('create', Tag::class))->toBeFalse()
+        ->and($agent->can('update', $this->urgent))->toBeFalse();
 });

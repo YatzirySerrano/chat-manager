@@ -6,6 +6,7 @@ use App\Enums\Permission;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\Connection;
 use App\Models\User;
+use App\Support\Queues;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -42,7 +43,7 @@ test('administrators see health, queues, failed jobs and connections', function 
             ->has('checks', 8)
             ->where('checks.0.key', 'database')
             ->where('checks.0.status', 'ok')
-            ->has('queues', 6)
+            ->has('queues', count(Queues::all()))
             ->where('failedJobs.meta.total', 0)
             ->has('connections', 1)
             ->where('connections.0.name', 'Ventas WhatsApp')

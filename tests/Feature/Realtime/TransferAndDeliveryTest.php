@@ -36,7 +36,8 @@ test('a transfer reaching a final state is announced once, whoever updated it', 
     $transfer->update(['status' => DataTransferStatus::Completed, 'finished_at' => now()]);
     $transfer->update(['rows_processed' => 10]);
 
-    Event::assertDispatchedTimes(RealtimeSignal::class, 1);
+    // The in-app notification of the transfer sends its own `.notification` signal.
+    expect(Event::dispatched(RealtimeSignal::class, fn (RealtimeSignal $signal): bool => $signal->event === 'transfer.changed'))->toHaveCount(1);
     Event::assertDispatched(RealtimeSignal::class, fn (RealtimeSignal $signal): bool => $signal->event === 'transfer.changed'
         && $signal->channels === ["users.{$transfer->user_id}"]
         && $signal->payload['status'] === 'completed');

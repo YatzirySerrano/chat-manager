@@ -19,6 +19,7 @@ use App\Support\InboundContactRegistration;
 use App\Support\InboundSender;
 use App\Support\PhoneNumber;
 use App\Support\ProviderReferral;
+use App\Support\ReadCommittedTransaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -50,19 +51,17 @@ use Illuminate\Support\Facades\DB;
  */
 class RegisterInboundContact
 {
-    /** Attempts of the registration when MariaDB resolves a deadlock between workers. */
-    private const ATTEMPTS = 3;
-
     public function __construct(
         private AuditLogger $audit,
         private OpenContactReview $openReview,
+        private ReadCommittedTransaction $transaction,
     ) {}
 
     public function handle(Connection $connection, InboundSender $sender): InboundContactRegistration
     {
         [$identity, $outcome, $reviewCase] = $this->resolveIdentity($connection, $sender);
 
-        return DB::transaction(function () use ($connection, $sender, $identity, $outcome, $reviewCase): InboundContactRegistration {
+        return $this->transaction->run('inbound.contact.interaction', function () use ($connection, $sender, $identity, $outcome, $reviewCase): InboundContactRegistration {
             $contact = Contact::query()->lockForUpdate()->findOrFail($identity->contact_id);
             $identity = ContactIdentity::query()->lockForUpdate()->findOrFail($identity->id);
 
@@ -88,10 +87,11 @@ class RegisterInboundContact
         }
 
         try {
-            // Workers registering the same new sender at once can deadlock on
-            // the phone lookup's gap locks: MariaDB rolls one back and it is
-            // retried, finding the winner's identity through the unique key.
-            return DB::transaction(fn (): array => $this->registerIdentity($connection, $sender), self::ATTEMPTS);
+            // At READ COMMITTED the phone lookup of a new sender takes no gap
+            // lock, so different new senders never block each other; the
+            // same sender registered by two workers races on the identity's
+            // unique key.
+            return $this->transaction->run('inbound.contact.identity', fn (): array => $this->registerIdentity($connection, $sender));
         } catch (UniqueConstraintViolationException) {
             // Another worker registered the same sender first: use its contact.
             return [$this->findIdentity($sender) ?? throw new \LogicException('The concurrently registered identity was not found.'), InboundContactOutcome::Matched, null];

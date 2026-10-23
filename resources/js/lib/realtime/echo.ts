@@ -4,6 +4,7 @@ import type { ChannelAuthorizationCallback } from 'pusher-js';
 import { readonly, ref } from 'vue';
 import type {
     RealtimeConfig,
+    PresenceListener,
     RealtimeHandler,
     RealtimePayload,
     RealtimeState,
@@ -32,8 +33,17 @@ type Subscription = {
     denied: boolean;
 };
 
+/** A presence channel joined by this tab and the member ids it reports. */
+type Presence = {
+    name: string;
+    listeners: Set<PresenceListener>;
+    members: Set<number>;
+    joined: boolean;
+};
+
 const state = ref<RealtimeState>('disabled');
 const subscriptions = new Map<string, Subscription>();
+const presences = new Map<string, Presence>();
 const reconnectListeners = new Set<() => void>();
 
 let echo: Echo<'reverb'> | null = null;
@@ -85,7 +95,10 @@ function authorize(
     })
         .then(async (response) => {
             if (!response.ok) {
-                const name = params.channelName.replace(/^private-/, '');
+                const name = params.channelName.replace(
+                    /^(private|presence)-/,
+                    '',
+                );
                 const subscription = subscriptions.get(name);
 
                 if (subscription && response.status === 403) {
@@ -169,8 +182,71 @@ function detach(subscription: Subscription): void {
     subscription.attached.clear();
 }
 
+function memberId(member: unknown): number | null {
+    const id = (member as { id?: unknown } | null)?.id;
+
+    return typeof id === 'number' ? id : null;
+}
+
+function notifyPresence(presence: Presence): void {
+    const ids = [...presence.members];
+
+    presence.listeners.forEach((listener) => {
+        try {
+            listener(ids);
+        } catch (error) {
+            console.error(error);
+        }
+    });
+}
+
+/**
+ * Joins a presence channel. The server answers each member with its id
+ * only; "here" brings the full list again after every (re)subscription.
+ */
+function joinPresenceChannel(presence: Presence): void {
+    if (!echo || presence.joined) {
+        return;
+    }
+
+    presence.joined = true;
+    echo.join(presence.name)
+        .here((members: unknown[]) => {
+            presence.members = new Set(
+                members.map(memberId).filter((id): id is number => id !== null),
+            );
+            notifyPresence(presence);
+        })
+        .joining((member: unknown) => {
+            const id = memberId(member);
+
+            if (id !== null) {
+                presence.members.add(id);
+                notifyPresence(presence);
+            }
+        })
+        .leaving((member: unknown) => {
+            const id = memberId(member);
+
+            if (id !== null && presence.members.delete(id)) {
+                notifyPresence(presence);
+            }
+        });
+}
+
+function leavePresenceChannel(presence: Presence): void {
+    if (presence.joined) {
+        echo?.leave(presence.name);
+    }
+
+    presence.joined = false;
+    presence.members.clear();
+    notifyPresence(presence);
+}
+
 function disconnect(): void {
     subscriptions.forEach(detach);
+    presences.forEach(leavePresenceChannel);
     echo?.disconnect();
     echo = null;
     client = null;
@@ -254,6 +330,7 @@ export function configureRealtime(
     });
 
     subscriptions.forEach(attach);
+    presences.forEach(joinPresenceChannel);
 }
 
 /**
@@ -315,7 +392,56 @@ export function resubscribeAll(): void {
         attach(subscription);
     });
 
+    presences.forEach((presence) => {
+        leavePresenceChannel(presence);
+        joinPresenceChannel(presence);
+    });
+
     reconnectListeners.forEach((listener) => listener());
+}
+
+/**
+ * Joins a presence channel and reports the ids of its members (the tab's
+ * own user included) on every change. Returns the function that stops
+ * listening; the channel is left when nobody listens to it any more.
+ */
+export function joinPresence(
+    channel: string,
+    listener: PresenceListener,
+): () => void {
+    let presence = presences.get(channel);
+
+    if (!presence) {
+        presence = {
+            name: channel,
+            listeners: new Set(),
+            members: new Set(),
+            joined: false,
+        };
+        presences.set(channel, presence);
+    }
+
+    presence.listeners.add(listener);
+    joinPresenceChannel(presence);
+
+    if (presence.members.size > 0) {
+        listener([...presence.members]);
+    }
+
+    return () => {
+        const current = presences.get(channel);
+
+        if (!current) {
+            return;
+        }
+
+        current.listeners.delete(listener);
+
+        if (current.listeners.size === 0) {
+            leavePresenceChannel(current);
+            presences.delete(channel);
+        }
+    };
 }
 
 /**

@@ -8,6 +8,7 @@ use App\Models\DataTransfer;
 use App\Reports\ReportRegistry;
 use App\Services\AuditLogger;
 use App\Services\Exports\ReportExporter;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -22,7 +23,9 @@ use Throwable;
 /**
  * Generates a queued export into the private disk. Authorization and the
  * row limit are checked again, because permissions or data may have
- * changed since the export was requested. A transfer is attempted once.
+ * changed since the export was requested. Relative periods ("today") are
+ * resolved against the moment of the request, not of the worker. A
+ * transfer is attempted once.
  */
 class GenerateReport implements ShouldBeUnique, ShouldQueue
 {
@@ -73,11 +76,12 @@ class GenerateReport implements ShouldBeUnique, ShouldQueue
 
         @ini_set('memory_limit', (string) config('exports.memory_limit', '1024M'));
 
-        $context = $exporter->context($actor, $transfer->filters ?? []);
+        $requestedAt = $transfer->options['requested_at'] ?? null;
+        $context = $exporter->context($actor, $transfer->filters ?? [], is_string($requestedAt) ? CarbonImmutable::parse($requestedAt) : null);
         $path = $exporter->temporaryPath($transfer->format);
 
         try {
-            $exporter->ensureWithinLimit($definition->count($context), $transfer->format);
+            $exporter->ensureWithinLimit($definition->count($context), $transfer->format, $exporter->maxRows($definition, $transfer->format));
             $rows = $exporter->render($definition, $context, $transfer->format, $path);
 
             $disk = Storage::disk($transfer->disk ?? (string) config('exports.disk'));

@@ -1,7 +1,9 @@
 # Chat Manager — scheduler (alternative to Supervisor or cron; use only one).
 [Unit]
 Description=Chat Manager scheduler
-After=network.target mariadb.service
+After=network-online.target mariadb.service redis-server.service
+Wants=network-online.target mariadb.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

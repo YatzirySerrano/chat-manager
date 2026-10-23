@@ -14,7 +14,11 @@
 |   E2E_PORT              local server port (default 8020)
 |   E2E_SERVER_WORKERS    PHP built-in server workers (default 4)
 |   NODE_BINARY           Node.js executable (default "node")
-|   PLAYWRIGHT_MODULE     where to load Playwright from (default "playwright")
+|   PLAYWRIGHT_MODULE     where to load Playwright from (default "playwright";
+|                         it is not a project dependency, so point it at an
+|                         installed package). Both are checked before the
+|                         database is touched; a broken Node.js or a missing
+|                         Playwright/Chromium stops the run with a clear error.
 |   E2E_SCREENSHOTS       optional directory for screenshots
 |   E2E_REVERB=1          also start a Reverb server for real-time scenarios,
 |                         with throwaway credentials generated for the run
@@ -46,6 +50,48 @@ $fail = function (string $message): never {
 
 if (! is_file($scenario)) {
     $fail("Scenario [{$scenario}] not found.");
+}
+
+// Node.js and Playwright are checked before the database is locked and
+// rebuilt: Playwright is not a project dependency, so a missing or stale
+// PLAYWRIGHT_MODULE must fail here with a clear message.
+$nodeBinary = getenv('NODE_BINARY') ?: 'node';
+$playwrightModule = getenv('PLAYWRIGHT_MODULE') ?: 'playwright';
+
+/** @return array{0: int, 1: string} */
+$runNode = function (string ...$arguments) use ($nodeBinary): array {
+    $process = @proc_open([$nodeBinary, ...array_values($arguments)], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, __DIR__);
+
+    if (! is_resource($process)) {
+        return [127, ''];
+    }
+
+    $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return [proc_close($process), trim($output)];
+};
+
+[$nodeStatus, $nodeOutput] = $runNode('--version');
+
+if ($nodeStatus !== 0) {
+    $fail("Node.js [{$nodeBinary}] does not run: ".($nodeOutput !== '' ? strtok($nodeOutput, PHP_EOL) : 'not found').PHP_EOL
+        .'Set NODE_BINARY to a working Node.js executable (for example NODE_BINARY=/usr/local/bin/node).');
+}
+
+[$playwrightStatus, $playwrightOutput] = $runNode(
+    '-e',
+    'const { chromium } = require(process.argv[1]); if (!require("fs").existsSync(chromium.executablePath())) { console.error("Chromium is not installed for this Playwright: " + chromium.executablePath()); process.exit(3); }',
+    $playwrightModule,
+);
+
+if ($playwrightStatus !== 0) {
+    $reason = preg_match('/^(?:\w*Error\b.*|Chromium is not installed.*)$/m', $playwrightOutput, $match) === 1 ? $match[0] : strtok($playwrightOutput, PHP_EOL);
+    $fail("Playwright could not be loaded from [{$playwrightModule}] with Node.js {$nodeOutput}: {$reason}".PHP_EOL
+        .'Playwright is not a project dependency: set PLAYWRIGHT_MODULE to the directory of an installed "playwright" package'
+        .' (for example $HOME/.npm/_npx/<hash>/node_modules/playwright, created by `npx playwright@1.63.0 --version`)'
+        .' and make sure its Chromium is installed (`npx playwright@1.63.0 install chromium`).');
 }
 
 $connection = config('database.connections.'.config('database.default'));
@@ -134,6 +180,11 @@ $server = proc_open(
     [...$environment, 'PHP_CLI_SERVER_WORKERS' => (string) (getenv('E2E_SERVER_WORKERS') ?: 4)],
 );
 
+if (! is_resource($server)) {
+    $stopReverb();
+    $fail('The local web server could not be started.');
+}
+
 $stopServer = function () use ($server): void {
     $pid = proc_get_status($server)['pid'];
 
@@ -147,8 +198,8 @@ for ($attempt = 0; $attempt < 50 && @fsockopen('127.0.0.1', $port, timeout: 0.2)
     usleep(200_000);
 }
 
-$node = proc_open([getenv('NODE_BINARY') ?: 'node', $scenario], [1 => STDOUT, 2 => STDERR], $pipes, $root, $environment);
-$status = proc_close($node);
+$node = proc_open([$nodeBinary, $scenario], [1 => STDOUT, 2 => STDERR], $pipes, $root, $environment);
+$status = is_resource($node) ? proc_close($node) : 1;
 
 $stopServer();
 $stopReverb();

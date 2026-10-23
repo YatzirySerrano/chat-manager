@@ -16,120 +16,31 @@
  *   PLAYWRIGHT_MODULE  where to load Playwright from (default "playwright")
  *   E2E_SCREENSHOTS    optional directory for screenshots
  */
-import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
-
-const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8020';
-const SEED = join(
-    dirname(fileURLToPath(import.meta.url)),
-    'increment-b-seed.php',
-);
-const SHOTS = process.env.E2E_SCREENSHOTS ?? null;
-const PASSWORD = 'e2e-password';
-const USERS = {
-    admin: 'e2e-admin@example.test',
-    ana: 'e2e-ana@example.test',
-    beto: 'e2e-beto@example.test',
-    carla: 'e2e-carla@example.test',
-};
-
-if (SHOTS) {
-    mkdirSync(SHOTS, { recursive: true });
-}
+import {
+    BASE,
+    USERS,
+    becomeAvailable,
+    chromium,
+    exitWithSummary,
+    inbound,
+    listRow,
+    login,
+    openConversation,
+    openPage,
+    operations,
+    overflow,
+    record,
+    recordPageProblems,
+    runOperation,
+    shot,
+    toastText,
+} from './lib.mjs';
 
 const ACCEPT_OUTCOME =
     /Aceptaste la conversación|Otra persona ya aceptó esta conversación/;
-const results = [];
-const problems = { console: [], pageerror: [], server: [] };
 
-function record(id, input, ok, note = '') {
-    results.push({ id, input, ok, note });
-    console.log(`${ok ? 'PASSED' : 'FAILED'} | ${id} | ${input} | ${note}`);
-}
-
-function inbound(waId, name, text) {
-    return JSON.parse(
-        execFileSync('php', [SEED, 'inbound', waId, name, text], {
-            env: process.env,
-            encoding: 'utf8',
-        }),
-    );
-}
-
-async function newPage(browser, options = {}) {
-    const context = await browser.newContext({
-        viewport: { width: 1366, height: 900 },
-        locale: 'es-MX',
-        ...options,
-    });
-    const page = await context.newPage();
-    page.setDefaultTimeout(15_000);
-    page.on('console', (message) => {
-        if (
-            message.type() === 'error' &&
-            !/status of 404/.test(message.text())
-        ) {
-            problems.console.push(`${message.text()} @ ${page.url()}`);
-        }
-    });
-    page.on('pageerror', (error) => problems.pageerror.push(String(error)));
-    page.on('response', (response) => {
-        if (response.status() >= 500) {
-            problems.server.push(`${response.status()} ${response.url()}`);
-        }
-    });
-
-    return page;
-}
-
-async function login(page, email) {
-    await page.goto(`${BASE}/login`);
-    await page.locator('#email').click();
-    await page.keyboard.type(email);
-    await page.locator('#password').click();
-    await page.keyboard.type(PASSWORD);
-    await page.keyboard.press('Enter');
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'));
-    await page.waitForLoadState('networkidle');
-}
-
-async function shot(page, name) {
-    if (SHOTS) {
-        await page.screenshot({
-            path: join(SHOTS, `${name}.png`),
-            fullPage: true,
-        });
-    }
-}
-
-/**
- * Text of the toast matching the expected outcome. Several toasts can be on
- * screen at once (newest first), so the expected one is looked up by its text;
- * when it never shows, the visible toasts are returned to explain the failure.
- */
-async function toastText(page, expected) {
-    const toast = page
-        .locator('[data-sonner-toast]', { hasText: expected })
-        .first();
-
-    try {
-        await toast.waitFor({ timeout: 8_000 });
-
-        return (await toast.innerText()).replace(/\s+/g, ' ');
-    } catch {
-        const visible = await page
-            .locator('[data-sonner-toast]')
-            .allInnerTexts();
-
-        return `no toast matching ${expected}; visible: ${JSON.stringify(visible)}`;
-    }
-}
+const newPage = (browser, options = {}) =>
+    openPage(browser, { context: options, ignoreConsole: /status of 404/ });
 
 async function waitToastsGone(page) {
     await page
@@ -139,63 +50,13 @@ async function waitToastsGone(page) {
         .catch(() => {});
 }
 
-const AVAILABILITY_SWITCH = 'Disponible para aceptar y recibir conversaciones';
-
-/**
- * Demo agents start as "No disponible": they switch to "Disponible" through
- * the availability switch of the list before taking conversations.
- */
-async function becomeAvailable(page) {
-    const toggle = page.getByRole('switch', { name: AVAILABILITY_SWITCH });
-
-    if ((await toggle.getAttribute('aria-checked')) !== 'true') {
-        await toggle.click();
-        await toastText(page, /Ahora estás disponible/);
-        await page.waitForLoadState('networkidle');
-    }
-
-    return (await toggle.getAttribute('aria-checked')) === 'true';
-}
-
-const overflow = (page) =>
-    page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
-    );
-
 /*
  * Increment C rebuilt the inbox as one three-panel page (/conversations?c=ID):
  * list rows are buttons that open the chat, and the operations live in the
  * chat header (main action as a button, the rest in "Más acciones"). The
- * helpers below follow that layout; the behavior checked is the same.
+ * shared helpers (lib.mjs) follow that layout; the behavior checked is the
+ * same.
  */
-const listRow = (page, name) =>
-    page.locator('[data-inbox-item]', { hasText: name }).first();
-
-const operations = (page) =>
-    page.getByRole('group', { name: 'Operaciones de la conversación' });
-
-async function runOperation(page, label) {
-    const direct = operations(page).getByRole('button', {
-        name: label,
-        exact: true,
-    });
-
-    if ((await direct.count()) > 0) {
-        await direct.click();
-
-        return;
-    }
-
-    await page
-        .getByRole('button', { name: 'Más acciones de la conversación' })
-        .click();
-    await page.getByRole('menuitem', { name: label, exact: true }).click();
-}
-
-async function openConversation(page, id, query = '') {
-    await page.goto(`${BASE}/conversations?${query}${query ? '&' : ''}c=${id}`);
-    await page.waitForLoadState('networkidle');
-}
 
 const run = async () => {
     const browser = await chromium.launch();
@@ -660,27 +521,8 @@ const run = async () => {
         await browser.close();
     }
 
-    record(
-        'no-page-errors',
-        'console',
-        problems.pageerror.length === 0 && problems.console.length === 0,
-        JSON.stringify(problems.pageerror.concat(problems.console)).slice(
-            0,
-            400,
-        ),
-    );
-    record(
-        'no-server-errors',
-        'network',
-        problems.server.length === 0,
-        problems.server.join(', '),
-    );
-
-    const failed = results.filter((result) => !result.ok);
-    console.log(
-        `\n${results.length - failed.length}/${results.length} scenarios passed`,
-    );
-    process.exit(failed.length === 0 ? 0 : 1);
+    recordPageProblems(400);
+    exitWithSummary();
 };
 
 run().catch((error) => {

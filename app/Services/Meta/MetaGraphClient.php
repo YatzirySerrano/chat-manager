@@ -2,11 +2,15 @@
 
 namespace App\Services\Meta;
 
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\LazyOpenStream;
+use GuzzleHttp\Psr7\StreamWrapper;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Client for the Meta Graph API (WhatsApp Cloud API). The access token
@@ -147,24 +151,79 @@ class MetaGraphClient
      * token in the Authorization header. Only Meta's media hosts are allowed,
      * so the token can never be sent elsewhere.
      *
+     * With a size limit, the bytes are counted while they stream to disk: the
+     * transfer is aborted as soon as the file exceeds it (whatever Meta
+     * reported or the Content-Length said), so a large file never fills the
+     * disk.
+     *
      * @throws MetaGraphException
+     * @throws MediaRejected When the file exceeds $maxBytes.
      */
-    public function download(string $accessToken, string $url, string $destination): void
+    public function download(string $accessToken, string $url, string $destination, ?int $maxBytes = null): void
     {
         if (! self::isMediaUrl($url)) {
             throw new MetaGraphException('La dirección de descarga no pertenece a Meta; se descartó por seguridad.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
         }
 
-        $response = $this->send(
-            $accessToken,
-            fn (PendingRequest $request): Response => $request->withOptions(['sink' => $destination])->get($url),
-            'la descarga del archivo',
-            absolute: true,
-        );
+        $exceeded = false;
+        $sink = $maxBytes === null ? $destination : $this->cappedSink($destination, $maxBytes, $exceeded);
+
+        try {
+            $response = $this->send(
+                $accessToken,
+                fn (PendingRequest $request): Response => $request->withOptions(['sink' => $sink])->get($url),
+                'la descarga del archivo',
+                absolute: true,
+            );
+        } catch (Throwable $exception) {
+            // Refusing to write aborts the transfer with a transport error.
+            throw $exceeded ? self::tooLarge($maxBytes) : $exception;
+        } finally {
+            if (is_resource($sink)) {
+                fclose($sink);
+            }
+        }
+
+        if ($exceeded) {
+            throw self::tooLarge($maxBytes);
+        }
 
         if (! $response->successful()) {
             throw $this->failure($response, $accessToken, 'la descarga del archivo');
         }
+    }
+
+    /**
+     * A writable stream on the destination file that refuses (writes 0
+     * bytes, which makes cURL abort) any chunk taking the file over the limit.
+     *
+     * @return resource
+     */
+    private function cappedSink(string $destination, int $maxBytes, bool &$exceeded)
+    {
+        $file = new LazyOpenStream($destination, 'w+');
+        $written = 0;
+
+        return StreamWrapper::getResource(FnStream::decorate($file, [
+            'write' => function (string $data) use ($file, $maxBytes, &$written, &$exceeded): int {
+                if ($exceeded || $written + strlen($data) > $maxBytes) {
+                    $exceeded = true;
+
+                    return 0;
+                }
+
+                $written += strlen($data);
+
+                return $file->write($data);
+            },
+        ]));
+    }
+
+    private static function tooLarge(?int $maxBytes): MediaRejected
+    {
+        $megabytes = rtrim(rtrim(number_format((int) $maxBytes / 1048576, 1), '0'), '.');
+
+        return new MediaRejected('too_large', "El archivo supera el tamaño permitido ({$megabytes} MB).");
     }
 
     public static function isMediaUrl(string $url): bool

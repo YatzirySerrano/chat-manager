@@ -7,6 +7,8 @@ use App\Jobs\DownloadInboundMedia;
 use App\Models\Connection;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Meta\MediaRejected;
+use App\Services\Meta\MetaGraphClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -116,6 +118,39 @@ test('media Meta no longer serves or that breaks the rules is marked unavailable
     'download URL outside Meta' => [fn () => ['graph.facebook.com/*' => Http::response(metaMedia(url: 'https://attacker.example/steal'))], 'expired'],
     'token rejected' => [fn () => ['graph.facebook.com/*' => Http::response(['error' => ['message' => 'Invalid OAuth access token.', 'code' => 190]], 401)], 'credentials_rejected'],
 ]);
+
+test('a download larger than allowed is stopped while streaming when Meta reports no size', function () {
+    Queue::fake();
+    config(['whatsapp.media.types.image.max_bytes' => 1024]);
+    $attachment = ($this->receiveImage)()->attachments()->sole();
+    Http::fake([
+        'graph.facebook.com/v26.0/1479537139650973' => Http::response([...metaMedia(), 'file_size' => null]),
+        'lookaside.fbsbx.com/*' => Http::response(pngBytes().str_repeat("\0", 4096), 200, ['Content-Type' => 'image/png']),
+    ]);
+    $temporaryBefore = glob(sys_get_temp_dir().'/wa-media-*') ?: [];
+
+    app()->call([new DownloadInboundMedia($attachment->id), 'handle']);
+
+    expect($attachment->refresh())
+        ->status->toBe(AttachmentStatus::Unavailable)
+        ->error_code->toBe('too_large')
+        ->path->toBeNull()
+        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(glob(sys_get_temp_dir().'/wa-media-*') ?: [])->toBe($temporaryBefore);
+});
+
+test('the download client stops writing as soon as the file exceeds the limit', function () {
+    Http::fake(['lookaside.fbsbx.com/*' => Http::response(str_repeat('x', 4096))]);
+    $destination = (string) tempnam(sys_get_temp_dir(), 'wa-cap-');
+
+    try {
+        expect(fn () => app(MetaGraphClient::class)->download(MEDIA_TOKEN, MEDIA_URL, $destination, 1024))
+            ->toThrow(MediaRejected::class)
+            ->and(filesize($destination))->toBeLessThanOrEqual(1024);
+    } finally {
+        @unlink($destination);
+    }
+});
 
 test('a token rejected while downloading media marks the connection credentials invalid', function () {
     Queue::fake();

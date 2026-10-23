@@ -9,8 +9,11 @@
 | Usage: php worker.php <scenario> <base64 json arguments>
 */
 
+use App\Support\ReadCommittedTransaction;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 
 require __DIR__.'/../../../vendor/autoload.php';
@@ -77,17 +80,29 @@ if (function_exists('pcntl_signal')) {
     pcntl_alarm(max(5, (int) (getenv('CONCURRENCY_WATCHDOG') ?: 50)));
 }
 
+// Deadlocks retried by ReadCommittedTransaction, per operation, reported
+// with the result ("retried", only when there was any) so a test can tell
+// how often the database rolled back.
+$retried = [];
+Event::listen(MessageLogged::class, function (MessageLogged $log) use (&$retried): void {
+    if ($log->message === ReadCommittedTransaction::RETRY_LOG_MESSAGE) {
+        $operation = (string) ($log->context['operation'] ?? 'unknown');
+        $retried[$operation] = ($retried[$operation] ?? 0) + 1;
+    }
+});
+
 $say('READY');
 $await('GO');
 $say('STARTED');
 
 try {
     $value = $scenarios[$name]($arguments, $say, $await);
-    $say('RESULT '.json_encode(['ok' => true, 'value' => $value]));
+    $say('RESULT '.json_encode(['ok' => true, 'value' => $value, ...($retried === [] ? [] : ['retried' => $retried])]));
 } catch (Throwable $exception) {
     $say('RESULT '.json_encode([
         'ok' => false,
         'error' => $exception::class,
         'message' => Str::limit($exception->getMessage(), 300),
+        ...($retried === [] ? [] : ['retried' => $retried]),
     ]));
 }

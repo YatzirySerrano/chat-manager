@@ -11,11 +11,16 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Ends the attention. The agent who attended it is kept for history, and
- * nothing is sent to the customer.
+ * nothing is sent to the customer. Once committed, the agent has room for
+ * one more conversation, so the queues of their automatic departments are
+ * offered again.
  */
 class CloseConversation
 {
-    public function __construct(private ConversationLifecycle $lifecycle) {}
+    public function __construct(
+        private ConversationLifecycle $lifecycle,
+        private AssignAutomatically $assignAutomatically,
+    ) {}
 
     public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null): Conversation
     {
@@ -36,6 +41,8 @@ class CloseConversation
                 'from_department_id' => $conversation->department_id,
                 'note' => $reason,
             ]);
+
+            $this->assignAutomatically->distributeForAgentAfterCommit($conversation->assigned_user_id);
 
             return $conversation;
         });

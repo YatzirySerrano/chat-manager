@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -10,8 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Restores a logically deleted connection. It comes back INACTIVE and with
- * its credentials pending verification: nothing proves the link with Meta
- * still works, so it must be verified and activated again explicitly.
+ * its credentials, webhook verification and app subscription pending:
+ * nothing proves the link with Meta still works, so it must be verified and
+ * activated again explicitly. Traffic history (last inbound/outbound) is
+ * kept for reports.
  */
 class RestoreConnection
 {
@@ -31,7 +34,12 @@ class RestoreConnection
                 'deleted_at' => null,
                 'is_active' => false,
                 'credentials_verified_at' => null,
+                // Integration evidence must be obtained again; traffic history is kept.
+                'webhook_verified_at' => null,
+                'app_subscribed' => null,
+                'subscription_checked_at' => null,
             ])->save();
+            ConnectionStatusChanged::dispatch($locked->id, 'restored');
 
             $this->audit->record(AuditAction::ConnectionRestored, $locked, [
                 'verification_reset' => true,

@@ -41,11 +41,12 @@ class RealtimeSignals
 
     /**
      * Send one signal to the given channels (duplicates are removed).
+     * Returns false only when the publication failed (and was logged).
      *
      * @param  iterable<string>  $channels
      * @param  array<string, int|string|bool|null>  $payload
      */
-    public function send(iterable $channels, string $event, array $payload): void
+    public function send(iterable $channels, string $event, array $payload): bool
     {
         $names = [];
 
@@ -54,27 +55,32 @@ class RealtimeSignals
         }
 
         if ($names === []) {
-            return;
+            return true;
         }
 
         try {
             broadcast(new RealtimeSignal(array_keys($names), $event, $payload));
+
+            return true;
         } catch (Throwable $exception) {
             Log::warning('No se pudo publicar una señal de tiempo real; los clientes se recuperarán al reconectar o con la actualización periódica.', [
                 'event' => $event,
                 'channels' => count($names),
                 'error' => $exception::class,
             ]);
+
+            return false;
         }
     }
 
     /**
-     * Send a signal to the personal channel of each user.
+     * Send a signal to the personal channel of each user. Returns false only
+     * when the publication failed.
      *
      * @param  iterable<int|null>  $userIds
      * @param  array<string, int|string|bool|null>  $payload
      */
-    public function toUsers(iterable $userIds, string $event, array $payload): void
+    public function toUsers(iterable $userIds, string $event, array $payload): bool
     {
         $channels = [];
 
@@ -84,7 +90,7 @@ class RealtimeSignals
             }
         }
 
-        $this->send($channels, $event, $payload);
+        return $this->send($channels, $event, $payload);
     }
 
     /**

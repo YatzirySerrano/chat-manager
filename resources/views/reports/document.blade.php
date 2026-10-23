@@ -73,7 +73,7 @@
     @endforeach
 
     @if ($includeTable)
-        <section @class(['detail', 'after-summary' => ($metrics !== [] || $charts !== []) && $sectionsBefore === [] && $rowCount > 12])>
+        <section @class(['detail', 'after-summary' => ($metrics !== [] || $charts !== []) && $sectionsBefore === [] && $rowCount > 12, 'keep' => $rowCount <= 12])>
             <div class="section-head">
                 <h2 class="section-title">{{ $tableTitle }}</h2>
                 <span class="section-count">{{ number_format($rowCount, 0, '.', ',') }} {{ $rowCount === 1 ? 'registro' : 'registros' }}</span>
@@ -95,28 +95,7 @@
                             @endforeach
                         </tr>
                     </thead>
-                    <tbody>
-                        @foreach ($entries as $entry)
-                            @if ($entry['kind'] === 'group')
-                                <tr class="group"><td colspan="{{ count($columns) }}">{{ $entry['label'] }}</td></tr>
-                            @else
-                                <tr class="{{ $entry['kind'] }}">
-                                    @foreach ($columns as $index => $column)
-                                        <td @class(['align-'.$column->alignment()->value, 'nowrap' => $column->unbreakable !== null || in_array($column->type->value, ['date', 'number', 'currency', 'percent'], true), 'datetime' => $column->type->value === 'datetime'])>{{ $index === 0 && $entry['kind'] === 'subtotal' ? $entry['label'] : $entry['cells'][$index] }}</td>
-                                    @endforeach
-                                </tr>
-                            @endif
-                        @endforeach
-                    </tbody>
-                    @if ($totals !== null)
-                        <tfoot>
-                            <tr class="totals">
-                                @foreach ($columns as $index => $column)
-                                    <td class="align-{{ $column->alignment()->value }}">{{ $index === 0 ? 'Total' : $totals[$index] }}</td>
-                                @endforeach
-                            </tr>
-                        </tfoot>
-                    @endif
+                    @include('reports.partials.table-rows', ['columns' => $columns, 'entries' => $entries, 'totals' => $totals])
                 </table>
             @endif
         </section>

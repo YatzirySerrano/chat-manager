@@ -6,7 +6,8 @@ use App\Notifications\PruneNotifications;
 use Illuminate\Console\Command;
 
 /**
- * Deletes old read notifications and expired deduplication receipts.
+ * Deletes old read notifications, expired deduplication receipts and stale
+ * Web Push subscriptions.
  */
 class PruneNotificationsCommand extends Command
 {
@@ -18,7 +19,7 @@ class PruneNotificationsCommand extends Command
     {
         $result = $prune->handle();
 
-        $this->info("Notificaciones eliminadas: {$result['notifications']}. Registros de deduplicación eliminados: {$result['receipts']}.");
+        $this->info("Notificaciones eliminadas: {$result['notifications']}. Registros de deduplicación eliminados: {$result['receipts']}. Suscripciones push antiguas eliminadas: {$result['push_subscriptions']}.");
 
         return self::SUCCESS;
     }

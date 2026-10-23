@@ -1,7 +1,9 @@
 # Chat Manager — Laravel Reverb (alternative to the Supervisor program).
 [Unit]
 Description=Chat Manager Reverb WebSocket server
-After=network.target
+# Redis only matters with REVERB_SCALING_ENABLED=true; ordering on a missing unit is ignored.
+After=network.target redis-server.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

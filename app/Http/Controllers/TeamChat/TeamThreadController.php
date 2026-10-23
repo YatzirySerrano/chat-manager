@@ -9,6 +9,7 @@ use App\Actions\TeamChat\MarkThreadRead;
 use App\Actions\TeamChat\StartDirectThread;
 use App\Actions\TeamChat\TeamUnreadCounter;
 use App\Actions\TeamChat\UpdateGroupThread;
+use App\Events\Broadcasts\RealtimeSignal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\TeamChat\StoreGroupThreadRequest;
 use App\Http\Requests\TeamChat\UpdateGroupThreadRequest;
@@ -18,6 +19,7 @@ use App\Support\SaveToast;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 
@@ -126,6 +128,29 @@ class TeamThreadController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => $muted ? 'Silenciaste este chat.' : 'Este chat vuelve a notificarte.']);
 
         return back();
+    }
+
+    /**
+     * "Typing…" indicator: an ephemeral signal on the thread channel with
+     * the author set by the server (never by the client), authorized again
+     * on every call so someone removed stops emitting at once. Nothing is
+     * stored; clients forget it after a few seconds. The signal is sent
+     * inside the closure (event(), not broadcast(), whose PendingBroadcast
+     * would only send it on destruction, outside rescue), so an unreachable
+     * Reverb never turns the request into an error.
+     */
+    public function typing(Request $request, TeamThread $thread): Response
+    {
+        Gate::authorize('post', $thread);
+
+        /** @var User $author */
+        $author = $request->user();
+
+        rescue(function () use ($thread, $author): void {
+            event(new RealtimeSignal(["team-chat.threads.{$thread->id}"], 'typing', ['user_id' => $author->id]));
+        }, report: false);
+
+        return response()->noContent();
     }
 
     /**

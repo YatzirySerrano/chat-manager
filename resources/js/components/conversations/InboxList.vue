@@ -25,6 +25,7 @@ import type {
     ConversationInbox,
     ConversationInboxView,
     ConversationList,
+    ConversationSearchScope,
     ConversationSort,
     ConversationStatusFilter,
     ConversationStatusValue,
@@ -77,6 +78,7 @@ const state = reactive({
     tag: props.filters.tag === null ? ALL : String(props.filters.tag),
     sort: props.filters.sort,
     search: props.filters.search,
+    searchIn: props.filters.search_in,
 });
 
 /* Follow the server when it normalizes or changes the filters. */
@@ -91,6 +93,7 @@ watch(
             filters.connection === null ? ALL : String(filters.connection);
         state.tag = filters.tag === null ? ALL : String(filters.tag);
         state.sort = filters.sort;
+        state.searchIn = filters.search_in;
     },
 );
 
@@ -140,11 +143,29 @@ const sortOptions: { value: ConversationSort; label: string }[] = [
     { value: 'oldest', label: 'Esperando hace más tiempo' },
 ];
 
+const searchScopes: { value: ConversationSearchScope; label: string }[] = [
+    { value: 'contact', label: 'Nombre, teléfono o correo del contacto' },
+    { value: 'messages', label: 'Contenido de los mensajes' },
+];
+
+/*
+ * The server says when the message search has no word it can look for
+ * (fewer than 3 letters or digits, or only very common words).
+ */
+const searchTooShort = computed(
+    () =>
+        state.searchIn === 'messages' &&
+        props.filters.search_ignored &&
+        props.filters.search === state.search.trim(),
+);
+
 const activeFilterCount = computed(
     () =>
         [state.department, state.agent, state.connection, state.tag].filter(
             (value) => value !== ALL,
-        ).length + (state.sort !== 'priority' ? 1 : 0),
+        ).length +
+        (state.sort !== 'priority' ? 1 : 0) +
+        (state.searchIn !== 'contact' ? 1 : 0),
 );
 
 const hasFilters = computed(
@@ -174,6 +195,10 @@ function query(): Record<string, string> {
 
     if (state.search.trim() !== '') {
         result.search = state.search.trim();
+
+        if (state.searchIn !== 'contact') {
+            result.search_in = state.searchIn;
+        }
     }
 
     return result;
@@ -203,6 +228,7 @@ function clearFilters(): void {
     state.tag = ALL;
     state.sort = 'priority';
     state.search = '';
+    state.searchIn = 'contact';
     apply();
 }
 
@@ -365,7 +391,11 @@ const selectClass =
                     <Input
                         v-model="state.search"
                         type="search"
-                        placeholder="Buscar por nombre o teléfono"
+                        :placeholder="
+                            state.searchIn === 'messages'
+                                ? 'Buscar en los mensajes'
+                                : 'Buscar por nombre, teléfono o correo'
+                        "
                         class="h-9 pl-8"
                         aria-label="Buscar conversaciones"
                     />
@@ -391,6 +421,23 @@ const selectClass =
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent align="end" class="grid w-72 gap-3">
+                        <div class="grid gap-1.5">
+                            <Label for="inbox-search-in">Buscar en</Label>
+                            <select
+                                id="inbox-search-in"
+                                v-model="state.searchIn"
+                                :class="selectClass"
+                                @change="state.search.trim() !== '' && apply()"
+                            >
+                                <option
+                                    v-for="option in searchScopes"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >
+                                    {{ option.label }}
+                                </option>
+                            </select>
+                        </div>
                         <div class="grid gap-1.5">
                             <Label for="inbox-sort">Ordenar por</Label>
                             <select
@@ -508,6 +555,16 @@ const selectClass =
                 </Popover>
             </div>
 
+            <p
+                v-if="searchTooShort"
+                class="text-xs text-muted-foreground"
+                role="status"
+            >
+                Escribe al menos una palabra de 3 letras o números para buscar
+                en los mensajes. Las palabras muy comunes (como «the» o «for»)
+                no se buscan.
+            </p>
+
             <nav
                 v-if="!isQueue"
                 class="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5"
@@ -607,7 +664,9 @@ const selectClass =
                 "
                 :description="
                     hasFilters
-                        ? 'Prueba con otra búsqueda o limpia los filtros.'
+                        ? state.status === 'all' || isQueue
+                            ? 'Prueba con otra búsqueda o limpia los filtros.'
+                            : 'Prueba con otra búsqueda, revisa la pestaña Todas o limpia los filtros.'
                         : 'Las conversaciones aparecen cuando un cliente escribe a una conexión de WhatsApp. Solo ves las que corresponden a tu alcance.'
                 "
             >

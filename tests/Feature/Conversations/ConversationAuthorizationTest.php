@@ -3,7 +3,6 @@
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\Permission;
-use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Conversation;
 use App\Models\ConversationNote;
 use App\Models\Department;
@@ -198,16 +197,18 @@ test('filters cannot reveal conversations outside the scope', function () {
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', []));
 });
 
-test('the transfer options only name people the actor may already see', function () {
-    $this->actingAs($this->agent)
-        ->get(route('conversations.index', ['c' => $this->mine->id]), [
-            'X-Inertia' => 'true',
-            'X-Inertia-Partial-Component' => 'conversations/Index',
-            'X-Inertia-Partial-Data' => 'transferOptions',
-            'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
-        ])
+test('an agent may choose an eligible colleague without seeing anything else about them', function () {
+    $agents = collect($this->actingAs($this->agent)
+        ->getJson(route('conversations.destinations', $this->mine))
         ->assertOk()
-        ->assertJsonPath('props.transferOptions.departments.0.agents', fn ($agents) => collect($agents)->pluck('id')->diff([$this->agent->id])->isEmpty());
+        ->json('departments'))->firstWhere('id', $this->sales->id)['agents'];
+
+    expect(collect($agents)->pluck('id')->all())->toEqualCanonicalizing([$this->agent->id, $this->colleague->id])
+        ->and(collect($agents)->every(fn (array $agent): bool => array_keys($agent) === ['id', 'name', 'availability', 'at_capacity']))->toBeTrue();
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.show', $this->colleagues))
+        ->assertNotFound();
 });
 
 test('assigning or transferring to someone outside the actor\'s scope never reveals who they are', function (string $route, Closure $input) {

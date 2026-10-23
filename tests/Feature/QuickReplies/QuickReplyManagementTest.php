@@ -294,11 +294,13 @@ test('department managers cannot change global replies or replies of other depar
     $foreign = QuickReply::factory()->forDepartments($other)->create();
     $mine = QuickReply::factory()->forDepartments($own)->create();
 
-    foreach ([$global, $mixed, $foreign] as $reply) {
+    // Replies the manager can use are refused; one shared only with another
+    // department answers like an id that does not exist.
+    foreach ([[$global, 403], [$mixed, 403], [$foreign, 404]] as [$reply, $status]) {
         $this->actingAs($manager)
             ->put(route('quick-replies.update', $reply), quickReplyInput(['shortcut' => $reply->shortcut, 'is_global' => false, 'department_ids' => [$own->id]]))
-            ->assertForbidden();
-        $this->actingAs($manager)->delete(route('quick-replies.destroy', $reply))->assertForbidden();
+            ->assertStatus($status);
+        $this->actingAs($manager)->delete(route('quick-replies.destroy', $reply))->assertStatus($status);
     }
 
     $this->actingAs($manager)
@@ -314,7 +316,8 @@ test('department managers cannot change global replies or replies of other depar
 
     expect($mine->refresh()->is_active)->toBeFalse();
 
-    $this->actingAs($manager)->patch(route('quick-replies.restore', $mine))->assertForbidden();
+    // Without records.view-deleted the deleted reply answers like an id that does not exist.
+    $this->actingAs($manager)->patch(route('quick-replies.restore', $mine))->assertNotFound();
 });
 
 test('a deleted reply cannot be used, keeps its shortcut reserved and can be restored', function () {

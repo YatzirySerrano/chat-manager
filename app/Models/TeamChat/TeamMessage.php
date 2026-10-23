@@ -100,4 +100,22 @@ class TeamMessage extends Model
     {
         return $this->hasMany(TeamAttachment::class);
     }
+
+    /**
+     * @return HasMany<TeamMessageReaction, $this>
+     */
+    public function reactions(): HasMany
+    {
+        return $this->hasMany(TeamMessageReaction::class);
+    }
+
+    /**
+     * Ids of the people mentioned in the message (group messages only).
+     *
+     * @return list<int>
+     */
+    public function mentionedUserIds(): array
+    {
+        return array_values(array_filter((array) ($this->metadata['mentions'] ?? []), 'is_int'));
+    }
 }

@@ -2,14 +2,19 @@
 
 namespace App\Actions\Conversations;
 
+use App\Actions\Contacts\ContactSearch;
 use App\Enums\ConversationStatus;
 use App\Enums\MessageDirection;
 use App\Enums\Permission;
+use App\Models\Contact;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Support\FullTextTerms;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The conversations inbox as the conversations screen lists it. Shared by
@@ -24,7 +29,17 @@ use Illuminate\Validation\Rule;
  * A view or filter outside the actor's options is ignored, so tampering
  * with the query string never widens what they see.
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, tag?: int|null, sort?: string}
+ * The search finds the contact (ContactSearch: phone, email or name) or,
+ * when asked, the content of the WhatsApp messages (FULLTEXT); both only
+ * narrow the conversations the actor may see, closed ones included only
+ * with the history permission.
+ *
+ * The list is paged with a keyset cursor over its order (status priority,
+ * last activity, id), so loading more never repeats or skips a row and has
+ * no upper bound.
+ *
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tag?: int|null, sort?: string}
+ * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
 class ConversationInboxQuery
 {
@@ -53,7 +68,26 @@ class ConversationInboxQuery
 
     public const SORT_OLDEST = 'oldest';
 
-    public function __construct(private ConversationAccess $access) {}
+    /**
+     * What the search looks in: the contact (default) or the messages.
+     */
+    public const SEARCH_CONTACT = 'contact';
+
+    public const SEARCH_MESSAGES = 'messages';
+
+    /**
+     * Statuses in the order of the priority sort.
+     *
+     * @var list<string>
+     */
+    private const PRIORITY = ['pending', 'open', 'on_hold', 'closed'];
+
+    /**
+     * Position of the status in PRIORITY (1 = pending).
+     */
+    private const PRIORITY_RANK = "FIELD(conversations.status, 'pending', 'open', 'on_hold', 'closed')";
+
+    public function __construct(private ConversationAccess $access, private ContactSearch $contacts) {}
 
     /**
      * Validation rules of the inbox filters (query string).
@@ -69,6 +103,7 @@ class ConversationInboxQuery
             'agent' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
             'connection' => ['nullable', 'integer'],
             'search' => ['nullable', 'string', 'max:100'],
+            'search_in' => ['nullable', Rule::in([self::SEARCH_CONTACT, self::SEARCH_MESSAGES])],
             'tag' => ['nullable', 'integer', 'min:1'],
             'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
         ];
@@ -101,6 +136,7 @@ class ConversationInboxQuery
             'agent' => ! $personal && is_scalar($agent) && (string) $agent !== '' ? (string) $agent : null,
             'connection' => is_numeric($validated['connection'] ?? null) ? (int) $validated['connection'] : null,
             'search' => trim(is_string($search) ? $search : ''),
+            'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
             'tag' => is_numeric($validated['tag'] ?? null) ? (int) $validated['tag'] : null,
             'sort' => in_array($validated['sort'] ?? null, [self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_PRIORITY,
         ];
@@ -128,10 +164,7 @@ class ConversationInboxQuery
             ->when(ctype_digit((string) $agent), fn (Builder $query) => $query->where('conversations.assigned_user_id', (int) $agent))
             ->when($filters['connection'] !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters['connection']))
             ->when(($filters['tag'] ?? null) !== null, fn (Builder $query) => $query->whereHas('tags', fn (Builder $tags) => $tags->whereKey($filters['tag'] ?? 0)))
-            ->when($search !== '', fn (Builder $query) => $query->whereHas('contact', fn (Builder $contact) => $contact
-                ->where('name', 'like', '%'.addcslashes($search, '%_\\').'%')
-                ->orWhere('profile_name', 'like', '%'.addcslashes($search, '%_\\').'%')
-                ->orWhere('phone_e164', 'like', '%'.addcslashes(preg_replace('/\D+/', '', $search) ?: $search, '%_\\').'%')));
+            ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $search, $filters['search_in'] ?? self::SEARCH_CONTACT));
     }
 
     /**
@@ -149,9 +182,95 @@ class ConversationInboxQuery
         return $this->filtered($actor, $filters)
             ->when($status === 'active', fn (Builder $query) => $query->notClosed())
             ->when(! in_array($status, ['active', 'all'], true), fn (Builder $query) => $query->where('conversations.status', $status))
-            ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw("FIELD(conversations.status, 'pending', 'open', 'on_hold', 'closed')"))
+            ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw(self::PRIORITY_RANK))
             ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy('conversations.last_message_at')->orderBy('conversations.id'))
             ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc('conversations.last_message_at')->orderByDesc('conversations.id'));
+    }
+
+    /**
+     * Narrows the list to the rows that follow the cursor in its order.
+     * Conversations without activity yet (no last_message_at) go last in
+     * the descending orders and first in the "oldest" one, as MariaDB sorts
+     * NULL values.
+     *
+     * @param  Builder<Conversation>  $query
+     * @param  InboxCursor  $cursor
+     * @return Builder<Conversation>
+     */
+    public function startingAfter(Builder $query, array $cursor, string $sort): Builder
+    {
+        ['rank' => $rank, 'at' => $at, 'id' => $id] = $cursor;
+
+        if ($sort === self::SORT_OLDEST) {
+            return $query->where(fn (Builder $after) => $at === null
+                ? $after->where(fn (Builder $same) => $same->whereNull('conversations.last_message_at')->where('conversations.id', '>', $id))
+                    ->orWhereNotNull('conversations.last_message_at')
+                : $after->where('conversations.last_message_at', '>', $at)
+                    ->orWhere(fn (Builder $same) => $same->where('conversations.last_message_at', $at)->where('conversations.id', '>', $id)));
+        }
+
+        $laterInTime = fn (Builder $after) => $at === null
+            ? $after->whereNull('conversations.last_message_at')->where('conversations.id', '<', $id)
+            : $after->where(fn (Builder $older) => $older
+                ->where('conversations.last_message_at', '<', $at)
+                ->orWhere(fn (Builder $same) => $same->where('conversations.last_message_at', $at)->where('conversations.id', '<', $id))
+                ->orWhereNull('conversations.last_message_at'));
+
+        if ($sort === self::SORT_RECENT) {
+            return $query->where($laterInTime);
+        }
+
+        return $query->where(fn (Builder $after) => $after
+            ->whereRaw(self::PRIORITY_RANK.' > ?', [$rank])
+            ->orWhere(fn (Builder $sameRank) => $sameRank->whereRaw(self::PRIORITY_RANK.' = ?', [$rank])->where($laterInTime)));
+    }
+
+    /**
+     * The cursor pointing right after a listed row: the position of its
+     * status in the priority order (1 = pending), its raw last activity and
+     * its id.
+     *
+     * @return InboxCursor
+     */
+    public function cursorFor(Conversation $row): array
+    {
+        $at = $row->getRawOriginal('last_message_at');
+
+        return [
+            'rank' => (int) array_search($row->status->value, self::PRIORITY, true) + 1,
+            'at' => is_string($at) ? $at : null,
+            'id' => (int) $row->id,
+        ];
+    }
+
+    /**
+     * @param  InboxCursor  $cursor
+     */
+    public static function encodeCursor(array $cursor): string
+    {
+        return rtrim(strtr(base64_encode((string) json_encode([$cursor['rank'], $cursor['at'], $cursor['id']])), '+/', '-_'), '=');
+    }
+
+    /**
+     * The cursor sent back by the client. A tampered or stale one is
+     * rejected instead of being guessed.
+     *
+     * @return InboxCursor
+     *
+     * @throws ValidationException
+     */
+    public static function decodeCursor(string $encoded, string $key = 'after'): array
+    {
+        $values = json_decode((string) base64_decode(strtr($encoded, '-_', '+/'), true), true);
+
+        if (! is_array($values) || ! array_is_list($values) || count($values) !== 3
+            || ! is_int($values[0]) || $values[0] < 1 || $values[0] > count(self::PRIORITY)
+            || ! ($values[1] === null || (is_string($values[1]) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $values[1]) === 1))
+            || ! is_int($values[2]) || $values[2] < 1) {
+            throw ValidationException::withMessages([$key => 'La lista cambió. Vuelve a cargarla.']);
+        }
+
+        return ['rank' => $values[0], 'at' => $values[1], 'id' => $values[2]];
     }
 
     /**
@@ -195,6 +314,53 @@ class ConversationInboxQuery
         return $this->access->attendsConversations($actor)
             ? [self::VIEW_ALL, self::VIEW_MINE]
             : [self::VIEW_ALL];
+    }
+
+    /**
+     * Whether the search finds nothing because none of its words can be
+     * searched: a message search with only short words or InnoDB stopwords.
+     * The inbox tells the person instead of showing a bare empty list.
+     *
+     * @param  InboxFilters  $filters
+     */
+    public function searchIgnored(array $filters): bool
+    {
+        return ($filters['search_in'] ?? self::SEARCH_CONTACT) === self::SEARCH_MESSAGES
+            && $filters['search'] !== ''
+            && FullTextTerms::booleanPrefixQuery($filters['search']) === null;
+    }
+
+    /**
+     * Narrows the conversations to the search: the contact (ContactSearch),
+     * or the content of their WhatsApp messages through the FULLTEXT index.
+     * Both are uncorrelated subqueries, so the index is searched once and
+     * the actor's reach (applied by the caller) still decides what is seen.
+     * A message search without any searchable word finds nothing
+     * (searchIgnored()).
+     *
+     * @param  Builder<Conversation>  $query
+     */
+    private function constrainToSearch(Builder $query, string $search, string $searchIn): void
+    {
+        if ($searchIn !== self::SEARCH_MESSAGES) {
+            $query->whereIn('conversations.contact_id', Contact::query()
+                ->select('contacts.id')
+                ->tap(fn (Builder $contacts) => $this->contacts->constrain($contacts, $search)));
+
+            return;
+        }
+
+        $words = FullTextTerms::booleanPrefixQuery($search);
+
+        if ($words === null) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->whereIn('conversations.id', Message::query()
+            ->select('messages.conversation_id')
+            ->whereFullText('messages.body', $words, ['mode' => 'boolean']));
     }
 
     /**

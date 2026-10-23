@@ -5,6 +5,10 @@
 # logs and framework caches too. The .env file is NOT included: keep it in a
 # password manager or secret store, it holds APP_KEY (needed to decrypt the
 # connection credentials stored in the database).
+#
+# Runs as root: install a reviewed copy owned by root, never run it from the
+# releases (they belong to the deploy user, see deploy/sudoers/chat-manager):
+#   sudo install -o root -g root -m 0755 deploy/scripts/backup-storage.sh /usr/local/sbin/chat-manager-backup-storage
 set -euo pipefail
 
 STORAGE_DIR="${STORAGE_DIR:-/var/www/chat-manager/shared/storage}"

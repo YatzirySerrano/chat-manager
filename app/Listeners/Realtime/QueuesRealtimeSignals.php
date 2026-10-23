@@ -6,7 +6,8 @@ use App\Support\Queues;
 
 /**
  * Queue settings shared by the real-time listeners: they run off the request
- * path on a fast queue of their own (config broadcasting.realtime), a few
+ * path on the dedicated "realtime" queue (REALTIME_QUEUE overrides it, see
+ * Queues::name), never behind in-app notifications or exports, with a few
  * bounded attempts for database hiccups, and they are skipped entirely when
  * broadcasting is disabled (BROADCAST_CONNECTION=null), so installations
  * without real-time never queue useless work.
@@ -25,9 +26,7 @@ trait QueuesRealtimeSignals
 
     public function viaQueue(): string
     {
-        $queue = config('broadcasting.realtime.queue');
-
-        return is_string($queue) && $queue !== '' ? $queue : Queues::name(Queues::NOTIFICATIONS);
+        return Queues::name(Queues::REALTIME);
     }
 
     public function viaConnection(): ?string

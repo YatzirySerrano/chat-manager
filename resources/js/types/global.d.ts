@@ -31,6 +31,8 @@ declare module '@inertiajs/core' {
             /** Unread internal chat messages (null without team-chat.use). */
             teamChatUnread: number | null;
             sidebarOpen: boolean;
+            /** CSRF token for native form posts (export downloads). */
+            csrfToken: string | null;
             [key: string]: unknown;
         };
     }

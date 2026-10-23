@@ -31,12 +31,14 @@ use App\Models\Message;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\WebhookEvent;
+use App\Notifications\NotificationKind;
 use App\Reports\ReportRegistry;
 use App\Services\Exports\ReportExporter;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -665,4 +667,122 @@ test('a large export while customer messages arrive is consistent and does not b
         ->and(count($exported))->toBe(1100)
         ->and(count(array_unique($exported)))->toBe(1100, 'Some conversations were exported twice and others were missing.')
         ->and(collect($exported)->sort()->values()->all())->toBe(collect($ids)->sort()->values()->all());
+});
+
+test('a ReadCommittedTransaction run as the outermost transaction really runs at READ COMMITTED', function () {
+    $probe = ConcurrentProcess::start('read-committed-probe');
+    $probe->waitFor('READY');
+    $probe->tell('GO');
+    $probe->waitFor('HOLDING');
+
+    // Committed by another session between the two reads of the probe.
+    committed(fn () => Contact::factory()->create());
+    $probe->tell('CONTINUE');
+
+    expect($probe->result())->toMatchArray(['ok' => true, 'value' => [0, 1]]);
+});
+
+test('a deadlock in a READ COMMITTED transaction is retried after a pause and logged, up to the attempt limit', function (int $deadlocks, bool $ok, int $retried) {
+    $result = ConcurrentProcess::race([ConcurrentProcess::start('read-committed-retry', ['deadlocks' => $deadlocks])])[0];
+
+    expect($result['ok'])->toBe($ok)
+        ->and($result['retried'])->toBe(['test.retry' => $retried]);
+
+    if ($ok) {
+        expect($result['value'])->toBe($deadlocks + 1);
+    } else {
+        expect($result['message'])->toContain('Deadlock found');
+    }
+})->with([
+    'recovered on the second attempt' => [1, true, 1],
+    'given up after three attempts' => [3, false, 2],
+]);
+
+test('first messages of many new customers processed at once open one conversation each without exhausting retries', function () {
+    $connection = committed(fn () => Connection::factory()->operational()->create());
+    // Consecutive numbers: the new contacts share the end of the phone and identity indexes.
+    $phones = array_map(fn (int $i): string => '52156000000'.str_pad((string) $i, 2, '0', STR_PAD_LEFT), range(1, 10));
+
+    $results = ConcurrentProcess::race(array_map(fn (string $phone) => ConcurrentProcess::start('inbound', [
+        'connection_id' => $connection->id,
+        'from' => $phone,
+        'wamid' => "wamid.first.{$phone}",
+    ]), $phones));
+
+    expect(failures($results))->toBe([])
+        ->and(collect($results)->pluck('value.0.outcome')->unique()->values()->all())->toBe([InboundMessageOutcome::Created->value])
+        ->and(committed(fn () => [Contact::query()->count(), ContactIdentity::query()->count(), Conversation::query()->count(), Message::query()->count()]))->toBe([10, 10, 10, 10])
+        ->and(committed(fn () => Conversation::query()->distinct()->count('contact_id')))->toBe(10);
+});
+
+test('several messages of the same new customer and of other new customers at once: one contact and one conversation per customer, no message lost', function () {
+    $connection = committed(fn () => Connection::factory()->operational()->create());
+    $repeated = '5215600000100';
+    $messages = [
+        ...array_map(fn (int $i): array => ['from' => $repeated, 'wamid' => "wamid.same.{$i}"], range(1, 4)),
+        ...array_map(fn (int $i): array => ['from' => '52156000001'.$i.'0', 'wamid' => "wamid.other.{$i}"], range(1, 4)),
+    ];
+
+    $results = ConcurrentProcess::race(array_map(fn (array $message) => ConcurrentProcess::start('inbound', ['connection_id' => $connection->id, ...$message]), $messages));
+
+    expect(failures($results))->toBe([])
+        ->and(committed(fn () => [Contact::query()->count(), ContactIdentity::query()->count(), Conversation::query()->count(), Message::query()->count()]))->toBe([5, 5, 5, 8])
+        ->and(committed(fn () => Message::query()->whereLike('whatsapp_message_id', 'wamid.same.%')->distinct()->count('conversation_id')))->toBe(1)
+        ->and(collect($results)->take(4)->pluck('value.0.conversation_id')->unique()->count())->toBe(1);
+});
+
+/**
+ * An available agent of a new department, to be notified by other processes.
+ *
+ * @return array{User, Department}
+ */
+function notifiableAgent(): array
+{
+    return committed(function (): array {
+        $department = Department::factory()->create();
+
+        return [User::factory()->agent()->available()->inDepartments($department)->create(), $department];
+    });
+}
+
+test('workers notifying the same agent at once with the same new aggregation key leave one unread notification counting every occurrence', function () {
+    [$agent, $department] = notifiableAgent();
+
+    $results = ConcurrentProcess::race(array_map(fn (int $i) => ConcurrentProcess::start('notify-pending', [
+        'user_id' => $agent->id,
+        'department_id' => $department->id,
+        'conversation_id' => 1000 + $i,
+        'event_id' => 5000 + $i,
+    ]), range(1, 8)));
+
+    $notification = committed(fn () => DatabaseNotification::query()->where('notifiable_id', $agent->id)->sole());
+
+    expect(failures($results))->toBe([])
+        ->and($notification->kind)->toBe(NotificationKind::ConversationPending->value)
+        ->and($notification->occurrences)->toBe(8)
+        ->and($notification->read_at)->toBeNull()
+        ->and($notification->data['conversation_ids'])->toEqualCanonicalizing(range(1001, 1008))
+        ->and(committed(fn () => DB::table('notification_receipts')->where('user_id', $agent->id)->pluck('notification_id')->all()))->toBe(array_fill(0, 8, $notification->id));
+});
+
+test('notifications stored while the agent marks everything read are neither lost nor duplicated', function () {
+    [$agent, $department] = notifiableAgent();
+
+    $results = ConcurrentProcess::race([
+        ...array_map(fn (int $i) => ConcurrentProcess::start('notify-pending', [
+            'user_id' => $agent->id,
+            'department_id' => $department->id,
+            'conversation_id' => 2000 + $i,
+            'event_id' => 6000 + $i,
+        ]), range(1, 6)),
+        ConcurrentProcess::start('mark-all-read', ['user_id' => $agent->id]),
+        ConcurrentProcess::start('mark-all-read', ['user_id' => $agent->id]),
+    ]);
+
+    $notifications = committed(fn () => DatabaseNotification::query()->where('notifiable_id', $agent->id)->get());
+
+    expect(failures($results))->toBe([])
+        ->and($notifications->sum('occurrences'))->toBe(6)
+        ->and($notifications->whereNull('read_at')->count())->toBeLessThanOrEqual(1)
+        ->and(committed(fn () => DB::table('notification_receipts')->where('user_id', $agent->id)->whereIn('notification_id', $notifications->modelKeys())->count()))->toBe(6);
 });

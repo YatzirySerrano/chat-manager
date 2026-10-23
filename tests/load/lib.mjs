@@ -620,3 +620,43 @@ function safeJson(text) {
         return text;
     }
 }
+
+/**
+ * Waits for real-time signals on one or more PusherClients: `wait()`
+ * resolves with the arrival time (performance.now()) of the first frame
+ * matching `predicate(event, channel, data)` received after the call, or
+ * null after `timeoutMs`. Used to measure webhook/action -> signal latency.
+ */
+export class SignalWatch {
+    constructor() {
+        this.waiters = new Set();
+    }
+
+    attach(client) {
+        client.on((event, channel, data) => {
+            const at = performance.now();
+
+            for (const waiter of this.waiters) {
+                if (waiter.predicate(event, channel, data)) {
+                    this.waiters.delete(waiter);
+                    clearTimeout(waiter.timer);
+                    waiter.resolve(at);
+                }
+            }
+        });
+
+        return client;
+    }
+
+    wait(predicate, timeoutMs = 60000) {
+        return new Promise((resolve) => {
+            const waiter = { predicate, resolve, timer: null };
+            waiter.timer = setTimeout(() => {
+                this.waiters.delete(waiter);
+                resolve(null);
+            }, timeoutMs);
+            waiter.timer.unref?.();
+            this.waiters.add(waiter);
+        });
+    }
+}

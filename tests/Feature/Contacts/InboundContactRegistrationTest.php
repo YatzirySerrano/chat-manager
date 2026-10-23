@@ -362,6 +362,7 @@ test('automatic registration does not widen what each employee can see', functio
     $agent = User::factory()->agent()->inDepartments($department)->create();
     $admin = User::factory()->superAdministrator()->create();
     $registration = registerInbound(Connection::factory()->create(), inboundSender(profileName: 'Cliente Reservado'));
+    commitForFullTextSearch();
 
     $this->actingAs($agent)->get(route('contacts.show', $registration->contact))->assertNotFound();
     $this->actingAs($agent)->get(route('contacts.index', ['search' => 'Reservado']))

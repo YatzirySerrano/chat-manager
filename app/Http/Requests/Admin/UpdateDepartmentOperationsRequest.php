@@ -3,8 +3,10 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\Department;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Validation for the automatic messages of a department (welcome and
@@ -18,12 +20,11 @@ class UpdateDepartmentOperationsRequest extends FormRequest
      */
     public const WELCOME_MESSAGE_MAX_LENGTH = 1024;
 
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $department = $this->route('department');
 
-        return $department instanceof Department
-            && ($this->user()?->can('update', $department) ?? false);
+        return $department instanceof Department ? Gate::inspect('update', $department) : Response::deny();
     }
 
     /**

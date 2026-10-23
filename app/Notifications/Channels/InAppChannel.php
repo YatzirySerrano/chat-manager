@@ -5,7 +5,7 @@ namespace App\Notifications\Channels;
 use App\Models\User;
 use App\Notifications\InAppNotification;
 use App\Notifications\NotificationSignal;
-use Illuminate\Database\UniqueConstraintViolationException;
+use App\Support\ReadCommittedTransaction;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -16,76 +16,104 @@ use Illuminate\Support\Str;
  * 1. the (recipient, source key) receipt is inserted first; when it already
  *    exists the event was notified before and nothing happens;
  * 2. with an aggregation key, the recipient's unread notification with that
- *    key is updated (occurrences + 1, newest payload, moved to the top);
- *    otherwise a new notification is created. The database allows a single
- *    unread notification per key, so two workers never create two;
+ *    key is created or, when it exists, counted (occurrences + 1, newest
+ *    payload, moved to the top) in one atomic upsert on the database's
+ *    single-unread-per-key unique index; otherwise a new notification is
+ *    created. Two workers never create two, and nothing locks a row that
+ *    may not exist (no gap locks);
  * 3. after commit the recipient receives a content-free real-time signal.
+ *
+ * It runs at READ COMMITTED with bounded, logged deadlock retries
+ * (ReadCommittedTransaction), so a burst for the same recipient does not
+ * fail the listener job and restart the whole fan-out.
  */
 class InAppChannel
 {
+    public function __construct(private ReadCommittedTransaction $transaction) {}
+
     public function send(User $notifiable, InAppNotification $notification): ?DatabaseNotification
     {
-        try {
-            return $this->store($notifiable, $notification);
-        } catch (UniqueConstraintViolationException) {
-            // Another worker created the unread aggregate meanwhile: fold into it.
-            return $this->store($notifiable, $notification);
-        }
+        return $this->transaction->run('notification.in_app', fn (): ?DatabaseNotification => $this->store($notifiable, $notification));
     }
 
     private function store(User $notifiable, InAppNotification $notification): ?DatabaseNotification
     {
-        $stored = DB::transaction(function () use ($notifiable, $notification): ?DatabaseNotification {
-            $inserted = DB::table('notification_receipts')->insertOrIgnore([
-                'user_id' => $notifiable->id,
-                'source_key' => mb_substr($notification->sourceKey(), 0, 191),
-                'created_at' => now(),
-            ]);
+        $sourceKey = mb_substr($notification->sourceKey(), 0, 191);
 
-            if ($inserted === 0) {
-                return null;
-            }
+        $inserted = DB::table('notification_receipts')->insertOrIgnore([
+            'user_id' => $notifiable->id,
+            'source_key' => $sourceKey,
+            'created_at' => now(),
+        ]);
 
-            $aggregateKey = $notification->aggregateKey();
-            $existing = $aggregateKey === null ? null : $notifiable->notifications()
-                ->getQuery()
-                ->where('unread_aggregate_key', $aggregateKey)
-                ->lockForUpdate()
-                ->first();
+        if ($inserted === 0) {
+            return null;
+        }
 
-            if ($existing instanceof DatabaseNotification) {
-                /** @var array<string, mixed> $data */
-                $data = $existing->data;
+        $aggregateKey = $notification->aggregateKey();
 
-                $existing->forceFill([
-                    'data' => $notification->aggregate($data),
-                    'occurrences' => $existing->getAttribute('occurrences') + 1,
-                    'updated_at' => now(),
-                ])->save();
+        $record = $aggregateKey === null
+            ? $notifiable->notifications()->create([
+                'id' => (string) Str::uuid(),
+                'type' => $notification::class,
+                'kind' => $notification->kind()->value,
+                'level' => $notification->kind()->level()->value,
+                'aggregate_key' => null,
+                'data' => $notification->payload(),
+                'read_at' => null,
+            ])
+            : $this->fold($notifiable, $notification, $aggregateKey);
 
-                $record = $existing;
-            } else {
-                $record = $notifiable->notifications()->create([
-                    'id' => (string) Str::uuid(),
-                    'type' => $notification::class,
-                    'kind' => $notification->kind()->value,
-                    'level' => $notification->kind()->level()->value,
-                    'aggregate_key' => $aggregateKey,
-                    'data' => $notification->payload(),
-                    'read_at' => null,
-                ]);
-            }
+        DB::table('notification_receipts')
+            ->where('user_id', $notifiable->id)
+            ->where('source_key', $sourceKey)
+            ->update(['notification_id' => $record->id]);
 
-            DB::table('notification_receipts')
-                ->where('user_id', $notifiable->id)
-                ->where('source_key', mb_substr($notification->sourceKey(), 0, 191))
-                ->update(['notification_id' => $record->id]);
+        NotificationSignal::dispatch($notifiable->id, (string) $record->id, $notification->kind()->value);
 
-            NotificationSignal::dispatch($notifiable->id, (string) $record->id, $notification->kind()->value);
+        return $record;
+    }
 
-            return $record;
-        });
+    /**
+     * Inserts the unread aggregate, or counts the occurrence on the existing
+     * one when the unique (recipient, unread aggregation key) index already
+     * has it. Either way the statement leaves that row locked by this
+     * transaction, so merging the payload afterwards cannot lose another
+     * worker's occurrence.
+     */
+    private function fold(User $notifiable, InAppNotification $notification, string $aggregateKey): DatabaseNotification
+    {
+        $id = (string) Str::uuid();
+        $now = now();
 
-        return $stored;
+        DB::table('notifications')->upsert([
+            'id' => $id,
+            'type' => $notification::class,
+            'notifiable_type' => $notifiable->getMorphClass(),
+            'notifiable_id' => $notifiable->id,
+            'kind' => $notification->kind()->value,
+            'level' => $notification->kind()->level()->value,
+            'aggregate_key' => $aggregateKey,
+            'occurrences' => 1,
+            'data' => json_encode($notification->payload(), JSON_THROW_ON_ERROR),
+            'read_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], ['notifiable_type', 'notifiable_id', 'unread_aggregate_key'], [
+            'occurrences' => DB::raw('occurrences + 1'),
+            'updated_at',
+        ]);
+
+        /** @var DatabaseNotification $record */
+        $record = $notifiable->notifications()->getQuery()->where('unread_aggregate_key', $aggregateKey)->firstOrFail();
+
+        if ($record->id !== $id) {
+            /** @var array<string, mixed> $data */
+            $data = $record->data;
+
+            $record->forceFill(['data' => $notification->aggregate($data)])->save();
+        }
+
+        return $record;
     }
 }

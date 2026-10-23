@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Cache;
  *     appearance: array{palette: string},
  *     business_hours: array{enabled: bool, days: array<string, BusinessDay>, holidays: list<Holiday>},
  *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool},
+ *     sla: array{first_response_minutes: int|null, resolution_minutes: int|null},
  * }
  */
 class PlatformSettings
@@ -140,6 +141,12 @@ class PlatformSettings
                 'max_open_conversations_per_agent' => null,
                 'auto_close_after_hours' => null,
                 'transfer_reason_required' => false,
+            ],
+            // Optional service level objectives of the reports, in minutes
+            // of business time; null = no objective (no compliance figure).
+            'sla' => [
+                'first_response_minutes' => null,
+                'resolution_minutes' => null,
             ],
         ];
     }

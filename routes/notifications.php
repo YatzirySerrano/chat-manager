@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Notifications\NotificationController;
 use App\Http\Controllers\Notifications\NotificationPreferenceController;
+use App\Http\Controllers\Notifications\PushSubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -17,4 +18,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('settings/notifications', [NotificationPreferenceController::class, 'edit'])->name('notifications.preferences.edit');
     Route::put('settings/notifications', [NotificationPreferenceController::class, 'update'])->name('notifications.preferences.update');
+
+    Route::post('settings/notifications/push-subscriptions', [PushSubscriptionController::class, 'store'])->middleware('throttle:20,1')->name('notifications.push-subscriptions.store');
+    Route::delete('settings/notifications/push-subscriptions/{subscription}', [PushSubscriptionController::class, 'destroy'])->whereNumber('subscription')->middleware('throttle:20,1')->name('notifications.push-subscriptions.destroy');
 });

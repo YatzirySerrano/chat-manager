@@ -11,8 +11,8 @@ use Carbon\CarbonInterface;
  * inbound message AND an outbound message confirmed by the provider.
  *
  * Precedence (first match wins): inactive overlay, not configured, invalid
- * credentials, error newer than the last success, operational, receiving,
- * verified credentials, configured.
+ * credentials, error newer than the last success, operational (only with
+ * verified credentials), receiving, verified credentials, configured.
  */
 enum ConnectionHealth: string
 {
@@ -72,7 +72,9 @@ enum ConnectionHealth: string
             return self::Error;
         }
 
-        if ($connection->last_inbound_at !== null && $connection->last_outbound_at !== null) {
+        // Past traffic does not vouch for credentials that are pending
+        // verification (changed token, restored connection).
+        if ($connection->credentials_verified_at !== null && $connection->last_inbound_at !== null && $connection->last_outbound_at !== null) {
             return self::Operational;
         }
 
@@ -110,7 +112,7 @@ enum ConnectionHealth: string
             self::CredentialsInvalid => 'Meta rechazó las credenciales en la última verificación.',
             self::CredentialsVerified => 'Meta aceptó las credenciales; aún no hay evidencia de recepción por webhook.',
             self::Receiving => 'El webhook fue verificado o ya se recibió al menos un mensaje.',
-            self::Operational => 'Se confirmó la recepción y el envío de mensajes.',
+            self::Operational => 'Credenciales verificadas y se confirmó la recepción y el envío de mensajes.',
             self::Error => 'El evento más reciente fue un error posterior al último éxito.',
         };
     }

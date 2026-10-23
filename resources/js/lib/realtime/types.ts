@@ -15,6 +15,11 @@ export type RealtimeConfig = {
     user_channel: string | null;
     /** Inbox channels that match the user's current inbox and permissions. */
     inbox_channels: string[];
+    /**
+     * Presence channels of the internal chat ("team", "team.departments.{id}"):
+     * each one only gathers people who may chat with each other.
+     */
+    presence_channels?: string[];
 };
 
 /**
@@ -38,6 +43,9 @@ export type RealtimeState =
 export type RealtimePayload = Record<string, string | number | boolean | null>;
 
 export type RealtimeHandler = (payload: RealtimePayload) => void;
+
+/** Receives the ids of the members of a presence channel. */
+export type PresenceListener = (memberIds: number[]) => void;
 
 /** A channel and the events of it that should refresh the page. */
 export type LiveChannel = {

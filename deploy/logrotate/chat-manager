@@ -15,7 +15,13 @@
     su www-data www-data
 }
 
+# Supervisor (root), the backups (root) and PHP-FPM errors (www-data, file
+# created with install -o www-data). /var/log/chatmanager must stay
+# root:root 0755: logrotate refuses directories writable by other users.
+# copytruncate keeps each file's owner and mode, so www-data can still write
+# php-fpm-errors.log after the rotation.
 /var/log/chatmanager/*.log {
+    su root root
     daily
     rotate 14
     missingok

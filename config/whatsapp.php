@@ -23,6 +23,20 @@ return [
     */
     'transport' => env('WHATSAPP_TRANSPORT') ?: 'unavailable',
 
+    /*
+    | Optional controlled pilot of the real transport: when this list (WhatsApp
+    | numbers, digits only as Meta reports them, comma separated) is not empty,
+    | the "meta" transport only sends to these recipients; any other message
+    | fails explicitly ("transport_unavailable") without calling Meta. Empty
+    | means no restriction.
+    */
+    'pilot' => [
+        'recipients' => array_values(array_filter(array_map(
+            fn (string $number): string => (string) preg_replace('/\D+/', '', $number),
+            explode(',', (string) env('WHATSAPP_PILOT_RECIPIENTS', '')),
+        ))),
+    ],
+
     'simulation' => [
         // Simulated transport only: report sent → delivered (→ read) through the
         // same status processing used for Meta webhooks.
@@ -41,6 +55,11 @@ return [
         // Worker attempts for a stored delivery and the waits between them (seconds).
         'tries' => 5,
         'backoff' => [10, 30, 120, 600],
+
+        // Connection errors and signals older than this (days, by the entry
+        // time Meta reports) are replays and are not applied again. Meta
+        // retries a failed delivery for up to 7 days.
+        'max_age_days' => (int) (env('WHATSAPP_WEBHOOK_MAX_AGE_DAYS') ?: 7),
 
         // Retention of the raw webhook log (days).
         'retention_days' => (int) (env('WHATSAPP_WEBHOOK_RETENTION_DAYS') ?: 30),

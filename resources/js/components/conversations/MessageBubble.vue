@@ -2,6 +2,7 @@
 import {
     Bot,
     CircleAlert,
+    CircleQuestionMark,
     FlaskConical,
     LayoutTemplate,
     MapPin,
@@ -14,6 +15,8 @@ import { computed } from 'vue';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
+    DELIVERY_UNKNOWN,
+    deliveryUnknownLabel,
     formatTime,
     typeLabel,
 } from '@/components/conversations/messageFormat';
@@ -51,6 +54,10 @@ const emit = defineEmits<{
 
 const outbound = computed(() => props.message.direction === 'outbound');
 const failed = computed(() => props.message.status === 'failed');
+/* Meta may have received it: a warning, not a definitive failure. */
+const unknownDelivery = computed(
+    () => failed.value && props.message.error_code === DELIVERY_UNKNOWN,
+);
 
 const content = computed(
     () => props.message.content as Record<string, unknown> | null,
@@ -149,7 +156,10 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 outbound
                     ? 'rounded-br-md bg-primary-soft text-primary-soft-foreground'
                     : 'rounded-bl-md border bg-card text-card-foreground',
-                failed && 'ring-1 ring-destructive/60',
+                failed &&
+                    (unknownDelivery
+                        ? 'ring-1 ring-warning/60'
+                        : 'ring-1 ring-destructive/60'),
             ]"
             :data-message-id="message.id"
         >
@@ -340,18 +350,41 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 <MessageStatusIndicator
                     v-if="outbound"
                     :status="message.status"
+                    :error-code="message.error_code"
                 />
             </div>
 
             <div
                 v-if="failed"
-                class="mt-1.5 flex flex-wrap items-center gap-2 border-t border-destructive/20 pt-1.5 text-xs text-destructive"
+                class="mt-1.5 flex flex-wrap items-center gap-2 border-t pt-1.5 text-xs"
+                :class="
+                    unknownDelivery
+                        ? 'border-warning/30 text-warning'
+                        : 'border-destructive/20 text-destructive'
+                "
                 role="status"
             >
-                <CircleAlert class="size-3.5 shrink-0" aria-hidden="true" />
-                <span class="min-w-0 flex-1">{{
-                    message.error_message ?? 'El mensaje no se pudo enviar.'
-                }}</span>
+                <CircleQuestionMark
+                    v-if="unknownDelivery"
+                    class="size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
+                <CircleAlert
+                    v-else
+                    class="size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
+                <span class="min-w-0 flex-1">
+                    <strong v-if="unknownDelivery" class="font-semibold"
+                        >{{ deliveryUnknownLabel }}:
+                    </strong>
+                    {{
+                        message.error_message ??
+                        (unknownDelivery
+                            ? 'WhatsApp no confirmó la entrega; el cliente pudo haberlo recibido.'
+                            : 'El mensaje no se pudo enviar.')
+                    }}
+                </span>
                 <Button
                     v-if="canRetry"
                     size="sm"

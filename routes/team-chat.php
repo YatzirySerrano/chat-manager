@@ -31,6 +31,7 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         Route::post('leave', [TeamThreadController::class, 'leave'])->name('leave');
         Route::put('mute', [TeamThreadController::class, 'mute'])->name('mute');
         Route::post('read', [TeamThreadController::class, 'read'])->name('read');
+        Route::post('typing', [TeamThreadController::class, 'typing'])->middleware('throttle:30,1')->name('typing');
 
         Route::post('participants', [TeamParticipantController::class, 'store'])->name('participants.store');
         Route::put('participants/{user}', [TeamParticipantController::class, 'update'])->withoutScopedBindings()->name('participants.update');
@@ -40,6 +41,8 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         Route::post('messages', [TeamMessageController::class, 'store'])->middleware('throttle:120,1')->name('messages.store');
         Route::put('messages/{message}', [TeamMessageController::class, 'update'])->name('messages.update');
         Route::delete('messages/{message}', [TeamMessageController::class, 'destroy'])->name('messages.destroy');
+        Route::put('messages/{message}/reactions', [TeamMessageController::class, 'react'])->middleware('throttle:120,1')->name('messages.reactions.store');
+        Route::delete('messages/{message}/reactions', [TeamMessageController::class, 'unreact'])->middleware('throttle:120,1')->name('messages.reactions.destroy');
     });
 
     Route::get('threads/{thread}/messages/{message}/attachments/{attachment}', [TeamAttachmentController::class, 'show'])

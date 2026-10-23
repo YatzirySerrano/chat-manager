@@ -47,9 +47,7 @@ class DeleteUser
 
             $released = $this->releaseConversations->handle($locked, null, $actor, 'Usuario eliminado');
 
-            if (config('session.driver') === 'database') {
-                DB::table((string) config('session.table', 'sessions'))->where('user_id', $locked->id)->delete();
-            }
+            $locked->closeSessions();
 
             $this->audit->record(AuditAction::UserDeleted, $locked, [
                 'role' => $locked->role()?->label,

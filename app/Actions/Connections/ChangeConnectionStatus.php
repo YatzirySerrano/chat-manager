@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -43,6 +44,7 @@ class ChangeConnectionStatus
             }
 
             $connection->forceFill(['is_active' => $active])->save();
+            ConnectionStatusChanged::dispatch($connection->id, $active ? 'activated' : 'deactivated');
 
             $this->audit->record(
                 $active ? AuditAction::ConnectionActivated : AuditAction::ConnectionDeactivated,

@@ -1,6 +1,9 @@
 <?php
 
+use App\Enums\AuditAction;
+use App\Models\AuditLog;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
@@ -141,4 +144,25 @@ test('choosing the current password as the new one writes nothing and says so', 
         ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'No había cambios por guardar.']));
 
     expect($writes)->toBe([]);
+});
+
+test('changing the password signs out the other sessions and keeps the current one', function () {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->create();
+
+    foreach (['other-device', 'another-device'] as $id) {
+        DB::table('sessions')->insert(['id' => $id, 'user_id' => $user->id, 'payload' => '', 'last_activity' => now()->getTimestamp()]);
+    }
+
+    $this->actingAs($user)
+        ->from(route('security.edit'))
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(DB::table('sessions')->where('user_id', $user->id)->pluck('id')->all())->toBe([session()->getId()])
+        ->and(AuditLog::query()->where('action', AuditAction::AuthPasswordChanged)->sole()->properties)->toBe(['sessions_closed' => 2]);
 });

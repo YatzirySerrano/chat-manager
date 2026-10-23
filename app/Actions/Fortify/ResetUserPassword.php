@@ -12,7 +12,9 @@ class ResetUserPassword implements ResetsUserPasswords
     use PasswordValidationRules;
 
     /**
-     * Validate and reset the user's forgotten password.
+     * Validate and reset the user's forgotten password. Every open session
+     * of the account is closed, and Fortify rotates the "remember me" token
+     * afterwards; the reset is audited by AuditSecurityEvents.
      *
      * @param  array<string, string>  $input
      */
@@ -25,5 +27,7 @@ class ResetUserPassword implements ResetsUserPasswords
         $user->forceFill([
             'password' => $input['password'],
         ])->save();
+
+        $user->closeSessions();
     }
 }

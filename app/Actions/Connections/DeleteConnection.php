@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -31,6 +32,7 @@ class DeleteConnection
             $wasActive = $locked->is_active;
 
             $locked->forceFill(['deleted_at' => now(), 'is_active' => false])->save();
+            ConnectionStatusChanged::dispatch($locked->id, 'deleted');
 
             $this->audit->record(AuditAction::ConnectionDeleted, $locked, [
                 'was_active' => $wasActive,

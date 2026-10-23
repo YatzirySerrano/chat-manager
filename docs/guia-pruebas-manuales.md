@@ -1,0 +1,543 @@
+# Guía de pruebas manuales
+
+Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
+cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
+qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están al
+final (§27).
+
+> **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
+> WhatsApp. Lo simulado lleva la etiqueta «Simulación».
+
+## 0. Preparación
+
+### 0.1 Cuentas disponibles en la base local `chatmanager`
+
+Consultadas con una lectura de solo lectura el 2026-10-22. Usa **la contraseña que ya conoces** de cada cuenta (esta
+guía nunca las incluye).
+
+| Cuenta                                    | Correo                                   | Rol (alcance)                        | Departamentos   | Activa | Disponibilidad inicial |
+| ----------------------------------------- | ---------------------------------------- | ------------------------------------ | --------------- | ------ | ---------------------- |
+| yat serrano (**Superadministrador**)      | `serranohdez.yatziry03@gmail.com`        | Superadministrador (raíz, global)    | —               | Sí     | Disponible             |
+| jesus arizmendi maya (**Administrador**)  | `jesusarizmendimaya@gmail.com`           | Administrador (toda la organización) | —               | Sí     | No disponible          |
+| Demo B · Valeria Ríos (**agente Ventas**) | `valeria.ventas@demo-b.chatmanager.test` | Demo B · Agente (solo lo asignado)   | Demo B · Ventas | Sí     | No disponible          |
+| Demo B · Óscar Lima (**agente Soporte**)  | `oscar.soporte@demo-b.chatmanager.test`  | Demo B · Agente (solo lo asignado)   | Soporte         | Sí     | Disponible             |
+
+Roles sin usuarios: Supervisor (sus departamentos) y Agente (solo lo asignado). Para probar el Supervisor, crea un
+usuario de prueba en el módulo 3. Los permisos de cada rol están en
+[seguridad-y-auditoria.md §3.1](seguridad-y-auditoria.md#31-permisos-por-rol-tras-la-actualización-de-la-estabilización).
+
+**Decisión pendiente:** el Administrador **no** tiene `system.view` ni `system.manage` (permisos sensibles, no
+concedidos en la actualización de roles). Por eso no ve Administración → Sistema (módulo 23). Si decides dárselos:
+`php artisan app:sync-permissions --upgrade-default-roles --include-sensitive` (vista previa) y después con `--apply`.
+
+### 0.2 Departamentos y conexiones
+
+| Departamento               | Estado                           | Distribución | Notas                                              |
+| -------------------------- | -------------------------------- | ------------ | -------------------------------------------------- |
+| Ventas (id 1)              | Eliminado lógicamente (inactivo) | Compartida   | Sirve para probar «Ver eliminados» y restaurar     |
+| Marketing (id 2)           | Activo                           | Compartida   | Sin miembros                                       |
+| Demo B · Ventas (id 3)     | Activo                           | Compartida   | Departamento por defecto de la línea demo; Valeria |
+| Soporte (id 4)             | Activo                           | Compartida   | Departamento demo de Soporte renombrado; Óscar     |
+| departamento prueba (id 5) | Activo                           | Compartida   | Sin miembros                                       |
+
+| Conexión                             | Phone number ID   | Estado                                                              | Departamentos autorizados                                   |
+| ------------------------------------ | ----------------- | ------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Demo B · WhatsApp simulado (id 1)    | `990000000000100` | **Desactivada y sin credenciales guardadas**                        | Demo B · Ventas (por defecto), Soporte, departamento prueba |
+| Demo B · WhatsApp simulado (Soporte) | `990000000000101` | No existe todavía: la crea el simulador con `--create-support-line` | Soporte                                                     |
+
+Conversaciones existentes: Laura Méndez (abierta, Demo B · Ventas, responsable el Superadministrador), Mario Ruiz
+(abierta, Soporte, responsable el Superadministrador) y Sofía Torres (cerrada, Soporte, la cerró Óscar).
+
+### 0.3 Entorno y procesos
+
+1. **Respaldo antes de empezar** (las pruebas escriben en `chatmanager`):
+   `mariadb-dump --single-transaction chatmanager | gzip > storage/app/backups/chatmanager-antes-pruebas-manuales.sql.gz`.
+2. En `.env`: `WHATSAPP_TRANSPORT=simulated` (opcional `WHATSAPP_SIMULATE_STATUSES=true` y
+   `WHATSAPP_SIMULATE_READ=true` para que los envíos pasen solos a Entregado/Leído), `BROADCAST_CONNECTION=reverb`,
+   `QUEUE_CONNECTION=database`. Después `php artisan config:clear`.
+3. **Antes del módulo 10 (y siempre que una prueba hable de «en vivo», colas, exportaciones en cola, importaciones o
+   Web Push)**, arranca los procesos: `composer run dev` (servidor `php artisan serve` en `http://localhost:8000`,
+   Vite, Reverb, un `queue:listen` con las colas `webhooks,messages,realtime,notifications,media,default,exports` y
+   `schedule:work`). Alternativa en terminales separadas: `php artisan serve`, `npm run dev`,
+   `php artisan reverb:start`, `php artisan queue:listen --queue=webhooks,messages,realtime,notifications,media,default,exports --tries=1`
+   y `php artisan schedule:work`. Sin worker, el simulador guarda los webhooks pero no se procesan; sin Reverb, la
+   interfaz se actualiza por sondeo cada 20 s (no es un error).
+4. **Preparar la conexión demo para poder responder** (Superadministrador, Conexiones → «Demo B · WhatsApp
+   simulado» → Editar): WABA ID `990000000000200` y token de acceso desechable `DEMO-SIMULADO-TOKEN-000000000000`
+   (≥ 20 caracteres, sin espacios). Guarda y pulsa **Activar**. **No pulses «Verificar credenciales»**: llamaría a
+   Meta con un token falso, Meta lo rechazaría y la conexión quedaría bloqueada para enviar. La conexión quedará
+   activa con la advertencia «credenciales sin verificar» (el envío se permite).
+5. Ten dos navegadores (o una ventana normal y otra privada) para ver a la vez al administrador y al agente.
+6. Al terminar: `php artisan chat-manager:demo-cleanup` (vista previa) y, si quieres borrar los datos ficticios,
+   `--confirm`. Restaura el respaldo del paso 1 si necesitas volver al estado exacto.
+
+### 0.4 Comandos del simulador (`php artisan chat-manager:simulate-inbound`)
+
+Solo local, exige `--confirm`, solo líneas demo y números ficticios `5215500000100`–`5215500000199` (o `laura`,
+`mario`, `sofia`). La salida es una tabla con el resultado real («Conversación nueva», «Agregado a la conversación
+abierta», «Conversación reabierta», «Llegó tarde…», «Duplicado»), si el contacto es nuevo o existente, el
+departamento y un enlace «Abre:». Para obtener el id de un mensaje saliente (lectura):
+`php artisan tinker --execute 'echo App\Models\Message::query()->where("direction","outbound")->latest("id")->value("id");'`
+
+| Escenario                          | Comando                                                                                                                                                              | Resultado esperado                                                                                                                                                                                                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nuevo contacto                     | `php artisan chat-manager:simulate-inbound 5215500000150 "Quiero una cotización" --name="Ana" --confirm`                                                             | «Conversación nueva», contacto «Demo B · Ana (nuevo)», en Demo B · Ventas, Pendiente                                                                                                                                                                                                           |
+| Nuevo mensaje (misma conversación) | `php artisan chat-manager:simulate-inbound 5215500000150 "¿Siguen ahí?" --confirm`                                                                                   | «Agregado a la conversación abierta», contacto existente                                                                                                                                                                                                                                       |
+| Contacto existente                 | `php artisan chat-manager:simulate-inbound laura "Sigo interesada" --confirm`                                                                                        | «Agregado a la conversación abierta», «(existente)»                                                                                                                                                                                                                                            |
+| Dirigido a Ventas                  | `php artisan chat-manager:simulate-inbound 5215500000151 "Hola Ventas" --department=ventas --confirm`                                                                | Conversación nueva en Demo B · Ventas (`ventas` es el valor por defecto)                                                                                                                                                                                                                       |
+| Dirigido a Soporte                 | `php artisan chat-manager:simulate-inbound 5215500000152 "Mi pedido llegó dañado" --department=soporte --create-support-line --confirm`                              | La primera vez crea la línea «Demo B · WhatsApp simulado (Soporte)» (auditada como `connection.created`); conversación nueva en **Soporte**. Después basta `--department=soporte`                                                                                                              |
+| Multimedia con archivo             | `php artisan chat-manager:simulate-inbound mario "Recibo" --type=document --file=/ruta/a/recibo.pdf --confirm`                                                       | «Archivo de muestra adjuntado (simulación)»; el adjunto se abre desde la conversación                                                                                                                                                                                                          |
+| Multimedia sin archivo             | `php artisan chat-manager:simulate-inbound mario "Foto" --type=image --confirm`                                                                                      | Adjunto «no disponible» (`simulated_media`)                                                                                                                                                                                                                                                    |
+| Duplicado                          | `php artisan chat-manager:simulate-inbound laura --duplicate --confirm`                                                                                              | «Duplicado: no se guardó otra vez» (mismo `wamid`)                                                                                                                                                                                                                                             |
+| Entregado                          | `php artisan chat-manager:simulate-inbound --status=delivered --message=<id saliente> --confirm`                                                                     | La burbuja pasa a dos marcas (Entregado)                                                                                                                                                                                                                                                       |
+| Leído                              | `php artisan chat-manager:simulate-inbound --status=read --message=<id saliente> --confirm` (añade `--out-of-order` para mandar `read` antes que `delivered`)        | Dos marcas de color (Leído) con hora de entrega; fuera de orden queda igual de correcto                                                                                                                                                                                                        |
+| Error de envío                     | `php artisan chat-manager:simulate-inbound --status=failed --message=<id saliente> --error-code=131026 --confirm`                                                    | «No se envió» con el motivo de Meta; con `--error-code=131047` el texto de ventana de 24 h vencida. Códigos: 131026, 131047, 131049, 131050, 131056, 130429, 131000, 131031                                                                                                                    |
+| Ventana de 24 h vencida            | `php artisan chat-manager:simulate-inbound laura --expire-window --confirm`                                                                                          | El último mensaje del cliente pasa a hace 24 h 5 min; al recargar, «Ventana 24 h: Vencida» y solo se ofrece plantilla. Si se rechaza por mensajes recientes, usa `php artisan chat-manager:simulate-inbound 5215500000160 "Hola" --minutes-ago=1500 --confirm` (conversación nueva ya vencida) |
+| Reapertura                         | Cierra una conversación desde la bandeja y, antes de 120 min: `php artisan chat-manager:simulate-inbound sofia "Una duda más" --confirm` (si la cerrada es de Sofía) | «Conversación reabierta». Pasados 120 min: «Conversación nueva»                                                                                                                                                                                                                                |
+| Transferencia                      | No es un evento de Meta: se hace en la interfaz (módulo 14)                                                                                                          | Evento «Transferida» en el historial                                                                                                                                                                                                                                                           |
+
+## 1. Login y logout
+
+**1.1 Iniciar sesión.** Cuenta: Valeria. Acción: abrir `http://localhost:8000/login`, escribir correo y contraseña,
+«Iniciar sesión». Resultado: entra al panel; el menú solo muestra lo que su rol permite (Panel, Conversaciones,
+Contactos, Etiquetas, Respuestas rápidas, Chat interno, Reportes). Administrador: no ve nada distinto. Registro: no se
+audita un inicio de sesión normal. Error: entrar con una contraseña incorrecta, ver módulos de administración o una
+página 500.
+
+**1.2 Bloqueo por intentos.** Cuenta: Valeria. Acción: 6 intentos seguidos con una contraseña incorrecta. Resultado: a
+partir del sexto, mensaje de demasiados intentos (espera un minuto). Registro: `auth.lockout` en Auditoría (lo ve el
+Superadministrador o el Administrador con `audit.view`). Error: se puede seguir probando sin límite.
+
+**1.3 Recuperación de contraseña.** Cuenta: ninguna (sin sesión). Acción: «¿Olvidaste tu contraseña?», enviar 6 veces en
+un minuto con cualquier correo. Resultado: mensaje neutral (no revela si el correo existe); la sexta responde «demasiadas
+solicitudes» (429). Error: el mensaje distingue correos existentes o no hay límite.
+
+**1.4 Cerrar sesión.** Cuenta: Valeria. Acción: menú de usuario → «Cerrar sesión» → confirmar en el diálogo; después
+pulsar «Atrás» en el navegador. Resultado: vuelve al login y «Atrás» no muestra datos de la sesión anterior (historial
+de Inertia cifrado y limpiado; en `localhost` funciona, por http en otra IP solo hay un aviso en la consola). Error: al
+volver atrás aparecen conversaciones de la sesión cerrada.
+
+**1.5 Sesiones al cambiar la contraseña.** Cuenta: Valeria en dos navegadores. Acción: en uno, Configuración →
+Seguridad → cambiar contraseña. Resultado: el otro navegador pide iniciar sesión en la siguiente petición; el actual
+sigue dentro. Registro: `auth.password_changed` con `sessions_closed`. Error: el otro navegador sigue con sesión.
+
+## 2. Dashboard
+
+**2.1 Panel principal.** Cuenta: Superadministrador y luego Valeria. Acción: abrir «Panel». Resultado: en vivo «En
+atención», «Pendientes», «Cerradas hoy», «Agentes disponibles»; del periodo, primera respuesta humana y recibidas. El
+Superadministrador ve toda la organización; Valeria solo sus cifras (alcance asignado). Registro: nada. Error: Valeria
+ve cifras de otros departamentos o el panel tarda o falla.
+
+**2.2 Actualización en vivo.** Cuenta: Superadministrador con el panel abierto; procesos de §0.3 activos. Acción:
+ejecutar el comando «Nuevo contacto» de §0.4. Resultado: «Pendientes» sube en segundos sin recargar. Error: no cambia
+ni siquiera tras 20 s (sondeo) o se duplica.
+
+## 3. Usuarios
+
+**3.1 Crear un supervisor de prueba.** Cuenta: Administrador. Acción: Administración → Usuarios → «Nuevo usuario»;
+nombre «Prueba Supervisor», correo `supervisor.prueba@demo-b.chatmanager.test`, rol Supervisor, departamento Demo B ·
+Ventas, contraseña temporal. Resultado: aparece en la lista; el correo se valida en vivo (disponible). Registro:
+`user.created` en Auditoría. El agente no ve el módulo. Error: se puede asignar un rol superior al propio o el correo
+duplicado no se detecta.
+
+**3.2 Editar un usuario y su límite de conversaciones.** Cuenta: Administrador. Acción: Usuarios → Valeria → Editar →
+«Límite de conversaciones en atención» = 1 → Guardar. Resultado: guardado; valores fuera de 1–200 dan error en
+español. Registro: `user.updated` con `changes.max_open_conversations`. Valeria: no ve cambios hasta que el límite
+actúe (módulo 13). Error: acepta 0 o 500, o no se audita.
+
+**3.3 Autoedición protegida.** Cuenta: Superadministrador. Acción: Usuarios → abrir tu propia fila. Resultado: el
+correo aparece de solo lectura con una pista y, en lugar de «Restablecer contraseña», un enlace a Configuración →
+Seguridad; cambiar solo el nombre se guarda. Error: puedes cambiar tu contraseña o correo desde Administración.
+
+**3.4 Restablecer la contraseña de otro.** Cuenta: Administrador; Valeria con sesión abierta en otro navegador. Acción:
+Usuarios → Valeria → restablecer contraseña. Resultado: Valeria pierde la sesión en su siguiente petición. Registro:
+`user.password_reset` con `sessions_closed`. Error: Valeria sigue dentro.
+
+**3.5 Eliminar y restaurar.** Cuenta: Administrador. Acción: eliminar el usuario de prueba de 3.1; activar «Ver
+eliminados» y restaurarlo. Resultado: desaparece de la lista normal y vuelve al restaurar; sus conversaciones se
+habrían devuelto a la cola. Registro: `user.deleted` y `user.restored`. Error: borrado físico o sin auditoría.
+
+## 4. Roles y permisos
+
+**4.1 Revisar los roles actualizados.** Cuenta: Superadministrador. Acción: Administración → Roles → abrir Agente,
+Supervisor, Demo B · Agente y Administrador. Resultado: coinciden con la tabla de
+[seguridad §3.1](seguridad-y-auditoria.md#31-permisos-por-rol-tras-la-actualización-de-la-estabilización) (Agente con
+etiquetas, reportes y chat interno; Administrador con plantillas y **sin** `system.view`/`system.manage`). Registro:
+la actualización del 2026-10-22 aparece como `role.permissions_changed`. Error: falta algún permiso añadido.
+
+**4.2 Vista previa de la actualización.** Cuenta: ninguna (terminal). Acción: `php artisan app:sync-permissions
+--upgrade-default-roles --demo-b`. Resultado: «Vista previa: no se modificó nada» y, como ya se aplicó, nada que añadir
+(salvo `system.*` retenidos como sensibles). Error: propone quitar permisos personalizados o escribe sin `--apply`.
+
+**4.3 Sin escalamiento.** Cuenta: Administrador. Acción: intentar dar a un rol un permiso reservado (por ejemplo
+`contacts.import`) o asignarse el rol Superadministrador. Resultado: la interfaz no lo ofrece y el servidor lo
+rechaza. Error: se concede.
+
+**4.4 Efecto inmediato.** Cuenta: Superadministrador; Valeria con sesión abierta. Acción: quitar `team-chat.use` al rol
+Demo B · Agente. Resultado: en su siguiente petición Valeria ya no ve «Chat interno» (y lo pierde en vivo). Vuelve a
+concederlo al terminar. Registro: `role.permissions_changed`. Error: Valeria conserva el acceso.
+
+## 5. Departamentos
+
+**5.1 Distribución y límite por departamento.** Cuenta: Administrador. Acción: Departamentos → Demo B · Ventas →
+tarjeta «Distribución de conversaciones» → modo «Automática» y «Límite de conversaciones por agente» = 2 → Guardar.
+Resultado: la tarjeta «Atención en este momento» indica «límite propio del departamento»; valores fuera de 1–200 dan
+error. Registro: `department.operations_updated`. Agente: recibe conversaciones automáticas si está Disponible (módulo
+13). Error: el límite no aparece o no se audita.
+
+**5.2 Fuera de alcance = 404.** Cuenta: el supervisor de prueba (Demo B · Ventas). Acción: abrir a mano
+`/departments/4` (Soporte). Resultado: la misma página 404 que un id inexistente (`/departments/999`). Error: 403 en
+uno y 404 en otro (permite enumerar).
+
+**5.3 Restaurar un departamento.** Cuenta: Administrador. Acción: Departamentos → «Ver eliminados» → Ventas →
+restaurar (y vuelve a eliminarlo si no lo necesitas). Registro: `department.restored` / `department.deleted`. Error:
+no aparece en eliminados.
+
+## 6. Conexiones
+
+**6.1 Ficha y diagnóstico.** Cuenta: Superadministrador. Acción: Conexiones → Demo B · WhatsApp simulado. Resultado:
+estado (activa tras §0.3), salud (no «Operativa» porque las credenciales no están verificadas), URL del webhook,
+diagnóstico (entregas sin confirmar de 7 días con enlaces) y «Simulación». Sin `WHATSAPP_PILOT_RECIPIENTS` no aparece
+«Piloto controlado». Error: aparece «Operativa» sin credenciales verificadas o se muestran secretos.
+
+**6.2 Pausar con una conversación abierta.** Cuenta: Administrador; Valeria con una conversación propia abierta en la
+bandeja (módulo 10). Acción: Conexiones → Desactivar. Resultado: en vivo, el compositor de Valeria cambia a «La
+conexión de WhatsApp «…» está desactivada… Puedes seguir agregando notas internas.», sin adjuntos ni plantillas; la
+pestaña Nota interna sigue funcionando. Sin tiempo real, al enviar recibe el motivo (409), la conversación se recarga
+y el borrador se conserva. Los mensajes del cliente se siguen recibiendo. Registro: `connection.deactivated`. Error:
+el agente puede enviar o se pierde un mensaje entrante.
+
+**6.3 Reactivar.** Cuenta: Administrador. Acción: Activar. Resultado: aviso de «credenciales aún no verificadas»; el
+compositor de Valeria se desbloquea en vivo con una advertencia amarilla. Registro: `connection.activated`. Error:
+sigue bloqueado.
+
+**6.4 Eliminar y restaurar** (opcional, al final). Resultado: una conexión eliminada responde 404 al webhook y el
+compositor dice «fue eliminada»; al restaurarla vuelve **desactivada** y sin verificación de webhook ni suscripción.
+Registro: `connection.deleted` / `connection.restored`.
+
+## 7. Contactos
+
+**7.1 Búsqueda.** Cuenta: Superadministrador. Acción: Contactos → buscar «laura», «Lau», «méndez» (sin acento
+«mendez»), el inicio del teléfono `5215500000` y un prefijo de correo con `@` si alguno lo tiene. Resultado: encuentra
+por comienzo de palabra con o sin acentos y por prefijo de teléfono; «ura» (subcadena) no encuentra nada (es una
+limitación documentada). Error: «Juan 5» devuelve contactos por el dígito o el buscador falla con caracteres `+ - "`.
+
+**7.2 Alcance.** Cuenta: Valeria. Acción: Contactos → buscar «Mario». Resultado: no aparece (no es de sus
+conversaciones). Error: ve contactos ajenos.
+
+**7.3 Crear, editar, eliminar y restaurar.** Cuenta: Administrador. Acción: «Nuevo contacto» con teléfono ficticio
+`+52 55 0000 0199`; editarlo; eliminarlo; restaurarlo desde «Ver eliminados». Registro: `contact.created`,
+`contact.updated`, `contact.deleted`, `contact.restored`. Error: teléfono mal normalizado o duplicado no avisado.
+
+**7.4 Orden.** Acción: ordenar por «Más recientes». Resultado: los contactos sin interacción quedan al final.
+
+## 8. Etiquetas
+
+**8.1 Catálogo.** Cuenta: Administrador. Acción: Etiquetas → crear «Urgente», editar color, eliminar y restaurar.
+Registro: `tag.created`, `tag.updated`, `tag.deleted`, `tag.restored`. Valeria ve la lista pero no puede administrarla.
+Error: Valeria puede crear o editar etiquetas.
+
+**8.2 Etiquetar una conversación.** Cuenta: Valeria con una conversación propia (módulo 10). Acción: panel de
+detalles → etiquetas de la conversación → añadir «Urgente». Resultado: se guarda; en una conversación que no es suya
+no puede (404). Registro: `conversation.tags_changed`. Error: puede etiquetar conversaciones ajenas.
+
+## 9. Respuestas rápidas
+
+**9.1 Crear y usar.** Cuenta: Administrador crea en Respuestas rápidas «saludo» para Demo B · Ventas con el texto
+«Hola {contacto.nombre}, gracias por escribir». Valeria, en el compositor de su conversación, escribe «/» y elige
+«saludo». Resultado: el texto aparece con el nombre del contacto ya resuelto. Registro: `quick_reply.created`. Error:
+la variable no se resuelve o Valeria ve respuestas de otros departamentos.
+
+**9.2 Alcance de edición.** Cuenta: el supervisor de prueba. Acción: intentar editar una respuesta global o de otro
+departamento. Resultado: 403 si la ve; 404 si está fuera de su alcance. Error: puede editarla.
+
+## 10. Bandeja de WhatsApp
+
+Requisitos: procesos de §0.3 en marcha y la conexión demo activa con credenciales desechables.
+
+**10.1 Llega una conversación nueva.** Cuenta: Valeria (ponla «Disponible» con el interruptor de la bandeja) y el
+Superadministrador en otro navegador. Acción: comando «Nuevo contacto» de §0.4. Resultado: en segundos la fila aparece
+en «Pendientes» de Valeria y en «Todas» del Superadministrador, sin recargar. Óscar (Soporte) no la ve. Registro:
+evento «Creada» en el historial; notificación de «conversación pendiente» para los disponibles. Error: Óscar la ve o
+tarda más de 20 s.
+
+**10.2 Aceptar.** Cuenta: Valeria. Acción: abrir la fila → «Aceptar». Resultado: pasa a «Mis conversaciones» con
+Valeria como responsable; si otra persona acepta a la vez, solo una gana («Otra persona ya aceptó…»). Registro: evento
+«Aceptada». Error: dos responsables o aviso de éxito duplicado.
+
+**10.3 Paginación sin tope.** Cuenta: Superadministrador. Acción: pestaña Todas → bajar con scroll o «Cargar más
+conversaciones». Resultado: con pocas conversaciones el botón desaparece; nunca se repiten filas. (Con más de 300
+conversaciones, en una base de pruebas, la lista sigue más allá de 250). Error: filas repetidas o advertencias de
+claves duplicadas en la consola.
+
+**10.4 Búsqueda de contacto y en mensajes.** Cuenta: Superadministrador. Acción: buscar «Ana»; después Filtros →
+«Buscar en: Contenido de los mensajes» → «cotización» con la pestaña Todas; luego «the». Resultado: encuentra la
+conversación por nombre y por contenido; con «the» aparece «Escribe al menos una palabra de 3 letras o números… Las
+palabras muy comunes (como «the» o «for») no se buscan.». Valeria con la misma búsqueda solo encuentra lo suyo; las
+cerradas solo aparecen con el permiso de historial. Error: aparecen conversaciones fuera de alcance o la búsqueda en
+mensajes encuentra notas internas.
+
+## 11. Mensajes
+
+**11.1 Responder.** Cuenta: Valeria en su conversación. Acción: escribir «Con gusto le ayudo» y Enter. Resultado: la
+burbuja pasa por En cola → Enviando → Aceptado y lleva la etiqueta «Simulación». Con `WHATSAPP_SIMULATE_STATUSES` pasa
+sola a Entregado/Leído; si no, usa los comandos «Entregado» y «Leído» de §0.4. El administrador lo ve en vivo.
+Registro: evento en el historial; mensaje con `client_reference`. Error: el mensaje se duplica al reintentar por red o
+aparece «Entregado» sin señal (simulada) de estado.
+
+**11.2 Nota interna.** Cuenta: Valeria. Acción: pestaña «Nota interna — no se envía al cliente» → escribir → guardar.
+Resultado: nota con otro color; el Superadministrador la ve en vivo; nunca sale al cliente ni toca la ventana.
+Registro: evento «Nota agregada». Error: la nota aparece como mensaje al cliente.
+
+**11.3 Error de envío y reintento.** Cuenta: Valeria. Acción: comando «Error de envío» de §0.4 con el id de su último
+mensaje y `--error-code=131026`; después «Reintentar». Resultado: «No se envió» con el motivo; al reintentar vuelve a
+la cola en la misma fila. Para «Entrega sin confirmar» (`delivery_unknown`, tras `php artisan whatsapp:maintenance
+reconcile-deliveries` con un mensaje atascado en Enviando) se ve en ámbar y el reintento pide confirmar el riesgo de
+duplicado. Registro: evento «Reintentado»; con riesgo de duplicado, además
+`conversation.message_retried_duplicate_risk` en Auditoría. Error: se reintenta sin confirmación o se crea otra fila.
+
+**11.4 Ventana de 24 h.** Cuenta: Valeria. Acción: comando «Ventana de 24 h vencida» de §0.4 y recargar la
+conversación. Resultado: «Ventana 24 h: Vencida», el campo libre se bloquea y se ofrece «Enviar plantilla» (no habrá
+plantillas aprobadas sin Meta: el selector lo explica). Error: deja enviar texto libre.
+
+**11.5 Duplicado.** Acción: comando «Duplicado» de §0.4. Resultado: el historial no cambia. Error: aparece el mensaje
+dos veces.
+
+**11.6 Autor que pierde el permiso.** Cuenta: Valeria y Superadministrador. Acción: detén el worker, Valeria envía un
+mensaje, el Superadministrador transfiere la conversación a Soporte, vuelve a arrancar el worker. Resultado: el mensaje
+queda fallido con «Quien escribió el mensaje ya no puede responder…». Error: se envía.
+
+## 12. Multimedia
+
+**12.1 Recibir un documento.** Acción: comando «Multimedia con archivo» de §0.4 con un PDF real de tu equipo.
+Resultado: tarjeta del documento; se abre o descarga por la ruta autorizada. Sin `--file`: «no disponible». Error:
+el archivo se sirve desde una URL pública.
+
+**12.2 Enviar un archivo.** Cuenta: Valeria. Acción: adjuntar una imagen PNG pequeña y enviarla; después intentar un
+`.exe` renombrado a `.png` y un archivo mayor de 16 MB. Resultado: el primero se envía (Simulación); el segundo se
+rechaza por contenido; el tercero por tamaño, con el límite en el mismo formato que en el chat interno. Error: se
+acepta un ejecutable.
+
+## 13. Asignaciones
+
+**13.1 Asignación automática con capacidad.** Cuenta: Administrador; Valeria Disponible con límite 1 (3.2) y
+Demo B · Ventas en modo Automático (5.1). Acción: simular dos contactos nuevos (`5215500000153` y `5215500000154`).
+Resultado: Valeria recibe la primera; la segunda queda Pendiente en la cola. Al cerrar o liberar la primera, la
+segunda se le asigna sola. Subir el límite a 3 le reparte lo pendiente; vaciar el campo hereda el del departamento o
+de la plataforma. Registro: eventos «Asignada automáticamente». Error: recibe más de su límite o la cola no se mueve.
+
+**13.2 Asignar a alguien al límite.** Cuenta: Administrador. Acción: en una pendiente, menú → Asignar → Valeria (al
+límite). Resultado: insignia «Al límite de carga», advertencia ámbar y casilla; sin marcarla el botón queda
+deshabilitado. Registro: evento «Asignada» con `assigned_over_limit` y `limit`. Valeria: la recibe. Error: asigna sin
+confirmar.
+
+**13.3 Asignar a alguien No disponible.** Igual que 13.2 con Óscar «No disponible» en un departamento que él atiende.
+Resultado: confirmación obligatoria; evento con `assigned_while_unavailable`.
+
+## 14. Transferencias
+
+**14.1 Transferir a otro departamento eligiendo persona.** Cuenta: Valeria (responsable). Acción: menú → Transferir →
+departamento Soporte → elegir a «Óscar · Disponible» → motivo «Es de Soporte» → Transferir. Resultado: la conversación
+desaparece en vivo de la bandeja de Valeria (y si intenta abrirla, 404); Óscar la recibe en vivo en «Mis
+conversaciones». En la lista de destinatarios también pueden aparecer personas de alcance global con permiso de ver y
+responder (el Superadministrador y el Administrador), marcadas con su disponibilidad. Registro: evento «Transferida»
+con motivo, de Valeria a Óscar. Error: la lista de Soporte sale vacía o Valeria sigue viendo la conversación.
+
+**14.2 Destino no disponible o al límite sin permiso de asignar.** Cuenta: Valeria. Acción: Transferir y mirar a una
+persona No disponible. Resultado: opción deshabilitada con «Transfiérela a la cola del departamento»; transferir a la
+cola (sin persona) siempre funciona y la deja Pendiente. Error: Valeria puede forzar la excepción.
+
+## 15. Disponibilidad
+
+**15.1 Cambiar disponibilidad.** Cuenta: Óscar en dos pestañas. Acción: interruptor «Disponible / No disponible» en la
+bandeja. Resultado: la otra pestaña se actualiza en vivo; los diálogos de asignar y transferir abiertos por un
+administrador muestran el cambio. Estar No disponible no le quita lo que atiende; impide aceptar nuevas y recibir
+automáticas. Registro: `user.availability_changed`. Error: se le quitan conversaciones o no se audita.
+
+## 16. Chat interno
+
+**16.1 Chat privado y «Visto».** Cuenta: Valeria y Óscar (si comparten departamento o con permiso entre
+departamentos; si no, usa el Superadministrador con Valeria). Acción: Chat interno → Nuevo → Chat privado → escribir.
+Resultado: llega en vivo; «Visto» aparece cuando el otro lo lee. El Superadministrador no puede abrir chats en los que
+no participa (404). Error: un tercero ve el chat.
+
+**16.2 Grupo, menciones y notificación.** Cuenta: Superadministrador crea un grupo con Valeria y Óscar. Acción:
+escribir «@Val» y elegir con Enter; enviar. Resultado: sugiere solo participantes activos (no a sí mismo); Valeria
+recibe una notificación urgente de mención aunque haya silenciado el grupo; editar el mensaje no vuelve a notificar;
+en un chat privado no hay sugerencias. Registro: `team_chat.group_created`, `team_chat.participants_added`. Error:
+menciona a quien no participa o notifica dos veces.
+
+**16.3 «Escribiendo…».** Acción: con el grupo abierto en dos navegadores, escribir sin enviar. Resultado: el otro ve
+«X está escribiendo…», que desaparece unos 5 s después o al llegar el mensaje. Con Reverb detenido, la petición
+`POST …/typing` responde 204 (pestaña Red) y no hay error. Error: respuesta 500.
+
+**16.4 Reacciones.** Acción: pasar el cursor sobre un mensaje → icono de carita → 👍. Resultado: chip «👍 1» resaltado,
+visible al instante para el otro; pulsar de nuevo lo retira; doble clic rápido no duplica; en un grupo archivado no hay
+botón; un mensaje eliminado pierde sus reacciones. Error: reacciones duplicadas o en mensajes eliminados.
+
+**16.5 En línea.** Acción: con ambos navegadores abiertos, mirar el avatar del chat privado. Resultado: anillo de color
+y «En línea · Disponible/No disponible»; al cerrar la pestaña del otro desaparece en unos segundos. En DevTools → WS,
+los datos del canal de presencia solo llevan `{"id":N}`. Error: se ve en línea a personas de otros departamentos que no
+puedes contactar, o la carga útil incluye nombres.
+
+**16.6 Expulsión.** Acción: el administrador del grupo retira a Óscar mientras él tiene el grupo abierto. Resultado:
+Óscar pierde el grupo y su historial al instante; si intenta enviar, 404. Registro: `team_chat.participant_removed`.
+
+## 17. Notificaciones
+
+**17.1 Campana.** Cuenta: Valeria Disponible. Acción: simular un contacto nuevo. Resultado: la campana suma una
+notificación de conversación pendiente en segundos (sin tiempo real, en ≤ 60 s); «Marcar todas como leídas» funciona.
+Error: notificaciones de departamentos ajenos.
+
+**17.2 Preferencias y aviso del navegador.** Cuenta: Valeria. Acción: Configuración → Notificaciones → activar
+«Navegador» para «Conversación pendiente» → «Permitir en este navegador»; cambiar a otra pestaña y simular otro
+contacto. Resultado: aparece un aviso del sistema (solo con la pestaña oculta). Error: el permiso se pide sin pulsar
+el botón.
+
+**17.3 Web Push (con la plataforma cerrada).** Requisitos: claves VAPID (`php artisan webpush:vapid`, copiar las dos
+líneas a `.env` con `VAPID_SUBJECT=mailto:tu-correo`, `php artisan config:clear`), un contexto seguro (**en local
+funciona en `http://localhost:8000`**; en otro host hace falta HTTPS) y el worker de la cola `notifications` activo.
+Cuenta: Valeria. Acción: Configuración → Notificaciones → tarjeta «Notificaciones push» → «Activar en este navegador»
+→ aceptar el permiso; activar «Navegador» para un tipo (por ejemplo «Acceso modificado») y guardar; **cerrar todas las
+pestañas de la plataforma**; desde el Superadministrador cambiar los departamentos de Valeria (y devolverlos después).
+Resultado: llega «Notificaciones nuevas: Tienes N notificaciones sin leer.»; al pulsarlo se abre `/dashboard`. Varias
+seguidas: un solo push por minuto. Con una pestaña abierta pero oculta y la suscripción activa, solo aparece el aviso
+del push (no se duplica con el de la pestaña); con la ventana enfocada no aparece nada. Tras cerrar sesión llega el
+aviso genérico «Inicia sesión para verlas». La tarjeta lista el dispositivo («Chrome en macOS», «este navegador») y
+permite eliminarlo. Sin claves VAPID la tarjeta explica que el servidor no está configurado; por http en una IP explica
+que hace falta HTTPS. Registro: notificación in-app guardada; en el log solo avisos sin el endpoint. Error: el aviso
+muestra contenido de la conversación, llegan dos avisos por el mismo hecho o se puede suscribir un endpoint que no es
+de un servicio push.
+
+## 18. Reportes
+
+**18.1 Reporte operativo.** Cuenta: Superadministrador. Acción: Reportes → periodo «Últimos 7 días». Resultado:
+recibidas, atendidas, primera respuesta humana (calendario y hábil), resolución, mapa de calor y tablas por agente,
+departamento y conexión. Una conversación solo asignada automáticamente no cuenta como atendida. Valeria ve solo sus
+cifras. Error: Valeria ve a otros agentes.
+
+**18.2 Objetivos de servicio.** Cuenta: Administrador. Acción: Configuración → «Objetivos de servicio» → primera
+respuesta 15 min → guardar. Resultado: en Reportes aparece «Objetivo de primera respuesta» con % y «X de Y dentro de 15
+min hábiles»; con el campo vacío no hay tarjeta; 0 o texto dan error. Registro: `settings.updated`. Error: muestra
+cumplimiento sin objetivo.
+
+**18.3 Tiempo hábil.** Acción: activar un horario L-V 09:00–18:00 y ejecutar `php artisan analytics:rebuild`; después
+`php artisan analytics:rebuild --business-time`. Resultado: el primero conserva los tiempos hábiles ya calculados; el
+segundo los recalcula con el horario vigente. Error: el tiempo hábil cambia sin `--business-time`.
+
+## 19. Excel y PDF
+
+**19.1 Exportar.** Cuenta: Superadministrador. Acción: Reportes → Exportar → Excel; después PDF. Resultado: el archivo
+se descarga; en la pestaña Red se ve un **POST** `/exports/analytics/xlsx` con `_token`; abrir a mano
+`GET /exports/tags/xlsx` responde 405. El orden de agentes coincide con la pantalla y en el PDF la fila Total va pegada
+a las últimas filas. Registro: `export.requested` y `export.generated`. Error: un GET genera el archivo o aparece «Sin
+datos» en la tabla.
+
+**19.2 Exportación en cola.** Acción: Conversaciones → Exportar con muchos filtros abiertos (o `EXPORTS_XLSX_SYNC_ROWS=0`
+y `config:clear`). Resultado: vuelve a la página con «Estamos generando…»; al terminar, notificación y descarga en
+Exportaciones. La descarga vuelve a comprobar el permiso del reporte. Error: el archivo de otra persona se descarga
+(debe dar 404).
+
+**19.3 Búsqueda en mensajes en el export.** Acción: en la bandeja, «Buscar en: Contenido de los mensajes» = «cotización»
+y exportar. Resultado: la fila de filtros dice «Búsqueda en el contenido de los mensajes: «cotización»».
+
+## 20. Importaciones
+
+**20.1 Importar contactos.** Cuenta: Superadministrador (único con `contacts.import`). Acción: Contactos → Importar →
+descargar la plantilla → llenar 3 filas con teléfonos ficticios `5215500000170`–`172` (una con error a propósito) →
+subir. Resultado: vista previa con errores por fila; al confirmar, el lote se procesa en la cola `exports` y muestra su
+reporte; se puede revertir el lote. Registro: `import.requested`, `import.completed` (restringidas: solo las ve el
+Superadministrador), `import.rolled_back` al revertir. El Administrador no ve el importador. Error: el Administrador
+puede importar o la reversión borra contactos modificados después.
+
+## 21. Auditoría
+
+**21.1 Bitácora.** Cuenta: Administrador. Acción: Administración → Auditoría → filtrar por acción «Conexión
+desactivada» y por actor. Resultado: aparecen las entradas de las pruebas anteriores con actor, sujeto, IP y fecha;
+las acciones del Superadministrador **no** las ve el Administrador (restringidas). Exportar la bitácora genera el
+archivo. Error: se puede editar o borrar una entrada, o el Administrador ve entradas restringidas.
+
+## 22. Configuración
+
+**22.1 Operación.** Cuenta: Administrador. Acción: Configuración → Operación → «Máximo de conversaciones por agente»
+= 2 → guardar. Resultado: subirlo reparte las colas automáticas; bajarlo no quita conversaciones. Registro:
+`settings.updated`. Error: bajarlo desasigna conversaciones.
+
+**22.2 Horario y días no laborables.** Acción: definir un horario y un día festivo; simular un mensaje fuera de
+horario. Resultado: mensaje automático de fuera de horario si está activo en el departamento (con «Simulación»).
+Registro: `settings.updated` / `department.hours_updated`.
+
+**22.3 Apariencia de la plataforma.** Acción: Administración → Apariencia → cambiar nombre y color. Registro:
+`appearance.updated`.
+
+## 23. Salud del sistema
+
+**23.1 Página de Sistema.** Cuenta: **Superadministrador** (el Administrador no tiene `system.view`: decisión
+pendiente, §0.1). Acción: Administración → Sistema. Resultado: 7 colas, entre ellas «Señales de tiempo real
+(realtime)», con acumulación y espera; latido del programador; trabajos fallidos con reintentar/descartar. Con el
+worker detenido y un par de mensajes simulados, la cola aparece acumulada. Registro: `system.job_retried` /
+`system.job_forgotten`. Error: el Administrador entra a Sistema sin el permiso.
+
+**23.2 Preflight.** Cuenta: ninguna (terminal). Acción: `php artisan app:preflight`. Resultado: columnas CORRECTO /
+ADVERTENCIA / BLOQUEANTE / NO APLICA; «Datos de demostración» en ADVERTENCIA (hay usuarios y líneas demo; en
+producción sería BLOQUEANTE); Redis NO APLICA si no se usa; «Respaldos de la base» NO APLICA sin `OPS_BACKUP_DIR`;
+«Notificaciones push» NO APLICA sin claves VAPID. Error: algo BLOQUEANTE fuera de producción.
+
+## 24. Seguridad
+
+**24.1 Aislamiento entre departamentos.** Cuenta: Óscar. Acción: abrir a mano `/conversations?c=<id de una conversación
+de Valeria>` y su `…/timeline`. Resultado: 404 (no 403). Error: ve el chat o la respuesta revela que existe.
+
+**24.2 Disponibilidad de correo fuera de alcance.** Cuenta: el supervisor de prueba. Acción: desde DevTools,
+`POST /admin/users/email-availability` con el `user_id` del Administrador y luego con `999999`. Resultado: ambos 404.
+
+**24.3 CSRF.** Acción: repetir un `POST` (por ejemplo una exportación) sin `_token`. Resultado: 419. Error: se acepta.
+
+**24.4 Cabeceras y adjuntos.** Acción: abrir un adjunto y revisar las cabeceras en Red. Resultado:
+`X-Content-Type-Options: nosniff`, `Cache-Control: private` y CSP con `sandbox` (salvo PDF). Error: un HTML adjunto se
+ejecuta en el navegador.
+
+## 25. Modo oscuro
+
+**25.1 Apariencia personal.** Cuenta: cualquiera. Acción: Configuración → Apariencia → Oscuro; recorrer Panel,
+Conversaciones (incluido el compositor bloqueado y «Entrega sin confirmar»), Chat interno (reacciones, «En línea»),
+Reportes y Notificaciones push. Resultado: contraste legible y colores del tema en todo; al elegir «Sistema» sigue al
+sistema operativo. Error: textos invisibles, fondos blancos o iconos sin contraste.
+
+## 26. Dispositivos móviles
+
+**26.1 Bandeja en móvil.** Cuenta: Valeria. Acción: DevTools → modo dispositivo 390×844 (o un teléfono en la misma red
+usando la IP del equipo; el tiempo real puede requerir ajustar `REVERB_*`). Recorrer: lista → abrir conversación →
+«Volver»; abrir detalles como panel lateral; enviar un mensaje y un adjunto; diálogo de transferencia. Resultado: sin
+desbordes horizontales, botones accesibles con el dedo y el teclado no tapa el compositor. Error: elementos cortados o
+el diálogo no cabe.
+
+**26.2 Chat interno y notificaciones en móvil.** Acción: lista de chats, grupo con menciones y reacciones, campana.
+Resultado: utilizable con una mano. Web Push en móvil: Android con Chrome sobre HTTPS; iOS no (requiere instalar la
+plataforma como app, no disponible).
+
+## 27. Pruebas que requieren credenciales oficiales de Meta
+
+No se pueden hacer en local con el transporte simulado. Siguen la activación real paso a paso de
+[mensajeria-whatsapp.md §9](mensajeria-whatsapp.md#9-activación-real-paso-a-paso), en un servidor con HTTPS válido,
+con una app de Meta, WABA, número de prueba y token permanente, `WHATSAPP_TRANSPORT=meta` y, para limitar el riesgo,
+`WHATSAPP_PILOT_RECIPIENTS=<tu número>`:
+
+1. **Verificar credenciales** de la conexión: debe pasar a «credenciales verificadas» y, con tráfico, «Operativa».
+2. **Verificación del webhook** (GET con `hub.verify_token`) desde el panel de Meta y **firma** real
+   `X-Hub-Signature-256` de cada POST.
+3. **Suscripción de la app** (`subscribed_apps`) desde la ficha de la conexión.
+4. **Ida y vuelta real**: escribir desde tu WhatsApp al número de prueba, responder desde la bandeja y ver
+   Enviado → Entregado → Leído reales (sin «Simulación»).
+5. **Piloto**: un envío a un número que no esté en `WHATSAPP_PILOT_RECIPIENTS` falla con «El destinatario no está en la
+   lista del piloto…» sin llamar a Meta; la ficha muestra «Piloto controlado».
+6. **Multimedia real**: recibir imagen, audio y documento (descarga desde `lookaside.fbsbx.com`, incluido el corte por
+   tamaño) y enviar un archivo (subida multipart).
+7. **Plantillas**: sincronizar, recibir el webhook de aprobación y enviar una plantilla con la ventana cerrada.
+8. **Errores reales**: ventana vencida (131047), límites (429/130429) y textos de cURL del servidor que distinguen «no
+   llegó a Meta» de «entrega sin confirmar».
+9. **Credenciales rechazadas**: con un token revocado, la verificación falla y el compositor bloquea el envío con
+   «Meta rechazó las credenciales…»; un reintento y una plantilla también responden 409.
+
+Registra los resultados y cualquier diferencia de formato en
+[mensajeria-whatsapp.md §10](mensajeria-whatsapp.md#10-lo-que-no-se-ha-validado-contra-meta-real).

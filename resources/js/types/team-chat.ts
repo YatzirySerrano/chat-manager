@@ -115,8 +115,21 @@ export type TeamMessage = {
         excerpt: string;
         deleted: boolean;
     } | null;
+    /** Current participants mentioned (@) in a group message. */
+    mentions: TeamMention[];
+    reactions: TeamReaction[];
     attachments: TeamAttachment[];
     can: { edit: boolean; delete: boolean };
+};
+
+export type TeamMention = { id: number; name: string };
+
+/** Reactions of one emoji ("Tú" stands for the viewer in names). */
+export type TeamReaction = {
+    emoji: string;
+    count: number;
+    mine: boolean;
+    names: string[];
 };
 
 export type TeamMessagePage = {
@@ -131,6 +144,11 @@ export type TeamChatLimits = {
     maxKilobytes: number;
     accept: string;
     groupMaxParticipants: number;
+    /** Most chats the list loads at once (then: search or filters). */
+    maxThreads: number;
+    maxMentions: number;
+    /** Allowed reactions. */
+    reactions: string[];
 };
 
 export type TeamChatFilters = {

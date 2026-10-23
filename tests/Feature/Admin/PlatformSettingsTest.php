@@ -108,3 +108,23 @@ test('saving the default settings for the first time does not create records', f
 
     expect($writes)->toBe([]);
 });
+
+test('service level objectives are optional whole minutes and can be removed', function () {
+    $admin = User::factory()->superAdministrator()->create();
+
+    $this->actingAs($admin)
+        ->put(route('admin.settings.update'), validSettingsPayload(['sla' => ['first_response_minutes' => 0, 'resolution_minutes' => 'abc']]))
+        ->assertSessionHasErrors(['sla.first_response_minutes', 'sla.resolution_minutes']);
+
+    $this->actingAs($admin)
+        ->put(route('admin.settings.update'), validSettingsPayload(['sla' => ['first_response_minutes' => 15]]))
+        ->assertSessionHasNoErrors();
+
+    expect(app(PlatformSettings::class)->get('sla'))->toBe(['first_response_minutes' => 15, 'resolution_minutes' => null]);
+
+    $this->actingAs($admin)
+        ->put(route('admin.settings.update'), validSettingsPayload(['sla' => ['first_response_minutes' => '']]))
+        ->assertSessionHasNoErrors();
+
+    expect(app(PlatformSettings::class)->get('sla.first_response_minutes'))->toBeNull();
+});

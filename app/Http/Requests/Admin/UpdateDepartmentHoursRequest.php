@@ -4,8 +4,10 @@ namespace App\Http\Requests\Admin;
 
 use App\Models\Department;
 use App\Services\PlatformSettings;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Validator;
 
 /**
@@ -15,12 +17,11 @@ use Illuminate\Validation\Validator;
  */
 class UpdateDepartmentHoursRequest extends FormRequest
 {
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $department = $this->route('department');
 
-        return $department instanceof Department
-            && ($this->user()?->can('update', $department) ?? false);
+        return $department instanceof Department ? Gate::inspect('update', $department) : Response::deny();
     }
 
     /**

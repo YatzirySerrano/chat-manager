@@ -46,3 +46,24 @@ test('the import upload is not blocked by the notification summary polling', fun
 
     $this->post(route('contacts.import.store'))->assertStatus(403);
 });
+
+test('password recovery is limited per IP on each of its routes', function () {
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('password.email'), ['email' => "nadie{$attempt}@empresa.test"])->assertSessionHasNoErrors();
+    }
+
+    $this->post(route('password.email'), ['email' => 'otra@empresa.test'])->assertTooManyRequests();
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('password.update'), ['token' => 'invalido', 'email' => "nadie{$attempt}@empresa.test", 'password' => 'new-password', 'password_confirmation' => 'new-password'])
+            ->assertSessionHasErrors('email');
+    }
+
+    $this->post(route('password.update'), ['token' => 'invalido', 'email' => 'otra@empresa.test', 'password' => 'new-password', 'password_confirmation' => 'new-password'])
+        ->assertTooManyRequests();
+
+    // Another address is not affected.
+    $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.8'])
+        ->post(route('password.email'), ['email' => 'otra@empresa.test'])
+        ->assertSessionHasNoErrors();
+});

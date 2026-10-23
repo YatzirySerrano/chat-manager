@@ -24,6 +24,26 @@ final class SimulatedWebhook
     public const TYPES = ['text', 'image', 'document', 'audio', 'video', 'sticker', 'location', 'contacts', 'interactive', 'button', 'reaction', 'unsupported'];
 
     /**
+     * Error codes a simulated "failed" status can carry, with Meta's title.
+     * 131047 is the rejection of a free-form message outside the 24-hour
+     * customer service window.
+     *
+     * @var array<int, string>
+     */
+    public const ERROR_CODES = [
+        131026 => 'Message undeliverable',
+        131047 => 'Re-engagement message',
+        131049 => 'This message was not delivered to maintain healthy ecosystem engagement',
+        131050 => 'User has stopped marketing messages',
+        131056 => 'Pair rate limit hit',
+        130429 => 'Rate limit hit',
+        131000 => 'Something went wrong',
+        131031 => 'Business Account locked',
+    ];
+
+    public const DEFAULT_ERROR_CODE = 131026;
+
+    /**
      * @param  array<string, string>|null  $referral
      * @param  array<string, mixed>|null  $context
      * @return array<string, mixed>
@@ -55,7 +75,7 @@ final class SimulatedWebhook
     /**
      * @return array<string, mixed>
      */
-    public static function status(string $phoneNumberId, string $businessAccountId, string $wamid, string $status, int $timestamp, ?string $callbackData = null): array
+    public static function status(string $phoneNumberId, string $businessAccountId, string $wamid, string $status, int $timestamp, ?string $callbackData = null, int $errorCode = self::DEFAULT_ERROR_CODE): array
     {
         $entry = [
             'id' => $wamid,
@@ -69,7 +89,7 @@ final class SimulatedWebhook
         }
 
         if ($status === 'failed') {
-            $entry['errors'] = [['code' => 131026, 'title' => 'Message undeliverable (simulación)']];
+            $entry['errors'] = [['code' => $errorCode, 'title' => (self::ERROR_CODES[$errorCode] ?? 'Error').' (simulación)']];
         }
 
         return self::envelope($phoneNumberId, $businessAccountId, ['statuses' => [$entry]]);

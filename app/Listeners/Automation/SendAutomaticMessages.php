@@ -29,6 +29,17 @@ class SendAutomaticMessages implements ShouldQueue
 {
     public const MAX_GREETING_DELAY_MINUTES = 60;
 
+    /**
+     * Events that start (greeting) or end (farewell) a conversation cycle.
+     *
+     * @var list<ConversationEventType>
+     */
+    private const CYCLE_EVENTS = [
+        ConversationEventType::Created,
+        ConversationEventType::Reopened,
+        ConversationEventType::Closed,
+    ];
+
     public int $tries = 3;
 
     /** @var list<int> */
@@ -44,11 +55,21 @@ class SendAutomaticMessages implements ShouldQueue
         return Queues::name(Queues::MESSAGES);
     }
 
+    /**
+     * Only the events that start or end a cycle queue a job on the critical
+     * "messages" queue; every other change (messages, tags, reads...) does not.
+     */
+    public function shouldQueue(ConversationChanged $event): bool
+    {
+        return $event->eventId !== null
+            && in_array(ConversationEventType::tryFrom($event->reason), self::CYCLE_EVENTS, true);
+    }
+
     public function handle(ConversationChanged $event): void
     {
         $type = ConversationEventType::tryFrom($event->reason);
 
-        if (! in_array($type, [ConversationEventType::Created, ConversationEventType::Reopened, ConversationEventType::Closed], true) || $event->eventId === null) {
+        if ($type === null || ! $this->shouldQueue($event)) {
             return;
         }
 

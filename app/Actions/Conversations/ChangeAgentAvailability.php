@@ -4,7 +4,6 @@ namespace App\Actions\Conversations;
 
 use App\Enums\AgentAvailability;
 use App\Enums\AuditAction;
-use App\Enums\DistributionMode;
 use App\Events\Users\AgentAvailabilityChanged;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -42,12 +41,6 @@ class ChangeAgentAvailability
             return 0;
         }
 
-        $assigned = 0;
-
-        foreach ($user->departments()->active()->where('distribution_mode', DistributionMode::Automatic)->get() as $department) {
-            $assigned += $this->assignAutomatically->distributeQueue($department);
-        }
-
-        return $assigned;
+        return $this->assignAutomatically->distributeForAgent($user);
     }
 }

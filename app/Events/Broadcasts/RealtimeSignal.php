@@ -12,8 +12,10 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
  * numbers, note text or file names. Clients refetch through endpoints that
  * authorize every request again, so a signal never grants access by itself.
  *
- * It is sent immediately because it is always created inside a queued
- * listener (app/Listeners/Realtime), off the request path.
+ * It is sent immediately because it is created inside a queued listener
+ * (app/Listeners/Realtime), off the request path. The one exception is the
+ * ephemeral "typing" signal of the internal chat, sent during its own
+ * request (TeamThreadController::typing) and protected with rescue.
  */
 class RealtimeSignal implements ShouldBroadcastNow
 {

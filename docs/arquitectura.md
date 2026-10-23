@@ -39,9 +39,10 @@ WhatsApp Web ni QR). Es una sola aplicación Laravel (monolito modular):
                                   │ datos de negocio + jobs + caché/sesión │     │
                                   └──────────────────┬─────────────────────┘     │
                                                      ▼                           │
-                     Workers: webhooks,messages │ media │ notifications,default │ exports
-                                 │                                   └───────────┘
-                                 └── Graph API de Meta (envíos, multimedia, plantillas)
+      Workers: webhooks,messages │ realtime │ notifications │ media │ default │ exports
+                  │                   └──────────────────────────────────────┘ (señales)
+                  ├── Graph API de Meta (envíos, multimedia, plantillas)
+                  └── servicios Web Push del navegador (POST vacío firmado con VAPID, cola notifications)
 ```
 
 Principios que atraviesan todos los módulos:
@@ -80,40 +81,42 @@ Principios que atraviesan todos los módulos:
 Todos implementan `ShouldDispatchAfterCommit` y llevan solo IDs. Los listeners se registran por autodescubrimiento
 (`app/Listeners/<Módulo>`).
 
-| Evento                                                              | Emite                                                                                                                                        | Escuchan                                                                                    |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `Conversations\ConversationChanged(id, reason, actor, event)`       | `ConversationLifecycle::record()` (todo `conversation_event`); bandeja para `read`, `tags`, `routing`, `message`                             | tiempo real, notificaciones, mensajes automáticos (`created`/`reopened`/`closed`), métricas |
-| `Conversations\ConversationNoteSaved`                               | bandeja (`AddConversationNote`, `UpdateConversationNote`)                                                                                    | tiempo real                                                                                 |
-| `Messaging\MessageRecorded(message, conversation, direction)`       | meta (entrantes, nunca duplicados), bandeja (respuestas de agentes), automatización (automáticos)                                            | tiempo real, notificaciones (entrantes), métricas                                           |
-| `Messaging\MessageStatusChanged`                                    | meta (`RecordMessageStatus`, entrega, reconciliación)                                                                                        | tiempo real, métricas                                                                       |
-| `Connections\ConnectionHealthChanged`                               | meta (`ConnectionMonitor`)                                                                                                                   | notificaciones (`connection.problem`)                                                       |
-| `Users\AgentAvailabilityChanged`                                    | `ChangeAgentAvailability`                                                                                                                    | tiempo real                                                                                 |
-| `Users\UserAccessChanged(userIds, reason)`                          | acciones de usuarios, roles, membresías de departamentos y del chat interno ([lista](tiempo-real.md#puntos-de-emisión-de-useraccesschanged)) | tiempo real (`.access.changed`), notificaciones                                             |
-| `DataTransfers\DataTransferFinished`                                | modelo `DataTransfer` al pasar a `completed`/`failed` (exportaciones e importaciones)                                                        | tiempo real (`.transfer.changed`), notificaciones                                           |
-| `TeamChat\TeamMessagePosted`, `TeamThreadChanged`, `TeamThreadRead` | chat interno                                                                                                                                 | chat interno (señales), notificaciones                                                      |
+| Evento                                                              | Emite                                                                                                                                        | Escuchan                                                                                          |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `Conversations\ConversationChanged(id, reason, actor, event)`       | `ConversationLifecycle::record()` (todo `conversation_event`); bandeja para `read`, `tags`, `routing`; `message` solo `DownloadInboundMedia` | tiempo real, notificaciones, mensajes automáticos (`created`/`reopened`/`closed`), métricas       |
+| `Conversations\ConversationNoteSaved`                               | bandeja (`AddConversationNote`, `UpdateConversationNote`)                                                                                    | tiempo real                                                                                       |
+| `Messaging\MessageRecorded(message, conversation, direction)`       | meta (entrantes, nunca duplicados), bandeja (respuestas de agentes), automatización (automáticos)                                            | tiempo real, notificaciones (entrantes), métricas                                                 |
+| `Messaging\MessageStatusChanged`                                    | meta (`RecordMessageStatus`, entrega, reconciliación)                                                                                        | tiempo real, métricas                                                                             |
+| `Connections\ConnectionHealthChanged`                               | meta (`ConnectionMonitor`)                                                                                                                   | notificaciones (`connection.problem`), tiempo real (`connection_changed`)                         |
+| `Connections\ConnectionStatusChanged`                               | acciones de conexiones (activar, desactivar, eliminar, restaurar, verificar, reemplazar credenciales)                                        | tiempo real (`BroadcastConnectionChange`: `conversation.changed` con `reason=connection_changed`) |
+| `Notifications\NotificationSignal(userId, notificationId, kind)`    | `InAppChannel` tras guardar una notificación                                                                                                 | tiempo real (`BroadcastNotificationSignal`, síncrono), Web Push (`QueueWebPush`)                  |
+| `Users\AgentAvailabilityChanged`                                    | `ChangeAgentAvailability`                                                                                                                    | tiempo real                                                                                       |
+| `Users\UserAccessChanged(userIds, reason)`                          | acciones de usuarios, roles, membresías de departamentos y del chat interno ([lista](tiempo-real.md#puntos-de-emisión-de-useraccesschanged)) | tiempo real (`.access.changed`), notificaciones                                                   |
+| `DataTransfers\DataTransferFinished`                                | modelo `DataTransfer` al pasar a `completed`/`failed` (exportaciones e importaciones)                                                        | tiempo real (`.transfer.changed`), notificaciones                                                 |
+| `TeamChat\TeamMessagePosted`, `TeamThreadChanged`, `TeamThreadRead` | chat interno                                                                                                                                 | chat interno (señales), notificaciones                                                            |
 
 ## 3. Modelo de datos
 
 Generado a partir del esquema real (`php artisan db:show` / `db:table`, solo lectura) y de `database/migrations`
-(62 migraciones). Las fechas se guardan en UTC.
+(68 migraciones). Las fechas se guardan en UTC.
 
 ### 3.1 Tablas principales
 
-| Área                      | Tablas                                                                                                                                                                              | Relaciones clave                                                                                                                                                                                                         |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Usuarios y acceso         | `users`, `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`, `sessions`, `password_reset_tokens`, `passkeys` (heredada, passkeys retiradas) | `roles.scope` (`global`/`departments`/`assigned`) e `is_root`; `users.availability`, `availability_changed_at`, `last_assigned_at`, `is_active`                                                                          |
-| Departamentos             | `departments`, `department_user`                                                                                                                                                    | `distribution_mode` (`shared`/`manual`/`automatic`), horario propio, `welcome_message`, `away_message`                                                                                                                   |
-| Conexiones                | `connections`, `connection_department`                                                                                                                                              | `phone_number_id` y `webhook_key` únicos; credenciales cifradas; `default_department_id`; `is_active` (pausa) y `deleted_at` (baja lógica)                                                                               |
-| Contactos                 | `contacts`, `contact_identities`, `connection_contact`, `contact_attributions`, `contact_notes`, `contact_review_cases`, `tags`, `contact_tag`                                      | Una identidad por canal/proveedor/`external_id`; procedencia confirmada por referencias de Meta                                                                                                                          |
-| Conversaciones            | `conversations`, `conversation_events`, `conversation_notes`, `conversation_tag`, `conversation_reads`                                                                              | `conversations` → `connections`, `contacts`, `departments`, `users` (responsable); clave única `(connection_id, contact_id, open_lock)`: una sola abierta por contacto y conexión; `version` para concurrencia optimista |
-| Mensajes                  | `messages`, `message_attachments`, `message_templates`                                                                                                                              | `messages.whatsapp_message_id` y `client_reference` únicos (idempotencia); `reply_to_message_id`; adjuntos con `status` y `whatsapp_media_id`                                                                            |
-| Webhooks                  | `webhook_events`                                                                                                                                                                    | Cuerpo crudo por conexión, deduplicado por `payload_hash`, con estado e intentos                                                                                                                                         |
-| Respuestas rápidas        | `quick_replies`, `department_quick_reply`                                                                                                                                           | Por departamento                                                                                                                                                                                                         |
-| Chat interno              | `team_threads`, `team_participants`, `team_messages`, `team_attachments`                                                                                                            | Sin relación con conversaciones de clientes ([chat-interno.md](chat-interno.md#modelo-de-datos))                                                                                                                         |
-| Notificaciones            | `notifications`, `notification_receipts`, `user_notification_preferences`                                                                                                           | Deduplicación por recibo y agrupación por clave ([notificaciones](notificaciones-y-horarios.md#11-modelo))                                                                                                               |
-| Transferencias de datos   | `data_transfers`, `import_batch_records`                                                                                                                                            | Exportaciones e importaciones; trazabilidad y reversión por lote ([migración](migracion-whaticket.md#trazabilidad-por-lote))                                                                                             |
-| Configuración y auditoría | `settings`, `audit_logs`                                                                                                                                                            | `audit_logs` solo inserción, con `restricted` para acciones del rol raíz                                                                                                                                                 |
-| Infraestructura Laravel   | `jobs`, `job_batches`, `failed_jobs`, `cache`, `cache_locks`, `migrations`                                                                                                          | Colas y caché en base de datos por defecto                                                                                                                                                                               |
+| Área                      | Tablas                                                                                                                                                                              | Relaciones clave                                                                                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Usuarios y acceso         | `users`, `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`, `sessions`, `password_reset_tokens`, `passkeys` (heredada, passkeys retiradas) | `roles.scope` (`global`/`departments`/`assigned`) e `is_root`; `users.availability`, `availability_changed_at`, `last_assigned_at`, `is_active`, `max_open_conversations` (límite propio, nullable)                                 |
+| Departamentos             | `departments`, `department_user`                                                                                                                                                    | `distribution_mode` (`shared`/`manual`/`automatic`), `max_open_conversations_per_agent` (nullable), horario propio, `welcome_message`, `away_message`                                                                               |
+| Conexiones                | `connections`, `connection_department`                                                                                                                                              | `phone_number_id` y `webhook_key` únicos; credenciales cifradas; `default_department_id`; `is_active` (pausa) y `deleted_at` (baja lógica)                                                                                          |
+| Contactos                 | `contacts`, `contact_identities`, `connection_contact`, `contact_attributions`, `contact_notes`, `contact_review_cases`, `tags`, `contact_tag`                                      | Una identidad por canal/proveedor/`external_id`; procedencia confirmada por referencias de Meta; FULLTEXT `(name, profile_name)`                                                                                                    |
+| Conversaciones            | `conversations`, `conversation_events`, `conversation_notes`, `conversation_tag`, `conversation_reads`                                                                              | `conversations` → `connections`, `contacts`, `departments`, `users` (responsable); clave única `(connection_id, contact_id, open_lock)`: una sola abierta por contacto y conexión; `version` para concurrencia optimista            |
+| Mensajes                  | `messages`, `message_attachments`, `message_templates`                                                                                                                              | `messages.whatsapp_message_id` y `client_reference` únicos (idempotencia); FULLTEXT sobre `body` (búsqueda en mensajes); índice `(updated_at, conversation_id)`; `reply_to_message_id`; adjuntos con `status` y `whatsapp_media_id` |
+| Webhooks                  | `webhook_events`                                                                                                                                                                    | Cuerpo crudo por conexión, deduplicado por `payload_hash`, con estado e intentos                                                                                                                                                    |
+| Respuestas rápidas        | `quick_replies`, `department_quick_reply`                                                                                                                                           | Por departamento                                                                                                                                                                                                                    |
+| Chat interno              | `team_threads`, `team_participants`, `team_messages`, `team_attachments`, `team_message_reactions`                                                                                  | Sin relación con conversaciones de clientes ([chat-interno.md](chat-interno.md#modelo-de-datos))                                                                                                                                    |
+| Notificaciones            | `notifications`, `notification_receipts`, `user_notification_preferences`, `push_subscriptions`                                                                                     | Deduplicación por recibo y agrupación por clave ([notificaciones](notificaciones-y-horarios.md#11-modelo))                                                                                                                          |
+| Transferencias de datos   | `data_transfers`, `import_batch_records`                                                                                                                                            | Exportaciones e importaciones; trazabilidad y reversión por lote ([migración](migracion-whaticket.md#trazabilidad-por-lote))                                                                                                        |
+| Configuración y auditoría | `settings`, `audit_logs`                                                                                                                                                            | `audit_logs` solo inserción, con `restricted` para acciones del rol raíz                                                                                                                                                            |
+| Infraestructura Laravel   | `jobs`, `job_batches`, `failed_jobs`, `cache`, `cache_locks`, `migrations`                                                                                                          | Colas y caché en base de datos por defecto                                                                                                                                                                                          |
 
 ```
 connections ─┬─< conversations >─ contacts ─< contact_identities
@@ -142,7 +145,10 @@ Se pueden reconstruir desde la fuente y no son historial:
 - Entidades de negocio con `App\Concerns\DeletesLogically` (no `SoftDeletes`, para que las relaciones de historial sigan
   viéndolas): `users`, `roles`, `departments`, `tags`, `quick_replies` (eliminado = `is_active = false`), `contacts`
   (estado `archived`), `connections` y `message_templates` (`deleted_at`). Quien tiene `records.view-deleted` consulta
-  los eliminados.
+  los eliminados. La marca es heterogénea a propósito (unas entidades guardan `is_active`, otras `deleted_at`): no se
+  añadió `deleted_at` a roles, departamentos, etiquetas ni respuestas rápidas; **quién y cuándo eliminó o restauró**
+  se consulta en la auditoría (`*.deleted` / `*.restored`), que es la fuente
+  ([ADR-SEC-8](decisiones.md#adr-sec-8--eliminación-lógica-heterogénea-con-la-auditoría-como-fuente)).
 - Conversaciones, mensajes, eventos, notas, webhooks, auditoría, hilos y mensajes internos **nunca se borran**. Un
   mensaje interno eliminado por su autor conserva la fila con `deleted_at` y pierde su contenido
   ([ADR-TC-3](decisiones.md#adr-tc-3--eliminar-un-mensaje-borra-su-contenido-y-deja-una-marca)).
@@ -175,10 +181,10 @@ ProcessWhatsAppWebhook (5 intentos) → ProcessWebhookPayload
                                      4. guarda el mensaje; fechas de actividad solo avanzan
                                      5. AssignAutomatically si el departamento es automático
                                      6. adjunto «pending» → DownloadInboundMedia (cola "media")
-                                   ──commit──▶ MessageRecorded + ConversationChanged
-                                                ├─ señales (cola notifications) → Reverb → bandejas y chat
-                                                ├─ notificaciones (cola notifications)
-                                                ├─ mensaje automático de bienvenida/fuera de horario (cola messages)
+                                   ──commit──▶ MessageRecorded (un solo evento por mensaje)
+                                                ├─ señales (cola realtime) → Reverb → bandejas y chat
+                                                ├─ notificaciones (cola notifications) → señal .notification y Web Push
+                                                ├─ mensaje automático de bienvenida/fuera de horario (cola messages, vía ConversationChanged created/reopened)
                                                 └─ recálculo de métricas (cola default)
 ```
 
@@ -188,6 +194,8 @@ ProcessWhatsAppWebhook (5 intentos) → ProcessWebhookPayload
   ([ADR-META-5](decisiones.md#adr-meta-5--una-conexión-pausada-recibe-pero-no-envía)).
 - Enrutamiento por departamento sin inferir intención: predeterminado de la conexión → predeterminado de la
   plataforma → sin departamento ([bandejas §3](bandejas-y-asignacion.md#3-distribución-entre-departamentos)).
+- La transacción de recepción y el registro del contacto corren en READ COMMITTED con reintento registrado
+  (`App\Support\ReadCommittedTransaction`, [ADR-LOAD-2](decisiones.md#adr-load-2--transacción-read-committed-compartida-y-upsert-de-notificaciones-agregadas)).
 - Recuperación: `whatsapp:maintenance recover-webhooks` (cada 10 min) reencola eventos `received` atascados;
   `retry-webhooks` reprocesa fallidos manualmente.
 
@@ -201,14 +209,16 @@ Compositor ──POST conversations/{id}/messages (texto o archivo, client_refer
            ──POST conversations/{id}/templates (plantilla aprobada, fuera de ventana permitido)
         │ autoriza (visible + responsable + conversations.reply) antes de validar
         ▼
-QueueOutboundMessage / QueueTemplateMessage
+QueueOutboundMessage / QueueTemplateMessage (RetryOutboundMessage para reintentos)
+   · la conexión puede enviar (Connection::sendingBlockReason(); si no, 409 con el motivo, sin guardar nada)
    · ventana de 24 h abierta para texto libre · archivo validado con finfo → disco privado
    · una fila por client_reference (doble envío inofensivo) · estado "queued"
    ──commit──▶ MessageRecorded(outbound) · DeliverOutboundMessage (cola "messages")
         ▼
 DeliverOutboundMessage
-   1. bajo bloqueo: conexión operativa, ventana, plantilla aprobada → "sending"   (si no: failed + outbound_blocked)
-   2. fuera de transacción: WhatsAppTransport::send()  (meta | simulated | unavailable)
+   1. bajo bloqueo: conexión operativa, el autor aún puede responder, ventana, plantilla aprobada → "sending"
+      (si no: failed + outbound_blocked; autor sin permiso → sender_not_allowed)
+   2. fuera de transacción: WhatsAppTransport::send()  (meta | simulated | unavailable; piloto WHATSAPP_PILOT_RECIPIENTS)
    3. wamid → "accepted"   ·  no llegó a Meta → "queued" con espera  ·  ambiguo → queda "sending"
         ▼
 Webhooks de estado → sent / delivered / read   ·   reconcile-deliveries (5 min) → failed/delivery_unknown
@@ -218,8 +228,9 @@ Webhooks de estado → sent / delivered / read   ·   reconcile-deliveries (5 mi
   ([notificaciones §3](notificaciones-y-horarios.md#3-mensajes-automáticos)).
 - Reintento manual: misma fila, confirmación obligatoria para `delivery_unknown`
   ([ADR-META-4](decisiones.md#adr-meta-4--el-reintento-manual-reutiliza-la-misma-fila)).
-- La conexión pausada permite escribir en el compositor, pero el job bloquea el envío y lo muestra en el chat
-  ([limitaciones](limitaciones.md)).
+- Con la conexión pausada, eliminada, sin credenciales o con credenciales rechazadas, el compositor muestra el motivo
+  y no deja enviar; el servidor responde `409` con el mismo motivo y el job vuelve a comprobarlo en el momento del envío
+  ([mensajeria-whatsapp.md §2.5](mensajeria-whatsapp.md#25-política-de-conexión-inactiva-o-eliminada)).
 
 ## 8. Estados de mensajes
 
@@ -262,15 +273,18 @@ transporte simulado esos estados son **simulados** y llevan la etiqueta «Simula
 - **No disponible** no quita las conversaciones que ya atiende; impide aceptar nuevas, recibir asignaciones automáticas
   y avisos de cola.
 - Al pasar a **Disponible** se reparte de inmediato la cola de sus departamentos automáticos.
-- La asignación automática elige, entre los disponibles elegibles por debajo del límite global
-  (`operations.max_open_conversations_per_agent`), la menor carga; empate por quien lleva más tiempo sin recibir una
+- La asignación automática elige, entre los disponibles elegibles por debajo de su límite (propio del agente >
+  por agente del departamento > `operations.max_open_conversations_per_agent`), la menor carga; empate por quien lleva más tiempo sin recibir una
   (`last_assigned_at`) y luego por id ([bandejas §4](bandejas-y-asignacion.md#4-bandeja-compartida-aceptación-y-asignación)).
-- Una asignación manual a alguien No disponible exige confirmación explícita.
+- Asignar o transferir a alguien No disponible o al límite exige `conversations.assign` y confirmación explícita, y
+  queda en el evento (`assigned_while_unavailable`, `assigned_over_limit`).
 - En tiempo real, el cambio llega por `.availability.changed` a la persona (sus otras pestañas) y a las bandejas de sus
   departamentos (diálogos de asignar y transferir abiertos).
 - Perder el acceso (baja, cambio de rol, retiro de departamento, quitar «responder» a un rol) devuelve sus
   conversaciones a la cola mediante `ReleaseAssignedConversations` ([bandejas §5](bandejas-y-asignacion.md#5-ausencias-y-cambios-de-acceso)).
-- No hay límite de carga por departamento (solo el global).
+- Cuando se libera capacidad (cerrar, liberar, reasignar, transferir, volver a Disponible, subir o quitar un límite)
+  la cola se redistribuye después del commit, acotada a 100 conversaciones por departamento
+  ([bandejas §4 «Capacidad»](bandejas-y-asignacion.md#capacidad)).
 
 ## 12. Colas y tareas programadas
 
@@ -279,19 +293,22 @@ transporte simulado esos estados son **simulados** y llevan la etiqueta «Simula
 Nombres en `App\Support\Queues` (remapeables con `QUEUE_NAME_*`; las exportaciones siguen `EXPORTS_QUEUE`). Grupos de
 workers de `deploy/supervisor/chat-manager.conf` ([infraestructura §9](infraestructura-y-despliegue.md#9-colas-y-workers)):
 
-| Cola            | Trabajos                                                                                               | Grupo      |
-| --------------- | ------------------------------------------------------------------------------------------------------ | ---------- |
-| `webhooks`      | `ProcessWhatsAppWebhook`, `SimulateMessageStatuses` (solo transporte simulado)                         | `critical` |
-| `messages`      | `DeliverOutboundMessage`, mensajes automáticos (`SendAutomaticMessages`)                               | `critical` |
-| `media`         | `DownloadInboundMedia`                                                                                 | `media`    |
-| `notifications` | Señales de tiempo real (`app/Listeners/Realtime`, chat interno), notificaciones y `NotificationSignal` | `general`  |
-| `default`       | Métricas (`RefreshConversationMetrics`), sincronización de plantillas y lo no clasificado              | `general`  |
-| `exports`       | `GenerateReport`, `ImportContacts`, `RollbackContactImport`                                            | `exports`  |
+| Cola            | Trabajos                                                                                        | Grupo           |
+| --------------- | ----------------------------------------------------------------------------------------------- | --------------- |
+| `webhooks`      | `ProcessWhatsAppWebhook`, `SimulateMessageStatuses` (solo transporte simulado)                  | `critical`      |
+| `messages`      | `DeliverOutboundMessage`, mensajes automáticos (`SendAutomaticMessages`)                        | `critical`      |
+| `realtime`      | Señales de tiempo real (`app/Listeners/Realtime`) y difusiones del chat interno                 | `realtime`      |
+| `notifications` | Notificaciones in-app (su señal `.notification` se publica en el mismo trabajo) y `SendWebPush` | `notifications` |
+| `media`         | `DownloadInboundMedia`                                                                          | `media`         |
+| `default`       | Métricas (`RefreshConversationMetrics`), sincronización de plantillas y lo no clasificado       | `default`       |
+| `exports`       | `GenerateReport`, `ImportContacts`, `RollbackContactImport`                                     | `exports`       |
 
 Pruebas y escenarios E2E sin worker usan `QUEUE_CONNECTION=sync`. Antes de cada trabajo en cola,
 `RefreshPermissionsBeforeQueuedJob` vacía la caché de permisos en memoria del worker, de modo que un permiso revocado
-deja de valer en workers de larga vida. Las mediciones de carga muestran que `notifications` es el cuello de botella del
-tiempo real en ráfagas ([rendimiento-y-carga.md §8](rendimiento-y-carga.md#8-identificado-y-no-corregido-con-motivo)).
+deja de valer en workers de larga vida. Las mediciones de carga anteriores a la estabilización mostraron que la cola
+compartida `notifications` era el cuello de botella del tiempo real en ráfagas; por eso las señales tienen ahora su
+propia cola y workers ([rendimiento-y-carga.md](rendimiento-y-carga.md)). Los listeners que no harían nada con un
+evento lo descartan en `shouldQueue()` y no encolan trabajos vacíos.
 
 ### 12.2 Programador (`routes/console.php`, verificado con `php artisan schedule:list`)
 

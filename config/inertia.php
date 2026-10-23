@@ -52,6 +52,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | History
+    |--------------------------------------------------------------------------
+    |
+    | Page data kept in the browser history is encrypted, so the back button
+    | cannot show what a closed session saw (signing out clears the key).
+    | Encryption needs a secure context (HTTPS or localhost); over plain HTTP
+    | the browser keeps the data unencrypted and only logs a warning.
+    |
+    */
+
+    'history' => [
+        'encrypt' => (bool) env('INERTIA_ENCRYPT_HISTORY', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Testing
     |--------------------------------------------------------------------------
     |

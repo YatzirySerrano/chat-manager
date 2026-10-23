@@ -19,15 +19,14 @@ use App\Models\Department;
 use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
-use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\OutboundAttachmentRules;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -43,6 +42,7 @@ use Inertia\Response;
  * again on each request.
  *
  * @phpstan-import-type InboxFilters from ConversationInboxQuery
+ * @phpstan-import-type InboxCursor from ConversationInboxQuery
  */
 class ConversationController extends Controller
 {
@@ -55,8 +55,12 @@ class ConversationController extends Controller
     /** Rows of the list loaded at first, and per "load more". */
     public const LIST_PAGE = 25;
 
-    /** Upper bound of rows the list keeps loaded. */
-    public const LIST_MAX = 250;
+    /**
+     * Rows one request of the list endpoint returns at most: the inbox
+     * refreshes the rows it loaded beyond the first page with it. There is
+     * no bound on how far the list can be followed.
+     */
+    public const LIST_CHUNK_MAX = 500;
 
     /** Previous conversations of the contact summarized in the panel. */
     private const CONTACT_HISTORY = 6;
@@ -90,7 +94,7 @@ class ConversationController extends Controller
      * The inbox, optionally with a conversation open. A conversation the
      * viewer cannot see is treated exactly like one that does not exist.
      */
-    public function index(Request $request, ConversationInboxQuery $inbox, ReportExporter $exporter, ConversationAccess $access, CustomerServiceWindow $window, ConversationTimeline $timeline, PlatformSettings $settings, OutboundAttachmentRules $attachmentRules): Response
+    public function index(Request $request, ConversationInboxQuery $inbox, ReportExporter $exporter, CustomerServiceWindow $window, ConversationTimeline $timeline, PlatformSettings $settings, OutboundAttachmentRules $attachmentRules): Response
     {
         Gate::authorize('viewAny', Conversation::class);
 
@@ -104,12 +108,10 @@ class ConversationController extends Controller
         $validated = $request->validate([
             ...ConversationInboxQuery::rules(),
             'c' => ['nullable', 'integer', 'min:1'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:'.self::LIST_MAX],
         ]);
 
         $filters = $inbox->filters($actor, $validated);
         $views = $filters['views'];
-        $limit = min(self::LIST_MAX, max(self::LIST_PAGE, (int) ($validated['limit'] ?? self::LIST_PAGE)));
 
         $request->session()->put(self::LIST_QUERY, $this->listQuery($validated, $filters));
 
@@ -129,7 +131,7 @@ class ConversationController extends Controller
         };
 
         return Inertia::render('conversations/Index', [
-            'conversations' => fn (): array => $this->list($inbox, $actor, $filters, $limit, $request),
+            'conversations' => fn (): array => $this->list($inbox, $actor, $filters, $request),
             'filters' => fn (): array => [
                 'view' => $filters['view'],
                 'status' => $filters['status'],
@@ -137,6 +139,8 @@ class ConversationController extends Controller
                 'agent' => $filters['agent'],
                 'connection' => $filters['connection'],
                 'search' => $filters['search'],
+                'search_in' => $filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT,
+                'search_ignored' => $inbox->searchIgnored($filters),
                 'tag' => $filters['tag'] ?? null,
                 'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_PRIORITY,
             ],
@@ -174,11 +178,38 @@ class ConversationController extends Controller
             'timeline' => fn (): ?array => ($selected = $selection()) === null ? null : $timeline->page($selected, $request),
             'details' => fn (): ?array => ($selected = $selection()) === null ? null : $this->details($selected, $actor, $request),
             'contactUrl' => fn (): ?string => ($selected = $selection()) !== null && $actor->can('view', $selected->contact) ? route('contacts.show', $selected->contact) : null,
-            'transferOptions' => Inertia::optional(fn (): array => ($selected = $selection()) === null
-                ? ['departments' => [], 'unrouted_agents' => []]
-                : $this->transferOptions($selected, $actor, $access)),
             'transferReasonRequired' => fn (): bool => (bool) $settings->get('operations.transfer_reason_required'),
         ]);
+    }
+
+    /**
+     * Rows of the list as JSON, for "load more" and for refreshing the rows
+     * loaded beyond the first page: the rows that follow the `after` cursor
+     * (the first ones without it) with the same filters, authorized like
+     * the inbox.
+     */
+    public function page(Request $request, ConversationInboxQuery $inbox): JsonResponse
+    {
+        Gate::authorize('viewAny', Conversation::class);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $actor->loadMissing('departments');
+
+        $validated = $request->validate([
+            ...ConversationInboxQuery::rules(),
+            'after' => ['nullable', 'string', 'max:255'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:'.self::LIST_CHUNK_MAX],
+        ]);
+
+        return response()->json($this->list(
+            $inbox,
+            $actor,
+            $inbox->filters($actor, $validated),
+            $request,
+            isset($validated['after']) ? ConversationInboxQuery::decodeCursor((string) $validated['after']) : null,
+            (int) ($validated['limit'] ?? self::LIST_PAGE),
+        ));
     }
 
     /**
@@ -216,14 +247,24 @@ class ConversationController extends Controller
     }
 
     /**
-     * The rows of the list with what each row shows for the viewer.
+     * Rows of the list with what each row shows for the viewer: the first
+     * page, or the rows following a cursor. `next_cursor` points after the
+     * last row returned.
      *
      * @param  InboxFilters  $filters
-     * @return array{data: list<array<string, mixed>>, has_more: bool, limit: int}
+     * @param  InboxCursor|null  $after
+     * @return array{data: list<array<string, mixed>>, has_more: bool, next_cursor: string|null}
      */
-    private function list(ConversationInboxQuery $inbox, User $actor, array $filters, int $limit, Request $request): array
+    private function list(ConversationInboxQuery $inbox, User $actor, array $filters, Request $request, ?array $after = null, int $limit = self::LIST_PAGE): array
     {
-        $rows = $inbox->withListColumns($inbox->handle($actor, $filters), $actor)
+        $sort = $filters['sort'] ?? ConversationInboxQuery::SORT_PRIORITY;
+        $listed = $inbox->handle($actor, $filters);
+
+        if ($after !== null) {
+            $inbox->startingAfter($listed, $after, $sort);
+        }
+
+        $rows = $inbox->withListColumns($listed, $actor)
             ->with([
                 'contact',
                 'channelConnection',
@@ -236,13 +277,14 @@ class ConversationController extends Controller
 
         $hasMore = $rows->count() > $limit;
         $rows = $rows->take($limit);
+        $last = $rows->last();
 
         $this->attachLastMessages($rows);
 
         return [
             'data' => array_values(ConversationResource::collection($rows)->resolve($request)),
             'has_more' => $hasMore,
-            'limit' => $limit,
+            'next_cursor' => $last === null ? null : ConversationInboxQuery::encodeCursor($inbox->cursorFor($last)),
         ];
     }
 
@@ -372,55 +414,6 @@ class ConversationController extends Controller
             'value' => $actor->availability->value,
             'label' => $actor->availability->label(),
             'options' => array_map(fn (AgentAvailability $option): array => ['value' => $option->value, 'label' => $option->label()], AgentAvailability::cases()),
-        ];
-    }
-
-    /**
-     * Destinations offered for assigning or transferring: active departments
-     * that may receive the connection's conversations, and per department the
-     * agents who can attend them. Loaded only when a dialog opens.
-     *
-     * @return array{departments: list<array{id: int, name: string, agents: list<array{id: int, name: string, availability: string, load: int}>}>, unrouted_agents: list<array{id: int, name: string, availability: string, load: int}>}
-     */
-    private function transferOptions(Conversation $conversation, User $actor, ConversationAccess $access): array
-    {
-        if (! $actor->can('assign', $conversation) && ! $actor->can('transfer', $conversation)) {
-            return ['departments' => [], 'unrouted_agents' => []];
-        }
-
-        $connection = $conversation->channelConnection()->firstOrFail();
-        $authorized = $connection->departments()->pluck('departments.id')->all();
-
-        $departments = Department::query()
-            ->active()
-            ->when($authorized !== [], fn (Builder $query) => $query->whereKey($authorized))
-            ->orderBy('name')
-            ->get();
-
-        // Only people the actor may already see are offered by name; others
-        // can still receive the conversation through the department queue.
-        $candidates = User::query()
-            ->visibleTo($actor)
-            ->with(['roles', 'departments'])
-            ->where('is_active', true)
-            ->withCount(['assignedConversations as attention_load' => fn (Builder $query) => $query->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold])])
-            ->orderBy('name')
-            ->get();
-
-        $describe = fn (User $user): array => [
-            'id' => $user->id,
-            'name' => $user->name,
-            'availability' => $user->availability->value,
-            'load' => (int) $user->getAttribute('attention_load'),
-        ];
-
-        return [
-            'departments' => array_values($departments->map(fn (Department $department): array => [
-                'id' => $department->id,
-                'name' => $department->name,
-                'agents' => array_values($candidates->filter(fn (User $user): bool => $access->canAttend($user, $department))->map($describe)->all()),
-            ])->all()),
-            'unrouted_agents' => array_values($candidates->filter(fn (User $user): bool => $access->canAttend($user, null))->map($describe)->all()),
         ];
     }
 }

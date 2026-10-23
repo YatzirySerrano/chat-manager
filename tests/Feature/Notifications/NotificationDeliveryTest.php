@@ -8,6 +8,7 @@ use App\Enums\ConnectionHealth;
 use App\Enums\DataTransferStatus;
 use App\Enums\DataTransferType;
 use App\Enums\Permission;
+use App\Events\Broadcasts\RealtimeSignal;
 use App\Events\Connections\ConnectionHealthChanged;
 use App\Events\Conversations\ConversationChanged;
 use App\Events\Users\UserAccessChanged;
@@ -16,10 +17,15 @@ use App\Models\DataTransfer;
 use App\Models\Department;
 use App\Models\User;
 use App\Notifications\NotificationKind;
-use App\Notifications\NotificationSignal;
+use Illuminate\Broadcasting\Broadcasters\NullBroadcaster;
+use Illuminate\Broadcasting\BroadcastException;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+use Tests\Feature\Realtime\RealtimeTestSupport;
 
 /*
 | Who receives each notification, how bursts and retries are folded or
@@ -206,14 +212,61 @@ test('access changes notify the affected active users without details', function
 });
 
 test('every stored notification sends a content-free signal on the recipient channel', function () {
-    Event::fake([NotificationSignal::class]);
+    config(['broadcasting.default' => 'log']);
+    Event::fake([RealtimeSignal::class]);
 
     receiveWhatsapp($this->connection);
 
     $notification = notificationsOf($this->agent)->sole();
 
-    Event::assertDispatched(NotificationSignal::class, fn (NotificationSignal $signal): bool => $signal->userId === $this->agent->id
-        && $signal->broadcastOn()[0]->name === "private-users.{$this->agent->id}"
-        && $signal->broadcastWith() === ['id' => $notification->id, 'kind' => 'conversation.pending']
-        && $signal->broadcastAs() === 'notification');
+    $signals = Event::dispatched(RealtimeSignal::class, fn (RealtimeSignal $signal): bool => $signal->event === 'notification');
+
+    expect($signals)->toHaveCount(1);
+
+    $signal = $signals->first()[0];
+    expect($signal->broadcastOn()[0]->name)->toBe("private-users.{$this->agent->id}")
+        ->and($signal->broadcastOn())->toHaveCount(1)
+        ->and($signal->broadcastAs())->toBe('notification')
+        ->and($signal->broadcastWith())->toBe(['id' => $notification->id, 'kind' => 'conversation.pending']);
+});
+
+test('a stopped real-time server never loses or retries the notification', function () {
+    RealtimeTestSupport::useReverb();
+    Log::spy();
+
+    receiveWhatsapp($this->connection);
+
+    expect(notificationsOf($this->agent, NotificationKind::ConversationPending))->toHaveCount(1);
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => ($context['event'] ?? null) === 'notification');
+});
+
+test('a failing real-time server is tried once per job, never once per recipient', function () {
+    $broadcaster = new class extends NullBroadcaster
+    {
+        public int $notificationAttempts = 0;
+
+        public function broadcast(array $channels, $event, array $payload = []): void
+        {
+            if ($event === 'notification') {
+                $this->notificationAttempts++;
+            }
+
+            throw new BroadcastException('Reverb no responde.');
+        }
+    };
+    Broadcast::extend('failing', fn () => $broadcaster);
+    config(['broadcasting.default' => 'failing', 'broadcasting.connections.failing' => ['driver' => 'failing']]);
+    app(BroadcastManager::class)->forgetDrivers();
+    $colleagues = User::factory()->count(2)->agent()->available()->inDepartments($this->department)->create();
+
+    receiveWhatsapp($this->connection);
+
+    expect(notificationsOf($this->agent, NotificationKind::ConversationPending))->toHaveCount(1)
+        ->and($colleagues->every(fn (User $colleague): bool => notificationsOf($colleague, NotificationKind::ConversationPending)->count() === 1))->toBeTrue()
+        ->and($broadcaster->notificationAttempts)->toBe(1);
+
+    app()->forgetScopedInstances();
+    UserAccessChanged::dispatch([$this->agent->id], 'role');
+
+    expect($broadcaster->notificationAttempts)->toBe(2);
 });

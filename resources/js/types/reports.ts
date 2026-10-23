@@ -45,6 +45,18 @@ export type AnalyticsComparable = {
 
 export type AnalyticsDuration = AnalyticsComparable & { samples: number };
 
+/**
+ * Compliance against a configured service level objective (business time).
+ * Null in the summary when no objective is configured.
+ */
+export type AnalyticsSla = {
+    target_seconds: number;
+    met: number;
+    samples: number;
+    rate: number | null;
+    previous_rate: number | null;
+};
+
 export type AnalyticsSummary = {
     received: AnalyticsComparable;
     attended: AnalyticsComparable;
@@ -57,6 +69,10 @@ export type AnalyticsSummary = {
     first_attention_seconds: AnalyticsDuration;
     first_response_seconds: AnalyticsDuration;
     resolution_seconds: AnalyticsDuration;
+    first_response_business_seconds: AnalyticsDuration;
+    resolution_business_seconds: AnalyticsDuration;
+    first_response_sla: AnalyticsSla | null;
+    resolution_sla: AnalyticsSla | null;
     messages_in: AnalyticsComparable;
     messages_out: AnalyticsComparable;
     failed_out: AnalyticsComparable;

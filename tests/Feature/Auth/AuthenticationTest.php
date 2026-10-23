@@ -63,6 +63,13 @@ test('users can logout', function () {
     $this->assertGuest();
 });
 
+test('signing out clears the browser history kept by Inertia', function () {
+    $this->actingAs(User::factory()->create())
+        ->post(route('logout'))
+        ->assertRedirect(route('home'))
+        ->assertSessionHas('inertia.clear_history', true);
+});
+
 test('users are rate limited', function () {
     $user = User::factory()->create();
 

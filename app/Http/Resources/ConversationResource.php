@@ -45,6 +45,15 @@ class ConversationResource extends JsonResource
                 'id' => $this->channelConnection->id,
                 'name' => $this->channelConnection->name,
                 'phone' => $this->channelConnection->display_phone_number,
+                // Operational state for the composer; the server checks it again on every send.
+                'state' => match (true) {
+                    $this->channelConnection->isDeleted() => 'deleted',
+                    ! $this->channelConnection->is_active => 'inactive',
+                    default => 'active',
+                },
+                'can_send' => ($sendBlockReason = $this->channelConnection->sendingBlockReason()) === null,
+                'send_block_reason' => $sendBlockReason,
+                'credentials_verified' => $this->channelConnection->credentials_verified_at !== null,
             ]),
             'department' => $this->whenLoaded('department', fn (): ?array => $this->department === null ? null : [
                 'id' => $this->department->id,

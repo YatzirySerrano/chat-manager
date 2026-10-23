@@ -49,7 +49,7 @@ class Preflight extends Command
 
         $counts = array_count_values(array_map(fn (HealthCheck $check): string => $check->status->value, $checks));
         $summary = sprintf(
-            '%d correctas, %d con atención, %d fallas.',
+            '%d correctas, %d advertencias, %d bloqueantes.',
             ($counts['ok'] ?? 0) + ($counts['skipped'] ?? 0),
             $counts['warning'] ?? 0,
             $counts['fail'] ?? 0,
@@ -63,10 +63,10 @@ class Preflight extends Command
     private function badge(HealthStatus $status): string
     {
         return match ($status) {
-            HealthStatus::Ok => '<fg=green>OK</>',
-            HealthStatus::Warning => '<fg=yellow>ATENCIÓN</>',
-            HealthStatus::Fail => '<fg=red>FALLA</>',
-            HealthStatus::Skipped => '<fg=gray>N/A</>',
+            HealthStatus::Ok => '<fg=green>CORRECTO</>',
+            HealthStatus::Warning => '<fg=yellow>ADVERTENCIA</>',
+            HealthStatus::Fail => '<fg=red>BLOQUEANTE</>',
+            HealthStatus::Skipped => '<fg=gray>NO APLICA</>',
         };
     }
 }

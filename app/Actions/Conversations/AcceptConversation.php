@@ -43,6 +43,7 @@ class AcceptConversation
                     : ConversationConflict::alreadyTaken();
             }
 
+            $department = $this->lifecycle->lockDepartment($conversation->department_id);
             $actor = $this->lifecycle->freshUser($actor->id);
             $this->lifecycle->authorize($actor, 'accept', $conversation);
 
@@ -50,9 +51,9 @@ class AcceptConversation
                 throw ConversationConflict::unavailableToAccept();
             }
 
-            $limit = $this->access->attentionLimit();
+            $limit = $this->access->reachedLimit($actor, $department, lockingRead: true);
 
-            if ($limit !== null && $this->access->attentionLoad($actor, lockingRead: true) >= $limit) {
+            if ($limit !== null) {
                 throw new ConversationConflict("Ya atiendes el máximo de {$limit} conversaciones permitido. Cierra o libera alguna antes de aceptar otra.");
             }
 

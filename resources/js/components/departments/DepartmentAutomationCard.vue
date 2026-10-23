@@ -27,6 +27,16 @@ const activeConnections = computed(() =>
     ),
 );
 
+const loadLimitLabel = computed(() => {
+    if (props.automation.department_limit !== null) {
+        return `Hasta ${props.automation.department_limit} conversaciones en atención por agente (límite propio del departamento).`;
+    }
+
+    return props.automation.load_limit === null
+        ? 'Sin límite: la distribución automática reparte por menor carga.'
+        : `Hasta ${props.automation.load_limit} conversaciones en atención por agente (límite de la plataforma).`;
+});
+
 function reopenLabel(minutes: number | null): string {
     if (minutes === null) {
         return 'Siempre inicia una conversación nueva';
@@ -137,11 +147,10 @@ function messagesLabel(connection: DepartmentConnection): string {
             <div class="space-y-1 text-sm">
                 <p class="font-medium">Límite de carga por agente</p>
                 <p class="text-muted-foreground">
-                    {{
-                        automation.load_limit === null
-                            ? 'Sin límite: la distribución automática reparte por menor carga.'
-                            : `Hasta ${automation.load_limit} conversaciones en atención por agente (aplica a toda la plataforma).`
-                    }}
+                    {{ loadLimitLabel }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                    Un límite propio en la ficha del agente tiene prioridad.
                 </p>
                 <Link
                     v-if="automation.settings_url"

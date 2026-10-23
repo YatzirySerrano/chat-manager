@@ -4,13 +4,15 @@ namespace App\Http\Controllers\Conversations;
 
 use App\Models\Conversation;
 use App\Services\Conversations\ConversationTimeline;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
  * JSON pages of a conversation's chat for the inbox: older pages
- * (`before`), what arrived after the newest known items (`after_*`), and the
- * current state of items already shown (`messages[]`, `notes[]`). The
+ * (`before`, plus `until` when the previous page was shortened), what
+ * arrived after the newest known items (`after_*`), and the current state
+ * of items already shown (`messages[]`, `notes[]`). The
  * conversation is authorized on every request, so a person who lost access
  * stops receiving anything at once.
  */
@@ -22,6 +24,11 @@ class ConversationTimelineController extends ConversationOperationController
 
         $validated = $request->validate([
             'before' => ['nullable', 'integer', 'min:1'],
+            'until' => ['nullable', 'string', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! is_string($value) || ConversationTimeline::parseUntil($value) === null) {
+                    $fail('El historial cambió. Vuelve a abrir la conversación.');
+                }
+            }],
             'after_message' => ['nullable', 'integer', 'min:0'],
             'after_note' => ['nullable', 'integer', 'min:0'],
             'after_event' => ['nullable', 'integer', 'min:0'],
@@ -54,6 +61,7 @@ class ConversationTimelineController extends ConversationOperationController
             $conversation,
             $request,
             isset($validated['before']) ? (int) $validated['before'] : null,
+            isset($validated['until']) ? (string) $validated['until'] : null,
         ));
     }
 }

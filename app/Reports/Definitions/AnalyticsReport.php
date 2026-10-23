@@ -24,6 +24,8 @@ use App\Services\Analytics\AnalyticsScope;
 use App\Services\Analytics\OperationalAnalytics;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Export of the reports module: the same figures, filters and reach as the
@@ -31,8 +33,15 @@ use Illuminate\Database\Eloquent\Model;
  * AnalyticsFilters), with the per-agent performance as main table and the
  * breakdowns per department, connection, day and hour as further sections.
  *
+ * The export computes the figures without the screen cache, inside the
+ * consistent snapshot of ReportExporter::render(): the rows of the main
+ * table, their totals and the summary come from the same data and the rows
+ * follow the order of the screen (most received first, ties by agent id).
+ * The screen may show figures up to OperationalAnalytics::REPORT_TTL older.
+ *
  * @phpstan-import-type Analytics from OperationalAnalytics
  * @phpstan-import-type BreakdownRow from OperationalAnalytics
+ * @phpstan-import-type Summary from OperationalAnalytics
  *
  * @extends ReportDefinition<ConversationMetric>
  */
@@ -133,14 +142,19 @@ class AnalyticsReport extends ReportDefinition
         $cohort = $this->analytics->cohort($context->actor, $this->filters($context))
             ->select('agent_id')
             ->groupBy('agent_id')
+            ->orderByRaw('COUNT(*) DESC')
             ->orderBy('agent_id');
 
         return ConversationMetric::query()->setQuery($cohort);
     }
 
+    /**
+     * Agents of the period, counted without computing the whole report (the
+     * count runs before the export snapshot starts).
+     */
     public function count(ReportContext $context): int
     {
-        return count($this->report($context)['by_agent']);
+        return DB::query()->fromSub($this->query($context)->toBase(), 'agents')->count();
     }
 
     public function columns(): array
@@ -166,7 +180,8 @@ class AnalyticsReport extends ReportDefinition
             }
         }
 
-        return ['name' => 'Sin datos'];
+        // Rows and figures are read from the same snapshot (see the class).
+        throw new LogicException('The agent of an exported row is missing from the computed report.');
     }
 
     public function metrics(ReportContext $context): array
@@ -176,11 +191,14 @@ class AnalyticsReport extends ReportDefinition
 
         return [
             new Metric('Recibidas', $summary['received']['value'], $this->versus($summary['received']['previous'])),
-            new Metric('Atendidas', $summary['attended']['value'], 'Aceptadas o asignadas a un agente'),
+            new Metric('Atendidas', $summary['attended']['value'], 'Aceptadas, asignadas por una persona o respondidas (la distribución automática no cuenta)'),
             new Metric('Resueltas', $summary['resolved']['value'], 'Cerradas al menos una vez'),
-            new Metric('Primera respuesta humana (prom.)', $this->duration($summary['first_response_seconds']['value']), $this->samples($summary['first_response_seconds']['samples'], $summary['first_response_seconds']['previous'])),
-            new Metric('Primera atención (prom.)', $this->duration($summary['first_attention_seconds']['value']), $this->samples($summary['first_attention_seconds']['samples'], $summary['first_attention_seconds']['previous'])),
-            new Metric('Resolución (prom.)', $this->duration($summary['resolution_seconds']['value']), $this->samples($summary['resolution_seconds']['samples'], $summary['resolution_seconds']['previous'])),
+            new Metric('Primera respuesta humana (prom., calendario)', $this->duration($summary['first_response_seconds']['value']), $this->samples($summary['first_response_seconds']['samples'], $summary['first_response_seconds']['previous'])),
+            new Metric('Primera respuesta humana (prom., hábil)', $this->duration($summary['first_response_business_seconds']['value']), $this->samples($summary['first_response_business_seconds']['samples'], $summary['first_response_business_seconds']['previous'])),
+            new Metric('Primera atención (prom., calendario)', $this->duration($summary['first_attention_seconds']['value']), $this->samples($summary['first_attention_seconds']['samples'], $summary['first_attention_seconds']['previous'])),
+            new Metric('Resolución (prom., calendario)', $this->duration($summary['resolution_seconds']['value']), $this->samples($summary['resolution_seconds']['samples'], $summary['resolution_seconds']['previous'])),
+            new Metric('Resolución (prom., hábil)', $this->duration($summary['resolution_business_seconds']['value']), $this->samples($summary['resolution_business_seconds']['samples'], $summary['resolution_business_seconds']['previous'])),
+            ...$this->slaMetrics($summary),
             new Metric('Reabiertas', $summary['reopened']['value'], 'Conversaciones reabiertas al menos una vez'),
             new Metric('Transferencias', $summary['transfers']['value'], $this->versus($summary['transfers']['previous'])),
             new Metric('Fuera de horario', $summary['out_of_hours']['value'], $summary['out_of_hours']['value'] === null ? 'Sin horario laboral configurado' : 'Recibidas fuera del horario laboral'),
@@ -355,6 +373,35 @@ class AnalyticsReport extends ReportDefinition
         ];
     }
 
+    /**
+     * Compliance cards, only for the objectives that are configured.
+     *
+     * @param  Summary  $summary
+     * @return list<Metric>
+     */
+    private function slaMetrics(array $summary): array
+    {
+        $metrics = [];
+
+        foreach (['first_response_sla' => 'primera respuesta', 'resolution_sla' => 'resolución'] as $key => $label) {
+            $sla = $summary[$key];
+
+            if ($sla === null) {
+                continue;
+            }
+
+            $metrics[] = new Metric(
+                "Objetivo de {$label}",
+                $sla['rate'] === null ? null : "{$sla['rate']} %",
+                $sla['samples'] === 0
+                    ? "Objetivo {$this->duration($sla['target_seconds'])} hábiles · sin conversaciones medidas"
+                    : "{$sla['met']} de {$sla['samples']} dentro de {$this->duration($sla['target_seconds'])} hábiles",
+            );
+        }
+
+        return $metrics;
+    }
+
     private function minutes(?int $seconds): ?float
     {
         return $seconds === null ? null : round($seconds / 60, 1);
@@ -391,7 +438,7 @@ class AnalyticsReport extends ReportDefinition
 
     private function filters(ReportContext $context): AnalyticsFilters
     {
-        return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->generatedAt);
+        return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->asOf());
     }
 
     /**
@@ -401,6 +448,6 @@ class AnalyticsReport extends ReportDefinition
     {
         $filters = $this->filters($context);
 
-        return $this->reports["{$context->actor->id}:{$filters->cacheKey()}"] ??= $this->analytics->report($context->actor, $filters);
+        return $this->reports["{$context->actor->id}:{$filters->cacheKey()}"] ??= $this->analytics->compute($context->actor, $filters);
     }
 }

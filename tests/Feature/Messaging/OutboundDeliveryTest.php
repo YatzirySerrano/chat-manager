@@ -262,3 +262,23 @@ test('without the integration enabled nothing is sent and the message fails expl
     expect($message->refresh())->status->toBe(MessageStatus::Failed)->error_code->toBe('transport_unavailable');
     Http::assertNothingSent();
 });
+
+test('during a controlled pilot only the listed recipients are reached', function (string $recipients, bool $sent) {
+    config(['whatsapp.pilot.recipients' => array_values(array_filter(array_map(fn (string $number): string => (string) preg_replace('/\D+/', '', $number), explode(',', $recipients))))]);
+    Http::fake([$this->messagesUrl => Http::response(acceptedByMeta('wamid.pilot.1'))]);
+    $message = WhatsAppFixtures::outbound($this->conversation);
+
+    ($this->deliver)($message);
+
+    if ($sent) {
+        expect($message->refresh()->status)->toBe(MessageStatus::Accepted);
+        Http::assertSentCount(1);
+    } else {
+        expect($message->refresh())->status->toBe(MessageStatus::Failed)->error_code->toBe('transport_unavailable');
+        Http::assertNothingSent();
+    }
+})->with([
+    'recipient in the pilot' => ['+52 1 55 1111 2222, 5215599990000', true],
+    'recipient outside the pilot' => ['5215599990000', false],
+    'no pilot configured' => ['', true],
+]);

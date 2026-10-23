@@ -32,6 +32,7 @@ class AdminUserResource extends JsonResource
                 'is_root' => $role->is_root,
             ],
             'is_active' => $this->is_active,
+            'max_open_conversations' => $this->max_open_conversations,
             'is_deleted' => $this->isDeleted(),
             'two_factor_enabled' => $this->two_factor_confirmed_at !== null,
             'last_login_at' => $this->last_login_at?->toIso8601String(),

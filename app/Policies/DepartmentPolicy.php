@@ -23,19 +23,11 @@ class DepartmentPolicy
 
     /**
      * A deleted department answers as nonexistent to people who cannot
-     * consult deleted records.
+     * consult deleted records, and so does one outside the actor's scope.
      */
     public function view(User $actor, Department $department): Response
     {
-        if (! $actor->holdsPermission(Permission::ViewDepartments)) {
-            return Response::deny();
-        }
-
-        if ($department->isDeleted() && ! $actor->canViewDeletedRecords()) {
-            return Response::denyAsNotFound();
-        }
-
-        return $this->guard->reachesDepartment($actor, $department) ? Response::allow() : Response::deny();
+        return $this->outOfReach($actor, $department, Permission::ViewDepartments) ?? Response::allow();
     }
 
     public function create(User $actor): bool
@@ -43,11 +35,10 @@ class DepartmentPolicy
         return $actor->holdsPermission(Permission::CreateDepartments);
     }
 
-    public function update(User $actor, Department $department): bool
+    public function update(User $actor, Department $department): Response
     {
-        return ! $department->isDeleted()
-            && $actor->holdsPermission(Permission::UpdateDepartments)
-            && $this->guard->reachesDepartment($actor, $department);
+        return $this->outOfReach($actor, $department, Permission::UpdateDepartments)
+            ?? ($department->isDeleted() ? Response::deny() : Response::allow());
     }
 
     /**
@@ -69,20 +60,43 @@ class DepartmentPolicy
     /**
      * Memberships of a deleted department are kept but inert.
      */
-    public function manageMembers(User $actor, Department $department): bool
+    public function manageMembers(User $actor, Department $department): Response
     {
-        return ! $department->isDeleted()
-            && $actor->holdsPermission(Permission::ManageDepartmentMembers)
-            && $this->guard->reachesDepartment($actor, $department);
+        return $this->outOfReach($actor, $department, Permission::ManageDepartmentMembers)
+            ?? ($department->isDeleted() ? Response::deny() : Response::allow());
     }
 
     /**
      * Whether the actor can add or remove this specific member: never someone
      * whose role the actor could not assign (e.g. a peer or a superior).
      */
-    public function manageMember(User $actor, Department $department, User $member): bool
+    public function manageMember(User $actor, Department $department, User $member): Response
     {
-        return $this->manageMembers($actor, $department)
-            && $this->guard->canManageMembership($actor, $department, $member);
+        $response = $this->manageMembers($actor, $department);
+
+        if ($response->denied()) {
+            return $response;
+        }
+
+        return $this->guard->canManageMembership($actor, $department, $member) ? Response::allow() : Response::deny();
+    }
+
+    /**
+     * Without the permission the answer is 403. With it, a department
+     * outside the actor's scope (or deleted, for someone who cannot consult
+     * deleted records) answers exactly like an id that does not exist.
+     * Null when the department is within reach.
+     */
+    private function outOfReach(User $actor, Department $department, Permission $permission): ?Response
+    {
+        if (! $actor->holdsPermission($permission)) {
+            return Response::deny();
+        }
+
+        if (($department->isDeleted() && ! $actor->canViewDeletedRecords()) || ! $this->guard->reachesDepartment($actor, $department)) {
+            return Response::denyAsNotFound();
+        }
+
+        return null;
     }
 }

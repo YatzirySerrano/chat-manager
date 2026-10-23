@@ -102,6 +102,10 @@ return [
         'xlsx' => [
             'sync_rows' => (int) env('EXPORTS_XLSX_SYNC_ROWS', 2000),
             'max_rows' => (int) env('EXPORTS_XLSX_MAX_ROWS', 50000),
+            // The workbook is built in memory (~0.8 KB per cell): rows are
+            // also capped at max_cells / columns of the report. 800 000
+            // cells peak around 650 MB, below the job memory_limit.
+            'max_cells' => (int) env('EXPORTS_XLSX_MAX_CELLS', 800000),
         ],
         'pdf' => [
             'sync_rows' => (int) env('EXPORTS_PDF_SYNC_ROWS', 500),

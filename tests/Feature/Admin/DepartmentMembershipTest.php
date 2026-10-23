@@ -60,11 +60,11 @@ test('supervisors cannot manage members of departments they do not supervise', f
 
     $this->actingAs($supervisor)
         ->post(route('departments.members.store', $other), ['user_id' => $newAgent->id])
-        ->assertForbidden();
+        ->assertNotFound();
 
     $this->actingAs($supervisor)
         ->delete(route('departments.members.destroy', [$other, $agent]))
-        ->assertForbidden();
+        ->assertNotFound();
 
     expect($newAgent->belongsToDepartment($other))->toBeFalse()
         ->and($agent->belongsToDepartment($other))->toBeTrue();

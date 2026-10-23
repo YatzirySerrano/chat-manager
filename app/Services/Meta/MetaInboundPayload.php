@@ -103,10 +103,11 @@ class MetaInboundPayload
 
     /**
      * Changes of the body, optionally of one field only, with the business
-     * account id (entry id) they belong to.
+     * account id (entry id) they belong to and the entry time Meta reports
+     * (Unix seconds, null when absent).
      *
      * @param  array<array-key, mixed>  $payload
-     * @return list<array{field: string, entry_id: string|null, value: array<array-key, mixed>}>
+     * @return list<array{field: string, entry_id: string|null, entry_time: int|null, value: array<array-key, mixed>}>
      */
     public static function changes(array $payload, ?string $field = null): array
     {
@@ -120,6 +121,7 @@ class MetaInboundPayload
 
         foreach (self::list($payload['entry'] ?? null) as $entry) {
             $entryId = isset($entry['id']) && is_scalar($entry['id']) ? (string) $entry['id'] : null;
+            $entryTime = isset($entry['time']) && is_numeric($entry['time']) && (int) $entry['time'] > 0 ? (int) $entry['time'] : null;
 
             foreach (self::list($entry['changes'] ?? null) as $change) {
                 $name = $change['field'] ?? null;
@@ -128,7 +130,7 @@ class MetaInboundPayload
                     continue;
                 }
 
-                $changes[] = ['field' => $name, 'entry_id' => $entryId, 'value' => $change['value']];
+                $changes[] = ['field' => $name, 'entry_id' => $entryId, 'entry_time' => $entryTime, 'value' => $change['value']];
             }
         }
 
@@ -140,14 +142,16 @@ class MetaInboundPayload
      * status attached), e.g. a webhook delivery problem.
      *
      * @param  array<array-key, mixed>  $payload
-     * @return list<array{code: int|null, title: string|null, message: string|null, details: string|null}>
+     * @return list<array{code: int|null, title: string|null, message: string|null, details: string|null, entry_time: int|null}>
      */
     public static function changeErrors(array $payload): array
     {
         $errors = [];
 
-        foreach (self::changes($payload, 'messages') as ['value' => $value]) {
-            array_push($errors, ...self::errors($value['errors'] ?? null));
+        foreach (self::changes($payload, 'messages') as ['value' => $value, 'entry_time' => $entryTime]) {
+            foreach (self::errors($value['errors'] ?? null) as $error) {
+                $errors[] = [...$error, 'entry_time' => $entryTime];
+            }
         }
 
         return $errors;

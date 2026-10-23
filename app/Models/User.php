@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -36,6 +37,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property bool $is_active
  * @property AgentAvailability $availability Declared by the person; only decides automatic assignments.
  * @property Carbon|null $availability_changed_at
+ * @property int|null $max_open_conversations Own capacity override; null inherits the department and platform limits.
  * @property Carbon|null $last_assigned_at
  * @property Carbon|null $deactivated_at
  * @property Carbon|null $last_login_at
@@ -76,6 +78,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'is_active' => 'boolean',
             'availability' => AgentAvailability::class,
             'availability_changed_at' => 'datetime',
+            'max_open_conversations' => 'integer',
             'last_assigned_at' => 'datetime',
             'deactivated_at' => 'datetime',
             'last_login_at' => 'datetime',
@@ -287,5 +290,26 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             : $this->departments()->pluck('departments.id')->all();
 
         return array_values(array_map('intval', $ids));
+    }
+
+    /**
+     * Sign the account out of its database sessions, optionally keeping the
+     * current one. With another session driver there is nothing stored to
+     * close; a new password already invalidates "remember me" cookies,
+     * because they carry a hash of the password.
+     *
+     * @return int The number of sessions closed.
+     */
+    public function closeSessions(?string $exceptSessionId = null): int
+    {
+        if (config('session.driver') !== 'database') {
+            return 0;
+        }
+
+        return DB::connection(config('session.connection'))
+            ->table((string) config('session.table', 'sessions'))
+            ->where('user_id', $this->getKey())
+            ->when($exceptSessionId !== null, fn ($query) => $query->where('id', '!=', $exceptSessionId))
+            ->delete();
     }
 }

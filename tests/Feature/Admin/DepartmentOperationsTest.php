@@ -101,8 +101,8 @@ test('only users who can update the department in their scope change its operati
         ->put(route('departments.hours.update', $department), $hours)
         ->assertSessionHasNoErrors();
 
-    $this->actingAs($editor)->put(route('departments.operations.update', $other), ['welcome_message' => 'Hola'])->assertForbidden();
-    $this->actingAs($editor)->put(route('departments.hours.update', $other), $hours)->assertForbidden();
+    $this->actingAs($editor)->put(route('departments.operations.update', $other), ['welcome_message' => 'Hola'])->assertNotFound();
+    $this->actingAs($editor)->put(route('departments.hours.update', $other), $hours)->assertNotFound();
 
     foreach ([$supervisor, $agent] as $user) {
         $this->actingAs($user)->put(route('departments.operations.update', $department), ['welcome_message' => 'Otro'])->assertForbidden();

@@ -20,15 +20,19 @@ use Throwable;
 class QueueMonitor
 {
     /**
+     * Labels of the responsibilities; one missing here falls back to its
+     * name, so a new queue of App\Support\Queues is always monitored.
+     *
      * @var array<string, string>
      */
     private const LABELS = [
         Queues::WEBHOOKS => 'Webhooks de WhatsApp',
         Queues::MESSAGES => 'Mensajes salientes',
+        Queues::REALTIME => 'Señales de tiempo real',
+        Queues::NOTIFICATIONS => 'Notificaciones',
         Queues::MEDIA => 'Multimedia',
-        Queues::NOTIFICATIONS => 'Notificaciones y tiempo real',
+        Queues::DEFAULT => 'Métricas y mantenimiento',
         Queues::EXPORTS => 'Exportaciones e importaciones',
-        Queues::DEFAULT => 'General',
     ];
 
     public function __construct(private QueueFactory $queues) {}
@@ -49,9 +53,9 @@ class QueueMonitor
     }
 
     /**
-     * Actual queue name of each responsibility. Exports and imports use
-     * EXPORTS_QUEUE (config/exports.php), which may differ from the
-     * "exports" name of the map.
+     * Actual queue name of each responsibility, in priority order. Exports
+     * and real-time signals honour their own overrides (EXPORTS_QUEUE,
+     * REALTIME_QUEUE) through Queues::name().
      *
      * @return array<string, string>
      */
@@ -59,10 +63,8 @@ class QueueMonitor
     {
         $names = [];
 
-        foreach (array_keys(self::LABELS) as $responsibility) {
-            $names[$responsibility] = $responsibility === Queues::EXPORTS
-                ? (string) (config('exports.queue') ?: Queues::name(Queues::EXPORTS))
-                : Queues::name($responsibility);
+        foreach (Queues::all() as $responsibility) {
+            $names[$responsibility] = Queues::name($responsibility);
         }
 
         return $names;
@@ -92,7 +94,7 @@ class QueueMonitor
     {
         $base = [
             'responsibility' => $responsibility,
-            'label' => self::LABELS[$responsibility],
+            'label' => self::LABELS[$responsibility] ?? $responsibility,
             'name' => $name,
             'pending' => null,
             'delayed' => null,

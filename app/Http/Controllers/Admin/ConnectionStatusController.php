@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Actions\Connections\ChangeConnectionStatus;
-use App\Enums\ConnectionHealth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateStatusRequest;
 use App\Models\Connection;
@@ -24,15 +23,16 @@ class ConnectionStatusController extends Controller
 
         if (! $connection->is_active) {
             Inertia::flash('toast', ['type' => 'success', 'message' => 'Conexión desactivada.']);
-        } elseif ($connection->configurationHealth() === ConnectionHealth::Configured) {
-            Inertia::flash('toast', [
-                'type' => 'warning',
-                'message' => 'Conexión activada, pero sus credenciales aún no se han verificado con Meta.',
-            ]);
-        } elseif ($connection->configurationHealth() === ConnectionHealth::CredentialsInvalid) {
+        } elseif (filled($connection->credentials_error)) {
             Inertia::flash('toast', [
                 'type' => 'warning',
                 'message' => 'Conexión activada, pero Meta rechazó sus credenciales en la última verificación.',
+            ]);
+        } elseif ($connection->credentials_verified_at === null) {
+            // Past traffic (e.g. a restored connection) does not prove the current credentials.
+            Inertia::flash('toast', [
+                'type' => 'warning',
+                'message' => 'Conexión activada, pero sus credenciales aún no se han verificado con Meta.',
             ]);
         } else {
             Inertia::flash('toast', ['type' => 'success', 'message' => 'Conexión activada.']);

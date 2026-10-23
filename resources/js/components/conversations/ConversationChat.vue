@@ -22,7 +22,6 @@ import type {
     ConversationSummary,
     ConversationTimelinePage,
     CustomerWindow,
-    TransferOptions,
     ViewerAvailability,
 } from '@/types';
 
@@ -37,7 +36,6 @@ const props = defineProps<{
     window: CustomerWindow;
     timeline: ConversationTimelinePage | null;
     availability: ViewerAvailability;
-    transferOptions?: TransferOptions;
     transferReasonRequired: boolean;
     composer: ComposerSettings;
     detailsOpen: boolean;
@@ -57,6 +55,14 @@ const SELECTION_RELOAD = [
     'window',
     'details',
     'timeline',
+];
+
+/** Header props (state, 24 h window) without the timeline or the details. */
+const HEADER_RELOAD = [
+    'selectedId',
+    'selectionMissing',
+    'conversation',
+    'window',
 ];
 
 const conversationId = computed<number | null>(() => props.conversation.id);
@@ -99,7 +105,17 @@ useChannel(
     () =>
         conversationId.value ? `conversations.${conversationId.value}` : null,
     {
-        '.message.recorded': () => afterVisit(() => void timeline.fetchNewer()),
+        /*
+         * The only signal of a new message: a customer message also reopens
+         * the 24 h window, so the conversation header is refreshed too.
+         */
+        '.message.recorded': (payload) => {
+            if (payload.direction === 'inbound') {
+                afterUserVisits(() => router.reload({ only: HEADER_RELOAD }));
+            }
+
+            afterVisit(() => void timeline.fetchNewer());
+        },
         '.message.status': (payload) => {
             const id = Number(payload.message_id);
 
@@ -152,11 +168,7 @@ function pendingDeliveryIds(): number[] {
 function catchUp(): void {
     void timeline.fetchNewer();
     void timeline.refresh({ messages: pendingDeliveryIds() });
-    afterUserVisits(() =>
-        router.reload({
-            only: ['selectedId', 'selectionMissing', 'conversation', 'window'],
-        }),
-    );
+    afterUserVisits(() => router.reload({ only: HEADER_RELOAD }));
 }
 
 watch(
@@ -297,7 +309,6 @@ const phone = computed(() =>
             <ConversationActions
                 :conversation="conversation"
                 :availability="availability"
-                :transfer-options="transferOptions"
                 :transfer-reason-required="transferReasonRequired"
             />
             <Button

@@ -5,7 +5,10 @@ namespace App\Enums;
 /**
  * Roles the platform starts with. They are only a starting point: the
  * synchronization creates the ones that do not exist yet and never touches
- * an existing role, so every role is then managed from the interface.
+ * an existing role, so every role is then managed from the interface. An
+ * existing installation brings its default roles up to these definitions
+ * only on request (app:sync-permissions --upgrade-default-roles), which adds
+ * what is missing and never removes a customization.
  *
  * The Superadministrador keeps the historical name 'admin' because existing
  * installations already store it; the Administrador is a regular (non-root)
@@ -56,6 +59,10 @@ enum DefaultRole: string
     }
 
     /**
+     * The agent classifies the conversations it attends (tags.assign only
+     * reaches conversations it is responsible for) and sees its own figures
+     * (reports.view is personal for the assigned scope).
+     *
      * @return list<Permission>
      */
     public function permissions(): array
@@ -81,6 +88,7 @@ enum DefaultRole: string
                 Permission::AddConversationNotes,
                 Permission::ViewContacts,
                 Permission::ViewTags,
+                Permission::AssignTags,
                 Permission::UseQuickReplies,
                 Permission::ViewReports,
                 Permission::UseTeamChat,
@@ -98,7 +106,10 @@ enum DefaultRole: string
                 Permission::ViewConversationHistory,
                 Permission::AddConversationNotes,
                 Permission::ViewContacts,
+                Permission::ViewTags,
+                Permission::AssignTags,
                 Permission::UseQuickReplies,
+                Permission::ViewReports,
                 Permission::UseTeamChat,
             ],
         };

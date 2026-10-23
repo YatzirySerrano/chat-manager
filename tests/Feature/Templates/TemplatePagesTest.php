@@ -85,7 +85,7 @@ test('the templates list can be exported to Excel', function () {
     $admin = User::factory()->superAdministrator()->create();
 
     $this->actingAs($admin)
-        ->get(route('exports.generate', ['report' => 'message-templates', 'format' => 'xlsx']))
+        ->post(route('exports.generate', ['report' => 'message-templates', 'format' => 'xlsx']))
         ->assertOk()
         ->assertDownload();
 });

@@ -6,8 +6,10 @@ use App\Enums\ColorSwatch;
 use App\Models\Department;
 use App\Rules\AppColorValue;
 use App\Support\AppColor;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 /**
@@ -15,13 +17,13 @@ use Illuminate\Validation\Rule;
  */
 class DepartmentRequest extends FormRequest
 {
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $department = $this->route('department');
 
         return $department instanceof Department
-            ? ($this->user()?->can('update', $department) ?? false)
-            : ($this->user()?->can('create', Department::class) ?? false);
+            ? Gate::inspect('update', $department)
+            : Gate::inspect('create', Department::class);
     }
 
     /**

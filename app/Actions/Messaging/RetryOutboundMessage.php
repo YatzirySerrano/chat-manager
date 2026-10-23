@@ -2,6 +2,7 @@
 
 namespace App\Actions\Messaging;
 
+use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
@@ -13,6 +14,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Models\User;
+use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use Illuminate\Support\Facades\DB;
@@ -29,8 +31,10 @@ use Illuminate\Validation\ValidationException;
  * Rules:
  * - only failed outbound messages of this conversation;
  * - "delivery_unknown" means Meta may have accepted the first attempt: the
- *   agent must confirm the risk of a duplicate (confirm flag);
- * - the conversation's connection must still be active and not deleted;
+ *   agent must confirm the risk of a duplicate (confirm flag), and that
+ *   decision is also kept in the central audit log;
+ * - the conversation's connection must be able to send
+ *   (Connection::sendingBlockReason(), the same rule as a new reply);
  * - the conversation rules apply now: the agent must be able to reply, the
  *   window must allow free text (templates are exempt) and a template must
  *   still be approved; the delivery job checks them again.
@@ -40,6 +44,7 @@ class RetryOutboundMessage
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private CustomerServiceWindow $window,
+        private AuditLogger $audit,
     ) {}
 
     public function handle(Conversation $conversation, Message $message, User $actor, bool $confirmDuplicateRisk = false): Message
@@ -57,8 +62,12 @@ class RetryOutboundMessage
                 throw new ConversationConflict('Solo se pueden reintentar mensajes fallidos.');
             }
 
-            if (! ($conversation->channelConnection?->isOperational() ?? false)) {
-                throw new ConversationConflict('La conexión de WhatsApp de esta conversación está desactivada o eliminada; no se puede reintentar el envío.');
+            $connectionBlock = $conversation->channelConnection === null
+                ? 'La conversación no tiene una conexión de WhatsApp disponible para enviar mensajes.'
+                : $conversation->channelConnection->sendingBlockReason();
+
+            if ($connectionBlock !== null) {
+                throw new ConversationConflict($connectionBlock);
             }
 
             if ($message->error_code === 'delivery_unknown' && ! $confirmDuplicateRisk) {
@@ -115,6 +124,14 @@ class RetryOutboundMessage
             $this->lifecycle->record($conversation, ConversationEventType::MessageRetried, $actor, [
                 'metadata' => ['message_id' => $message->id, 'previous_error' => $code],
             ]);
+
+            if ($code === 'delivery_unknown') {
+                $this->audit->record(AuditAction::MessageRetriedWithDuplicateRisk, $conversation, [
+                    'message_id' => $message->id,
+                    'previous_error' => $code,
+                    'duplicate_risk_confirmed' => true,
+                ], $actor);
+            }
 
             MessageStatusChanged::dispatch($message->id, $conversation->id, MessageStatus::Queued->value, MessageStatus::Failed->value);
             DeliverOutboundMessage::dispatch($message->id)->afterCommit();

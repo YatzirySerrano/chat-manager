@@ -204,14 +204,49 @@ class ConversationAccess
     }
 
     /**
-     * Maximum of conversations in attention per agent for self-service and
-     * automatic assignment, or null when unlimited.
+     * Maximum of conversations in attention of the agent when receiving one of
+     * the department, or null when unlimited. Precedence: the agent's own
+     * limit, then the department's per agent limit, then the platform-wide
+     * limit. The load it is compared with always counts every conversation
+     * the agent attends, in any department (attentionLoad()).
+     *
+     * Self-service (accepting) and automatic distribution never go past it;
+     * handing a conversation over by hand past it is an exception reserved to
+     * users who can assign, with explicit confirmation (reachedLimit()).
      */
-    public function attentionLimit(): ?int
+    public function attentionLimit(?User $agent = null, ?Department $department = null): ?int
     {
+        foreach ([$agent?->max_open_conversations, $department?->max_open_conversations_per_agent] as $override) {
+            if (is_int($override) && $override > 0) {
+                return $override;
+            }
+        }
+
         $limit = $this->settings->get('operations.max_open_conversations_per_agent');
 
         return is_int($limit) && $limit > 0 ? $limit : null;
+    }
+
+    /**
+     * The limit the agent already reached for conversations of the
+     * department, or null while they still have room (or have no limit).
+     * Inside an engine operation the load is read with a locking read, after
+     * the agent row lock, so it includes assignments committed meanwhile.
+     */
+    public function reachedLimit(User $agent, ?Department $department, bool $lockingRead = false): ?int
+    {
+        $limit = $this->attentionLimit($agent, $department);
+
+        return $limit !== null && $this->attentionLoad($agent, $lockingRead) >= $limit ? $limit : null;
+    }
+
+    /**
+     * Asked before handing a conversation by hand to an agent who already
+     * attends their maximum (an exception only users who can assign may make).
+     */
+    public function overCapacityConfirmation(User $agent, int $limit): string
+    {
+        return "{$agent->name} ya atiende el máximo de {$limit} conversaciones. Confirma que quieres asignársela de todas formas.";
     }
 
     public function attentionLoad(User $user, bool $lockingRead = false): int

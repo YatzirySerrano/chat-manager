@@ -8,7 +8,9 @@ use App\Events\Conversations\ConversationChanged;
 use App\Exceptions\ConversationConflict;
 use App\Models\Conversation;
 use App\Models\ConversationEvent;
+use App\Models\Department;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -22,7 +24,31 @@ use Illuminate\Support\Facades\Gate;
  * - apply() only performs transitions of the state matrix;
  * - record() appends the operational event.
  *
- * Lock order is always conversation first, then users, then departments.
+ * Lock order (the same in every operation, so two of them never wait for
+ * each other in a cycle):
+ *
+ * 1. the conversation row(s), in id order when there are several;
+ * 2. the conversation's (or destination's) department row (lockDepartment()):
+ *    exclusive while choosing an agent of an automatic department or moving
+ *    the conversation to a queue, shared otherwise. It must come before the
+ *    user because the event (and a moved conversation) references the
+ *    department, and that foreign key check takes a shared lock on its row
+ *    anyway: taken after the user, it inverted the order of a distribution
+ *    (department, then agent). A new inbound conversation locks its
+ *    automatic department before inserting its row, which no other
+ *    transaction can hold yet;
+ * 3. the user rows (freshUser()), with shared locks on their role and on
+ *    their membership rows (department_user), never on department rows;
+ * 4. shared reads of the agent's other conversations to count their load
+ *    (ConversationAccess::attentionLoad()).
+ *
+ * Step 4 reads conversation rows after a user row. An operation holding one
+ * of those conversations while waiting for the same agent row (e.g. moving
+ * the agent's own conversation to another department while keeping them as
+ * responsible) can still form a cycle; MariaDB detects it, rolls one of the
+ * two transactions back completely and the user receives a controlled
+ * "retry" response. Releasing an agent's conversations while holding their
+ * row (ReleaseAssignedConversations) is the other documented exception.
  */
 class ConversationLifecycle
 {
@@ -35,6 +61,23 @@ class ConversationLifecycle
         }
 
         return $locked;
+    }
+
+    /**
+     * Step 2 of the lock order: the department row, before any user row.
+     * Shared is enough to keep it from changing (and matches the foreign key
+     * checks of the event); exclusive when the operation may distribute the
+     * department's queue, so the shared lock is never upgraded later.
+     */
+    public function lockDepartment(?int $departmentId, bool $exclusive = false): ?Department
+    {
+        if ($departmentId === null) {
+            return null;
+        }
+
+        $query = Department::query()->whereKey($departmentId);
+
+        return ($exclusive ? $query->lockForUpdate() : $query->sharedLock())->first();
     }
 
     /**
@@ -53,10 +96,16 @@ class ConversationLifecycle
      * A user re-read (and optionally row locked) with the data that decides
      * whether they can attend: account state, role and departments.
      *
-     * When locked, role and departments are read with shared locks: a locking
-     * read sees the latest committed membership (not the transaction snapshot)
-     * and a membership or role change in progress waits for this operation,
-     * so a decision is never taken on a membership that is being removed.
+     * When locked, the role and the membership rows are read with shared
+     * locks: a locking read sees the latest committed membership (not the
+     * transaction snapshot) and a membership or role change in progress waits
+     * for this operation, so a decision is never taken on a membership that
+     * is being removed. Department rows themselves are not locked here: an
+     * automatic distribution holds its department row before the agent row,
+     * so locking departments after the user inverted that order (deadlocks
+     * between a new conversation and an accept, or between two automatic
+     * departments sharing an agent). Whoever depends on the state of a
+     * department locks that row itself, before the user.
      */
     public function freshUser(int $userId, bool $lock = true): User
     {
@@ -64,13 +113,21 @@ class ConversationLifecycle
             return User::query()->with(['roles', 'departments'])->findOrFail($userId);
         }
 
-        return User::query()
-            ->with([
-                'roles' => fn ($query) => $query->sharedLock(),
-                'departments' => fn ($query) => $query->sharedLock(),
-            ])
+        $user = User::query()
+            ->with(['roles' => fn ($query) => $query->sharedLock()])
             ->lockForUpdate()
             ->findOrFail($userId);
+
+        $departmentIds = DB::table('department_user')
+            ->where('user_id', $userId)
+            ->orderBy('department_id')
+            ->sharedLock()
+            ->pluck('department_id')
+            ->all();
+
+        $user->setRelation('departments', Department::query()->whereKey($departmentIds)->orderBy('id')->get());
+
+        return $user;
     }
 
     /**

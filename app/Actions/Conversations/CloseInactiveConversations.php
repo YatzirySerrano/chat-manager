@@ -13,13 +13,16 @@ use Illuminate\Support\Facades\DB;
  * Applies the platform's "close after inactivity" setting: unclosed
  * conversations without messages for that many hours are closed by the
  * system, one by one and under lock, with an event explaining why. Nothing
- * is sent to the customer.
+ * is sent to the customer. Afterwards, the queues of the automatic
+ * departments of the agents who attended them are offered again, once per
+ * agent, since they now have room.
  */
 class CloseInactiveConversations
 {
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private PlatformSettings $settings,
+        private AssignAutomatically $assignAutomatically,
     ) {}
 
     public function handle(): int
@@ -31,6 +34,7 @@ class CloseInactiveConversations
         }
 
         $closed = 0;
+        $freedAgentIds = [];
 
         Conversation::query()
             ->notClosed()
@@ -38,9 +42,9 @@ class CloseInactiveConversations
                 ->where('last_message_at', '<', now()->subHours($hours))
                 ->orWhere(fn ($withoutMessages) => $withoutMessages->whereNull('last_message_at')->where('created_at', '<', now()->subHours($hours))))
             ->orderBy('id')
-            ->chunkById(100, function ($conversations) use ($hours, &$closed): void {
+            ->chunkById(100, function ($conversations) use ($hours, &$closed, &$freedAgentIds): void {
                 foreach ($conversations as $conversation) {
-                    $closed += DB::transaction(function () use ($conversation, $hours): int {
+                    $closed += DB::transaction(function () use ($conversation, $hours, &$freedAgentIds): int {
                         $conversation = $this->lifecycle->lock($conversation);
                         $lastActivity = $conversation->last_message_at ?? $conversation->created_at;
 
@@ -61,10 +65,18 @@ class CloseInactiveConversations
                             'metadata' => ['trigger' => 'inactivity', 'hours' => $hours],
                         ]);
 
+                        if ($conversation->assigned_user_id !== null) {
+                            $freedAgentIds[$conversation->assigned_user_id] = true;
+                        }
+
                         return 1;
                     });
                 }
             });
+
+        foreach (array_keys($freedAgentIds) as $agentId) {
+            $this->assignAutomatically->distributeForAgentAfterCommit($agentId);
+        }
 
         return $closed;
     }

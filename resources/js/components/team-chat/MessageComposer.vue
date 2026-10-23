@@ -10,18 +10,32 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
+import { formatFileSize } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { typing as announceTyping } from '@/routes/team-chat/threads';
 import { store as storeMessage } from '@/routes/team-chat/threads/messages';
-import type { TeamChatLimits, TeamMessage } from '@/types/team-chat';
+import type {
+    TeamChatLimits,
+    TeamMention,
+    TeamMessage,
+} from '@/types/team-chat';
 
 /**
  * Writes internal messages: multiline text (Enter sends, Shift+Enter adds a
  * line), files of the allowed types and quick emoji. Internal messages are
  * never sent to WhatsApp.
+ *
+ * In groups, typing "@" suggests the current participants; the chosen ids
+ * travel with the message (names are not unique) and the server keeps only
+ * current participants. While writing, a "typing" signal is sent at most
+ * every few seconds; it is never stored.
  */
 const props = defineProps<{
     threadId: number;
     limits: TeamChatLimits;
     replyTo: TeamMessage | null;
+    /** People that may be mentioned (other current participants of a group). */
+    mentionable: TeamMention[];
 }>();
 
 const emit = defineEmits<{
@@ -62,17 +76,51 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const emojiOpen = ref(false);
 const localError = ref<string | null>(null);
 
+const TYPING_INTERVAL_MS = 3000;
+const MENTION_QUERY = /(?:^|\s)@([^\s@]{0,30})$/u;
+
 const http = useHttp<
     {
         body: string;
         reply_to_message_id: number | null;
         attachments: File[];
+        mentions: number[];
     },
     { data: TeamMessage }
 >({
     body: '',
     reply_to_message_id: null,
     attachments: [],
+    mentions: [],
+});
+const typingHttp = useHttp<Record<string, never>>({});
+
+const chosenMentions = ref<TeamMention[]>([]);
+const mentionQuery = ref<string | null>(null);
+const mentionIndex = ref(0);
+let lastTypingAt = 0;
+
+function normalized(text: string): string {
+    return text
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('es');
+}
+
+const suggestions = computed(() => {
+    if (mentionQuery.value === null) {
+        return [];
+    }
+
+    const query = normalized(mentionQuery.value);
+
+    return props.mentionable
+        .filter((person) =>
+            normalized(person.name)
+                .split(/\s+/)
+                .some((word) => word.startsWith(query)),
+        )
+        .slice(0, 8);
 });
 
 const remaining = computed(
@@ -111,7 +159,102 @@ function focus(): void {
 
 defineExpose({ focus });
 
+function detectMention(): void {
+    const element = textarea.value;
+
+    if (!element || props.mentionable.length === 0) {
+        mentionQuery.value = null;
+
+        return;
+    }
+
+    const match = http.body
+        .slice(0, element.selectionStart ?? http.body.length)
+        .match(MENTION_QUERY);
+
+    mentionQuery.value = match ? match[1] : null;
+    mentionIndex.value = 0;
+}
+
+async function chooseMention(person: TeamMention): Promise<void> {
+    const element = textarea.value;
+    const caret = element?.selectionStart ?? http.body.length;
+    const before = http.body
+        .slice(0, caret)
+        .replace(/@[^\s@]{0,30}$/u, `@${person.name} `);
+
+    http.body = `${before}${http.body.slice(caret)}`;
+
+    if (!chosenMentions.value.some((chosen) => chosen.id === person.id)) {
+        chosenMentions.value = [...chosenMentions.value, person];
+    }
+
+    mentionQuery.value = null;
+    await nextTick();
+    element?.focus();
+    element?.setSelectionRange(before.length, before.length);
+    resize();
+}
+
+/** Mentions whose "@Name" is still in the text. */
+function mentionsInText(): number[] {
+    return chosenMentions.value
+        .filter((person) => http.body.includes(`@${person.name}`))
+        .map((person) => person.id)
+        .slice(0, props.limits.maxMentions);
+}
+
+function signalTyping(): void {
+    const now = Date.now();
+
+    if (http.body.trim() === '' || now - lastTypingAt < TYPING_INTERVAL_MS) {
+        return;
+    }
+
+    lastTypingAt = now;
+    typingHttp
+        .post(announceTyping.url(props.threadId), {
+            onHttpException: () => false,
+            onNetworkError: () => false,
+        })
+        .catch(() => {
+            // The indicator is best effort: a lost signal only hides it.
+        });
+}
+
+function onInput(): void {
+    resize();
+    detectMention();
+    signalTyping();
+}
+
 function onKeydown(event: KeyboardEvent): void {
+    if (suggestions.value.length > 0 && !event.isComposing) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            mentionIndex.value =
+                (mentionIndex.value + step + suggestions.value.length) %
+                suggestions.value.length;
+
+            return;
+        }
+
+        if (event.key === 'Enter' || event.key === 'Tab') {
+            event.preventDefault();
+            void chooseMention(suggestions.value[mentionIndex.value]);
+
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            mentionQuery.value = null;
+
+            return;
+        }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         void send();
@@ -131,7 +274,7 @@ function pickFiles(event: Event): void {
     );
 
     if (tooBig.length > 0) {
-        localError.value = `«${tooBig[0].name}» supera el máximo de ${Math.round(props.limits.maxKilobytes / 1024)} MB por archivo.`;
+        localError.value = `«${tooBig[0].name}» supera el máximo de ${formatFileSize(props.limits.maxKilobytes * 1024)} por archivo.`;
     }
 
     const accepted = chosen.filter((file) => !tooBig.includes(file));
@@ -170,6 +313,8 @@ async function send(): Promise<void> {
 
     localError.value = null;
     http.reply_to_message_id = props.replyTo?.id ?? null;
+    http.mentions = mentionsInText();
+    mentionQuery.value = null;
     http.clearErrors();
 
     try {
@@ -196,8 +341,11 @@ async function send(): Promise<void> {
             body: '',
             reply_to_message_id: null,
             attachments: [],
+            mentions: [],
         });
         http.reset();
+        chosenMentions.value = [];
+        lastTypingAt = 0;
         emit('sent', response.data);
         await nextTick();
         resize();
@@ -313,17 +461,58 @@ async function send(): Promise<void> {
                 </PopoverContent>
             </Popover>
             <label :for="textareaId" class="sr-only">Mensaje</label>
-            <textarea
-                :id="textareaId"
-                ref="textarea"
-                v-model="http.body"
-                rows="1"
-                class="max-h-[200px] min-h-10 flex-1 resize-none rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
-                placeholder="Escribe un mensaje interno…"
-                :aria-invalid="errors.length > 0"
-                @keydown="onKeydown"
-                @input="resize"
-            />
+            <div class="relative flex min-w-0 flex-1">
+                <ul
+                    v-if="suggestions.length > 0"
+                    :id="`${textareaId}-mentions`"
+                    role="listbox"
+                    aria-label="Mencionar a"
+                    class="absolute bottom-full left-0 z-10 mb-1 grid w-64 max-w-full gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                    <li
+                        v-for="(person, index) in suggestions"
+                        :id="`${textareaId}-mention-${person.id}`"
+                        :key="person.id"
+                        role="option"
+                        :aria-selected="index === mentionIndex"
+                        :class="
+                            cn(
+                                'cursor-pointer truncate rounded-md px-2 py-1.5 text-sm',
+                                index === mentionIndex
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'hover:bg-accent',
+                            )
+                        "
+                        @mousedown.prevent="chooseMention(person)"
+                    >
+                        {{ person.name }}
+                    </li>
+                </ul>
+                <textarea
+                    :id="textareaId"
+                    ref="textarea"
+                    v-model="http.body"
+                    rows="1"
+                    class="max-h-[200px] min-h-10 flex-1 resize-none rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                    placeholder="Escribe un mensaje interno…"
+                    :aria-invalid="errors.length > 0"
+                    :aria-expanded="suggestions.length > 0"
+                    :aria-controls="
+                        suggestions.length > 0
+                            ? `${textareaId}-mentions`
+                            : undefined
+                    "
+                    :aria-activedescendant="
+                        suggestions.length > 0
+                            ? `${textareaId}-mention-${suggestions[mentionIndex]?.id}`
+                            : undefined
+                    "
+                    @keydown="onKeydown"
+                    @input="onInput"
+                    @click="detectMention"
+                    @blur="mentionQuery = null"
+                />
+            </div>
             <Button
                 size="icon"
                 class="shrink-0 rounded-xl"

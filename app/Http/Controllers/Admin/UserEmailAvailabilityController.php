@@ -8,7 +8,6 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 
 class UserEmailAvailabilityController extends Controller
 {
@@ -17,7 +16,9 @@ class UserEmailAvailabilityController extends Controller
      * conflict is explained while typing. Only people who can create the
      * account (or update the edited one) may ask, the answer is a single
      * boolean and the route is throttled, so it cannot be used to enumerate
-     * accounts. The unique rule of the form request stays authoritative.
+     * accounts. A missing account and one out of reach both answer 404, so
+     * the user id cannot be probed either. The unique rule of the form
+     * request stays authoritative.
      */
     public function __invoke(Request $request): JsonResponse
     {
@@ -28,7 +29,7 @@ class UserEmailAvailabilityController extends Controller
 
         $validated = $request->validate([
             'email' => ['required', 'string', 'max:255'],
-            'user_id' => ['nullable', 'integer', Rule::exists(User::class, 'id')],
+            'user_id' => ['nullable', 'integer'],
         ]);
 
         $editedUser = isset($validated['user_id']) ? User::query()->findOrFail((int) $validated['user_id']) : null;

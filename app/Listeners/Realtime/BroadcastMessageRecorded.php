@@ -11,7 +11,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 /**
  * A new inbound or outbound message: people looking at the conversation
  * fetch it, and the inboxes listing the conversation refresh their order,
- * preview and counters. The signal never includes the message itself.
+ * preview and counters. It is the only signal of a new message (no
+ * ConversationChanged "message" is dispatched with it), so each message
+ * costs one queued job and one inbox refresh. The signal never includes the
+ * message itself.
  */
 class BroadcastMessageRecorded implements ShouldQueue
 {

@@ -3,6 +3,7 @@
 namespace App\Services\Analytics;
 
 use Carbon\CarbonImmutable;
+use DateTimeZone;
 
 /**
  * A reporting period in the platform time zone: [from, to) plus the
@@ -113,12 +114,38 @@ final readonly class AnalyticsPeriod
     }
 
     /**
-     * UTC offset (seconds) of the time zone at the start of the period, used
-     * to group timestamps by local day or hour in SQL.
+     * SQL expression turning a stored UTC timestamp column into local time,
+     * with the UTC offset in force at each moment of the period (daylight
+     * saving changes inside the period included), plus its bindings. It
+     * needs no time zone tables in the database: the offsets come from PHP.
+     *
+     * @param  'received_at'|'resolved_at'  $column
+     * @return array{0: literal-string, 1: list<int|string>}
      */
-    public function offsetSeconds(): int
+    public function localTimeSql(string $column): array
     {
-        return $this->from->getOffset();
+        $transitions = (new DateTimeZone($this->timezone))->getTransitions($this->from->getTimestamp(), $this->to->getTimestamp());
+        $offsets = [];
+        $bindings = [];
+
+        foreach (array_slice($transitions, 1) as $transition) {
+            $offsets[] = "WHEN {$column} < ? THEN ?";
+            $bindings[] = CarbonImmutable::createFromTimestampUTC($transition['ts'])->format('Y-m-d H:i:s');
+            $bindings[] = $this->offsetBefore($transition['ts']);
+        }
+
+        $last = $this->to->subSecond()->getOffset();
+
+        if ($offsets === []) {
+            return ["DATE_ADD({$column}, INTERVAL ? SECOND)", [$last]];
+        }
+
+        return ['DATE_ADD('.$column.', INTERVAL CASE '.implode(' ', $offsets).' ELSE ? END SECOND)', [...$bindings, $last]];
+    }
+
+    private function offsetBefore(int $timestamp): int
+    {
+        return CarbonImmutable::createFromTimestampUTC($timestamp - 1)->setTimezone($this->timezone)->getOffset();
     }
 
     /**

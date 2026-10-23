@@ -6,6 +6,7 @@
 |   php tests/load/run.php <scenario[:n]>[,<scenario[:n]>...]
 |
 |   scenarios: profile | webhooks[:total] | agents[:count] | websocket[:connections] | export
+|              | transfers[:count] | reconnect[:connections]
 |   e.g.       php tests/load/run.php profile,webhooks:2000
 |              php tests/load/run.php agents:10,agents:25
 |
@@ -42,7 +43,8 @@
 |   LOAD_SERVER                 fpm | builtin (default fpm when httpd and php-fpm exist)
 |   LOAD_PHP_WORKERS            FPM children / built-in server workers (default 8)
 |   LOAD_WORKERS                queue workers, "queues:count;..." (default
-|                               "webhooks,messages:4;media:1;notifications,default:2;exports:1")
+|                               "webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1",
+|                               the production topology of deploy/supervisor)
 |   LOAD_CONVERSATIONS          historical conversations (default 10000)
 |   LOAD_SEED_AGENTS            agent users in the dataset (default 100)
 |   LOAD_OUTPUT                 output directory (default: system temp dir)
@@ -54,6 +56,7 @@
 
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
+use App\Support\ReadCommittedTransaction;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Database\Events\QueryExecuted;
@@ -382,7 +385,7 @@ if ($serverKind === 'fpm') {
 
 $waitForPort($port) || $fail("The web server did not start; see {$outDir}/*.log");
 
-$workerLayout = $knob('LOAD_WORKERS', 'webhooks,messages:4;media:1;notifications,default:2;exports:1');
+$workerLayout = $knob('LOAD_WORKERS', 'webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1');
 $workerDescription = [];
 
 foreach (array_filter(explode(';', $workerLayout)) as $index => $definition) {
@@ -396,8 +399,50 @@ foreach (array_filter(explode(';', $workerLayout)) as $index => $definition) {
     $workerDescription[] = "{$count} × queue:work --queue={$queues}";
 }
 
-$start('reverb', 'reverb', [PHP_BINARY, $root.'/artisan', 'reverb:start', '--host=127.0.0.1', "--port={$reverbPort}"], $root);
+$startReverb = fn () => $start('reverb', 'reverb', [PHP_BINARY, $root.'/artisan', 'reverb:start', '--host=127.0.0.1', "--port={$reverbPort}"], $root);
+$startReverb();
 $waitForPort($reverbPort) || $fail("Reverb did not start; see {$outDir}/reverb.log");
+
+/*
+| Restart of Reverb on request of a scenario (reconnect.mjs writes
+| {label}.restart-reverb next to its result): SIGTERM, wait for the exit,
+| start again, wait for the port; the timings go to {label}.reverb-restarted.
+*/
+$restartReverb = function (string $label) use (&$processes, $startReverb, $waitForPort, $reverbPort, $outDir): void {
+    $requested = "{$outDir}/{$label}.restart-reverb";
+
+    if (! is_file($requested)) {
+        return;
+    }
+
+    unlink($requested);
+    $started = microtime(true);
+    $entry = $processes['reverb'] ?? null;
+
+    if ($entry !== null) {
+        proc_terminate($entry['process'], 15);
+
+        while (proc_get_status($entry['process'])['running'] && microtime(true) - $started < 10) {
+            usleep(50_000);
+        }
+
+        if (proc_get_status($entry['process'])['running']) {
+            proc_terminate($entry['process'], 9);
+        }
+
+        proc_close($entry['process']);
+        unset($processes['reverb']);
+    }
+
+    $stopped = microtime(true);
+    $startReverb();
+    $listening = $waitForPort($reverbPort, 30.0);
+    file_put_contents("{$outDir}/{$label}.reverb-restarted", json_encode([
+        'stop_ms' => (int) round(($stopped - $started) * 1000),
+        'down_ms' => (int) round((microtime(true) - $started) * 1000),
+        'listening_again' => $listening,
+    ]));
+};
 
 // Warm up (OPcache, route/view compilation) before measuring anything.
 for ($warm = 0; $warm < $phpWorkers * 2; $warm++) {
@@ -496,7 +541,7 @@ $snapshotProcesses = function (array $extraRoots) use (&$processes, $mariadbPid,
  *
  * @return array<string, mixed>
  */
-$runScenario = function (string $script, array $extra, string $label) use ($root, $childEnvironment, $outDir, $scenarioTimeout, $drainTimeout, $snapshotProcesses, $globalStatus, $say, $knob): array {
+$runScenario = function (string $script, array $extra, string $label) use ($root, $childEnvironment, $outDir, $scenarioTimeout, $drainTimeout, $snapshotProcesses, $globalStatus, $say, $knob, $restartReverb): array {
     $resultPath = "{$outDir}/{$label}.result.json";
     @unlink($resultPath);
     $baseline = [
@@ -554,6 +599,7 @@ $runScenario = function (string $script, array $extra, string $label) use ($root
 
     while (true) {
         usleep(1_000_000);
+        $restartReverb($label);
         $now = microtime(true);
         $running = proc_get_status($node)['running'];
 
@@ -623,6 +669,16 @@ $runScenario = function (string $script, array $extra, string $label) use ($root
 
     arsort($logSummary);
 
+    // Deadlocks retried by ReadCommittedTransaction, per operation, so the
+    // server-wide Innodb_deadlocks delta can be attributed.
+    preg_match_all('/'.preg_quote(ReadCommittedTransaction::RETRY_LOG_MESSAGE, '/').' \\{"operation":"([^"]+)"/', $log, $retries);
+    $retriedDeadlocks = array_count_values($retries[1]);
+    ksort($retriedDeadlocks);
+
+    // Deadlocks and lock waits that were NOT recovered: the retry warnings
+    // carry the error code too, so they are left out of these counters.
+    $unrecoveredLog = (string) preg_replace('/^.*'.preg_quote(ReadCommittedTransaction::RETRY_LOG_MESSAGE, '/').'.*$/m', '', $log);
+
     $statusDelta = [];
 
     foreach ($statusAfter as $name => $value) {
@@ -642,8 +698,10 @@ $runScenario = function (string $script, array $extra, string $label) use ($root
         'result' => $result,
         'mariadb_status_delta' => $statusDelta,
         'log' => [
-            'deadlock_mentions' => preg_match_all('/Deadlock found|SQLSTATE\[40001\]|1213/', $log),
-            'lock_wait_timeouts' => preg_match_all('/Lock wait timeout|1205/', $log),
+            // Error texts only: a bare "1213" also matches ids such as "conversation_id":1213.
+            'deadlock_mentions' => preg_match_all('/Deadlock found|SQLSTATE\[40001\]|General error: 1213\b/', $unrecoveredLog),
+            'lock_wait_timeouts' => preg_match_all('/Lock wait timeout|General error: 1205\b/', $unrecoveredLog),
+            'retried_deadlocks' => $retriedDeadlocks,
             'levels' => array_slice($logSummary, 0, 15, true),
         ],
         'samples' => $samples,
@@ -720,6 +778,29 @@ $verify = function (array $run) use ($summarizeSeconds): array {
             'rounds' => count($rounds),
             'exactly_one_winner' => count(array_filter($rounds, fn (array $round): bool => $round['http_winners'] === 1 && $round['accept_events'] === 1 && $round['assignee_is_http_winner'])),
             'detail' => $rounds,
+        ];
+    }
+
+    if (! empty($expectations['transfers'])) {
+        $rows = [];
+
+        foreach ($expectations['transfers'] as $transfer) {
+            $conversation = DB::table('conversations')->where('id', $transfer['conversation'])->first(['assigned_user_id', 'department_id', 'status']);
+            $events = DB::table('conversation_events')->where('conversation_id', $transfer['conversation'])->where('id', '>', $baseline['conversation_events'])->where('type', 'transferred')->count();
+            $destination = $transfer['destination'] ?? null;
+            $landed = $destination === null ? null : (isset($destination['user_id'])
+                ? (int) $conversation?->assigned_user_id === (int) $destination['user_id']
+                : (int) $conversation?->department_id === (int) $destination['department_id'] && $conversation?->assigned_user_id === null);
+            $rows[] = ['conversation' => $transfer['conversation'], 'winners' => $transfer['winners'], 'transferred_events' => $events, 'at_destination' => $landed, 'status' => $conversation?->status];
+        }
+
+        $consistent = array_filter($rows, fn (array $row): bool => $row['transferred_events'] === $row['winners'] && ($row['winners'] === 0 || $row['at_destination'] === true));
+        $checks['transfers'] = [
+            'checked' => count($rows),
+            'won' => count(array_filter($rows, fn (array $row): bool => $row['winners'] === 1)),
+            'consistent' => count($consistent),
+            'more_than_one_winner' => count(array_filter($rows, fn (array $row): bool => $row['winners'] > 1)),
+            'inconsistent_sample' => array_slice(array_values(array_udiff($rows, $consistent, fn (array $a, array $b): int => $a['conversation'] <=> $b['conversation'])), 0, 5),
         ];
     }
 
@@ -1005,6 +1086,8 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
         'agents' => 'agents.mjs',
         'websocket' => 'websocket.mjs',
         'export' => 'export.mjs',
+        'transfers' => 'transfers.mjs',
+        'reconnect' => 'reconnect.mjs',
         default => $fail("Unknown scenario [{$name}]."),
     };
 
@@ -1014,6 +1097,8 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
             'agents' => 'LOAD_AGENTS',
             'websocket' => 'LOAD_WS_CONNECTIONS',
             'export' => 'LOAD_EXPORT_WEBHOOKS_PER_S',
+            'transfers' => 'LOAD_TRANSFERS',
+            'reconnect' => 'LOAD_RECONNECT_CONNECTIONS',
         }] = $parameter;
     }
 

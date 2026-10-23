@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useHttp, usePage } from '@inertiajs/vue3';
+import { router, useHttp, usePage } from '@inertiajs/vue3';
 import {
     FileText,
     LayoutTemplate,
@@ -7,12 +7,12 @@ import {
     Paperclip,
     Send,
     StickyNote,
+    TriangleAlert,
     X,
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import EmojiPicker from '@/components/conversations/EmojiPicker.vue';
 import {
-    formatFileSize,
     newClientReference,
     typeLabel,
 } from '@/components/conversations/messageFormat';
@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { usePermissions } from '@/composables/usePermissions';
-import { formatDuration } from '@/lib/format';
+import { formatDuration, formatFileSize } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { store as storeMessage } from '@/routes/conversations/messages';
 import { store as storeNote } from '@/routes/conversations/notes';
@@ -40,7 +40,9 @@ import type {
  * - "Responder": a WhatsApp message to the customer (text, or one file with
  *   an optional caption). Only the responsible agent can use it while the
  *   customer service window is open; otherwise it explains why and, when
- *   the window closed, offers the approved template flow.
+ *   the window closed, offers the approved template flow. Nothing (text,
+ *   file or template) can be sent through a paused, deleted or misconfigured
+ *   connection: the reason is shown instead and notes stay available.
  * - "Nota interna": a private note for the team, in another color and with
  *   an explicit label. It goes to a different endpoint and never to Meta.
  *
@@ -172,6 +174,16 @@ const replyBlock = computed<string | null>(() => {
             : 'No tienes permiso para responder a esta conversación.';
     }
 
+    if (!conversation.connection.can_send) {
+        const reason =
+            conversation.connection.send_block_reason ??
+            `La conexión de WhatsApp «${conversation.connection.name}» no puede enviar mensajes en este momento.`;
+
+        return canNote.value
+            ? `${reason} Puedes seguir agregando notas internas.`
+            : reason;
+    }
+
     if (!props.window.allows_free_form) {
         return (
             props.window.block_reason ??
@@ -186,7 +198,15 @@ const windowClosed = computed(
     () =>
         props.conversation.status === 'open' &&
         canReply.value &&
+        props.conversation.connection.can_send &&
         !props.window.allows_free_form,
+);
+
+/* Sending may work, but nothing proves the credentials (e.g. restored). */
+const unverifiedConnection = computed(
+    () =>
+        props.conversation.connection.can_send &&
+        !props.conversation.connection.credentials_verified,
 );
 const canUseTemplates = computed(() => windowClosed.value);
 const canUseQuickReplies = computed(() => holdsPermission('quick-replies.use'));
@@ -546,6 +566,12 @@ async function submit(): Promise<void> {
         if (status !== null && status >= 400 && status < 500) {
             clientReference = newClientReference();
         }
+
+        // The conversation or its connection changed meanwhile: show the
+        // current state (the draft stays in the composer).
+        if (status === 409) {
+            router.reload({ only: ['conversation', 'window'] });
+        }
     } finally {
         sending.value = false;
         await nextTick();
@@ -882,6 +908,17 @@ defineExpose({ focus });
                 role="alert"
             >
                 {{ error }}
+            </p>
+            <p
+                v-else-if="mode === 'reply' && unverifiedConnection"
+                id="chat-composer-hint"
+                class="flex items-center gap-1 text-[11px] text-warning"
+                role="status"
+            >
+                <TriangleAlert class="size-3 shrink-0" aria-hidden="true" />
+                Las credenciales de la conexión «{{
+                    conversation.connection.name
+                }}» aún no se han verificado con Meta: el envío podría fallar.
             </p>
             <p
                 v-else

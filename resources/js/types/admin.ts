@@ -152,6 +152,8 @@ export type AdminUser = {
     email: string;
     role: RoleSummary | null;
     is_active: boolean;
+    /** Own load limit; null inherits the department and platform limits. */
+    max_open_conversations: number | null;
     is_deleted: boolean;
     two_factor_enabled: boolean;
     last_login_at: string | null;
@@ -199,6 +201,8 @@ export type DepartmentSummary = {
     away_message: string | null;
     /** How pending conversations reach an agent (see App\\Enums\\DistributionMode). */
     distribution_mode: DistributionModeValue;
+    /** Per agent load limit for this department's conversations; null inherits the platform limit. */
+    max_open_conversations_per_agent: number | null;
     uses_custom_hours: boolean;
     /** Custom schedule; only applies while `uses_custom_hours` is true. */
     business_hours: { days: Record<Weekday, BusinessDay> } | null;
@@ -320,6 +324,11 @@ export type PlatformSettings = {
         max_open_conversations_per_agent: number | null;
         auto_close_after_hours: number | null;
         transfer_reason_required: boolean;
+    };
+    /** Optional service level objectives in minutes of business time; null = no objective. */
+    sla: {
+        first_response_minutes: number | null;
+        resolution_minutes: number | null;
     };
 };
 

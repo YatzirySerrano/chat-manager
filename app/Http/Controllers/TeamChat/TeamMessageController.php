@@ -6,6 +6,7 @@ use App\Actions\TeamChat\DeleteTeamMessage;
 use App\Actions\TeamChat\EditTeamMessage;
 use App\Actions\TeamChat\PostTeamMessage;
 use App\Actions\TeamChat\TeamMessageHistory;
+use App\Actions\TeamChat\ToggleTeamMessageReaction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\TeamChat\StoreTeamMessageRequest;
 use App\Http\Requests\TeamChat\UpdateTeamMessageRequest;
@@ -16,10 +17,11 @@ use App\Services\TeamChat\TeamChatPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 /**
  * JSON endpoints of a thread's messages, used by the chat window: history
- * pages, sending, editing and deleting. Every call authorizes the viewer as
+ * pages, sending, editing, deleting and reactions. Every call authorizes the viewer as
  * a current participant again.
  */
 class TeamMessageController extends Controller
@@ -71,7 +73,7 @@ class TeamMessageController extends Controller
     {
         /** @var User $author */
         $author = $request->user();
-        $message = $postTeamMessage->handle($thread, $author, $request->body(), $request->replyToMessageId(), $request->attachments());
+        $message = $postTeamMessage->handle($thread, $author, $request->body(), $request->replyToMessageId(), $request->attachments(), $request->mentions());
 
         return response()->json(['data' => $this->present($thread, $message, $author)], 201);
     }
@@ -94,6 +96,43 @@ class TeamMessageController extends Controller
         $deleteTeamMessage->handle($message, $actor);
 
         return response()->json(['data' => $this->present($thread, $message, $actor)]);
+    }
+
+    /**
+     * Add the viewer's reaction (idempotent). Answers the message as shown
+     * now, with every participant's reactions.
+     */
+    public function react(Request $request, TeamThread $thread, TeamMessage $message, ToggleTeamMessageReaction $reactions): JsonResponse
+    {
+        Gate::authorize('react', [$thread, $message]);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $reactions->add($message, $actor, $this->validatedEmoji($request));
+
+        return response()->json(['data' => $this->present($thread, $message, $actor)]);
+    }
+
+    /**
+     * Withdraw the viewer's reaction (idempotent).
+     */
+    public function unreact(Request $request, TeamThread $thread, TeamMessage $message, ToggleTeamMessageReaction $reactions): JsonResponse
+    {
+        Gate::authorize('react', [$thread, $message]);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $reactions->remove($message, $actor, $this->validatedEmoji($request));
+
+        return response()->json(['data' => $this->present($thread, $message, $actor)]);
+    }
+
+    private function validatedEmoji(Request $request): string
+    {
+        return (string) $request->validate(
+            ['emoji' => ['required', 'string', Rule::in((array) config('team-chat.reactions'))]],
+            ['emoji.in' => 'Esa reacción no está disponible.'],
+        )['emoji'];
     }
 
     /**

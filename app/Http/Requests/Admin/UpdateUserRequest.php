@@ -8,8 +8,10 @@ use App\Enums\RecordState;
 use App\Models\Department;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
@@ -20,16 +22,17 @@ class UpdateUserRequest extends FormRequest
     /**
      * Changing the role additionally requires being allowed to assign it to this user.
      */
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $user = $this->route('user');
-        $actor = $this->user();
 
-        if (! $user instanceof User || $actor === null || ! $actor->can('update', $user)) {
-            return false;
+        if (! $user instanceof User) {
+            return Response::deny();
         }
 
-        return ! $this->changesRole($user) || $actor->can('assignRole', $user);
+        $response = Gate::inspect('update', $user);
+
+        return $response->denied() || ! $this->changesRole($user) ? $response : Gate::inspect('assignRole', $user);
     }
 
     /**
@@ -43,7 +46,9 @@ class UpdateUserRequest extends FormRequest
     }
 
     /**
-     * Get the validation rules that apply to the request.
+     * Get the validation rules that apply to the request. One's own e-mail
+     * and password are not changed here: Configuración asks for the current
+     * password and verifies the new address again.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -52,13 +57,22 @@ class UpdateUserRequest extends FormRequest
         /** @var User $user */
         $user = $this->route('user');
         $currentDepartmentIds = $user->departmentIds();
+        $editsOwnAccount = $this->editsOwnAccount();
+        $profileRules = $this->profileRules($user->id);
+
+        if ($editsOwnAccount) {
+            $profileRules['email'][] = Rule::in([mb_strtolower($user->email)]);
+        }
 
         return [
-            ...$this->profileRules($user->id),
-            'password' => ['nullable', 'string', Password::default(), 'confirmed'],
+            ...$profileRules,
+            'password' => $editsOwnAccount
+                ? ['prohibited']
+                : ['nullable', 'string', Password::default(), 'confirmed'],
             'role_id' => ['nullable', 'integer', Rule::exists(Role::class, 'id')],
             'role_change_fingerprint' => ['nullable', 'string', 'size:64'],
             'department_ids' => ['sometimes', 'array'],
+            'max_open_conversations' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:200'],
             'department_ids.*' => [
                 'integer',
                 'distinct',
@@ -83,6 +97,20 @@ class UpdateUserRequest extends FormRequest
             'role_id' => 'rol',
             'department_ids' => 'departamentos',
             'department_ids.*' => 'departamento',
+            'max_open_conversations' => 'límite de conversaciones',
+        ];
+    }
+
+    /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'email.in' => 'Cambia tu propio correo en Configuración > Perfil, donde se verifica de nuevo.',
+            'password.prohibited' => 'Cambia tu propia contraseña en Configuración > Seguridad, donde se pide la contraseña actual.',
         ];
     }
 
@@ -123,12 +151,35 @@ class UpdateUserRequest extends FormRequest
 
         return [
             'name' => $this->string('name')->trim()->value(),
-            'email' => $this->string('email')->value(),
+            'email' => $this->editsOwnAccount() ? $user->email : $this->string('email')->value(),
             'password' => $this->filled('password') ? $this->string('password')->value() : null,
             'role' => $this->filled('role_id') ? Role::query()->with('permissions')->findOrFail($this->integer('role_id')) : null,
             'department_ids' => $departmentIds,
             'role_change_fingerprint' => $this->filled('role_change_fingerprint') ? $this->string('role_change_fingerprint')->value() : null,
         ];
+    }
+
+    /**
+     * Whether the form sent the agent's own load limit.
+     */
+    public function updatesCapacity(): bool
+    {
+        return $this->has('max_open_conversations');
+    }
+
+    /**
+     * The agent's own load limit; empty inherits the department and platform limits.
+     */
+    public function capacity(): ?int
+    {
+        return $this->filled('max_open_conversations') ? $this->integer('max_open_conversations') : null;
+    }
+
+    private function editsOwnAccount(): bool
+    {
+        $user = $this->route('user');
+
+        return $user instanceof User && ($this->user()?->is($user) ?? false);
     }
 
     private function changesRole(User $user): bool

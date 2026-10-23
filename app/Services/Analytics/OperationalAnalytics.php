@@ -8,6 +8,7 @@ use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\PlatformSettings;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -25,7 +26,8 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type Comparable array{value: int|float|null, previous: int|float|null}
  * @phpstan-type Duration array{value: int|null, previous: int|null, samples: int}
  * @phpstan-type BreakdownRow array{id: int|null, name: string, received: int, attended: int, responded: int, resolved: int, first_attention_seconds: int|null, first_response_seconds: int|null, resolution_seconds: int|null, transfers: int, reopened: int, messages_in: int, messages_out: int, failed_out: int, out_of_hours: int, current_load: int|null}
- * @phpstan-type Summary array{received: Comparable, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
+ * @phpstan-type Sla array{target_seconds: int, met: int, samples: int, rate: float|null, previous_rate: float|null}
+ * @phpstan-type Summary array{received: Comparable, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, first_response_business_seconds: Duration, resolution_business_seconds: Duration, first_response_sla: Sla|null, resolution_sla: Sla|null, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
  * @phpstan-type Snapshot array{pending: int, open: int, on_hold: int, available_agents: int|null, agents: int|null}
  * @phpstan-type TrendPoint array{key: string, label: string, received: int, resolved: int, previous_received: int}
  * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'month', points: list<TrendPoint>}, heatmap: array{max: int, cells: list<list<int>>}, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>}
@@ -40,29 +42,42 @@ class OperationalAnalytics
     public function __construct(
         private AnalyticsScope $scope,
         private AnalyticsCache $cache,
+        private PlatformSettings $settings,
     ) {}
 
     /**
-     * Everything the reports page shows.
+     * Everything the reports page shows, cached for REPORT_TTL seconds.
      *
      * @return Analytics
      */
     public function report(User $viewer, AnalyticsFilters $filters): array
     {
         return $this->cache->remember(
-            "report:{$this->scope->fingerprint($viewer)}:{$filters->cacheKey()}",
+            "report:{$this->scope->fingerprint($viewer)}:{$filters->cacheKey()}:sla".implode('-', array_map('intval', $this->slaTargets())),
             self::REPORT_TTL,
-            fn (): array => [
-                'summary' => $this->summary($viewer, $filters),
-                'current' => $this->snapshot($viewer, $filters),
-                'statuses' => $this->statuses($viewer, $filters),
-                'trend' => $this->trend($viewer, $filters),
-                'heatmap' => $this->heatmap($viewer, $filters),
-                'by_agent' => $this->breakdown($viewer, $filters, 'agent_id'),
-                'by_department' => $this->scope->isPersonal($viewer) ? [] : $this->breakdown($viewer, $filters, 'department_id'),
-                'by_connection' => $this->breakdown($viewer, $filters, 'connection_id'),
-            ],
+            fn (): array => $this->compute($viewer, $filters),
         );
+    }
+
+    /**
+     * Everything the reports page shows, computed now (no cache): exports
+     * read it inside their own consistent snapshot, so their rows, totals
+     * and figures always come from the same data.
+     *
+     * @return Analytics
+     */
+    public function compute(User $viewer, AnalyticsFilters $filters): array
+    {
+        return [
+            'summary' => $this->summary($viewer, $filters),
+            'current' => $this->snapshot($viewer, $filters),
+            'statuses' => $this->statuses($viewer, $filters),
+            'trend' => $this->trend($viewer, $filters),
+            'heatmap' => $this->heatmap($viewer, $filters),
+            'by_agent' => $this->breakdown($viewer, $filters, 'agent_id'),
+            'by_department' => $this->scope->isPersonal($viewer) ? [] : $this->breakdown($viewer, $filters, 'department_id'),
+            'by_connection' => $this->breakdown($viewer, $filters, 'connection_id'),
+        ];
     }
 
     /**
@@ -72,8 +87,9 @@ class OperationalAnalytics
      */
     public function summary(User $viewer, AnalyticsFilters $filters): array
     {
-        $current = $this->totals($this->cohort($viewer, $filters));
-        $previous = $this->totals($this->cohort($viewer, $filters->previous()));
+        [$responseTarget, $resolutionTarget] = $this->slaTargets();
+        $current = $this->totals($this->cohort($viewer, $filters), $responseTarget, $resolutionTarget);
+        $previous = $this->totals($this->cohort($viewer, $filters->previous()), $responseTarget, $resolutionTarget);
 
         $comparable = fn (string $key): array => ['value' => $current[$key], 'previous' => $previous[$key]];
         $duration = fn (string $key): array => [
@@ -97,6 +113,10 @@ class OperationalAnalytics
             'first_attention_seconds' => $duration('first_attention'),
             'first_response_seconds' => $duration('first_response'),
             'resolution_seconds' => $duration('resolution'),
+            'first_response_business_seconds' => $duration('first_response_business'),
+            'resolution_business_seconds' => $duration('resolution_business'),
+            'first_response_sla' => $this->sla($responseTarget, $current, $previous, 'first_response'),
+            'resolution_sla' => $this->sla($resolutionTarget, $current, $previous, 'resolution'),
             'messages_in' => $comparable('messages_in'),
             'messages_out' => $comparable('messages_out'),
             'failed_out' => $comparable('failed_out'),
@@ -189,9 +209,9 @@ class OperationalAnalytics
      */
     public function heatmap(User $viewer, AnalyticsFilters $filters): array
     {
-        $offset = $filters->period->offsetSeconds();
+        [$local, $bindings] = $filters->period->localTimeSql('received_at');
         $rows = $this->cohort($viewer, $filters)
-            ->selectRaw('WEEKDAY(DATE_ADD(received_at, INTERVAL ? SECOND)) AS weekday, HOUR(DATE_ADD(received_at, INTERVAL ? SECOND)) AS hour, COUNT(*) AS total', [$offset, $offset])
+            ->selectRaw("WEEKDAY({$local}) AS weekday, HOUR({$local}) AS hour, COUNT(*) AS total", [...$bindings, ...$bindings])
             ->groupBy('weekday', 'hour')
             ->get();
 
@@ -209,7 +229,8 @@ class OperationalAnalytics
 
     /**
      * Figures of the period grouped by agent, department or connection,
-     * largest first. Conversations without agent/department form their
+     * largest first (ties by id, so the screen and the export list them in
+     * the same order). Conversations without agent/department form their
      * own row.
      *
      * @param  'agent_id'|'department_id'|'connection_id'  $column
@@ -221,6 +242,7 @@ class OperationalAnalytics
             ->addSelect(DB::raw("{$column} AS dimension"))
             ->groupBy($column)
             ->orderByDesc('received')
+            ->orderBy($column)
             ->get();
 
         $ids = $rows->pluck('dimension')->filter()->map(fn (mixed $id): int => (int) $id)->all();
@@ -294,8 +316,17 @@ class OperationalAnalytics
             ->when($filters->connectionId !== null, fn (Builder $q) => $q->where('connection_id', $filters->connectionId));
     }
 
-    private function aggregate(Builder $query): Builder
+    private function aggregate(Builder $query, ?int $responseTarget = null, ?int $resolutionTarget = null): Builder
     {
+        // Compliance needs an objective; without one it is not computed.
+        if ($responseTarget !== null) {
+            $query->selectRaw('SUM(CASE WHEN business_seconds_to_first_human_response <= ? THEN 1 ELSE 0 END) AS first_response_sla_met', [$responseTarget]);
+        }
+
+        if ($resolutionTarget !== null) {
+            $query->selectRaw('SUM(CASE WHEN business_seconds_to_resolution <= ? THEN 1 ELSE 0 END) AS resolution_sla_met', [$resolutionTarget]);
+        }
+
         return $query
             ->selectRaw('COUNT(*) AS received')
             ->selectRaw('SUM(CASE WHEN first_assigned_at IS NOT NULL THEN 1 ELSE 0 END) AS attended')
@@ -308,15 +339,61 @@ class OperationalAnalytics
             ->selectRaw('AVG(seconds_to_first_attention) AS first_attention_avg, COUNT(seconds_to_first_attention) AS first_attention_samples')
             ->selectRaw('AVG(seconds_to_first_human_response) AS first_response_avg, COUNT(seconds_to_first_human_response) AS first_response_samples')
             ->selectRaw('AVG(seconds_to_resolution) AS resolution_avg, COUNT(seconds_to_resolution) AS resolution_samples')
+            ->selectRaw('AVG(business_seconds_to_first_human_response) AS first_response_business_avg, COUNT(business_seconds_to_first_human_response) AS first_response_business_samples')
+            ->selectRaw('AVG(business_seconds_to_resolution) AS resolution_business_avg, COUNT(business_seconds_to_resolution) AS resolution_business_samples')
             ->selectRaw('SUM(messages_in) AS messages_in, SUM(messages_out) AS messages_out, SUM(failed_out) AS failed_out');
     }
 
     /**
      * @return array<string, int|null>
      */
-    private function totals(Builder $query): array
+    private function totals(Builder $query, ?int $responseTarget = null, ?int $resolutionTarget = null): array
     {
-        return $this->normalize($this->aggregate($query)->first());
+        return $this->normalize($this->aggregate($query, $responseTarget, $resolutionTarget)->first());
+    }
+
+    /**
+     * Configured service level objectives in seconds of business time
+     * (first response, resolution); null when not configured.
+     *
+     * @return array{0: int|null, 1: int|null}
+     */
+    private function slaTargets(): array
+    {
+        $seconds = function (string $key): ?int {
+            $minutes = $this->settings->get("sla.{$key}");
+
+            return is_numeric($minutes) && (int) $minutes > 0 ? (int) $minutes * 60 : null;
+        };
+
+        return [$seconds('first_response_minutes'), $seconds('resolution_minutes')];
+    }
+
+    /**
+     * Compliance against an objective: of the measured conversations, how
+     * many took no longer than the target (business time).
+     *
+     * @param  array<string, int|null>  $current
+     * @param  array<string, int|null>  $previous
+     * @param  'first_response'|'resolution'  $key
+     * @return Sla|null
+     */
+    private function sla(?int $target, array $current, array $previous, string $key): ?array
+    {
+        if ($target === null) {
+            return null;
+        }
+
+        $samples = (int) $current["{$key}_business_samples"];
+        $met = (int) $current["{$key}_sla_met"];
+
+        return [
+            'target_seconds' => $target,
+            'met' => $met,
+            'samples' => $samples,
+            'rate' => $this->rate($met, $samples),
+            'previous_rate' => $this->rate((int) $previous["{$key}_sla_met"], (int) $previous["{$key}_business_samples"]),
+        ];
     }
 
     /**
@@ -327,11 +404,11 @@ class OperationalAnalytics
         $values = (array) $row;
         $result = [];
 
-        foreach (['received', 'attended', 'responded', 'resolved', 'reopened', 'transfers', 'out_of_hours', 'out_of_hours_measurable', 'first_attention_samples', 'first_response_samples', 'resolution_samples', 'messages_in', 'messages_out', 'failed_out'] as $key) {
+        foreach (['received', 'attended', 'responded', 'resolved', 'reopened', 'transfers', 'out_of_hours', 'out_of_hours_measurable', 'first_attention_samples', 'first_response_samples', 'resolution_samples', 'first_response_business_samples', 'resolution_business_samples', 'first_response_sla_met', 'resolution_sla_met', 'messages_in', 'messages_out', 'failed_out'] as $key) {
             $result[$key] = (int) ($values[$key] ?? 0);
         }
 
-        foreach (['first_attention_avg', 'first_response_avg', 'resolution_avg'] as $key) {
+        foreach (['first_attention_avg', 'first_response_avg', 'resolution_avg', 'first_response_business_avg', 'resolution_business_avg'] as $key) {
             $value = $values[$key] ?? null;
             $result[$key] = $value === null ? null : (int) round((float) $value);
         }
@@ -422,15 +499,11 @@ class OperationalAnalytics
      */
     private function bucketCounts(Builder $query, string $column, AnalyticsPeriod $period, string $granularity): array
     {
-        $select = match ([$column, $granularity]) {
-            ['received_at', 'day'] => "DATE_FORMAT(DATE_ADD(received_at, INTERVAL ? SECOND), '%Y-%m-%d') AS bucket, COUNT(*) AS total",
-            ['received_at', 'month'] => "DATE_FORMAT(DATE_ADD(received_at, INTERVAL ? SECOND), '%Y-%m') AS bucket, COUNT(*) AS total",
-            ['resolved_at', 'day'] => "DATE_FORMAT(DATE_ADD(resolved_at, INTERVAL ? SECOND), '%Y-%m-%d') AS bucket, COUNT(*) AS total",
-            default => "DATE_FORMAT(DATE_ADD(resolved_at, INTERVAL ? SECOND), '%Y-%m') AS bucket, COUNT(*) AS total",
-        };
+        [$local, $bindings] = $period->localTimeSql($column);
+        $bucket = $granularity === 'day' ? "DATE_FORMAT({$local}, '%Y-%m-%d')" : "DATE_FORMAT({$local}, '%Y-%m')";
 
         return $query
-            ->selectRaw($select, [$period->offsetSeconds()])
+            ->selectRaw("{$bucket} AS bucket, COUNT(*) AS total", $bindings)
             ->groupBy('bucket')
             ->pluck('total', 'bucket')
             ->map(fn (mixed $total): int => (int) $total)

@@ -115,15 +115,22 @@ test('templates not approved by Meta or of another connection are refused', func
     'other connection' => [fn ($template) => $template->forceFill(['connection_id' => Connection::factory()->create()->id])->save(), 'template_id'],
 ]);
 
-test('a template is refused at once when the connection was deactivated', function () {
+test('a template is refused at once when the connection cannot send', function (array $state, string $reason) {
     Queue::fake();
-    $this->connection->forceFill(['is_active' => false])->save();
+    $this->connection->forceFill($state)->save();
 
-    ($this->send)(['parameters' => $this->values])->assertStatus(409);
+    ($this->send)(['parameters' => $this->values])
+        ->assertStatus(409)
+        ->assertJsonPath('message', fn (string $message): bool => str_contains($message, $reason));
 
     expect(Message::query()->count())->toBe(0);
     Queue::assertNothingPushed();
-});
+})->with([
+    'deactivated' => [['is_active' => false], 'está desactivada'],
+    'deleted' => [['deleted_at' => now(), 'is_active' => false], 'fue eliminada'],
+    'missing credentials' => [['access_token' => null], 'no tiene guardados sus identificadores'],
+    'credentials rejected by Meta' => [['credentials_error' => 'Invalid OAuth access token.'], 'Meta rechazó las credenciales'],
+]);
 
 test('a template paused after being queued is not sent', function () {
     Queue::fake();

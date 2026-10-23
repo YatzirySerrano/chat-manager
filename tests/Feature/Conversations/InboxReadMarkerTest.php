@@ -119,23 +119,23 @@ test('a colleague\'s attended conversation never reaches the list, its previews 
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', []));
 });
 
-test('the list loads incrementally up to its limit', function () {
+test('the list loads incrementally from where the first page ended', function () {
     Conversation::factory()->count(30)->inDepartment($this->department)->assignedTo($this->agent)->create();
 
-    $this->actingAs($this->agent)
+    $first = $this->actingAs($this->agent)
         ->get(route('conversations.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->has('conversations.data', 25)
-            ->where('conversations.has_more', true)
-            ->where('conversations.limit', 25));
+            ->where('conversations.has_more', true))
+        ->inertiaProps('conversations.next_cursor');
+
+    expect($first)->toBeString();
 
     $this->actingAs($this->agent)
-        ->get(route('conversations.index', ['limit' => 50]))
-        ->assertInertia(fn (Assert $page) => $page
-            ->has('conversations.data', 31)
-            ->where('conversations.has_more', false));
-
-    $this->actingAs($this->agent)->get(route('conversations.index', ['limit' => 5000]))->assertSessionHasErrors('limit');
+        ->getJson(route('conversations.page', ['after' => $first]))
+        ->assertOk()
+        ->assertJsonCount(6, 'data')
+        ->assertJsonPath('has_more', false);
 });
 
 test('the list can be sorted by longest waiting and filtered by tag', function () {

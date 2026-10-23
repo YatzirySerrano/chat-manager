@@ -172,8 +172,9 @@ test('a departments-scoped user cannot change hours or welcome message of anothe
     $role = Role::factory()->scope(DataScope::Departments)->withPermissions([Permission::ViewDepartments, Permission::UpdateDepartments])->create();
     $user = User::factory()->withRole($role)->inDepartments($support)->create();
 
-    $this->actingAs($user)->put(route('departments.operations.update', $sales), ['welcome_message' => 'x'])->assertForbidden();
-    $this->actingAs($user)->put(route('departments.hours.update', $sales), ['uses_custom_hours' => false])->assertForbidden();
+    // Outside the user's scope the department answers like an id that does not exist.
+    $this->actingAs($user)->put(route('departments.operations.update', $sales), ['welcome_message' => 'x'])->assertNotFound();
+    $this->actingAs($user)->put(route('departments.hours.update', $sales), ['uses_custom_hours' => false])->assertNotFound();
 });
 
 test('deactivated users cannot reach the new json endpoint', function () {

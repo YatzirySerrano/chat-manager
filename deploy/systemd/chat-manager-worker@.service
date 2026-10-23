@@ -1,14 +1,27 @@
 # Chat Manager — queue worker as a systemd template (alternative to Supervisor).
-# One instance per worker group, e.g.:
+# One instance per worker process, e.g.:
 #   sudo cp deploy/systemd/*.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now chat-manager-worker@critical-1 chat-manager-worker@critical-2 \
-#       chat-manager-worker@media-1 chat-manager-worker@general-1 chat-manager-worker@exports-1
-# The group is the part of the instance name before "-" (critical, media, general, exports).
+#   sudo systemctl enable --now \
+#       chat-manager-worker@critical-1 chat-manager-worker@critical-2 \
+#       chat-manager-worker@critical-3 chat-manager-worker@critical-4 \
+#       chat-manager-worker@realtime-1 chat-manager-worker@realtime-2 \
+#       chat-manager-worker@notifications-1 chat-manager-worker@notifications-2 \
+#       chat-manager-worker@media-1 chat-manager-worker@media-2 \
+#       chat-manager-worker@default-1 chat-manager-worker@exports-1
+# The group is the part of the instance name before "-" (critical, realtime,
+# notifications, media, default, exports); see deploy/supervisor/chat-manager.conf
+# for what each queue runs. Workers use the default connection (QUEUE_CONNECTION,
+# database or redis): never name a connection in the command.
+# Rule: job timeout < worker --timeout < retry_after (900 s).
 [Unit]
 Description=Chat Manager queue worker (%i)
-After=network.target mariadb.service
-Wants=mariadb.service
+# Start after the database (and Redis when QUEUE_CONNECTION=redis; then also
+# add redis-server.service to Wants=). Ordering on a missing unit is ignored.
+After=network-online.target mariadb.service redis-server.service
+Wants=network-online.target mariadb.service
+# Never give up restarting (RestartSec below already spaces the attempts).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -17,14 +30,16 @@ Group=www-data
 WorkingDirectory=/var/www/chat-manager/current
 # "$$" and "%%" are systemd escapes for "$" and "%" inside the shell snippet.
 ExecStart=/bin/sh -c 'group="$${0%%-*}"; case "$$group" in \
-  critical) exec php artisan queue:work database --queue=webhooks,messages --sleep=1 --tries=3 --backoff=10 --timeout=150 --max-time=3600 --memory=256 ;; \
-  media) exec php artisan queue:work database --queue=media --sleep=2 --tries=3 --backoff=30 --timeout=180 --max-time=3600 --memory=512 ;; \
-  general) exec php artisan queue:work database --queue=notifications,default --sleep=1 --tries=3 --backoff=5 --timeout=120 --max-time=3600 --memory=256 ;; \
-  exports) exec php artisan queue:work database --queue=exports --sleep=3 --tries=1 --timeout=660 --max-time=7200 --memory=1024 ;; \
+  critical) exec php artisan queue:work --queue=webhooks,messages --sleep=1 --tries=3 --backoff=10 --timeout=150 --max-time=3600 --memory=256 ;; \
+  realtime) exec php artisan queue:work --queue=realtime --sleep=1 --tries=3 --backoff=2 --timeout=60 --max-time=3600 --memory=256 ;; \
+  notifications) exec php artisan queue:work --queue=notifications --sleep=1 --tries=3 --backoff=5 --timeout=120 --max-time=3600 --memory=256 ;; \
+  media) exec php artisan queue:work --queue=media --sleep=2 --tries=3 --backoff=30 --timeout=180 --max-time=3600 --memory=512 ;; \
+  default) exec php artisan queue:work --queue=default --sleep=2 --tries=3 --backoff=10 --timeout=120 --max-time=3600 --memory=256 ;; \
+  exports) exec php artisan queue:work --queue=exports --sleep=3 --tries=1 --timeout=660 --max-time=7200 --memory=1024 ;; \
   *) echo "unknown worker group $$group" >&2; exit 1 ;; esac' %i
 Restart=always
 RestartSec=3
-# Above the longest --timeout of the group (exports: 660 s).
+# Above the longest --timeout of the groups (exports: 660 s).
 TimeoutStopSec=700
 KillSignal=SIGTERM
 NoNewPrivileges=true

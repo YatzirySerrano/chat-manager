@@ -29,6 +29,7 @@ import {
     Recorder,
     Session,
     PusherClient,
+    SignalWatch,
     inboundBody,
     statusBody,
     postWebhook,
@@ -62,8 +63,23 @@ const expectedInbound = new Set();
 const statusExpectations = [];
 const groups = [];
 let newSenders = 0;
-const probes = manifest.probes.slice(0, probeCount);
-const openTargets = manifest.probes.slice(probeCount);
+// One probe per agent; the open-conversation traffic of the burst never
+// targets a probe agent, so their signals can be attributed to the probe.
+const probes = [];
+
+for (const candidate of manifest.probes) {
+    if (
+        probes.length < probeCount &&
+        !probes.some((probe) => probe.agent === candidate.agent)
+    ) {
+        probes.push(candidate);
+    }
+}
+
+const probeAgents = new Set(probes.map((probe) => probe.agent));
+const openTargets = manifest.probes.filter(
+    (target) => !probeAgents.has(target.agent),
+);
 const statusTargets = [...manifest.status_targets];
 const sentBodies = [];
 
@@ -183,53 +199,59 @@ while (produced < total) {
 
 /* ------------------------------------------------------------ realtime probes */
 
+/*
+| Each probe conversation is watched by its own assignee (a real agent
+| session, like the open chat of their browser), on two channels:
+| conversations.{id} (".message.recorded") and users.{agent} (".inbox.changed"
+| of that conversation and the ".notification" of the bell). The three
+| latencies are measured separately from the POST of the webhook:
+| - message_recorded: queue webhooks -> processing -> realtime job -> Reverb,
+| - inbox_user: same path, the inbox signal of the assignee,
+| - notification: notifications queue -> notification saved -> its signal.
+| Probe agents own no other conversation of the burst, so a message signal
+| (and a "conversation.message" notification) can only come from their probe.
+*/
 const probeResults = {
     enabled: false,
-    latencies: [],
-    missing: 0,
+    latencies: { message_recorded: [], inbox_user: [], notification: [] },
+    missing: { message_recorded: 0, inbox_user: 0, notification: 0 },
     subscribe_errors: 0,
 };
-let probeClient = null;
-const probeWaiters = new Map();
+const probeClients = [];
+const watch = new SignalWatch();
 
 if (env('LOAD_REVERB_KEY') && probes.length > 0) {
     try {
-        const session = new Session(baseUrl, 'probe');
-        await session.login(manifest.users.superadmin.email, manifest.password);
-        probeClient = new PusherClient({
-            host: '127.0.0.1',
-            port: env('LOAD_REVERB_PORT'),
-            key: env('LOAD_REVERB_KEY'),
-            origin: baseUrl,
-            session,
-        });
-        await probeClient.connect();
-
         for (const probe of probes) {
-            try {
-                await probeClient.subscribe(
-                    `conversations.${probe.conversation}`,
-                );
-            } catch {
-                probeResults.subscribe_errors++;
+            const agent = manifest.users.agents.find(
+                (candidate) => candidate.id === probe.agent,
+            );
+            const session = new Session(baseUrl, agent.email);
+            await session.login(agent.email, manifest.password);
+            const client = watch.attach(
+                new PusherClient({
+                    host: '127.0.0.1',
+                    port: env('LOAD_REVERB_PORT'),
+                    key: env('LOAD_REVERB_KEY'),
+                    origin: baseUrl,
+                    session,
+                }),
+            );
+            await client.connect();
+            probeClients.push(client);
+
+            for (const channel of [
+                `conversations.${probe.conversation}`,
+                `users.${probe.agent}`,
+            ]) {
+                try {
+                    await client.subscribe(channel);
+                } catch {
+                    probeResults.subscribe_errors++;
+                }
             }
         }
 
-        probeClient.on((event, channel, data) => {
-            if (event !== 'message.recorded' || data?.direction !== 'inbound') {
-                return;
-            }
-
-            const id = Number(
-                String(channel).replace('private-conversations.', ''),
-            );
-            const waiter = probeWaiters.get(id);
-
-            if (waiter) {
-                probeWaiters.delete(id);
-                waiter(performance.now());
-            }
-        });
         probeResults.enabled = true;
     } catch (error) {
         probeResults.error = String(error?.message ?? error);
@@ -248,20 +270,42 @@ async function sendProbe(probe) {
             timestamp: now(),
         }),
     );
+    const conversationChannel = `private-conversations.${probe.conversation}`;
+    const userChannel = `private-users.${probe.agent}`;
     const started = performance.now();
-    const arrival = new Promise((resolve) => {
-        probeWaiters.set(probe.conversation, resolve);
-        setTimeout(() => resolve(null), 60000).unref();
-    });
+    const arrivals = {
+        message_recorded: watch.wait(
+            (event, channel, data) =>
+                event === 'message.recorded' &&
+                channel === conversationChannel &&
+                data?.direction === 'inbound',
+        ),
+        inbox_user: watch.wait(
+            (event, channel, data) =>
+                event === 'inbox.changed' &&
+                channel === userChannel &&
+                Number(data?.conversation_id) === probe.conversation,
+        ),
+        // Only the bell entry of a customer message: new customers of the
+        // burst also notify the queue (conversation.pending) to these agents.
+        notification: watch.wait(
+            (event, channel, data) =>
+                event === 'notification' &&
+                channel === userChannel &&
+                data?.kind === 'conversation.message',
+        ),
+    };
 
     await deliver({ connectionKey: probe.connection, body, kind: 'probe' });
-    const arrivedAt = await arrival;
-    probeWaiters.delete(probe.conversation);
 
-    if (arrivedAt === null) {
-        probeResults.missing++;
-    } else {
-        probeResults.latencies.push(arrivedAt - started);
+    for (const [kind, arrival] of Object.entries(arrivals)) {
+        const arrivedAt = await arrival;
+
+        if (arrivedAt === null) {
+            probeResults.missing[kind]++;
+        } else {
+            probeResults.latencies[kind].push(arrivedAt - started);
+        }
     }
 }
 
@@ -346,7 +390,9 @@ await Promise.all(
 
 recorder.stop();
 await probeTimer;
-probeClient?.close();
+for (const client of probeClients) {
+    client.close();
+}
 
 const report = recorder.report();
 const posted = Object.entries(report.operations)
@@ -366,9 +412,16 @@ writeResult({
     webhooks_posted_first_attempt: posted,
     redeliveries,
     probes: {
-        ...probeResults,
-        latencies: undefined,
-        e2e_ms: summarize(probeResults.latencies),
+        enabled: probeResults.enabled,
+        error: probeResults.error,
+        subscribe_errors: probeResults.subscribe_errors,
+        missing: probeResults.missing,
+        e2e_ms: Object.fromEntries(
+            Object.entries(probeResults.latencies).map(([kind, values]) => [
+                kind,
+                summarize(values),
+            ]),
+        ),
     },
     expectations: {
         inbound_wamids: [...expectedInbound],

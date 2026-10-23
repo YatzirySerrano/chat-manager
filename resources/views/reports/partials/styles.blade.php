@@ -121,21 +121,25 @@
     .section { margin-bottom: 16pt; }
     .section.new-page { break-before: page; }
     .section.keep { break-inside: avoid; }
-    .section-description { margin: -2pt 0 6pt; font-size: 7.5pt; color: #616A75; }
+    .section-description { margin: -2pt 0 6pt; font-size: 7.5pt; color: #616A75; break-after: avoid; page-break-after: avoid; }
 
     /* Data table */
     /* With a summary above, a long detail starts on its own page (no orphan heading);
-       a short one stays with the summary and is kept in one piece. */
+       a short one is kept in one piece, and a long one without summary flows from
+       where it starts (its heading stays with the first rows). */
     .detail.after-summary { break-before: page; }
-    .detail:not(.after-summary) { break-inside: avoid; }
-    .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 6pt; }
+    .detail.keep { break-inside: avoid; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 6pt; break-after: avoid; page-break-after: avoid; }
     .section-title { margin: 0; font-size: 11pt; font-weight: 700; }
     .section-count { font-size: 8pt; color: #616A75; }
 
     table.data { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8pt; }
-    table.data thead { display: table-header-group; }
-    table.data tfoot { display: table-row-group; }
+    table.data thead { display: table-header-group; break-after: avoid; page-break-after: avoid; }
     table.data tr { break-inside: avoid; page-break-inside: avoid; }
+    /* The last data rows and the totals form one unbreakable group: the totals never start a page alone. */
+    table.data tbody.table-end { break-inside: avoid; page-break-inside: avoid; }
+    table.data tr.group { break-after: avoid; page-break-after: avoid; }
+    table.data tr.subtotal, table.data tr.totals { break-before: avoid; page-break-before: avoid; }
     table.data th {
         padding: 6pt 6pt;
         background: #008251;
@@ -151,7 +155,7 @@
     }
     table.data th:last-child { border-right: 0; }
     table.data td { padding: 4pt 6pt; border-bottom: 1px solid #E3E7EA; vertical-align: top; overflow-wrap: break-word; }
-    table.data tbody tr.row:nth-child(even) td { background: #F6F8F9; }
+    table.data tbody tr.row.is-even td { background: #F6F8F9; }
     table.data .align-right { text-align: right; }
     table.data .nowrap { white-space: nowrap; }
     table.data .datetime { overflow-wrap: normal; word-break: keep-all; }

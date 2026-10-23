@@ -20,6 +20,18 @@ return [
     */
     'page_size' => 30,
 
+    /*
+    | People that can be mentioned (@) in one group message. Only current
+    | participants of the group are kept; mentions notify the person even
+    | if they muted the group.
+    */
+    'max_mentions' => 20,
+
+    /*
+    | Allowed reactions. Anything else is rejected; reactions notify nobody.
+    */
+    'reactions' => ['👍', '❤️', '😂', '😮', '😢', '🙏', '✅', '👀'],
+
     'attachments' => [
 
         /*

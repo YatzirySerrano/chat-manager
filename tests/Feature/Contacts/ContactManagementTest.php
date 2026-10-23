@@ -60,10 +60,11 @@ test('users without contacts.view cannot open the contact list', function () {
         ->assertForbidden();
 });
 
-test('quick search matches name, email and partial phone digits in any format', function (string $search) {
+test('quick search matches name, email and the beginning of the phone in any format', function (string $search) {
     $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->create(['name' => 'María López', 'phone_e164' => '+525512345678', 'email' => 'maria@example.com']);
     Contact::factory()->create(['name' => 'Pedro Ruiz', 'phone_e164' => '+528187654321', 'email' => 'pedro@example.com']);
+    commitForFullTextSearch();
 
     $this->actingAs($admin)
         ->get(route('contacts.index', ['search' => $search]))
@@ -74,7 +75,7 @@ test('quick search matches name, email and partial phone digits in any format', 
 })->with([
     'name' => 'maría',
     'email' => 'maria@',
-    'partial phone' => '1234',
+    'partial phone' => '551234',
     'formatted phone' => '(55) 1234-56',
 ]);
 
@@ -123,6 +124,7 @@ test('the origin filter follows the winning attribution, not any attribution', f
 test('pagination is server side and keeps the query string', function () {
     $admin = User::factory()->superAdministrator()->create();
     Contact::factory()->count(17)->create(['name' => 'Cliente Frecuente']);
+    commitForFullTextSearch();
 
     $this->actingAs($admin)
         ->get(route('contacts.index', ['search' => 'Frecuente', 'page' => 2]))

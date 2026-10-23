@@ -16,6 +16,7 @@ use App\Models\Connection;
 use App\Models\Department;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\TestDatabase;
 
 require __DIR__.'/../../vendor/autoload.php';
@@ -31,7 +32,13 @@ try {
 }
 
 $connection = Connection::query()->where('phone_number_id', '880000000000002')->firstOrFail();
-$connection->forceFill(['is_active' => true])->save();
+// Without stored credentials the connection cannot send (Connection::
+// sendingBlockReason); these are throwaway values for the simulated transport.
+$connection->forceFill([
+    'is_active' => true,
+    'business_account_id' => $connection->business_account_id ?? '990000000000002',
+    'access_token' => 'E2E-SIMULATED-'.Str::random(32),
+])->save();
 
 echo json_encode([
     'connection' => $connection->id,

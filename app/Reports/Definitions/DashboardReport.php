@@ -122,7 +122,7 @@ class DashboardReport extends ReportDefinition
     public function query(ReportContext $context): Builder
     {
         $actor = $context->actor;
-        $startOfToday = $context->generatedAt->startOfDay()->utc();
+        $startOfToday = $context->asOf()->startOfDay()->utc();
 
         return Department::query()
             ->visibleTo($actor)
@@ -270,6 +270,6 @@ class DashboardReport extends ReportDefinition
 
     private function filters(ReportContext $context): AnalyticsFilters
     {
-        return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->generatedAt);
+        return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->asOf());
     }
 }

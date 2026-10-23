@@ -9,6 +9,13 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # (ops:check-alerts throttles repeated alerts; keep it even with schedule:work).
 */10 * * * * www-data cd /var/www/chat-manager/current && php artisan ops:check-alerts >> /dev/null 2>&1
 
-# Nightly database backup (see docs/recuperacion-y-respaldos.md).
-15 2 * * * root /var/www/chat-manager/current/deploy/scripts/backup-database.sh >> /var/log/chatmanager/backup.log 2>&1
-45 2 * * * root /var/www/chat-manager/current/deploy/scripts/backup-storage.sh >> /var/log/chatmanager/backup.log 2>&1
+# Nightly backups (see docs/recuperacion-y-respaldos.md). Lines run as root
+# only call the root-owned copies installed in /usr/local/sbin, never a
+# script under /var/www (owned by the deploy user: that would let it run
+# arbitrary code as root).
+15 2 * * * root /usr/local/sbin/chat-manager-backup-database >> /var/log/chatmanager/backup.log 2>&1
+45 2 * * * root /usr/local/sbin/chat-manager-backup-storage >> /var/log/chatmanager/backup.log 2>&1
+
+# Offsite copy: uncomment and replace the placeholder destination
+# (<user>@<backup-host>:<path>, or OFFSITE_TOOL=rclone with <remote>:<bucket>/<path>).
+#30 3 * * * root OFFSITE_TARGET='<user>@<backup-host>:/srv/backups/chat-manager' /usr/local/sbin/chat-manager-backup-offsite >> /var/log/chatmanager/backup.log 2>&1

@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\Conversation;
-use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\Role;
 use App\Models\Tag;
@@ -31,14 +30,14 @@ final class ManualValidationCleanup
      */
     public function plan(): array
     {
-        $connectionIds = $this->ids(Connection::query()->where('phone_number_id', ManualValidation::PHONE_NUMBER_ID)->pluck('id')->all());
+        $connectionIds = $this->ids(Connection::query()->whereIn('phone_number_id', ManualValidation::LINES)->pluck('id')->all());
         $contactIds = $this->ids(Contact::query()
             ->where(fn ($query) => $query
                 ->where('phone_e164', 'like', ManualValidation::demoPhonePattern())
                 ->orWhereIn('id', DB::table('contact_identities')->where('channel', 'whatsapp')->where('external_id', 'like', '52155000001__')->select('contact_id')))
             ->pluck('id')->all());
         $userIds = $this->ids(User::query()->where('email', 'like', '%@'.ManualValidation::EMAIL_DOMAIN)->pluck('id')->all());
-        $departmentIds = $this->ids(Department::query()->whereIn('slug', ManualValidation::DEPARTMENTS)->pluck('id')->all());
+        $departmentIds = ManualValidation::departmentIds();
         $roleIds = $this->ids(Role::query()->where('label', ManualValidation::ROLE_LABEL)->pluck('id')->all());
         $tagIds = $this->ids(Tag::query()->whereIn('slug', ManualValidation::TAGS)->pluck('id')->all());
         $quickReplyIds = $this->ids(QuickReply::query()->whereIn('shortcut', ManualValidation::QUICK_REPLIES)->where('title', 'like', ManualValidation::PREFIX.'%')->pluck('id')->all());

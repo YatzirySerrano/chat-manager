@@ -6,6 +6,7 @@ use App\Enums\MessageTemplateStatus;
 use App\Jobs\SyncConnectionTemplates;
 use App\Models\Connection;
 use App\Models\MessageTemplate;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -15,13 +16,18 @@ use Illuminate\Support\Str;
  * synchronized copies of every connection sharing that account. A template
  * not synchronized yet triggers a synchronization of the connection instead
  * of being invented from the notice.
+ *
+ * Status updates never go back in time: one whose entry time is older than
+ * the status already recorded (a late or replayed delivery) is ignored, so
+ * a replayed body changes nothing.
  */
 class RecordTemplateUpdate
 {
     /**
      * @param  array<array-key, mixed>  $value
+     * @param  int|null  $entryTime  When Meta says the change happened (Unix seconds).
      */
-    public function status(Connection $connection, array $value): int
+    public function status(Connection $connection, array $value, ?int $entryTime = null): int
     {
         $templateId = isset($value['message_template_id']) && is_scalar($value['message_template_id']) ? (string) $value['message_template_id'] : null;
         $event = is_string($value['event'] ?? null) ? strtoupper($value['event']) : null;
@@ -39,8 +45,16 @@ class RecordTemplateUpdate
         }
 
         $reason = is_string($value['reason'] ?? null) && ! in_array($value['reason'], ['NONE', ''], true) ? Str::limit($value['reason'], 255, '') : null;
+        // Never in the future, so a skewed clock cannot freeze later updates.
+        $occurredAt = $entryTime === null ? null : Carbon::createFromTimestamp($entryTime, (string) config('app.timezone'))->min(now());
 
         foreach ($templates as $template) {
+            if ($occurredAt !== null && $template->status_updated_at !== null && $occurredAt->lt($template->status_updated_at)) {
+                Log::info('Template status update older than the recorded status ignored.', ['template_id' => $template->id]);
+
+                continue;
+            }
+
             if ($event === 'FLAGGED') {
                 // Quality warning: Meta keeps the template approved until it pauses
                 // it; the score itself arrives as message_template_quality_update.
@@ -60,8 +74,9 @@ class RecordTemplateUpdate
             $template->forceFill([
                 'status' => $status,
                 'rejected_reason' => $status === MessageTemplateStatus::Rejected ? $reason : $template->rejected_reason,
-                'status_updated_at' => now(),
-                'deleted_at' => $status === MessageTemplateStatus::Deleted ? ($template->deleted_at ?? now()) : $template->deleted_at,
+                'status_updated_at' => $occurredAt ?? now(),
+                // Like the synchronization: a template Meta reports again is no longer deleted.
+                'deleted_at' => $status === MessageTemplateStatus::Deleted ? ($template->deleted_at ?? $occurredAt ?? now()) : null,
             ])->save();
         }
 

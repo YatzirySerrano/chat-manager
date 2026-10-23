@@ -13,16 +13,16 @@ Documentos relacionados: [tiempo-real.md](tiempo-real.md) (Reverb en detalle), [
 
 ## 1. Componentes y procesos
 
-| Proceso                     | Qué hace                                                                  | Plantilla                                                                               |
-| --------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Nginx                       | TLS, archivos estáticos de `public/`, proxy de WebSockets `/app` a Reverb | `deploy/nginx/chat-manager.conf`                                                        |
-| PHP-FPM 8.4 (pool propio)   | Peticiones HTTP de Laravel                                                | `deploy/php-fpm/chat-manager.conf`                                                      |
-| MariaDB 11.4 LTS            | Base única `chatmanager`                                                  | —                                                                                       |
-| Workers de colas (4 grupos) | Webhooks, envíos, multimedia, notificaciones, exportaciones               | `deploy/supervisor/chat-manager.conf` (o `deploy/systemd/chat-manager-worker@.service`) |
-| Reverb                      | Servidor WebSocket en `127.0.0.1:8080`                                    | Supervisor `chatmanager-reverb` (o `deploy/systemd/chat-manager-reverb.service`)        |
-| Programador                 | `schedule:work` (o cron `schedule:run`)                                   | Supervisor `chatmanager-scheduler` / `deploy/cron/chat-manager`                         |
-| Redis (opcional)            | Colas/caché/escalado de Reverb                                            | —                                                                                       |
-| Chromium + Node             | PDF de exportaciones (Browsershot + puppeteer)                            | —                                                                                       |
+| Proceso                     | Qué hace                                                                                       | Plantilla                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Nginx                       | TLS, archivos estáticos de `public/`, proxy de WebSockets `/app` a Reverb                      | `deploy/nginx/chat-manager.conf`                                                        |
+| PHP-FPM 8.4 (pool propio)   | Peticiones HTTP de Laravel                                                                     | `deploy/php-fpm/chat-manager.conf`                                                      |
+| MariaDB 11.4 LTS            | Base única `chatmanager`                                                                       | —                                                                                       |
+| Workers de colas (6 grupos) | Webhooks y envíos, señales de tiempo real, notificaciones, multimedia, métricas, exportaciones | `deploy/supervisor/chat-manager.conf` (o `deploy/systemd/chat-manager-worker@.service`) |
+| Reverb                      | Servidor WebSocket en `127.0.0.1:8080`                                                         | Supervisor `chatmanager-reverb` (o `deploy/systemd/chat-manager-reverb.service`)        |
+| Programador                 | `schedule:work` (o cron `schedule:run`)                                                        | Supervisor `chatmanager-scheduler` / `deploy/cron/chat-manager`                         |
+| Redis (opcional)            | Colas/caché/escalado de Reverb                                                                 | —                                                                                       |
+| Chromium + Node             | PDF de exportaciones (Browsershot + puppeteer)                                                 | —                                                                                       |
 
 ### Tareas programadas (`routes/console.php`)
 
@@ -83,7 +83,12 @@ sudo cp -r storage /var/www/chat-manager/shared/      # desde un clon del reposi
 sudo chown -R deploy:www-data /var/www/chat-manager && sudo chmod -R g+w /var/www/chat-manager/shared/storage
 sudo find /var/www/chat-manager/shared/storage -type d -exec chmod g+s {} +   # archivos nuevos heredan el grupo www-data
 sudo install -m 640 -o deploy -g www-data .env.production /var/www/chat-manager/shared/.env
+# Log de errores del pool de PHP-FPM: el pool corre como www-data y abre el archivo él mismo; el directorio
+# /var/log/chatmanager queda root:root 0755 (Supervisor y los respaldos escriben como root).
+sudo install -o www-data -g adm -m 640 /dev/null /var/log/chatmanager/php-fpm-errors.log
 ```
+
+`.env.production` es tu archivo local con los valores reales (a partir de `.env.example`); no está en el repositorio.
 
 Permisos mínimos: el código pertenece al usuario de despliegue (`deploy`) y solo es legible por `www-data`; únicamente
 `shared/storage` y `bootstrap/cache` admiten escritura de `www-data`. `storage/app/private` (adjuntos, exportaciones,
@@ -119,26 +124,34 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON chatmanager.* TO 'chatma
 
 Base: `.env.example` (todas las claves comentadas). Valores clave:
 
-| Variable                                                           | Producción                                 | Notas                                                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `APP_ENV` / `APP_DEBUG`                                            | `production` / `false`                     | Con debug, cualquier visitante ve trazas y variables                                   |
-| `APP_KEY`                                                          | `php artisan key:generate --show`          | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida |
-| `APP_URL`                                                          | `https://chat.empresa.com`                 | HTTPS obligatorio (Meta y cookies seguras)                                             |
-| `TRUSTED_PROXIES`                                                  | `127.0.0.1`                                | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real               |
-| `SESSION_SECURE_COOKIE`                                            | `true` (por defecto si `APP_URL` es https) | HttpOnly y SameSite=lax por defecto                                                    |
-| `SESSION_DRIVER` / `CACHE_STORE`                                   | `database` (o `redis`)                     | Nunca `array`/`cookie`                                                                 |
-| `QUEUE_CONNECTION`                                                 | `database` (o `redis`)                     | Nunca `sync` en producción                                                             |
-| `DB_QUEUE_RETRY_AFTER`                                             | `900`                                      | Mayor que el `--timeout` más largo (exportaciones 660)                                 |
-| `EXPORTS_QUEUE`                                                    | `exports`                                  | Worker propio con timeout largo                                                        |
-| `QUEUE_NAME_*`                                                     | sin cambios                                | Solo si varias apps comparten el backend de colas                                      |
-| `BROADCAST_CONNECTION`                                             | `reverb`                                   | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)           |
-| `WHATSAPP_TRANSPORT`                                               | `meta`                                     | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)            |
-| `META_GRAPH_VERSION`                                               | `v26.0` (o la vigente)                     | Credenciales por conexión en la interfaz, no en `.env`                                 |
-| `MAIL_*`                                                           | SMTP real                                  | Restablecimiento de contraseña y alertas                                               |
-| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                     | buzón de guardia / `true`                  | Destinatarios de alertas operativas                                                    |
-| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH` | rutas absolutas                            | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                   |
-| `LOG_STACK` / `LOG_LEVEL`                                          | `daily` / `warning`                        | `debug` llena el disco                                                                 |
-| `SECURITY_CSP_ENABLED`                                             | vacío (= activo en producción)             | Ver §8                                                                                 |
+| Variable                                                                                | Producción                                           | Notas                                                                                                         |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `APP_ENV` / `APP_DEBUG`                                                                 | `production` / `false`                               | Con debug, cualquier visitante ve trazas y variables                                                          |
+| `APP_KEY`                                                                               | `php artisan key:generate --show`                    | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida                        |
+| `APP_URL`                                                                               | `https://chat.empresa.com`                           | HTTPS obligatorio (Meta y cookies seguras)                                                                    |
+| `TRUSTED_PROXIES`                                                                       | `127.0.0.1`                                          | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real                                      |
+| `SESSION_SECURE_COOKIE`                                                                 | `true` (por defecto si `APP_URL` es https)           | HttpOnly y SameSite=lax por defecto                                                                           |
+| `SESSION_DRIVER` / `CACHE_STORE`                                                        | `database` (o `redis`)                               | Nunca `array`/`cookie`                                                                                        |
+| `QUEUE_CONNECTION`                                                                      | `database` (o `redis`)                               | Nunca `sync` en producción                                                                                    |
+| `DB_QUEUE_RETRY_AFTER`                                                                  | `900`                                                | Mayor que el `--timeout` más largo (exportaciones 660)                                                        |
+| `EXPORTS_QUEUE`                                                                         | `exports`                                            | Worker propio con timeout largo                                                                               |
+| `QUEUE_NAME_*`                                                                          | sin cambios                                          | Solo si varias apps comparten el backend de colas                                                             |
+| `BROADCAST_CONNECTION`                                                                  | `reverb`                                             | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)                                  |
+| `WHATSAPP_TRANSPORT`                                                                    | `meta`                                               | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)                                   |
+| `META_GRAPH_VERSION`                                                                    | `v26.0` (o la vigente)                               | Credenciales por conexión en la interfaz, no en `.env`                                                        |
+| `MAIL_*`                                                                                | SMTP real                                            | Restablecimiento de contraseña y alertas                                                                      |
+| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                                          | buzón de guardia / `true`                            | Destinatarios de alertas operativas                                                                           |
+| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH`                      | rutas absolutas                                      | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                                          |
+| `LOG_STACK` / `LOG_LEVEL`                                                               | `daily` / `warning`                                  | `debug` llena el disco                                                                                        |
+| `SECURITY_CSP_ENABLED`                                                                  | vacío (= activo en producción)                       | Ver §8                                                                                                        |
+| `QUEUE_NAME_REALTIME` / `REALTIME_QUEUE`                                                | sin cambios (`realtime`)                             | Cola dedicada de señales de tiempo real (§9); `REALTIME_QUEUE` tiene prioridad                                |
+| `WHATSAPP_PILOT_RECIPIENTS`                                                             | vacío, o números del piloto                          | Con `meta`, solo envía a esos números ([mensajeria §8](mensajeria-whatsapp.md#8-transportes))                 |
+| `WHATSAPP_WEBHOOK_MAX_AGE_DAYS`                                                         | `7` (opcional)                                       | Antigüedad máxima de errores y señales del webhook que se aplican                                             |
+| `INERTIA_ENCRYPT_HISTORY`                                                               | `true`                                               | Historial del navegador cifrado (requiere HTTPS o localhost)                                                  |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`                              | `php artisan webpush:vapid`                          | Web Push; la privada es secreta; cambiarlas invalida las suscripciones                                        |
+| `WEBPUSH_TTL` / `_THROTTLE_SECONDS` / `_TIMEOUT` / `_RETENTION_DAYS` / `_ALLOWED_HOSTS` | `3600` / `60` / `5` / `120` / por defecto            | Opcionales ([notificaciones §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada)) |
+| `EXPORTS_XLSX_MAX_CELLS`                                                                | `800000`                                             | Tope de celdas del XLSX en memoria (≈ 650 MB)                                                                 |
+| `OPS_PREFLIGHT_MIN_FREE_DISK_MB` / `OPS_BACKUP_DIR` / `OPS_BACKUP_MAX_AGE_HOURS`        | `2048` / `/var/backups/chat-manager/database` / `26` | Comprobaciones de disco y respaldos del preflight (§15)                                                       |
 
 Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el gestor de secretos de la empresa.
 `.env.example` no contiene valores reales.
@@ -191,7 +204,8 @@ Lista de verificación de seguridad:
 - [ ] `public/hot` no existe (lo verifica el preflight); `public/storage` solo apunta a `storage/app/public`.
 - [ ] Workers, Reverb y programador supervisados; `WHATSAPP_TRANSPORT=meta` (no simulado).
 - [ ] El primer Superadministrador se crea con `php artisan app:create-administrator` (contraseña propia, nunca una
-      conocida); no hay usuarios de demostración en producción (solo se siembran en `local`).
+      conocida); no hay usuarios de demostración en producción (solo se siembran en `local`; el preflight los
+      bloquea).
 - [ ] Alertas con destinatarios (`OPS_ALERT_EMAILS`) y monitor externo de `/health/ready`.
 - [ ] `php artisan app:preflight` sin fallas.
 
@@ -199,12 +213,29 @@ Lista de verificación de seguridad:
 
 Una cola por responsabilidad (`App\Support\Queues`, mapa `queue.names` en `config/queue.php`):
 
-| Grupo (Supervisor) | Colas                   | Procesos | `--timeout` | Motivo                                                           |
-| ------------------ | ----------------------- | -------- | ----------- | ---------------------------------------------------------------- |
-| `critical`         | `webhooks,messages`     | 4        | 150         | Entrada de Meta y envíos: no deben esperar a nada                |
-| `media`            | `media`                 | 2        | 180         | Descargas/subidas de multimedia, más lentas                      |
-| `general`          | `notifications,default` | 2        | 120         | Señales de tiempo real, notificaciones, métricas, plantillas     |
-| `exports`          | `exports`               | 1        | 660         | Excel/PDF e importación de contactos (`EXPORTS_JOB_TIMEOUT=600`) |
+Topología de la estabilización: **un grupo de workers por cola**, de mayor a menor prioridad. Programas de Supervisor
+`chatmanager-queue-<grupo>` (grupo `chatmanager-workers`); en systemd, instancias `chat-manager-worker@<grupo>-N`
+(`critical-1…4`, `realtime-1…2`, `notifications-1…2`, `media-1…2`, `default-1`, `exports-1`). El antiguo grupo
+`general` (`notifications,default`) ya no existe.
+
+| Grupo           | Cola(s)             | Procesos | Opciones de `queue:work`                                  | `stopwaitsecs` | Uso                                                                                     |
+| --------------- | ------------------- | -------- | --------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------- |
+| `critical`      | `webhooks,messages` | 4        | `--sleep=1 --tries=3 --backoff=10 --timeout=150`, 256 MB  | 180            | Procesamiento del webhook (recepción) y envíos, mensajes automáticos: no esperan a nada |
+| `realtime`      | `realtime`          | 2        | `--sleep=1 --tries=3 --backoff=2 --timeout=60`, 256 MB    | 90             | Señales de tiempo real (bandejas, chat abierto, chat interno, conexiones)               |
+| `notifications` | `notifications`     | 2        | `--sleep=1 --tries=3 --backoff=5 --timeout=120`, 256 MB   | 150            | Notificaciones in-app (con su señal `.notification`) y Web Push (`SendWebPush`)         |
+| `media`         | `media`             | 2        | `--sleep=2 --tries=3 --backoff=30 --timeout=180`, 512 MB  | 210            | Descargas y subidas de multimedia, más lentas                                           |
+| `default`       | `default`           | 1        | `--sleep=2 --tries=3 --backoff=10 --timeout=120`, 256 MB  | 150            | Métricas, sincronización de plantillas, mantenimiento                                   |
+| `exports`       | `exports`           | 1        | `--sleep=3 --tries=1 --timeout=660 --max-time=7200`, 1 GB | 700            | Excel/PDF e importación de contactos (`EXPORTS_JOB_TIMEOUT=600`), baja prioridad        |
+
+Todos usan `--max-time=3600` (salvo exportaciones) y `startretries=20`. Los comandos **no fijan conexión**
+(`queue:work --queue=...`): toman `QUEUE_CONNECTION` (`database` o `redis`); antes llevaban `database` escrito y con
+Redis ningún worker habría consumido. Supervisor necesita un _drop-in_ de systemd
+(`/etc/systemd/system/supervisor.service.d/override.conf` con `After=mariadb.service redis-server.service` y
+`Wants=mariadb.service`, documentado en la cabecera de la plantilla); las unidades `worker@` y `scheduler` declaran
+`After=`/`Wants=` de MariaDB (y `After=` de Redis) y `StartLimitIntervalSec=0`, así que tras un reinicio no quedan en
+`FATAL` si la base tarda en arrancar. `tests/Feature/Integration/QueueTopologyTest.php` deriva las colas de
+`App\Support\Queues::all()` y comprueba ambas plantillas. La batería de carga usa el mismo reparto por omisión
+(`LOAD_WORKERS=webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1`).
 
 Reglas: `timeout del job` < `--timeout del worker` < `retry_after` (900 s). `stopwaitsecs` mayor que `--timeout`
 para que un despliegue no corte un trabajo. `--max-time`/`--memory` reciclan procesos. Los trabajos tienen intentos y
@@ -213,8 +244,9 @@ backoff acotados en su propia clase; nunca se reintenta automáticamente un env�
 Ajusta el número de procesos con mediciones (cola acumulada y espera máxima en Administración > Sistema), no con
 estimaciones. No se publican capacidades numéricas sin pruebas de carga.
 
-**Desarrollo local**: `composer run dev` escucha todas las colas en orden de prioridad (webhooks, messages, media,
-notifications, default, exports) y ejecuta `schedule:work` (configurado en `OperationsServiceProvider`).
+**Desarrollo local**: `composer run dev` escucha todas las colas en orden de prioridad (webhooks, messages, realtime,
+notifications, media, default, exports) con un `queue:listen`, ejecuta `schedule:work` (configurado en
+`OperationsServiceProvider`) y levanta Reverb, Vite y el servidor.
 
 **`after_commit`**: los eventos de dominio implementan `ShouldDispatchAfterCommit`. El driver `database` inserta el
 trabajo dentro de la misma transacción (si se revierte, el trabajo desaparece), por eso conserva `after_commit=false`.
@@ -224,8 +256,8 @@ worker nunca lea filas aún no confirmadas.
 ### Opción Redis
 
 Configuración preparada, no activa por defecto: `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` (y opcionalmente
-`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Cambia `database` por `redis` en
-los comandos `queue:work` de Supervisor. Para varios servidores Reverb: `REVERB_SCALING_ENABLED=true`. Requiere la
+`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Los comandos `queue:work` no
+necesitan cambios (usan `QUEUE_CONNECTION`); añade `redis-server.service` a `Wants=` de las unidades systemd. Para varios servidores Reverb: `REVERB_SCALING_ENABLED=true`. Requiere la
 extensión `php8.4-redis` (el preflight falla si falta). Al cambiar de driver, deja vaciar la cola `database` antes de
 detener sus workers.
 
@@ -263,6 +295,10 @@ El preflight comprueba Node, npm, Chromium y puppeteer; si fallan, solo se afect
   usa `deploy/logrotate/chat-manager`). Nivel recomendado `warning`.
 - Alertas operativas: `storage/logs/ops-AAAA-MM-DD.log` (canal `ops`, 90 días, `LOG_OPS_DAYS`).
 - Workers, Reverb y programador: `/var/log/chatmanager/*.log` (Supervisor), rotados por logrotate.
+- Errores de PHP-FPM: `/var/log/chatmanager/php-fpm-errors.log`. El pool corre como `www-data`, así que el archivo
+  debe existir con ese propietario (§3, `install -o www-data`); si no, PHP no puede abrirlo y los errores fatales se
+  pierden. `copytruncate` conserva propietario y permisos al rotar.
+- Respaldos: `/var/log/chatmanager/backup.log` (cron como root).
 - Nginx: `/var/log/nginx/chat-manager.*.log` (logrotate del paquete).
 - **Correlación**: cada entrada de log lleva `request_id` (petición HTTP) y, en trabajos de cola, `job`, `job_id`,
   `queue` y los identificadores públicos del trabajo (`webhook_event_id`, `message_id`, `conversation_id`,
@@ -323,6 +359,10 @@ php artisan app:preflight --json     # para automatizar
 php artisan app:preflight --strict   # también falla con advertencias
 ```
 
+Niveles: **CORRECTO**, **ADVERTENCIA** (merece revisión, no detiene el despliegue), **BLOQUEANTE** (código de salida
+1: `deploy.sh` se detiene sin tocar la versión activa) y **NO APLICA** (la verificación no corresponde a la
+configuración, p. ej. Redis sin usar). En `--json` el campo `status` vale `ok`, `warning`, `fail` o `skipped`.
+
 Es de solo lectura (no escribe en la base, la caché ni el disco). Verifica: versión y extensiones de PHP (incluidas
 pcntl/OPcache/redis según la configuración), `APP_ENV`, `APP_DEBUG`, `APP_KEY`, `APP_URL` https, caché de configuración,
 dependencias de desarrollo, cookies de sesión, proxies de confianza, conexión y versión de MariaDB, migraciones
@@ -333,34 +373,119 @@ programados existentes, latido del programador, Reverb (claves, orígenes, TLS, 
 nivel de logs y zona horaria. Fuera de producción, los problemas que solo bloquean producción se muestran como
 advertencias.
 
+Además:
+
+| Clave             | Qué comprueba                                                                                                                                                                                                                                                                                | Nivel                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `redis`           | `PING` real a cada conexión de Redis que usen la cola, la caché, la sesión o el escalado de Reverb                                                                                                                                                                                           | Bloqueante en producción si no responde; advertencia fuera; no aplica si no se usa Redis        |
+| `queues`          | Acumulación y espera del trabajo más antiguo por cola (indicio de workers detenidos)                                                                                                                                                                                                         | Como máximo advertencia (en la primera instalación aún no hay workers); no aplica con `sync`    |
+| `webhooks`        | Entregas de Meta sin procesar más allá de `OPS_WEBHOOK_GRACE_SECONDS` y con error en 24 h                                                                                                                                                                                                    | Como máximo advertencia                                                                         |
+| `failed_jobs`     | Trabajos fallidos en las últimas 24 h                                                                                                                                                                                                                                                        | Como máximo advertencia                                                                         |
+| `meta`            | Con `WHATSAPP_TRANSPORT=meta`, cuántas conexiones activas tienen credenciales verificadas con Meta: con cero **no** se presenta como integrado                                                                                                                                               | Advertencia sin conexiones verificadas; `simulated` sigue siendo bloqueante en producción       |
+| `demo`            | Usuarios activos `@demo-b.chatmanager.test` y conexiones no eliminadas con los Phone number ID ficticios `990000000000100` (Ventas) y `990000000000101` (Soporte), según `ManualValidation::LINES` (escenario de validación manual local, p. ej. al restaurar una copia local en producción) | Bloqueante en producción; advertencia fuera                                                     |
+| `webpush`         | Con claves VAPID: que formen un par P-256 y que `APP_URL` use HTTPS                                                                                                                                                                                                                          | No aplica sin claves; advertencia si fallan                                                     |
+| `storage.disk`    | Espacio libre del disco de `storage/` frente a `OPS_PREFLIGHT_MIN_FREE_DISK_MB` (2048)                                                                                                                                                                                                       | Advertencia                                                                                     |
+| `storage.backups` | Antigüedad del `*.sql.gz` más reciente en `OPS_BACKUP_DIR` frente a `OPS_BACKUP_MAX_AGE_HOURS` (26 h); solo lee fechas                                                                                                                                                                       | Advertencia; en producción sin `OPS_BACKUP_DIR` también advierte; fuera de producción no aplica |
+
+El latido del programador (`scheduler.heartbeat`) ya estaba incluido. El preflight no puede ver los procesos de
+Supervisor: los workers detenidos se detectan por la cola acumulada. Para `storage.backups`, el usuario que ejecuta el
+preflight (`deploy`) debe poder listar el directorio sin leer los archivos (siguen en 600):
+`sudo chmod 750 /var/backups/chat-manager /var/backups/chat-manager/database && sudo chgrp deploy /var/backups/chat-manager /var/backups/chat-manager/database`
+y `OPS_BACKUP_DIR=/var/backups/chat-manager/database`.
+
 ## 16. Despliegue
 
 Lista previa:
 
-- [ ] Respaldo reciente verificado (recuperacion-y-respaldos.md) y espacio en disco.
+- [ ] Respaldo reciente verificado (recuperacion-y-respaldos.md) y espacio en disco (el preflight advierte de ambos).
 - [ ] Cambios revisados; migraciones nuevas solo aditivas.
 - [ ] `.env` actualizado con las claves nuevas de `.env.example`.
 
-Ejecución (`deploy/scripts/deploy.sh [rama-o-etiqueta]`, variables `APP_DIR`, `REPOSITORY`, `HEALTH_URL`,
-`PHP_FPM_SERVICE`):
+### Scripts que se ejecutan como root (una vez, y en cada cambio de esos scripts)
 
-1. Clona la versión en `releases/<fecha>` y enlaza `shared/.env` y `shared/storage`.
-2. `composer install --no-dev --optimize-autoloader`, `npm ci && npm run build` (y borra `public/hot`).
-3. `php artisan app:preflight` en la versión nueva: si falla, se detiene sin tocar la versión activa.
-4. Respaldo de la base (`sudo backup-database.sh`: el usuario `deploy` necesita sudo para ese script, además de
-   `systemctl reload php8.4-fpm` y `supervisorctl`) y `php artisan down` en la versión activa.
-5. `php artisan migrate --force` (aditivas).
-6. `php artisan optimize` (config, rutas, vistas y eventos en caché).
-7. Cambio atómico de `current`, recarga de PHP-FPM (limpia OPcache), `queue:restart` (los workers terminan su trabajo
+Los respaldos necesitan root (credenciales en `/etc/chat-manager`, `/var/backups` privado). Root **nunca** ejecuta un
+script de `/var/www/chat-manager`: esas carpetas pertenecen al usuario `deploy`, y quien controle esa cuenta o el
+repositorio podría modificar el script y ejecutar cualquier cosa como root. Se instala una copia revisada, propiedad
+de root, en `/usr/local/sbin`, y cron, `deploy.sh` y sudoers solo usan esas rutas fijas:
+
+```bash
+# Desde un clon revisado del repositorio (git log/diff de deploy/scripts antes de copiar)
+for script in backup-database backup-storage backup-offsite restore-database restore-storage; do
+  sudo install -o root -g root -m 0755 deploy/scripts/$script.sh /usr/local/sbin/chat-manager-$script
+done
+sudo visudo -cf deploy/sudoers/chat-manager \
+  && sudo install -o root -g root -m 0440 deploy/sudoers/chat-manager /etc/sudoers.d/chat-manager
+sudo install -o root -g root -m 0644 deploy/cron/chat-manager /etc/cron.d/chat-manager
+```
+
+`deploy/sudoers/chat-manager` autoriza al usuario `deploy` exactamente: `/usr/local/sbin/chat-manager-backup-database`
+sin argumentos, `systemctl reload php8.4-fpm` y `supervisorctl restart chatmanager-scheduler` (ajusta el nombre del
+usuario, el servicio y las rutas de `systemctl`/`supervisorctl` del servidor). Cuando un despliegue cambie algún
+script de `deploy/scripts/backup-*`/`restore-*`, repite la copia manual tras revisarla: **la versión desplegada no
+se instala sola**.
+
+### Ejecución
+
+`REPOSITORY=<url-git-del-repositorio> deploy/scripts/deploy.sh [rama-o-etiqueta]` como usuario `deploy`.
+`REPOSITORY` es obligatoria (no hay URL por defecto). Variables opcionales: `APP_DIR` (`/var/www/chat-manager`),
+`KEEP_RELEASES` (5), `PHP_FPM_SERVICE` (`php8.4-fpm`), `PHP`, `BACKUP_DATABASE_COMMAND`
+(`/usr/local/sbin/chat-manager-backup-database`; sudoers solo permite esa ruta), `HEALTH_URL` (por defecto `APP_URL`
+de `shared/.env` + `/health/ready`), `SMOKE_ATTEMPTS` (6) y `SMOKE_INTERVAL` (5 s), `AUTO_ROLLBACK` (1) y
+`KEEP_FAILED_RELEASE` (0).
+
+1. Comprueba `shared/.env`, `shared/storage` y que se pueda derivar la URL de la prueba de humo (si no, se detiene antes de
+   empezar: la prueba es obligatoria).
+2. Clona la versión en `releases/<fecha>` y enlaza `shared/.env` y `shared/storage`.
+3. `composer install --no-dev --optimize-autoloader`, `npm ci && npm run build` (y borra `public/hot`).
+4. `php artisan app:preflight` en la versión nueva: si hay un bloqueante, se detiene sin tocar la versión activa.
+5. Consulta `/health/ready` en la versión activa (línea base), respaldo de la base
+   (`sudo /usr/local/sbin/chat-manager-backup-database`) y `php artisan down` en la versión activa.
+6. `php artisan migrate --force` (aditivas).
+7. `php artisan optimize` (config, rutas, vistas y eventos en caché).
+8. Cambio atómico de `current`, recarga de PHP-FPM (limpia OPcache), `queue:restart` (los workers terminan su trabajo
    actual y Supervisor los levanta con el código nuevo), `reverb:restart`, reinicio del programador.
-8. `php artisan up` y prueba de `/health/ready`; conserva las últimas 5 versiones.
+9. `php artisan up` y **prueba de humo obligatoria** de `/health/ready` (hasta 6 intentos cada 5 s).
+10. `deploy/scripts/prune-releases.sh`: conserva las últimas 5 versiones (nunca borra la activa; se ordenan por nombre;
+    sin nada que borrar, como en la primera instalación, no es un error).
+
+Si algo falla **antes** del cambio de enlace, la carpeta de la versión a medio construir se elimina (con
+`KEEP_FAILED_RELEASE=1` se conserva para inspección) y la versión activa sigue sirviendo; si el fallo ocurrió con el
+sitio en mantenimiento (migraciones u `optimize`), el script lo indica: corrige y vuelve a desplegar o ejecuta
+`rollback.sh`, y luego `php artisan up`. Si la **prueba de humo** falla, con `AUTO_ROLLBACK=1` (por defecto) se ejecuta
+`rollback.sh <versión anterior>` y el despliegue termina con error; con `AUTO_ROLLBACK=0` solo imprime el comando
+exacto de reversión. En la primera instalación no hay versión anterior: el script lo dice y hay que revisar
+Administración > Sistema y el preflight.
+
+`/health/ready` falla con condiciones operativas que el preflight solo marca como advertencia (programador sin latido,
+acumulación crítica de colas o webhooks, Reverb). Por eso el script consulta `/health/ready` **antes** del cambio: si ya
+fallaba, avisa, y si la prueba de humo falla no revierte automáticamente (la versión nueva queda activa, el despliegue
+termina con error e imprime el comando de reversión), porque el fallo no es atribuible al código nuevo. Tras `artisan up`
+borra el veredicto en caché de la sonda (`cache:forget operations:readiness-verdict`) para que la prueba de humo evalúe
+la versión nueva y no la respuesta de la línea base.
+
+Una versión que se conservó con `KEEP_FAILED_RELEASE=1`, o de la que se salió con `rollback.sh` (a mano o por la prueba
+de humo), queda marcada con un archivo `FAILED` y `rollback.sh` no vuelve a elegirla.
 
 Después: revisa Administración > Sistema (colas al día, sin fallidos nuevos, latido reciente).
+
+### Webhooks durante la ventana de mantenimiento
+
+Mientras el sitio está en `artisan down` (migraciones y `optimize`, normalmente segundos), Laravel responde 503 a todo,
+también a `/webhooks/whatsapp/*`, y los workers no procesan trabajos. Es deliberado: no se procesan entregas de Meta con
+un esquema a medio migrar. Meta reintenta las entregas no confirmadas con espera creciente durante un tiempo limitado,
+por lo que una ventana corta no pierde mensajes; tras `up` llegan con retraso. Este comportamiento depende de Meta y
+**no se ha validado con tráfico real**: mide la duración de la ventana en el primer despliegue (marcas de hora del
+script) y confirma en Administración > Sistema que las entregas atrasadas se procesan.
 
 ## 17. Reversión (rollback)
 
 `deploy/scripts/rollback.sh [versión]` vuelve el enlace `current` a la versión anterior (o a la indicada), regenera
-cachés, recarga PHP-FPM y reinicia workers, Reverb y programador. **No revierte la base**: como las migraciones son
+cachés, recarga PHP-FPM y reinicia workers, Reverb y programador. Sin argumento elige la versión **completa** más
+reciente con nombre menor que la activa (las carpetas son marcas de tiempo; nunca se ordena por fecha de modificación,
+así que una versión posterior que falló no se activa). Completa significa con `REVISION`, `vendor/autoload.php` y
+`public/build/manifest.json`; una versión indicada que no lo esté, o un nombre que no sea una marca de tiempo, se
+rechaza. Tampoco elige ni acepta una versión con el marcador `FAILED`; al terminar marca así la versión que abandona
+(para reutilizarla a propósito, revísala y borra `releases/<versión>/FAILED`). `ROLLBACK_DRY_RUN=1 deploy/scripts/rollback.sh` solo muestra qué versión elegiría. **No revierte la base**: como las migraciones son
 aditivas, el código anterior funciona con el esquema nuevo. Si el problema está en los datos, restaura el respaldo que
 tomó el despliegue siguiendo [recuperacion-y-respaldos.md](recuperacion-y-respaldos.md). Nunca uses
 `migrate:rollback` en producción (además está bloqueado).
@@ -375,9 +500,12 @@ tomó el despliegue siguiendo [recuperacion-y-respaldos.md](recuperacion-y-respa
 
 ## 19. Limitaciones
 
-- Nada de esto se ha ejecutado contra un servidor real desde este repositorio: plantillas y scripts se validaron por
-  sintaxis (`bash -n`, `nginx -t` debe ejecutarse en el servidor) y las verificaciones de la aplicación con pruebas
-  automatizadas.
+- Nada de esto se ha ejecutado contra un servidor real desde este repositorio: los scripts se validaron por sintaxis
+  (`bash -n`; `shellcheck` no estaba disponible), la elección de versión de `rollback.sh` con pruebas sobre un árbol
+  temporal (`tests/Feature/Operations/DeployTemplatesTest.php`), sudoers con `visudo -c`, y Nginx, PHP-FPM y
+  logrotate solo por inspección (`nginx -t`, `php-fpm8.4 -t` y `logrotate -d` deben ejecutarse en el servidor).
+- La ventana de mantenimiento responde 503 a los webhooks (§16); el reintento de Meta no se ha medido con tráfico
+  real.
 - Las alertas no usan el centro de notificaciones de la aplicación (solo log y correo); integrar un tipo
   `system.alert` en `App\Notifications` queda como mejora coordinada con ese módulo.
 - No hay panel de métricas históricas (Horizon/Pulse no están instalados); la página de Sistema muestra el estado

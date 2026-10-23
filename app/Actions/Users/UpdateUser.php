@@ -64,7 +64,8 @@ class UpdateUser
             if ($passwordChanged) {
                 $user->forceFill(['password' => $password, 'remember_token' => null])->save();
 
-                $this->audit->record(AuditAction::UserPasswordReset, $user, [], $actor);
+                // Whoever knew the previous password is signed out everywhere.
+                $this->audit->record(AuditAction::UserPasswordReset, $user, ['sessions_closed' => $user->closeSessions()], $actor);
             }
 
             if ($roleChanges || $departmentsChanged) {

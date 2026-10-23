@@ -33,6 +33,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.max_open_conversations_per_agent' => ['nullable', 'integer', 'min:1', 'max:200'],
             'operations.auto_close_after_hours' => ['nullable', 'integer', 'min:1', 'max:720'],
             'operations.transfer_reason_required' => ['sometimes', 'boolean'],
+            'sla.first_response_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
+            'sla.resolution_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
         ];
 
         foreach (PlatformSettings::WEEKDAYS as $day) {
@@ -82,6 +84,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.max_open_conversations_per_agent' => 'máximo de conversaciones por agente',
             'operations.auto_close_after_hours' => 'cierre automático por inactividad',
             'operations.transfer_reason_required' => 'motivo obligatorio al transferir',
+            'sla.first_response_minutes' => 'objetivo de primera respuesta',
+            'sla.resolution_minutes' => 'objetivo de resolución',
         ];
     }
 
@@ -116,6 +120,10 @@ class UpdatePlatformSettingsRequest extends FormRequest
                 'max_open_conversations_per_agent' => $this->filled('operations.max_open_conversations_per_agent') ? $this->integer('operations.max_open_conversations_per_agent') : null,
                 'auto_close_after_hours' => $this->filled('operations.auto_close_after_hours') ? $this->integer('operations.auto_close_after_hours') : null,
                 'transfer_reason_required' => $this->boolean('operations.transfer_reason_required'),
+            ],
+            'sla' => [
+                'first_response_minutes' => $this->filled('sla.first_response_minutes') ? $this->integer('sla.first_response_minutes') : null,
+                'resolution_minutes' => $this->filled('sla.resolution_minutes') ? $this->integer('sla.resolution_minutes') : null,
             ],
         ];
     }

@@ -6,6 +6,8 @@ use App\Enums\DataTransferType;
 use App\Enums\Permission;
 use App\Models\DataTransfer;
 use App\Models\User;
+use App\Reports\ReportRegistry;
+use App\Services\Exports\ReportExporter;
 use Illuminate\Auth\Access\Response;
 
 /**
@@ -14,6 +16,8 @@ use Illuminate\Auth\Access\Response;
  */
 class DataTransferPolicy
 {
+    public function __construct(private ReportRegistry $registry, private ReportExporter $exporter) {}
+
     /**
      * The "Exportaciones" page: anybody who may export something (module
      * reports with reports.export, the audit log with audit.export).
@@ -23,6 +27,12 @@ class DataTransferPolicy
         return $this->canExport($actor);
     }
 
+    /**
+     * Downloading checks the same as generating, with the permissions the
+     * owner holds now: the report's export permission, the module and, for
+     * single-record reports, the record. Losing any of them since the file
+     * was generated blocks the download.
+     */
     public function download(User $actor, DataTransfer $transfer): Response
     {
         // Import results are downloaded from the importer (see manageImport).
@@ -30,8 +40,10 @@ class DataTransferPolicy
             return Response::denyAsNotFound();
         }
 
-        if (! $this->canExport($actor)) {
-            return Response::deny('No tienes permiso para descargar exportaciones.');
+        $definition = $this->registry->find((string) $transfer->report);
+
+        if ($definition === null || ! $this->exporter->allowsStored($definition, $actor, $transfer->filters ?? [])) {
+            return Response::deny('No tienes permiso para descargar esta exportación.');
         }
 
         return $transfer->isDownloadable()

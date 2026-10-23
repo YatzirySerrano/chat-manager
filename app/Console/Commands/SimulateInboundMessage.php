@@ -2,225 +2,155 @@
 
 namespace App\Console\Commands;
 
-use App\Actions\Messaging\ProcessWebhookPayload;
-use App\Enums\MessageDirection;
+use App\Enums\InboundMessageOutcome;
 use App\Models\Connection;
-use App\Models\Message;
-use App\Models\MessageAttachment;
-use App\Services\Conversations\CustomerServiceWindow;
-use App\Services\Meta\MediaRejected;
-use App\Services\Meta\MediaStorage;
-use App\Services\Meta\MetaCloudWhatsAppTransport;
 use App\Services\Meta\SimulatedWebhook;
 use App\Support\ManualValidation;
+use App\Support\ManualValidationSimulator;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Local development tool (SIMULACIÓN): a fictitious customer writes to the
- * demo connection, or Meta reports the status of one of its outbound
- * messages. The event, in the documented WhatsApp Cloud API webhook format,
- * goes through the same processing real webhooks use (contact,
- * conversation, message, media, statuses, idempotency). Nothing is sent to
- * or read from Meta, nothing is deleted, and no HTTP endpoint is exposed.
+ * Local development tool (SIMULACIÓN): a fictitious customer writes to a
+ * demo line, or Meta reports the status of one of its outbound messages.
+ * The event, in the documented WhatsApp Cloud API webhook format, goes
+ * through the same processing real webhooks use (contact, conversation,
+ * message, media, statuses, idempotency). Nothing is sent to or read from
+ * Meta, nothing is deleted, and no HTTP endpoint is exposed. The work is
+ * done by App\Support\ManualValidationSimulator.
  *
+ * - --department=ventas (default) or soporte: the demo line, whose default
+ *   department receives new conversations; the support line is created
+ *   once with --create-support-line.
  * - --type: text (default), image, document, audio, video, sticker,
  *   location, contacts, interactive, button, reaction or unsupported. Media
  *   ids are fictitious: the attachment shows as unavailable, unless --file
  *   points to a local sample file, validated like a real download.
  * - --status=sent|delivered|read|failed --message=ID: Meta's status for an
- *   outbound message of the demo connection; --out-of-order reports "read"
- *   before "delivered"; --duplicate delivers the same status twice.
+ *   outbound message of a demo line; --out-of-order reports "read" before
+ *   "delivered"; --duplicate delivers the same status twice; --error-code
+ *   chooses the error of "failed" (131047: 24-hour window expired).
+ * - --expire-window: moves the customer's last message on the line more
+ *   than 24 hours back, closing the customer service window.
  */
 class SimulateInboundMessage extends Command
 {
     protected $signature = 'chat-manager:simulate-inbound
         {from? : laura, mario, sofia or a fictitious WhatsApp number between 5215500000100 and 5215500000199}
         {text? : Text the customer writes (caption, place or contact name for other types)}
+        {--department=ventas : Demo line to write to: ventas or soporte}
+        {--create-support-line : Create the demo support line (once) if it does not exist}
         {--type=text : text, image, document, audio, video, sticker, location, contacts, interactive, button, reaction or unsupported}
         {--file= : Local sample file attached to a simulated media message}
         {--reply-to= : Provider id (wamid) of the message the customer replies to}
         {--status= : Report sent, delivered, read or failed for the outbound message given in --message}
-        {--message= : Id of an outbound message of the demo connection (with --status)}
+        {--message= : Id of an outbound message of a demo line (with --status)}
+        {--error-code=131026 : With --status=failed: Meta error code (131026, 131047, 131049, 131050, 131056, 130429, 131000, 131031)}
         {--out-of-order : With --status=delivered or read: report read before delivered}
         {--name= : Profile name of a new fictitious customer}
         {--ad : The message comes from a (fictitious) click-to-WhatsApp ad}
         {--minutes-ago=0 : When the customer sent it, in minutes before now}
         {--duplicate : Deliver again the last message of this customer, with the same id}
+        {--expire-window : Move the last message of this customer on the line more than 24 hours back}
         {--confirm : Required: confirms that fictitious data is written to the local database}';
 
-    protected $description = 'LOCAL ONLY (simulación): simulate a WhatsApp message from a fictitious customer, or a status of an outbound message, on the demo connection';
+    protected $description = 'LOCAL ONLY (simulación): simulate a WhatsApp message from a fictitious customer, or a status of an outbound message, on a demo line';
 
     public function isHidden(): bool
     {
         return ! app()->isLocal();
     }
 
-    public function handle(ProcessWebhookPayload $process, CustomerServiceWindow $window, MediaStorage $storage): int
+    public function handle(ManualValidationSimulator $simulator): int
     {
         try {
             ManualValidation::ensureAllowed();
+
+            if (! $this->option('confirm')) {
+                throw new RuntimeException('Agrega --confirm para escribir la simulación en la base de datos local.');
+            }
+
+            if ($this->stringOption('status') !== null) {
+                return $this->status($simulator);
+            }
+
+            $connection = $simulator->line($this->stringOption('department') ?? 'ventas', (bool) $this->option('create-support-line'));
+
+            return $this->option('expire-window')
+                ? $this->expireWindow($simulator, $connection)
+                : $this->inbound($simulator, $connection);
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
+    }
 
-        if (! $this->option('confirm')) {
-            $this->error('Add --confirm to write the simulated message to the local database.');
+    private function inbound(ManualValidationSimulator $simulator, Connection $connection): int
+    {
+        $result = $simulator->inbound($connection, $this->stringArgument('from') ?? '', $this->stringArgument('text'), [
+            'type' => $this->stringOption('type') ?? 'text',
+            'file' => $this->stringOption('file'),
+            'reply_to' => $this->stringOption('reply-to'),
+            'name' => $this->stringOption('name'),
+            'ad' => (bool) $this->option('ad'),
+            'minutes_ago' => (int) ($this->stringOption('minutes-ago') ?? 0),
+            'duplicate' => (bool) $this->option('duplicate'),
+        ]);
+        $message = $result['message'];
+        $conversation = $result['conversation'];
 
-            return self::FAILURE;
+        if ($result['warning'] !== null) {
+            $this->warn($result['warning']);
+        } elseif ($this->stringOption('file') !== null && $result['outcome'] !== InboundMessageOutcome::Duplicate) {
+            $this->info('Archivo de muestra adjuntado (simulación).');
         }
 
-        $connection = Connection::query()->where('phone_number_id', ManualValidation::PHONE_NUMBER_ID)->first();
-
-        if ($connection === null) {
-            $this->error('The demo connection does not exist yet. Run: php artisan db:seed --class="Database\Seeders\Local\ManualValidationSeeder"');
-
-            return self::FAILURE;
-        }
-
-        if ($this->stringOption('status') !== null) {
-            return $this->simulateStatus($process, $connection);
-        }
-
-        $type = $this->stringOption('type') ?? 'text';
-
-        if (! in_array($type, SimulatedWebhook::TYPES, true)) {
-            $this->error('Unknown --type. Use one of: '.implode(', ', SimulatedWebhook::TYPES).'.');
-
-            return self::FAILURE;
-        }
-
-        $from = $this->stringArgument('from') ?? '';
-        $customer = ManualValidation::CUSTOMERS[Str::lower($from)] ?? null;
-        $waId = $customer['wa_id'] ?? $from;
-
-        if (! ManualValidation::isDemoSender($waId)) {
-            $this->error('Only fictitious numbers between 5215500000100 and 5215500000199 (or laura, mario, sofia) can be simulated.');
-
-            return self::FAILURE;
-        }
-
-        $messageId = $this->option('duplicate') ? $this->lastMessageId($waId) : 'wamid.DEMO-B.sim.'.Str::lower((string) Str::ulid());
-
-        if ($messageId === null) {
-            $this->error("No simulated message of {$waId} has been recorded yet to deliver again.");
-
-            return self::FAILURE;
-        }
-
-        $name = $customer['name'] ?? ($this->stringOption('name') ?? 'Cliente '.substr($waId, -3));
-        $name = str_starts_with($name, ManualValidation::PREFIX) ? $name : ManualValidation::PREFIX.$name;
-        $minutesAgo = max(0, (int) ($this->stringOption('minutes-ago') ?? 0));
-
-        $file = $this->stringOption('file');
-
-        if ($file !== null && ! is_file($file)) {
-            $this->error("The sample file {$file} does not exist.");
-
-            return self::FAILURE;
-        }
-
-        $replyTo = $this->stringOption('reply-to');
-        $existed = Message::query()->where('whatsapp_message_id', $messageId)->exists();
-
-        $process->handle($connection, SimulatedWebhook::message(
-            ManualValidation::PHONE_NUMBER_ID,
-            (string) ($connection->business_account_id ?: 'DEMO-B-WABA'),
-            $waId,
-            $name,
-            $messageId,
-            $type,
-            $this->stringArgument('text') ?? 'Hola, este es un mensaje de prueba.',
-            now()->subMinutes($minutesAgo)->getTimestamp(),
-            $this->option('ad') ? ManualValidation::demoAdReferral(substr($waId, -3)) : null,
-            $replyTo === null ? null : ['from' => $waId, 'id' => $replyTo],
-            $file === null ? null : basename($file),
-        ));
-
-        $message = Message::query()->with(['conversation', 'attachments'])->where('whatsapp_message_id', $messageId)->first();
-
-        if ($message === null) {
-            $this->error('The simulated event was not received.');
-
-            return self::FAILURE;
-        }
-
-        if ($file !== null && ! $existed) {
-            $this->attachSample($message->attachments->first(), $file, $storage);
-        }
-
-        $conversation = $message->conversation;
-        $state = $window->for($conversation);
-        $outcome = $existed ? 'duplicate' : 'received';
-
-        $this->record([
+        file_put_contents(ManualValidation::inboundLogPath(), json_encode([
             'at' => now()->toIso8601String(),
-            'wa_id' => $waId,
-            'message_id' => $messageId,
-            'outcome' => $outcome,
+            'wa_id' => $message->conversation->contact?->phone_e164,
+            'message_id' => $message->whatsapp_message_id,
+            'outcome' => $result['outcome']->value,
             'conversation_id' => $conversation->id,
             'contact_id' => $conversation->contact_id,
-        ]);
+        ], JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND | LOCK_EX);
 
-        $this->table(['Resultado', 'Tipo', 'Conversación', 'Estado', 'Contacto', 'Ventana 24 h', 'Id del mensaje'], [[
-            $outcome,
+        $this->table(['Resultado', 'Contacto', 'Tipo', 'Conversación', 'Estado', 'Departamento', 'Ventana 24 h', 'Id del mensaje'], [[
+            $this->outcomeLabel($result['outcome']),
+            $result['name'].($result['new_contact'] ? ' (nuevo)' : ' (existente)'),
             $message->type->value,
             "#{$conversation->id}",
             $conversation->status->label(),
-            $name,
-            $state->toArray()['label'],
-            $messageId,
+            $conversation->department->name ?? 'Sin departamento',
+            $result['window'],
+            $message->whatsapp_message_id,
         ]]);
         $this->line('Abre: '.route('conversations.show', $conversation));
 
         return self::SUCCESS;
     }
 
-    /**
-     * Meta's status for an outbound message of the demo connection, through
-     * the same processing as a status webhook.
-     */
-    private function simulateStatus(ProcessWebhookPayload $process, Connection $connection): int
+    private function status(ManualValidationSimulator $simulator): int
     {
-        $status = (string) $this->stringOption('status');
-        $message = Message::query()
-            ->whereKey((int) $this->stringOption('message'))
-            ->where('direction', MessageDirection::Outbound)
-            ->whereHas('conversation', fn ($query) => $query->where('connection_id', $connection->id))
-            ->first();
+        $code = $this->stringOption('error-code') ?? (string) SimulatedWebhook::DEFAULT_ERROR_CODE;
 
-        if (! in_array($status, ['sent', 'delivered', 'read', 'failed'], true) || $message === null) {
-            $this->error('Use --status=sent|delivered|read|failed with --message=<id of an outbound message of the demo connection>.');
-
-            return self::FAILURE;
+        if (! ctype_digit($code)) {
+            throw new RuntimeException('--error-code debe ser un número.');
         }
 
-        $wamid = $message->whatsapp_message_id ?? 'wamid.DEMO-B.sim.'.Str::lower((string) Str::ulid());
-        $sequence = $this->option('out-of-order') && in_array($status, ['delivered', 'read'], true) ? ['read', 'delivered'] : [$status];
+        ['message' => $message, 'sequence' => $sequence] = $simulator->status(
+            (int) $this->stringOption('message'),
+            (string) $this->stringOption('status'),
+            (bool) $this->option('out-of-order'),
+            (bool) $this->option('duplicate'),
+            (int) $code,
+        );
 
-        if ($this->option('duplicate')) {
-            $sequence[] = end($sequence);
-        }
-
-        foreach ($sequence as $offset => $reported) {
-            $process->handle($connection, SimulatedWebhook::status(
-                ManualValidation::PHONE_NUMBER_ID,
-                (string) ($connection->business_account_id ?: 'DEMO-B-WABA'),
-                $wamid,
-                $reported,
-                now()->addSeconds($offset)->getTimestamp(),
-                MetaCloudWhatsAppTransport::callbackData($message),
-            ));
-        }
-
-        $message->refresh();
-        $this->table(['Mensaje', 'Estados simulados', 'Estado actual', 'Enviado', 'Entregado', 'Leído'], [[
+        $this->table(['Mensaje', 'Estados simulados', 'Estado actual', 'Error', 'Enviado', 'Entregado', 'Leído'], [[
             "#{$message->id}",
             implode(' → ', $sequence),
             $message->status->label(),
+            $message->error_message ?? '—',
             $message->sent_at?->toDateTimeString() ?? '—',
             $message->delivered_at?->toDateTimeString() ?? '—',
             $message->read_at?->toDateTimeString() ?? '—',
@@ -229,20 +159,30 @@ class SimulateInboundMessage extends Command
         return self::SUCCESS;
     }
 
-    private function attachSample(?MessageAttachment $attachment, string $file, MediaStorage $storage): void
+    private function expireWindow(ManualValidationSimulator $simulator, Connection $connection): int
     {
-        if ($attachment === null) {
-            $this->warn('This message type carries no file; --file was ignored.');
+        $minutes = (int) ($this->stringOption('minutes-ago') ?? 0);
+        $result = $simulator->expireWindow($connection, $this->stringArgument('from') ?? '', max($minutes, ManualValidationSimulator::EXPIRED_WINDOW_MINUTES));
 
-            return;
-        }
+        $this->table(['Conversación', 'Último mensaje del cliente', 'Ventana 24 h'], [[
+            "#{$result['conversation']->id}",
+            $result['last_inbound_at']->toDateTimeString(),
+            $result['window'],
+        ]]);
+        $this->line('Recarga la conversación para ver la ventana cerrada: '.route('conversations.show', $result['conversation']));
 
-        try {
-            SimulatedWebhook::attachLocalFile($attachment->load('message'), $file, $storage);
-            $this->info('Sample file attached (simulación).');
-        } catch (MediaRejected $exception) {
-            $this->warn('The sample file was refused: '.$exception->getMessage());
-        }
+        return self::SUCCESS;
+    }
+
+    private function outcomeLabel(InboundMessageOutcome $outcome): string
+    {
+        return match ($outcome) {
+            InboundMessageOutcome::Created => 'Conversación nueva',
+            InboundMessageOutcome::Appended => 'Agregado a la conversación abierta',
+            InboundMessageOutcome::Reopened => 'Conversación reabierta',
+            InboundMessageOutcome::LateArrival => 'Llegó tarde: se agregó al historial sin reabrir',
+            InboundMessageOutcome::Duplicate => 'Duplicado: no se guardó otra vez',
+        };
     }
 
     private function stringArgument(string $name): ?string
@@ -257,29 +197,5 @@ class SimulateInboundMessage extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function lastMessageId(string $waId): ?string
-    {
-        $path = ManualValidation::inboundLogPath();
-        $lines = is_file($path) ? array_reverse(file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []) : [];
-
-        foreach ($lines as $line) {
-            $entry = json_decode($line, true);
-
-            if (is_array($entry) && ($entry['wa_id'] ?? null) === $waId && is_string($entry['message_id'] ?? null)) {
-                return $entry['message_id'];
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $entry
-     */
-    private function record(array $entry): void
-    {
-        file_put_contents(ManualValidation::inboundLogPath(), json_encode($entry, JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 }

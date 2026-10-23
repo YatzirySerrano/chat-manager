@@ -73,6 +73,7 @@ test('without records.view-deleted deleted contacts cannot be found through list
     $viewer = contactManager([Permission::UpdateContacts, Permission::DeleteContacts]);
     Contact::factory()->create(['name' => 'Zoe Activa']);
     $deleted = Contact::factory()->archived()->create(['name' => 'Zoe Eliminada']);
+    commitForFullTextSearch();
 
     foreach (['deleted', 'all'] as $record) {
         $this->actingAs($viewer)

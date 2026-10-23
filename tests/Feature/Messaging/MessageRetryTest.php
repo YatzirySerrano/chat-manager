@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\MessageStatus;
 use App\Jobs\DeliverOutboundMessage;
+use App\Models\AuditLog;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
@@ -75,6 +77,36 @@ test('an unconfirmed delivery is retried only after the agent accepts the duplic
         ->and($this->failed->metadata['delivery']['history'][0]['duplicate_risk_confirmed'])->toBeTrue();
 });
 
+test('accepting the duplicate risk is kept in the audit log; an ordinary retry is not', function () {
+    Queue::fake();
+    $ordinary = WhatsAppFixtures::outbound($this->conversation, ['status' => 'failed', 'error_code' => 'provider_unreachable', 'failed_at' => now()]);
+    $this->failed->forceFill(['error_code' => 'delivery_unknown'])->save();
+
+    ($this->retry)($this->agent, $ordinary)->assertAccepted();
+    ($this->retry)($this->agent, $this->failed, ['confirm' => true])->assertAccepted();
+
+    expect(AuditLog::query()->sole())
+        ->action->toBe(AuditAction::MessageRetriedWithDuplicateRisk)
+        ->user_id->toBe($this->agent->id)
+        ->auditable_id->toBe($this->conversation->id)
+        ->and(AuditLog::query()->sole()->properties)->toMatchArray([
+            'message_id' => $this->failed->id,
+            'previous_error' => 'delivery_unknown',
+            'duplicate_risk_confirmed' => true,
+        ]);
+});
+
+test('a message retried by the new responsible agent after a transfer is delivered', function () {
+    $transport = WhatsAppFixtures::transport();
+    $newAgent = User::factory()->agent()->inDepartments($this->department)->create();
+    $this->conversation->forceFill(['assigned_user_id' => $newAgent->id])->save();
+
+    ($this->retry)($newAgent, $this->failed)->assertAccepted();
+
+    expect($this->failed->refresh()->status)->toBe(MessageStatus::Accepted)
+        ->and($transport->sent)->toBe([$this->failed->id]);
+});
+
 test('only failed messages can be retried', function (string $status) {
     Queue::fake();
     $this->failed->forceFill(['status' => $status, 'error_code' => null])->save();
@@ -90,6 +122,20 @@ test('a message is not retried once its connection was deactivated', function ()
     ($this->retry)($this->agent, $this->failed)->assertStatus(409);
 
     expect($this->failed->refresh()->status)->toBe(MessageStatus::Failed);
+    Queue::assertNothingPushed();
+});
+
+test('a message is not retried while Meta rejects the connection credentials', function () {
+    Queue::fake();
+    $this->conversation->channelConnection->forceFill(['credentials_error' => 'Invalid OAuth access token.'])->save();
+    $this->failed->forceFill(['error_code' => 'delivery_unknown'])->save();
+
+    ($this->retry)($this->agent, $this->failed, ['confirm' => true])
+        ->assertConflict()
+        ->assertJsonFragment(['message' => $this->conversation->channelConnection->sendingBlockReason()]);
+
+    expect($this->failed->refresh()->status)->toBe(MessageStatus::Failed)
+        ->and(AuditLog::query()->exists())->toBeFalse();
     Queue::assertNothingPushed();
 });
 

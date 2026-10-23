@@ -8,8 +8,10 @@ use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
 use App\Rules\QuickReplyBody;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -27,13 +29,13 @@ class QuickReplyRequest extends FormRequest
 
     public const SHORTCUT_PATTERN = '/^[a-z0-9][a-z0-9_-]*$/';
 
-    public function authorize(): bool
+    public function authorize(): Response
     {
         $quickReply = $this->route('quickReply');
 
         return $quickReply instanceof QuickReply
-            ? ($this->user()?->can('update', $quickReply) ?? false)
-            : ($this->user()?->can('create', QuickReply::class) ?? false);
+            ? Gate::inspect('update', $quickReply)
+            : Gate::inspect('create', QuickReply::class);
     }
 
     /**

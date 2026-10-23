@@ -2,13 +2,16 @@
 
 use App\Actions\Connections\ChangeConnectionStatus;
 use App\Enums\AuditAction;
+use App\Enums\ConnectionHealth;
 use App\Enums\DataScope;
 use App\Enums\Permission;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\AuditLog;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -90,6 +93,39 @@ test('a restored connection stays inactive and must be verified again', function
         ->credentials_verified_at->toBeNull()
         ->isOperational()->toBeFalse()
         ->and(AuditLog::query()->where('action', AuditAction::ConnectionRestored)->count())->toBe(1);
+});
+
+test('a restored connection with past traffic does not look verified or operational once activated', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $connection = Connection::factory()->operational()->create(['app_subscribed' => true, 'subscription_checked_at' => now()]);
+
+    $this->actingAs($admin)->delete(route('connections.destroy', $connection));
+    $this->actingAs($admin)->patch(route('connections.restore', $connection));
+    $this->actingAs($admin)
+        ->patch(route('connections.status.update', $connection), ['is_active' => true])
+        ->assertInertiaFlash('toast', ['type' => 'warning', 'message' => 'Conexión activada, pero sus credenciales aún no se han verificado con Meta.']);
+
+    expect($connection->refresh())
+        ->is_active->toBeTrue()
+        ->webhook_verified_at->toBeNull()
+        ->app_subscribed->toBeNull()
+        ->subscription_checked_at->toBeNull()
+        ->last_inbound_at->not->toBeNull()
+        ->and($connection->health())->not->toBe(ConnectionHealth::Operational);
+});
+
+test('pausing, deleting or restoring a connection signals its conversations in attention', function () {
+    Event::fake([ConnectionStatusChanged::class]);
+    $admin = User::factory()->superAdministrator()->create();
+    $connection = Connection::factory()->verified()->create();
+
+    $this->actingAs($admin)->patch(route('connections.status.update', $connection), ['is_active' => false]);
+    $this->actingAs($admin)->delete(route('connections.destroy', $connection));
+    $this->actingAs($admin)->patch(route('connections.restore', $connection));
+
+    Event::assertDispatched(ConnectionStatusChanged::class, fn (ConnectionStatusChanged $event): bool => $event->connectionId === $connection->id && $event->reason === 'deactivated');
+    Event::assertDispatched(ConnectionStatusChanged::class, fn (ConnectionStatusChanged $event): bool => $event->reason === 'deleted');
+    Event::assertDispatched(ConnectionStatusChanged::class, fn (ConnectionStatusChanged $event): bool => $event->reason === 'restored');
 });
 
 test('the phone number id of a deleted connection stays reserved and the conflict is explained', function () {

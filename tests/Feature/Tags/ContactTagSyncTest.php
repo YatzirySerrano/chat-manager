@@ -66,7 +66,7 @@ test('saving the same tags records nothing', function () {
 });
 
 test('assigning tags requires the assign permission', function () {
-    $supervisor = User::factory()->supervisor()->create();
+    $supervisor = User::factory()->withRole(Role::factory()->scope(DataScope::Departments)->withPermissions([Permission::ViewContacts, Permission::CreateContacts, Permission::ViewTags])->create())->create();
     $contact = Contact::factory()->createdBy($supervisor)->create();
     $tag = Tag::factory()->create();
 

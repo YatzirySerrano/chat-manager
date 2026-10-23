@@ -219,9 +219,10 @@ class DepartmentController extends Controller
     /**
      * Read-only context of how the department operates today: whether it is
      * attending right now under which schedule, the next non-working days,
-     * and the platform-wide load limit (configured in Configuración).
+     * and the load limits: the platform-wide one (configured in Configuración)
+     * and the department's own per agent limit, which takes precedence.
      *
-     * @return array{hours: array{mode: string, is_open: bool, next_opening: string|null, holiday: string|null, timezone: string}, holidays: list<array{date: string, label: string, recurring: bool}>, load_limit: int|null, settings_url: string|null}
+     * @return array{hours: array{mode: string, is_open: bool, next_opening: string|null, holiday: string|null, timezone: string}, holidays: list<array{date: string, label: string, recurring: bool}>, load_limit: int|null, department_limit: int|null, settings_url: string|null}
      */
     private function automation(Department $department, User $actor): array
     {
@@ -235,6 +236,7 @@ class DepartmentController extends Controller
                 fn (array $holiday): bool => $holiday['recurring'] || $holiday['date'] >= $today,
             )), 0, 5),
             'load_limit' => app(ConversationAccess::class)->attentionLimit(),
+            'department_limit' => $department->max_open_conversations_per_agent,
             'settings_url' => Route::has('admin.settings.edit') && $actor->holdsPermission(Permission::ViewSettings)
                 ? route('admin.settings.edit')
                 : null,

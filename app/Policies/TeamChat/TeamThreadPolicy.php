@@ -148,6 +148,29 @@ class TeamThreadPolicy
     }
 
     /**
+     * React to (or withdraw a reaction from) any visible message of a
+     * thread that still accepts messages.
+     */
+    public function react(User $actor, TeamThread $thread, TeamMessage $message): Response
+    {
+        $post = $this->post($actor, $thread);
+
+        if ($post->denied()) {
+            return $post;
+        }
+
+        if ($message->team_thread_id !== $thread->id) {
+            return Response::denyAsNotFound();
+        }
+
+        if ($message->isSystem() || $message->isDeleted()) {
+            return Response::deny('No puedes reaccionar a este mensaje.');
+        }
+
+        return Response::allow();
+    }
+
+    /**
      * The actor's current participation when they may use the chat at all.
      */
     private function participation(User $actor, TeamThread $thread): ?TeamParticipant

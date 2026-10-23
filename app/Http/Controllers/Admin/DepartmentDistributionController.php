@@ -13,11 +13,11 @@ use Inertia\Inertia;
 class DepartmentDistributionController extends Controller
 {
     /**
-     * Update how the department distributes its pending conversations.
+     * Update how the department distributes its pending conversations and its per agent load limit.
      */
     public function update(UpdateDepartmentDistributionRequest $request, Department $department, UpdateDepartmentDistribution $updateDistribution): RedirectResponse
     {
-        $assigned = $updateDistribution->handle($department, $request->mode(), $request->user());
+        $assigned = $updateDistribution->handle($department, $request->mode(), $request->user(), $request->capacity());
 
         Inertia::flash('toast', match (true) {
             $assigned === null => ['type' => 'info', 'message' => SaveToast::NO_CHANGES],

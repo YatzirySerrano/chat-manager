@@ -345,7 +345,7 @@ test('supervisors cannot open or change departments outside their scope', functi
     $supervisor = User::factory()->supervisor()->inDepartments($own)->create();
 
     $this->actingAs($supervisor)->get(route('departments.show', $own))->assertOk();
-    $this->actingAs($supervisor)->get(route('departments.show', $foreign))->assertForbidden();
+    $this->actingAs($supervisor)->get(route('departments.show', $foreign))->assertNotFound();
     $this->actingAs($supervisor)->delete(route('departments.destroy', $foreign))->assertForbidden();
     $this->actingAs($supervisor)->put(route('departments.update', $foreign), ['name' => 'Tomado'])->assertForbidden();
 

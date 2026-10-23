@@ -94,7 +94,8 @@ class DownloadInboundMedia implements ShouldQueue
                 $storage->assertSize($kind, $media['file_size']);
             }
 
-            $graph->download($token, $media['url'], $temporary);
+            // The limit is enforced while streaming, even when Meta reports no size.
+            $graph->download($token, $media['url'], $temporary, $storage->rules($kind)['max_bytes']);
             $stored = $storage->store($temporary, $kind);
         } catch (MediaRejected $exception) {
             $this->markUnavailable($attachment, $exception->reason);

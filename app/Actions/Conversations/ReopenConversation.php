@@ -4,8 +4,10 @@ namespace App\Actions\Conversations;
 
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Enums\DistributionMode;
 use App\Exceptions\ConversationConflict;
 use App\Models\Conversation;
+use App\Models\Department;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
@@ -50,8 +52,12 @@ class ReopenConversation
      */
     public function reopen(Conversation $conversation, ?User $actor, string $trigger): Conversation
     {
+        // Engine lock order: the department before the agent; exclusive when
+        // its queue may be distributed below, so that lock is never upgraded.
+        $automatic = $conversation->department_id !== null
+            && Department::query()->whereKey($conversation->department_id)->where('distribution_mode', DistributionMode::Automatic)->exists();
+        $department = $this->lifecycle->lockDepartment($conversation->department_id, exclusive: $automatic);
         $previousAgent = $conversation->assigned_user_id === null ? null : $this->lifecycle->freshUser($conversation->assigned_user_id);
-        $department = $conversation->department()->first();
         $returnsToAgent = $previousAgent !== null && $this->access->canAttend($previousAgent, $department);
 
         $this->lifecycle->apply(

@@ -2,10 +2,18 @@
 
 namespace App\Services\Operations;
 
+use App\Models\Connection;
+use App\Models\User;
+use App\Notifications\Push\Vapid;
+use App\Support\ManualValidation;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Redis\RedisManager;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -14,8 +22,10 @@ use Throwable;
  * the cache or the disk; only reads, version queries and file checks).
  *
  * Every check reads configuration through config() so the result matches
- * what the application will actually use (also with config:cache). "Fail"
- * means the deployment is not ready; "Warning" deserves a look.
+ * what the application will actually use (also with config:cache). Levels:
+ * "Ok" (Correcto), "Warning" (Advertencia: deserves a look, does not stop
+ * the deployment) and "Fail" (Bloqueante: the deployment is not ready).
+ * Production-only requirements are warnings in any other environment.
  */
 class Preflight
 {
@@ -48,9 +58,12 @@ class Preflight
             'app' => fn (): array => [$this->environment(), $this->debug(), $this->appKey(), $this->appUrl(), $this->configCache(), $this->devDependencies()],
             'http' => fn (): array => [$this->sessionCookies(), $this->trustedProxies()],
             'database' => fn (): array => [$this->databaseServer(), $this->migrations()],
-            'storage' => fn (): array => [$this->health->storage(), $this->privateStorage()],
-            'runtime' => fn (): array => [$this->cacheStore(), $this->queueConfiguration(), $this->scheduledCommands(), $this->schedulerHeartbeat()],
-            'integrations' => fn (): array => [$this->broadcasting(), $this->browsershot(), $this->meta(), $this->mail()],
+            'storage' => fn (): array => [$this->health->storage(), $this->privateStorage(), $this->diskSpace(), $this->backups()],
+            'runtime' => fn (): array => [
+                $this->cacheStore(), $this->redis(), $this->queueConfiguration(), $this->scheduledCommands(), $this->schedulerHeartbeat(),
+                ...array_map($this->atMostWarning(...), [$this->health->queueBacklog(), $this->health->webhookBacklog(), $this->health->failedJobsCheck()]),
+            ],
+            'integrations' => fn (): array => [$this->broadcasting(), $this->browsershot(), $this->meta(), $this->demoData(), $this->mail(), $this->webPush()],
             'observability' => fn (): array => [$this->logging(), $this->timezone()],
         ] as $group => $build) {
             try {
@@ -78,6 +91,18 @@ class Preflight
         return $this->isProduction()
             ? HealthCheck::fail($key, $label, $summary, $details)
             : HealthCheck::warning($key, $label, $summary, $details);
+    }
+
+    /**
+     * Runtime state (backlogs, failed jobs) deserves a look before deploying
+     * but never blocks it: a first installation has no workers yet, and the
+     * deployment itself restarts them.
+     */
+    private function atMostWarning(HealthCheck $check): HealthCheck
+    {
+        return $check->status === HealthStatus::Fail
+            ? HealthCheck::warning($check->key, $check->label, $check->summary, $check->details)
+            : $check;
     }
 
     public function phpVersion(): HealthCheck
@@ -351,6 +376,69 @@ class Preflight
         return HealthCheck::ok('storage.private', 'Archivos privados', 'Adjuntos, exportaciones e importaciones en discos privados fuera de public/.');
     }
 
+    public function diskSpace(): HealthCheck
+    {
+        $minimum = max(0, (int) config('operations.preflight.min_free_disk_mb', 2048));
+        $free = @disk_free_space(storage_path());
+
+        if ($free === false) {
+            return HealthCheck::warning('storage.disk', 'Espacio en disco', 'No se pudo leer el espacio libre del disco de storage/.');
+        }
+
+        $freeMb = (int) floor($free / 1048576);
+        $details = ['free_mb' => $freeMb, 'minimum_mb' => $minimum];
+
+        if ($freeMb < $minimum) {
+            return HealthCheck::warning('storage.disk', 'Espacio en disco', "Quedan {$freeMb} MB libres en el disco de storage/ (mínimo recomendado {$minimum} MB, OPS_PREFLIGHT_MIN_FREE_DISK_MB). El despliegue compila y respalda en el mismo disco: libera espacio antes de continuar.", $details);
+        }
+
+        return HealthCheck::ok('storage.disk', 'Espacio en disco', "{$freeMb} MB libres en el disco de storage/.", $details);
+    }
+
+    /**
+     * Age of the newest database backup in OPS_BACKUP_DIR (only the file
+     * dates are read; the backups stay unreadable for this user).
+     */
+    public function backups(): HealthCheck
+    {
+        $directory = rtrim(trim((string) config('operations.preflight.backup_directory')), '/');
+
+        if ($directory === '') {
+            return $this->isProduction()
+                ? HealthCheck::warning('storage.backups', 'Respaldos de la base', 'OPS_BACKUP_DIR no está configurado: no se puede comprobar la antigüedad del último respaldo (ver docs/recuperacion-y-respaldos.md).')
+                : HealthCheck::skipped('storage.backups', 'Respaldos de la base', 'Sin OPS_BACKUP_DIR (normal fuera de producción).');
+        }
+
+        if (! is_dir($directory) || ! is_readable($directory)) {
+            return HealthCheck::warning('storage.backups', 'Respaldos de la base', "No se puede leer {$directory}: no existe o este usuario no tiene permiso para listarlo.");
+        }
+
+        $newest = null;
+
+        foreach (glob($directory.'/*.sql.gz') ?: [] as $file) {
+            $modified = @filemtime($file);
+
+            if ($modified !== false && ($newest === null || $modified > $newest)) {
+                $newest = $modified;
+            }
+        }
+
+        $maxAge = max(1, (int) config('operations.preflight.backup_max_age_hours', 26));
+
+        if ($newest === null) {
+            return HealthCheck::warning('storage.backups', 'Respaldos de la base', "No hay respaldos (*.sql.gz) en {$directory}.", ['max_age_hours' => $maxAge]);
+        }
+
+        $ageHours = intdiv(max(0, CarbonImmutable::now()->getTimestamp() - $newest), 3600);
+        $details = ['age_hours' => $ageHours, 'max_age_hours' => $maxAge];
+
+        if ($ageHours > $maxAge) {
+            return HealthCheck::warning('storage.backups', 'Respaldos de la base', "El último respaldo tiene {$ageHours} h (límite {$maxAge} h): revisa la tarea de cron de respaldo.", $details);
+        }
+
+        return HealthCheck::ok('storage.backups', 'Respaldos de la base', "Último respaldo hace {$ageHours} h.", $details);
+    }
+
     public function cacheStore(): HealthCheck
     {
         $store = (string) config('cache.default');
@@ -366,6 +454,70 @@ class Preflight
         }
 
         return HealthCheck::ok('cache', 'Caché', "Almacén {$store} ({$driver}) disponible.");
+    }
+
+    /**
+     * Real connectivity (PING) with every Redis connection the configuration
+     * uses: queue, cache and session through their database.redis
+     * connections, and Reverb scaling through its own
+     * reverb.servers.reverb.scaling.server settings (Reverb does not use a
+     * database.redis connection), pinged with a throwaway RedisManager so
+     * the application's connections and configuration are never altered.
+     */
+    public function redis(): HealthCheck
+    {
+        $queue = 'queue.connections.'.config('queue.default');
+        $cache = 'cache.stores.'.config('cache.default');
+        $connections = [];
+
+        if (config("{$queue}.driver") === 'redis') {
+            $connections[] = (string) config("{$queue}.connection", 'default');
+        }
+
+        if (config("{$cache}.driver") === 'redis') {
+            $connections[] = (string) config("{$cache}.connection", 'cache');
+        }
+
+        if (config('session.driver') === 'redis') {
+            $connections[] = (string) (config('session.connection') ?: 'default');
+        }
+
+        $connections = array_values(array_unique($connections));
+        $usesReverbScaling = (bool) config('reverb.servers.reverb.scaling.enabled', false);
+
+        if ($connections === [] && ! $usesReverbScaling) {
+            return HealthCheck::skipped('redis', 'Redis', 'La configuración no usa Redis.');
+        }
+
+        $unreachable = [];
+
+        foreach ($connections as $name) {
+            try {
+                Redis::connection($name)->command('ping');
+            } catch (Throwable $exception) {
+                $unreachable[] = "{$name} (".class_basename($exception).')';
+            }
+        }
+
+        if ($usesReverbScaling) {
+            $connections[] = 'escalado de Reverb';
+
+            try {
+                $server = array_merge((array) config('reverb.servers.reverb.scaling.server', []), ['timeout' => 5]);
+
+                (new RedisManager(app(), (string) config('database.redis.client', 'phpredis'), ['reverb-scaling' => $server]))
+                    ->connection('reverb-scaling')
+                    ->command('ping');
+            } catch (Throwable $exception) {
+                $unreachable[] = 'escalado de Reverb ('.class_basename($exception).')';
+            }
+        }
+
+        if ($unreachable !== []) {
+            return $this->productionFailure('redis', 'Redis', 'Redis no responde en la conexión '.implode(', ', $unreachable).'. Revisa REDIS_HOST, REDIS_PORT y REDIS_PASSWORD y que redis-server esté activo.');
+        }
+
+        return HealthCheck::ok('redis', 'Redis', 'Redis responde (conexiones: '.implode(', ', $connections).').');
     }
 
     public function queueConfiguration(): HealthCheck
@@ -529,7 +681,65 @@ class Preflight
             return HealthCheck::warning('meta', 'WhatsApp Cloud API', "WHATSAPP_TRANSPORT={$transport}: los mensajes salientes quedarán sin enviar. Usa meta cuando las conexiones tengan credenciales verificadas.");
         }
 
-        return HealthCheck::ok('meta', 'WhatsApp Cloud API', "Graph API {$version}, envío real habilitado. Las credenciales se verifican por conexión en Conexiones.");
+        $verified = $this->connectionsWithVerifiedCredentials();
+
+        if ($verified === null) {
+            return HealthCheck::warning('meta', 'WhatsApp Cloud API', "Graph API {$version} y WHATSAPP_TRANSPORT=meta, pero no se pudieron consultar las conexiones (¿base sin migrar?): WhatsApp no está integrado todavía.");
+        }
+
+        if ($verified === 0) {
+            return HealthCheck::warning('meta', 'WhatsApp Cloud API', "Graph API {$version} y WHATSAPP_TRANSPORT=meta, pero ninguna conexión activa tiene credenciales verificadas con Meta: WhatsApp no está integrado todavía. Captura y verifica las credenciales en Conexiones.", ['verified_connections' => 0]);
+        }
+
+        return HealthCheck::ok('meta', 'WhatsApp Cloud API', "Graph API {$version}, envío real habilitado; {$verified} conexiones activas con credenciales verificadas (la recepción se confirma con el primer webhook, ver Conexiones).", ['verified_connections' => $verified]);
+    }
+
+    /**
+     * Active, not deleted connections whose credentials Meta accepted in the
+     * last verification; null when the table cannot be read.
+     */
+    private function connectionsWithVerifiedCredentials(): ?int
+    {
+        try {
+            if (! Schema::hasTable((new Connection)->getTable())) {
+                return null;
+            }
+
+            return Connection::query()->active()->notDeleted()
+                ->whereNotNull('credentials_verified_at')
+                ->whereNull('credentials_error')
+                ->count();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Records of the local manual-validation scenario (App\Support\ManualValidation)
+     * that must never reach production: a restored local copy brings demo
+     * users with locally known passwords and the simulated lines of
+     * ManualValidation::LINES (sales and support).
+     */
+    public function demoData(): HealthCheck
+    {
+        try {
+            if (! Schema::hasTable((new User)->getTable()) || ! Schema::hasTable((new Connection)->getTable())) {
+                return HealthCheck::skipped('demo', 'Datos de demostración', 'La base aún no tiene esquema.');
+            }
+
+            $users = User::query()->active()->where('email', 'like', '%@'.ManualValidation::EMAIL_DOMAIN)->count();
+            $connections = Connection::query()->notDeleted()->whereIn('phone_number_id', array_values(ManualValidation::LINES))->count();
+        } catch (Throwable $exception) {
+            return HealthCheck::warning('demo', 'Datos de demostración', 'No se pudo comprobar si hay datos de demostración ('.class_basename($exception).').');
+        }
+
+        $details = ['demo_users' => $users, 'demo_connections' => $connections];
+
+        if ($users > 0 || $connections > 0) {
+            return $this->productionFailure('demo', 'Datos de demostración', "La base contiene datos de la validación manual: {$users} usuarios activos @".ManualValidation::EMAIL_DOMAIN." y {$connections} conexiones simuladas (Phone number ID ".implode(', ', ManualValidation::LINES).'). Desactívalos o elimínalos desde la interfaz; php artisan chat-manager:demo-cleanup solo funciona en una copia local.', $details);
+        }
+
+        return HealthCheck::ok('demo', 'Datos de demostración', 'Sin usuarios ni conexiones de demostración.', $details);
     }
 
     public function mail(): HealthCheck
@@ -553,6 +763,28 @@ class Preflight
         return $problems === []
             ? HealthCheck::ok('mail', 'Correo', "Mailer {$mailer}, remitente {$from}.")
             : HealthCheck::warning('mail', 'Correo', ucfirst(implode('; ', $problems)).'.');
+    }
+
+    /**
+     * Optional Web Push (config/webpush.php): skipped without keys, a
+     * warning when the keys are unusable or the site is not served over
+     * HTTPS (browsers refuse service workers then).
+     */
+    public function webPush(): HealthCheck
+    {
+        if (blank(config('webpush.public_key')) && blank(config('webpush.private_key'))) {
+            return HealthCheck::skipped('webpush', 'Notificaciones push', 'Sin claves VAPID: Web Push desactivado (php artisan webpush:vapid).');
+        }
+
+        if (! app(Vapid::class)->isConfigured()) {
+            return HealthCheck::warning('webpush', 'Notificaciones push', 'VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no forman un par P-256 válido; genera otro con php artisan webpush:vapid.');
+        }
+
+        if (! str_starts_with((string) config('app.url'), 'https://')) {
+            return HealthCheck::warning('webpush', 'Notificaciones push', 'APP_URL no usa HTTPS: los navegadores no permiten Web Push fuera de localhost.');
+        }
+
+        return HealthCheck::ok('webpush', 'Notificaciones push', 'Claves VAPID válidas.');
     }
 
     public function logging(): HealthCheck

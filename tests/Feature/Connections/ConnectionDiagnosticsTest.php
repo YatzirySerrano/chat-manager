@@ -5,10 +5,14 @@ use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\AuditLog;
 use App\Models\Connection;
+use App\Models\Conversation;
+use App\Models\Department;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Support\WhatsAppFixtures;
 
 /*
 | Activation diagnostics of a connection: webhook URL, evidence, and the
@@ -94,3 +98,42 @@ test('a deleted connection cannot be subscribed', function () {
     $this->actingAs($this->admin)->post(route('connections.subscription.store', $this->connection))->assertForbidden();
     Http::assertNothingSent();
 });
+
+test('replies of unknown delivery are counted and their visible conversations listed', function () {
+    // Without conversations.history the viewer does not see closed conversations.
+    $viewer = User::factory()
+        ->withRole(Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewConnections, Permission::ViewConversations])->create())
+        ->create();
+    $sales = Department::factory()->create();
+    $unknown = ['status' => 'failed', 'error_code' => 'delivery_unknown', 'failed_at' => now()->subDay()];
+    $visible = Conversation::factory()->inDepartment($sales)->create(['connection_id' => $this->connection->id]);
+    $hidden = Conversation::factory()->inDepartment($sales)->create(['connection_id' => $this->connection->id, 'status' => 'closed', 'closed_at' => now()]);
+    WhatsAppFixtures::outbound($visible, $unknown);
+    WhatsAppFixtures::outbound($visible, $unknown);
+    WhatsAppFixtures::outbound($hidden, $unknown);
+    WhatsAppFixtures::outbound($visible, [...$unknown, 'failed_at' => now()->subDays(8)]);
+    WhatsAppFixtures::outbound($visible, [...$unknown, 'error_code' => 'provider_rejected']);
+    WhatsAppFixtures::outbound(Conversation::factory()->inDepartment($sales)->create(), $unknown);
+
+    $this->actingAs($viewer)
+        ->get(route('connections.show', $this->connection))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('diagnostics.outbound.unknown', 3)
+            ->has('diagnostics.outbound.unknown_conversations', 1)
+            ->where('diagnostics.outbound.unknown_conversations.0.id', $visible->id)
+            ->where('diagnostics.outbound.unknown_conversations.0.messages', 2));
+});
+
+test('the controlled pilot is announced only when the real Meta transport applies it', function (string $transport, int $announced) {
+    config(['whatsapp.transport' => $transport, 'whatsapp.pilot.recipients' => ['5215511112222', '5215599990000']]);
+
+    $this->actingAs($this->admin)
+        ->get(route('connections.show', $this->connection))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('diagnostics.transport.pilot_recipients', $announced));
+})->with([
+    'meta' => ['meta', 2],
+    'simulated' => ['simulated', 0],
+    'unavailable' => ['unavailable', 0],
+]);

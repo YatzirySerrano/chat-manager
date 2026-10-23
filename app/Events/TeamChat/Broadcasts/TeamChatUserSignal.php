@@ -46,9 +46,12 @@ class TeamChatUserSignal implements ShouldBroadcast
         return ['thread_id' => $this->threadId, 'reason' => $this->reason];
     }
 
+    /**
+     * Same dedicated queue as the other real-time signals.
+     */
     public function broadcastQueue(): string
     {
-        return Queues::name(Queues::NOTIFICATIONS);
+        return Queues::name(Queues::REALTIME);
     }
 
     /**

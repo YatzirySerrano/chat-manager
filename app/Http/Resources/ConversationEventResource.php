@@ -28,6 +28,7 @@ class ConversationEventResource extends JsonResource
             'note' => $this->note,
             'trigger' => is_string($this->metadata['trigger'] ?? null) ? $this->metadata['trigger'] : null,
             'message_id' => is_int($this->metadata['message_id'] ?? null) ? $this->metadata['message_id'] : null,
+            'reason' => is_string($this->metadata['reason'] ?? null) ? $this->metadata['reason'] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];
     }

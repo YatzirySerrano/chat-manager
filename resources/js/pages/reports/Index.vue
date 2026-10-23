@@ -10,6 +10,7 @@ import {
     MoonStar,
     RotateCcw,
     Send,
+    Target,
     Timer,
     UserRoundCheck,
 } from '@lucide/vue';
@@ -33,6 +34,7 @@ import type {
     AnalyticsPeriod,
     AnalyticsPreset,
     AnalyticsQuery,
+    AnalyticsSla,
     OperationalAnalytics,
 } from '@/types';
 
@@ -108,6 +110,18 @@ function samples(figure: AnalyticsDuration): string {
     return figure.samples === 0
         ? 'Ninguna conversación tiene aún los eventos necesarios'
         : `Promedio de ${figure.samples.toLocaleString('es-MX')} ${figure.samples === 1 ? 'conversación' : 'conversaciones'}`;
+}
+
+function previousDuration(figure: AnalyticsDuration): string | null {
+    return figure.previous === null ? null : formatDuration(figure.previous);
+}
+
+function slaHint(sla: AnalyticsSla): string {
+    const target = formatDuration(sla.target_seconds);
+
+    return sla.samples === 0
+        ? `Objetivo: ${target} hábiles. Ninguna conversación medida aún`
+        : `${sla.met.toLocaleString('es-MX')} de ${sla.samples.toLocaleString('es-MX')} dentro de ${target} hábiles`;
 }
 
 const statusItems = computed(() =>
@@ -211,7 +225,8 @@ const statusItems = computed(() =>
                                 share(
                                     analytics.summary.attended.value,
                                     analytics.summary.received.value,
-                                ) ?? 'Aceptadas o asignadas a un agente'
+                                ) ??
+                                'Aceptadas, asignadas por una persona o respondidas'
                             "
                         />
                         <KpiCard
@@ -270,7 +285,7 @@ const statusItems = computed(() =>
                                       )
                             "
                             better="lower"
-                            :hint="`Desde que llega hasta que un agente la toma. ${samples(analytics.summary.first_attention_seconds)}`"
+                            :hint="`Desde que llega hasta que una persona la acepta, la asigna o responde (la asignación automática no cuenta). ${samples(analytics.summary.first_attention_seconds)}`"
                         />
                         <KpiCard
                             label="Primera respuesta humana (prom.)"
@@ -322,6 +337,136 @@ const statusItems = computed(() =>
                             "
                             better="lower"
                             :hint="`Desde que llega hasta su primer cierre. ${samples(analytics.summary.resolution_seconds)}`"
+                        />
+                    </div>
+                </section>
+
+                <section
+                    aria-labelledby="business-times-heading"
+                    class="space-y-3"
+                >
+                    <h2
+                        id="business-times-heading"
+                        class="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                    >
+                        Tiempos (tiempo hábil)
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Solo cuentan las horas de atención del departamento que
+                        recibió la conversación; sin horario configurado, la
+                        atención es continua y coincide con el tiempo
+                        calendario.
+                    </p>
+                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <KpiCard
+                            label="Primera respuesta humana hábil (prom.)"
+                            :icon="MessageCircleReply"
+                            :value="
+                                duration(
+                                    analytics.summary
+                                        .first_response_business_seconds,
+                                )
+                            "
+                            :current="
+                                analytics.summary
+                                    .first_response_business_seconds.value
+                            "
+                            :previous="
+                                analytics.summary
+                                    .first_response_business_seconds.previous
+                            "
+                            :previous-label="
+                                previousDuration(
+                                    analytics.summary
+                                        .first_response_business_seconds,
+                                )
+                            "
+                            better="lower"
+                            :hint="
+                                samples(
+                                    analytics.summary
+                                        .first_response_business_seconds,
+                                )
+                            "
+                        />
+                        <KpiCard
+                            label="Resolución hábil (prom.)"
+                            :icon="CheckCircle2"
+                            :value="
+                                duration(
+                                    analytics.summary
+                                        .resolution_business_seconds,
+                                )
+                            "
+                            :current="
+                                analytics.summary.resolution_business_seconds
+                                    .value
+                            "
+                            :previous="
+                                analytics.summary.resolution_business_seconds
+                                    .previous
+                            "
+                            :previous-label="
+                                previousDuration(
+                                    analytics.summary
+                                        .resolution_business_seconds,
+                                )
+                            "
+                            better="lower"
+                            :hint="
+                                samples(
+                                    analytics.summary
+                                        .resolution_business_seconds,
+                                )
+                            "
+                        />
+                        <KpiCard
+                            v-if="analytics.summary.first_response_sla"
+                            label="Objetivo de primera respuesta"
+                            :icon="Target"
+                            :value="
+                                analytics.summary.first_response_sla.rate ===
+                                null
+                                    ? null
+                                    : `${analytics.summary.first_response_sla.rate} %`
+                            "
+                            :current="analytics.summary.first_response_sla.rate"
+                            :previous="
+                                analytics.summary.first_response_sla
+                                    .previous_rate
+                            "
+                            :previous-label="
+                                analytics.summary.first_response_sla
+                                    .previous_rate === null
+                                    ? null
+                                    : `${analytics.summary.first_response_sla.previous_rate} %`
+                            "
+                            better="higher"
+                            :hint="
+                                slaHint(analytics.summary.first_response_sla)
+                            "
+                        />
+                        <KpiCard
+                            v-if="analytics.summary.resolution_sla"
+                            label="Objetivo de resolución"
+                            :icon="Target"
+                            :value="
+                                analytics.summary.resolution_sla.rate === null
+                                    ? null
+                                    : `${analytics.summary.resolution_sla.rate} %`
+                            "
+                            :current="analytics.summary.resolution_sla.rate"
+                            :previous="
+                                analytics.summary.resolution_sla.previous_rate
+                            "
+                            :previous-label="
+                                analytics.summary.resolution_sla
+                                    .previous_rate === null
+                                    ? null
+                                    : `${analytics.summary.resolution_sla.previous_rate} %`
+                            "
+                            better="higher"
+                            :hint="slaHint(analytics.summary.resolution_sla)"
                         />
                     </div>
                 </section>

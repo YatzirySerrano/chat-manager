@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
 import { MessagesSquare, SearchX } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import InboxList from '@/components/conversations/InboxList.vue';
@@ -22,7 +23,10 @@ import {
 } from '@/composables/useUserChannel';
 import { afterUserVisits } from '@/lib/realtime';
 import type { LiveChannel } from '@/lib/realtime';
-import { index as conversationsIndex } from '@/routes/conversations';
+import {
+    index as conversationsIndex,
+    page as conversationsPage,
+} from '@/routes/conversations';
 import type {
     ComposerSettings,
     ConversationDetails,
@@ -35,7 +39,6 @@ import type {
     ConversationTimelinePage,
     CustomerWindow,
     TagOption,
-    TransferOptions,
     ViewerAvailability,
 } from '@/types';
 
@@ -67,7 +70,6 @@ const props = defineProps<{
     timeline: ConversationTimelinePage | null;
     details: ConversationDetails | null;
     contactUrl: string | null;
-    transferOptions?: TransferOptions;
     transferReasonRequired: boolean;
 }>();
 
@@ -89,13 +91,47 @@ const SELECTION_PROPS = [
     'details',
     'contactUrl',
 ];
-const PAGE_SIZE = 25;
+/** Rows refreshed at most per request (ConversationController::LIST_CHUNK_MAX). */
+const REFRESH_MAX = 500;
 
 const page = usePage();
 const listQuery = ref<Record<string, string>>({});
-const limit = ref(Math.max(PAGE_SIZE, props.conversations.limit));
 const loadingList = ref(false);
+const loadingMore = ref(false);
+/*
+ * Reloads of the rows after the first page still running. "Load more" waits
+ * for them, so the next page always starts from the rows just read again.
+ */
+let refreshingMore = 0;
+let loadMoreAfterRefresh = false;
 const loadingSelection = ref(false);
+
+/*
+ * The first page is a prop (reloaded live); rows loaded with "load more"
+ * follow it here, page after page with the server's cursor, so the list
+ * can be followed to its end. Every filter change starts over.
+ */
+const more = ref<ConversationList | null>(null);
+let listGeneration = 0;
+const moreHttp = useHttp<Record<string, never>, ConversationList>({});
+const refreshHttp = useHttp<Record<string, never>, ConversationList>({});
+
+const list = computed<ConversationList>(() => {
+    if (more.value === null) {
+        return props.conversations;
+    }
+
+    const first = new Set(props.conversations.data.map((row) => row.id));
+
+    return {
+        data: [
+            ...props.conversations.data,
+            ...more.value.data.filter((row) => !first.has(row.id)),
+        ],
+        has_more: more.value.has_more,
+        next_cursor: more.value.next_cursor,
+    };
+});
 
 /** Query string of the current list, as the list component builds it. */
 const inboxList = ref<InstanceType<typeof InboxList> | null>(null);
@@ -104,7 +140,6 @@ function url(selected: number | null, query: Record<string, string>): string {
     return conversationsIndex.url({
         query: {
             ...query,
-            ...(limit.value > PAGE_SIZE ? { limit: String(limit.value) } : {}),
             ...(selected !== null ? { c: String(selected) } : {}),
         },
     });
@@ -133,7 +168,9 @@ function select(id: number | null): void {
 
 function filter(query: Record<string, string>): void {
     listQuery.value = query;
-    limit.value = PAGE_SIZE;
+    listGeneration++;
+    loadMoreAfterRefresh = false;
+    more.value = null;
     router.get(url(props.selectedId, query), undefined, {
         preserveState: true,
         preserveScroll: true,
@@ -144,21 +181,109 @@ function filter(query: Record<string, string>): void {
     });
 }
 
-function loadMore(): void {
-    if (loadingList.value || !props.conversations.has_more) {
+async function loadMore(): Promise<void> {
+    const current = list.value;
+
+    if (refreshingMore > 0) {
+        loadMoreAfterRefresh = true;
+
         return;
     }
 
-    limit.value = Math.min(250, props.conversations.limit + PAGE_SIZE);
-    router.get(url(props.selectedId, currentQuery()), undefined, {
-        preserveState: true,
-        preserveScroll: true,
-        replace: true,
-        only: ['conversations'],
-        onStart: () => (loadingList.value = true),
-        onFinish: () => (loadingList.value = false),
-    });
+    if (
+        loadingList.value ||
+        loadingMore.value ||
+        !current.has_more ||
+        current.next_cursor === null
+    ) {
+        return;
+    }
+
+    const generation = listGeneration;
+    loadingMore.value = true;
+
+    try {
+        const next = await moreHttp.get(
+            conversationsPage.url({
+                query: { ...currentQuery(), after: current.next_cursor },
+            }),
+        );
+
+        if (generation === listGeneration) {
+            const loaded = more.value?.data ?? [];
+            const known = new Set(loaded.map((row) => row.id));
+
+            more.value = {
+                data: [
+                    ...loaded,
+                    ...next.data.filter((row) => !known.has(row.id)),
+                ],
+                has_more: next.has_more,
+                next_cursor: next.next_cursor ?? current.next_cursor,
+            };
+        }
+    } catch {
+        if (generation === listGeneration) {
+            toast.error(
+                'No se pudieron cargar más conversaciones. Inténtalo de nuevo.',
+            );
+        }
+    } finally {
+        loadingMore.value = false;
+    }
 }
+
+/*
+ * The first page was reloaded (live change, read marker): the rows loaded
+ * after it are read again from its new end, so they never stay stale,
+ * repeated or out of their filter.
+ */
+async function refreshMore(first: ConversationList): Promise<void> {
+    const loaded = more.value?.data.length ?? 0;
+    const generation = ++listGeneration;
+
+    if (loaded === 0 || first.next_cursor === null || !first.has_more) {
+        more.value = null;
+
+        return;
+    }
+
+    refreshingMore++;
+
+    try {
+        const rows = await refreshHttp.get(
+            conversationsPage.url({
+                query: {
+                    ...currentQuery(),
+                    after: first.next_cursor,
+                    limit: String(Math.min(REFRESH_MAX, loaded)),
+                },
+            }),
+        );
+
+        if (generation === listGeneration) {
+            more.value = rows.data.length === 0 ? null : rows;
+        }
+    } catch {
+        // The next reload or "load more" brings the current rows.
+    } finally {
+        refreshingMore--;
+
+        if (refreshingMore === 0 && loadMoreAfterRefresh) {
+            loadMoreAfterRefresh = false;
+            void loadMore();
+        }
+    }
+}
+
+watch(
+    () => props.conversations,
+    (first) => {
+        if (more.value !== null) {
+            void refreshMore(first);
+        }
+    },
+);
 
 /* Real-time: the list follows the viewer's inbox channels. */
 const liveChannels = computed<LiveChannel[]>(() => {
@@ -200,12 +325,6 @@ function onRead(): void {
         router.reload({ only: ['conversations'] });
     }
 }
-
-/* The server decides how many rows it returned (it may cap the limit). */
-watch(
-    () => props.conversations.limit,
-    (value) => (limit.value = Math.max(PAGE_SIZE, value)),
-);
 
 /* Layout: three panels on wide screens, list ↔ chat on small ones. */
 const wide = useMediaQuery('(min-width: 1024px)');
@@ -290,7 +409,7 @@ const title = computed(() =>
         <div v-show="showList" class="min-h-0 border-r">
             <InboxList
                 ref="inboxList"
-                :conversations="conversations"
+                :conversations="list"
                 :filters="filters"
                 :counts="counts"
                 :inbox="inbox"
@@ -304,7 +423,7 @@ const title = computed(() =>
                 :can-export="canExport"
                 :availability="availability"
                 :selected-id="selectedId"
-                :loading="loadingList"
+                :loading="loadingList || loadingMore"
                 @select="select"
                 @filter="filter"
                 @load-more="loadMore"
@@ -323,7 +442,6 @@ const title = computed(() =>
                 :window="window"
                 :timeline="timeline"
                 :availability="availability"
-                :transfer-options="transferOptions"
                 :transfer-reason-required="transferReasonRequired"
                 :composer="composer"
                 :details-open="extraWide ? detailsOpen : sheetDetailsOpen"

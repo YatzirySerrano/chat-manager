@@ -42,6 +42,9 @@ return [
             'critical_age' => (int) env('OPS_QUEUE_CRITICAL_AGE', 900),
         ],
         'overrides' => [
+            // Real-time signals must flow within seconds; a backlog here means
+            // the dedicated realtime workers are stopped or saturated.
+            'realtime' => ['warning_pending' => 200, 'critical_pending' => 2000, 'warning_age' => 30, 'critical_age' => 120],
             'exports' => ['warning_pending' => 50, 'critical_pending' => 500, 'warning_age' => 900, 'critical_age' => 3600],
             'media' => ['warning_age' => 600, 'critical_age' => 3600],
         ],
@@ -164,6 +167,26 @@ return [
         'emails' => array_values(array_filter(array_map('trim', explode(',', (string) env('OPS_ALERT_EMAILS', ''))))),
         'notify_admins' => (bool) env('OPS_ALERT_NOTIFY_ADMINS', false),
         'throttle_minutes' => (int) env('OPS_ALERT_THROTTLE_MINUTES', 60),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Production preflight
+    |--------------------------------------------------------------------------
+    |
+    | `app:preflight` warns when the disk of storage/ has less than
+    | "min_free_disk_mb" free (the deployment builds and backs up on it) and,
+    | when "backup_directory" is set, when the newest *.sql.gz in it is older
+    | than "backup_max_age_hours". Only file dates are read: the directory
+    | must be listable by the user running the preflight (see
+    | docs/recuperacion-y-respaldos.md).
+    |
+    */
+
+    'preflight' => [
+        'min_free_disk_mb' => (int) env('OPS_PREFLIGHT_MIN_FREE_DISK_MB', 2048),
+        'backup_directory' => env('OPS_BACKUP_DIR'),
+        'backup_max_age_hours' => (int) env('OPS_BACKUP_MAX_AGE_HOURS', 26),
     ],
 
     /*

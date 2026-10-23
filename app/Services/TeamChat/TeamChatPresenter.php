@@ -6,6 +6,7 @@ use App\Enums\AgentAvailability;
 use App\Enums\TeamChat\TeamChatSystemEvent;
 use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
+use App\Models\TeamChat\TeamMessageReaction;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
@@ -96,8 +97,12 @@ class TeamChatPresenter
     public function messages(Collection $messages, User $viewer, bool $viewerCanPost): array
     {
         $targetIds = $messages
+            ->toBase()
             ->filter(fn (TeamMessage $message): bool => $message->isSystem())
             ->map(fn (TeamMessage $message): ?int => isset($message->metadata['target_user_id']) ? (int) $message->metadata['target_user_id'] : null)
+            ->merge($messages
+                ->reject(fn (TeamMessage $message): bool => $message->isSystem() || $message->isDeleted())
+                ->flatMap(fn (TeamMessage $message): array => $message->mentionedUserIds()))
             ->filter()
             ->unique()
             ->values()
@@ -110,7 +115,8 @@ class TeamChatPresenter
     }
 
     /**
-     * Requires `author`, `attachments` and `replyTo.author` loaded.
+     * Requires `author`, `attachments`, `reactions.user` and `replyTo.author`
+     * loaded. Mentioned people are looked up in `$targets`.
      *
      * @param  Collection<int, User>  $targets
      * @return array<string, mixed>
@@ -142,12 +148,35 @@ class TeamChatPresenter
                     : Str::limit(Str::squish((string) $message->replyTo->body), 120),
                 'deleted' => $message->replyTo->isDeleted(),
             ],
+            'mentions' => $message->isSystem() || $message->isDeleted() ? [] : array_map(fn (int $userId): array => [
+                'id' => $userId,
+                'name' => $this->userName($targets->get($userId)),
+            ], $message->mentionedUserIds()),
+            'reactions' => $message->isSystem() || $message->isDeleted() ? [] : $this->reactions($message, $viewer),
             'attachments' => $message->isDeleted() ? [] : array_values($message->attachments
                 ->filter(fn (TeamAttachment $attachment): bool => ! $attachment->isPurged())
                 ->map(fn (TeamAttachment $attachment): array => $this->attachment($message, $attachment))
                 ->all()),
             'can' => ['edit' => $isEditable, 'delete' => $isEditable],
         ];
+    }
+
+    /**
+     * Reactions grouped by emoji, in the order they were first used.
+     *
+     * @return list<array{emoji: string, count: int, mine: bool, names: list<string>}>
+     */
+    public function reactions(TeamMessage $message, User $viewer): array
+    {
+        return array_values($message->reactions
+            ->groupBy('emoji')
+            ->map(fn (Collection $reactions, string $emoji): array => [
+                'emoji' => $emoji,
+                'count' => $reactions->count(),
+                'mine' => $reactions->contains(fn (TeamMessageReaction $reaction): bool => $reaction->user_id === $viewer->id),
+                'names' => array_values($reactions->map(fn (TeamMessageReaction $reaction): string => $reaction->user_id === $viewer->id ? 'Tú' : $this->userName($reaction->user))->all()),
+            ])
+            ->all());
     }
 
     /**

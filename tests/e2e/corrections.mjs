@@ -13,91 +13,26 @@
  * PLAYWRIGHT_MODULE, optional E2E_SCREENSHOTS (also receives the exported
  * files so they can be inspected).
  */
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+    BASE,
+    SHOTS,
+    USERS,
+    chromium,
+    exitWithSummary,
+    inbound,
+    login,
+    openPage,
+    recordPageProblems,
+    step,
+} from './lib.mjs';
 
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
-
-const BASE = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8020';
-const SEED = join(
-    dirname(fileURLToPath(import.meta.url)),
-    'increment-b-seed.php',
-);
-const SHOTS = process.env.E2E_SCREENSHOTS ?? null;
-const PASSWORD = 'e2e-password';
-const USERS = { admin: 'e2e-admin@example.test', ana: 'e2e-ana@example.test' };
-
-if (SHOTS) {
-    mkdirSync(SHOTS, { recursive: true });
-}
-
-const results = [];
-const problems = { console: [], pageerror: [], server: [] };
-
-function record(id, input, ok, note = '') {
-    results.push({ id, ok });
-    console.log(`${ok ? 'PASSED' : 'FAILED'} | ${id} | ${input} | ${note}`);
-}
-
-async function step(id, input, scenario) {
-    try {
-        const [ok, note] = await scenario();
-        record(id, input, ok, note);
-    } catch (error) {
-        record(id, input, false, String(error).split('\n')[0]);
-    }
-}
-
-function inbound(waId, name, text) {
-    return JSON.parse(
-        execFileSync('php', [SEED, 'inbound', waId, name, text], {
-            env: process.env,
-            encoding: 'utf8',
-        }),
-    );
-}
-
-async function newPage(browser, options = {}) {
-    const context = await browser.newContext({
-        viewport: { width: 1366, height: 900 },
-        locale: 'es-MX',
-        acceptDownloads: true,
-        ...options,
+const newPage = (browser, options = {}) =>
+    openPage(browser, {
+        context: { acceptDownloads: true, ...options },
+        ignoreConsole: /status of (404|409|422|429)/,
     });
-    const page = await context.newPage();
-    page.setDefaultTimeout(15_000);
-    page.on('console', (message) => {
-        if (
-            message.type() === 'error' &&
-            !/status of (404|409|422|429)/.test(message.text())
-        ) {
-            problems.console.push(`${message.text()} @ ${page.url()}`);
-        }
-    });
-    page.on('pageerror', (error) => problems.pageerror.push(String(error)));
-    page.on('response', (response) => {
-        if (response.status() >= 500) {
-            problems.server.push(`${response.status()} ${response.url()}`);
-        }
-    });
-
-    return page;
-}
-
-async function login(page, email) {
-    await page.goto(`${BASE}/login`);
-    await page.locator('#email').click();
-    await page.keyboard.type(email);
-    await page.locator('#password').click();
-    await page.keyboard.type(PASSWORD);
-    await page.keyboard.press('Enter');
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'));
-    await page.waitForLoadState('networkidle');
-}
 
 async function download(page, trigger, name) {
     const [file] = await Promise.all([
@@ -482,27 +417,8 @@ const run = async () => {
         await browser.close();
     }
 
-    record(
-        'no-page-errors',
-        'console',
-        problems.pageerror.length === 0 && problems.console.length === 0,
-        JSON.stringify(problems.pageerror.concat(problems.console)).slice(
-            0,
-            500,
-        ),
-    );
-    record(
-        'no-server-errors',
-        'network',
-        problems.server.length === 0,
-        problems.server.join(', '),
-    );
-
-    const failed = results.filter((result) => !result.ok);
-    console.log(
-        `\n${results.length - failed.length}/${results.length} scenarios passed`,
-    );
-    process.exit(failed.length === 0 ? 0 : 1);
+    recordPageProblems(500);
+    exitWithSummary();
 };
 
 run().catch((error) => {

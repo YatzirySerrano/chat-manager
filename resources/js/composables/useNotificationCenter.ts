@@ -8,6 +8,7 @@ import {
     playNotificationSound,
     showBrowserNotification,
 } from '@/lib/notifications/alerts';
+import { currentPushSubscription } from '@/lib/notifications/push';
 import {
     index as notificationsIndex,
     read,
@@ -160,6 +161,23 @@ export function useNotificationCenter() {
         }
     }
 
+    /**
+     * With Web Push active in this browser the service worker already shows
+     * the (generic) alert for the same notification, so the page stays
+     * silent to avoid a duplicate. The worker cannot be the one to skip it:
+     * subscriptions use userVisibleOnly, and Chrome shows its own "updated in
+     * the background" notice when a push to a hidden page shows nothing.
+     */
+    async function showUnlessPushed(item: AppNotification): Promise<void> {
+        if (await currentPushSubscription()) {
+            return;
+        }
+
+        showBrowserNotification(item.id, item.title, item.body, () =>
+            open(item),
+        );
+    }
+
     function alert(fresh: AppNotification[]): void {
         let played = false;
 
@@ -184,9 +202,7 @@ export function useNotificationCenter() {
             }
 
             if (preference.browser && document.visibilityState === 'hidden') {
-                showBrowserNotification(item.id, item.title, item.body, () =>
-                    open(item),
-                );
+                void showUnlessPushed(item);
             } else if (item.level === 'urgent') {
                 toast.info(item.title, {
                     description: item.body ?? undefined,

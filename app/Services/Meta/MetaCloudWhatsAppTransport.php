@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\Storage;
  * upload id is kept on the attachment so a retry never uploads it again.
  * The message's client reference travels as biz_opaque_callback_data, so
  * Meta's status webhooks can be matched even if the answer to this call
- * never arrived.
+ * never arrived. During a controlled pilot (WHATSAPP_PILOT_RECIPIENTS) only
+ * the listed recipients are reached.
  */
 class MetaCloudWhatsAppTransport implements WhatsAppTransport
 {
@@ -37,10 +38,18 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
             throw new WhatsAppTransportUnavailable('La conexión no tiene el Phone number ID o el token de acceso guardados.');
         }
 
+        $recipient = $this->recipient($message);
+        $pilot = self::pilotRecipients();
+
+        // Before any upload or send: nothing reaches Meta for other recipients.
+        if ($pilot !== [] && ! in_array($recipient, $pilot, true)) {
+            throw new WhatsAppTransportUnavailable('El destinatario no está en la lista del piloto de WhatsApp (WHATSAPP_PILOT_RECIPIENTS); el mensaje no se envió.');
+        }
+
         $payload = [
             'messaging_product' => 'whatsapp',
             'recipient_type' => 'individual',
-            'to' => $this->recipient($message),
+            'to' => $recipient,
             ...$this->content($message, $connection),
             'biz_opaque_callback_data' => self::callbackData($message),
         ];
@@ -59,6 +68,17 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
         }
 
         return new SendResult($id);
+    }
+
+    /**
+     * Recipients of the optional controlled pilot (config whatsapp.pilot);
+     * empty when every recipient is allowed.
+     *
+     * @return list<string>
+     */
+    public static function pilotRecipients(): array
+    {
+        return array_values(array_filter((array) config('whatsapp.pilot.recipients', []), fn (mixed $number): bool => is_string($number) && $number !== ''));
     }
 
     /**

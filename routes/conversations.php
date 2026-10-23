@@ -22,11 +22,17 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations', [ConversationController::class, 'index'])->name('conversations.index');
     Route::put('conversations/availability', [AgentAvailabilityController::class, 'update'])->name('conversations.availability.update');
+    Route::get('conversations/page', [ConversationController::class, 'page'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.page');
     Route::get('conversations/{conversation}', [ConversationController::class, 'show'])->name('conversations.show');
     Route::post('conversations/{conversation}/accept', [ConversationAssignmentController::class, 'accept'])->name('conversations.accept');
     Route::post('conversations/{conversation}/assign', [ConversationAssignmentController::class, 'assign'])->name('conversations.assign');
     Route::post('conversations/{conversation}/release', [ConversationAssignmentController::class, 'release'])->name('conversations.release');
     Route::post('conversations/{conversation}/transfer', [ConversationTransferController::class, 'store'])->name('conversations.transfer');
+    Route::get('conversations/{conversation}/destinations', [ConversationTransferController::class, 'destinations'])
+        ->middleware('throttle:60,1')
+        ->name('conversations.destinations');
     Route::post('conversations/{conversation}/hold', [ConversationStatusController::class, 'hold'])->name('conversations.hold');
     Route::post('conversations/{conversation}/resume', [ConversationStatusController::class, 'resume'])->name('conversations.resume');
     Route::post('conversations/{conversation}/close', [ConversationStatusController::class, 'close'])->name('conversations.close');

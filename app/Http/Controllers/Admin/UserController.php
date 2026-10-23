@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Conversations\UpdateAgentCapacity;
 use App\Actions\Users\CreateUser;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\RestoreUser;
@@ -97,9 +98,13 @@ class UserController extends Controller
         return back();
     }
 
-    public function update(UpdateUserRequest $request, User $user, UpdateUser $updateUser): RedirectResponse
+    public function update(UpdateUserRequest $request, User $user, UpdateUser $updateUser, UpdateAgentCapacity $updateCapacity): RedirectResponse
     {
         $changed = $updateUser->handle($user, $request->payload(), $request->user());
+
+        if ($request->updatesCapacity()) {
+            $changed = $updateCapacity->handle($user, $request->capacity(), $request->user()) || $changed;
+        }
 
         SaveToast::flash($changed, 'Cambios guardados.');
 

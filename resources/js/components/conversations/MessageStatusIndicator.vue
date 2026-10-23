@@ -3,22 +3,37 @@ import {
     Check,
     CheckCheck,
     CircleAlert,
+    CircleQuestionMark,
     Clock3,
     LoaderCircle,
 } from '@lucide/vue';
 import { computed } from 'vue';
-import { statusLabel } from '@/components/conversations/messageFormat';
+import {
+    DELIVERY_UNKNOWN,
+    statusLabel,
+} from '@/components/conversations/messageFormat';
 import type { MessageStatusValue } from '@/types';
 
 /**
  * Delivery state of an outbound message. Two ticks only appear when Meta
  * reported the delivery, and colored ticks only when it reported the read.
+ * A failure of unknown outcome (Meta may have received it) is a warning,
+ * not a definitive failure.
  */
 const props = defineProps<{
     status: MessageStatusValue;
+    errorCode?: string | null;
 }>();
 
+const unknownDelivery = computed(
+    () => props.status === 'failed' && props.errorCode === DELIVERY_UNKNOWN,
+);
+
 const icon = computed(() => {
+    if (unknownDelivery.value) {
+        return CircleQuestionMark;
+    }
+
     switch (props.status) {
         case 'queued':
             return Clock3;
@@ -35,6 +50,10 @@ const icon = computed(() => {
 });
 
 const tone = computed(() => {
+    if (unknownDelivery.value) {
+        return 'text-warning';
+    }
+
     switch (props.status) {
         case 'read':
             return 'text-sky-600 dark:text-sky-400';
@@ -47,7 +66,7 @@ const tone = computed(() => {
     }
 });
 
-const label = computed(() => statusLabel(props.status));
+const label = computed(() => statusLabel(props.status, props.errorCode));
 </script>
 
 <template>

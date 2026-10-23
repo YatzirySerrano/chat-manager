@@ -104,9 +104,12 @@ $administrator = User::query()->where('email', 'e2e-administrador@example.test')
     ]);
 
 $appSecret = Str::random(40);
+// Without stored credentials the connection cannot send (Connection::
+// sendingBlockReason); the token is a throwaway value for the simulated transport.
 $connection->forceFill([
     'is_active' => true,
     'business_account_id' => FINAL_BUSINESS_ACCOUNT_ID,
+    'access_token' => 'E2E-SIMULATED-'.Str::random(32),
     'app_secret' => $appSecret,
 ])->save();
 

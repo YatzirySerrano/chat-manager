@@ -24,6 +24,10 @@ use Illuminate\Support\Str;
  *   provider signals; account bans or restrictions become a connection error.
  *
  * Changes of another business account than the connection's are ignored.
+ * A body delivered again (a Meta retry, or a replay after the webhook log
+ * was pruned) changes nothing: messages are unique by wamid, statuses and
+ * template updates never go back in time, and connection errors or signals
+ * older than whatsapp.webhooks.max_age_days are not applied again.
  */
 class ProcessWebhookPayload
 {
@@ -65,20 +69,37 @@ class ProcessWebhookPayload
         }
 
         foreach (MetaInboundPayload::changeErrors($payload) as $error) {
+            if ($this->isStale($error['entry_time'])) {
+                $summary['ignored']++;
+
+                continue;
+            }
+
             $code = $error['code'];
             $this->monitor->failure($connection, Str::limit((MetaErrorCatalog::messageFor($code) ?? $error['title'] ?? 'Meta reportó un error en el webhook.').($code !== null ? " (código {$code})" : ''), 500, ''));
         }
 
-        foreach (MetaInboundPayload::changes($payload) as ['field' => $field, 'value' => $value]) {
-            match ($field) {
-                'messages' => null,
-                'message_template_status_update' => $summary['templates'] += $this->templates->status($connection, $value),
-                'message_template_quality_update' => $summary['templates'] += $this->templates->quality($connection, $value),
+        foreach (MetaInboundPayload::changes($payload) as ['field' => $field, 'entry_time' => $entryTime, 'value' => $value]) {
+            match (true) {
+                $field === 'messages' => null,
+                $field === 'message_template_status_update' => $summary['templates'] += $this->templates->status($connection, $value, $entryTime),
+                $field === 'message_template_quality_update' => $summary['templates'] += $this->templates->quality($connection, $value),
+                $this->isStale($entryTime) => $summary['ignored']++,
                 default => $summary['signals'] += $this->signal($connection, $field, $value),
             };
         }
 
         return $summary;
+    }
+
+    /**
+     * Whether the entry is older than any delivery Meta still retries, so it
+     * can only be a replay of something already applied.
+     */
+    private function isStale(?int $entryTime): bool
+    {
+        return $entryTime !== null
+            && $entryTime < now()->subDays(max(1, (int) config('whatsapp.webhooks.max_age_days', 7)))->getTimestamp();
     }
 
     /**

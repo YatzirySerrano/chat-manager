@@ -65,6 +65,8 @@ class HandleInertiaRequests extends Middleware
                 ? app(TeamUnreadCounter::class)->total($user)
                 : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // Native form posts (the export downloads) cannot send the XSRF header.
+            'csrfToken' => fn (): ?string => $request->hasSession() ? $request->session()->token() : null,
         ];
     }
 

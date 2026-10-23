@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Actions\Fortify\ResetUserPassword;
 use App\Http\Responses\FailedPasswordResetLinkResponse;
+use App\Http\Responses\LogoutResponse;
 use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -11,12 +12,14 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
+use Laravel\Fortify\Contracts\LogoutResponse as LogoutResponseContract;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
 
@@ -28,6 +31,7 @@ class FortifyServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(FailedPasswordResetLinkRequestResponse::class, FailedPasswordResetLinkResponse::class);
+        $this->app->singleton(LogoutResponseContract::class, LogoutResponse::class);
     }
 
     /**
@@ -38,6 +42,7 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->throttlePasswordResetRoutes();
     }
 
     /**
@@ -116,10 +121,41 @@ class FortifyServiceProvider extends ServiceProvider
             });
         });
 
+        // Password recovery: besides the broker's one e-mail per account and
+        // minute, each IP gets 5 requests per minute on each of the routes.
+        RateLimiter::for('password-reset', function (Request $request) {
+            return Limit::perMinute(5)->by($request->route()?->getName().'|'.$request->ip());
+        });
+
         RateLimiter::for('passkeys', function (Request $request) {
             return Limit::perMinute(10)->by(
                 ($request->input('credential.id') ?: $request->session()->getId()).'|'.$request->ip(),
             );
+        });
+    }
+
+    /**
+     * Fortify registers POST forgot-password and reset-password without a
+     * throttle, so the "password-reset" limiter is attached once all routes
+     * are loaded. Cached routes already carry it from when they were cached.
+     */
+    private function throttlePasswordResetRoutes(): void
+    {
+        $this->app->booted(function (): void {
+            if ($this->app->routesAreCached()) {
+                return;
+            }
+
+            $routes = Route::getRoutes();
+            $routes->refreshNameLookups();
+
+            foreach (['password.email', 'password.update'] as $name) {
+                $route = $routes->getByName($name);
+
+                if ($route !== null && ! in_array('throttle:password-reset', $route->middleware(), true)) {
+                    $route->middleware('throttle:password-reset');
+                }
+            }
         });
     }
 }

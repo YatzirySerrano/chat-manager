@@ -24,6 +24,8 @@ class TeamChatSearchController extends Controller
         /** @var User $viewer */
         $viewer = $request->user();
 
-        return response()->json(['data' => $search->messages($viewer, (string) $validated['q'])]);
+        $found = $search->messages($viewer, (string) $validated['q']);
+
+        return response()->json(['data' => $found['results'], 'has_more' => $found['has_more']]);
     }
 }

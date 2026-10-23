@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Chat Manager — restore a database backup into a target database.
 #
-# Usage: deploy/scripts/restore-database.sh <backup.sql.gz> <target_database>
+# Usage: chat-manager-restore-database <backup.sql.gz> <target_database>
+#
+# Runs as root: install a reviewed copy owned by root, never run it from the
+# releases (they belong to the deploy user, see deploy/sudoers/chat-manager):
+#   sudo install -o root -g root -m 0755 deploy/scripts/restore-database.sh /usr/local/sbin/chat-manager-restore-database
 #
 # Safe by default: verifies the checksum, refuses a target that already has
 # tables unless ALLOW_NON_EMPTY=1, and asks to type the database name. To
@@ -15,6 +19,7 @@ target="${2:?target database required}"
 DEFAULTS_FILE="${DEFAULTS_FILE:-/etc/chat-manager/restore.cnf}"
 CLIENT="$(command -v mariadb || command -v mysql)"
 
+[[ "$target" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Invalid database name: $target" >&2; exit 1; }
 [ -r "$backup" ] || { echo "Cannot read $backup" >&2; exit 1; }
 [ -r "$DEFAULTS_FILE" ] || { echo "Cannot read $DEFAULTS_FILE" >&2; exit 1; }
 

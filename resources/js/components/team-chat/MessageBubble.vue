@@ -5,6 +5,7 @@ import {
     FileText,
     MoreHorizontal,
     Pencil,
+    SmilePlus,
     Trash2,
 } from '@lucide/vue';
 import { computed, nextTick, ref } from 'vue';
@@ -15,14 +16,21 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { TeamAttachment, TeamMessage } from '@/types/team-chat';
+import type { TeamMessage } from '@/types/team-chat';
 
 /**
  * One message of an internal thread. Text is rendered as plain text (line
- * breaks kept, never HTML). Files open through the authorized route.
+ * breaks kept, never HTML); mentions of current participants are only
+ * emphasized. Files open through the authorized route. Reactions show who
+ * reacted and toggle the viewer's own one.
  */
 const props = defineProps<{
     message: TeamMessage;
@@ -30,10 +38,13 @@ const props = defineProps<{
     highlighted: boolean;
     seen: boolean;
     canReply: boolean;
+    /** Allowed reactions; empty when the viewer cannot react. */
+    reactions: string[];
     saving: boolean;
 }>();
 
 const emit = defineEmits<{
+    react: [message: TeamMessage, emoji: string];
     reply: [message: TeamMessage];
     edit: [message: TeamMessage, body: string];
     delete: [message: TeamMessage];
@@ -41,6 +52,7 @@ const emit = defineEmits<{
 }>();
 
 const editing = ref(false);
+const reactionsOpen = ref(false);
 const draft = ref('');
 const editor = ref<InstanceType<typeof Textarea> | null>(null);
 
@@ -53,6 +65,48 @@ const hasActions = computed(
         !props.message.deleted &&
         (props.canReply || props.message.can.edit || props.message.can.delete),
 );
+const canReact = computed(
+    () => !props.message.deleted && props.reactions.length > 0,
+);
+
+/** The text split around "@Name" of the people mentioned. */
+const segments = computed(() => {
+    const body = props.message.body ?? '';
+    const tokens = props.message.mentions
+        .map((mention) => `@${mention.name}`)
+        .sort((first, second) => second.length - first.length);
+    const parts: { text: string; mention: boolean }[] = [];
+    let rest = body;
+
+    while (tokens.length > 0 && rest !== '') {
+        const next = tokens
+            .map((token) => ({ token, at: rest.indexOf(token) }))
+            .filter((found) => found.at >= 0)
+            .sort((first, second) => first.at - second.at)[0];
+
+        if (!next) {
+            break;
+        }
+
+        if (next.at > 0) {
+            parts.push({ text: rest.slice(0, next.at), mention: false });
+        }
+
+        parts.push({ text: next.token, mention: true });
+        rest = rest.slice(next.at + next.token.length);
+    }
+
+    if (rest !== '') {
+        parts.push({ text: rest, mention: false });
+    }
+
+    return parts;
+});
+
+function react(emoji: string): void {
+    reactionsOpen.value = false;
+    emit('react', props.message, emoji);
+}
 const images = computed(() =>
     props.message.attachments.filter(
         (attachment) => attachment.kind === 'image' && attachment.preview_url,
@@ -64,14 +118,6 @@ const files = computed(() =>
             !(attachment.kind === 'image' && attachment.preview_url),
     ),
 );
-
-function size(attachment: TeamAttachment): string {
-    const kilobytes = attachment.size_bytes / 1024;
-
-    return kilobytes >= 1024
-        ? `${(kilobytes / 1024).toFixed(1)} MB`
-        : `${Math.max(1, Math.round(kilobytes))} KB`;
-}
 
 async function startEditing(): Promise<void> {
     draft.value = props.message.body ?? '';
@@ -209,7 +255,23 @@ function onEditKeydown(event: KeyboardEvent): void {
                         v-else-if="message.body"
                         class="break-words whitespace-pre-wrap"
                     >
-                        {{ message.body }}
+                        <template
+                            v-for="(segment, index) in segments"
+                            :key="index"
+                        >
+                            <span
+                                v-if="segment.mention"
+                                :class="
+                                    cn(
+                                        'rounded px-0.5 font-semibold',
+                                        message.is_mine
+                                            ? 'bg-primary-foreground/20'
+                                            : 'bg-primary-soft text-primary-soft-foreground',
+                                    )
+                                "
+                                >{{ segment.text }}</span
+                            ><template v-else>{{ segment.text }}</template>
+                        </template>
                     </p>
 
                     <div
@@ -259,7 +321,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                                     file.name
                                 }}</span>
                                 <span class="shrink-0 opacity-75">{{
-                                    size(file)
+                                    formatFileSize(file.size_bytes)
                                 }}</span>
                                 <Download
                                     class="size-3.5 shrink-0"
@@ -269,6 +331,45 @@ function onEditKeydown(event: KeyboardEvent): void {
                         </li>
                     </ul>
                 </template>
+
+                <ul
+                    v-if="message.reactions.length > 0"
+                    class="mt-1.5 flex flex-wrap gap-1"
+                    aria-label="Reacciones"
+                >
+                    <li
+                        v-for="reaction in message.reactions"
+                        :key="reaction.emoji"
+                    >
+                        <button
+                            type="button"
+                            :class="
+                                cn(
+                                    'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs text-foreground',
+                                    reaction.mine
+                                        ? 'border-primary bg-primary-soft'
+                                        : 'bg-background',
+                                    canReact &&
+                                        reactions.includes(reaction.emoji)
+                                        ? 'hover:bg-accent'
+                                        : 'cursor-default',
+                                )
+                            "
+                            :title="reaction.names.join(', ')"
+                            :aria-label="`${reaction.emoji} ${reaction.count}: ${reaction.names.join(', ')}`"
+                            :aria-pressed="reaction.mine"
+                            :disabled="
+                                !canReact || !reactions.includes(reaction.emoji)
+                            "
+                            @click="react(reaction.emoji)"
+                        >
+                            <span aria-hidden="true">{{ reaction.emoji }}</span>
+                            <span class="font-medium">{{
+                                reaction.count
+                            }}</span>
+                        </button>
+                    </li>
+                </ul>
 
                 <p
                     :class="
@@ -291,6 +392,40 @@ function onEditKeydown(event: KeyboardEvent): void {
                 </p>
             </div>
 
+            <Popover v-if="canReact && !editing" v-model:open="reactionsOpen">
+                <PopoverTrigger as-child>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="Reaccionar"
+                        title="Reaccionar"
+                    >
+                        <SmilePlus class="size-4" />
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    class="w-auto p-1"
+                    :align="message.is_mine ? 'end' : 'start'"
+                >
+                    <div
+                        class="flex gap-0.5"
+                        role="group"
+                        aria-label="Reacciones"
+                    >
+                        <button
+                            v-for="emoji in reactions"
+                            :key="emoji"
+                            type="button"
+                            class="rounded-md p-1 text-lg hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                            :aria-label="`Reaccionar con ${emoji}`"
+                            @click="react(emoji)"
+                        >
+                            {{ emoji }}
+                        </button>
+                    </div>
+                </PopoverContent>
+            </Popover>
             <DropdownMenu v-if="hasActions && !editing">
                 <DropdownMenuTrigger as-child>
                     <Button

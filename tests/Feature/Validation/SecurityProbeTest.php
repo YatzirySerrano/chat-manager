@@ -67,6 +67,7 @@ test('the contact search never matches hidden contacts by phone digits, name or 
     $supervisor = User::factory()->supervisor()->inDepartments($own)->create();
     $hidden = Contact::factory()->create(['name' => 'Oculta Zeta', 'phone_e164' => '+525598761234', 'email' => 'oculta@example.com']);
     Conversation::factory()->inDepartment($other)->create(['contact_id' => $hidden->id]);
+    commitForFullTextSearch();
 
     $this->actingAs($supervisor)
         ->get(route('contacts.index', ['search' => $search, 'record' => 'all']))
@@ -289,7 +290,7 @@ test('leaving a department removes access to its contacts and quick replies in o
 
     $this->actingAs($user->refresh())->get(route('contacts.show', $contact))->assertNotFound();
     $this->actingAs($user)->put(route('contacts.update', $contact), ['name' => 'X', 'phone' => '5512345678'])->assertNotFound();
-    $this->actingAs($user)->delete(route('quick-replies.destroy', $reply))->assertForbidden();
+    $this->actingAs($user)->delete(route('quick-replies.destroy', $reply))->assertNotFound();
 
     expect($reply->refresh()->is_active)->toBeTrue();
 });
@@ -340,6 +341,7 @@ test('state-changing routes of the new modules reject requests without a CSRF to
     'connection create' => [fn ($t) => $t->post(route('connections.store'), ['name' => 'x', 'department_ids' => []])],
     'connection verify' => [fn ($t) => $t->post(route('connections.verify', Connection::factory()->create()))],
     'department hours' => [fn ($t) => $t->put(route('departments.hours.update', Department::factory()->create()), ['uses_custom_hours' => false])],
+    'export generate' => [fn ($t) => $t->post(route('exports.generate', ['tags', 'xlsx']))],
 ]);
 
 /*

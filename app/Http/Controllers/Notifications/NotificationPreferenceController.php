@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Notifications;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Notifications\UpdateNotificationPreferencesRequest;
+use App\Models\PushSubscription;
 use App\Models\User;
 use App\Notifications\NotificationKind;
 use App\Notifications\NotificationPreferences;
+use App\Notifications\Push\Vapid;
 use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +21,7 @@ class NotificationPreferenceController extends Controller
      * Preferences of the kinds that can concern the user with their current
      * permissions.
      */
-    public function edit(Request $request, NotificationPreferences $preferences): Response
+    public function edit(Request $request, NotificationPreferences $preferences, Vapid $vapid): Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -34,6 +36,20 @@ class NotificationPreferenceController extends Controller
                 'level_label' => $kind->level()->label(),
                 'preferences' => $current[$kind->value],
             ], array_filter(NotificationKind::cases(), fn (NotificationKind $kind): bool => $kind->concerns($user)))),
+            'push' => [
+                'public_key' => $vapid->isConfigured() ? $vapid->publicKey() : null,
+                'subscriptions' => PushSubscription::query()
+                    ->where('user_id', $user->id)
+                    ->latest('updated_at')
+                    ->get()
+                    ->map(fn (PushSubscription $subscription): array => [
+                        'id' => $subscription->id,
+                        'endpoint_hash' => $subscription->endpoint_hash,
+                        'user_agent' => $subscription->user_agent,
+                        'created_at' => $subscription->created_at?->toIso8601String(),
+                    ])
+                    ->all(),
+            ],
         ]);
     }
 

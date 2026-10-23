@@ -5,7 +5,6 @@ namespace App\Actions\Templates;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
-use App\Events\Conversations\ConversationChanged;
 use App\Events\Messaging\MessageRecorded;
 use App\Exceptions\ConversationConflict;
 use App\Jobs\DeliverOutboundMessage;
@@ -50,8 +49,13 @@ class QueueTemplateMessage
                 return $existing;
             }
 
-            if (! ($conversation->channelConnection?->isOperational() ?? false)) {
-                throw new ConversationConflict('La conexión de WhatsApp de esta conversación está desactivada o eliminada; no se puede enviar la plantilla.');
+            // Same rule as a free-form reply (QueueOutboundMessage); checked again by the delivery job.
+            $connectionBlock = $conversation->channelConnection === null
+                ? 'La conversación no tiene una conexión de WhatsApp disponible para enviar mensajes.'
+                : $conversation->channelConnection->sendingBlockReason();
+
+            if ($connectionBlock !== null) {
+                throw new ConversationConflict($connectionBlock);
             }
 
             $template = MessageTemplate::query()->whereKey($template->id)->sharedLock()->firstOrFail();
@@ -107,7 +111,6 @@ class QueueTemplateMessage
 
             DeliverOutboundMessage::dispatch($message->id)->afterCommit();
             MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);
-            ConversationChanged::dispatch($conversation->id, 'message', $actor->id);
 
             return $message;
         });

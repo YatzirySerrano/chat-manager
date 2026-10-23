@@ -402,6 +402,7 @@ defineExpose({ scrollToBottom });
                         :contact-name="conversation.contact.name"
                         :can-retry="
                             conversation.can.reply &&
+                            conversation.connection.can_send &&
                             row.item.message.direction === 'outbound' &&
                             row.item.message.status === 'failed'
                         "

@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import { Archive, BellOff } from '@lucide/vue';
 import { computed } from 'vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
+import { useTeamPresence } from '@/composables/useTeamPresence';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { show } from '@/routes/team-chat/threads';
@@ -28,6 +29,14 @@ const preview = computed(() => {
         : message.text;
 });
 
+const { isOnline } = useTeamPresence();
+const partnerOnline = computed(
+    () =>
+        props.thread.partner !== null &&
+        !props.thread.partner.deleted &&
+        isOnline(props.thread.partner.id),
+);
+
 const unreadLabel = computed(() =>
     props.thread.unread > 99 ? '99+' : String(props.thread.unread),
 );
@@ -51,6 +60,7 @@ const unreadLabel = computed(() =>
             :group="thread.type === 'group'"
             :deleted="thread.partner?.deleted ?? false"
             :availability="thread.partner?.availability ?? null"
+            :online="partnerOnline"
         />
         <span class="min-w-0 flex-1">
             <span class="flex items-center gap-2">
@@ -63,6 +73,7 @@ const unreadLabel = computed(() =>
                     "
                 >
                     {{ thread.title }}
+                    <span v-if="partnerOnline" class="sr-only">(en línea)</span>
                 </span>
                 <time
                     v-if="thread.last_activity_at"

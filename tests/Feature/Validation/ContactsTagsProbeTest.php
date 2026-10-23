@@ -143,6 +143,7 @@ test('searching the full number in WhatsApp or 00 format finds the contact', fun
 test('deleted contacts are hidden from the default search and reappear after restore', function () {
     $admin = User::factory()->superAdministrator()->create();
     $contact = Contact::factory()->archived()->create(['name' => 'Zoe Archivada']);
+    commitForFullTextSearch();
 
     $search = fn () => $this->actingAs($admin)->get(route('contacts.index', ['search' => 'Zoe']))->inertiaProps('contacts.data');
 

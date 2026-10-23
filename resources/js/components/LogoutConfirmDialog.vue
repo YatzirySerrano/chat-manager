@@ -27,6 +27,9 @@ function confirmLogout(): void {
 
     processing.value = true;
     router.flushAll();
+    // The server also asks for it, but the history of this session must not
+    // survive even if the sign out request fails halfway.
+    router.clearHistory();
     router.visit(logout(), {
         onFinish: () => {
             processing.value = false;

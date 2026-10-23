@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router, usePage } from '@inertiajs/vue3';
+import { router, useHttp, usePage } from '@inertiajs/vue3';
 import {
     ArrowRightLeft,
     EllipsisVertical,
@@ -28,6 +28,7 @@ import {
     accept,
     assign,
     close,
+    destinations,
     hold,
     release,
     reopen,
@@ -49,7 +50,6 @@ import type {
 const props = defineProps<{
     conversation: ConversationSummary;
     availability: ViewerAvailability;
-    transferOptions?: TransferOptions;
     transferReasonRequired: boolean;
 }>();
 
@@ -160,19 +160,46 @@ const routeDialogOpen = computed({
     },
 });
 const loadingOptions = ref(false);
+const transferOptions = ref<TransferOptions | undefined>(undefined);
 
-function loadRouteOptions(): void {
-    router.reload({
-        only: ['transferOptions'],
-        onStart: () => (loadingOptions.value = true),
-        onFinish: () => (loadingOptions.value = false),
-    });
+/**
+ * Destinations come from a JSON endpoint authorized by the assign/transfer
+ * policy of this conversation; only the latest answer is kept.
+ */
+const destinationsRequest = useHttp<Record<string, never>, TransferOptions>({});
+let latestDestinations = 0;
+
+async function loadRouteOptions(): Promise<void> {
+    const request = ++latestDestinations;
+    loadingOptions.value = true;
+    destinationsRequest.cancel();
+
+    try {
+        const result = await destinationsRequest.get(
+            destinations.url(id.value),
+        );
+
+        if (request === latestDestinations) {
+            transferOptions.value = result;
+        }
+    } catch {
+        if (request === latestDestinations && routeDialog.value !== null) {
+            toast.error(
+                'No se pudieron cargar los destinos. Cierra el diálogo e inténtalo de nuevo.',
+            );
+        }
+    } finally {
+        if (request === latestDestinations) {
+            loadingOptions.value = false;
+        }
+    }
 }
 
 function openRouteDialog(mode: 'assign' | 'transfer'): void {
     errors.value = {};
+    transferOptions.value = undefined;
     routeDialog.value = mode;
-    loadRouteOptions();
+    void loadRouteOptions();
 }
 
 /*
@@ -216,7 +243,7 @@ watch(
 
                 availabilityTimer = setTimeout(() => {
                     availabilityTimer = null;
-                    loadRouteOptions();
+                    void loadRouteOptions();
                 }, 300);
             }),
         );
@@ -230,6 +257,7 @@ function submitRoute(payload: {
     user_id: number | null;
     reason: string;
     confirm_unavailable: boolean;
+    confirm_over_capacity: boolean;
 }): void {
     if (routeDialog.value === 'assign') {
         operate(
@@ -237,6 +265,7 @@ function submitRoute(payload: {
             {
                 user_id: payload.user_id,
                 confirm_unavailable: payload.confirm_unavailable,
+                confirm_over_capacity: payload.confirm_over_capacity,
             },
             () => (routeDialog.value = null),
         );

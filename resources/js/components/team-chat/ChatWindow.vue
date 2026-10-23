@@ -17,6 +17,7 @@ import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useChannel } from '@/composables/useChannel';
+import { useTeamPresence } from '@/composables/useTeamPresence';
 import { onReconnect, realtimeState } from '@/lib/realtime';
 import { formatDate } from '@/lib/format';
 import { index as teamChatIndex } from '@/routes/team-chat';
@@ -26,8 +27,13 @@ import {
     index as messagesIndex,
     update as updateMessage,
 } from '@/routes/team-chat/threads/messages';
+import {
+    destroy as removeReaction,
+    store as addReaction,
+} from '@/routes/team-chat/threads/messages/reactions';
 import type {
     TeamChatLimits,
+    TeamMention,
     TeamMessage,
     TeamMessagePage,
     TeamThreadDetail,
@@ -52,6 +58,7 @@ const emit = defineEmits<{
 }>();
 
 const FALLBACK_INTERVAL_MS = 15_000;
+const TYPING_TTL_MS = 5_000;
 
 const messages = ref<TeamMessage[]>([...props.page.data]);
 const hasMoreBefore = ref(props.page.has_more_before);
@@ -79,6 +86,11 @@ const readHttp = useHttp<
 >({ message_id: 0 });
 const editHttp = useHttp<{ body: string }, { data: TeamMessage }>({ body: '' });
 const deleteHttp = useHttp<Record<string, never>, { data: TeamMessage }>({});
+const reactionHttp = useHttp<{ emoji: string }, { data: TeamMessage }>({
+    emoji: '',
+});
+const typingUntil = ref<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+const { isOnline } = useTeamPresence();
 
 const channelName = computed(() => `team-chat.threads.${props.thread.id}`);
 const partnerReadUpTo = computed(() => {
@@ -97,6 +109,12 @@ const lastOwnMessageId = computed(
             .reverse()
             .find((message) => message.is_mine && !message.deleted)?.id ?? null,
 );
+const partnerOnline = computed(
+    () =>
+        props.thread.partner !== null &&
+        !props.thread.partner.deleted &&
+        isOnline(props.thread.partner.id),
+);
 const subtitle = computed(() => {
     if (props.thread.type === 'group') {
         const count = props.thread.participants.length;
@@ -110,10 +128,78 @@ const subtitle = computed(() => {
         return 'Cuenta eliminada';
     }
 
-    return partner.availability === 'available'
-        ? 'Disponible'
-        : 'No disponible';
+    const availability =
+        partner.availability === 'available' ? 'Disponible' : 'No disponible';
+
+    return partnerOnline.value ? `En línea · ${availability}` : availability;
 });
+const mentionable = computed<TeamMention[]>(() =>
+    props.thread.type === 'group'
+        ? props.thread.participants
+              .filter(
+                  (participant) => !participant.is_me && !participant.deleted,
+              )
+              .map(({ id, name }) => ({ id, name }))
+        : [],
+);
+const typingLabel = computed(() => {
+    const names = props.thread.participants
+        .filter((participant) => typingUntil.value.has(participant.id))
+        .map((participant) => participant.name);
+
+    if (names.length === 0) {
+        return null;
+    }
+
+    if (props.thread.type === 'direct') {
+        return 'Escribiendo…';
+    }
+
+    if (names.length === 1) {
+        return `${names[0]} está escribiendo…`;
+    }
+
+    return names.length === 2
+        ? `${names[0]} y ${names[1]} están escribiendo…`
+        : 'Varias personas están escribiendo…';
+});
+
+function stopTyping(userId: number): void {
+    const timer = typingUntil.value.get(userId);
+
+    if (timer === undefined) {
+        return;
+    }
+
+    clearTimeout(timer);
+    const next = new Map(typingUntil.value);
+    next.delete(userId);
+    typingUntil.value = next;
+}
+
+/** Someone else is writing: shown for a few seconds unless renewed. */
+function startTyping(userId: number): void {
+    const participant = props.thread.participants.find(
+        (candidate) => candidate.id === userId,
+    );
+
+    if (!participant || participant.is_me) {
+        return;
+    }
+
+    const previous = typingUntil.value.get(userId);
+
+    if (previous !== undefined) {
+        clearTimeout(previous);
+    }
+
+    const next = new Map(typingUntil.value);
+    next.set(
+        userId,
+        setTimeout(() => stopTyping(userId), TYPING_TTL_MS),
+    );
+    typingUntil.value = next;
+}
 
 function dayOf(message: TeamMessage): string {
     return formatDate(message.created_at);
@@ -254,6 +340,11 @@ async function loadNewer(): Promise<void> {
             (message) =>
                 !messages.value.some((known) => known.id === message.id),
         );
+        fresh.forEach((message) => {
+            if (message.author?.id) {
+                stopTyping(message.author.id);
+            }
+        });
         merge(page.data);
         hasMoreAfter.value = page.has_more_after;
 
@@ -387,6 +478,31 @@ async function confirmDelete(): Promise<void> {
     }
 }
 
+async function toggleReaction(
+    message: TeamMessage,
+    emoji: string,
+): Promise<void> {
+    actionError.value = null;
+    reactionHttp.emoji = emoji;
+    const mine = message.reactions.some(
+        (reaction) => reaction.emoji === emoji && reaction.mine,
+    );
+    const target = { thread: props.thread.id, message: message.id };
+
+    try {
+        const response = mine
+            ? await reactionHttp.delete(removeReaction.url(target), {
+                  onHttpException: () => false,
+              })
+            : await reactionHttp.put(addReaction.url(target), {
+                  onHttpException: () => false,
+              });
+        merge([response.data]);
+    } catch {
+        actionError.value = 'No se pudo guardar la reacción.';
+    }
+}
+
 function reply(message: TeamMessage): void {
     replyTo.value = message;
     composer.value?.focus();
@@ -413,6 +529,11 @@ useChannel(channelName, {
         } else {
             reloadThread();
             void loadNewer();
+        }
+    },
+    typing: (payload) => {
+        if (typeof payload.user_id === 'number') {
+            startTyping(payload.user_id);
         }
     },
     read: (payload) => {
@@ -463,7 +584,10 @@ onMounted(async () => {
     }
 });
 
-onBeforeUnmount(stopReconnect);
+onBeforeUnmount(() => {
+    stopReconnect();
+    typingUntil.value.forEach((timer) => clearTimeout(timer));
+});
 </script>
 
 <template>
@@ -490,6 +614,7 @@ onBeforeUnmount(stopReconnect);
                 :group="thread.type === 'group'"
                 :deleted="thread.partner?.deleted ?? false"
                 :availability="thread.partner?.availability ?? null"
+                :online="partnerOnline"
             />
             <div class="min-w-0 flex-1">
                 <h2
@@ -600,7 +725,9 @@ onBeforeUnmount(stopReconnect);
                             partnerReadUpTo >= message.id
                         "
                         :can-reply="thread.can.post"
+                        :reactions="thread.can.post ? limits.reactions : []"
                         :saving="savingId === message.id"
+                        @react="toggleReaction"
                         @reply="reply"
                         @edit="saveEdit"
                         @delete="toDelete = $event"
@@ -650,11 +777,19 @@ onBeforeUnmount(stopReconnect);
             {{ actionError }}
         </p>
 
+        <p
+            v-if="typingLabel && thread.can.post"
+            class="shrink-0 truncate px-4 pt-1 text-xs text-muted-foreground italic"
+            aria-live="polite"
+        >
+            {{ typingLabel }}
+        </p>
         <MessageComposer
             v-if="thread.can.post"
             ref="composer"
             :thread-id="thread.id"
             :limits="limits"
+            :mentionable="mentionable"
             :reply-to="replyTo"
             @sent="onSent"
             @cancel-reply="replyTo = null"

@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
@@ -60,6 +61,10 @@ class UpdateConnection
                 $connection->save();
             } catch (UniqueConstraintViolationException) {
                 throw ValidationException::withMessages(['phone_number_id' => 'Este Phone number ID ya está registrado en otra conexión.']);
+            }
+
+            if ($credentialsChanged) {
+                ConnectionStatusChanged::dispatch($connection->id, 'credentials');
             }
 
             $departmentChanges = $connection->departments()->sync($data['department_ids']);

@@ -46,6 +46,8 @@ class StoreTeamMessageRequest extends FormRequest
             'attachments' => ['nullable', 'array', 'max:'.(int) config('team-chat.attachments.max_files')],
             'attachments.*' => ['required', 'file', 'max:'.(int) config('team-chat.attachments.max_kilobytes')],
             'reply_to_message_id' => ['nullable', 'integer'],
+            'mentions' => ['nullable', 'array', 'max:'.(int) config('team-chat.max_mentions')],
+            'mentions.*' => ['integer', 'distinct'],
         ];
     }
 
@@ -64,14 +66,18 @@ class StoreTeamMessageRequest extends FormRequest
                     }
                 }
 
+                /** @var TeamThread $thread */
+                $thread = $this->route('thread');
+
+                if (filled($this->input('mentions')) && ! $thread->isGroup()) {
+                    $validator->errors()->add('mentions', 'Solo puedes mencionar a personas en los grupos.');
+                }
+
                 $replyTo = $this->input('reply_to_message_id');
 
                 if ($replyTo === null || $validator->errors()->has('reply_to_message_id')) {
                     return;
                 }
-
-                /** @var TeamThread $thread */
-                $thread = $this->route('thread');
 
                 $isValidReply = TeamMessage::query()
                     ->whereKey((int) $replyTo)
@@ -98,6 +104,7 @@ class StoreTeamMessageRequest extends FormRequest
             'attachments.*.max' => 'Cada archivo debe pesar como máximo '.$this->maxMegabytes().' MB.',
             'attachments.*.file' => 'No se pudo recibir el archivo. Inténtalo de nuevo.',
             'attachments.*.uploaded' => 'No se pudo subir el archivo; puede exceder el tamaño permitido.',
+            'mentions.max' => 'Puedes mencionar como máximo a :max personas por mensaje.',
         ];
     }
 
@@ -121,6 +128,19 @@ class StoreTeamMessageRequest extends FormRequest
         $replyTo = $this->validated('reply_to_message_id');
 
         return $replyTo === null ? null : (int) $replyTo;
+    }
+
+    /**
+     * Ids chosen in the composer's @ suggestions; PostTeamMessage keeps only
+     * the current participants of the group.
+     *
+     * @return list<int>
+     */
+    public function mentions(): array
+    {
+        $mentions = $this->validated('mentions');
+
+        return is_array($mentions) ? array_values(array_map('intval', $mentions)) : [];
     }
 
     /**

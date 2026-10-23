@@ -49,6 +49,8 @@ export function useConversationTimeline(
     const notes = shallowRef(new Map<number, ConversationNote>());
     const events = shallowRef(new Map<number, ConversationEvent>());
     const hasMore = ref(false);
+    /** Upper bound of the notes and events of the next older page, when the last one was shortened. */
+    const olderUntil = ref<string | null>(null);
     const loadingOlder = ref(false);
     const failed = ref(false);
 
@@ -71,6 +73,7 @@ export function useConversationTimeline(
         notes.value = new Map();
         events.value = new Map();
         hasMore.value = false;
+        olderUntil.value = null;
         failed.value = false;
     }
 
@@ -107,6 +110,7 @@ export function useConversationTimeline(
 
         if (older) {
             hasMore.value = page.has_more;
+            olderUntil.value = page.until ?? null;
         }
     }
 
@@ -116,8 +120,7 @@ export function useConversationTimeline(
             reset();
 
             if (initial.value) {
-                ingest(initial.value);
-                hasMore.value = initial.value.has_more;
+                ingest(initial.value, true);
             }
         },
         { immediate: true },
@@ -126,11 +129,7 @@ export function useConversationTimeline(
     // Later reloads of the newest page (after an operation) merge in place.
     watch(initial, (page, previous) => {
         if (page && previous !== undefined && page !== previous) {
-            ingest(page);
-
-            if (messages.value.size <= page.messages.length) {
-                hasMore.value = page.has_more;
-            }
+            ingest(page, messages.value.size <= page.messages.length);
         }
     });
 
@@ -198,8 +197,9 @@ export function useConversationTimeline(
         }
 
         const before = oldestMessageId.value;
+        const until = olderUntil.value;
 
-        if (before === null) {
+        if (before === null && until === null) {
             return 0;
         }
 
@@ -208,7 +208,12 @@ export function useConversationTimeline(
 
         try {
             const page = await olderHttp.get(
-                timelineRoute.url(id, { query: { before } }),
+                timelineRoute.url(id, {
+                    query: {
+                        ...(before !== null ? { before } : {}),
+                        ...(until !== null ? { until } : {}),
+                    },
+                }),
             );
 
             if (conversationId.value === id) {
@@ -257,6 +262,11 @@ export function useConversationTimeline(
 
             if (conversationId.value === id) {
                 ingest(page);
+
+                // A stream reached the server's limit: ask again from the newest.
+                if (page.has_more) {
+                    pendingNewer = true;
+                }
             }
 
             return page;

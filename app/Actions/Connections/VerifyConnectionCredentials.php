@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -64,6 +65,7 @@ class VerifyConnectionCredentials
                 'code_verification_status' => $this->limit($profile['code_verification_status'], 40),
                 'platform_type' => $this->limit($profile['platform_type'], 40),
             ])->save();
+            ConnectionStatusChanged::dispatch($connection->id, 'credentials');
 
             $this->audit->record(AuditAction::ConnectionCredentialsVerified, $connection, [
                 'verification_result' => CredentialVerification::VERIFIED,
@@ -89,6 +91,7 @@ class VerifyConnectionCredentials
                 'credentials_verified_at' => null,
                 'credentials_error' => Str::limit($exception->getMessage(), 500, ''),
             ])->save();
+            ConnectionStatusChanged::dispatch($connection->id, 'credentials');
 
             $this->audit->record(AuditAction::ConnectionCredentialsFailed, $connection, [
                 'verification_result' => CredentialVerification::REJECTED,

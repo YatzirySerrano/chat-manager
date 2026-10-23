@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { History } from '@lucide/vue';
 import { computed } from 'vue';
-import { formatTime } from '@/components/conversations/messageFormat';
+import {
+    DELIVERY_UNKNOWN,
+    deliveryUnknownLabel,
+    formatTime,
+} from '@/components/conversations/messageFormat';
 import { formatDateTime } from '@/lib/format';
 import type { ConversationEvent } from '@/types';
 
@@ -18,6 +22,13 @@ const triggers: Record<string, string> = {
     inactivity: 'por inactividad',
     access_change: 'por un cambio en el acceso del agente',
 };
+
+/* An unconfirmed delivery is not a "message not sent": it may have arrived. */
+const label = computed(() =>
+    props.event.reason === DELIVERY_UNKNOWN
+        ? deliveryUnknownLabel
+        : props.event.label,
+);
 
 const detail = computed(() => {
     const parts: string[] = [];
@@ -53,9 +64,7 @@ const detail = computed(() => {
             class="inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border bg-muted/60 px-3 py-1 text-center text-[11px] text-muted-foreground"
         >
             <History class="size-3 shrink-0" aria-hidden="true" />
-            <span class="font-medium text-foreground/80">{{
-                event.label
-            }}</span>
+            <span class="font-medium text-foreground/80">{{ label }}</span>
             <span v-if="detail">· {{ detail }}</span>
             <span v-if="event.note" class="break-words"
                 >· «{{ event.note }}»</span

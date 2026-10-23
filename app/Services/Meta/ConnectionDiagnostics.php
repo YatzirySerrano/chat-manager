@@ -2,26 +2,40 @@
 
 namespace App\Services\Meta;
 
+use App\Actions\Messaging\ReconcileStuckDeliveries;
 use App\Enums\MessageStatus;
 use App\Enums\WebhookEventStatus;
 use App\Models\Connection;
+use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
+use App\Models\User;
 use App\Models\WebhookEvent;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 /**
  * Activation checklist of a WhatsApp connection for administrators, built
  * only from recorded evidence. It never includes secrets: only whether each
- * one is saved.
+ * one is saved. It also counts the recent replies whose delivery could not
+ * be confirmed ("delivery_unknown") and lists the affected conversations the
+ * viewer can see, so someone can check them with the customer.
  */
 class ConnectionDiagnostics
 {
     public function __construct(private WhatsAppTransport $transport) {}
 
+    /** Days of failed deliveries of unknown outcome shown to administrators. */
+    public const UNKNOWN_DELIVERY_DAYS = 7;
+
+    /** Affected conversations listed at most. */
+    private const UNKNOWN_DELIVERY_CONVERSATIONS = 10;
+
     /**
+     * @param  User|null  $viewer  Lists the conversations with unconfirmed deliveries this user can see.
      * @return array<string, mixed>
      */
-    public function for(Connection $connection): array
+    public function for(Connection $connection, ?User $viewer = null): array
     {
         $since = now()->subDay();
         $events = WebhookEvent::query()
@@ -39,6 +53,7 @@ class ConnectionDiagnostics
             ->where('status', MessageStatus::Sending)
             ->whereHas('conversation', fn ($query) => $query->where('connection_id', $connection->id))
             ->count();
+        $unknown = $this->unknownDeliveries($connection);
 
         $url = $connection->webhook_key === null ? null : route('webhooks.whatsapp.verify', ['webhookKey' => $connection->webhook_key]);
 
@@ -50,6 +65,8 @@ class ConnectionDiagnostics
                     'simulated' => 'Simulación local: ningún mensaje sale a WhatsApp',
                     default => 'Envío deshabilitado en esta instalación (WHATSAPP_TRANSPORT)',
                 },
+                // The pilot list only restricts the real Meta transport.
+                'pilot_recipients' => $this->transport->name() === 'meta' ? count(MetaCloudWhatsAppTransport::pilotRecipients()) : 0,
             ],
             'webhook' => [
                 'url' => $url,
@@ -84,6 +101,9 @@ class ConnectionDiagnostics
             ],
             'outbound' => [
                 'unconfirmed' => $stuck,
+                'unknown' => (clone $unknown)->count(),
+                'unknown_days' => self::UNKNOWN_DELIVERY_DAYS,
+                'unknown_conversations' => $viewer === null ? [] : $this->unknownConversations($unknown, $viewer),
             ],
             'signals' => collect($connection->provider_signals ?? [])
                 ->map(fn (mixed $signal, string $field): array => [
@@ -94,5 +114,50 @@ class ConnectionDiagnostics
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * Replies of this connection marked "delivery_unknown" (Meta may or may
+     * not have received them) in the recent period.
+     *
+     * @return Builder<Message>
+     */
+    private function unknownDeliveries(Connection $connection): Builder
+    {
+        return Message::query()
+            ->where('status', MessageStatus::Failed)
+            ->where('error_code', ReconcileStuckDeliveries::CODE)
+            ->where('failed_at', '>=', now()->subDays(self::UNKNOWN_DELIVERY_DAYS))
+            ->whereHas('conversation', fn (Builder $query) => $query->where('connection_id', $connection->id));
+    }
+
+    /**
+     * The affected conversations the viewer can see, most recent first.
+     *
+     * @param  Builder<Message>  $unknown
+     * @return list<array{id: int, contact: string|null, messages: int, last_failed_at: string|null}>
+     */
+    private function unknownConversations(Builder $unknown, User $viewer): array
+    {
+        $rows = (clone $unknown)
+            ->whereIn('conversation_id', Conversation::query()->visibleTo($viewer)->select('id'))
+            ->selectRaw('conversation_id, count(*) as total, max(failed_at) as last_failed_at')
+            ->groupBy('conversation_id')
+            ->orderByDesc('last_failed_at')
+            ->limit(self::UNKNOWN_DELIVERY_CONVERSATIONS)
+            ->toBase()
+            ->get();
+        $conversations = Conversation::query()
+            ->with('contact:id,name')
+            ->whereKey($rows->pluck('conversation_id')->all())
+            ->get()
+            ->keyBy('id');
+
+        return array_values($rows->map(fn (object $row): array => [
+            'id' => (int) $row->conversation_id,
+            'contact' => $conversations->get((int) $row->conversation_id)?->contact?->name,
+            'messages' => (int) $row->total,
+            'last_failed_at' => $row->last_failed_at === null ? null : Carbon::parse((string) $row->last_failed_at)->toIso8601String(),
+        ])->all());
     }
 }

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\InboundMessageReceipt;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -151,4 +152,17 @@ function databaseWritesDuring(callable $callback): array
     $recording = false;
 
     return $writes;
+}
+
+/**
+ * Commits what the test created so far. InnoDB FULLTEXT searches (contact
+ * names, message content) only see committed rows, never the ones inside
+ * the transaction that wraps each test. The test goes on inside a new
+ * transaction, and the testing database is rebuilt before the next test.
+ */
+function commitForFullTextSearch(): void
+{
+    DB::commit();
+    DB::beginTransaction();
+    RefreshDatabaseState::$migrated = false;
 }

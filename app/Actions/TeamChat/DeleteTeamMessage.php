@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Storage;
  * The author deletes their message: its text and files are erased for
  * everyone (nobody, administrators included, can recover them later) and
  * the row stays as a "Mensaje eliminado" marker so the thread keeps its
- * order and replies. Files are removed from the disk after the commit.
+ * order and replies. Its mentions and reactions go with the content. Files are removed from the disk after the commit.
  */
 class DeleteTeamMessage
 {
@@ -23,6 +23,7 @@ class DeleteTeamMessage
 
         DB::transaction(function () use ($message, $actor, &$files): void {
             $message->forceFill(['body' => null, 'metadata' => null, 'deleted_at' => now()])->save();
+            $message->reactions()->delete();
 
             foreach ($message->attachments()->whereNull('purged_at')->get() as $attachment) {
                 /** @var TeamAttachment $attachment */

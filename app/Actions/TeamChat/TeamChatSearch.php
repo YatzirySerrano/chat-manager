@@ -25,14 +25,17 @@ class TeamChatSearch
     public function __construct(private TeamChatPresenter $presenter) {}
 
     /**
-     * @return list<array{thread_id: int, thread_title: string, thread_type: string, message_id: int, author: string, excerpt: string, created_at: string|null}>
+     * The most recent LIMIT matches; `has_more` tells the interface that
+     * older matches exist and the search should be refined.
+     *
+     * @return array{results: list<array{thread_id: int, thread_title: string, thread_type: string, message_id: int, author: string, excerpt: string, created_at: string|null}>, has_more: bool}
      */
     public function messages(User $viewer, string $search): array
     {
         $search = Str::squish($search);
 
         if (mb_strlen($search) < self::MIN_LENGTH) {
-            return [];
+            return ['results' => [], 'has_more' => false];
         }
 
         $term = '%'.addcslashes($search, '\\%_').'%';
@@ -43,7 +46,7 @@ class TeamChatSearch
             ->whereNull('deleted_at')
             ->where('body', 'like', $term)
             ->orderByDesc('id')
-            ->limit(self::LIMIT)
+            ->limit(self::LIMIT + 1)
             ->with([
                 'author:id,name,is_active',
                 'thread',
@@ -52,7 +55,9 @@ class TeamChatSearch
             ])
             ->get();
 
-        return array_values($messages->map(fn (TeamMessage $message): array => [
+        $hasMore = $messages->count() > self::LIMIT;
+
+        $results = array_values($messages->take(self::LIMIT)->map(fn (TeamMessage $message): array => [
             'thread_id' => $message->team_thread_id,
             'thread_title' => $this->presenter->title($message->thread, $viewer),
             'thread_type' => $message->thread->type->value,
@@ -61,6 +66,8 @@ class TeamChatSearch
             'excerpt' => $this->excerpt((string) $message->body, $search),
             'created_at' => $message->created_at?->toIso8601String(),
         ])->all());
+
+        return ['results' => $results, 'has_more' => $hasMore];
     }
 
     /**

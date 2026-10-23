@@ -18,7 +18,7 @@ class ReportExportController extends Controller
 {
     /**
      * Download a report now, or queue it when it is large. The filters come
-     * from the query string and are validated by the report definition.
+     * from the posted form and are validated by the report definition.
      */
     public function __invoke(Request $request, string $report, string $format, ReportRegistry $registry, ReportExporter $exporter): BinaryFileResponse|RedirectResponse
     {
@@ -28,7 +28,7 @@ class ReportExportController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
-        $context = $exporter->prepare($definition, $actor, $request->query());
+        $context = $exporter->prepare($definition, $actor, $request->except('_token'));
 
         try {
             $result = $exporter->export($definition, $context, $exportFormat);

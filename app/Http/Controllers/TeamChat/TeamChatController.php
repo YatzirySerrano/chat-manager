@@ -91,6 +91,9 @@ class TeamChatController extends Controller
                 'maxKilobytes' => (int) config('team-chat.attachments.max_kilobytes'),
                 'accept' => implode(',', array_map(fn (string $extension): string => '.'.$extension, array_merge(...array_values($types)))),
                 'groupMaxParticipants' => (int) config('team-chat.group_max_participants'),
+                'maxThreads' => TeamThreadListQuery::MAX_LIMIT,
+                'maxMentions' => (int) config('team-chat.max_mentions'),
+                'reactions' => array_values(array_map('strval', (array) config('team-chat.reactions'))),
             ],
             'availabilityOptions' => $this->presenter->availabilityOptions(),
         ]);

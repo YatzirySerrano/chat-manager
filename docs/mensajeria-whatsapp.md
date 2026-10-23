@@ -400,7 +400,11 @@ conversación transferida y cerrada (Sofía).
    Anota el **App ID** y, en Configuración → Básica, el **App secret**.
 2. **Cuenta y número:** en WhatsApp → Configuración de la API, identifica el **WhatsApp Business Account ID (WABA)**
    y el **Phone number ID**. Para pruebas puedes usar el número de prueba de Meta (solo envía a hasta 5 números
-   autorizados; otros responden con el error 131030). Para producción registra y verifica tu número.
+   autorizados; otros responden con el error 131030). Para producción registra y verifica tu número. En México, Meta
+   informa en los webhooks el WhatsApp ID con el «1» heredado de móvil (`521` + 10 dígitos), pero la lista de números
+   autorizados del número de prueba solo coincide con `52` + 10 dígitos; por eso el transporte envía siempre el `to`
+   de un móvil mexicano en la forma `52` + 10 dígitos (conserva intacto el WhatsApp ID guardado) y deja tal cual los
+   de cualquier otro país (`MetaCloudWhatsAppTransport::recipientNumber`).
 3. **Token permanente:** en Business Manager → Usuarios del sistema crea un usuario del sistema (administrador),
    asígnale la app y la cuenta de WhatsApp con control total y genera un token con los permisos
    `whatsapp_business_messaging` y `whatsapp_business_management` (sin caducidad o con renovación documentada). No uses

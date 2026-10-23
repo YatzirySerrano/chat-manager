@@ -25,7 +25,8 @@ return [
 
     /*
     | Optional controlled pilot of the real transport: when this list (WhatsApp
-    | numbers, digits only as Meta reports them, comma separated) is not empty,
+    | numbers, digits only, comma separated; a Mexican mobile may be written
+    | with or without the legacy "1" after 52) is not empty,
     | the "meta" transport only sends to these recipients; any other message
     | fails explicitly ("transport_unavailable") without calling Meta. Empty
     | means no restriction.

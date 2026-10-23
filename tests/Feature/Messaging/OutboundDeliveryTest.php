@@ -49,7 +49,7 @@ function acceptedByMeta(string $wamid = 'wamid.HBgLMTY1MDUwNzY1MjAVAgARGBI5QTNDQ
 {
     return [
         'messaging_product' => 'whatsapp',
-        'contacts' => [['input' => '5215511112222', 'wa_id' => '5215511112222']],
+        'contacts' => [['input' => '525511112222', 'wa_id' => '5215511112222']],
         'messages' => [['id' => $wamid]],
     ];
 }
@@ -66,7 +66,7 @@ test('a text reply is sent with the token in the header and becomes accepted, no
         && $request->hasHeader('Authorization', 'Bearer '.OUTBOUND_TOKEN)
         && ! str_contains($request->url(), OUTBOUND_TOKEN)
         && $request['messaging_product'] === 'whatsapp'
-        && $request['to'] === '5215511112222'
+        && $request['to'] === '525511112222'
         && $request['type'] === 'text'
         && $request['text'] === ['body' => 'Con gusto le ayudo', 'preview_url' => false]
         && $request['biz_opaque_callback_data'] === $message->client_reference

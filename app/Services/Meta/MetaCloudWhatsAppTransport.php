@@ -8,6 +8,7 @@ use App\Models\Connection;
 use App\Models\ContactIdentity;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -38,11 +39,12 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
             throw new WhatsAppTransportUnavailable('La conexión no tiene el Phone number ID o el token de acceso guardados.');
         }
 
-        $recipient = $this->recipient($message);
+        $recipient = self::recipientNumber($this->whatsAppId($message));
         $pilot = self::pilotRecipients();
 
         // Before any upload or send: nothing reaches Meta for other recipients.
-        if ($pilot !== [] && ! in_array($recipient, $pilot, true)) {
+        // The pilot list may hold either form of a Mexican mobile number.
+        if ($pilot !== [] && ! in_array($recipient, array_map(self::recipientNumber(...), $pilot), true)) {
             throw new WhatsAppTransportUnavailable('El destinatario no está en la lista del piloto de WhatsApp (WHATSAPP_PILOT_RECIPIENTS); el mensaje no se envió.');
         }
 
@@ -89,12 +91,38 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
         return $message->client_reference ?? 'message-'.$message->id;
     }
 
-    private function recipient(Message $message): string
+    /**
+     * The number written in "to" for a WhatsApp ID. Meta keeps Mexico's
+     * legacy mobile "1" in the WhatsApp ID of Mexican numbers (521 + 10
+     * digits) although the numbering plan no longer uses it; Meta delivers
+     * either form to the same account, but the allowed list of a test number
+     * only matches the current one (52 + 10 digits) and answers 131030
+     * otherwise. Only that case is rewritten, with the same rule used to
+     * store the contact's phone (PhoneNumber::normalize); any other WhatsApp
+     * ID, from any country, is sent exactly as Meta reported it.
+     */
+    private static function recipientNumber(string $whatsAppId): string
+    {
+        if (! ctype_digit($whatsAppId)) {
+            return $whatsAppId;
+        }
+
+        $normalized = PhoneNumber::normalize('+'.$whatsAppId);
+
+        return $normalized === null ? $whatsAppId : substr($normalized, 1);
+    }
+
+    /**
+     * The contact's most recently seen WhatsApp identity, or the digits of
+     * its phone when it has none.
+     */
+    private function whatsAppId(Message $message): string
     {
         $identity = ContactIdentity::query()
             ->where('contact_id', $message->conversation->contact_id)
             ->where('channel', 'whatsapp')
             ->orderByDesc('last_seen_at')
+            ->orderByDesc('id')
             ->value('external_id');
 
         $recipient = is_string($identity) && $identity !== ''

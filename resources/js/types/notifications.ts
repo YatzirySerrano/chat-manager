@@ -37,6 +37,8 @@ export type AppNotification = {
     created_at: string | null;
     updated_at: string | null;
     conversation_id: number | null;
+    /** Announced live with a toast when it arrives (urgent kinds and customer messages). */
+    toast: boolean;
 };
 
 export type NotificationUnread = { urgent: number; total: number };

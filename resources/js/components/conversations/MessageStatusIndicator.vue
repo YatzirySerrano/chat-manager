@@ -18,12 +18,19 @@ import type { MessageStatusValue } from '@/types';
  * Delivery state of an outbound message. Two ticks only appear when Meta
  * reported the delivery, and colored ticks only when it reported the read.
  * A failure of unknown outcome (Meta may have received it) is a warning,
- * not a definitive failure.
+ * not a definitive failure. While a reply is still on its way (queued or
+ * sending) its label can be shown next to the icon, since a tooltip never
+ * appears on touch screens.
  */
-const props = defineProps<{
-    status: MessageStatusValue;
-    errorCode?: string | null;
-}>();
+const props = withDefaults(
+    defineProps<{
+        status: MessageStatusValue;
+        errorCode?: string | null;
+        /** Show the label of the in-progress states as visible text. */
+        showProgressLabel?: boolean;
+    }>(),
+    { errorCode: null, showProgressLabel: false },
+);
 
 const unknownDelivery = computed(
     () => props.status === 'failed' && props.errorCode === DELIVERY_UNKNOWN,
@@ -67,16 +74,22 @@ const tone = computed(() => {
 });
 
 const label = computed(() => statusLabel(props.status, props.errorCode));
+
+const labelVisible = computed(
+    () =>
+        props.showProgressLabel &&
+        (props.status === 'queued' || props.status === 'sending'),
+);
 </script>
 
 <template>
-    <span class="inline-flex items-center" :title="label">
+    <span class="inline-flex items-center gap-1" :title="label">
         <component
             :is="icon"
             class="size-3.5"
             :class="[tone, status === 'sending' && 'animate-spin']"
             aria-hidden="true"
         />
-        <span class="sr-only">{{ label }}</span>
+        <span :class="labelVisible ? tone : 'sr-only'">{{ label }}</span>
     </span>
 </template>

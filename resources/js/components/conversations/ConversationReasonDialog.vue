@@ -79,7 +79,7 @@ function submit(): void {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-md">
+        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-md">
             <form class="grid gap-4" novalidate @submit.prevent="submit">
                 <DialogHeader>
                     <DialogTitle>{{ title }}</DialogTitle>
@@ -107,7 +107,7 @@ function submit(): void {
                         "
                     />
                 </FormField>
-                <DialogFooter class="gap-2">
+                <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                     <Button
                         type="button"
                         variant="outline"

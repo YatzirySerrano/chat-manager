@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Support\FullTextTerms;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -38,7 +39,13 @@ use Illuminate\Validation\ValidationException;
  * last activity, id), so loading more never repeats or skips a row and has
  * no upper bound.
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tag?: int|null, sort?: string}
+ * Unread messages are personal (unreadMessages()): the customer messages
+ * after the viewer's read marker. Without a marker, only the ones nobody
+ * answered yet count (after the latest reply of a person), and closed
+ * conversations never count, so whoever never opened a conversation does
+ * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
+ *
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tag?: int|null, sort?: string, unread?: bool}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
 class ConversationInboxQuery
@@ -106,6 +113,7 @@ class ConversationInboxQuery
             'search_in' => ['nullable', Rule::in([self::SEARCH_CONTACT, self::SEARCH_MESSAGES])],
             'tag' => ['nullable', 'integer', 'min:1'],
             'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
+            'unread' => ['nullable', 'boolean'],
         ];
     }
 
@@ -130,7 +138,11 @@ class ConversationInboxQuery
             'views' => $views,
             'personal' => $personal,
             // The queue only holds pending conversations: status tabs do not apply.
-            'status' => $view === self::VIEW_QUEUE ? 'active' : (is_string($status) ? $status : 'active'),
+            // "Mine" never holds pending ones (accepting assigns, queuing unassigns),
+            // so its hidden "Pending" tab falls back to the active conversations.
+            'status' => $view === self::VIEW_QUEUE || ($view === self::VIEW_MINE && $status === ConversationStatus::Pending->value)
+                ? 'active'
+                : (is_string($status) ? $status : 'active'),
             'department' => is_scalar($department) && (string) $department !== '' ? (string) $department : null,
             // Personal inboxes never filter by agent: they only hold their own work.
             'agent' => ! $personal && is_scalar($agent) && (string) $agent !== '' ? (string) $agent : null,
@@ -139,6 +151,7 @@ class ConversationInboxQuery
             'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
             'tag' => is_numeric($validated['tag'] ?? null) ? (int) $validated['tag'] : null,
             'sort' => in_array($validated['sort'] ?? null, [self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_PRIORITY,
+            'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
         ];
     }
 
@@ -164,7 +177,13 @@ class ConversationInboxQuery
             ->when(ctype_digit((string) $agent), fn (Builder $query) => $query->where('conversations.assigned_user_id', (int) $agent))
             ->when($filters['connection'] !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters['connection']))
             ->when(($filters['tag'] ?? null) !== null, fn (Builder $query) => $query->whereHas('tags', fn (Builder $tags) => $tags->whereKey($filters['tag'] ?? 0)))
-            ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $search, $filters['search_in'] ?? self::SEARCH_CONTACT));
+            ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $search, $filters['search_in'] ?? self::SEARCH_CONTACT))
+            ->when($filters['unread'] ?? false, fn (Builder $query) => $query
+                // Closed conversations never count as unread: filtering them on
+                // the outer row lets the status index skip them before the
+                // correlated lookup runs for each candidate.
+                ->where('conversations.status', '<>', ConversationStatus::Closed->value)
+                ->whereExists(fn (QueryBuilder $unread) => $this->unreadMessages($unread->selectRaw('1'), $actor)));
     }
 
     /**
@@ -275,9 +294,9 @@ class ConversationInboxQuery
 
     /**
      * Adds what the inbox list shows per row for the viewer: the id of the
-     * latest message (for its preview) and how many customer messages
-     * arrived after the viewer's read marker. Both are index backed
-     * correlated subqueries, evaluated only for the rows of the page.
+     * latest message (for its preview) and how many of its customer
+     * messages are unread for the viewer (unreadMessages()). Both are index
+     * backed correlated subqueries, evaluated only for the rows of the page.
      *
      * @param  Builder<Conversation>  $query
      * @return Builder<Conversation>
@@ -290,12 +309,35 @@ class ConversationInboxQuery
                 ->from('messages')
                 ->selectRaw('MAX(messages.id)')
                 ->whereColumn('messages.conversation_id', 'conversations.id'), 'last_message_id')
-            ->selectSub(fn ($unread) => $unread
-                ->from('messages')
-                ->selectRaw('COUNT(*)')
-                ->whereColumn('messages.conversation_id', 'conversations.id')
-                ->where('messages.direction', MessageDirection::Inbound->value)
-                ->whereRaw('messages.id > COALESCE((SELECT conversation_reads.last_read_message_id FROM conversation_reads WHERE conversation_reads.conversation_id = conversations.id AND conversation_reads.user_id = ?), 0)', [$viewer->id]), 'unread_count');
+            ->selectSub(fn (QueryBuilder $unread) => $this->unreadMessages($unread->selectRaw('COUNT(*)'), $viewer), 'unread_count');
+    }
+
+    /**
+     * Narrows a subquery on `messages`, correlated with the outer
+     * `conversations` row, to the customer messages unread for the viewer:
+     * - after the viewer's read marker, when they have one (it only moves
+     *   forward while the chat is on screen, never when listing);
+     * - without a marker, after the latest reply sent by a person
+     *   (automatic messages do not count as an answer), so what a colleague
+     *   already answered, or imported history, is not new to them;
+     * - never in closed conversations: the counter signals pending work.
+     * Every lookup is backed by the messages(conversation_id, direction, id)
+     * index and the unique read marker per user and conversation.
+     */
+    private function unreadMessages(QueryBuilder $messages, User $viewer): QueryBuilder
+    {
+        return $messages
+            ->from('messages')
+            ->whereColumn('messages.conversation_id', 'conversations.id')
+            ->where('messages.direction', MessageDirection::Inbound->value)
+            ->whereRaw('conversations.status <> ?', [ConversationStatus::Closed->value])
+            ->whereRaw(
+                'messages.id > COALESCE('
+                .'(SELECT conversation_reads.last_read_message_id FROM conversation_reads WHERE conversation_reads.conversation_id = conversations.id AND conversation_reads.user_id = ?), '
+                .'(SELECT answered.id FROM messages AS answered WHERE answered.conversation_id = conversations.id AND answered.direction = ? AND answered.sender_user_id IS NOT NULL ORDER BY answered.id DESC LIMIT 1), '
+                .'0)',
+                [$viewer->id, MessageDirection::Outbound->value],
+            );
     }
 
     /**

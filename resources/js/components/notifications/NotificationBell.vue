@@ -75,7 +75,7 @@ function onOpenChange(value: boolean): void {
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                class="relative size-9 rounded-lg text-muted-foreground"
+                                class="relative size-9 rounded-lg text-muted-foreground pointer-coarse:size-10"
                                 :aria-label="label"
                             >
                                 <BellRing

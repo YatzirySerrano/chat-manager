@@ -73,7 +73,13 @@ return [
             // Same rule as the database connection: above the longest worker
             // --timeout (exports), or a running job is handed to a second worker.
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 900),
-            'block_for' => null,
+            // Seconds a worker waits in a blocking pop instead of polling
+            // every --sleep. Off by default (REDIS_QUEUE_BLOCK_FOR empty):
+            // the pop blocks on the FIRST queue of a multi-queue worker
+            // (messages,webhooks) before it looks at the next one, so only
+            // enable it when every worker on this connection reads a single
+            // queue. 0 would block forever and is treated as off.
+            'block_for' => ((int) env('REDIS_QUEUE_BLOCK_FOR', 0)) > 0 ? (int) env('REDIS_QUEUE_BLOCK_FOR') : null,
             // Redis is outside the database transaction: a job dispatched
             // inside one must not reach a worker before the rows it reads
             // are committed. The database driver inserts the job row in the

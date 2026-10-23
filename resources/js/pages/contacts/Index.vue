@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     ChevronDown,
     Contact as ContactIcon,
+    Ellipsis,
     Eye,
     Pencil,
     Plus,
@@ -12,7 +13,7 @@ import {
     Upload,
     X,
 } from '@lucide/vue';
-import { watchDebounced } from '@vueuse/core';
+import { useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, onUnmounted, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
@@ -34,6 +35,7 @@ import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
     DropdownMenuContent,
+    DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
@@ -249,6 +251,20 @@ const selectedTagsLabel = computed(() => {
 
 const { mode: viewMode } = useViewMode('contacts');
 
+/**
+ * Phones always get the cards presentation: a table squeezed to one column
+ * hides most of the data. The remembered choice still applies from `sm` up.
+ */
+const isPhone = useMediaQuery('(max-width: 639px)');
+const effectiveViewMode = computed(() =>
+    isPhone.value ? 'cards' : viewMode.value,
+);
+
+/** Secondary page actions, grouped in "Más acciones" below `lg`. */
+const hasSecondaryActions = computed(
+    () => props.can.reviewDuplicates || Boolean(props.can.import),
+);
+
 const formOpen = ref(false);
 const editingContact = ref<Contact | null>(null);
 
@@ -320,33 +336,112 @@ function contactSubtitle(contact: Contact): string | null {
                 "
                 #actions
             >
-                <ExportMenu
-                    v-if="canExport"
-                    report="contacts"
-                    :filters="filters"
-                />
-                <Button v-if="can.reviewDuplicates" variant="outline" as-child>
-                    <Link :href="reviewsIndex()">
-                        <ShieldQuestion />
-                        Revisión de duplicados
-                        <span
-                            v-if="openReviews"
-                            class="rounded-full bg-warning/15 px-1.5 text-xs font-medium text-foreground tabular-nums"
-                            :aria-label="`${openReviews} pendientes`"
-                            >{{ openReviews }}</span
-                        >
-                    </Link>
-                </Button>
-                <Button v-if="can.import" variant="outline" as-child>
-                    <Link :href="importCreate()">
-                        <Upload />
-                        Importar
-                    </Link>
-                </Button>
-                <Button v-if="can.create" @click="openCreate">
+                <Button
+                    v-if="can.create"
+                    class="max-sm:w-full lg:order-last"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nuevo contacto
                 </Button>
+                <div
+                    v-if="canExport || hasSecondaryActions"
+                    class="flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:*:flex-1"
+                >
+                    <ExportMenu
+                        v-if="canExport"
+                        report="contacts"
+                        :filters="filters"
+                    />
+                    <Button
+                        v-if="can.reviewDuplicates"
+                        variant="outline"
+                        class="hidden lg:inline-flex"
+                        as-child
+                    >
+                        <Link :href="reviewsIndex()">
+                            <ShieldQuestion />
+                            Revisión de duplicados
+                            <span
+                                v-if="openReviews"
+                                class="rounded-full bg-warning/15 px-1.5 text-xs font-medium text-foreground tabular-nums"
+                                aria-hidden="true"
+                                >{{ openReviews }}</span
+                            >
+                            <span v-if="openReviews" class="sr-only"
+                                >, {{ openReviews }} pendientes</span
+                            >
+                        </Link>
+                    </Button>
+                    <Button
+                        v-if="can.import"
+                        variant="outline"
+                        class="hidden lg:inline-flex"
+                        as-child
+                    >
+                        <Link :href="importCreate()">
+                            <Upload />
+                            Importar
+                        </Link>
+                    </Button>
+                    <DropdownMenu v-if="hasSecondaryActions">
+                        <DropdownMenuTrigger as-child>
+                            <Button variant="outline" class="lg:hidden">
+                                <Ellipsis />
+                                Más acciones
+                                <span
+                                    v-if="can.reviewDuplicates && openReviews"
+                                    class="rounded-full bg-warning/15 px-1.5 text-xs font-medium text-foreground tabular-nums"
+                                    aria-hidden="true"
+                                    >{{ openReviews }}</span
+                                >
+                                <span
+                                    v-if="can.reviewDuplicates && openReviews"
+                                    class="sr-only"
+                                    >, {{ openReviews }} duplicados
+                                    pendientes</span
+                                >
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" class="w-64">
+                            <DropdownMenuLabel
+                                class="text-xs text-muted-foreground"
+                            >
+                                Más acciones de contactos
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                v-if="can.reviewDuplicates"
+                                as-child
+                                class="min-h-11 sm:min-h-0"
+                            >
+                                <Link :href="reviewsIndex()">
+                                    <ShieldQuestion aria-hidden="true" />
+                                    Revisión de duplicados
+                                    <span
+                                        v-if="openReviews"
+                                        class="ml-auto rounded-full bg-warning/15 px-1.5 text-xs font-medium text-foreground tabular-nums"
+                                        aria-hidden="true"
+                                        >{{ openReviews }}</span
+                                    >
+                                    <span v-if="openReviews" class="sr-only"
+                                        >, {{ openReviews }} pendientes</span
+                                    >
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                v-if="can.import"
+                                as-child
+                                class="min-h-11 sm:min-h-0"
+                            >
+                                <Link :href="importCreate()">
+                                    <Upload aria-hidden="true" />
+                                    Importar contactos
+                                </Link>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </template>
         </PageHeader>
 
@@ -364,11 +459,14 @@ function contactSubtitle(contact: Contact): string | null {
                         v-model="filterState.search"
                         type="search"
                         placeholder="Buscar por nombre, teléfono o correo"
-                        class="pl-9"
+                        class="pl-9 pointer-coarse:h-10"
                         aria-label="Buscar contactos"
                     />
                 </div>
-                <ViewModeToggle v-model="viewMode" class="order-2" />
+                <ViewModeToggle
+                    v-model="viewMode"
+                    class="order-2 max-sm:hidden"
+                />
                 <div
                     class="order-3 grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap"
                 >
@@ -438,7 +536,7 @@ function contactSubtitle(contact: Contact): string | null {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full lg:w-40"
+                            class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate lg:w-40"
                             aria-label="Filtrar por fuente de registro"
                         >
                             <SelectValue />
@@ -460,7 +558,7 @@ function contactSubtitle(contact: Contact): string | null {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full lg:w-44"
+                            class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate lg:w-44"
                             aria-label="Filtrar por origen"
                         >
                             <SelectValue />
@@ -486,7 +584,7 @@ function contactSubtitle(contact: Contact): string | null {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full lg:w-44"
+                            class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate max-sm:col-span-2 lg:w-44"
                             aria-label="Ordenar por"
                         >
                             <SelectValue />
@@ -514,7 +612,7 @@ function contactSubtitle(contact: Contact): string | null {
             </div>
 
             <Table
-                v-if="contacts.data.length > 0 && viewMode === 'table'"
+                v-if="contacts.data.length > 0 && effectiveViewMode === 'table'"
                 class="transition-opacity"
                 :class="loading && 'opacity-60'"
                 :aria-busy="loading"

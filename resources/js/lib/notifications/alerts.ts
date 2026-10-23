@@ -1,3 +1,6 @@
+import { readonly, ref } from 'vue';
+import type { Ref } from 'vue';
+
 /**
  * Browser-level alerts of in-app notifications: system notifications (the
  * Notification API, only after the user granted permission with an explicit
@@ -58,34 +61,205 @@ export function showBrowserNotification(
     }
 }
 
+/**
+ * Whether this tab can play the notification sound: `locked` until the
+ * user interacts with the page (browsers block audio started without a
+ * gesture after opening or reloading it), `ready` once the audio context
+ * runs, `unsupported` without Web Audio.
+ */
+export type NotificationSoundState = 'locked' | 'ready' | 'unsupported';
+
+const soundState = ref<NotificationSoundState>(
+    audioContextConstructor() ? 'locked' : 'unsupported',
+);
+
+export const notificationSoundState: Readonly<Ref<NotificationSoundState>> =
+    readonly(soundState);
+
 let audioContext: AudioContext | null = null;
+let unlockInstalled = false;
+
+/** A resume() that settles later than this is not worth a stale chime. */
+const RESUME_GRACE_MS = 1_000;
+
+function audioContextConstructor(): typeof AudioContext | null {
+    return typeof window !== 'undefined' && 'AudioContext' in window
+        ? window.AudioContext
+        : null;
+}
 
 /**
- * A short two-tone chime. Browsers may block audio until the user has
- * interacted with the page; then it silently does nothing.
+ * Whether the page already received a user gesture. Without one, creating
+ * or resuming an audio context only produces a console warning, so it is
+ * not attempted. Browsers without the User Activation API are tried.
+ */
+function hasUserActivation(): boolean {
+    return typeof navigator !== 'undefined' && 'userActivation' in navigator
+        ? navigator.userActivation.hasBeenActive
+        : true;
+}
+
+function syncSoundState(): void {
+    if (audioContext) {
+        soundState.value =
+            audioContext.state === 'running' ? 'ready' : 'locked';
+    }
+}
+
+/** The shared audio context, created only after a user gesture. */
+function contextAfterGesture(): AudioContext | null {
+    if (audioContext || !hasUserActivation()) {
+        return audioContext;
+    }
+
+    const AudioContextClass = audioContextConstructor();
+
+    if (!AudioContextClass) {
+        return null;
+    }
+
+    try {
+        audioContext = new AudioContextClass();
+        audioContext.addEventListener('statechange', syncSoundState);
+        syncSoundState();
+    } catch {
+        soundState.value = 'unsupported';
+    }
+
+    return audioContext;
+}
+
+/**
+ * Events that can carry the user activation browsers require to start
+ * audio. `pointerdown` only activates the page for a mouse; a touch
+ * activates it on `pointerup`/`touchend` (and `click`), and some keys
+ * (Escape, shortcuts) never do, so every candidate is listened to.
+ */
+const UNLOCK_EVENTS = [
+    'pointerdown',
+    'pointerup',
+    'touchend',
+    'click',
+    'keydown',
+] as const;
+
+/**
+ * Unlocks the sound with the first interaction on the page that really
+ * activates it: the audio context is created or resumed inside that
+ * gesture, which is what browsers (Safari/iOS in particular) require.
+ * Installed once per tab; the listeners stay until the context runs (or
+ * Web Audio turns out to be unavailable), so an event without activation
+ * simply waits for the next one.
+ */
+export function unlockNotificationSound(): void {
+    if (unlockInstalled || soundState.value === 'unsupported') {
+        return;
+    }
+
+    unlockInstalled = true;
+
+    const options = { capture: true, passive: true } as const;
+
+    const remove = (): void => {
+        UNLOCK_EVENTS.forEach((type) =>
+            window.removeEventListener(type, unlock, options),
+        );
+    };
+
+    function unlock(): void {
+        const context = contextAfterGesture();
+
+        if (!context) {
+            // No activation yet (a touch's pointerdown, Escape...): keep
+            // listening. Only a missing Web Audio ends the attempt.
+            if (soundState.value === 'unsupported') {
+                remove();
+            }
+
+            return;
+        }
+
+        if (context.state === 'running') {
+            remove();
+
+            return;
+        }
+
+        context.resume().then(
+            () => {
+                syncSoundState();
+
+                if (context.state === 'running') {
+                    remove();
+                }
+            },
+            () => {
+                // Still blocked: the next interaction tries again.
+            },
+        );
+    }
+
+    UNLOCK_EVENTS.forEach((type) =>
+        window.addEventListener(type, unlock, options),
+    );
+}
+
+function chime(context: AudioContext, urgent: boolean): void {
+    const now = context.currentTime;
+    const tones = urgent ? [880, 1175] : [660];
+
+    tones.forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const start = now + index * 0.14;
+
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.25);
+    });
+}
+
+/**
+ * A short chime (two tones when urgent). While the browser keeps audio
+ * blocked (no interaction with the page yet) nothing is attempted and
+ * nothing fails; a context suspended by the browser is resumed first.
  */
 export function playNotificationSound(urgent: boolean): void {
     try {
-        audioContext ??= new AudioContext();
+        const context = contextAfterGesture();
 
-        const context = audioContext;
-        const now = context.currentTime;
-        const tones = urgent ? [880, 1175] : [660];
+        if (!context) {
+            return;
+        }
 
-        tones.forEach((frequency, index) => {
-            const oscillator = context.createOscillator();
-            const gain = context.createGain();
-            const start = now + index * 0.14;
+        if (context.state === 'running') {
+            chime(context, urgent);
 
-            oscillator.type = 'sine';
-            oscillator.frequency.value = frequency;
-            gain.gain.setValueAtTime(0.0001, start);
-            gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
-            oscillator.connect(gain).connect(context.destination);
-            oscillator.start(start);
-            oscillator.stop(start + 0.25);
-        });
+            return;
+        }
+
+        const requestedAt = Date.now();
+
+        context.resume().then(
+            () => {
+                syncSoundState();
+
+                if (
+                    context.state === 'running' &&
+                    Date.now() - requestedAt < RESUME_GRACE_MS
+                ) {
+                    chime(context, urgent);
+                }
+            },
+            () => {
+                // Blocked by the browser: stay silent.
+            },
+        );
     } catch {
         // Audio is not available in this browser.
     }

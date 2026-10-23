@@ -26,7 +26,7 @@ const role = computed(() => page.props.auth?.role);
         class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:h-16 sm:gap-3 sm:px-4 md:px-6"
     >
         <SidebarTrigger
-            class="-ml-1 size-9 shrink-0 rounded-lg text-muted-foreground"
+            class="-ml-1 size-9 shrink-0 rounded-lg text-muted-foreground pointer-coarse:size-10"
         />
         <div class="min-w-0 flex-1 overflow-hidden">
             <Breadcrumbs

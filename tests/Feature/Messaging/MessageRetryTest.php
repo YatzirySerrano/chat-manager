@@ -3,6 +3,7 @@
 use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\MessageStatus;
+use App\Http\Resources\ConversationMessageResource;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\AuditLog;
 use App\Models\Conversation;
@@ -61,6 +62,24 @@ test('a manual retry starts a new cycle of automatic attempts', function () {
 
     expect(DeliverOutboundMessage::attemptsInCycle($this->failed->refresh()))->toBe(0);
     Queue::assertPushed(DeliverOutboundMessage::class, fn (DeliverOutboundMessage $job): bool => $job->messageId === $this->failed->id);
+});
+
+test('a retry within the same second as the failure is versioned by its retry count', function () {
+    Queue::fake();
+    $chatCopy = fn (): array => ConversationMessageResource::make($this->failed->refresh())->resolve(request());
+
+    expect($chatCopy())->toMatchArray(['status' => 'failed', 'delivery_attempts' => 5, 'delivery_retries' => 0]);
+
+    ($this->retry)($this->agent, $this->failed)->assertAccepted();
+
+    // Requeued without a new attempt: only the retry count tells the chat that
+    // this copy is newer than the failure shown within the same second.
+    expect($chatCopy())->toMatchArray(['status' => 'queued', 'delivery_attempts' => 5, 'delivery_retries' => 1]);
+
+    $this->failed->forceFill(['status' => MessageStatus::Failed, 'error_code' => 'provider_unreachable', 'failed_at' => now()])->save();
+    ($this->retry)($this->agent, $this->failed)->assertAccepted();
+
+    expect($chatCopy())->delivery_retries->toBe(2);
 });
 
 test('an unconfirmed delivery is retried only after the agent accepts the duplicate risk', function () {

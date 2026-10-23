@@ -41,6 +41,22 @@ Código: `app/Notifications/*` (tipos, canal `Channels\InAppChannel`, `Notificat
 | `connection.problem`       | Urgente     | Una conexión pasa a `error` o `credentials_invalid` (`ConnectionHealthChanged`)                                              | Usuarios con `connections.view` o `connections.manage`                                                                                                                                                                   | Una sin leer por conexión; la misma transición se ignora durante la hora                                               |
 | `account.access-changed`   | Informativa | Cambio de rol, permisos, departamentos o estado (`UserAccessChanged`)                                                        | Los usuarios afectados que siguen activos                                                                                                                                                                                | Una sin leer; recibo por razón y bloque de 5 minutos                                                                   |
 
+**Valores predeterminados** (mientras el usuario no guarde una preferencia para el tipo; una preferencia guardada
+siempre manda): en la app sí, navegador no, y sonido sí para los tipos que se anuncian en vivo
+(`NotificationKind::announcesInPage()`): todos los urgentes y `conversation.message`. Estos mismos tipos muestran un
+aviso (_toast_) en la parte inferior de la página al llegar (campo `toast` de cada elemento de
+`notifications.index`, falso si el usuario ya no tiene acceso al registro). `conversation.message` sigue siendo
+informativa: no cuenta como urgente en la campana ni en Web Push. Las respuestas del propio agente (salientes) nunca
+generan notificación.
+
+**Pérdida de acceso**: cuando una conversación deja a su agente (transferencia, devolución a la cola o reasignación)
+y ese agente ya no puede verla, `NotifyConversationChanges` marca como leídas sus notificaciones de esa conversación
+(mensajes agregados, asignación, transferencia), igual que al abrirla. Si sigue pudiendo verla (supervisor del
+departamento, alcance global), no se tocan. Si se marcó alguna, se publica la señal `.notification` (sin `id`) en
+`users.{id}` de ese agente: sus pestañas abiertas recargan la campana sin avisar (lo recargado ya está leído), el
+contador baja sin recargar la página y su toast, si seguía visible, se cierra. No es un `NotificationSignal`, así que
+no dispara Web Push. Sin tiempo real, el cambio llega con la actualización periódica de respaldo.
+
 Eventos escuchados: `ConversationChanged`, `MessageRecorded` (solo entrantes), `ConnectionHealthChanged`,
 `UserAccessChanged`, `TeamChat\TeamMessagePosted` y `DataTransfers\DataTransferFinished` (este último lo emite
 `DataTransfer` al pasar de `queued`/`processing` a `completed`/`failed`, de modo que cubre exportaciones e
@@ -78,13 +94,32 @@ omiten (como mucho un _timeout_ por trabajo) y la notificación nunca se pierde 
 - **Preferencias** en _Mi cuenta › Notificaciones_ (`/settings/notifications`): por tipo, en la app, sonido y
   navegador. Solo se listan los tipos que pueden afectar al usuario por sus permisos actuales.
 - **Navegador**: el permiso de notificaciones del sistema solo se solicita al pulsar «Permitir en este navegador».
-  Se muestran únicamente cuando la pestaña no está visible; con la pestaña visible, las urgentes aparecen como aviso
-  dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
+  Se muestran únicamente cuando la pestaña no está visible; con la pestaña visible, los tipos que se anuncian en vivo
+  (urgentes y mensajes del cliente) aparecen como aviso dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
   del sistema (`useNotificationCenter`, `showUnlessPushed`): el aviso lo da el _service worker_, así que no se duplica
   pestaña + push. El sonido es un tono generado con Web Audio (sin archivos).
 - **Notificaciones push**: en la misma página, «Activar en este navegador» y la lista de dispositivos suscritos
   (ver 1.8).
-- Si la notificación es de la conversación que el usuario tiene abierta, no suena ni avisa: se marca leída.
+- Si la notificación es de la conversación que el usuario tiene abierta **en una pestaña visible y con foco**, no
+  suena ni avisa: se marca leída. Si la pestaña está oculta o la ventana sin foco, avisa con normalidad y se marca
+  leída al volver a ella.
+- **Avisos en pantalla**: el `Toaster` del layout (`AppSidebarLayout`) queda abajo, pero por encima del compositor de
+  mensajes cuando hay uno acoplado al pie (conversaciones y chat interno), en escritorio y en móvil
+  (`useToastClearance`), para no tapar el cuadro de texto ni el botón de enviar. Solo cuenta un bloque con cuadro de
+  texto (fuera de diálogos) cuyo borde inferior coincide con el de la ventana, con su parte superior en pantalla y
+  visible en ese borde; una tarjeta que solo se desborda por debajo o una nota en edición dentro del historial no
+  mueven los avisos. Se mide al terminar cada visita, al redimensionar, al desplazar y cuando el compositor cambia de
+  tamaño.
+- **Sin duplicados**: un elemento solo se avisa si cambia su versión (`updated_at` + `occurrences`), así que dos
+  mensajes agregados en el mismo segundo también avisan y una recarga no repite avisos. La campana vive en el layout
+  persistente: navegar con Inertia no duplica sus escuchas.
+- **Sonido y autoplay**: los navegadores bloquean el audio hasta que la persona interactúa con la página después de
+  abrirla o recargarla. El contexto de Web Audio se crea o reanuda con la primera interacción que de verdad activa la
+  página (`unlockNotificationSound` escucha `pointerdown`, `pointerup`, `touchend`, `click` y `keydown`: con un toque
+  la activación llega al levantar el dedo y Escape no activa). Las escuchas siguen hasta que el contexto queda en
+  marcha, así que un evento sin activación solo espera al siguiente; antes de eso no se intenta sonar (sin errores) y la página de preferencias muestra un
+  aviso discreto. No se garantiza sonido con la pestaña en segundo plano o con el navegador limitándola: para no
+  perder avisos se recomienda activar las notificaciones del navegador o Web Push.
 
 ### 1.6 Endpoints
 

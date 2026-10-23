@@ -2,6 +2,7 @@
 
 namespace App\Listeners\Notifications;
 
+use App\Broadcasting\RealtimeSignals;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Events\Conversations\ConversationChanged;
@@ -27,6 +28,10 @@ use Illuminate\Support\Facades\Notification;
  * - assignments (manual, automatic, return on reopen) notify the new
  *   responsible agent, never the person who did it themselves;
  * - a direct transfer notifies the receiving agent;
+ * - the agent who lost the conversation (transfer, release, reassignment)
+ *   gets its pending notifications marked read when they can no longer see
+ *   it, so their bell does not keep counting news they cannot open (a
+ *   `.notification` hint makes their open tabs refresh the bell at once);
  * - reading a conversation marks its notifications read for that user.
  */
 class NotifyConversationChanges implements ShouldQueue
@@ -39,6 +44,7 @@ class NotifyConversationChanges implements ShouldQueue
     public function __construct(
         private NotificationRecipients $recipients,
         private NotificationCenter $center,
+        private RealtimeSignals $signals,
     ) {}
 
     public function viaQueue(): string
@@ -99,6 +105,8 @@ class NotifyConversationChanges implements ShouldQueue
             return;
         }
 
+        $this->forgetForPreviousAgent($conversation, $record);
+
         match ($type) {
             ConversationEventType::Created,
             ConversationEventType::Unassigned => $this->notifyQueue($conversation, $record),
@@ -112,6 +120,41 @@ class NotifyConversationChanges implements ShouldQueue
             ConversationEventType::AutoAssigned => $this->notifyAssignment($conversation, $record, 'auto_assigned'),
             default => null,
         };
+    }
+
+    /**
+     * The conversation left its previous agent: if they lost access to it,
+     * its notifications (aggregated messages, assignment, transfer) are no
+     * longer news for them. If they still see it (a supervisor of the
+     * department, a global scope) nothing is touched.
+     *
+     * Marking them read is a plain update, so their open tabs get the same
+     * `.notification` hint a new notification sends (without id: there is
+     * nothing new to alert about): the bell reloads and the counter drops
+     * without a page reload. It is not a NotificationSignal, which would
+     * also wake Web Push.
+     */
+    private function forgetForPreviousAgent(Conversation $conversation, ConversationEvent $record): void
+    {
+        $previousId = $record->from_user_id;
+
+        if ($previousId === null || $previousId === $conversation->assigned_user_id) {
+            return;
+        }
+
+        if ($this->recipients->ifCanView($previousId, $conversation) !== null) {
+            return;
+        }
+
+        $previous = User::query()->find($previousId);
+
+        if ($previous !== null && $this->center->markConversationRead($previous, $conversation->id) > 0) {
+            $this->signals->toUsers([$previous->id], 'notification', [
+                'id' => null,
+                'kind' => null,
+                'reason' => 'access_lost',
+            ]);
+        }
     }
 
     private function notifyQueue(Conversation $conversation, ConversationEvent $record): void

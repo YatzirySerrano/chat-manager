@@ -632,7 +632,7 @@ defineExpose({ focus });
                     type="button"
                     role="tab"
                     :aria-selected="mode === 'reply'"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors"
+                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors pointer-coarse:min-h-10"
                     :class="
                         mode === 'reply'
                             ? 'bg-background text-foreground shadow-xs'
@@ -648,7 +648,7 @@ defineExpose({ focus });
                     type="button"
                     role="tab"
                     :aria-selected="mode === 'note'"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors"
+                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors pointer-coarse:min-h-10"
                     :class="
                         mode === 'note'
                             ? 'bg-warning/20 text-foreground shadow-xs'
@@ -661,13 +661,13 @@ defineExpose({ focus });
                 </button>
             </div>
             <p
-                class="min-w-0 truncate text-xs text-muted-foreground"
+                class="line-clamp-2 min-w-0 basis-full text-xs wrap-anywhere text-muted-foreground sm:line-clamp-none sm:basis-auto sm:truncate"
                 :title="mode === 'reply' ? `Para: ${recipient}` : undefined"
             >
                 <template v-if="mode === 'reply'">
                     <span
                         v-if="windowBadge"
-                        class="mr-1.5 inline-flex items-center rounded-full border px-1.5 py-px text-[11px] font-medium"
+                        class="mr-1.5 inline-flex items-center rounded-full border px-1.5 py-px text-xs font-medium"
                         :class="windowBadge.tone"
                         :title="windowBadge.title"
                         >{{ windowBadge.text }}</span
@@ -682,7 +682,7 @@ defineExpose({ focus });
                     v-else
                     class="inline-flex items-center gap-1 font-semibold text-warning"
                 >
-                    <Lock class="size-3" aria-hidden="true" />
+                    <Lock class="size-3.5" aria-hidden="true" />
                     Nota interna — no se envía al cliente
                 </span>
             </p>
@@ -698,6 +698,7 @@ defineExpose({ focus });
             <Button
                 v-if="mode === 'reply' && canUseTemplates"
                 size="sm"
+                class="pointer-coarse:h-10"
                 @click="emit('openTemplates')"
             >
                 <LayoutTemplate aria-hidden="true" />
@@ -708,7 +709,7 @@ defineExpose({ focus });
         <form v-else novalidate class="grid gap-2" @submit.prevent="submit">
             <div
                 v-if="replyTo && mode === 'reply'"
-                class="flex items-start gap-2 rounded-lg border-l-2 border-primary bg-muted/50 px-3 py-1.5 text-xs"
+                class="flex items-start gap-2 rounded-lg border-l-2 border-primary bg-muted/50 px-3 py-1.5 text-sm md:text-xs"
             >
                 <div class="min-w-0 flex-1">
                     <p class="font-medium">
@@ -725,8 +726,9 @@ defineExpose({ focus });
                 </div>
                 <button
                     type="button"
-                    class="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    class="-my-1 -mr-2 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-10"
                     aria-label="Quitar la cita"
+                    title="Quitar la cita"
                     @click="emit('update:replyTo', null)"
                 >
                     <X class="size-3.5" aria-hidden="true" />
@@ -766,8 +768,9 @@ defineExpose({ focus });
                 </div>
                 <button
                     type="button"
-                    class="rounded p-1 text-muted-foreground hover:text-foreground"
+                    class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:size-10"
                     aria-label="Quitar el archivo adjunto"
+                    title="Quitar el archivo adjunto"
                     :disabled="sending"
                     @click="clearAttachment"
                 >
@@ -846,7 +849,7 @@ defineExpose({ focus });
                         type="button"
                         variant="ghost"
                         size="icon"
-                        class="size-9 text-muted-foreground"
+                        class="text-muted-foreground pointer-coarse:size-10"
                         :disabled="sending"
                         title="Adjuntar archivo (imagen, documento, audio o video)"
                         aria-label="Adjuntar archivo"
@@ -869,7 +872,7 @@ defineExpose({ focus });
                     Enter para enviar
                 </label>
                 <span
-                    class="ml-auto text-[11px] tabular-nums"
+                    class="ml-auto text-xs tabular-nums"
                     :class="
                         tooLong ? 'text-destructive' : 'text-muted-foreground'
                     "
@@ -882,6 +885,7 @@ defineExpose({ focus });
                     type="submit"
                     :disabled="!canSubmit"
                     :variant="mode === 'note' ? 'outline' : 'default'"
+                    class="pointer-coarse:h-10"
                     :class="mode === 'note' && 'border-warning/60'"
                 >
                     <Spinner v-if="sending" />
@@ -912,10 +916,13 @@ defineExpose({ focus });
             <p
                 v-else-if="mode === 'reply' && unverifiedConnection"
                 id="chat-composer-hint"
-                class="flex items-center gap-1 text-[11px] text-warning"
+                class="flex items-start gap-1 text-xs text-warning"
                 role="status"
             >
-                <TriangleAlert class="size-3 shrink-0" aria-hidden="true" />
+                <TriangleAlert
+                    class="mt-px size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
                 Las credenciales de la conexión «{{
                     conversation.connection.name
                 }}» aún no se han verificado con Meta: el envío podría fallar.
@@ -923,7 +930,7 @@ defineExpose({ focus });
             <p
                 v-else
                 id="chat-composer-hint"
-                class="text-[11px] text-muted-foreground"
+                class="text-xs text-muted-foreground pointer-coarse:sr-only"
             >
                 {{ hint }}
             </p>

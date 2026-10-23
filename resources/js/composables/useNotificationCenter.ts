@@ -7,6 +7,7 @@ import { afterUserVisits } from '@/lib/realtime';
 import {
     playNotificationSound,
     showBrowserNotification,
+    unlockNotificationSound,
 } from '@/lib/notifications/alerts';
 import { currentPushSubscription } from '@/lib/notifications/push';
 import {
@@ -33,7 +34,11 @@ const FALLBACK_INTERVAL_MS = 60_000;
  * when real-time is unavailable, triggers a new fetch. Notifications that
  * appear between two fetches may play a sound, show a system notification
  * or a toast, according to the user's preferences, except those about the
- * conversation already on screen, which are marked read instead.
+ * conversation the user is looking at (open, in a visible and focused tab),
+ * which are marked read instead.
+ *
+ * Mounted once, in the persistent layout (NotificationBell): Inertia visits
+ * keep it alive, so its listeners are never duplicated.
  */
 export function useNotificationCenter() {
     const page = usePage();
@@ -53,8 +58,14 @@ export function useNotificationCenter() {
     const failed = ref(false);
     const onlyUnread = ref(false);
 
-    /** updated_at of every notification seen, to detect fresh ones. */
-    const seen = new Map<string, string | null>();
+    /**
+     * Version (updated_at and occurrences) of every notification seen, to
+     * detect fresh ones: timestamps have second precision, so a folded
+     * occurrence within the same second only changes the counter.
+     */
+    const seen = new Map<string, string>();
+    /** Notifications whose toast may still be on screen in this tab. */
+    const toasted = new Set<string>();
     let requestCounter = 0;
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -76,24 +87,36 @@ export function useNotificationCenter() {
         return typeof props.selectedId === 'number' ? props.selectedId : null;
     });
 
+    function version(item: AppNotification): string {
+        return `${item.updated_at ?? ''}|${item.occurrences}`;
+    }
+
     function remember(list: AppNotification[]): AppNotification[] {
         const fresh: AppNotification[] = [];
 
         for (const item of list) {
-            const previous = seen.get(item.id);
+            const current = version(item);
 
             if (
                 loaded.value &&
                 item.read_at === null &&
-                (previous === undefined || previous !== item.updated_at)
+                seen.get(item.id) !== current
             ) {
                 fresh.push(item);
             }
 
-            seen.set(item.id, item.updated_at);
+            seen.set(item.id, current);
         }
 
         return fresh;
+    }
+
+    /**
+     * Whether the user is actually looking at this tab. A conversation left
+     * open in a hidden tab or an unfocused window is not "on screen".
+     */
+    function pageIsAttended(): boolean {
+        return document.visibilityState === 'visible' && document.hasFocus();
     }
 
     /**
@@ -133,7 +156,7 @@ export function useNotificationCenter() {
 
             if (options.more || options.silent) {
                 response.data.forEach((item) =>
-                    seen.set(item.id, item.updated_at),
+                    seen.set(item.id, version(item)),
                 );
             }
 
@@ -146,6 +169,30 @@ export function useNotificationCenter() {
             nextBeforeId.value = response.next_before_id;
             failed.value = false;
             loaded.value = true;
+
+            // A notification read elsewhere (another tab, or by the server
+            // when the conversation left the user's reach) drops its toast.
+            // With "Only unread" a read notification is not listed at all, so
+            // a toast missing from the (newest) unread page is dropped too.
+            if (!options.more) {
+                const listed = new Set(
+                    response.data
+                        .filter((item) => item.read_at === null)
+                        .map((item) => item.id),
+                );
+
+                for (const id of toasted) {
+                    const isGone = query.unread === 1 && !listed.has(id);
+                    const isRead = response.data.some(
+                        (item) => item.id === id && item.read_at !== null,
+                    );
+
+                    if (isGone || isRead) {
+                        toast.dismiss(`notification-${id}`);
+                        toasted.delete(id);
+                    }
+                }
+            }
 
             if (!options.silent) {
                 alert(fresh);
@@ -184,7 +231,8 @@ export function useNotificationCenter() {
         for (const item of fresh) {
             if (
                 item.conversation_id !== null &&
-                item.conversation_id === viewedConversationId.value
+                item.conversation_id === viewedConversationId.value &&
+                pageIsAttended()
             ) {
                 void markConversationRead(item.conversation_id);
                 continue;
@@ -203,8 +251,12 @@ export function useNotificationCenter() {
 
             if (preference.browser && document.visibilityState === 'hidden') {
                 void showUnlessPushed(item);
-            } else if (item.level === 'urgent') {
+            } else if (item.toast) {
+                // One toast per notification: a new occurrence of an
+                // aggregated one replaces its toast instead of stacking.
+                toasted.add(item.id);
                 toast.info(item.title, {
+                    id: `notification-${item.id}`,
                     description: item.body ?? undefined,
                     action: item.url
                         ? { label: 'Abrir', onClick: () => open(item) }
@@ -306,9 +358,13 @@ export function useNotificationCenter() {
         { immediate: true },
     );
 
-    watch(viewedConversationId, (conversationId) => {
+    /** The conversation on screen has nothing new for the user any more. */
+    function readViewedConversation(): void {
+        const conversationId = viewedConversationId.value;
+
         if (
             conversationId !== null &&
+            pageIsAttended() &&
             items.value.some(
                 (item) =>
                     item.conversation_id === conversationId &&
@@ -317,12 +373,32 @@ export function useNotificationCenter() {
         ) {
             void markConversationRead(conversationId);
         }
-    });
+    }
+
+    watch(viewedConversationId, readViewedConversation);
 
     watch(onlyUnread, () => void load({ silent: true }));
 
-    onMounted(() => void load());
-    onBeforeUnmount(stopFallback);
+    // Back to the tab with the conversation open: what arrived meanwhile
+    // was alerted and is now seen.
+    function onAttentionChange(): void {
+        if (pageIsAttended()) {
+            readViewedConversation();
+        }
+    }
+
+    onMounted(() => {
+        unlockNotificationSound();
+        document.addEventListener('visibilitychange', onAttentionChange);
+        window.addEventListener('focus', onAttentionChange);
+        void load();
+    });
+
+    onBeforeUnmount(() => {
+        stopFallback();
+        document.removeEventListener('visibilitychange', onAttentionChange);
+        window.removeEventListener('focus', onAttentionChange);
+    });
 
     return {
         items,

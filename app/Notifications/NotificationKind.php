@@ -68,9 +68,22 @@ enum NotificationKind: string
     }
 
     /**
-     * Defaults while the user has not saved preferences for the kind.
-     * Browser notifications are always off by default: they need an explicit
-     * opt-in and the browser's permission.
+     * Whether a fresh notification of the kind is announced live in the open
+     * page with a toast (besides the bell). Urgent kinds ask for an action;
+     * a customer writing in a conversation the agent attends is the news an
+     * agent waits for, so it is announced too although it stays informative
+     * (it does not count as urgent in the bell nor in Web Push).
+     */
+    public function announcesInPage(): bool
+    {
+        return $this->level() === NotificationLevel::Urgent || $this === self::ConversationMessage;
+    }
+
+    /**
+     * Defaults while the user has not saved preferences for the kind. The
+     * kinds announced live also sound by default; a preference the user saved
+     * always wins. Browser notifications are always off by default: they need
+     * an explicit opt-in and the browser's permission.
      *
      * @return array{in_app: bool, browser: bool, sound: bool}
      */
@@ -79,7 +92,7 @@ enum NotificationKind: string
         return [
             'in_app' => true,
             'browser' => false,
-            'sound' => $this->level() === NotificationLevel::Urgent,
+            'sound' => $this->announcesInPage(),
         ];
     }
 

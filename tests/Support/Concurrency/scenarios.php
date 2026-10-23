@@ -18,12 +18,14 @@ use App\Actions\Messaging\StoreWebhookDelivery;
 use App\Actions\Users\AssessRoleChange;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\UpdateUser;
+use App\Events\Broadcasts\RealtimeSignal;
 use App\Jobs\DeliverOutboundMessage;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Department;
+use App\Models\Message;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\ConversationPendingNotification;
@@ -32,10 +34,13 @@ use App\Services\Meta\WhatsAppTransport;
 use App\Support\ReadCommittedTransaction;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Client\Request as GraphRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\Concurrency\RecordingTransport;
 
 /**
@@ -68,6 +73,41 @@ $inboundPayload = fn (Connection $connection, array $arguments): array => [
 
 $useRecordingTransport = function (array $arguments): void {
     app()->instance(WhatsAppTransport::class, new RecordingTransport((string) $arguments['sends_log']));
+};
+
+/*
+ * The real Cloud API transport, with every Graph call faked (never Meta):
+ * each send is appended to the shared log as JSON (endpoint, recipient,
+ * callback data, text) and answered as accepted after a short delay.
+ */
+$useFakedGraph = function (array $arguments): void {
+    config(['whatsapp.transport' => 'meta', 'whatsapp.pilot.recipients' => [], 'services.meta.graph_version' => 'v26.0']);
+    Http::preventStrayRequests();
+    Http::fake(['graph.facebook.com/*' => function (GraphRequest $request) use ($arguments) {
+        file_put_contents((string) $arguments['sends_log'], json_encode([
+            'url' => $request->url(),
+            'to' => $request['to'] ?? null,
+            'reference' => $request['biz_opaque_callback_data'] ?? null,
+            'body' => $request['text']['body'] ?? null,
+        ])."\n", FILE_APPEND | LOCK_EX);
+        usleep(100_000);
+
+        return Http::response(['messaging_product' => 'whatsapp', 'messages' => [['id' => 'wamid.graph.'.($request['biz_opaque_callback_data'] ?? uniqid())]]]);
+    }]);
+};
+
+/*
+ * Realtime signals sent by this process (event name and channels).
+ */
+$recordSignals = function (): Closure {
+    $signals = [];
+    Event::listen(RealtimeSignal::class, function (RealtimeSignal $signal) use (&$signals): void {
+        $signals[] = ['event' => $signal->event, 'channels' => $signal->channels];
+    });
+
+    return function () use (&$signals): array {
+        return $signals;
+    };
 };
 
 return [
@@ -153,6 +193,23 @@ return [
         });
     },
 
+    /*
+     * A transfer (to a department, optionally straight to an agent) that
+     * reports the realtime signals it sent.
+     */
+    'transfer-with-signals' => function (array $arguments) use ($recordSignals): array {
+        $signals = $recordSignals();
+        $conversation = app(TransferConversation::class)->handle(
+            Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+            Department::query()->findOrFail((int) $arguments['department_id']),
+            isset($arguments['user_id']) ? User::query()->findOrFail((int) $arguments['user_id']) : null,
+            User::query()->findOrFail((int) $arguments['actor_id']),
+            'Transferencia de prueba de concurrencia',
+        );
+
+        return ['department_id' => $conversation->department_id, 'assigned_user_id' => $conversation->assigned_user_id, 'signals' => $signals()];
+    },
+
     'transfer' => function (array $arguments): ?int {
         return app(TransferConversation::class)->handle(
             Conversation::query()->findOrFail((int) $arguments['conversation_id']),
@@ -220,6 +277,40 @@ return [
             (string) $arguments['body'],
             (string) $arguments['client_reference'],
         )->id;
+    },
+
+    /*
+     * The agent's reply request through the real Cloud API transport (Graph
+     * faked); the sync queue delivers it right away.
+     */
+    'queue-outbound-graph' => function (array $arguments) use ($useFakedGraph): int {
+        $useFakedGraph($arguments);
+
+        return app(QueueOutboundMessage::class)->handle(
+            Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+            User::query()->findOrFail((int) $arguments['user_id']),
+            (string) $arguments['body'],
+            (string) $arguments['client_reference'],
+        )->id;
+    },
+
+    /*
+     * A messages queue worker (database queue, one job at a time) delivering
+     * through the recording transport until none of the given messages is
+     * queued or being sent; returns how many times it asked for a job.
+     */
+    'work-deliveries' => function (array $arguments) use ($useRecordingTransport): int {
+        $useRecordingTransport($arguments);
+        $deadline = microtime(true) + (float) ($arguments['seconds'] ?? 40);
+        $runs = 0;
+
+        while (microtime(true) < $deadline && Message::query()->whereKey((array) $arguments['message_ids'])->whereIn('status', ['queued', 'sending'])->exists()) {
+            Artisan::call('queue:work', ['connection' => 'database', '--queue' => (string) $arguments['queue'], '--once' => true, '--sleep' => 0]);
+            $runs++;
+            usleep(50_000);
+        }
+
+        return $runs;
     },
 
     /*
@@ -307,5 +398,16 @@ return [
         $request = Request::create((string) $arguments['uri'], (string) ($arguments['method'] ?? 'GET'), server: ['HTTP_ACCEPT' => 'application/json']);
 
         return app(HttpKernel::class)->handle($request)->getStatusCode();
+    },
+
+    /*
+     * Like "http", also returning the decoded JSON answer.
+     */
+    'http-json' => function (array $arguments): array {
+        Auth::guard('web')->setUser(User::query()->findOrFail((int) $arguments['user_id']));
+        $request = Request::create((string) $arguments['uri'], (string) ($arguments['method'] ?? 'GET'), server: ['HTTP_ACCEPT' => 'application/json']);
+        $response = app(HttpKernel::class)->handle($request);
+
+        return ['status' => $response->getStatusCode(), 'json' => json_decode((string) $response->getContent(), true)];
     },
 ];

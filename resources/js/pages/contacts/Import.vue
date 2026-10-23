@@ -396,7 +396,7 @@ const progress = computed(() => {
                 :aria-current="index === currentStep ? 'step' : undefined"
                 :class="
                     cn(
-                        'flex items-center gap-2 rounded-lg border px-3 py-2',
+                        'flex items-center gap-2 rounded-lg border px-3 py-2 max-sm:flex-col max-sm:gap-1 max-sm:px-2 max-sm:text-center',
                         index === currentStep &&
                             'border-primary bg-primary-soft text-primary-soft-foreground',
                         index !== currentStep && 'text-muted-foreground',
@@ -417,7 +417,9 @@ const progress = computed(() => {
                     <Check v-if="index < currentStep" class="size-3.5" />
                     <template v-else>{{ index + 1 }}</template>
                 </span>
-                <span class="truncate font-medium">{{ item.label }}</span>
+                <span class="leading-tight font-medium sm:truncate">{{
+                    item.label
+                }}</span>
             </li>
         </ol>
 
@@ -528,6 +530,7 @@ const progress = computed(() => {
                         </span>
                         <Button
                             type="submit"
+                            class="pointer-coarse:h-10"
                             :disabled="
                                 upload.file === null || upload.processing
                             "

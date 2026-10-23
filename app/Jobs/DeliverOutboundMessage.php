@@ -20,8 +20,11 @@ use App\Services\Meta\SendResult;
 use App\Services\Meta\WhatsAppTransport;
 use App\Services\Meta\WhatsAppTransportUnavailable;
 use App\Support\Queues;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -51,6 +54,30 @@ use Throwable;
  * processed) leaves it "sending": a status webhook carrying its callback
  * data reconciles it, otherwise `whatsapp:maintenance reconcile-deliveries` marks it
  * failed as "delivery_unknown". It is never re-sent automatically.
+ *
+ * Order per conversation: replies of one conversation leave in the order they
+ * were written (by id). Right before the claim, a message whose earlier
+ * outbound message of the same conversation is still queued, or still being
+ * sent, waits: the job is dispatched again a moment later (1, 2, 4 and then
+ * every 5 seconds; a new job, so the wait never uses up the attempts of this
+ * one), and the waiting message's updated_at is refreshed so it keeps holding
+ * the ones written after it for as long as it waits. Only the same
+ * conversation waits; other conversations of the same number are never held
+ * back. The wait is bounded: an earlier message whose queued row was not
+ * refreshed for longer than the longest backoff (its job was lost), or
+ * "sending" for longer than the job timeout (an ambiguous outcome waiting for
+ * reconciliation), no longer holds the next ones. Without an
+ * asynchronous queue (sync), messages are delivered as they come.
+ * Known limits: the order only sees messages already committed. Jobs are
+ * dispatched after commit, but if two people reply to the same conversation
+ * at once and the earlier row (lower id) commits after the later job has
+ * run, the later one may leave first. An earlier queued message whose job
+ * is delayed longer than the bound above stops holding the next ones too.
+ * A wait longer than LONG_ORDER_WAITS checks is logged once to spot them.
+ *
+ * Timing: an accepted message keeps in metadata.delivery.timing when each
+ * stage happened (UTC, milliseconds) and how long it took, to measure the
+ * outbound path. It holds no personal data and no credentials.
  */
 class DeliverOutboundMessage implements ShouldQueue
 {
@@ -60,10 +87,23 @@ class DeliverOutboundMessage implements ShouldQueue
 
     public int $timeout = 90;
 
-    public function __construct(public int $messageId)
+    /** When the delivery was first queued (Unix time with microseconds); null on jobs queued before it existed. */
+    public ?float $queuedAt = null;
+
+    /** Times this delivery waited for an earlier message of its conversation. */
+    public int $orderWaits = 0;
+
+    /** Longest pause (seconds) between two checks of a delivery waiting for an earlier one. */
+    private const int MAX_ORDER_WAIT_DELAY = 5;
+
+    /** Waits (about one minute) after which a delivery held by an earlier message is logged. */
+    private const int LONG_ORDER_WAITS = 15;
+
+    public function __construct(public int $messageId, ?float $queuedAt = null)
     {
         $this->onQueue(Queues::name(Queues::MESSAGES));
         $this->tries = self::maxAttempts() + 1;
+        $this->queuedAt = $queuedAt ?? microtime(true);
     }
 
     public static function maxAttempts(): int
@@ -84,13 +124,24 @@ class DeliverOutboundMessage implements ShouldQueue
 
     public function handle(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, WhatsAppTransport $transport, ConnectionMonitor $monitor): void
     {
-        $message = $this->claim($window, $lifecycle);
+        $startedAt = microtime(true);
+        $mustWait = false;
+        $message = $this->claim($window, $lifecycle, $mustWait);
+
+        if ($mustWait) {
+            $this->waitForEarlierMessage();
+
+            return;
+        }
 
         if ($message === null) {
             return;
         }
 
+        $claimedAt = microtime(true);
+
         try {
+            $requestStartedAt = microtime(true);
             $result = $transport->send($message);
         } catch (WhatsAppTransportUnavailable $exception) {
             $this->failMessage($lifecycle, $message, 'transport_unavailable', $exception->getMessage());
@@ -111,7 +162,7 @@ class DeliverOutboundMessage implements ShouldQueue
             return;
         }
 
-        $this->accept($message, $result, $monitor);
+        $this->accept($message, $result, $monitor, $this->timing($message, $startedAt, $claimedAt, $requestStartedAt, microtime(true)));
     }
 
     /**
@@ -128,9 +179,12 @@ class DeliverOutboundMessage implements ShouldQueue
         }
     }
 
-    private function claim(CustomerServiceWindow $window, ConversationLifecycle $lifecycle): ?Message
+    /**
+     * @param  bool  $mustWait  Set when the message must wait for an earlier one of its conversation.
+     */
+    private function claim(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, bool &$mustWait): ?Message
     {
-        return DB::transaction(function () use ($window, $lifecycle): ?Message {
+        return DB::transaction(function () use ($window, $lifecycle, &$mustWait): ?Message {
             $message = Message::query()->lockForUpdate()->find($this->messageId);
 
             if ($message === null || $message->status !== MessageStatus::Queued || $message->direction !== MessageDirection::Outbound) {
@@ -174,6 +228,18 @@ class DeliverOutboundMessage implements ShouldQueue
                 }
             }
 
+            if ($this->runsOnAsynchronousQueue() && $this->hasEarlierPendingMessage($message)) {
+                // Still alive while it waits: a later message of the conversation
+                // must keep counting it as pending, however long the wait lasts.
+                Message::query()->whereKey($message->id)->update(['updated_at' => now()]);
+                $mustWait = true;
+
+                return null;
+            }
+
+            // The transport and accept() reuse what was just checked.
+            $message->setRelation('conversation', $conversation);
+
             $message->forceFill([
                 'status' => MessageStatus::Sending,
                 'sending_started_at' => now(),
@@ -186,6 +252,88 @@ class DeliverOutboundMessage implements ShouldQueue
 
             return $message;
         });
+    }
+
+    private function runsOnAsynchronousQueue(): bool
+    {
+        return $this->job !== null && ! $this->job instanceof SyncJob;
+    }
+
+    /**
+     * An earlier outbound message of the same conversation that has not
+     * reached Meta yet and is still expected to (see the class summary).
+     */
+    private function hasEarlierPendingMessage(Message $message): bool
+    {
+        $backoff = array_map('intval', (array) config('whatsapp.delivery.backoff', [10, 30, 90, 300]));
+        $queuedSince = now()->subSeconds(max([0, ...$backoff]) + 60);
+        $sendingSince = now()->subSeconds($this->timeout);
+
+        return Message::query()
+            ->where('conversation_id', $message->conversation_id)
+            ->where('direction', MessageDirection::Outbound)
+            ->where('id', '<', $message->id)
+            ->where(fn (Builder $pending) => $pending
+                ->where(fn (Builder $queued) => $queued->where('status', MessageStatus::Queued)->where('updated_at', '>=', $queuedSince))
+                ->orWhere(fn (Builder $sending) => $sending->where('status', MessageStatus::Sending)->whereNull('whatsapp_message_id')->where('sending_started_at', '>=', $sendingSince)))
+            ->exists();
+    }
+
+    /**
+     * Try again shortly with a new job (same message, same queue), keeping
+     * when the delivery was first queued. The pause grows with each wait
+     * (1, 2, 4 and then 5 seconds) so a long wait, such as an earlier message
+     * in backoff while Meta is degraded, does not poll every second.
+     */
+    private function waitForEarlierMessage(): void
+    {
+        $next = new self($this->messageId, $this->queuedAt);
+        $next->orderWaits = $this->orderWaits + 1;
+
+        if ($next->orderWaits === self::LONG_ORDER_WAITS) {
+            Log::info('Outbound delivery held by an earlier message of its conversation.', [
+                'message_id' => $this->messageId,
+                'order_waits' => $next->orderWaits,
+            ]);
+        }
+
+        dispatch($next->onConnection($this->connection)->onQueue($this->queue)->delay(self::orderWaitDelay($this->orderWaits)));
+    }
+
+    /**
+     * Seconds before checking again, after the given number of earlier waits.
+     */
+    private static function orderWaitDelay(int $previousWaits): int
+    {
+        return min(self::MAX_ORDER_WAIT_DELAY, 2 ** min(max(0, $previousWaits), 3));
+    }
+
+    /**
+     * Stages of this attempt (UTC with milliseconds) and their durations.
+     *
+     * @return array<string, int|string>
+     */
+    private function timing(Message $message, float $startedAt, float $claimedAt, float $requestStartedAt, float $respondedAt): array
+    {
+        $milliseconds = fn (float $from, float $to): int => max(0, (int) round(($to - $from) * 1000));
+
+        return array_filter([
+            'queued_at' => $this->queuedAt === null ? null : self::stamp($this->queuedAt),
+            'started_at' => self::stamp($startedAt),
+            'claimed_at' => self::stamp($claimedAt),
+            'graph_request_started_at' => self::stamp($requestStartedAt),
+            'graph_response_at' => self::stamp($respondedAt),
+            'wait_ms' => $this->queuedAt === null ? null : $milliseconds($this->queuedAt, $startedAt),
+            'claim_ms' => $milliseconds($startedAt, $claimedAt),
+            'provider_ms' => $milliseconds($requestStartedAt, $respondedAt),
+            'attempt' => $message->delivery_attempts,
+            'order_waits' => $this->orderWaits,
+        ], fn (int|string|null $value): bool => $value !== null);
+    }
+
+    private static function stamp(float $at): string
+    {
+        return CarbonImmutable::createFromTimestampMs((int) round($at * 1000), 'UTC')->format('Y-m-d\TH:i:s.v\Z');
     }
 
     /**
@@ -225,10 +373,13 @@ class DeliverOutboundMessage implements ShouldQueue
         return null;
     }
 
-    private function accept(Message $message, SendResult $result, ConnectionMonitor $monitor): void
+    /**
+     * @param  array<string, int|string>  $timing
+     */
+    private function accept(Message $message, SendResult $result, ConnectionMonitor $monitor, array $timing): void
     {
-        $connection = DB::transaction(function () use ($message, $result) {
-            $current = Message::query()->with('conversation.channelConnection')->lockForUpdate()->findOrFail($message->id);
+        $connection = DB::transaction(function () use ($message, $result, $timing) {
+            $current = Message::query()->lockForUpdate()->findOrFail($message->id);
             $previous = $current->status;
 
             // A status webhook may have reconciled the message first (callback data).
@@ -245,13 +396,24 @@ class DeliverOutboundMessage implements ShouldQueue
                 $current->metadata = [...($current->metadata ?? []), 'simulated' => true];
             }
 
+            $acceptedAt = microtime(true);
+            $start = isset($timing['queued_at']) ? $this->queuedAt : null;
+            $current->metadata = [...($current->metadata ?? []), 'delivery' => [
+                ...(is_array($current->metadata['delivery'] ?? null) ? $current->metadata['delivery'] : []),
+                'timing' => [
+                    ...$timing,
+                    'accepted_at' => self::stamp($acceptedAt),
+                    ...($start === null ? [] : ['total_ms' => max(0, (int) round(($acceptedAt - $start) * 1000))]),
+                ],
+            ]];
+
             $current->save();
 
             if ($current->status !== $previous) {
                 MessageStatusChanged::dispatch($current->id, $current->conversation_id, $current->status->value, $previous->value);
             }
 
-            return $current->conversation->channelConnection;
+            return $message->conversation->channelConnection;
         });
 
         if ($connection !== null && ! $result->simulated) {
@@ -285,7 +447,7 @@ class DeliverOutboundMessage implements ShouldQueue
             return;
         }
 
-        $connection = $message->conversation()->with('channelConnection')->first()?->channelConnection;
+        $connection = $message->conversation->channelConnection;
 
         if ($connection !== null) {
             if ($exception->kind === MetaGraphException::TOKEN_INVALID) {

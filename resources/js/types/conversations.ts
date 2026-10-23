@@ -42,6 +42,9 @@ export type ConversationSummary = {
         id: number;
         name: string;
         phone: string | null;
+        /** Channel of the connection (ConnectionChannel on the server). */
+        channel: string;
+        channel_label: string;
         /** Paused (inactive) and deleted connections are told apart. */
         state: 'active' | 'inactive' | 'deleted';
         /** Whether a reply can be sent now; the server checks it again. */
@@ -134,6 +137,8 @@ export type ConversationFilters = {
     search_ignored: boolean;
     tag: number | null;
     sort: ConversationSort;
+    /** Only conversations with messages unread for the viewer. */
+    unread: boolean;
 };
 
 export type MessageDirection = 'inbound' | 'outbound';
@@ -216,6 +221,12 @@ export type ConversationMessage = {
     delivered_at: string | null;
     read_at: string | null;
     failed_at: string | null;
+    /** Last change of the stored message (delivery state version). */
+    updated_at?: string | null;
+    /** Calls made to the provider; breaks a tie of updated_at between delivery states. */
+    delivery_attempts?: number;
+    /** Manual retries; a retry requeues without a new attempt, so it breaks the tie first. */
+    delivery_retries?: number;
 };
 
 export type ConversationNote = {

@@ -39,6 +39,10 @@ export const USERS = {
     carla: 'e2e-carla@example.test',
 };
 export const INCREMENT_B_SEED = join(HERE, 'increment-b-seed.php');
+/** The PHP binary of the runner (tests/e2e/run.php), not whatever is on PATH. */
+export const PHP_BINARY = process.env.E2E_PHP_BINARY ?? 'php';
+/** Viewport widths of the responsive checks (phones, tablet, desktops). */
+export const WIDTHS = [320, 360, 390, 430, 768, 1024, 1280, 1440];
 
 /** Polling fallback of the inbox pages: a live update must beat it. */
 export const FALLBACK_MS = 20_000;
@@ -139,7 +143,7 @@ export function printProblems() {
 
 /** Runs a PHP seed script and returns its standard output. */
 export function php(script, ...args) {
-    return execFileSync('php', [script, ...args], {
+    return execFileSync(PHP_BINARY, [script, ...args], {
         env: process.env,
         cwd: ROOT,
         encoding: 'utf8',
@@ -148,7 +152,7 @@ export function php(script, ...args) {
 
 /** Same, without blocking the event loop (browser events keep flowing). */
 export async function phpAsync(script, ...args) {
-    const { stdout } = await execFileAsync('php', [script, ...args], {
+    const { stdout } = await execFileAsync(PHP_BINARY, [script, ...args], {
         env: process.env,
         cwd: ROOT,
     });
@@ -221,7 +225,12 @@ export function watchProblems(page, ignoreConsole, prefix = '') {
  *                  (public/hot) locally, so its full-page reloads while other
  *                  people edit sources do not interfere; only the
  *                  application's behaviour is seen
- *   trackToasts    remember every toast shown, also the ones already gone
+ *   trackToasts    remember every toast shown, also the ones already gone:
+ *                  window.__toasts (texts) and window.__toastLog ({t, text}),
+ *                  one entry per toast element, so a repeated toast with the
+ *                  same text counts twice (see toastsSince)
+ *   trackAlerts    spy on the notification sound (Web Audio oscillators
+ *                  and media elements), see alertCounts / alertDelta
  */
 export async function openPage(browser, options = {}) {
     const context = await browser.newContext({
@@ -241,19 +250,29 @@ export async function openPage(browser, options = {}) {
 
     if (options.trackToasts) {
         await page.addInitScript(() => {
+            const toastNodes = new WeakSet();
             window.__toasts = [];
+            window.__toastLog = [];
             new MutationObserver(() => {
                 for (const toast of document.querySelectorAll(
                     '[data-sonner-toast]',
                 )) {
                     const text = toast.textContent.trim();
 
-                    if (text && !window.__toasts.includes(text)) {
+                    // One entry per toast element (never deduplicated by
+                    // text); an element is logged once it shows its text.
+                    if (text && !toastNodes.has(toast)) {
+                        toastNodes.add(toast);
                         window.__toasts.push(text);
+                        window.__toastLog.push({ t: Date.now(), text });
                     }
                 }
             }).observe(document, { childList: true, subtree: true });
         });
+    }
+
+    if (options.trackAlerts) {
+        await page.addInitScript(installAlertSpy);
     }
 
     page.setDefaultTimeout(15_000);
@@ -342,6 +361,126 @@ export async function waitFor(predicate, timeoutMs, intervalMs = 200) {
     return false;
 }
 
+/** Toasts (one per element, see trackToasts) shown since `since`. */
+export function toastsSince(page, since, pattern = /./) {
+    return page.evaluate(
+        ({ since, source, flags }) =>
+            (window.__toastLog ?? []).filter(
+                (entry) =>
+                    entry.t >= since &&
+                    new RegExp(source, flags).test(entry.text),
+            ),
+        { since, source: pattern.source, flags: pattern.flags },
+    );
+}
+
+/**
+ * Chromium without the autoplay restriction of the operating system: the
+ * page still has to be activated by a gesture (the application waits for
+ * navigator.userActivation before creating its audio context).
+ */
+export function launchBrowser(options = {}) {
+    return chromium.launch({
+        ...options,
+        args: [
+            '--autoplay-policy=no-user-gesture-required',
+            ...(options.args ?? []),
+        ],
+    });
+}
+
+/**
+ * Init script of openPage({ trackAlerts }): counts the notification sound.
+ * The application synthesizes it with Web Audio (one oscillator per tone,
+ * two tones when urgent), so every createOscillator() is a tone and the
+ * tones created within 100 ms form one chime. Media elements are counted
+ * too (no audio file is expected).
+ */
+function installAlertSpy() {
+    const alerts = {
+        contexts: 0,
+        tones: 0,
+        chimes: 0,
+        running: 0,
+        media: 0,
+        log: [],
+    };
+    let lastTone = -Infinity;
+    window.__alerts = alerts;
+
+    const Base = window.BaseAudioContext ?? window.AudioContext;
+
+    if (window.AudioContext) {
+        const Original = window.AudioContext;
+        window.AudioContext = class extends Original {
+            constructor(...args) {
+                super(...args);
+                alerts.contexts++;
+            }
+        };
+    }
+
+    if (Base) {
+        const createOscillator = Base.prototype.createOscillator;
+        Base.prototype.createOscillator = function (...args) {
+            const now = performance.now();
+
+            alerts.tones++;
+            alerts.running += this.state === 'running' ? 1 : 0;
+
+            if (now - lastTone > 100) {
+                alerts.chimes++;
+            }
+
+            lastTone = now;
+            alerts.log.push({ t: Date.now(), state: this.state });
+
+            return createOscillator.apply(this, args);
+        };
+    }
+
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...args) {
+        alerts.media++;
+
+        return play.apply(this, args);
+    };
+}
+
+/** Counters of the sound spy (trackAlerts) without the log. */
+export function alertCounts(page) {
+    return page.evaluate(() => {
+        const { log, ...counts } = window.__alerts ?? {
+            contexts: 0,
+            tones: 0,
+            chimes: 0,
+            running: 0,
+            media: 0,
+            log: [],
+        };
+
+        return { ...counts, lastState: log.at(-1)?.state ?? null };
+    });
+}
+
+/**
+ * Runs the action and returns how the sound counters changed, after
+ * waiting `settleMs` (late chimes count).
+ */
+export async function alertDelta(page, action, { settleMs = 1_500 } = {}) {
+    const before = await alertCounts(page);
+    const result = await action();
+    await page.waitForTimeout(settleMs);
+    const after = await alertCounts(page);
+    const delta = {};
+
+    for (const key of ['contexts', 'tones', 'chimes', 'running', 'media']) {
+        delta[key] = after[key] - before[key];
+    }
+
+    return { ...delta, lastState: after.lastState, result };
+}
+
 /* ------------------------------------------------------------------ */
 /* Inbox (three-panel page /conversations?c=ID).                       */
 /* ------------------------------------------------------------------ */
@@ -349,10 +488,199 @@ export async function waitFor(predicate, timeoutMs, intervalMs = 200) {
 export const AVAILABILITY_SWITCH =
     'Disponible para aceptar y recibir conversaciones';
 
-export const overflow = (page) =>
-    page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
+/**
+ * Horizontal overflow in px: the document's (page scrolls sideways) or, when
+ * larger, the worst one inside the page (a panel that scrolls sideways or
+ * cuts its content; see layoutReport). <= 0 means nothing overflows.
+ */
+export async function overflow(page) {
+    const report = await layoutReport(page);
+
+    return Math.max(
+        report.doc,
+        ...report.innerScroll.map((entry) => entry.by),
+        ...report.offscreen.map((entry) => entry.by),
+        ...report.clipped.map((entry) => entry.by),
     );
+}
+
+/**
+ * Layout of the page as the user sees it, measured in the browser:
+ *
+ *   doc          document.scrollWidth - innerWidth (page scrolls sideways)
+ *   offscreen    visible elements reaching past the left/right edge of the
+ *                viewport (also the ones a clipping panel hides)
+ *   innerScroll  elements that scroll horizontally inside (overflow-x
+ *                auto/scroll with scrollWidth > clientWidth)
+ *   clipped      overflow-x hidden/clip elements whose content is wider
+ *                than they are and is cut without an ellipsis
+ *   smallFont    visible text under `minFont` px inside `fontRoots`
+ *   smallTargets visible `targets` (CSS selectors of the main actions)
+ *                smaller than `minTarget` px in height or width
+ *
+ * Toasts and screen-reader-only text are ignored. Every entry has the tag,
+ * an accessible name or text and the measure that failed.
+ */
+export function layoutReport(page, options = {}) {
+    return page.evaluate(
+        ({ fontRoots, minFont, targets, minTarget }) => {
+            const viewport = document.documentElement.clientWidth;
+            const ignored = (element) =>
+                element.closest(
+                    '[data-sonner-toaster], .sr-only, [data-e2e-ignore]',
+                ) !== null;
+            const shown = (element) => {
+                if (ignored(element)) {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+
+                return (
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    (element.checkVisibility?.({
+                        checkOpacity: true,
+                        checkVisibilityCSS: true,
+                    }) ??
+                        true)
+                );
+            };
+            const describe = (element, extra) => ({
+                tag: element.tagName.toLowerCase(),
+                name: (
+                    element.getAttribute('aria-label') ||
+                    element.getAttribute('title') ||
+                    element.textContent ||
+                    element.id ||
+                    String(element.className)
+                )
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 50),
+                ...extra,
+            });
+            const ownText = (element) =>
+                [...element.childNodes].some(
+                    (node) =>
+                        node.nodeType === Node.TEXT_NODE &&
+                        node.textContent.trim() !== '',
+                );
+            const all = [...document.body.querySelectorAll('*')].filter(shown);
+            const report = {
+                width: window.innerWidth,
+                doc: document.documentElement.scrollWidth - window.innerWidth,
+                offscreen: [],
+                innerScroll: [],
+                clipped: [],
+                smallFont: [],
+                smallTargets: [],
+            };
+
+            for (const element of all) {
+                const style = getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                const leaf =
+                    ownText(element) ||
+                    element.matches(
+                        'a, button, input, select, textarea, img, svg, [role]',
+                    );
+
+                if (
+                    leaf &&
+                    style.position !== 'fixed' &&
+                    (rect.right > viewport + 1 || rect.left < -1)
+                ) {
+                    report.offscreen.push(
+                        describe(element, {
+                            by: Math.round(
+                                Math.max(rect.right - viewport, -rect.left),
+                            ),
+                        }),
+                    );
+                }
+
+                const extra = element.scrollWidth - element.clientWidth;
+
+                if (extra > 1 && element.clientWidth > 1) {
+                    if (['auto', 'scroll'].includes(style.overflowX)) {
+                        report.innerScroll.push(
+                            describe(element, { by: extra }),
+                        );
+                    } else if (
+                        ['hidden', 'clip'].includes(style.overflowX) &&
+                        style.textOverflow !== 'ellipsis'
+                    ) {
+                        report.clipped.push(describe(element, { by: extra }));
+                    }
+                }
+            }
+
+            const roots = fontRoots
+                .flatMap((selector) => [...document.querySelectorAll(selector)])
+                .filter(shown);
+
+            for (const element of all) {
+                if (
+                    roots.some((root) => root.contains(element)) &&
+                    ownText(element)
+                ) {
+                    const size = parseFloat(getComputedStyle(element).fontSize);
+
+                    if (size < minFont) {
+                        report.smallFont.push(describe(element, { size }));
+                    }
+                }
+            }
+
+            for (const selector of targets) {
+                for (const element of document.querySelectorAll(selector)) {
+                    if (!shown(element)) {
+                        continue;
+                    }
+
+                    const rect = element.getBoundingClientRect();
+
+                    if (rect.height < minTarget || rect.width < minTarget) {
+                        report.smallTargets.push(
+                            describe(element, {
+                                selector,
+                                size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                            }),
+                        );
+                    }
+                }
+            }
+
+            return report;
+        },
+        {
+            fontRoots: options.fontRoots ?? [],
+            minFont: options.minFont ?? 12,
+            targets: options.targets ?? [],
+            minTarget: options.minTarget ?? 40,
+        },
+    );
+}
+
+/** Problems of a layoutReport as short text ('' when there are none). */
+export function layoutProblems(report) {
+    const list = (label, entries, field) =>
+        entries.length === 0
+            ? null
+            : `${label}=${entries.length} ${JSON.stringify(entries.slice(0, 3).map((entry) => `${entry.tag}:${entry.name}:${entry[field]}`))}`;
+
+    return [
+        report.doc > 0 ? `doc=${report.doc}` : null,
+        list('offscreen', report.offscreen, 'by'),
+        list('innerScroll', report.innerScroll, 'by'),
+        list('clipped', report.clipped, 'by'),
+        list('smallFont', report.smallFont, 'size'),
+        list('smallTargets', report.smallTargets, 'size'),
+    ]
+        .filter(Boolean)
+        .join('; ');
+}
 
 export const listRow = (page, name) =>
     page.locator('[data-inbox-item]', { hasText: name }).first();
@@ -571,7 +899,7 @@ export function startProcess(args, logName = null) {
         SHOTS && logName
             ? openSync(join(SHOTS, `${String(logName)}.log`), 'a')
             : 'ignore';
-    const child = spawn('php', args, {
+    const child = spawn(PHP_BINARY, args, {
         cwd: ROOT,
         env: process.env,
         stdio: ['ignore', log, log],

@@ -43,8 +43,9 @@
 |   LOAD_SERVER                 fpm | builtin (default fpm when httpd and php-fpm exist)
 |   LOAD_PHP_WORKERS            FPM children / built-in server workers (default 8)
 |   LOAD_WORKERS                queue workers, "queues:count;..." (default
-|                               "webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1",
-|                               the production topology of deploy/supervisor)
+|                               "messages,webhooks:4;realtime:2;notifications:2;media:2;default:1;exports:1",
+|                               the production topology of deploy/supervisor:
+|                               outbound messages before webhooks)
 |   LOAD_CONVERSATIONS          historical conversations (default 10000)
 |   LOAD_SEED_AGENTS            agent users in the dataset (default 100)
 |   LOAD_OUTPUT                 output directory (default: system temp dir)
@@ -385,7 +386,7 @@ if ($serverKind === 'fpm') {
 
 $waitForPort($port) || $fail("The web server did not start; see {$outDir}/*.log");
 
-$workerLayout = $knob('LOAD_WORKERS', 'webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1');
+$workerLayout = $knob('LOAD_WORKERS', 'messages,webhooks:4;realtime:2;notifications:2;media:2;default:1;exports:1');
 $workerDescription = [];
 
 foreach (array_filter(explode(';', $workerLayout)) as $index => $definition) {

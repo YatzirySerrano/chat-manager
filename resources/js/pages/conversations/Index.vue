@@ -7,6 +7,7 @@ import { toast } from 'vue-sonner';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import InboxList from '@/components/conversations/InboxList.vue';
+import { useConversationAccept } from '@/components/conversations/useConversationAccept';
 import EmptyState from '@/components/EmptyState.vue';
 import {
     Sheet,
@@ -57,7 +58,12 @@ const props = defineProps<{
     statuses: { value: ConversationStatusValue; label: string }[];
     departments: { id: number; name: string; is_active: boolean }[];
     agents: { id: number; name: string; is_active: boolean }[];
-    connections: { id: number; name: string }[];
+    connections: {
+        id: number;
+        name: string;
+        display_phone_number: string | null;
+    }[];
+    unreadCount: number;
     tags: TagOption[];
     canSeeUnrouted: boolean;
     canExport: boolean;
@@ -80,6 +86,14 @@ const LIST_PROPS = [
     'counts',
     'inbox',
     'viewCounts',
+    'unreadCount',
+];
+/** Props a live change refreshes in the list. */
+const LIVE_LIST_PROPS = [
+    'conversations',
+    'counts',
+    'viewCounts',
+    'unreadCount',
 ];
 /** Props of the selected conversation (center and right panels). */
 const SELECTION_PROPS = [
@@ -177,7 +191,10 @@ function filter(query: Record<string, string>): void {
         replace: true,
         only: LIST_PROPS,
         onStart: () => (loadingList.value = true),
-        onFinish: () => (loadingList.value = false),
+        onFinish: () => {
+            loadingList.value = false;
+            reloadIfSignaledDuringFilter();
+        },
     });
 }
 
@@ -301,12 +318,51 @@ const liveChannels = computed<LiveChannel[]>(() => {
     return channels;
 });
 
-useLiveReload({
+/*
+ * A signal that arrives while a filter change is loading is not lost: the
+ * filter's response may have been read before that change was committed,
+ * so the list reloads once more when the filter finishes.
+ */
+let signalDuringFilter = false;
+
+const liveList = useLiveReload({
     channels: liveChannels,
-    only: ['conversations', 'counts', 'viewCounts'],
+    only: LIVE_LIST_PROPS,
     fallbackIntervalMs: 20_000,
     enabled: () => !loadingList.value,
+    filter: () => {
+        if (loadingList.value) {
+            signalDuringFilter = true;
+        }
+
+        return true;
+    },
 });
+
+function reloadIfSignaledDuringFilter(): void {
+    if (!signalDuringFilter) {
+        return;
+    }
+
+    signalDuringFilter = false;
+    // Through the live reload, so a debounced reload already scheduled by the
+    // same signal and this one become a single request.
+    liveList.schedule();
+}
+
+/* Accepting a pending row: the same route and action as in the chat. */
+const { acceptingId, accept: acceptConversation } = useConversationAccept();
+
+function acceptFromList(id: number): void {
+    acceptConversation(id, {
+        onSuccess: () => {
+            // The server opens the accepted conversation (?c=id).
+            if (props.selectedId === id) {
+                mobilePane.value = 'chat';
+            }
+        },
+    });
+}
 
 /* The viewer's availability changed (another tab or device): follow it. */
 useUserChannel({
@@ -322,7 +378,7 @@ const { state: realtimeState } = useRealtimeStatus();
 
 function onRead(): void {
     if (realtimeState.value !== 'connected' && !loadingList.value) {
-        router.reload({ only: ['conversations'] });
+        router.reload({ only: ['conversations', 'unreadCount'] });
     }
 }
 
@@ -418,13 +474,16 @@ const title = computed(() =>
                 :departments="departments"
                 :agents="agents"
                 :connections="connections"
+                :unread-count="unreadCount"
                 :tags="tags"
                 :can-see-unrouted="canSeeUnrouted"
                 :can-export="canExport"
                 :availability="availability"
                 :selected-id="selectedId"
                 :loading="loadingList || loadingMore"
+                :accepting-id="acceptingId"
                 @select="select"
+                @accept="acceptFromList"
                 @filter="filter"
                 @load-more="loadMore"
             />

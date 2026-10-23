@@ -1,7 +1,9 @@
 <?php
 
+use App\Providers\OperationsServiceProvider;
 use App\Services\Operations\QueueMonitor;
 use App\Support\Queues;
+use Illuminate\Foundation\DevCommands;
 
 /*
 | Every job must land on a queue some worker consumes. The production
@@ -38,6 +40,36 @@ function workerQueueLists(string $template): array
     }, workerCommands($template));
 }
 
+/**
+ * The `composer run dev` commands registered by OperationsServiceProvider in
+ * the local environment, by name.
+ *
+ * @return array<string, string>
+ */
+function localDevCommands(): array
+{
+    $environment = app()->environment();
+    app()->detectEnvironment(fn (): string => 'local');
+
+    try {
+        (new OperationsServiceProvider(app()))->boot();
+    } finally {
+        app()->detectEnvironment(fn (): string => $environment);
+    }
+
+    return array_column(DevCommands::commands(), 'command', 'name');
+}
+
+/**
+ * @return list<string>
+ */
+function devCommandQueues(string $command): array
+{
+    preg_match("/--queue='?([a-z,_-]+)'?/", $command, $match);
+
+    return explode(',', $match[1] ?? '');
+}
+
 test('every queue responsibility has a worker in both production templates', function (string $template) {
     $consumed = array_merge(...workerQueueLists($template));
 
@@ -55,6 +87,12 @@ test('critical queues never share a worker with notifications, media, metrics or
     }
 
     expect(workerQueueLists($template))->toContain([Queues::REALTIME]);
+})->with(QUEUE_TEMPLATES);
+
+test('critical workers take outbound messages before webhooks in both production templates', function (string $template) {
+    $critical = array_values(array_filter(workerQueueLists($template), fn (array $queues): bool => in_array(Queues::WEBHOOKS, $queues, true)));
+
+    expect($critical)->toBe([[Queues::MESSAGES, Queues::WEBHOOKS]]);
 })->with(QUEUE_TEMPLATES);
 
 test('workers use the configured queue connection and stop before retry_after', function (string $template) {
@@ -92,4 +130,43 @@ test('the system page monitors every queue, including the REALTIME_QUEUE overrid
     config(['broadcasting.realtime.queue' => 'fast']);
 
     expect(app(QueueMonitor::class)->queueNames()[Queues::REALTIME])->toBe('fast');
+});
+
+test('composer run dev keeps two polling workers on the critical queues, one preferring sends and one webhooks', function () {
+    config(['exports.queue' => 'exports']);
+
+    $commands = localDevCommands();
+
+    expect(devCommandQueues($commands['queue']))->toBe([Queues::MESSAGES, Queues::REALTIME, Queues::WEBHOOKS])
+        ->and(devCommandQueues($commands['webhooks']))->toBe([Queues::WEBHOOKS, Queues::REALTIME, Queues::MESSAGES]);
+
+    foreach (['queue', 'webhooks'] as $name) {
+        // A long-lived worker polling every second, started again after `queue:restart`.
+        expect($commands[$name])->toContain('queue:work')->toContain('--sleep=1')->toStartWith('while :; do ');
+    }
+});
+
+test('composer run dev consumes every other queue in a reloading listener with exports last', function () {
+    config(['exports.queue' => 'exports']);
+
+    $commands = localDevCommands();
+    $background = devCommandQueues($commands['queue-bg']);
+
+    expect($commands['queue-bg'])->toContain('queue:listen')
+        ->and($background)->toBe([Queues::NOTIFICATIONS, Queues::MEDIA, Queues::DEFAULT, Queues::EXPORTS])
+        ->and(array_diff(array_values(app(QueueMonitor::class)->queueNames()), [...devCommandQueues($commands['queue']), ...$background]))->toBe([]);
+});
+
+test('composer run dev never lists a remapped queue twice', function () {
+    config(['exports.queue' => 'default', 'broadcasting.realtime.queue' => 'messages']);
+
+    $commands = localDevCommands();
+
+    expect(devCommandQueues($commands['queue']))->toBe([Queues::MESSAGES, Queues::WEBHOOKS])
+        ->and(devCommandQueues($commands['queue-bg']))->toBe([Queues::NOTIFICATIONS, Queues::MEDIA, Queues::DEFAULT]);
+});
+
+test('composer run dev serves with several PHP workers', function () {
+    // PHP_CLI_SERVER_WORKERS is ignored by `artisan serve` without --no-reload.
+    expect(localDevCommands()['server'])->toMatch('/^PHP_CLI_SERVER_WORKERS=\\d+ php artisan serve --no-reload$/');
 });

@@ -10,6 +10,7 @@ use App\Support\Queues;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
@@ -18,8 +19,8 @@ use Illuminate\Support\ServiceProvider;
 /**
  * Production hardening and observability wiring: trusted reverse proxies,
  * https URLs, correlation identifiers on every queued job, and the local
- * `composer run dev` processes (a queue listener for every queue of the
- * application and the scheduler).
+ * `composer run dev` processes (queue workers for every queue of the
+ * application, the scheduler and a multi-worker web server).
  */
 class OperationsServiceProvider extends ServiceProvider
 {
@@ -78,8 +79,30 @@ class OperationsServiceProvider extends ServiceProvider
     }
 
     /**
-     * The default dev command only listens to the "default" queue; the
-     * application uses one queue per responsibility (App\Support\Queues).
+     * `composer run dev` processes (the framework defaults only listen to the
+     * "default" queue with one `queue:listen` and serve with one PHP worker).
+     *
+     * - "queue" and "webhooks": two long-lived `queue:work` processes for the
+     *   critical queues (App\Support\Queues), one preferring outbound
+     *   messages and the other the reception of webhooks, both draining the
+     *   real-time signals, polling every second. `queue:listen` boots a new
+     *   PHP process for every job and sleeps 3 s when the queue is empty,
+     *   which put 1-2 s between queued and sending and 3-6 s until accepted.
+     *   A worker keeps the code it booted with: after editing PHP run
+     *   `php artisan queue:restart`; the shell loop starts it again at once
+     *   (multiplex only restarts commands that exit with an error, and a
+     *   restarted worker exits with 0).
+     * - "queue-bg": `queue:listen` (reloads the code by itself) for the
+     *   remaining queues, exports last.
+     * - "server": `artisan serve --no-reload` with PHP_CLI_SERVER_WORKERS
+     *   (default 4; the value of .env or of the shell wins), so webhooks of
+     *   the tunnel, the send request and its refetches are served in
+     *   parallel. Without --no-reload the variable is ignored; in exchange
+     *   a change to .env needs `composer run dev` restarted.
+     *
+     * On Windows the dev command runs through `concurrently` and cmd.exe (no
+     * shell loop, no inline variables, no built-in server workers): there a
+     * single listener polls every second.
      */
     private function configureDevCommands(): void
     {
@@ -88,12 +111,52 @@ class OperationsServiceProvider extends ServiceProvider
         }
 
         $names = $this->app->make(QueueMonitor::class)->queueNames();
+        $sendFirst = $this->queueList([$names[Queues::MESSAGES], $names[Queues::REALTIME], $names[Queues::WEBHOOKS]]);
+        $receiveFirst = $this->queueList([$names[Queues::WEBHOOKS], $names[Queues::REALTIME], $names[Queues::MESSAGES]]);
         $exports = $names[Queues::EXPORTS];
-        unset($names[Queues::EXPORTS]);
-        // Priority order; slow exports last so they never delay messages.
-        $queues = implode(',', array_values(array_unique([...array_values($names), $exports])));
+        unset($names[Queues::WEBHOOKS], $names[Queues::MESSAGES], $names[Queues::REALTIME], $names[Queues::EXPORTS]);
+        // Priority order; slow exports last so they never delay the rest.
+        $background = array_values(array_diff(array_unique([...array_values($names), $exports]), $sendFirst));
 
-        DevCommands::artisan("queue:listen --queue={$queues} --tries=1 --timeout=0", 'queue');
         DevCommands::artisan('schedule:work', 'scheduler');
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            DevCommands::artisan('queue:listen --queue='.implode(',', [...$sendFirst, ...$background]).' --sleep=1 --tries=1 --timeout=0', 'queue');
+
+            return;
+        }
+
+        DevCommands::register($this->restartingWorker($sendFirst), 'queue');
+        DevCommands::register($this->restartingWorker($receiveFirst), 'webhooks');
+
+        if ($background !== []) {
+            DevCommands::artisan('queue:listen --queue='.escapeshellarg(implode(',', $background)).' --sleep=3 --tries=1 --timeout=0', 'queue-bg');
+        }
+
+        // Same variable ServeCommand reads; only used by the local dev command.
+        $serverWorkers = max(1, (int) (Env::get('PHP_CLI_SERVER_WORKERS') ?: 4));
+        DevCommands::register("PHP_CLI_SERVER_WORKERS={$serverWorkers} php artisan serve --no-reload", 'server');
+    }
+
+    /**
+     * @param  list<string>  $queues
+     * @return list<string>
+     */
+    private function queueList(array $queues): array
+    {
+        return array_values(array_unique($queues));
+    }
+
+    /**
+     * A long-lived worker started again whenever it stops (queue:restart,
+     * memory limit, a crash), one second later.
+     *
+     * @param  list<string>  $queues
+     */
+    private function restartingWorker(array $queues): string
+    {
+        $queue = escapeshellarg(implode(',', $queues));
+
+        return "while :; do php artisan queue:work --queue={$queue} --sleep=1 --tries=1 --timeout=0; sleep 1; done";
     }
 }

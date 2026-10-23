@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Route;
  * @phpstan-type PresentedNotification array{
  *     id: string, kind: string, level: string, title: string, body: string|null, url: string|null,
  *     accessible: bool, occurrences: int, read_at: string|null, created_at: string|null, updated_at: string|null,
- *     conversation_id: int|null
+ *     conversation_id: int|null, toast: bool
  * }
  */
 class NotificationPresenter
@@ -106,6 +106,7 @@ class NotificationPresenter
             'created_at' => $notification->created_at?->toIso8601String(),
             'updated_at' => $notification->updated_at?->toIso8601String(),
             'conversation_id' => $accessible && isset($data['conversation_id']) && is_int($data['conversation_id']) ? $data['conversation_id'] : null,
+            'toast' => $accessible && $kind !== null && $kind->announcesInPage(),
         ];
     }
 

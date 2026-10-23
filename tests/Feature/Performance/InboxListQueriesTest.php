@@ -66,6 +66,34 @@ test('the list of a supervisor costs the same queries with 2 or 12 conversations
     expect($many)->toBe($few);
 });
 
+test('the list of a global administrator costs the same queries with 2 or 12 pending conversations they may accept', function () {
+    $department = Department::factory()->distribution(DistributionMode::Shared)->create();
+    $admin = User::factory()->administrator()->available()->create();
+
+    Conversation::factory()->count(2)->inDepartment($department)->create();
+    inboxListQueries($admin, 'all', 2); // warms per-process caches (permissions, settings)
+    $few = inboxListQueries($admin->fresh(), 'all', 2);
+
+    Conversation::factory()->count(10)->inDepartment($department)->create();
+    $many = inboxListQueries($admin->fresh(), 'all', 12);
+
+    expect($many)->toBe($few);
+});
+
+test('a department deactivated after a listing no longer lets the same person accept from it', function () {
+    $department = Department::factory()->distribution(DistributionMode::Shared)->create();
+    $admin = User::factory()->administrator()->available()->create();
+    $queued = Conversation::factory()->inDepartment($department)->create();
+
+    $this->actingAs($admin)->get(route('conversations.index'))
+        ->assertInertia(fn ($page) => $page->where('conversations.data.0.can.accept', true));
+
+    $department->forceFill(['is_active' => false])->save();
+
+    $this->actingAs($admin)->get(route('conversations.index'))
+        ->assertInertia(fn ($page) => $page->where('conversations.data.0.id', $queued->id)->where('conversations.data.0.can.accept', false));
+});
+
 test('the queue still lists only the departments the agent may accept from', function () {
     $own = Department::factory()->distribution(DistributionMode::Shared)->create();
     $manual = Department::factory()->distribution(DistributionMode::Manual)->create();

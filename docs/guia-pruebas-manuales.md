@@ -57,9 +57,16 @@ Conversaciones existentes: Laura Méndez (abierta, Demo B · Ventas, responsable
    `QUEUE_CONNECTION=database`. Después `php artisan config:clear`.
 3. **Antes del módulo 10 (y siempre que una prueba hable de «en vivo», colas, exportaciones en cola, importaciones o
    Web Push)**, arranca los procesos: `composer run dev` (servidor `php artisan serve` en `http://localhost:8000`,
-   Vite, Reverb, un `queue:listen` con las colas `webhooks,messages,realtime,notifications,media,default,exports` y
-   `schedule:work`). Alternativa en terminales separadas: `php artisan serve`, `npm run dev`,
-   `php artisan reverb:start`, `php artisan queue:listen --queue=webhooks,messages,realtime,notifications,media,default,exports --tries=1`
+   Vite, Reverb, `schedule:work` y tres procesos de colas: `queue` (`queue:work` con
+   `messages,realtime,webhooks`, envíos primero), `webhooks` (`queue:work` con `webhooks,realtime,messages`, recepción
+   primero) y `queue-bg` (`queue:listen` con `media,notifications,default,exports`); en Windows, un único
+   `queue:listen` con todas las colas). Los dos `queue:work` corren en un bucle que los vuelve a arrancar al detenerse:
+   **después de cambiar código PHP que corre en la cola (jobs, listeners, transportes), ejecuta
+   `php artisan queue:restart`** para que tomen el código nuevo (el `queue:listen` de `queue-bg` lo recarga solo).
+   Alternativa en terminales separadas: `php artisan serve`, `npm run dev`, `php artisan reverb:start`,
+   `php artisan queue:work --queue=messages,realtime,webhooks --sleep=1 --tries=1 --timeout=0`,
+   `php artisan queue:work --queue=webhooks,realtime,messages --sleep=1 --tries=1 --timeout=0`,
+   `php artisan queue:listen --queue=media,notifications,default,exports --sleep=3 --tries=1 --timeout=0`
    y `php artisan schedule:work`. Sin worker, el simulador guarda los webhooks pero no se procesan; sin Reverb, la
    interfaz se actualiza por sondeo cada 20 s (no es un error).
 4. **Preparar la conexión demo para poder responder** (Superadministrador, Conexiones → «Demo B · WhatsApp

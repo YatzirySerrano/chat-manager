@@ -63,6 +63,7 @@ function safeUrl(url: string | null): string | null {
             <Button
                 variant="ghost"
                 size="icon-sm"
+                class="pointer-coarse:size-10"
                 title="Cerrar el panel de detalles"
                 aria-label="Cerrar el panel de detalles"
                 @click="emit('close')"
@@ -80,7 +81,10 @@ function safeUrl(url: string | null): string | null {
                         <UserRound class="size-5" aria-hidden="true" />
                     </span>
                     <div class="min-w-0">
-                        <p class="truncate font-semibold">
+                        <p
+                            class="truncate font-semibold"
+                            :title="details.contact.name"
+                        >
                             {{ details.contact.name }}
                         </p>
                         <p
@@ -119,7 +123,9 @@ function safeUrl(url: string | null): string | null {
                             class="size-4 shrink-0 text-muted-foreground"
                             aria-hidden="true"
                         />
-                        <dd class="truncate">{{ details.contact.email }}</dd>
+                        <dd class="truncate" :title="details.contact.email">
+                            {{ details.contact.email }}
+                        </dd>
                     </div>
                     <div
                         v-if="details.contact.first_interaction_at"
@@ -138,6 +144,7 @@ function safeUrl(url: string | null): string | null {
                         v-if="contactUrl"
                         variant="outline"
                         size="sm"
+                        class="pointer-coarse:h-10"
                         as-child
                     >
                         <Link :href="contactUrl">
@@ -285,7 +292,7 @@ function safeUrl(url: string | null): string | null {
                     <li v-for="previous in details.history" :key="previous.id">
                         <button
                             type="button"
-                            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
+                            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent pointer-coarse:min-h-11"
                             @click="emit('select', previous.id)"
                         >
                             <span class="min-w-0">
@@ -297,7 +304,7 @@ function safeUrl(url: string | null): string | null {
                                     >
                                 </span>
                                 <span
-                                    class="block truncate text-[11px] text-muted-foreground"
+                                    class="block truncate text-xs text-muted-foreground"
                                 >
                                     {{ previous.assignee ?? 'Sin agente' }}
                                 </span>
@@ -333,7 +340,7 @@ function safeUrl(url: string | null): string | null {
                         <p class="line-clamp-4 break-words whitespace-pre-line">
                             {{ note.body }}
                         </p>
-                        <p class="mt-1 text-[11px] text-muted-foreground">
+                        <p class="mt-1 text-xs text-muted-foreground">
                             {{ note.author ?? 'Usuario eliminado' }} ·
                             {{ formatDate(note.created_at) }}
                         </p>

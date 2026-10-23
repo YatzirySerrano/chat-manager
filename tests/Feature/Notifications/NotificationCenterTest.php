@@ -185,6 +185,40 @@ test('the preferences page lists only kinds that concern me', function () {
             ->where('kinds.0.preferences', ['in_app' => true, 'browser' => false, 'sound' => true]));
 });
 
+test('customer messages in my conversations sound and show a toast by default, unlike other informative kinds', function () {
+    $finished = NotificationKind::ExportFinished;
+    app(AcceptConversation::class)->handle($this->receipt->conversation, $this->agent);
+    receiveWhatsapp($this->connection, body: 'Otra pregunta');
+
+    $response = $this->actingAs($this->agent)->getJson(route('notifications.index'))->assertOk();
+    $message = collect($response->json('data'))->firstWhere('kind', NotificationKind::ConversationMessage->value);
+    $preferences = $response->json('preferences');
+
+    expect($message)->toMatchArray(['level' => 'informative', 'toast' => true])
+        ->and($preferences[NotificationKind::ConversationMessage->value])->toBe(['in_app' => true, 'browser' => false, 'sound' => true])
+        ->and($preferences[$finished->value])->toBe(['in_app' => true, 'browser' => false, 'sound' => false]);
+});
+
+test('a saved preference without sound wins over the default of customer messages', function () {
+    $this->actingAs($this->agent)->put(route('notifications.preferences.update'), ['preferences' => [
+        ['kind' => NotificationKind::ConversationMessage->value, 'in_app' => true, 'browser' => false, 'sound' => false],
+    ]])->assertSessionHasNoErrors();
+
+    $preferences = $this->actingAs($this->agent)->getJson(route('notifications.index'))->json('preferences');
+
+    expect($preferences[NotificationKind::ConversationMessage->value]['sound'])->toBeFalse();
+});
+
+test('a notification about a conversation I can no longer see is never announced with a toast', function () {
+    $supervisor = User::factory()->supervisor()->inDepartments($this->department)->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
+    app(AssignConversation::class)->handle($this->receipt->conversation, $colleague, $supervisor);
+
+    $item = $this->actingAs($this->agent)->getJson(route('notifications.index'))->json('data.0');
+
+    expect($item)->toMatchArray(['level' => 'urgent', 'accessible' => false, 'toast' => false]);
+});
+
 test('saving preferences validates kinds and reports when nothing changed', function () {
     $this->actingAs($this->agent)->put(route('notifications.preferences.update'), ['preferences' => [
         ['kind' => 'unknown.kind', 'in_app' => true, 'browser' => true, 'sound' => true],

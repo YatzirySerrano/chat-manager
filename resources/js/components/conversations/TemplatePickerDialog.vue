@@ -296,7 +296,7 @@ async function send(): Promise<void> {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-3xl">
+        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
             <DialogHeader>
                 <DialogTitle>Enviar una plantilla aprobada</DialogTitle>
                 <DialogDescription>
@@ -485,7 +485,7 @@ async function send(): Promise<void> {
 
             <InputError :message="sendError ?? undefined" />
 
-            <DialogFooter class="gap-2">
+            <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                 <Button variant="outline" @click="open = false"
                     >Cancelar</Button
                 >

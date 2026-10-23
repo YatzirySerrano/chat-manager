@@ -44,6 +44,13 @@ const announcement = ref('');
 
 const BOTTOM_THRESHOLD = 96;
 
+/*
+ * While the "go to the end" button floats over the history, the history
+ * reserves room below its last item, so the button never covers the last
+ * message, its delivery state or its retry button.
+ */
+const showJumpButton = computed(() => unseen.value > 0 || !atBottom.value);
+
 type Row =
     | { type: 'day'; key: string; label: string }
     | { type: 'item'; key: string; item: TimelineItem };
@@ -105,6 +112,17 @@ function scrollToBottom(smooth = false): void {
 
 let restoringFrom: number | null = null;
 
+/*
+ * Cleared first so the same text ("Nuevo mensaje de …" twice in a row) is a
+ * new change of the live region and screen readers announce it again.
+ */
+function announce(text: string): void {
+    announcement.value = '';
+    void nextTick(() => {
+        announcement.value = text;
+    });
+}
+
 async function loadOlder(): Promise<void> {
     const element = scroller.value;
 
@@ -130,20 +148,23 @@ watch(
     async (items, previous) => {
         const element = scroller.value;
         const wasAtBottom = atBottom.value;
-        const previousLast = previous?.[previous.length - 1]?.key;
-        const newItems = previous
-            ? items.slice(
-                  Math.max(
-                      0,
-                      items.findIndex((item) => item.key === previousLast) + 1,
-                  ),
-              )
-            : [];
+        /*
+         * New items are those whose key was not on screen before, wherever
+         * they land: the timeline is ordered by writing time, so a customer
+         * message delivered late is inserted above a reply already shown and
+         * still has to be announced and counted. Items placed before the
+         * previous first one are an older page being prepended, not news.
+         */
+        const previousKeys = new Set(previous?.map((item) => item.key) ?? []);
+        const previousFirst = previous?.[0]?.key;
+        const firstKeptIndex = items.findIndex(
+            (item) => item.key === previousFirst,
+        );
         const appended =
-            previous !== undefined && previousLast !== undefined
-                ? newItems.filter(
-                      (item) => !previous.some((old) => old.key === item.key),
-                  )
+            previous !== undefined && previous.length > 0
+                ? items
+                      .slice(firstKeptIndex + 1)
+                      .filter((item) => !previousKeys.has(item.key))
                 : [];
 
         await nextTick();
@@ -175,10 +196,11 @@ watch(
         );
 
         if (inbound.length > 0) {
-            announcement.value =
+            announce(
                 inbound.length === 1
                     ? `Nuevo mensaje de ${props.conversation.contact.name}`
-                    : `${inbound.length} mensajes nuevos de ${props.conversation.contact.name}`;
+                    : `${inbound.length} mensajes nuevos de ${props.conversation.contact.name}`,
+            );
         }
 
         const ownReply = appended.some(
@@ -342,7 +364,8 @@ defineExpose({ scrollToBottom });
     <div class="relative min-h-0 flex-1">
         <div
             ref="scroller"
-            class="h-full overflow-y-auto overscroll-contain bg-muted/30 px-3 py-4 sm:px-6"
+            class="h-full overflow-y-auto overscroll-contain bg-muted/30 px-3 pt-4 sm:px-6"
+            :class="showJumpButton ? 'pb-16' : 'pb-4'"
             tabindex="0"
             role="log"
             :aria-label="`Historial de la conversación con ${conversation.contact.name}`"
@@ -355,6 +378,7 @@ defineExpose({ scrollToBottom });
                         v-if="hasMore"
                         variant="ghost"
                         size="sm"
+                        class="pointer-coarse:h-10"
                         :disabled="loadingOlder"
                         @click="loadOlder"
                     >
@@ -363,7 +387,7 @@ defineExpose({ scrollToBottom });
                     </Button>
                     <p
                         v-else-if="items.length > 0"
-                        class="text-[11px] text-muted-foreground"
+                        class="text-xs text-muted-foreground"
                     >
                         Inicio de la conversación
                     </p>
@@ -392,7 +416,7 @@ defineExpose({ scrollToBottom });
                         :aria-label="row.label"
                     >
                         <span
-                            class="rounded-full border bg-background/95 px-3 py-0.5 text-[11px] font-medium text-muted-foreground shadow-xs first-letter:uppercase"
+                            class="rounded-full border bg-background/95 px-3 py-0.5 text-xs font-medium text-muted-foreground shadow-xs first-letter:uppercase"
                             >{{ row.label }}</span
                         >
                     </div>
@@ -427,10 +451,10 @@ defineExpose({ scrollToBottom });
         </div>
 
         <Button
-            v-if="unseen > 0 || !atBottom"
+            v-if="showJumpButton"
             size="sm"
             variant="secondary"
-            class="absolute right-4 bottom-4 rounded-full shadow-elevated"
+            class="absolute right-4 bottom-4 rounded-full shadow-elevated pointer-coarse:h-10"
             @click="scrollToBottom(true)"
         >
             <ArrowDown aria-hidden="true" />

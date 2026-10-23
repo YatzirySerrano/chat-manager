@@ -230,7 +230,7 @@ redirect_stderr=true
 
     | Grupo           | Cola                | Procesos | Uso                                                                    |
     | --------------- | ------------------- | -------- | ---------------------------------------------------------------------- |
-    | `critical`      | `webhooks,messages` | 4        | Procesamiento del webhook (recepción) y mensajes salientes             |
+    | `critical`      | `messages,webhooks` | 4        | Mensajes salientes y procesamiento del webhook (recepción)             |
     | `realtime`      | `realtime`          | 2        | Señales de tiempo real (mensaje nuevo, bandejas, chat interno)         |
     | `notifications` | `notifications`     | 2        | Notificaciones in-app y administrativas (con su señal `.notification`) |
     | `media`         | `media`             | 2        | Descargas y subidas de multimedia                                      |

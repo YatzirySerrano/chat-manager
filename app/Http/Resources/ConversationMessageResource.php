@@ -14,7 +14,10 @@ use Illuminate\Support\Str;
  * Internal notes are never messages. Structured content (location, shared
  * contacts, interactive answers, reactions) is reduced to the few display
  * fields the chat needs; raw provider payloads are never exposed, and files
- * are only reachable through the authorized attachment route.
+ * are only reachable through the authorized attachment route. updated_at,
+ * and inside the same second delivery_retries (manual retries, which requeue
+ * without a new attempt) and then delivery_attempts, version the delivery state:
+ * the chat keeps the newest one when responses arrive out of order.
  *
  * @mixin Message
  */
@@ -61,6 +64,9 @@ class ConversationMessageResource extends JsonResource
             'delivered_at' => $this->delivered_at?->toIso8601String(),
             'read_at' => $this->read_at?->toIso8601String(),
             'failed_at' => $this->failed_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+            'delivery_attempts' => $this->delivery_attempts,
+            'delivery_retries' => is_int($metadata['delivery']['retries'] ?? null) ? $metadata['delivery']['retries'] : 0,
         ];
     }
 

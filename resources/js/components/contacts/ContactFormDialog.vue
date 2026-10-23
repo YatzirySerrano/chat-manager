@@ -366,7 +366,7 @@ function submit(confirmDuplicate = false): void {
                 <div
                     v-for="(field, index) in form.custom_fields"
                     :key="index"
-                    class="grid grid-cols-[1fr_1.5fr_auto] items-start gap-2"
+                    class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 max-sm:rounded-lg max-sm:border max-sm:p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
                 >
                     <div class="grid gap-1">
                         <Input
@@ -389,7 +389,9 @@ function submit(confirmDuplicate = false): void {
                             "
                         />
                     </div>
-                    <div class="grid gap-1">
+                    <div
+                        class="grid gap-1 max-sm:col-start-1 max-sm:row-start-2"
+                    >
                         <Input
                             :id="`contact-field-${index}-value`"
                             v-model="field.value"
@@ -414,6 +416,7 @@ function submit(confirmDuplicate = false): void {
                         type="button"
                         variant="ghost"
                         size="icon"
+                        class="max-sm:col-start-2 max-sm:row-start-1"
                         :aria-label="`Quitar campo ${index + 1}`"
                         @click="removeCustomField(index)"
                     >

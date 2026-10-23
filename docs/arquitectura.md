@@ -39,7 +39,7 @@ WhatsApp Web ni QR). Es una sola aplicación Laravel (monolito modular):
                                   │ datos de negocio + jobs + caché/sesión │     │
                                   └──────────────────┬─────────────────────┘     │
                                                      ▼                           │
-      Workers: webhooks,messages │ realtime │ notifications │ media │ default │ exports
+      Workers: messages,webhooks │ realtime │ notifications │ media │ default │ exports
                   │                   └──────────────────────────────────────┘ (señales)
                   ├── Graph API de Meta (envíos, multimedia, plantillas)
                   └── servicios Web Push del navegador (POST vacío firmado con VAPID, cola notifications)

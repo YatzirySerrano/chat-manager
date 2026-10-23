@@ -178,6 +178,8 @@ E2E_REVERB=1 E2E_PORT=8040 E2E_REVERB_PORT=8101 WHATSAPP_TRANSPORT=simulated WHA
   TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php realtime.mjs
 E2E_REVERB=1 E2E_PORT=8050 E2E_REVERB_PORT=8111 WHATSAPP_TRANSPORT=simulated \
   TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php estabilizacion.mjs
+E2E_REVERB=1 E2E_PORT=8060 E2E_REVERB_PORT=8121 E2E_SERVER_WORKERS=8 WHATSAPP_TRANSPORT=simulated \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php bandeja.mjs
 ```
 
 - Variables del lanzador: `E2E_PORT` (8020), `E2E_SERVER_WORKERS` (4), `NODE_BINARY`, `PLAYWRIGHT_MODULE`,
@@ -191,6 +193,14 @@ E2E_REVERB=1 E2E_PORT=8050 E2E_REVERB_PORT=8111 WHATSAPP_TRANSPORT=simulated \
 - `realtime.mjs` y `estabilizacion.mjs` arrancan su propio worker (la lista `--queue` incluye `realtime`) y registran
   cada trama WebSocket para demostrar que la señal llegó antes del cambio en la interfaz.
 - Los escenarios cargan los assets del servidor de Vite si existe `public/hot`.
+- `bandeja.mjs` (semilla `bandeja-seed.php`, con dos conexiones de WhatsApp) cubre la bandeja con dos sesiones que
+  aceptan la misma fila a la vez, los filtros rápidos combinados, las no leídas, el toast y el sonido de los avisos
+  (espía de Web Audio: `trackAlerts`, `alertDelta`; registro de toasts sin quitar duplicados: `toastsSince`) y una
+  matriz responsive de 320 a 1440 px en modo claro y oscuro (`layoutReport`: desborde del documento, desbordes
+  internos, texto recortado, fuente mínima y objetivos táctiles).
+- `overflow()` de `lib.mjs` también mide los desbordes internos (paneles con `overflow-hidden` u `overflow-x-auto`), no
+  solo el ancho del documento. Con `E2E_SCREENSHOTS` el lanzador guarda ahí la salida del servidor web y de Reverb, y
+  falla con un mensaje claro si alguno no arranca.
 
 ### 6.1 Resultados de la estabilización
 

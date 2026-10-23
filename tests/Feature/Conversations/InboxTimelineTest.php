@@ -177,6 +177,27 @@ test('refreshing shown items returns their current state and ignores ids of othe
         ->assertDontSee('Mensaje de otra persona');
 });
 
+test('each message carries the time of its last change and its delivery attempt, so the chat keeps the newest delivery state', function () {
+    $reply = Message::factory()->create([
+        'conversation_id' => $this->conversation->id,
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Sending,
+        'whatsapp_message_id' => null,
+        'sender_user_id' => $this->agent->id,
+        'delivery_attempts' => 1,
+    ]);
+
+    $this->travel(5)->seconds();
+    $reply->forceFill(['status' => MessageStatus::Accepted])->save();
+
+    $this->actingAs($this->agent)
+        ->getJson(route('conversations.timeline', [$this->conversation, 'messages' => [$reply->id]]))
+        ->assertOk()
+        ->assertJsonPath('messages.0.status', 'accepted')
+        ->assertJsonPath('messages.0.updated_at', now()->toIso8601String())
+        ->assertJsonPath('messages.0.delivery_attempts', 1);
+});
+
 test('a cursor that belongs to another conversation returns nothing', function () {
     storeMessages($this->conversation, 2, CarbonImmutable::parse('2026-10-20 09:00:00', 'UTC'));
     $foreign = Message::factory()->create();

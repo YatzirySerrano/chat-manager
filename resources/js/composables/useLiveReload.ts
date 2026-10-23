@@ -53,7 +53,10 @@ export type LiveReloadOptions = {
  * - a reload waits for the user's own visit in flight (afterUserVisits), so
  *   it never races with the operation that caused the signal.
  */
-export function useLiveReload(options: LiveReloadOptions): void {
+export function useLiveReload(options: LiveReloadOptions): {
+    /** Requests a debounced reload, merged with any already scheduled or running. */
+    schedule: () => void;
+} {
     const fallbackIntervalMs = options.fallbackIntervalMs ?? 20_000;
     const safetyIntervalMs =
         options.safetyIntervalMs === undefined
@@ -222,4 +225,6 @@ export function useLiveReload(options: LiveReloadOptions): void {
             clearInterval(intervalTimer);
         }
     });
+
+    return { schedule };
 }

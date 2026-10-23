@@ -102,7 +102,7 @@ TEST_DB_LOCK_WAIT=1800 LOAD_WEBHOOK_RATE=10 php tests/load/run.php webhooks:600,
   latencias, muestras por segundo (CPU y RSS por proceso, cola por nombre, mensajes nuevos), contadores de InnoDB y las
   verificaciones de integridad.
 - Variables útiles: `LOAD_SERVER` (`fpm`|`builtin`), `LOAD_PHP_WORKERS` (8), `LOAD_WORKERS`
-  (`"webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1"`, la topología de
+  (`"messages,webhooks:4;realtime:2;notifications:2;media:2;default:1;exports:1"`, la topología actual de
   `deploy/supervisor`), `LOAD_CONVERSATIONS` (10000),
   `LOAD_SEED_AGENTS` (100), `LOAD_DURATION` (60 s por escenario de agentes), `LOAD_THINK_MIN_MS`/`LOAD_THINK_MAX_MS`
   (1000/3000), `LOAD_WEBHOOK_CONCURRENCY` (20), `LOAD_WEBHOOK_RATE` (sin límite), `LOAD_WS_STORMS` (3),
@@ -406,6 +406,13 @@ señal de mensaje ya no espera detrás de las notificaciones. Los _deadlocks_ de
 procesamiento de la ráfaga no cambió (lo limita el número de workers de `webhooks,messages` y la CPU compartida). La
 campana sigue dependiendo de `notifications` (2 workers): en ráfaga su p95 es 8 s.
 
+Variación entre corridas: el 0 de _deadlocks_ de la corrida A no se repite siempre. Con el orden actual
+`messages,webhooks` del grupo `critical`, corridas posteriores de la misma ráfaga dieron 1 y 2 (con el orden anterior,
+6), todos entre webhooks entrantes en `inbound.message` y reintentados con éxito al primer intento por
+`ReadCommittedTransaction`. Entre 0 y unos 6 reintentados por cada 3 000 webhooks es la variación normal; lo que debe
+ser 0 son los no recuperados (`deadlock_mentions`, `lock_wait_timeouts`), los trabajos fallidos y los mensajes
+perdidos o duplicados.
+
 ### 10.3 Webhooks a ritmo sostenido (corrida D, `webhooks:600`, 10 por s)
 
 | Métrica                                                | Valor                    |
@@ -424,7 +431,8 @@ campana sigue dependiendo de `notifications` (2 workers): en ráfaga su p95 es 8
 Sin acumulación, la latencia de señal tiene un suelo de ~0,3–1 s: el mensaje pasa por dos colas de base de datos
 (`webhooks`, luego `realtime`) y un worker ocioso consulta cada `--sleep=1` s. En la difusión del escenario
 `websocket` (sin carga) las 10 rondas dieron p50 0,98–1,02 s. Con Redis (espera bloqueante) ese suelo debería bajar;
-no se midió.
+no se midió. Corrección: `block_for` está en `null` y Redis solo bloquea en la primera cola de cada worker; véase
+[11.3](#113-redis-y-block_for-hallazgo-lat-10).
 
 ### 10.4 Agentes simultáneos (corridas B y C)
 
@@ -566,3 +574,72 @@ superior.
 - Producción: nginx, Redis como cola, varios servidores o Reverb escalado, Meta real y navegadores reales.
 - Latencia de Web Push (no hay suscriptor de prueba que la reciba).
 - Desglose del tiempo de procesamiento por debajo de 1 s: `received_at`/`processed_at` tienen resolución de segundos.
+
+## 11. Latencia de envío en desarrollo y producción
+
+> **Medición local (2026-10-22), Apple M2 compartido (_load average_ 1,6–1,9), `chatmanager_testing` bajo el candado
+> de pruebas, cola `database`, OPcache CLI desactivado, sin Meta.** Son tiempos de cola, no de extremo a extremo: el
+> "envío" es un trabajo de sondeo que reproduce el abanico de `QueueOutboundMessage`/`DeliverOutboundMessage` (trabajo
+> en `messages` + señal "recorded" en `realtime` + métricas en `default`; dentro del envío, señal "sending", 300 ms de
+> proveedor simulado y señal "accepted"). 10 envíos por topología, separados 4–5,3 s (desarrollo) o 0,7 s durante una
+> ráfaga (producción). Con n = 10 el máximo es prácticamente el p99.
+
+### 11.1 Desarrollo (`composer run dev`, hallazgos LAT-01 y LAT-02)
+
+Antes: un solo `queue:listen` para todas las colas (`--sleep=3` por omisión, un proceso PHP nuevo por trabajo, en
+serie) y `artisan serve` con un solo proceso. Ahora: dos `queue:work` persistentes con `--sleep=1` para
+`messages,realtime,webhooks` y `webhooks,realtime,messages`, un `queue:listen` para el resto y
+`PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload` (detalle y avisos en
+[infraestructura](infraestructura-y-despliegue.md#9-colas-y-workers)).
+
+| Desde que se encola (ms), p50 / máx.        | Antes (`listen`, sleep 3) | Solo `--sleep=1` en el `listen` | Ahora (`work` ×2 + `listen`) |
+| ------------------------------------------- | ------------------------- | ------------------------------- | ---------------------------- |
+| Empieza el trabajo de entrega               | 1 035 / 2 724             | 236 / 1 152                     | 291 / 644                    |
+| Señal `.message.recorded` ejecutada         | 1 540 / 3 237             | 740 / 1 656                     | 309 / 638                    |
+| Señal "sending" ejecutada                   | 1 694 / 3 392             | 896 / 1 810                     | 519 / 943                    |
+| Señal "accepted" ejecutada (incluye 300 ms) | 1 849 / 3 545             | 1 051 / 1 966                   | 614 / 960                    |
+
+Lectura: con `queue:listen` cada trabajo arranca PHP y Laravel (el diagnóstico midió ~0,17 s por arranque en vacío, sin OPcache), y las tres señales de un
+envío esperan en fila detrás de la entrega; bajar solo `--sleep` a 1 deja ese coste. Los workers persistentes quitan
+el arranque por trabajo y reparten las colas críticas entre dos procesos: la señal "accepted" queda ~0,3 s por encima
+del tiempo del proveedor (antes ~1,5 s, hasta 3,2 s). El servidor con `PHP_CLI_SERVER_WORKERS=4` arranca 4 procesos
+hijos (comprobado con `ps`); no se midió su efecto en milisegundos. Se comprobó también que `php artisan queue:restart`
+detiene el worker y el bucle de shell lo vuelve a levantar en 1,3 s, y que la señal al grupo de procesos (como hace
+multiplex al salir) termina el bucle y el worker.
+
+### 11.2 Producción (grupo `critical`, hallazgo LAT-09)
+
+4 workers del grupo `critical`, 2 de `realtime` y 1 de `default`, con las opciones de `deploy/supervisor`. Ráfaga de
+600 trabajos en `webhooks` de 120 ms cada uno (≈ el ritmo de la ráfaga de 3 000 webhooks de la sección 10.2:
+~18 s de cola con 4 workers) y, 2 s después, los 10 envíos.
+
+| Desde que se encola (ms), p50 / máx. | `--queue=webhooks,messages` (antes) | `--queue=messages,webhooks` (ahora) |
+| ------------------------------------ | ----------------------------------- | ----------------------------------- |
+| Empieza el trabajo de entrega        | 14 305 / 17 554                     | 20 / 60                             |
+| Señal "accepted" (incluye 300 ms)    | 15 324 / 17 882                     | 798 / 1 332                         |
+
+Con el orden anterior un envío esperaba a que se vaciara toda la cola `webhooks`. Los envíos van primero porque son
+pocos y cortos (los de los agentes y los mensajes automáticos, que los generan los propios webhooks), así que no dejan
+sin turno a la recepción; en esta corrida los 10 envíos ocuparon ~3 s de worker frente a ~72 s de la ráfaga. No se
+repitió la batería completa (`webhooks:3000` con envíos simultáneos); `LOAD_WORKERS` de `tests/load/run.php` aún usa
+`webhooks,messages` por omisión.
+
+### 11.3 Redis y `block_for` (hallazgo LAT-10)
+
+La sección 10.3 suponía que Redis bajaría el suelo de ~1 s con espera bloqueante, pero `block_for` estaba en `null`:
+Redis también consulta cada `--sleep=1`. Ahora es configurable (`REDIS_QUEUE_BLOCK_FOR`, vacío por omisión; no afecta
+a la conexión `database`) y se deja vacío: Redis solo bloquea en la **primera** cola de cada worker, así que un worker
+`messages,webhooks` ocioso tardaría hasta `block_for` segundos en ver un webhook. Solo conviene con workers de una sola
+cola (por ejemplo `realtime`) y con todos los workers de esa conexión así. No se midió (no hay Redis en esta máquina).
+
+### 11.4 Tramos externos (LAT-07 y LAT-08, sin cambio de código)
+
+- **Llamada a Meta** (de "sending" a "accepted"): 1–4 s observados en los mensajes reales del entorno local; incluye
+  DNS, TCP y TLS (`MetaGraphClient` crea un cliente HTTP por llamada, sin _keep-alive_ entre trabajos) y el
+  procesamiento de Meta. Con workers persistentes el proceso ya no arranca de cero en cada envío; reutilizar la
+  conexión solo se valorará si una medición por etapa muestra que el _handshake_ domina.
+- **Entrega y webhooks de estado** (accepted → sent → delivered): 0–2 s observados; dependen de Meta, del dispositivo
+  del cliente y, en desarrollo, del túnel de Cloudflare hasta `artisan serve`. En producción no hay túnel (nginx +
+  PHP-FPM) y los workers de `webhooks` consultan cada segundo.
+- No hay instrumentación por etapa en milisegundos (columnas `timestamp` de 1 s); separar Meta + túnel de la cola
+  propia requiere medir el desfase `occurredAt` → `received_at` → `processed_at`.

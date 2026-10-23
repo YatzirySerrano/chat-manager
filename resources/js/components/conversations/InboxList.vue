@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { CircleAlert, Inbox, ListFilter, Search, X } from '@lucide/vue';
+import {
+    CircleAlert,
+    Inbox,
+    ListFilter,
+    MailWarning,
+    Search,
+    X,
+} from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
@@ -19,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { formatPhone } from '@/lib/phone';
 import { update as updateAvailability } from '@/routes/conversations/availability';
 import type {
     ConversationFilters,
@@ -36,9 +44,9 @@ import type {
 /**
  * Left panel of the inbox: quick access to the views the viewer has (their
  * conversations, the pending queue they may accept from or every authorized
- * one), status tabs with counters, search, filters, sorting and the list
- * itself, loaded incrementally. Filters only ever narrow what the server
- * already authorized.
+ * one), status tabs with counters, the "unread" filter, search, filters,
+ * sorting and the list itself, loaded incrementally. Filters only ever
+ * narrow what the server already authorized, and combine with each other.
  */
 const props = defineProps<{
     conversations: ConversationList;
@@ -49,19 +57,28 @@ const props = defineProps<{
     statuses: { value: ConversationStatusValue; label: string }[];
     departments: { id: number; name: string; is_active: boolean }[];
     agents: { id: number; name: string; is_active: boolean }[];
-    connections: { id: number; name: string }[];
+    connections: {
+        id: number;
+        name: string;
+        display_phone_number: string | null;
+    }[];
+    /** Conversations with unread messages in this view and filters. */
+    unreadCount: number;
     tags: TagOption[];
     canSeeUnrouted: boolean;
     canExport: boolean;
     availability: ViewerAvailability;
     selectedId: number | null;
     loading: boolean;
+    /** Conversation being accepted from the list, if any. */
+    acceptingId: number | null;
 }>();
 
 const emit = defineEmits<{
     select: [id: number];
     filter: [query: Record<string, string>];
     loadMore: [];
+    accept: [id: number];
 }>();
 
 const ALL = '';
@@ -79,6 +96,7 @@ const state = reactive({
     sort: props.filters.sort,
     search: props.filters.search,
     searchIn: props.filters.search_in,
+    unread: props.filters.unread,
 });
 
 /* Follow the server when it normalizes or changes the filters. */
@@ -94,6 +112,7 @@ watch(
         state.tag = filters.tag === null ? ALL : String(filters.tag);
         state.sort = filters.sort;
         state.searchIn = filters.search_in;
+        state.unread = filters.unread;
     },
 );
 
@@ -121,6 +140,11 @@ const views = computed(() =>
     })),
 );
 
+/*
+ * Status tabs over the real statuses. The viewer's own conversations are
+ * never pending (pending ones have nobody responsible), so "Mis
+ * conversaciones" does not offer a tab that would always be empty.
+ */
 const statusTabs = computed<
     { value: ConversationStatusFilter; label: string; count: number | null }[]
 >(() => [
@@ -129,12 +153,14 @@ const statusTabs = computed<
         label: 'Activas',
         count: props.counts.pending + props.counts.open + props.counts.on_hold,
     },
-    ...props.statuses.map((status) => ({
-        value: status.value as ConversationStatusFilter,
-        label: status.label,
-        count: props.counts[status.value],
-    })),
-    { value: 'all', label: 'Todas', count: null },
+    ...props.statuses
+        .filter((status) => state.view !== 'mine' || status.value !== 'pending')
+        .map((status) => ({
+            value: status.value as ConversationStatusFilter,
+            label: status.label,
+            count: props.counts[status.value],
+        })),
+    { value: 'all', label: 'Todos los estados', count: null },
 ]);
 
 const sortOptions: { value: ConversationSort; label: string }[] = [
@@ -169,8 +195,17 @@ const activeFilterCount = computed(
 );
 
 const hasFilters = computed(
-    () => activeFilterCount.value > 0 || state.search.trim() !== '',
+    () =>
+        activeFilterCount.value > 0 ||
+        state.unread ||
+        state.search.trim() !== '',
 );
+
+/*
+ * The export follows the screen's filters except the personal "unread" one,
+ * which depends on each person's read markers and is not part of the report.
+ */
+const exportFilters = computed(() => ({ ...props.filters, unread: false }));
 
 function query(): Record<string, string> {
     const result: Record<string, string> = {};
@@ -191,6 +226,10 @@ function query(): Record<string, string> {
 
     if (state.sort !== 'priority') {
         result.sort = state.sort;
+    }
+
+    if (state.unread) {
+        result.unread = '1';
     }
 
     if (state.search.trim() !== '') {
@@ -221,6 +260,11 @@ function selectStatus(status: ConversationStatusFilter): void {
     apply();
 }
 
+function toggleUnread(): void {
+    state.unread = !state.unread;
+    apply();
+}
+
 function clearFilters(): void {
     state.department = ALL;
     state.agent = ALL;
@@ -229,6 +273,7 @@ function clearFilters(): void {
     state.sort = 'priority';
     state.search = '';
     state.searchIn = 'contact';
+    state.unread = false;
     apply();
 }
 
@@ -302,7 +347,7 @@ function toggleAvailability(available: boolean): void {
 }
 
 const selectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
+    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs md:text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
 </script>
 
 <template>
@@ -311,17 +356,21 @@ const selectClass =
         aria-label="Lista de conversaciones"
     >
         <header class="grid min-w-0 grid-cols-1 gap-3 border-b px-3 pt-3 pb-2">
-            <div class="flex flex-wrap items-center justify-between gap-2">
+            <div
+                class="flex flex-wrap items-center justify-between gap-x-2 gap-y-2"
+            >
                 <h1 class="text-base font-semibold">Conversaciones</h1>
-                <div class="flex flex-wrap items-center gap-1">
+                <div
+                    class="ml-auto flex flex-wrap items-center justify-end gap-1"
+                >
                     <ExportMenu
                         v-if="canExport"
                         report="conversations"
-                        :filters="filters"
+                        :filters="exportFilters"
                         label="Exportar"
                     />
                     <label
-                        class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs"
+                        class="flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm pointer-coarse:h-10"
                         :title="
                             availability.value === 'available'
                                 ? 'Recibes y aceptas conversaciones'
@@ -359,7 +408,7 @@ const selectClass =
                     v-for="view in views"
                     :key="view.value"
                     type="button"
-                    class="flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
+                    class="flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors pointer-coarse:min-h-10"
                     :class="
                         state.view === view.value
                             ? 'bg-background text-foreground shadow-xs'
@@ -396,7 +445,7 @@ const selectClass =
                                 ? 'Buscar en los mensajes'
                                 : 'Buscar por nombre, teléfono o correo'
                         "
-                        class="h-9 pl-8"
+                        class="h-9 pl-8 pointer-coarse:h-10"
                         aria-label="Buscar conversaciones"
                     />
                 </div>
@@ -405,7 +454,7 @@ const selectClass =
                         <Button
                             variant="outline"
                             size="sm"
-                            class="h-9 shrink-0"
+                            class="h-9 shrink-0 pointer-coarse:h-10 pointer-coarse:min-w-10"
                             :aria-label="
                                 activeFilterCount > 0
                                     ? `Filtros (${activeFilterCount} activos)`
@@ -415,7 +464,7 @@ const selectClass =
                             <ListFilter aria-hidden="true" />
                             <span
                                 v-if="activeFilterCount > 0"
-                                class="rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground tabular-nums"
+                                class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums"
                                 >{{ activeFilterCount }}</span
                             >
                         </Button>
@@ -518,7 +567,12 @@ const selectClass =
                                     :key="connection.id"
                                     :value="String(connection.id)"
                                 >
-                                    {{ connection.name }}
+                                    {{ connection.name
+                                    }}{{
+                                        connection.display_phone_number
+                                            ? ` · ${formatPhone(connection.display_phone_number)}`
+                                            : ''
+                                    }}
                                 </option>
                             </select>
                         </div>
@@ -566,28 +620,46 @@ const selectClass =
             </p>
 
             <nav
-                v-if="!isQueue"
-                class="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5"
+                class="flex flex-wrap gap-1 pb-0.5"
                 aria-label="Estado de las conversaciones"
             >
                 <button
-                    v-for="tab in statusTabs"
-                    :key="tab.value"
                     type="button"
-                    class="shrink-0 rounded-full border px-2.5 py-0.5 text-xs transition-colors"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors pointer-coarse:min-h-10 pointer-coarse:px-3"
                     :class="
-                        state.status === tab.value
+                        state.unread
                             ? 'border-primary bg-primary text-primary-foreground'
                             : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                     "
-                    :aria-pressed="state.status === tab.value"
-                    @click="selectStatus(tab.value)"
+                    :aria-pressed="state.unread"
+                    title="Solo las conversaciones con mensajes del cliente que aún no has leído"
+                    data-inbox-unread
+                    @click="toggleUnread"
                 >
-                    {{ tab.label }}
-                    <span v-if="tab.count !== null" class="tabular-nums">
-                        · {{ tab.count }}</span
-                    >
+                    <MailWarning class="size-3.5" aria-hidden="true" />
+                    No leídas
+                    <span class="tabular-nums"> · {{ unreadCount }}</span>
                 </button>
+                <template v-if="!isQueue">
+                    <button
+                        v-for="tab in statusTabs"
+                        :key="tab.value"
+                        type="button"
+                        class="shrink-0 rounded-full border px-2.5 py-0.5 text-xs transition-colors pointer-coarse:min-h-10 pointer-coarse:px-3"
+                        :class="
+                            state.status === tab.value
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                        "
+                        :aria-pressed="state.status === tab.value"
+                        @click="selectStatus(tab.value)"
+                    >
+                        {{ tab.label }}
+                        <span v-if="tab.count !== null" class="tabular-nums">
+                            · {{ tab.count }}</span
+                        >
+                    </button>
+                </template>
             </nav>
         </header>
 
@@ -607,7 +679,7 @@ const selectClass =
             <Button
                 size="sm"
                 variant="outline"
-                class="h-7"
+                class="pointer-coarse:h-10"
                 :disabled="availabilityProcessing"
                 @click="toggleAvailability(true)"
             >
@@ -642,7 +714,10 @@ const selectClass =
                         :show-assignee="
                             !inbox.personal || state.view === 'queue'
                         "
+                        :unavailable="isUnavailable"
+                        :accepting-id="acceptingId"
                         @select="(id) => emit('select', id)"
+                        @accept="(id) => emit('accept', id)"
                     />
                 </li>
             </ul>
@@ -666,7 +741,7 @@ const selectClass =
                     hasFilters
                         ? state.status === 'all' || isQueue
                             ? 'Prueba con otra búsqueda o limpia los filtros.'
-                            : 'Prueba con otra búsqueda, revisa la pestaña Todas o limpia los filtros.'
+                            : 'Prueba con otra búsqueda, revisa la pestaña Todos los estados o limpia los filtros.'
                         : 'Las conversaciones aparecen cuando un cliente escribe a una conexión de WhatsApp. Solo ves las que corresponden a tu alcance.'
                 "
             >

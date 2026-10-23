@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
 import { Toaster } from '@/components/ui/sonner';
+import { useToastClearance } from '@/composables/useToastClearance';
 import type { BreadcrumbItem } from '@/types';
 
 type Props = {
@@ -13,6 +14,9 @@ type Props = {
 withDefaults(defineProps<Props>(), {
     breadcrumbs: () => [],
 });
+
+// Toasts stay at the bottom but above a docked message composer.
+const toastClearance = useToastClearance();
 </script>
 
 <template>
@@ -22,6 +26,9 @@ withDefaults(defineProps<Props>(), {
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />
             <slot />
         </AppContent>
-        <Toaster />
+        <Toaster
+            :offset="toastClearance.offset()"
+            :mobile-offset="toastClearance.mobileOffset()"
+        />
     </AppShell>
 </template>

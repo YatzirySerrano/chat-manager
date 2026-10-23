@@ -218,14 +218,14 @@ Topología de la estabilización: **un grupo de workers por cola**, de mayor a m
 (`critical-1…4`, `realtime-1…2`, `notifications-1…2`, `media-1…2`, `default-1`, `exports-1`). El antiguo grupo
 `general` (`notifications,default`) ya no existe.
 
-| Grupo           | Cola(s)             | Procesos | Opciones de `queue:work`                                  | `stopwaitsecs` | Uso                                                                                     |
-| --------------- | ------------------- | -------- | --------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------- |
-| `critical`      | `webhooks,messages` | 4        | `--sleep=1 --tries=3 --backoff=10 --timeout=150`, 256 MB  | 180            | Procesamiento del webhook (recepción) y envíos, mensajes automáticos: no esperan a nada |
-| `realtime`      | `realtime`          | 2        | `--sleep=1 --tries=3 --backoff=2 --timeout=60`, 256 MB    | 90             | Señales de tiempo real (bandejas, chat abierto, chat interno, conexiones)               |
-| `notifications` | `notifications`     | 2        | `--sleep=1 --tries=3 --backoff=5 --timeout=120`, 256 MB   | 150            | Notificaciones in-app (con su señal `.notification`) y Web Push (`SendWebPush`)         |
-| `media`         | `media`             | 2        | `--sleep=2 --tries=3 --backoff=30 --timeout=180`, 512 MB  | 210            | Descargas y subidas de multimedia, más lentas                                           |
-| `default`       | `default`           | 1        | `--sleep=2 --tries=3 --backoff=10 --timeout=120`, 256 MB  | 150            | Métricas, sincronización de plantillas, mantenimiento                                   |
-| `exports`       | `exports`           | 1        | `--sleep=3 --tries=1 --timeout=660 --max-time=7200`, 1 GB | 700            | Excel/PDF e importación de contactos (`EXPORTS_JOB_TIMEOUT=600`), baja prioridad        |
+| Grupo           | Cola(s)             | Procesos | Opciones de `queue:work`                                  | `stopwaitsecs` | Uso                                                                                   |
+| --------------- | ------------------- | -------- | --------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------- |
+| `critical`      | `messages,webhooks` | 4        | `--sleep=1 --tries=3 --backoff=10 --timeout=150`, 256 MB  | 180            | Envíos y mensajes automáticos primero, luego el procesamiento del webhook (recepción) |
+| `realtime`      | `realtime`          | 2        | `--sleep=1 --tries=3 --backoff=2 --timeout=60`, 256 MB    | 90             | Señales de tiempo real (bandejas, chat abierto, chat interno, conexiones)             |
+| `notifications` | `notifications`     | 2        | `--sleep=1 --tries=3 --backoff=5 --timeout=120`, 256 MB   | 150            | Notificaciones in-app (con su señal `.notification`) y Web Push (`SendWebPush`)       |
+| `media`         | `media`             | 2        | `--sleep=2 --tries=3 --backoff=30 --timeout=180`, 512 MB  | 210            | Descargas y subidas de multimedia, más lentas                                         |
+| `default`       | `default`           | 1        | `--sleep=2 --tries=3 --backoff=10 --timeout=120`, 256 MB  | 150            | Métricas, sincronización de plantillas, mantenimiento                                 |
+| `exports`       | `exports`           | 1        | `--sleep=3 --tries=1 --timeout=660 --max-time=7200`, 1 GB | 700            | Excel/PDF e importación de contactos (`EXPORTS_JOB_TIMEOUT=600`), baja prioridad      |
 
 Todos usan `--max-time=3600` (salvo exportaciones) y `startretries=20`. Los comandos **no fijan conexión**
 (`queue:work --queue=...`): toman `QUEUE_CONNECTION` (`database` o `redis`); antes llevaban `database` escrito y con
@@ -235,7 +235,12 @@ Redis ningún worker habría consumido. Supervisor necesita un _drop-in_ de syst
 `After=`/`Wants=` de MariaDB (y `After=` de Redis) y `StartLimitIntervalSec=0`, así que tras un reinicio no quedan en
 `FATAL` si la base tarda en arrancar. `tests/Feature/Integration/QueueTopologyTest.php` deriva las colas de
 `App\Support\Queues::all()` y comprueba ambas plantillas. La batería de carga usa el mismo reparto por omisión
-(`LOAD_WORKERS=webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1`).
+(`LOAD_WORKERS=webhooks,messages:4;realtime:2;notifications:2;media:2;default:1;exports:1`; todavía con el orden anterior del grupo `critical`, ver `tests/load/run.php`).
+
+Orden del grupo `critical`: `messages` va antes que `webhooks` para que una ráfaga entrante (miles de webhooks en
+cola) no retrase la respuesta de un agente; los envíos son pocos y cortos (los de los agentes y los mensajes
+automáticos que generan los propios webhooks), así que no dejan sin turno a la recepción. Mediciones en
+[rendimiento y carga](rendimiento-y-carga.md#11-latencia-de-envío-en-desarrollo-y-producción).
 
 Reglas: `timeout del job` < `--timeout del worker` < `retry_after` (900 s). `stopwaitsecs` mayor que `--timeout`
 para que un despliegue no corte un trabajo. `--max-time`/`--memory` reciclan procesos. Los trabajos tienen intentos y
@@ -244,9 +249,28 @@ backoff acotados en su propia clase; nunca se reintenta automáticamente un env�
 Ajusta el número de procesos con mediciones (cola acumulada y espera máxima en Administración > Sistema), no con
 estimaciones. No se publican capacidades numéricas sin pruebas de carga.
 
-**Desarrollo local**: `composer run dev` escucha todas las colas en orden de prioridad (webhooks, messages, realtime,
-notifications, media, default, exports) con un `queue:listen`, ejecuta `schedule:work` (configurado en
-`OperationsServiceProvider`) y levanta Reverb, Vite y el servidor.
+**Desarrollo local**: `composer run dev` (procesos definidos en `OperationsServiceProvider::configureDevCommands()`,
+visibles con `php artisan dev:list`) levanta Reverb, Vite, `pail`, `schedule:work` y:
+
+| Proceso    | Comando                                                                                    | Por qué                                                             |
+| ---------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `queue`    | `queue:work --queue=messages,realtime,webhooks --sleep=1 --tries=1 --timeout=0` (en bucle) | Envíos y sus señales sin esperar a una ráfaga de webhooks           |
+| `webhooks` | `queue:work --queue=webhooks,realtime,messages --sleep=1 --tries=1 --timeout=0` (en bucle) | Recepción y estados de Meta sin esperar a los envíos                |
+| `queue-bg` | `queue:listen --queue=notifications,media,default,exports --sleep=3 --tries=1 --timeout=0` | Resto de colas; recarga el código sola; exportaciones al final      |
+| `server`   | `PHP_CLI_SERVER_WORKERS=4 php artisan serve --no-reload`                                   | Webhooks del túnel, el envío y sus recargas se atienden en paralelo |
+
+- Los dos `queue:work` **conservan el código con el que arrancaron**: tras editar PHP que corre en un trabajo (jobs,
+  listeners, acciones, transportes), ejecuta `php artisan queue:restart`. Cada worker corre dentro de un bucle de
+  shell que lo vuelve a levantar 1 s después (multiplex solo reinicia procesos que terminan con error, y un worker
+  reiniciado termina con 0); también se relanza si supera la memoria o falla. `queue-bg` usa `queue:listen`, que
+  arranca un proceso por trabajo y recarga solo.
+- `PHP_CLI_SERVER_WORKERS` vale 4 por omisión; el valor de `.env` o del shell manda (por ejemplo
+  `PHP_CLI_SERVER_WORKERS=8`). Con `--no-reload`, **un cambio en `.env` exige reiniciar `composer run dev`**. Sin
+  `--no-reload` Laravel ignora la variable y atiende de una en una.
+- Los nombres salen de `App\Support\Queues` (`QUEUE_NAME_*`, `REALTIME_QUEUE`, `EXPORTS_QUEUE`); una cola remapeada
+  sobre otra no se repite.
+- En Windows (`concurrently` y cmd.exe, sin bucle ni variables en línea) queda un solo `queue:listen --sleep=1` para
+  todas las colas y el servidor por omisión.
 
 **`after_commit`**: los eventos de dominio implementan `ShouldDispatchAfterCommit`. El driver `database` inserta el
 trabajo dentro de la misma transacción (si se revierte, el trabajo desaparece), por eso conserva `after_commit=false`.
@@ -256,7 +280,11 @@ worker nunca lea filas aún no confirmadas.
 ### Opción Redis
 
 Configuración preparada, no activa por defecto: `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` (y opcionalmente
-`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Los comandos `queue:work` no
+`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. `REDIS_QUEUE_BLOCK_FOR`
+(segundos, vacío por omisión) activa la espera bloqueante en lugar de consultar cada `--sleep`; déjalo vacío con la
+topología actual: Redis solo bloquea en la **primera** cola de un worker multicola, así que un worker
+`messages,webhooks` ocioso tardaría hasta ese tiempo en ver un webhook. Úsalo solo si todos los workers de la
+conexión leen una sola cola (0 equivale a vacío; no afecta a la conexión `database`). Los comandos `queue:work` no
 necesitan cambios (usan `QUEUE_CONNECTION`); añade `redis-server.service` a `Wants=` de las unidades systemd. Para varios servidores Reverb: `REVERB_SCALING_ENABLED=true`. Requiere la
 extensión `php8.4-redis` (el preflight falla si falta). Al cambiar de driver, deja vaciar la cola `database` antes de
 detener sus workers.
@@ -499,6 +527,13 @@ tomó el despliegue siguiendo [recuperacion-y-respaldos.md](recuperacion-y-respa
 - Dependencias de la aplicación (Composer/npm): solo mediante una versión nueva del repositorio y `deploy.sh`.
 
 ## 19. Limitaciones
+
+- Reloj del servidor: el historial de cada conversación se ordena por hora de escritura, y mezcla la hora de Meta
+  (mensajes del cliente) con la del servidor (respuestas, `created_at`), ambas con resolución de segundos. El servidor
+  debe sincronizar su reloj por NTP (`timedatectl set-ntp true` o chrony; comprobar con `timedatectl status`): un
+  desfase de unos segundos puede dejar una respuesta encima del mensaje que respondía. Un mensaje del cliente que llega
+  muy tarde (sin conexión por horas) se coloca en su hora de escritura; el chat lo anuncia y lo cuenta como nuevo
+  igualmente.
 
 - Nada de esto se ha ejecutado contra un servidor real desde este repositorio: los scripts se validaron por sintaxis
   (`bash -n`; `shellcheck` no estaba disponible), la elección de versión de `rollback.sh` con pruebas sobre un árbol

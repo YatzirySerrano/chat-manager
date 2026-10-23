@@ -118,7 +118,7 @@ class RetryOutboundMessage
                 'sent_at' => null,
                 'delivered_at' => null,
                 'read_at' => null,
-                'metadata' => [...$metadata, 'delivery' => [...$delivery, 'history' => array_slice($history, -10), 'retry_base' => $message->delivery_attempts]],
+                'metadata' => [...$metadata, 'delivery' => [...$delivery, 'history' => array_slice($history, -10), 'retry_base' => $message->delivery_attempts, 'retries' => (int) ($delivery['retries'] ?? count($history) - 1) + 1]],
             ])->save();
 
             $this->lifecycle->record($conversation, ConversationEventType::MessageRetried, $actor, [

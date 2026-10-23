@@ -41,6 +41,9 @@ function listedRow(object $test, User $viewer, Conversation $conversation, array
 test('the list counts the customer messages after the viewer\'s marker and previews the latest one', function () {
     $first = Message::factory()->create(['conversation_id' => $this->conversation->id, 'body' => 'Hola']);
     Message::factory()->create(['conversation_id' => $this->conversation->id, 'body' => '¿Siguen ahí?']);
+
+    expect(listedRow($this, $this->agent, $this->conversation)['unread_count'])->toBe(2);
+
     Message::factory()->create([
         'conversation_id' => $this->conversation->id,
         'direction' => MessageDirection::Outbound,
@@ -51,12 +54,14 @@ test('the list counts the customer messages after the viewer\'s marker and previ
 
     $row = listedRow($this, $this->agent, $this->conversation);
 
-    expect($row['unread_count'])->toBe(2)
+    // Without a marker, what a person already answered is not unread.
+    expect($row['unread_count'])->toBe(0)
         ->and($row['last_message']['body'])->toBe('Sí, aquí estamos')
         ->and($row['last_message']['direction'])->toBe('outbound');
 
     ConversationRead::query()->forceCreate(['user_id' => $this->agent->id, 'conversation_id' => $this->conversation->id, 'last_read_message_id' => $first->id, 'read_at' => now()]);
 
+    // The personal marker decides once it exists.
     expect(listedRow($this, $this->agent, $this->conversation)['unread_count'])->toBe(1);
 });
 

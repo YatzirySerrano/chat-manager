@@ -71,9 +71,9 @@ function save(): void {
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
         <header
-            class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-semibold tracking-wide text-warning uppercase"
+            class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold tracking-wide text-warning uppercase"
         >
-            <Lock class="size-3" aria-hidden="true" />
+            <Lock class="size-3.5" aria-hidden="true" />
             Nota interna — no se envía al cliente
         </header>
         <form
@@ -117,9 +117,9 @@ function save(): void {
         <template v-else>
             <p class="break-words whitespace-pre-line">{{ note.body }}</p>
             <footer
-                class="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground"
+                class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground"
             >
-                <span>
+                <span class="min-w-0 wrap-anywhere">
                     {{ note.author?.name ?? 'Usuario eliminado' }} ·
                     <time
                         :datetime="note.created_at ?? undefined"
@@ -132,7 +132,7 @@ function save(): void {
                     v-if="note.can.update"
                     variant="ghost"
                     size="icon-sm"
-                    class="size-7"
+                    class="size-7 shrink-0 pointer-coarse:size-10"
                     aria-label="Editar nota interna"
                     title="Editar nota interna"
                     @click="startEditing"

@@ -174,6 +174,7 @@ function discard(): void {
                     <Button
                         type="button"
                         variant="outline"
+                        class="pointer-coarse:h-10"
                         :disabled="processing"
                         @click="requestOpenChange(false)"
                     >
@@ -181,6 +182,7 @@ function discard(): void {
                     </Button>
                     <Button
                         type="submit"
+                        class="pointer-coarse:h-10"
                         :disabled="processing || submitDisabled || unchanged"
                     >
                         <Spinner v-if="processing" />

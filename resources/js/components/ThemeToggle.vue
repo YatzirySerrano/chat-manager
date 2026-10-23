@@ -21,7 +21,7 @@ function toggle(): void {
             <Button
                 variant="ghost"
                 size="icon"
-                class="size-9 rounded-lg text-muted-foreground"
+                class="size-9 rounded-lg text-muted-foreground pointer-coarse:size-10"
                 :aria-label="
                     resolvedAppearance === 'dark'
                         ? 'Cambiar a modo claro'

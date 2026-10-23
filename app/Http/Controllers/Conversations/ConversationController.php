@@ -19,6 +19,7 @@ use App\Models\Department;
 use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\OutboundAttachmentRules;
@@ -65,12 +66,14 @@ class ConversationController extends Controller
     /** Previous conversations of the contact summarized in the panel. */
     private const CONTACT_HISTORY = 6;
 
+    public function __construct(private ConversationAccess $access) {}
+
     /**
      * Props of the list (left panel), reloaded when filters change.
      *
      * @var list<string>
      */
-    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'viewCounts'];
+    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'viewCounts', 'unreadCount'];
 
     /**
      * Props of the selected conversation (chat and details panel).
@@ -143,6 +146,7 @@ class ConversationController extends Controller
                 'search_ignored' => $inbox->searchIgnored($filters),
                 'tag' => $filters['tag'] ?? null,
                 'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_PRIORITY,
+                'unread' => $filters['unread'] ?? false,
             ],
             'counts' => fn (): array => $this->statusCounts($inbox, $actor, $filters),
             'inbox' => fn (): array => [
@@ -154,10 +158,13 @@ class ConversationController extends Controller
             'viewCounts' => fn (): array => collect($views)->mapWithKeys(fn (string $option): array => [
                 $option => $inbox->filtered($actor, $filters, $option)->notClosed()->count(),
             ])->all(),
+            // Conversations with messages unread for the viewer in the current
+            // view, filters and status tab: what the "Unread" filter would list.
+            'unreadCount' => fn (): int => $inbox->handle($actor, [...$filters, 'unread' => true])->reorder()->count(),
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
-            'connections' => fn () => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name']),
+            'connections' => fn () => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'display_phone_number']),
             'tags' => fn (): array => $actor->holdsPermission(Permission::ViewTags) || $actor->holdsPermission(Permission::AssignTags)
                 ? $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active']))
                 : [],
@@ -281,8 +288,15 @@ class ConversationController extends Controller
 
         $this->attachLastMessages($rows);
 
+        // The abilities of every row ask which departments the actor may
+        // accept from: computed once for the whole page (INB-03).
+        $data = $this->access->rememberingAcceptableDepartments(
+            $actor,
+            fn (): array => array_values(ConversationResource::collection($rows)->resolve($request)),
+        );
+
         return [
-            'data' => array_values(ConversationResource::collection($rows)->resolve($request)),
+            'data' => $data,
             'has_more' => $hasMore,
             'next_cursor' => $last === null ? null : ConversationInboxQuery::encodeCursor($inbox->cursorFor($last)),
         ];

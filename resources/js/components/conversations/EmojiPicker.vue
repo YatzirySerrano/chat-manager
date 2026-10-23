@@ -183,7 +183,7 @@ function choose(emoji: string): void {
                 type="button"
                 variant="ghost"
                 size="icon"
-                class="size-9 shrink-0 text-muted-foreground"
+                class="shrink-0 text-muted-foreground pointer-coarse:size-10"
                 :disabled="disabled"
                 title="Insertar emoji"
                 aria-label="Insertar emoji"
@@ -206,7 +206,7 @@ function choose(emoji: string): void {
                     <Input
                         v-model="search"
                         type="search"
-                        class="h-8 pl-8"
+                        class="h-8 pl-8 pointer-coarse:h-10"
                         placeholder="Buscar emoji (gracias, envío…)"
                         aria-label="Buscar emoji"
                     />
@@ -225,16 +225,18 @@ function choose(emoji: string): void {
                     class="mb-2 last:mb-0"
                 >
                     <h3
-                        class="mb-1 px-1 text-[11px] font-medium text-muted-foreground"
+                        class="mb-1 px-1 text-xs font-medium text-muted-foreground"
                     >
                         {{ group.label }}
                     </h3>
-                    <div class="grid grid-cols-8 gap-0.5">
+                    <div
+                        class="grid grid-cols-8 gap-0.5 pointer-coarse:grid-cols-7"
+                    >
                         <button
                             v-for="[emoji, keywords] in group.emojis"
                             :key="emoji"
                             type="button"
-                            class="flex size-8 items-center justify-center rounded-md text-lg hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            class="flex size-8 items-center justify-center rounded-md text-lg hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:size-10"
                             :title="keywords"
                             :aria-label="`${emoji} ${keywords}`"
                             @click="choose(emoji)"

@@ -151,7 +151,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
         :class="outbound ? 'justify-end' : 'justify-start'"
     >
         <div
-            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-sm shadow-xs sm:max-w-[70%]"
+            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[0.9375rem]/snug shadow-xs sm:max-w-[70%] md:text-sm"
             :class="[
                 outbound
                     ? 'rounded-br-md bg-primary-soft text-primary-soft-foreground'
@@ -164,20 +164,22 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             :data-message-id="message.id"
         >
             <p
-                class="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+                class="mb-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground"
             >
                 <Bot
                     v-if="message.automatic"
-                    class="size-3"
+                    class="size-3.5 shrink-0"
                     aria-hidden="true"
                 />
-                <span class="truncate">{{ author }}</span>
+                <span class="min-w-0 truncate" :title="author">{{
+                    author
+                }}</span>
                 <span
                     v-if="message.simulated"
-                    class="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-px text-[10px] font-semibold text-warning uppercase"
+                    class="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-px text-xs font-semibold text-warning"
                     title="Enviado por el transporte simulado de desarrollo: no llegó a WhatsApp."
                 >
-                    <FlaskConical class="size-3" aria-hidden="true" />
+                    <FlaskConical class="size-3.5" aria-hidden="true" />
                     Simulación
                 </span>
             </p>
@@ -185,7 +187,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             <button
                 v-if="message.reply_to"
                 type="button"
-                class="mb-1.5 block w-full rounded-md border-l-2 border-primary/60 bg-background/50 px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background/80"
+                class="mb-1.5 block w-full rounded-md border-l-2 border-primary/60 bg-background/50 px-2 py-1 text-left text-sm text-muted-foreground hover:bg-background/80 md:text-xs"
                 :aria-label="`Ir al mensaje citado`"
                 @click="emit('jump', message.reply_to.id)"
             >
@@ -203,12 +205,18 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
 
             <p
                 v-if="message.template"
-                class="mb-1 inline-flex items-center gap-1 rounded bg-background/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                class="mb-1 flex w-fit max-w-full items-start gap-1 rounded bg-background/60 px-1.5 py-0.5 text-xs text-muted-foreground"
             >
-                <LayoutTemplate class="size-3" aria-hidden="true" />
-                Plantilla «{{ message.template.name }}»
-                <template v-if="message.template.language">
-                    · {{ message.template.language }}</template
+                <LayoutTemplate
+                    class="mt-px size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
+                <span class="min-w-0 wrap-anywhere"
+                    >Plantilla «{{ message.template.name }}»<template
+                        v-if="message.template.language"
+                    >
+                        · {{ message.template.language }}</template
+                    ></span
                 >
             </p>
 
@@ -319,7 +327,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 v-if="text"
                 :text="text"
                 links
-                class="break-words whitespace-pre-line"
+                class="wrap-anywhere whitespace-pre-line"
             />
             <p
                 v-else-if="
@@ -339,7 +347,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             </p>
 
             <div
-                class="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground"
+                class="mt-1 flex items-center justify-end gap-1.5 text-xs text-muted-foreground tabular-nums"
             >
                 <time
                     :datetime="time ?? undefined"
@@ -351,6 +359,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     v-if="outbound"
                     :status="message.status"
                     :error-code="message.error_code"
+                    show-progress-label
                 />
             </div>
 
@@ -389,7 +398,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     v-if="canRetry"
                     size="sm"
                     variant="outline"
-                    class="h-7"
+                    class="pointer-coarse:h-10"
                     :disabled="retrying"
                     @click="emit('retry', message)"
                 >
@@ -402,13 +411,17 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             <button
                 v-if="canQuote"
                 type="button"
-                class="absolute top-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                :class="outbound ? '-left-8' : '-right-8'"
-                :title="'Responder citando este mensaje'"
+                class="absolute top-0 flex size-8 items-center justify-center rounded-full opacity-0 transition-opacity outline-none group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-10 pointer-coarse:opacity-100"
+                :class="
+                    outbound
+                        ? '-left-9 pointer-coarse:-left-11'
+                        : '-right-9 pointer-coarse:-right-11'
+                "
+                title="Responder citando este mensaje"
                 @click="emit('quote', message)"
             >
                 <span
-                    class="flex size-6 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-foreground"
+                    class="flex size-7 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-foreground pointer-coarse:size-8"
                 >
                     <Reply class="size-3.5" aria-hidden="true" />
                 </span>

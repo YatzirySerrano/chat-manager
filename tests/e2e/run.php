@@ -5,6 +5,10 @@
 |
 |   php tests/e2e/run.php [scenario.mjs]      (default: increment-b.mjs)
 |
+| Scenarios: increment-b.mjs, corrections.mjs, finalizacion.mjs,
+| realtime.mjs, estabilizacion.mjs and bandeja.mjs (the command line of each
+| one is in its header and in docs/pruebas.md §6).
+|
 | It never creates databases: it uses chatmanager_testing (.env.testing),
 | holds the same exclusive lock as the Pest suite (so both never run at the
 | same time), rebuilds it, starts its own local server, runs Chromium
@@ -19,7 +23,8 @@
 |                         installed package). Both are checked before the
 |                         database is touched; a broken Node.js or a missing
 |                         Playwright/Chromium stops the run with a clear error.
-|   E2E_SCREENSHOTS       optional directory for screenshots
+|   E2E_SCREENSHOTS       optional directory for screenshots (also keeps the
+|                         output of the web server and Reverb started here)
 |   E2E_REVERB=1          also start a Reverb server for real-time scenarios,
 |                         with throwaway credentials generated for the run
 |   E2E_REVERB_PORT       Reverb port (default 8081)
@@ -113,7 +118,16 @@ if (Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]) !== 0)
     $fail(Artisan::output());
 }
 
-$environment = [...getenv(), 'APP_ENV' => 'testing', 'APP_URL' => $baseUrl, 'E2E_BASE_URL' => $baseUrl];
+$environment = [...getenv(), 'APP_ENV' => 'testing', 'APP_URL' => $baseUrl, 'E2E_BASE_URL' => $baseUrl, 'E2E_PHP_BINARY' => PHP_BINARY];
+
+// With E2E_SCREENSHOTS the output of the servers started here is kept there.
+$shots = getenv('E2E_SCREENSHOTS') ?: null;
+
+if ($shots !== null && ! is_dir($shots)) {
+    mkdir($shots, 0777, true);
+}
+
+$serverLog = fn (string $name): array => ['file', $shots !== null ? $shots.'/'.$name.'.log' : '/dev/null', 'a'];
 
 $reverb = null;
 
@@ -144,7 +158,7 @@ if (getenv('E2E_REVERB') === '1') {
 
     $reverb = proc_open(
         [PHP_BINARY, $root.'/artisan', 'reverb:start', '--host=127.0.0.1', "--port={$reverbPort}"],
-        [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+        [1 => $serverLog('reverb-runner'), 2 => $serverLog('reverb-runner')],
         $pipes,
         $root,
         $environment,
@@ -152,6 +166,16 @@ if (getenv('E2E_REVERB') === '1') {
 
     for ($attempt = 0; $attempt < 50 && @fsockopen('127.0.0.1', $reverbPort, timeout: 0.2) === false; $attempt++) {
         usleep(200_000);
+    }
+
+    if (@fsockopen('127.0.0.1', $reverbPort, timeout: 0.5) === false) {
+        if (is_resource($reverb)) {
+            exec('pkill -TERM -P '.(int) proc_get_status($reverb)['pid']);
+            proc_terminate($reverb);
+            proc_close($reverb);
+        }
+
+        $fail("Reverb did not start on port {$reverbPort}".($shots !== null ? " (see {$shots}/reverb-runner.log)." : '; set E2E_SCREENSHOTS to keep its output.'));
     }
 }
 
@@ -174,7 +198,7 @@ if ($seeded !== 0) {
 
 $server = proc_open(
     [PHP_BINARY, '-S', "127.0.0.1:{$port}", $root.'/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'],
-    [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']],
+    [1 => $serverLog('php-server'), 2 => $serverLog('php-server')],
     $pipes,
     $root.'/public',
     [...$environment, 'PHP_CLI_SERVER_WORKERS' => (string) (getenv('E2E_SERVER_WORKERS') ?: 4)],
@@ -196,6 +220,12 @@ $stopServer = function () use ($server): void {
 
 for ($attempt = 0; $attempt < 50 && @fsockopen('127.0.0.1', $port, timeout: 0.2) === false; $attempt++) {
     usleep(200_000);
+}
+
+if (@fsockopen('127.0.0.1', $port, timeout: 0.5) === false) {
+    $stopServer();
+    $stopReverb();
+    $fail("The local web server did not start on port {$port}".($shots !== null ? " (see {$shots}/php-server.log)." : '.'));
 }
 
 $node = proc_open([$nodeBinary, $scenario], [1 => STDOUT, 2 => STDERR], $pipes, $root, $environment);

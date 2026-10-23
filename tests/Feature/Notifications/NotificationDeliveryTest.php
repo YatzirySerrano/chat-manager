@@ -24,8 +24,10 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Tests\Feature\Realtime\RealtimeTestSupport;
+use Tests\Support\WhatsAppFixtures;
 
 /*
 | Who receives each notification, how bursts and retries are folded or
@@ -163,6 +165,94 @@ test('messages of a conversation assigned to someone else do not notify me', fun
 
     expect(notificationsOf($this->agent, NotificationKind::ConversationMessage))->toBeEmpty()
         ->and(notificationsOf($colleague, NotificationKind::ConversationMessage))->toHaveCount(1);
+});
+
+test('my own replies to the customer never notify anyone', function () {
+    Http::preventStrayRequests();
+    WhatsAppFixtures::transport();
+    $connection = Connection::factory()->operational()->create(['default_department_id' => $this->department->id]);
+    $receipt = receiveWhatsapp($connection, body: 'Hola');
+    app(AcceptConversation::class)->handle($receipt->conversation, $this->agent);
+    $supervisor = User::factory()->supervisor()->available()->inDepartments($this->department)->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
+
+    $this->actingAs($this->agent)
+        ->postJson(route('conversations.messages.store', $receipt->conversation), [
+            'body' => 'Con gusto le ayudo.',
+            'client_reference' => (string) str()->uuid(),
+        ])
+        ->assertStatus(202);
+
+    expect(DatabaseNotification::query()->where('kind', NotificationKind::ConversationMessage->value)->count())->toBe(0)
+        ->and(notificationsOf($supervisor))->toBeEmpty()
+        ->and(notificationsOf($colleague))->toBeEmpty();
+});
+
+test('after a transfer the customer messages notify only the agent who now attends', function () {
+    $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
+    $receipt = receiveWhatsapp($this->connection);
+    app(AcceptConversation::class)->handle($receipt->conversation, $this->agent);
+    app(TransferConversation::class)->handle($receipt->conversation->refresh(), $this->department, $colleague, $this->agent);
+
+    receiveWhatsapp($this->connection, body: 'Sigo esperando');
+
+    expect(notificationsOf($this->agent, NotificationKind::ConversationMessage))->toBeEmpty()
+        ->and(notificationsOf($colleague, NotificationKind::ConversationMessage))->toHaveCount(1);
+});
+
+test('transferring a conversation out of my reach marks its message notification read for me', function () {
+    $otherDepartment = Department::factory()->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($otherDepartment)->create();
+    $receipt = receiveWhatsapp($this->connection);
+    app(AcceptConversation::class)->handle($receipt->conversation, $this->agent);
+    receiveWhatsapp($this->connection, body: 'Otra pregunta');
+    $notification = notificationsOf($this->agent, NotificationKind::ConversationMessage)->sole();
+    $unreadBefore = $this->actingAs($this->agent)->getJson(route('notifications.index'))->json('unread.total');
+
+    app(TransferConversation::class)->handle($receipt->conversation->refresh(), $otherDepartment, $colleague, $this->agent);
+
+    expect($notification->refresh()->read_at)->not->toBeNull()
+        ->and($this->actingAs($this->agent)->getJson(route('notifications.index'))->json('unread.total'))->toBe($unreadBefore - 1);
+});
+
+test('losing access to a conversation refreshes the bell of my open tabs', function () {
+    $otherDepartment = Department::factory()->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($otherDepartment)->create();
+    $receipt = receiveWhatsapp($this->connection);
+    app(AcceptConversation::class)->handle($receipt->conversation, $this->agent);
+    receiveWhatsapp($this->connection, body: 'Otra pregunta');
+    Event::fake([RealtimeSignal::class]);
+
+    app(TransferConversation::class)->handle($receipt->conversation->refresh(), $otherDepartment, $colleague, $this->agent);
+
+    Event::assertDispatched(RealtimeSignal::class, fn (RealtimeSignal $signal): bool => $signal->event === 'notification'
+        && $signal->channels === ['users.'.$this->agent->id]
+        && $signal->payload['id'] === null);
+});
+
+test('a previous holder with nothing unread about the conversation gets no bell refresh', function () {
+    $otherDepartment = Department::factory()->create();
+    $colleague = User::factory()->agent()->available()->inDepartments($otherDepartment)->create();
+    $receipt = receiveWhatsapp($this->connection);
+    app(AcceptConversation::class)->handle($receipt->conversation, $this->agent);
+    Event::fake([RealtimeSignal::class]);
+
+    app(TransferConversation::class)->handle($receipt->conversation->refresh(), $otherDepartment, $colleague, $this->agent);
+
+    Event::assertNotDispatched(RealtimeSignal::class, fn (RealtimeSignal $signal): bool => $signal->event === 'notification'
+        && in_array('users.'.$this->agent->id, $signal->channels, true));
+});
+
+test('a reassignment keeps the message notification unread for a previous holder who can still see the conversation', function () {
+    $supervisor = User::factory()->supervisor()->available()->inDepartments($this->department)->create();
+    $receipt = receiveWhatsapp($this->connection);
+    app(AssignConversation::class)->handle($receipt->conversation, $supervisor, $supervisor);
+    receiveWhatsapp($this->connection, body: 'Otra pregunta');
+    $notification = notificationsOf($supervisor, NotificationKind::ConversationMessage)->sole();
+
+    app(AssignConversation::class)->handle($receipt->conversation->refresh(), $this->agent, $supervisor);
+
+    expect($notification->refresh()->read_at)->toBeNull();
 });
 
 test('users who turned a kind off receive nothing of it', function () {

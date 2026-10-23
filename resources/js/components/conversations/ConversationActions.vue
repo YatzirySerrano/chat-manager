@@ -391,20 +391,20 @@ const secondary = computed<Action[]>(() => {
             v-for="action in primary"
             :key="action.key"
             size="sm"
+            class="pointer-coarse:h-10"
             :disabled="processing || action.disabled"
             :title="action.hint"
             @click="action.run"
         >
             <component :is="action.icon" aria-hidden="true" />
-            <span class="hidden sm:inline">{{ action.label }}</span>
-            <span class="sr-only sm:hidden">{{ action.label }}</span>
+            {{ action.label }}
         </Button>
         <DropdownMenu v-if="secondary.length > 0">
             <DropdownMenuTrigger as-child>
                 <Button
                     variant="outline"
                     size="icon"
-                    class="size-8"
+                    class="pointer-coarse:size-10"
                     :disabled="processing"
                     title="Más acciones"
                     aria-label="Más acciones de la conversación"
@@ -417,6 +417,7 @@ const secondary = computed<Action[]>(() => {
                     v-for="action in secondary"
                     :key="action.key"
                     :variant="action.destructive ? 'destructive' : 'default'"
+                    class="pointer-coarse:min-h-11"
                     @select="action.run"
                 >
                     <component :is="action.icon" aria-hidden="true" />

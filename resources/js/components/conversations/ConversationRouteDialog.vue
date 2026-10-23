@@ -180,7 +180,7 @@ const hasBlockedAgents = computed(
 );
 
 const selectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
+    'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-10 md:text-sm dark:bg-input/30';
 
 const isTransfer = computed(() => props.mode === 'transfer');
 
@@ -239,7 +239,7 @@ function agentLabel(agent: TransferAgentOption): string {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-lg">
+        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
             <form class="grid gap-4" novalidate @submit.prevent="submit">
                 <DialogHeader>
                     <DialogTitle>
@@ -351,7 +351,7 @@ function agentLabel(agent: TransferAgentOption): string {
                         class="flex flex-wrap items-center gap-2 text-sm"
                         aria-live="polite"
                     >
-                        <span class="font-medium">{{
+                        <span class="min-w-0 font-medium wrap-anywhere">{{
                             selectedAgent.name
                         }}</span>
                         <Badge
@@ -465,7 +465,7 @@ function agentLabel(agent: TransferAgentOption): string {
 
                 <InputError :message="errors.conversation" />
 
-                <DialogFooter class="gap-2">
+                <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                     <Button
                         type="button"
                         variant="outline"

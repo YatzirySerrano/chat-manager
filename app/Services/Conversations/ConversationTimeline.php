@@ -3,6 +3,7 @@
 namespace App\Services\Conversations;
 
 use App\Enums\ConversationEventType;
+use App\Enums\MessageDirection;
 use App\Enums\MessageType;
 use App\Http\Resources\ConversationEventResource;
 use App\Http\Resources\ConversationMessageResource;
@@ -35,6 +36,15 @@ use Illuminate\Support\Facades\Gate;
  * ever left out or repeated, even with hundreds of items in one second.
  * Likewise "after" says `has_more` when a stream reached AFTER_LIMIT, and
  * the chat asks again.
+ *
+ * Within what is returned, messages are in the order they were written:
+ * a customer message by the time the customer sent it (the timestamp Meta
+ * reports, `sent_at`), a reply by the time it was written (`created_at`),
+ * then by id. Webhooks are processed in parallel and retried, so a customer
+ * message may be stored after a later one; its id says when it arrived, not
+ * when it was written. Pages stay delimited by id (the cursor is unchanged:
+ * nothing is left out or repeated), so a customer message stored very late
+ * is shown in time order within its page, at the edge of an older page.
  *
  * Callers must have authorized the viewer to see the conversation.
  *
@@ -142,7 +152,7 @@ class ConversationTimeline
         }
 
         return [
-            'messages' => $this->presentMessages($conversation, $messages, $request),
+            'messages' => $this->presentMessages($conversation, $this->inWrittenOrder($messages), $request),
             'notes' => $this->presentNotes($notes->reverse()->values(), $request),
             'events' => $events === null ? [] : $this->presentEvents($events->reverse()->values(), $request),
             'has_more' => $hasMore,
@@ -190,6 +200,7 @@ class ConversationTimeline
     public function after(Conversation $conversation, Request $request, int $afterMessageId, int $afterNoteId, int $afterEventId): array
     {
         $messages = $this->messages($conversation)->where('id', '>', $afterMessageId)->orderBy('id')->limit(self::AFTER_LIMIT)->get();
+        $messages = $this->inWrittenOrder($messages);
 
         // A chat that holds no note (or event) yet sends 0 for that stream.
         // Notes and events older than its newest known message belong to
@@ -231,6 +242,7 @@ class ConversationTimeline
     public function refresh(Conversation $conversation, Request $request, array $messageIds, array $noteIds): array
     {
         $messages = $messageIds === [] ? new Collection : $this->messages($conversation)->whereKey($messageIds)->orderBy('id')->get();
+        $messages = $this->inWrittenOrder($messages);
         $notes = $noteIds === [] ? new Collection : $this->notes($conversation)->whereKey($noteIds)->orderBy('id')->get();
 
         return [
@@ -239,6 +251,30 @@ class ConversationTimeline
             'events' => [],
             'has_more' => false,
         ];
+    }
+
+    /**
+     * The moment a message was written: by the customer (Meta's timestamp)
+     * or by the agent or the system (when it was stored).
+     */
+    private static function writtenAt(Message $message): ?CarbonInterface
+    {
+        return $message->direction === MessageDirection::Inbound
+            ? ($message->sent_at ?? $message->created_at)
+            : $message->created_at;
+    }
+
+    /**
+     * The messages by when they were written, then by id.
+     *
+     * @param  Collection<int, Message>  $messages
+     * @return Collection<int, Message>
+     */
+    private function inWrittenOrder(Collection $messages): Collection
+    {
+        $key = fn (Message $message): array => [self::writtenAt($message)?->getTimestamp() ?? 0, $message->id];
+
+        return $messages->sort(fn (Message $a, Message $b): int => $key($a) <=> $key($b))->values();
     }
 
     /**

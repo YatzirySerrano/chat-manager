@@ -45,6 +45,9 @@ class ConversationResource extends JsonResource
                 'id' => $this->channelConnection->id,
                 'name' => $this->channelConnection->name,
                 'phone' => $this->channelConnection->display_phone_number,
+                // Channel of the receiving connection, for the list indicator.
+                'channel' => $this->channelConnection->channel->value,
+                'channel_label' => $this->channelConnection->channel->label(),
                 // Operational state for the composer; the server checks it again on every send.
                 'state' => match (true) {
                     $this->channelConnection->isDeleted() => 'deleted',

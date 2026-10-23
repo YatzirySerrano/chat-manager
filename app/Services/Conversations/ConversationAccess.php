@@ -10,7 +10,9 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\PlatformSettings;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use WeakMap;
 
 /**
  * Single source of truth of who reaches which conversation and who may be
@@ -28,7 +30,46 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class ConversationAccess
 {
+    /**
+     * Departments each user may accept from, computed once while a list is
+     * being resolved (rememberingAcceptableDepartments()). Keyed by the
+     * User instance, so the engine, which reads a fresh user under lock,
+     * always computes them again.
+     *
+     * @var WeakMap<User, list<int>>|null
+     */
+    private static ?WeakMap $rememberedAcceptable = null;
+
     public function __construct(private PlatformSettings $settings) {}
+
+    /**
+     * Runs the callback (resolving the abilities of many listed rows) with
+     * the departments the user may accept from computed only once. Users
+     * with global scope do not depend on a loaded relation, so without it
+     * every pending row would ask the database again (docs/rendimiento-y-carga.md).
+     * Only for the duration of the callback: nothing outlives the listing.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $callback
+     * @return TResult
+     */
+    public function rememberingAcceptableDepartments(User $user, Closure $callback): mixed
+    {
+        self::$rememberedAcceptable ??= new WeakMap;
+
+        if (isset(self::$rememberedAcceptable[$user])) {
+            return $callback();
+        }
+
+        self::$rememberedAcceptable[$user] = $this->acceptableDepartmentIds($user);
+
+        try {
+            return $callback();
+        } finally {
+            unset(self::$rememberedAcceptable[$user]);
+        }
+    }
 
     public function canView(User $user, Conversation $conversation): bool
     {
@@ -90,6 +131,10 @@ class ConversationAccess
      */
     public function acceptableDepartmentIds(User $user): array
     {
+        if (self::$rememberedAcceptable !== null && isset(self::$rememberedAcceptable[$user])) {
+            return self::$rememberedAcceptable[$user];
+        }
+
         if (! $user->holdsPermission(Permission::AcceptConversations) || ! $this->canAttendConversations($user)) {
             return [];
         }

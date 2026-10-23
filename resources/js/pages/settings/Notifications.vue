@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
     browserNotificationPermission,
+    notificationSoundState,
     playNotificationSound,
     requestBrowserNotificationPermission,
 } from '@/lib/notifications/alerts';
@@ -255,6 +256,25 @@ function submit(): void {
                             Probar sonido
                         </Button>
                     </div>
+                    <p
+                        v-if="notificationSoundState === 'locked'"
+                        class="text-xs text-muted-foreground"
+                        role="status"
+                        data-test="sound-locked-notice"
+                    >
+                        El navegador bloquea el sonido hasta que interactúes con
+                        la página (un clic o una tecla) después de abrirla o
+                        recargarla. Con la pestaña en segundo plano puede no
+                        sonar; activa las notificaciones del navegador para no
+                        perder avisos.
+                    </p>
+                    <p
+                        v-else-if="notificationSoundState === 'unsupported'"
+                        class="text-xs text-muted-foreground"
+                        role="status"
+                    >
+                        Este navegador no permite reproducir el sonido de aviso.
+                    </p>
                 </div>
             </div>
         </div>

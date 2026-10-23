@@ -143,7 +143,7 @@ const opensInline = computed(
                 :href="attachment.url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-10"
                 :title="`Abrir ${name}`"
             >
                 <ExternalLink class="size-4" aria-hidden="true" />
@@ -151,7 +151,7 @@ const opensInline = computed(
             </a>
             <a
                 :href="attachment.download_url"
-                class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-10"
                 :title="`Descargar ${name}`"
             >
                 <Download class="size-4" aria-hidden="true" />

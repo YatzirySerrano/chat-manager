@@ -7,6 +7,7 @@ import type {
     ConversationMessage,
     ConversationNote,
     ConversationTimelinePage,
+    MessageStatusValue,
 } from '@/types';
 
 export type TimelineItem =
@@ -33,6 +34,111 @@ export type TimelineItem =
       };
 
 const KIND_ORDER = { event: 0, message: 1, note: 2 } as const;
+
+/**
+ * The moment a message was written, the same key the server orders by: a
+ * customer message by the time the customer sent it (Meta's timestamp, which
+ * the resource already falls back to the stored time), a reply by the time
+ * it was stored. Webhooks are processed in parallel, so a customer message's
+ * id says when it arrived, not when it was written.
+ */
+export function messageWrittenAt(message: ConversationMessage): string {
+    return message.direction === 'inbound'
+        ? (message.sent_at ?? message.created_at ?? '')
+        : (message.created_at ?? message.sent_at ?? '');
+}
+
+function timeOf(at: string): number {
+    const time = Date.parse(at);
+
+    return Number.isNaN(time) ? 0 : time;
+}
+
+/**
+ * Order of the delivery states inside one second (the resolution of
+ * updated_at) when the delivery attempt is unknown: replies only move
+ * forward, and a failure, being terminal until an explicit retry, wins a tie.
+ */
+const STATUS_RANK: Record<MessageStatusValue, number> = {
+    received: 0,
+    queued: 1,
+    sending: 2,
+    accepted: 3,
+    sent: 4,
+    delivered: 5,
+    read: 6,
+    failed: 7,
+};
+
+/**
+ * Order of the delivery states inside one delivery attempt. Each claim of
+ * the job counts an attempt as it moves the message to sending, so within
+ * the same attempt a queued state can only be the job putting it back after
+ * a transient error (or a retry after a failure, which the next sending,
+ * one attempt later, supersedes). A failure still wins a tie.
+ */
+const ATTEMPT_RANK: Record<MessageStatusValue, number> = {
+    received: 0,
+    sending: 1,
+    queued: 2,
+    accepted: 2,
+    sent: 3,
+    delivered: 4,
+    read: 5,
+    failed: 6,
+};
+
+/**
+ * Whether a copy of a message read from the server may replace the one
+ * shown. Requests run in parallel (signals, refreshes, reloads, the send
+ * response), so the last response to arrive is not always the newest state:
+ * the newer updated_at wins; inside the same second the higher manual
+ * retry count wins (a retry requeues a failed message without a new
+ * attempt), then the higher delivery attempt, and then the state rank. A copy without a version replaces
+ * the shown one, as before.
+ */
+export function isNewerMessageState(
+    current: ConversationMessage,
+    incoming: ConversationMessage,
+): boolean {
+    const currentAt = Date.parse(current.updated_at ?? '');
+    const incomingAt = Date.parse(incoming.updated_at ?? '');
+
+    if (Number.isNaN(currentAt) || Number.isNaN(incomingAt)) {
+        return true;
+    }
+
+    if (incomingAt !== currentAt) {
+        return incomingAt > currentAt;
+    }
+
+    const currentRetries = current.delivery_retries;
+    const incomingRetries = incoming.delivery_retries;
+
+    if (
+        typeof currentRetries === 'number' &&
+        typeof incomingRetries === 'number' &&
+        incomingRetries !== currentRetries
+    ) {
+        return incomingRetries > currentRetries;
+    }
+
+    const currentAttempt = current.delivery_attempts;
+    const incomingAttempt = incoming.delivery_attempts;
+
+    if (
+        typeof currentAttempt !== 'number' ||
+        typeof incomingAttempt !== 'number'
+    ) {
+        return STATUS_RANK[incoming.status] >= STATUS_RANK[current.status];
+    }
+
+    if (incomingAttempt !== currentAttempt) {
+        return incomingAttempt > currentAttempt;
+    }
+
+    return ATTEMPT_RANK[incoming.status] >= ATTEMPT_RANK[current.status];
+}
 
 /**
  * Client state of a conversation's chat. The server sends the newest page
@@ -82,7 +188,11 @@ export function useConversationTimeline(
             const next = new Map(messages.value);
 
             for (const message of page.messages) {
-                next.set(message.id, message);
+                const current = next.get(message.id);
+
+                if (!current || isNewerMessageState(current, message)) {
+                    next.set(message.id, message);
+                }
             }
 
             messages.value = next;
@@ -148,7 +258,7 @@ export function useConversationTimeline(
             list.push({
                 kind: 'message',
                 key: `m${message.id}`,
-                at: message.created_at ?? message.sent_at ?? '',
+                at: messageWrittenAt(message),
                 id: message.id,
                 message,
             });
@@ -175,11 +285,7 @@ export function useConversationTimeline(
         }
 
         return list.sort((a, b) => {
-            if (a.kind === 'message' && b.kind === 'message') {
-                return a.id - b.id;
-            }
-
-            const time = new Date(a.at).getTime() - new Date(b.at).getTime();
+            const time = timeOf(a.at) - timeOf(b.at);
 
             if (time !== 0) {
                 return time;

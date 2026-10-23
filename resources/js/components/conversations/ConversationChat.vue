@@ -235,8 +235,21 @@ watchDebounced(
     { debounce: 800, immediate: true },
 );
 
+/*
+ * The reply returned by the server is already in the timeline. With
+ * real-time connected, its own signals (".message.recorded" for the chat and
+ * ".inbox.changed" for the list) bring the rest, so only the header is
+ * reloaded; without them, the chat and the list are refreshed here.
+ */
 function onSent(message: ConversationMessage): void {
     timeline.upsertMessage(message);
+
+    if (realtimeState.value === 'connected') {
+        router.reload({ only: ['conversation'] });
+
+        return;
+    }
+
     void timeline.fetchNewer();
     router.reload({ only: ['conversation', 'conversations'] });
 }
@@ -262,7 +275,7 @@ const phone = computed(() =>
             <Button
                 variant="ghost"
                 size="icon"
-                class="shrink-0 lg:hidden"
+                class="shrink-0 lg:hidden pointer-coarse:size-10"
                 title="Volver a la lista"
                 aria-label="Volver a la lista de conversaciones"
                 @click="emit('back')"
@@ -279,13 +292,15 @@ const phone = computed(() =>
                 "
                 @click="emit('toggleDetails')"
             >
-                <h2 class="truncate text-sm font-semibold sm:text-base">
+                <h2 class="truncate text-base font-semibold">
                     {{ conversation.contact.name }}
                 </h2>
                 <p
                     class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
                 >
-                    <span v-if="phone" class="truncate">{{ phone }}</span>
+                    <span v-if="phone" class="truncate tabular-nums">{{
+                        phone
+                    }}</span>
                     <ConversationStatusBadge
                         :status="conversation.status"
                         :label="conversation.status_label"
@@ -314,7 +329,7 @@ const phone = computed(() =>
             <Button
                 variant="ghost"
                 size="icon"
-                class="shrink-0"
+                class="shrink-0 pointer-coarse:size-10"
                 :title="detailsOpen ? 'Ocultar detalles' : 'Mostrar detalles'"
                 :aria-label="
                     detailsOpen

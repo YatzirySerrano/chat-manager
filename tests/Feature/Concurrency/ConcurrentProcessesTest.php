@@ -21,6 +21,7 @@ use App\Enums\ExportFormat;
 use App\Enums\InboundMessageOutcome;
 use App\Enums\MessageStatus;
 use App\Enums\Permission;
+use App\Jobs\DeliverOutboundMessage;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactIdentity;
@@ -33,11 +34,14 @@ use App\Models\User;
 use App\Models\WebhookEvent;
 use App\Notifications\NotificationKind;
 use App\Reports\ReportRegistry;
+use App\Services\Conversations\ConversationTimeline;
 use App\Services\Exports\ReportExporter;
+use App\Support\Queues;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
+use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -785,4 +789,266 @@ test('notifications stored while the agent marks everything read are neither los
         ->and($notifications->sum('occurrences'))->toBe(6)
         ->and($notifications->whereNull('read_at')->count())->toBeLessThanOrEqual(1)
         ->and(committed(fn () => DB::table('notification_receipts')->where('user_id', $agent->id)->whereIn('notification_id', $notifications->modelKeys())->count()))->toBe(6);
+});
+
+/*
+| Multi-agent attention through ONE WhatsApp number (several customers,
+| several agents, one phone_number_id).
+*/
+
+/**
+ * Conversations of the same connection, each with its own customer (a
+ * WhatsApp identity) and its own available agent of the department.
+ *
+ * @param  list<string>  $phones
+ * @return array{connection: Connection, department: Department, conversations: list<Conversation>}
+ */
+function conversationsOnOneNumber(array $phones): array
+{
+    return committed(function () use ($phones): array {
+        $connection = Connection::factory()->operational()->create(['phone_number_id' => '140000000000099']);
+        $department = Department::factory()->create(['name' => 'Ventas']);
+        $conversations = array_map(function (string $phone) use ($connection, $department): Conversation {
+            $agent = User::factory()->agent()->available()->inDepartments($department)->create();
+            $contact = Contact::factory()->create(['phone_e164' => '+'.$phone]);
+            ContactIdentity::factory()->create(['contact_id' => $contact->id, 'external_id' => $phone]);
+
+            return Conversation::factory()->inDepartment($department)->assignedTo($agent)->create([
+                'connection_id' => $connection->id,
+                'contact_id' => $contact->id,
+                'status' => ConversationStatus::Open,
+                'last_inbound_at' => now()->subHour(),
+            ]);
+        }, $phones);
+
+        return ['connection' => $connection, 'department' => $department, 'conversations' => $conversations];
+    });
+}
+
+/**
+ * The Graph sends logged by the faked Cloud API of the processes.
+ *
+ * @return list<array{url: string, to: string|null, reference: string|null, body: string|null}>
+ */
+function graphSends(string $log): array
+{
+    return is_file($log)
+        ? array_values(array_map(fn (string $line): array => json_decode($line, true), array_filter(explode("\n", (string) file_get_contents($log)))))
+        : [];
+}
+
+test('many customers writing at once to the same number: one contact and one conversation each, no message mixed up', function () {
+    $connection = committed(fn () => Connection::factory()->operational()->create());
+    $phones = array_map(fn (int $i): string => '52157000000'.str_pad((string) $i, 2, '0', STR_PAD_LEFT), range(1, 8));
+
+    $results = ConcurrentProcess::race(array_map(fn (string $phone) => ConcurrentProcess::start('inbound', [
+        'connection_id' => $connection->id,
+        'from' => $phone,
+        'wamid' => "wamid.mix.{$phone}",
+        'body' => "Soy {$phone}",
+    ]), $phones));
+
+    expect(failures($results))->toBe([]);
+
+    $messages = committed(fn () => Message::query()->with('conversation.contact.identities')->get());
+
+    expect($messages)->toHaveCount(8)
+        ->and($messages->pluck('conversation_id')->unique())->toHaveCount(8)
+        ->and(committed(fn () => [Contact::query()->count(), Conversation::query()->where('connection_id', $connection->id)->count()]))->toBe([8, 8])
+        ->and($messages->every(fn (Message $message): bool => $message->body === 'Soy '.$message->conversation->contact->identities->sole()->external_id
+            && $message->whatsapp_message_id === 'wamid.mix.'.$message->conversation->contact->identities->sole()->external_id))->toBeTrue();
+});
+
+test('three agents replying at once to three customers of the same number: each send goes to its own customer through the same phone number id', function () {
+    $phones = ['14155550301', '14155550302', '14155550303'];
+    ['conversations' => $conversations] = conversationsOnOneNumber($phones);
+    $log = sendsLog();
+    $references = array_map(fn () => (string) Str::uuid(), $phones);
+
+    $results = ConcurrentProcess::race(array_map(fn (int $i) => ConcurrentProcess::start('queue-outbound-graph', [
+        'conversation_id' => $conversations[$i]->id,
+        'user_id' => $conversations[$i]->assigned_user_id,
+        'body' => "Respuesta para {$phones[$i]}",
+        'client_reference' => $references[$i],
+        'sends_log' => $log,
+    ]), array_keys($phones)));
+
+    expect(failures($results))->toBe([]);
+
+    $sends = collect(graphSends($log))->keyBy('reference');
+
+    expect($sends)->toHaveCount(3)
+        ->and($sends->pluck('url')->unique()->all())->toBe(['https://graph.facebook.com/v26.0/140000000000099/messages']);
+
+    foreach (array_keys($phones) as $i) {
+        $message = committed(fn () => Message::query()->where('client_reference', $references[$i])->sole());
+
+        expect($message->conversation_id)->toBe($conversations[$i]->id)
+            ->and($message->status)->toBe(MessageStatus::Accepted)
+            ->and($sends[$references[$i]]['to'])->toBe($phones[$i])
+            ->and($sends[$references[$i]]['body'])->toBe("Respuesta para {$phones[$i]}");
+    }
+});
+
+test('replies of one conversation picked by several queue workers leave in the order they were written, without holding back other conversations', function () {
+    ['conversations' => [$chatty, $other]] = conversationsOnOneNumber(['14155550401', '14155550402']);
+    [$ordered, $unrelated] = committed(fn () => [
+        collect(range(1, 3))->map(fn (int $i) => WhatsAppFixtures::outbound($chatty, ['body' => "Parte {$i}"])->id)->all(),
+        WhatsAppFixtures::outbound($other)->id,
+    ]);
+    $log = sendsLog();
+    $shared = ['QUEUE_CONNECTION' => 'database', 'CONCURRENCY_WATCHDOG' => '90'];
+    config(['queue.connections.database.connection' => 'committed']);
+
+    // The newest reply is the first job in the queue.
+    committed(function () use ($ordered, $unrelated): void {
+        foreach ([...array_reverse($ordered), $unrelated] as $messageId) {
+            app('queue')->connection('database')->pushOn(Queues::name(Queues::MESSAGES), new DeliverOutboundMessage($messageId));
+        }
+    });
+
+    $results = ConcurrentProcess::race(array_map(fn () => ConcurrentProcess::start('work-deliveries', [
+        'message_ids' => [...$ordered, $unrelated],
+        'queue' => Queues::name(Queues::MESSAGES),
+        'sends_log' => $log,
+    ], $shared), range(1, 3)), 90);
+
+    $sent = RecordingTransport::sentIds($log);
+    $messages = committed(fn () => Message::query()->whereKey([...$ordered, $unrelated])->get()->keyBy('id'));
+
+    expect(failures($results))->toBe([])
+        ->and(array_values(array_filter($sent, fn (int $id): bool => in_array($id, $ordered, true))))->toBe($ordered)
+        ->and($sent)->toContain($unrelated)
+        ->and($sent)->toHaveCount(4)
+        ->and($messages->every(fn (Message $message): bool => $message->status === MessageStatus::Accepted && $message->delivery_attempts === 1))->toBeTrue()
+        ->and($messages[$ordered[2]]->metadata['delivery']['timing']['order_waits'])->toBeGreaterThanOrEqual(1)
+        ->and($messages[$unrelated]->metadata['delivery']['timing']['order_waits'])->toBe(0)
+        // No delivery job left behind or failed (listeners of other queues may still wait).
+        ->and(committed(fn () => DB::table('jobs')->where('queue', Queues::name(Queues::MESSAGES))->count()))->toBe(0)
+        ->and(committed(fn () => DB::table('failed_jobs')->count()))->toBe(0);
+});
+
+test('two agents accepting through the web at once: one is redirected to the conversation, the other gets a 409', function () {
+    [$agents, $conversation] = committed(function (): array {
+        $department = Department::factory()->create();
+
+        return [
+            User::factory()->agent()->available()->inDepartments($department)->count(2)->create(),
+            Conversation::factory()->inDepartment($department)->create(),
+        ];
+    });
+    $uri = route('conversations.accept', $conversation->id, false);
+
+    $results = ConcurrentProcess::race($agents->map(fn (User $agent) => ConcurrentProcess::start('http-json', ['user_id' => $agent->id, 'uri' => $uri, 'method' => 'POST']))->all());
+
+    expect(failures($results))->toBe([])
+        ->and(collect($results)->pluck('value.status')->sort()->values()->all())->toBe([302, 409]);
+
+    $loser = collect($results)->firstWhere('value.status', 409)['value'];
+    $winner = $agents[collect($results)->search(fn (array $result): bool => $result['value']['status'] === 302)];
+
+    expect($loser['json']['message'])->toBe('Otra persona ya aceptó esta conversación.')
+        ->and(committed(fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->toBe($winner->id)
+        ->and(committed(fn () => ConversationEvent::query()->where('type', ConversationEventType::Accepted)->count()))->toBe(1);
+});
+
+test('a customer sending several quick messages, some delivered twice, at once: each is stored once, shown in the order sent, and notifies once', function () {
+    ['connection' => $connection, 'conversation' => $conversation, 'agent' => $agent, 'phone' => $phone] = attendedWhatsappConversation();
+    $sentAt = CarbonImmutable::now()->subMinute()->startOfSecond();
+    $message = fn (int $i) => ConcurrentProcess::start('inbound', [
+        'connection_id' => $connection->id,
+        'from' => $phone,
+        'wamid' => "wamid.burst.{$i}",
+        'body' => "Parte {$i}",
+        'timestamp' => $sentAt->addSeconds($i)->getTimestamp(),
+    ]);
+
+    // Newest first, and Meta repeats two of them.
+    $results = ConcurrentProcess::race([$message(4), $message(3), $message(2), $message(1), $message(3), $message(2)]);
+
+    expect(failures($results))->toBe([])
+        ->and(collect($results)->pluck('value.0.outcome')->countBy()->sortKeys()->all())->toBe([InboundMessageOutcome::Appended->value => 4, InboundMessageOutcome::Duplicate->value => 2]);
+
+    $stored = committed(fn () => Message::query()->where('conversation_id', $conversation->id)->get()->keyBy('whatsapp_message_id'));
+    $page = committed(function () use ($conversation, $agent): array {
+        $request = Request::create('/');
+        $request->setUserResolver(fn () => User::query()->findOrFail($agent->id));
+
+        return app(ConversationTimeline::class)->page(Conversation::query()->findOrFail($conversation->id), $request);
+    });
+    $notification = committed(fn () => DatabaseNotification::query()->where('notifiable_id', $agent->id)->sole());
+
+    expect($stored)->toHaveCount(4)
+        ->and(collect(range(1, 4))->every(fn (int $i): bool => $stored["wamid.burst.{$i}"]->sent_at?->getTimestamp() === $sentAt->addSeconds($i)->getTimestamp()))->toBeTrue()
+        ->and(array_column($page['messages'], 'body'))->toBe(['Parte 1', 'Parte 2', 'Parte 3', 'Parte 4'])
+        ->and($notification->kind)->toBe(NotificationKind::ConversationMessage->value)
+        ->and($notification->occurrences)->toBe(4)
+        ->and(committed(fn () => DB::table('notification_receipts')->where('user_id', $agent->id)->count()))->toBe(4);
+});
+
+test('a transfer between agents: the new agent sees the whole history, the previous one loses access, and both are signalled', function () {
+    ['conversation' => $conversation, 'agent' => $previous] = attendedWhatsappConversation();
+    [$admin, $support, $next, $history] = committed(function () use ($conversation): array {
+        $support = Department::factory()->create(['name' => 'Soporte']);
+
+        return [
+            User::factory()->administrator()->create(),
+            $support,
+            User::factory()->agent()->available()->inDepartments($support)->create(),
+            [
+                Message::factory()->create(['conversation_id' => $conversation->id, 'body' => 'Necesito ayuda'])->id,
+                WhatsAppFixtures::outbound($conversation, ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.before.transfer'])->id,
+            ],
+        ];
+    });
+    $shared = ['BROADCAST_CONNECTION' => 'log'];
+
+    $transfer = ConcurrentProcess::race([ConcurrentProcess::start('transfer-with-signals', [
+        'conversation_id' => $conversation->id,
+        'department_id' => $support->id,
+        'user_id' => $next->id,
+        'actor_id' => $admin->id,
+    ], $shared)])[0];
+
+    $uri = route('conversations.timeline', $conversation->id, false);
+    [$asNext, $asPrevious] = ConcurrentProcess::race([
+        ConcurrentProcess::start('http-json', ['user_id' => $next->id, 'uri' => $uri]),
+        ConcurrentProcess::start('http-json', ['user_id' => $previous->id, 'uri' => $uri]),
+    ]);
+
+    expect($transfer['ok'])->toBeTrue(json_encode($transfer))
+        ->and($transfer['value']['department_id'])->toBe($support->id)
+        ->and($transfer['value']['assigned_user_id'])->toBe($next->id)
+        ->and($asNext['value']['status'])->toBe(200)
+        ->and(array_column($asNext['value']['json']['messages'], 'id'))->toBe($history)
+        ->and($asPrevious['value']['status'])->toBeIn([403, 404])
+        ->and(committed(fn () => ConversationEvent::query()->where('conversation_id', $conversation->id)->where('type', ConversationEventType::Transferred)->count()))->toBe(1);
+
+    $signalled = collect($transfer['value']['signals'])->flatMap(fn (array $signal): array => array_map(fn (string $channel): string => "{$signal['event']} {$channel}", $signal['channels']))->all();
+
+    expect($signalled)->toContain("conversation.changed conversations.{$conversation->id}")
+        ->toContain("inbox.changed users.{$previous->id}")
+        ->toContain("inbox.changed users.{$next->id}");
+});
+
+test('the same customer writing to two numbers at once gets one contact and one open conversation per number', function () {
+    [$sales, $support] = committed(fn () => [Connection::factory()->operational()->create(), Connection::factory()->operational()->create()]);
+    $phone = '5215700000999';
+
+    $results = ConcurrentProcess::race([
+        ConcurrentProcess::start('inbound', ['connection_id' => $sales->id, 'from' => $phone, 'wamid' => 'wamid.two.sales.1']),
+        ConcurrentProcess::start('inbound', ['connection_id' => $support->id, 'from' => $phone, 'wamid' => 'wamid.two.support.1']),
+        ConcurrentProcess::start('inbound', ['connection_id' => $sales->id, 'from' => $phone, 'wamid' => 'wamid.two.sales.2']),
+        ConcurrentProcess::start('inbound', ['connection_id' => $support->id, 'from' => $phone, 'wamid' => 'wamid.two.support.2']),
+    ]);
+
+    expect(failures($results))->toBe([])
+        ->and(committed(fn () => [Contact::query()->count(), ContactIdentity::query()->count(), Message::query()->count()]))->toBe([1, 1, 4]);
+
+    $conversations = committed(fn () => Conversation::query()->whereNot('status', ConversationStatus::Closed)->get()->keyBy('connection_id'));
+
+    expect($conversations)->toHaveCount(2)
+        ->and($conversations->pluck('contact_id')->unique())->toHaveCount(1)
+        ->and(committed(fn () => Message::query()->whereLike('whatsapp_message_id', 'wamid.two.sales.%')->pluck('conversation_id')->unique()->all()))->toBe([$conversations[$sales->id]->id])
+        ->and(committed(fn () => Message::query()->whereLike('whatsapp_message_id', 'wamid.two.support.%')->pluck('conversation_id')->unique()->all()))->toBe([$conversations[$support->id]->id]);
 });

@@ -127,7 +127,7 @@ con alto volumen.
 
 La ficha de la conexión muestra la tarjeta «Integración con WhatsApp Cloud API»: modo de transporte, URL del webhook,
 secretos guardados (sí/no), verificación, suscripción de la app, eventos de las últimas 24 h, último error, mensajes
-sin confirmación, mensajes con **entrega sin confirmar** (`delivery_unknown`) de los últimos 7 días con enlace a las
+sin confirmación, mensajes con **entrega no confirmada** (`delivery_unknown`) de los últimos 7 días con enlace a las
 conversaciones afectadas que el usuario puede ver (máximo 10, respetando su visibilidad), el piloto controlado si
 está configurado (§9), avisos de Meta y plantillas.
 
@@ -223,15 +223,23 @@ documento admiten pie de foto.
 
 ### 5.1 Estados
 
-| Estado                             | Significado                                      | Origen               |
-| ---------------------------------- | ------------------------------------------------ | -------------------- |
-| `queued` (Pendiente)               | Guardado, esperando un worker                    | aplicación           |
-| `sending` (En proceso)             | Un worker lo reclamó y está llamando a Meta      | aplicación           |
-| `accepted` (Aceptado por WhatsApp) | La API de Meta devolvió el `wamid`               | respuesta de Meta    |
-| `sent` (Enviado)                   | Meta lo envió                                    | webhook de estado    |
-| `delivered` (Entregado)            | Llegó al teléfono                                | webhook de estado    |
-| `read` (Leído)                     | El cliente lo leyó                               | webhook de estado    |
-| `failed` (Fallido)                 | No se envió; terminal salvo reintento autorizado | aplicación o webhook |
+Las etiquetas son solo de presentación; los valores internos conservan toda la progresión.
+
+| Estado                                     | Etiqueta              | Significado                                                    | Origen               |
+| ------------------------------------------ | --------------------- | -------------------------------------------------------------- | -------------------- |
+| `received`                                 | Recibido              | Mensaje entrante del cliente                                   | webhook              |
+| `queued`                                   | Enviando              | Guardado, esperando un worker                                  | aplicación           |
+| `sending`                                  | Enviando              | Un worker lo reclamó y está llamando a Meta                    | aplicación           |
+| `accepted`                                 | Enviado               | La API de Meta devolvió el `wamid` (aceptado por el proveedor) | respuesta de Meta    |
+| `sent`                                     | Enviado               | Meta lo envió                                                  | webhook de estado    |
+| `delivered`                                | Entregado             | Llegó al teléfono                                              | webhook de estado    |
+| `read`                                     | Leído                 | El cliente lo leyó                                             | webhook de estado    |
+| `failed`                                   | Fallido               | No se envió; terminal salvo reintento autorizado               | aplicación o webhook |
+| `failed` + `error_code = delivery_unknown` | Entrega no confirmada | Sin evidencia de Meta tras 15 min en `sending`                 | reconciliación       |
+
+La acción para un fallido es «Reintentar». Los avisos dicen «Enviando mensaje…», «Reintentando el envío…» y «Enviando
+plantilla…». En el chat web los mismos valores se usan con `WebChatTransport`, que acepta al instante sin red; los
+acuses de entrega y lectura los envía el widget ([canal-chat-web.md](canal-chat-web.md#4-ciclo-de-vida-del-visitante)).
 
 Reglas de `RecordMessageStatus`:
 
@@ -281,7 +289,7 @@ Los mensajes de error se sanean: nunca contienen el token (`[token]`), ni cadena
 `php artisan whatsapp:maintenance reconcile-deliveries` (cada 5 minutos) marca como `failed / delivery_unknown` los
 mensajes `sending` sin evidencia después de `WHATSAPP_RECONCILE_AFTER_MINUTES` (15). **Nunca se reenvían
 automáticamente**, porque Meta pudo haberlos aceptado. Si después llega un estado de Meta con su callback data, el
-mensaje se corrige solo. En la conversación se muestran como **«Entrega sin confirmar»** (tono de advertencia, no de
+mensaje se corrige solo. En la conversación se muestran como **«Entrega no confirmada»** (tono de advertencia, no de
 fallo definitivo) con el motivo y el aviso de que el cliente pudo haberlos recibido; nunca se marcan como entregados o
 leídos sin evidencia. La tarjeta de diagnóstico de la conexión los cuenta (§2.6).
 
@@ -429,8 +437,8 @@ conversación transferida y cerrada (Sofía).
     Al terminar la validación deja la variable vacía y vuelve a cachear la configuración.
 11. **Activar** la conexión y asignar departamentos.
 12. **Prueba de ida y vuelta:** escribe al número desde un teléfono; debe crearse la conversación (y la salud pasar a
-    «Recibiendo mensajes»). Acepta y responde desde la bandeja: el mensaje debe pasar a «Aceptado por WhatsApp» y
-    luego a «Enviado/Entregado/Leído» por los webhooks de estado; la conexión pasa a «Operativa». Envía una imagen
+    «Recibiendo mensajes»). Acepta y responde desde la bandeja: el mensaje debe pasar de «Enviando» a «Enviado» y
+    luego a «Entregado» y «Leído» por los webhooks de estado; la conexión pasa a «Operativa». Envía una imagen
     desde el teléfono (debe descargarse) y prueba una plantilla con la ventana vencida.
 13. Revisa la tarjeta de diagnóstico: eventos procesados, sin errores ni mensajes sin confirmación o con entrega sin
     confirmar.

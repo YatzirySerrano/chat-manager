@@ -30,7 +30,7 @@ class MessageRetryController extends Controller
             return response()->json(['data' => ['id' => $message->id, 'status' => $message->status->value]], 202);
         }
 
-        Inertia::flash('toast', ['type' => 'info', 'message' => 'Mensaje en cola para reintentar el envío.']);
+        Inertia::flash('toast', ['type' => 'info', 'message' => 'Reintentando el envío…']);
 
         return back();
     }

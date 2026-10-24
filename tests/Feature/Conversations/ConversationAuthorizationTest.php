@@ -31,18 +31,20 @@ test('the list shows each person only the conversations within their reach', fun
     $user = $viewer($this);
 
     $this->actingAs($user)
-        ->get(route('conversations.index', ['status' => 'all']))
+        ->get(route('conversations.index', ['view' => 'all', 'status' => 'all']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('conversations/Index')
             ->where('conversations.data', fn ($rows) => collect($rows)->pluck('id')->sort()->values()->all() === collect($expected($this))->pluck('id')->sort()->values()->all())
-            ->where('counts', fn ($counts) => collect($counts)->sum() === count($expected($this))));
+            // The counters respect the same reach: the pending chip counts
+            // exactly the pending conversations of the list.
+            ->where('counts.pending', collect($expected($this))->where('status', ConversationStatus::Pending)->count()));
 })->with([
     'administrator' => [fn ($test) => User::factory()->administrator()->create(), fn ($test) => [$test->mine, $test->colleagues, $test->queued, $test->otherQueue, $test->unrouted]],
     'supervisor of the department' => [fn ($test) => User::factory()->supervisor()->inDepartments($test->sales)->create(), fn ($test) => [$test->mine, $test->colleagues, $test->queued]],
-    // Agents open on "Mis conversaciones"; the queue they may accept from is
-    // a separate view (see ConversationInboxTest).
-    'agent with accept permission' => [fn ($test) => $test->agent, fn ($test) => [$test->mine]],
+    // Agents have no "all" view: they get the general inbox, their own
+    // conversations and the pending ones they may accept (see GeneralInboxTest).
+    'agent with accept permission' => [fn ($test) => $test->agent, fn ($test) => [$test->mine, $test->queued]],
     'agent without accept permission' => [fn ($test) => conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$test->sales]), fn ($test) => []],
 ]);
 
@@ -186,7 +188,7 @@ test('tampered inputs are rejected without side effects', function (array $input
 test('filters cannot reveal conversations outside the scope', function () {
     // A personal inbox ignores the agent filter: it only ever holds the agent's own work.
     $this->actingAs($this->agent)
-        ->get(route('conversations.index', ['agent' => $this->colleague->id, 'status' => 'all']))
+        ->get(route('conversations.index', ['view' => 'mine', 'agent' => $this->colleague->id, 'status' => 'all']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => collect($rows)->pluck('id')->all() === [$this->mine->id])

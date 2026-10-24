@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Webhooks;
 
 use App\Actions\Messaging\StoreWebhookDelivery;
+use App\Enums\ConnectionChannel;
 use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Services\Meta\ConnectionMonitor;
@@ -82,7 +83,12 @@ class WhatsAppWebhookController extends Controller
 
     private function connection(string $webhookKey): Connection
     {
-        $connection = Connection::query()->where('webhook_key', $webhookKey)->first();
+        // Only WhatsApp connections have a webhook: a web chat connection's
+        // key answers like an unknown one.
+        $connection = Connection::query()
+            ->where('webhook_key', $webhookKey)
+            ->where('channel', ConnectionChannel::Whatsapp)
+            ->first();
 
         abort_if($connection === null || $connection->isDeleted(), 404);
 

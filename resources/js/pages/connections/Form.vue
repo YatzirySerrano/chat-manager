@@ -20,6 +20,11 @@ import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagno
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
+import WebChatPreview from '@/components/connections/WebChatPreview.vue';
+import type { WebChatPreviewAppearance } from '@/components/connections/WebChatPreview.vue';
+import WebChatSnippet from '@/components/connections/WebChatSnippet.vue';
+import WebChatWidgetCard from '@/components/connections/WebChatWidgetCard.vue';
+import type { WebChatWidgetOptions } from '@/components/connections/WebChatWidgetCard.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
@@ -82,7 +87,10 @@ const props = defineProps<{
         is_active: boolean;
     }[];
     limits: { message: number; reopen_window: number };
-    graphVersion: string;
+    /** Graph API version (WhatsApp only). */
+    graphVersion: string | null;
+    /** Widget choices and limits (web chat only). */
+    widgetOptions: WebChatWidgetOptions | null;
     diagnostics: ConnectionDiagnostics | null;
     can: {
         update: boolean;
@@ -117,6 +125,30 @@ type ConnectionForm = {
 
 const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
+const isWebChat = computed(() => props.channel.value === 'web_chat');
+const widget = computed(() => connection.value?.web_chat_widget ?? null);
+
+/** Unsaved appearance of the widget card, followed by the live preview. */
+const previewAppearance = ref<WebChatPreviewAppearance | null>(null);
+const previewDirty = ref(false);
+
+function onWidgetAppearance(
+    appearance: WebChatPreviewAppearance,
+    dirty: boolean,
+): void {
+    previewAppearance.value = appearance;
+    previewDirty.value = dirty;
+}
+
+const META_FIELDS = [
+    'display_phone_number',
+    'phone_number_id',
+    'business_account_id',
+    'meta_app_id',
+    'access_token',
+    'app_secret',
+    'webhook_verify_token',
+] as const;
 
 const form = useForm<ConnectionForm>({
     name: connection.value?.name ?? '',
@@ -351,6 +383,22 @@ function submit(): void {
         },
     };
 
+    // The channel is only chosen when creating; a web chat connection has
+    // no Meta identifiers or secrets to send.
+    form.transform((data) => {
+        const payload: Record<string, unknown> = { ...data };
+
+        if (isWebChat.value) {
+            META_FIELDS.forEach((field) => delete payload[field]);
+        }
+
+        if (!connection.value) {
+            payload.channel = props.channel.value;
+        }
+
+        return payload;
+    });
+
     if (connection.value) {
         form.submit(update(connection.value.id), options);
     } else {
@@ -449,7 +497,9 @@ const pageTitle = computed(() =>
                 :description="
                     isEditing
                         ? `${channel.label} · ${provider.label}`
-                        : 'Registra un número de WhatsApp Business conectado mediante la API oficial de Meta.'
+                        : isWebChat
+                          ? 'Crea un chat para tu sitio web. Después de guardarlo configurarás sus dominios, su apariencia y el código para insertarlo.'
+                          : 'Registra un número de WhatsApp Business conectado mediante la API oficial de Meta.'
                 "
             >
                 <template #eyebrow>
@@ -472,10 +522,17 @@ const pageTitle = computed(() =>
                 title="Esta conexión está eliminada"
                 :deleted-at="connection.deleted_at"
             >
-                No envía ni recibe mensajes y su Phone number ID queda
-                reservado. Sus conversaciones e historial se conservan. Al
-                restaurarla quedará inactiva y deberás verificar sus
-                credenciales de nuevo.
+                <template v-if="isWebChat">
+                    El widget deja de funcionar en los sitios donde está
+                    insertado. Sus conversaciones e historial se conservan. Al
+                    restaurarla quedará inactiva hasta que la actives.
+                </template>
+                <template v-else>
+                    No envía ni recibe mensajes y su Phone number ID queda
+                    reservado. Sus conversaciones e historial se conservan. Al
+                    restaurarla quedará inactiva y deberás verificar sus
+                    credenciales de nuevo.
+                </template>
             </DeletedRecordNotice>
 
             <p
@@ -515,7 +572,7 @@ const pageTitle = computed(() =>
                         <FormField
                             id="connection-channel"
                             label="Canal"
-                            hint="Por ahora solo se admite WhatsApp mediante la API oficial de Meta."
+                            hint="El canal se elige al crear la conexión y no se puede cambiar."
                         >
                             <Input
                                 id="connection-channel"
@@ -525,6 +582,7 @@ const pageTitle = computed(() =>
                             />
                         </FormField>
                         <FormField
+                            v-if="!isWebChat"
                             id="connection-display-phone"
                             label="Número visible (opcional)"
                             :error="validation.error('display_phone_number')"
@@ -548,8 +606,9 @@ const pageTitle = computed(() =>
                     </SurfaceCard>
 
                     <SurfaceCard
+                        v-if="!isWebChat"
                         title="Credenciales de Meta"
-                        :description="`Datos de tu app y de tu cuenta de WhatsApp Business. Se consultan con la Graph API ${graphVersion}.`"
+                        :description="`Datos de tu app y de tu cuenta de WhatsApp Business. Se consultan con la Graph API ${graphVersion ?? ''}.`"
                         body-class="grid gap-5 p-5"
                     >
                         <div class="grid gap-5 sm:grid-cols-2">
@@ -707,9 +766,36 @@ const pageTitle = computed(() =>
                         </div>
                     </SurfaceCard>
 
+                    <template v-if="isWebChat">
+                        <WebChatWidgetCard
+                            v-if="connection && widget && widgetOptions"
+                            :connection-id="connection.id"
+                            :widget="widget"
+                            :options="widgetOptions"
+                            :can-update="can.update"
+                            @appearance="onWidgetAppearance"
+                        />
+                        <p
+                            v-else-if="!connection"
+                            class="flex gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
+                        >
+                            <Info
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Al crear la conexión podrás autorizar los dominios
+                            de tu sitio, personalizar el widget y copiar el
+                            código para insertarlo.
+                        </p>
+                    </template>
+
                     <SurfaceCard
                         title="Departamentos"
-                        description="Quién atiende las conversaciones que lleguen a este número."
+                        :description="
+                            isWebChat
+                                ? 'Quién atiende las conversaciones que lleguen por este chat.'
+                                : 'Quién atiende las conversaciones que lleguen a este número.'
+                        "
                         body-class="grid gap-5 p-5"
                     >
                         <fieldset class="grid gap-2">
@@ -826,7 +912,13 @@ const pageTitle = computed(() =>
                                 class="mt-0.5 size-4 shrink-0"
                                 aria-hidden="true"
                             />
-                            <p>
+                            <p v-if="isWebChat">
+                                Estos mensajes se envían solos, solo como texto,
+                                y solo mientras la conexión está activa. El
+                                mensaje de ausencia o bienvenida del
+                                departamento tiene prioridad.
+                            </p>
+                            <p v-else>
                                 Estos mensajes se envían solos, solo como texto,
                                 únicamente dentro de la ventana de 24 horas de
                                 atención al cliente de WhatsApp y solo mientras
@@ -1019,7 +1111,8 @@ const pageTitle = computed(() =>
                 </fieldset>
 
                 <aside
-                    class="grid min-w-0 grid-cols-1 gap-6 lg:sticky lg:top-4"
+                    class="grid min-w-0 grid-cols-1 gap-6"
+                    :class="!isWebChat && 'lg:sticky lg:top-4'"
                 >
                     <SurfaceCard body-class="grid gap-4 p-5">
                         <div class="flex items-center justify-between gap-2">
@@ -1053,7 +1146,10 @@ const pageTitle = computed(() =>
                                 </p>
                             </div>
 
-                            <ConnectionChecklist :checks="connection.checks" />
+                            <ConnectionChecklist
+                                v-if="!isWebChat"
+                                :checks="connection.checks"
+                            />
 
                             <div
                                 v-if="phoneNotConnected"
@@ -1158,6 +1254,18 @@ const pageTitle = computed(() =>
                                     </Button>
                                     <p
                                         v-if="
+                                            isWebChat &&
+                                            !connection.is_active &&
+                                            !connection.has_required_credentials
+                                        "
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        Guarda al menos un dominio autorizado en
+                                        el widget para poder activarla.
+                                    </p>
+                                    <p
+                                        v-if="
+                                            !isWebChat &&
                                             !connection.is_active &&
                                             connection.has_required_credentials &&
                                             credentialsUnverified
@@ -1194,11 +1302,35 @@ const pageTitle = computed(() =>
                             </div>
                         </template>
 
+                        <p
+                            v-else-if="isWebChat"
+                            class="text-sm text-muted-foreground"
+                        >
+                            La conexión se creará <strong>inactiva</strong>.
+                            Después de guardarla podrás configurar el widget y
+                            activarla.
+                        </p>
                         <p v-else class="text-sm text-muted-foreground">
                             La conexión se creará <strong>inactiva</strong>.
                             Después de guardarla podrás verificar las
                             credenciales con Meta y activarla.
                         </p>
+                    </SurfaceCard>
+
+                    <SurfaceCard
+                        v-if="isWebChat && widget"
+                        body-class="grid gap-5 p-5"
+                    >
+                        <WebChatSnippet
+                            :snippet="widget.snippet"
+                            :configured="widget.allowed_origins.length > 0"
+                        />
+                        <WebChatPreview
+                            v-if="previewAppearance"
+                            :frame-url="widget.frame_url"
+                            :appearance="previewAppearance"
+                            :dirty="previewDirty"
+                        />
                     </SurfaceCard>
 
                     <ConnectionDiagnosticsCard
@@ -1253,7 +1385,11 @@ const pageTitle = computed(() =>
         <ConfirmDialog
             v-model:open="confirmDeactivateOpen"
             :title="`¿Desactivar ${connection?.name ?? 'la conexión'}?`"
-            description="La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan."
+            :description="
+                isWebChat
+                    ? 'El widget se mostrará fuera de línea y no aceptará mensajes nuevos. La configuración y el historial se conservan.'
+                    : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
+            "
             confirm-label="Desactivar"
             destructive
             :processing="statusProcessing"

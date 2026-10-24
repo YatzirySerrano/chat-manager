@@ -37,9 +37,11 @@ class ChangeConnectionStatus
                 ]);
             }
 
-            if ($active && ! $connection->hasRequiredCredentials()) {
+            if ($active && ! $connection->isConfigured()) {
                 throw ValidationException::withMessages([
-                    'is_active' => 'Para activar la conexión guarda primero el Phone number ID, el WABA ID y el token de acceso.',
+                    'is_active' => $connection->isWebChat()
+                        ? 'Para activar el chat web configura primero su widget con al menos un dominio autorizado.'
+                        : 'Para activar la conexión guarda primero el Phone number ID, el WABA ID y el token de acceso.',
                 ]);
             }
 

@@ -67,6 +67,7 @@ function save(): void {
 
 <template>
     <article
+        data-layout-box="note"
         class="mx-auto w-full max-w-2xl rounded-xl border border-dashed border-warning/60 bg-warning/10 px-3 py-2 text-sm"
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
@@ -115,7 +116,7 @@ function save(): void {
             </div>
         </form>
         <template v-else>
-            <p class="break-words whitespace-pre-line">{{ note.body }}</p>
+            <p class="wrap-anywhere whitespace-pre-line">{{ note.body }}</p>
             <footer
                 class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground"
             >

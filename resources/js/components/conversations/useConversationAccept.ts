@@ -11,6 +11,10 @@ import { accept as acceptRoute } from '@/routes/conversations';
  * The server answers with the conversation open (the list, counters and
  * chat come in the same visit) or, when a colleague was faster, with the
  * list without that row and the explanation in `errors.conversation`.
+ * Accepted from the general inbox, the row stays in its place with its
+ * new status; from "Pendientes", the server opens the general inbox, so
+ * the row never vanishes. The list is never patched or merged here: it is
+ * always the server's.
  */
 export function useConversationAccept() {
     /** Conversation being accepted, if any. */

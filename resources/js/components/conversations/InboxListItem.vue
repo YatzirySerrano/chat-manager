@@ -2,6 +2,7 @@
 import {
     Bot,
     CircleDot,
+    Globe,
     Hand,
     Hourglass,
     MessageCircle,
@@ -25,7 +26,8 @@ import type { ConversationSummary } from '@/types';
 
 /**
  * One row of the inbox list. Pending conversations (waiting in a queue) are
- * set apart from the ones someone attends, and a dot marks those where the
+ * set apart from the ones someone attends with a text badge «Pendiente»
+ * and an icon (never by color alone), and a dot marks those where the
  * customer wrote last and is still waiting for an answer. Every row tells
  * its status, department, responsible agent and the connection (channel,
  * name and number) the customer wrote to. A pending row the server lets the
@@ -38,6 +40,8 @@ const props = defineProps<{
     unread: number;
     /** Personal inboxes do not repeat the responsible agent (it is the viewer). */
     showAssignee: boolean;
+    /** The viewer's connections span more than one channel: tell it. */
+    showChannel?: boolean;
     /** The viewer is not available: accepting is disabled, as in the chat. */
     unavailable: boolean;
     /** Conversation being accepted from the list, if any (one at a time). */
@@ -89,11 +93,16 @@ const connectionTitle = computed(() =>
         .filter(Boolean)
         .join(' · '),
 );
+const channelIcon = computed(() =>
+    props.conversation.connection.channel === 'web_chat'
+        ? Globe
+        : MessageCircle,
+);
 const label = computed(() => {
-    const parts = [
-        props.conversation.contact.name,
-        props.conversation.status_label,
-    ];
+    // Whoever may accept it hears it first: the status is part of the prefix.
+    const parts = canAccept.value
+        ? [`Pendiente de aceptar: ${props.conversation.contact.name}`]
+        : [props.conversation.contact.name, props.conversation.status_label];
 
     if (props.unread > 0) {
         parts.push(
@@ -143,7 +152,7 @@ const label = computed(() => {
                 class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
                 :class="
                     pending
-                        ? 'bg-warning/15 text-warning'
+                        ? 'bg-warning/15 text-foreground'
                         : 'bg-primary-soft text-primary-soft-foreground'
                 "
                 aria-hidden="true"
@@ -193,6 +202,9 @@ const label = computed(() => {
                                     'outbound'
                                 "
                                 :status="conversation.last_message.status"
+                                :error-code="
+                                    conversation.last_message.error_code
+                                "
                             />
                             <Bot
                                 v-if="conversation.last_message.automatic"
@@ -221,7 +233,21 @@ const label = computed(() => {
                 </span>
 
                 <span class="mt-1.5 flex flex-wrap items-center gap-1">
+                    <!-- Pending: text and icon on a warning tint, with the
+                         foreground color so it keeps ≥4.5:1 in both themes. -->
+                    <span
+                        v-if="pending"
+                        class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/15 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-foreground"
+                        data-inbox-pending
+                    >
+                        <Hourglass
+                            class="size-3 shrink-0 text-warning"
+                            aria-hidden="true"
+                        />
+                        {{ conversation.status_label }}
+                    </span>
                     <ConversationStatusBadge
+                        v-else
                         :status="conversation.status"
                         :label="conversation.status_label"
                     />
@@ -268,11 +294,18 @@ const label = computed(() => {
                     ]"
                     :title="connectionTitle"
                 >
-                    <MessageCircle
+                    <component
+                        :is="channelIcon"
                         class="size-3.5 shrink-0"
                         aria-hidden="true"
                     />
-                    <span class="sr-only"
+                    <span
+                        v-if="showChannel"
+                        class="shrink-0 rounded border px-1 leading-4 text-foreground"
+                        data-inbox-channel
+                        >{{ conversation.connection.channel_label }}</span
+                    >
+                    <span v-else class="sr-only"
                         >{{ conversation.connection.channel_label }}:</span
                     >
                     <span class="truncate">{{

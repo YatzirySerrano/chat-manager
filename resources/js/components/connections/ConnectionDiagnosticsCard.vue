@@ -255,7 +255,7 @@ const checks = computed<
         >
             {{ diagnostics.outbound.unconfirmed }} mensaje(s) enviados sin
             confirmación de Meta. Si no llega la confirmación se marcarán como
-            «entrega sin confirmar».
+            «entrega no confirmada».
         </p>
 
         <div
@@ -266,7 +266,7 @@ const checks = computed<
             <p>
                 <strong
                     >{{ diagnostics.outbound.unknown }} mensaje(s) con entrega
-                    sin confirmar</strong
+                    no confirmada</strong
                 >
                 en los últimos {{ diagnostics.outbound.unknown_days }} días:
                 WhatsApp pudo haberlos recibido o no. El agente responsable debe

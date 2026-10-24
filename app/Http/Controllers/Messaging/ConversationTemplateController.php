@@ -71,7 +71,7 @@ class ConversationTemplateController extends Controller
             ]], 202);
         }
 
-        Inertia::flash('toast', ['type' => 'info', 'message' => 'Plantilla en cola de envío.']);
+        Inertia::flash('toast', ['type' => 'info', 'message' => 'Enviando plantilla…']);
 
         return back();
     }

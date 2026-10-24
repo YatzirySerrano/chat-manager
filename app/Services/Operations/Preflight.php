@@ -2,6 +2,7 @@
 
 namespace App\Services\Operations;
 
+use App\Enums\ConnectionChannel;
 use App\Models\Connection;
 use App\Models\User;
 use App\Notifications\Push\Vapid;
@@ -147,6 +148,7 @@ class Preflight
         $usesRedis = in_array('redis', [
             config('queue.connections.'.config('queue.default').'.driver'),
             config('cache.stores.'.config('cache.default').'.driver'),
+            config('cache.stores.'.(config('cache.limiter') ?: config('cache.default')).'.driver'),
             config('session.driver'),
         ], true) || (bool) config('reverb.servers.reverb.scaling.enabled', false);
 
@@ -262,6 +264,12 @@ class Preflight
     {
         $proxies = trim((string) config('operations.http.trusted_proxies'));
 
+        if ($proxies === '' && $this->hasActiveWebChat()) {
+            // Rate limits and session hashes of web chat visitors depend on
+            // the real client IP: behind a proxy every visitor would share one.
+            return $this->productionFailure('http.proxies', 'Proxies de confianza', 'TRUSTED_PROXIES está vacío y hay un chat web activo: los límites por IP de los visitantes usarían la IP del proxy. Configura TRUSTED_PROXIES (por ejemplo 127.0.0.1 detrás de Nginx en el mismo servidor).');
+        }
+
         if ($proxies === '') {
             return $this->isProduction()
                 ? HealthCheck::warning('http.proxies', 'Proxies de confianza', 'TRUSTED_PROXIES está vacío. Detrás de Nginx en el mismo servidor usa TRUSTED_PROXIES=127.0.0.1 para que Laravel reconozca HTTPS y la IP real.')
@@ -271,6 +279,19 @@ class Preflight
         return $proxies === '*'
             ? HealthCheck::warning('http.proxies', 'Proxies de confianza', 'TRUSTED_PROXIES=* confía en cualquier origen; úsalo solo si el puerto de PHP no es accesible desde fuera.')
             : HealthCheck::ok('http.proxies', 'Proxies de confianza', "TRUSTED_PROXIES={$proxies}.");
+    }
+
+    private function hasActiveWebChat(): bool
+    {
+        try {
+            return Connection::query()
+                ->where('channel', ConnectionChannel::WebChat)
+                ->active()
+                ->notDeleted()
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function databaseServer(): HealthCheck
@@ -453,7 +474,23 @@ class Preflight
             return $this->productionFailure('cache', 'Caché', "CACHE_STORE={$store} no conserva datos entre peticiones: bloqueos, límites y el latido del programador dejan de funcionar.");
         }
 
-        return HealthCheck::ok('cache', 'Caché', "Almacén {$store} ({$driver}) disponible.");
+        $limiterStore = (string) (config('cache.limiter') ?: $store);
+        $limiterDriver = config("cache.stores.{$limiterStore}.driver");
+
+        if (in_array($limiterDriver, ['array', 'null'], true)) {
+            return $this->productionFailure('cache', 'Caché', "CACHE_LIMITER={$limiterStore} no conserva datos entre peticiones: los límites de abuso dejan de funcionar.");
+        }
+
+        // The database store's add()/increment() deadlock under bursts on the
+        // same key (InnoDB duplicate-key locks) and it never retries: with a
+        // public web chat, every page load of the host site hits the limiter.
+        if ($limiterDriver === 'database' && $this->hasActiveWebChat()) {
+            return HealthCheck::warning('cache', 'Caché', "Los límites de uso se guardan en la base ({$limiterStore}) y hay un chat web público activo: en picos de tráfico aparecen bloqueos mutuos. Usa Redis con CACHE_STORE=redis o al menos CACHE_LIMITER=redis.");
+        }
+
+        return HealthCheck::ok('cache', 'Caché', $limiterStore === $store
+            ? "Almacén {$store} ({$driver}) disponible."
+            : "Almacén {$store} ({$driver}) disponible; límites de uso en {$limiterStore} ({$limiterDriver}).");
     }
 
     /**
@@ -476,6 +513,12 @@ class Preflight
 
         if (config("{$cache}.driver") === 'redis') {
             $connections[] = (string) config("{$cache}.connection", 'cache');
+        }
+
+        $limiter = 'cache.stores.'.(config('cache.limiter') ?: config('cache.default'));
+
+        if (config("{$limiter}.driver") === 'redis') {
+            $connections[] = (string) config("{$limiter}.connection", 'cache');
         }
 
         if (config('session.driver') === 'redis') {

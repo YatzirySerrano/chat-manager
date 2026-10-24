@@ -63,7 +63,7 @@ class RetryOutboundMessage
             }
 
             $connectionBlock = $conversation->channelConnection === null
-                ? 'La conversación no tiene una conexión de WhatsApp disponible para enviar mensajes.'
+                ? 'La conversación no tiene una conexión disponible para enviar mensajes.'
                 : $conversation->channelConnection->sendingBlockReason();
 
             if ($connectionBlock !== null) {

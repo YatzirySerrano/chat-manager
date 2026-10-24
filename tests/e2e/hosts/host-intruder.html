@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  A site that is NOT an allowed origin of the widget (http://intruso.test)
+  copying the shop's snippet. The browser must refuse to frame the chat
+  (CSP frame-ancestors) and no visitor session may start. With ?forge=1 it
+  is also used as a hostile child frame that posts forged widget messages to
+  its parent.
+-->
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" href="data:," />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Intruso E2E</title>
+    </head>
+    <body>
+        <h1>Sitio no autorizado</h1>
+        <script>
+            window.__events = [];
+            var params = new URLSearchParams(location.search);
+            window.__cm = { base: params.get('base'), key: params.get('key') };
+
+            if (params.get('forge') === '1') {
+                // Forged frame → host messages, from the wrong window and origin.
+                ['cm:close-request', 'cm:unread', 'cm:ready'].forEach(
+                    function (type) {
+                        parent.postMessage(
+                            {
+                                v: 1,
+                                source: 'chat-manager',
+                                type: type,
+                                payload:
+                                    type === 'cm:unread'
+                                        ? { count: 7 }
+                                        : {
+                                              appearance: {
+                                                  title: 'Falso',
+                                                  accent_color: '#ff0000',
+                                                  position: 'left',
+                                                  launcher_enabled: true,
+                                                  launcher_label: 'Falso',
+                                                  avatar: null,
+                                              },
+                                          },
+                            },
+                            '*',
+                        );
+                    },
+                );
+            } else {
+                (function (w, d, s, u) {
+                    w.ChatManager =
+                        w.ChatManager ||
+                        function () {
+                            (w.ChatManager.q = w.ChatManager.q || []).push(
+                                arguments,
+                            );
+                        };
+                    var j = d.createElement(s);
+                    j.async = true;
+                    j.src = u;
+                    d.head.appendChild(j);
+                })(
+                    window,
+                    document,
+                    'script',
+                    window.__cm.base + '/widget/v1/chat-manager.js',
+                );
+                ChatManager('init', { key: window.__cm.key });
+                ['ready', 'error'].forEach(function (name) {
+                    ChatManager('on', name, function (payload) {
+                        window.__events.push({
+                            name: name,
+                            payload: payload === undefined ? null : payload,
+                        });
+                    });
+                });
+            }
+        </script>
+    </body>
+</html>

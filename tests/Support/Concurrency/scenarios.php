@@ -19,6 +19,7 @@ use App\Actions\Users\AssessRoleChange;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\UpdateUser;
 use App\Events\Broadcasts\RealtimeSignal;
+use App\Events\WebChat\VisitorSessionSignal;
 use App\Jobs\DeliverOutboundMessage;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\Connection;
@@ -108,6 +109,54 @@ $recordSignals = function (): Closure {
     return function () use (&$signals): array {
         return $signals;
     };
+};
+
+/*
+ * Signals sent to web chat visitors by this process (type and channels).
+ */
+$recordVisitorSignals = function (): Closure {
+    $signals = [];
+    Event::listen(VisitorSessionSignal::class, function (VisitorSessionSignal $signal) use (&$signals): void {
+        $signals[] = ['type' => $signal->type, 'channels' => $signal->channels];
+    });
+
+    return function () use (&$signals): array {
+        return $signals;
+    };
+};
+
+/*
+ * One anonymous web request (no signed-in user, no session), served by
+ * this process like PHP-FPM would: method, uri, optional JSON body, client
+ * IP and headers (Origin, Referer, Authorization…). Returns the status and
+ * the decoded JSON answer.
+ *
+ * @param  array<string, mixed>  $request
+ * @return array{status: int, json: mixed}
+ */
+$guestRequest = function (array $request): array {
+    $server = [
+        'HTTP_ACCEPT' => 'application/json',
+        'REMOTE_ADDR' => (string) ($request['ip'] ?? '127.0.0.1'),
+    ];
+
+    foreach ((array) ($request['headers'] ?? []) as $name => $value) {
+        $server['HTTP_'.strtoupper(str_replace('-', '_', (string) $name))] = (string) $value;
+    }
+
+    $content = null;
+
+    if (array_key_exists('json', $request)) {
+        $server['CONTENT_TYPE'] = 'application/json';
+        $content = (string) json_encode($request['json']);
+    }
+
+    $kernel = app(HttpKernel::class);
+    $httpRequest = Request::create((string) $request['uri'], (string) ($request['method'] ?? 'GET'), server: $server, content: $content);
+    $response = $kernel->handle($httpRequest);
+    $kernel->terminate($httpRequest, $response);
+
+    return ['status' => $response->getStatusCode(), 'json' => json_decode((string) $response->getContent(), true)];
 };
 
 return [
@@ -403,11 +452,82 @@ return [
     /*
      * Like "http", also returning the decoded JSON answer.
      */
-    'http-json' => function (array $arguments): array {
+    'http-json' => function (array $arguments) use ($recordVisitorSignals): array {
+        $visitorSignals = $recordVisitorSignals();
         Auth::guard('web')->setUser(User::query()->findOrFail((int) $arguments['user_id']));
         $request = Request::create((string) $arguments['uri'], (string) ($arguments['method'] ?? 'GET'), server: ['HTTP_ACCEPT' => 'application/json']);
         $response = app(HttpKernel::class)->handle($request);
 
-        return ['status' => $response->getStatusCode(), 'json' => json_decode((string) $response->getContent(), true)];
+        return [
+            'status' => $response->getStatusCode(),
+            'json' => json_decode((string) $response->getContent(), true),
+            'visitor_signals' => $visitorSignals(),
+        ];
+    },
+
+    /*
+     * One anonymous request (the web chat widget, a webhook…): see
+     * $guestRequest. Also reports the signals sent to web chat visitors.
+     */
+    'http-guest' => function (array $arguments) use ($guestRequest, $recordVisitorSignals): array {
+        $visitorSignals = $recordVisitorSignals();
+
+        return [...$guestRequest($arguments), 'visitor_signals' => $visitorSignals()];
+    },
+
+    /*
+     * A web chat visitor through the widget API (the iframe's requests):
+     * starts a session with the frame ticket the test issued, then sends
+     * the given messages, one after the other. Returns the statuses, the
+     * session's public id and token, and the cursors of the messages.
+     */
+    'visitor-session' => function (array $arguments) use ($guestRequest): array {
+        $ip = (string) ($arguments['ip'] ?? '127.0.0.1');
+        $started = $guestRequest([
+            'method' => 'POST',
+            'uri' => route('api.v1.widget.sessions.store', (string) $arguments['public_key'], false),
+            'ip' => $ip,
+            'json' => ['ticket' => (string) $arguments['ticket'], ...(isset($arguments['profile']) ? ['profile' => (array) $arguments['profile']] : [])],
+        ]);
+        $token = is_array($started['json']) ? ($started['json']['token'] ?? null) : null;
+        $sent = [];
+
+        foreach ($token === null ? [] : (array) ($arguments['messages'] ?? []) as $message) {
+            $sent[] = $guestRequest([
+                'method' => 'POST',
+                'uri' => route('api.v1.widget.session.messages.store', absolute: false),
+                'ip' => $ip,
+                'headers' => ['Authorization' => 'Bearer '.$token],
+                'json' => ['client_message_id' => (string) $message['client_message_id'], 'body' => (string) $message['body']],
+            ]);
+        }
+
+        return [
+            'status' => $started['status'],
+            'token' => $token,
+            'session' => $started['json']['data']['id'] ?? null,
+            'messages' => array_map(fn (array $answer): array => ['status' => $answer['status'], 'cursor' => $answer['json']['data']['cursor'] ?? null], $sent),
+        ];
+    },
+
+    /*
+     * A visitor's tab sending messages with an existing session token, one
+     * after the other (the same client_message_id may repeat, as a retry
+     * does). Returns the status of each send.
+     */
+    'visitor-message' => function (array $arguments) use ($guestRequest): array {
+        $statuses = [];
+
+        foreach ((array) $arguments['messages'] as $message) {
+            $statuses[] = $guestRequest([
+                'method' => 'POST',
+                'uri' => route('api.v1.widget.session.messages.store', absolute: false),
+                'ip' => (string) ($arguments['ip'] ?? '127.0.0.1'),
+                'headers' => ['Authorization' => 'Bearer '.(string) $arguments['token']],
+                'json' => ['client_message_id' => (string) $message['client_message_id'], 'body' => (string) $message['body']],
+            ])['status'];
+        }
+
+        return $statuses;
     },
 ];

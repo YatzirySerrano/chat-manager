@@ -12,6 +12,8 @@ enum ContactSource: string
     /** Registered automatically from an inbound provider message. */
     case Whatsapp = 'whatsapp';
     case Import = 'import';
+    /** Registered automatically from a web chat visitor message. */
+    case WebChat = 'web_chat';
 
     public function label(): string
     {
@@ -19,6 +21,7 @@ enum ContactSource: string
             self::Manual => 'Registro manual',
             self::Whatsapp => 'Automático (WhatsApp)',
             self::Import => 'Importación',
+            self::WebChat => 'Automático (Chat web)',
         };
     }
 

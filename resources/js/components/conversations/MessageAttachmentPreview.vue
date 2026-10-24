@@ -65,7 +65,7 @@ const opensInline = computed(
 </script>
 
 <template>
-    <div class="max-w-full">
+    <div class="max-w-full min-w-0" data-layout-box="attachment">
         <div
             v-if="!attachment.available"
             class="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground"

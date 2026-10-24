@@ -2,6 +2,7 @@
 
 use App\Enums\ConnectionHealth;
 use App\Models\Connection;
+use Tests\Support\WebChatFixtures;
 
 test('the health of a connection is derived from recorded evidence', function (Closure $connection, ConnectionHealth $expected) {
     expect($connection()->health())->toBe($expected);
@@ -35,4 +36,25 @@ test('the configuration health ignores the inactive overlay', function () {
 
     expect($connection->health())->toBe(ConnectionHealth::Inactive)
         ->and($connection->configurationHealth())->toBe(ConnectionHealth::CredentialsInvalid);
+});
+
+test('the health of a web chat connection follows its widget and visitor traffic', function (array $widget, array $connection, ConnectionHealth $expected) {
+    $webChat = WebChatFixtures::connection($widget, $connection);
+
+    expect($webChat->health())->toBe($expected);
+})->with([
+    'no authorized origin' => [['allowed_origins' => []], [], ConnectionHealth::NotConfigured],
+    'widget ready, no visitor yet' => [[], [], ConnectionHealth::Configured],
+    'a visitor wrote' => [[], ['last_inbound_at' => now()->subHour()], ConnectionHealth::Receiving],
+    'visitor and reply confirmed' => [[], ['last_inbound_at' => now()->subHour(), 'last_outbound_at' => now()->subMinutes(30)], ConnectionHealth::Operational],
+    'error after the last success' => [[], ['last_inbound_at' => now()->subHour(), 'last_error_at' => now()], ConnectionHealth::Error],
+    'deactivated' => [[], ['is_active' => false], ConnectionHealth::Inactive],
+]);
+
+test('a web chat connection without its widget is not configured', function () {
+    $connection = Connection::factory()->make(['channel' => 'web_chat', 'provider' => 'web_widget']);
+    $connection->setRelation('webChatWidget', null);
+
+    expect($connection->configurationHealth())->toBe(ConnectionHealth::NotConfigured)
+        ->and($connection->isConfigured())->toBeFalse();
 });

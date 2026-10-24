@@ -3,6 +3,8 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     CircleAlert,
     Eye,
+    Globe,
+    MessageCircle,
     Pencil,
     Plug,
     PlugZap,
@@ -17,6 +19,7 @@ import {
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import ChannelPicker from '@/components/connections/ChannelPicker.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
@@ -55,7 +58,6 @@ import { formatDateTime, formatRelative } from '@/lib/format';
 import { recordActions } from '@/lib/recordActions';
 import { toastFirstError } from '@/lib/toastErrors';
 import {
-    create as createConnection,
     destroy as destroyConnection,
     index as connectionsIndex,
     restore as restoreConnection,
@@ -153,6 +155,10 @@ function clearFilters(): void {
     filterState.record = 'active';
     applyFilters();
 }
+
+const channelPickerOpen = ref(false);
+
+const channelIcons = { whatsapp: MessageCircle, web_chat: Globe } as const;
 
 const processingId = ref<number | null>(null);
 const pendingDeactivation = ref<Connection | null>(null);
@@ -254,6 +260,18 @@ function actionsFor(connection: Connection): RecordAction[] {
 }
 
 function phoneLabel(connection: Connection): string {
+    if (connection.channel.value === 'web_chat') {
+        const origins = connection.web_chat_widget?.allowed_origins ?? [];
+
+        if (origins.length === 0) {
+            return 'Sin dominios autorizados';
+        }
+
+        return origins.length === 1
+            ? origins[0]
+            : `${origins[0]} y ${origins.length - 1} más`;
+    }
+
     return (
         connection.display_phone_number ??
         (connection.phone_number_id
@@ -271,7 +289,7 @@ function phoneLabel(connection: Connection): string {
     >
         <PageHeader
             title="Conexiones"
-            description="Números de WhatsApp Business conectados mediante la API oficial de Meta y su estado real."
+            description="Números de WhatsApp Business conectados mediante la API oficial de Meta, chats para sitios web y su estado real."
         >
             <template v-if="can.create || canExport" #actions>
                 <ExportMenu
@@ -279,11 +297,9 @@ function phoneLabel(connection: Connection): string {
                     report="connections"
                     :filters="filters"
                 />
-                <Button v-if="can.create" as-child>
-                    <Link :href="createConnection()">
-                        <Plus />
-                        Nueva conexión
-                    </Link>
+                <Button v-if="can.create" @click="channelPickerOpen = true">
+                    <Plus />
+                    Nueva conexión
                 </Button>
             </template>
         </PageHeader>
@@ -308,7 +324,7 @@ function phoneLabel(connection: Connection): string {
                 label="Credenciales verificadas"
                 :value="stats.verified"
                 :icon="ShieldCheck"
-                hint="Aceptadas por Meta"
+                hint="Conexiones de WhatsApp aceptadas por Meta"
             />
             <StatCard
                 label="Requieren atención"
@@ -322,13 +338,11 @@ function phoneLabel(connection: Connection): string {
             v-if="stats.total === 0 && recordStates.length === 0"
             :icon="Unplug"
             title="Aún no hay conexiones"
-            description="Registra tu número de WhatsApp Business con los datos de tu app de Meta. Podrás guardar la configuración aunque todavía no tengas todas las credenciales; ningún indicador se marcará como funcionando hasta que exista evidencia real."
+            description="Registra tu número de WhatsApp Business con los datos de tu app de Meta o crea un chat para tu sitio web. Podrás guardar la configuración aunque todavía no esté completa; ningún indicador se marcará como funcionando hasta que exista evidencia real."
         >
-            <Button v-if="can.create" as-child>
-                <Link :href="createConnection()">
-                    <Plus />
-                    Nueva conexión
-                </Link>
+            <Button v-if="can.create" @click="channelPickerOpen = true">
+                <Plus />
+                Nueva conexión
             </Button>
         </EmptyState>
 
@@ -501,8 +515,19 @@ function phoneLabel(connection: Connection): string {
                             }}</span>
                         </template>
                         <template #subtitle>
-                            {{ phoneLabel(connection) }} ·
-                            {{ connection.channel.label }}
+                            <span
+                                class="inline-flex min-w-0 items-center gap-1"
+                            >
+                                <component
+                                    :is="channelIcons[connection.channel.value]"
+                                    class="size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate"
+                                    >{{ connection.channel.label }} ·
+                                    {{ phoneLabel(connection) }}</span
+                                >
+                            </span>
                         </template>
                         <template #badges>
                             <DeletedBadge
@@ -518,6 +543,7 @@ function phoneLabel(connection: Connection): string {
                             />
                         </template>
                         <ConnectionChecklist
+                            v-if="connection.channel.value === 'whatsapp'"
                             :checks="connection.checks"
                             compact
                         />
@@ -589,9 +615,18 @@ function phoneLabel(connection: Connection): string {
                             >
                                 {{ connection.name }}
                             </Link>
-                            <p class="truncate text-xs text-muted-foreground">
-                                {{ phoneLabel(connection) }} ·
-                                {{ connection.channel.label }}
+                            <p
+                                class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+                            >
+                                <component
+                                    :is="channelIcons[connection.channel.value]"
+                                    class="size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate"
+                                    >{{ connection.channel.label }} ·
+                                    {{ phoneLabel(connection) }}</span
+                                >
                             </p>
                             <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
                                 <DeletedBadge
@@ -616,7 +651,12 @@ function phoneLabel(connection: Connection): string {
                         </TableCell>
                         <TableCell class="hidden text-sm lg:table-cell">
                             <span
-                                v-if="
+                                v-if="connection.channel.value === 'web_chat'"
+                                class="text-muted-foreground"
+                                >No aplica</span
+                            >
+                            <span
+                                v-else-if="
                                     connection.checks.credentials.state ===
                                     'verified'
                                 "
@@ -717,12 +757,18 @@ function phoneLabel(connection: Connection): string {
         <ConfirmDialog
             v-model:open="confirmOpen"
             :title="`¿Desactivar ${pendingDeactivation?.name ?? 'la conexión'}?`"
-            description="La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan."
+            :description="
+                pendingDeactivation?.channel.value === 'web_chat'
+                    ? 'El widget se mostrará fuera de línea y no aceptará mensajes nuevos. La configuración y el historial se conservan.'
+                    : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
+            "
             confirm-label="Desactivar"
             destructive
             :processing="processingId !== null"
             @confirm="confirmDeactivation"
         />
+
+        <ChannelPicker v-model:open="channelPickerOpen" />
 
         <ConfirmDialog
             v-model:open="deletion.open"

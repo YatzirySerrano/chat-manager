@@ -2,7 +2,9 @@
 
 namespace App\Services\Conversations;
 
+use App\Enums\ConnectionChannel;
 use App\Enums\CustomerWindowStatus;
+use App\Models\Connection;
 use App\Models\Conversation;
 use App\Support\CustomerWindowState;
 use Carbon\CarbonImmutable;
@@ -17,6 +19,11 @@ use DateTimeInterface;
  *
  * This only answers whether a free-form message is allowed. It says nothing
  * about pricing, which follows the provider's current rules.
+ *
+ * Channels without that window (the web chat) are always NotApplicable and
+ * allow free-form messages. The channel comes from the loaded connection
+ * when it carries it, otherwise from one query per connection (the channel
+ * of a connection never changes), so lists never trigger lazy loading.
  */
 class CustomerServiceWindow
 {
@@ -25,8 +32,17 @@ class CustomerServiceWindow
     /** Remaining time below which the window is reported as about to expire. */
     public const WARNING_MINUTES = 60;
 
+    /** @var array<int, ConnectionChannel|null> */
+    private array $channels = [];
+
     public function for(Conversation $conversation, ?DateTimeInterface $now = null): CustomerWindowState
     {
+        $channel = $this->channelOf($conversation);
+
+        if ($channel !== null && ! $channel->usesCustomerServiceWindow()) {
+            return new CustomerWindowState(CustomerWindowStatus::NotApplicable, null, null, 0, null);
+        }
+
         return $this->at($conversation->last_inbound_at, $now);
     }
 
@@ -65,5 +81,23 @@ class CustomerServiceWindow
             $remaining,
             null,
         );
+    }
+
+    private function channelOf(Conversation $conversation): ?ConnectionChannel
+    {
+        $connection = $conversation->relationLoaded('channelConnection') ? $conversation->channelConnection : null;
+
+        if ($connection instanceof Connection && array_key_exists('channel', $connection->getAttributes())) {
+            return $connection->channel;
+        }
+
+        $connectionId = $conversation->connection_id;
+
+        if (! array_key_exists($connectionId, $this->channels)) {
+            $value = Connection::query()->whereKey($connectionId)->toBase()->value('channel');
+            $this->channels[$connectionId] = is_string($value) ? ConnectionChannel::tryFrom($value) : null;
+        }
+
+        return $this->channels[$connectionId];
     }
 }

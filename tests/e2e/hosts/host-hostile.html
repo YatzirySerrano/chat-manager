@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+  Host page of the widget E2E with hostile CSS: resets, !important rules on
+  every element, hidden buttons, iframes and divs, huge fonts. None of it may
+  reach the launcher (closed Shadow DOM) nor the chat (iframe).
+-->
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" href="data:," />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Host hostil E2E</title>
+        <style>
+            * {
+                all: unset !important;
+            }
+            button,
+            iframe,
+            div {
+                display: none !important;
+            }
+            * {
+                z-index: 1 !important;
+                font-size: 40px !important;
+            }
+            html,
+            body {
+                display: block !important;
+                height: 2000px !important;
+            }
+            chat-manager-widget {
+                display: none !important;
+                opacity: 0 !important;
+                transform: scale(3) !important;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Hostil</h1>
+        <script>
+            window.__events = [];
+            var params = new URLSearchParams(location.search);
+            window.__cm = { base: params.get('base'), key: params.get('key') };
+            (function (w, d, s, u) {
+                w.ChatManager =
+                    w.ChatManager ||
+                    function () {
+                        (w.ChatManager.q = w.ChatManager.q || []).push(
+                            arguments,
+                        );
+                    };
+                var j = d.createElement(s);
+                j.async = true;
+                j.src = u;
+                d.head.appendChild(j);
+            })(
+                window,
+                document,
+                'script',
+                window.__cm.base + '/widget/v1/chat-manager.js',
+            );
+            ChatManager('init', { key: window.__cm.key });
+            ChatManager('on', 'ready', function () {
+                window.__events.push({ name: 'ready' });
+            });
+        </script>
+    </body>
+</html>

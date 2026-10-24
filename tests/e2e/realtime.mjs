@@ -451,15 +451,25 @@ const main = async () => {
             const settled = await waitFor(
                 async () =>
                     (await row(loser, 'Cliente RT Dos').count()) === 0 &&
+                    // Exact: the "Pendientes" chip now says "… por aceptar".
                     (await loser
-                        .getByRole('button', { name: 'Aceptar' })
+                        .getByRole('button', { name: 'Aceptar', exact: true })
+                        .count()) === 0 &&
+                    (await loser
+                        .getByRole('button', {
+                            name: 'Aceptar la conversación de Cliente RT Dos',
+                        })
                         .count()) === 0,
                 LIVE_BUDGET_MS,
             );
 
+            const left = settled
+                ? ''
+                : ` (rows=${await row(loser, 'Cliente RT Dos').count()}, accept buttons=${JSON.stringify(await loser.getByRole('button', { name: /^Aceptar/ }).allInnerTexts())}, url=${new URL(loser.url()).search})`;
+
             return [
                 [a, b].sort().join(',') === 'refused,won' && settled,
-                `ana=${a}, beto=${b}; refused session (${loser.session}) left without the conversation: ${settled}`,
+                `ana=${a}, beto=${b}; refused session (${loser.session}) left without the conversation: ${settled}${left}`,
             ];
         });
 

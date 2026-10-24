@@ -372,7 +372,7 @@ defineExpose({ scrollToBottom });
             aria-live="off"
             @scroll.passive="onScroll"
         >
-            <div class="mx-auto grid max-w-4xl gap-2">
+            <div class="mx-auto grid max-w-4xl grid-cols-1 gap-2">
                 <div class="flex justify-center py-1">
                     <Button
                         v-if="hasMore"

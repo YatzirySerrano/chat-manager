@@ -12,7 +12,11 @@ resume y se enlaza, sin repetirlo. Los números de sección siguen los temas de 
 ## 1. Arquitectura general
 
 Chat Manager es una bandeja multiagente para WhatsApp Business sobre la **API oficial de WhatsApp Cloud de Meta** (sin
-WhatsApp Web ni QR). Es una sola aplicación Laravel (monolito modular):
+WhatsApp Web ni QR) y, desde la fase 4, para un segundo canal, el **Chat web** (widget insertable en sitios externos,
+[canal-chat-web.md](canal-chat-web.md)), con una API de integración `/api/v1` ([api-v1.md](api-v1.md)). Los dos canales
+comparten el mismo motor: `ReceiveInboundMessage` para la entrada y `DeliverOutboundMessage` con
+`ChannelTransports::for($connection)` (WhatsApp → `WhatsAppTransport`, Chat web → `WebChatTransport`) para la salida.
+Es una sola aplicación Laravel (monolito modular):
 
 | Capa                | Tecnología                                                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,15 +253,20 @@ Fuente: `App\Enums\MessageStatus` y `App\Actions\Messaging\RecordMessageStatus`.
         └──────────────── rechazo explícito de Meta ──────────▶ failed
 ```
 
-| Estado      | Etiqueta              | Origen                                                  |
-| ----------- | --------------------- | ------------------------------------------------------- |
-| `queued`    | Pendiente             | Aplicación: guardado, esperando un worker               |
-| `sending`   | En proceso            | Aplicación: un worker lo reclamó y está llamando a Meta |
-| `accepted`  | Aceptado por WhatsApp | Respuesta de la API con `wamid`                         |
-| `sent`      | Enviado               | Webhook de estado de Meta                               |
-| `delivered` | Entregado             | Webhook de estado de Meta                               |
-| `read`      | Leído                 | Webhook de estado de Meta                               |
-| `failed`    | Fallido               | Aplicación o Meta; terminal salvo reintento autorizado  |
+| Estado                          | Etiqueta              | Origen                                                      |
+| ------------------------------- | --------------------- | ----------------------------------------------------------- |
+| `received`                      | Recibido              | Mensaje entrante                                            |
+| `queued`                        | Enviando              | Aplicación: guardado, esperando un worker                   |
+| `sending`                       | Enviando              | Aplicación: un worker lo reclamó y está llamando a Meta     |
+| `accepted`                      | Enviado               | Respuesta de la API con `wamid` (aceptado por el proveedor) |
+| `sent`                          | Enviado               | Webhook de estado de Meta                                   |
+| `delivered`                     | Entregado             | Webhook de estado de Meta (chat web: acuse del widget)      |
+| `read`                          | Leído                 | Webhook de estado de Meta (chat web: acuse del widget)      |
+| `failed`                        | Fallido               | Aplicación o Meta; terminal salvo reintento autorizado      |
+| `failed` con `delivery_unknown` | Entrega no confirmada | Reconciliación: 15 min en `sending` sin evidencia           |
+
+Las etiquetas son solo de presentación (`MessageStatus::label()`, `messageFormat.ts`, expediente PDF y API v1); los
+valores internos no cambian. La acción para un fallido es «Reintentar».
 
 Reglas: solo hacia adelante; tolera desorden (un `read` temprano fija también `delivered_at` y `sent_at`); un evento
 repetido no cambia nada; un `failed` después de `delivered` no deshace la entrega; `delivery_unknown` es el único fallo
@@ -324,6 +333,7 @@ evento lo descartan en `shouldQueue()` y no encolan trabajos vacíos.
 | `whatsapp:maintenance prune-webhooks`       | diaria 03:10 |
 | `analytics:rebuild --days=2`                | diaria 03:30 |
 | `notifications:prune`                       | diaria 04:10 |
+| `webchat:prune-sessions`                    | diaria 04:20 |
 | `queue:prune-failed --hours=2160`           | diaria 04:30 |
 | `queue:prune-batches --hours=168`           | diaria 04:40 |
 
@@ -334,4 +344,5 @@ El programador corre con `schedule:work` (Supervisor) o cron `schedule:run`; su 
 
 Webhooks (6), conexiones (7), bandejas y permisos (9), distribución (10), chat interno (12), WebSockets (13), adjuntos
 (14), plantillas (15), reportes (16), exportaciones (17), Whaticket (18), seguridad (19), pruebas (20), infraestructura
-(21), despliegue (22), respaldos (23) y limitaciones (24): ver el índice en [README.md](README.md).
+(21), despliegue (22), respaldos (23) y limitaciones (24): ver el índice en [README.md](README.md). Chat web, widget y
+API v1: [canal-chat-web.md](canal-chat-web.md), [widget-integracion.md](widget-integracion.md) y [api-v1.md](api-v1.md).

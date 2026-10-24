@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  Host page of the widget E2E using the jQuery adapter. The jQuery URL is
+  answered by the scenario with tests/e2e/hosts/jquery-stub.js (no jQuery
+  dependency); the loader registers $.fn.chatManager when it finds jQuery.
+-->
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" href="data:," />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Tienda con jQuery E2E</title>
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    </head>
+    <body>
+        <h1>Tienda con jQuery</h1>
+        <div id="box"></div>
+        <script>
+            window.__events = [];
+            var params = new URLSearchParams(location.search);
+            window.__cm = { base: params.get('base'), key: params.get('key') };
+            var loader = document.createElement('script');
+            loader.src = window.__cm.base + '/widget/v1/chat-manager.js';
+            loader.onload = function () {
+                window.__adapter = typeof jQuery.fn.chatManager === 'function';
+                $('#box').chatManager('init', {
+                    key: window.__cm.key,
+                    onReady: function () {
+                        window.__events.push({ name: 'ready' });
+                    },
+                    onOpen: function () {
+                        window.__events.push({ name: 'open' });
+                    },
+                    onClose: function () {
+                        window.__events.push({ name: 'close' });
+                    },
+                });
+            };
+            document.head.appendChild(loader);
+        </script>
+    </body>
+</html>

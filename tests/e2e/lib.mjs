@@ -42,7 +42,32 @@ export const INCREMENT_B_SEED = join(HERE, 'increment-b-seed.php');
 /** The PHP binary of the runner (tests/e2e/run.php), not whatever is on PATH. */
 export const PHP_BINARY = process.env.E2E_PHP_BINARY ?? 'php';
 /** Viewport widths of the responsive checks (phones, tablet, desktops). */
-export const WIDTHS = [320, 360, 390, 430, 768, 1024, 1280, 1440];
+export const WIDTHS = [320, 360, 375, 390, 430, 768, 1024, 1280, 1440];
+
+/**
+ * Labels of the interface the scenarios look for (kept in one place so a
+ * renamed chip or button breaks one constant, not every scenario).
+ */
+export const LABELS = {
+    generalInbox: 'Bandeja general',
+    pending: 'Pendientes',
+    mine: 'Mis conversaciones',
+    all: 'Todas',
+    closeToast: 'Cerrar notificación',
+};
+
+/**
+ * Host names of the widget's cross-site host pages (tests/e2e/hosts, served
+ * by run.php on E2E_HOST_PORT). launchBrowser maps both to 127.0.0.1, so a
+ * page of http://tienda.test:{port} is another site than the application
+ * (http://127.0.0.1:{E2E_PORT}). Only tienda.test is an allowed origin of
+ * the seeded widget; intruso.test never is.
+ */
+export const HOST_PORT = Number(process.env.E2E_HOST_PORT ?? 0);
+export const HOSTS = {
+    shop: HOST_PORT ? `http://tienda.test:${HOST_PORT}` : null,
+    intruder: HOST_PORT ? `http://intruso.test:${HOST_PORT}` : null,
+};
 
 /** Polling fallback of the inbox pages: a live update must beat it. */
 export const FALLBACK_MS = 20_000;
@@ -384,6 +409,8 @@ export function launchBrowser(options = {}) {
         ...options,
         args: [
             '--autoplay-policy=no-user-gesture-required',
+            // The widget's host sites (HOSTS) resolve to this machine.
+            '--host-resolver-rules=MAP tienda.test 127.0.0.1, MAP intruso.test 127.0.0.1',
             ...(options.args ?? []),
         ],
     });
@@ -421,6 +448,7 @@ function installAlertSpy() {
     }
 
     if (Base) {
+        // oxlint-disable-next-line typescript/unbound-method -- re-bound with .call
         const createOscillator = Base.prototype.createOscillator;
         Base.prototype.createOscillator = function (...args) {
             const now = performance.now();
@@ -439,6 +467,7 @@ function installAlertSpy() {
         };
     }
 
+    // oxlint-disable-next-line typescript/unbound-method -- re-bound with .call
     const play = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function (...args) {
         alerts.media++;
@@ -491,166 +520,339 @@ export const AVAILABILITY_SWITCH =
 /**
  * Horizontal overflow in px: the document's (page scrolls sideways) or, when
  * larger, the worst one inside the page (a panel that scrolls sideways or
- * cuts its content; see layoutReport). <= 0 means nothing overflows.
+ * cuts its content, a piece out of its box; see layoutReport). <= 0 means
+ * nothing overflows.
  */
-export async function overflow(page) {
-    const report = await layoutReport(page);
+export async function overflow(page, options = {}) {
+    const report = await layoutReport(page, options);
 
     return Math.max(
         report.doc,
+        report.scale === 1 ? 0 : 1,
         ...report.innerScroll.map((entry) => entry.by),
         ...report.offscreen.map((entry) => entry.by),
         ...report.clipped.map((entry) => entry.by),
+        ...report.contained.map((entry) => entry.by),
     );
 }
 
 /**
  * Layout of the page as the user sees it, measured in the browser:
  *
- *   doc          document.scrollWidth - innerWidth (page scrolls sideways)
+ *   doc          max(document scrollWidth, innerWidth) - the CONFIGURED
+ *                width (options.width, default the page's viewport): a
+ *                phone browser that widened its layout viewport to fit a
+ *                wide child counts, even when scrollWidth == innerWidth
+ *   scale        visualViewport.scale (1 unless the browser zoomed out to
+ *                fit the page; anything else is a problem)
  *   offscreen    visible elements reaching past the left/right edge of the
- *                viewport (also the ones a clipping panel hides)
+ *                viewport (also the ones a clipping panel hides, except
+ *                text truncated with an ellipsis by a box that is on
+ *                screen); fixed elements only inside [data-layout-check]
  *   innerScroll  elements that scroll horizontally inside (overflow-x
  *                auto/scroll with scrollWidth > clientWidth)
  *   clipped      overflow-x hidden/clip elements whose content is wider
  *                than they are and is cut without an ellipsis
+ *   contained    visible pieces sticking out of their [data-layout-box]
+ *                (a bubble, quote, note or attachment card), even when the
+ *                page itself does not overflow (absolutely positioned
+ *                pieces, placed beside the box on purpose, are left to
+ *                offscreen)
+ *   frames       same-origin iframes whose own document overflows
  *   smallFont    visible text under `minFont` px inside `fontRoots`
+ *   missingRoots `fontRoots` selectors that match no visible element (a
+ *                dead selector would otherwise measure nothing in silence)
  *   smallTargets visible `targets` (CSS selectors of the main actions)
  *                smaller than `minTarget` px in height or width
  *
- * Toasts and screen-reader-only text are ignored. Every entry has the tag,
- * an accessible name or text and the measure that failed.
+ * Open shadow roots and same-origin iframes are walked too (an iframe is
+ * measured against its own width; its entries are named "iframe› …").
+ * Toasts, screen-reader-only text and [data-e2e-ignore] are ignored. Every
+ * entry has the tag, an accessible name or text and the measure that failed.
  */
-export function layoutReport(page, options = {}) {
+export async function layoutReport(page, options = {}) {
+    // A Frame (the widget's iframe) has no viewport of its own: its width
+    // is the one of its document unless options.width says otherwise.
+    const width = options.width ?? page.viewportSize?.()?.width ?? null;
+
     return page.evaluate(
-        ({ fontRoots, minFont, targets, minTarget }) => {
-            const viewport = document.documentElement.clientWidth;
-            const ignored = (element) =>
-                element.closest(
-                    '[data-sonner-toaster], .sr-only, [data-e2e-ignore]',
-                ) !== null;
-            const shown = (element) => {
-                if (ignored(element)) {
-                    return false;
-                }
-
-                const rect = element.getBoundingClientRect();
-
-                return (
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    (element.checkVisibility?.({
-                        checkOpacity: true,
-                        checkVisibilityCSS: true,
-                    }) ??
-                        true)
-                );
-            };
-            const describe = (element, extra) => ({
-                tag: element.tagName.toLowerCase(),
-                name: (
-                    element.getAttribute('aria-label') ||
-                    element.getAttribute('title') ||
-                    element.textContent ||
-                    element.id ||
-                    String(element.className)
-                )
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .slice(0, 50),
-                ...extra,
-            });
-            const ownText = (element) =>
-                [...element.childNodes].some(
-                    (node) =>
-                        node.nodeType === Node.TEXT_NODE &&
-                        node.textContent.trim() !== '',
-                );
-            const all = [...document.body.querySelectorAll('*')].filter(shown);
+        ({ fontRoots, minFont, targets, minTarget, configured }) => {
             const report = {
                 width: window.innerWidth,
-                doc: document.documentElement.scrollWidth - window.innerWidth,
+                configured: configured ?? window.innerWidth,
+                doc:
+                    Math.max(
+                        document.documentElement.scrollWidth,
+                        window.innerWidth,
+                    ) - (configured ?? window.innerWidth),
+                scale:
+                    Math.round((window.visualViewport?.scale ?? 1) * 100) / 100,
                 offscreen: [],
                 innerScroll: [],
                 clipped: [],
+                contained: [],
+                frames: [],
                 smallFont: [],
                 smallTargets: [],
+                missingRoots: [],
+            };
+            const matchedRoots = new Set();
+
+            /** Every element of a document or shadow root, shadows included. */
+            const collect = (root, into = []) => {
+                for (const element of root.querySelectorAll('*')) {
+                    into.push(element);
+
+                    if (element.shadowRoot) {
+                        collect(element.shadowRoot, into);
+                    }
+                }
+
+                return into;
             };
 
-            for (const element of all) {
-                const style = getComputedStyle(element);
-                const rect = element.getBoundingClientRect();
-                const leaf =
-                    ownText(element) ||
-                    element.matches(
-                        'a, button, input, select, textarea, img, svg, [role]',
-                    );
-
-                if (
-                    leaf &&
-                    style.position !== 'fixed' &&
-                    (rect.right > viewport + 1 || rect.left < -1)
-                ) {
-                    report.offscreen.push(
-                        describe(element, {
-                            by: Math.round(
-                                Math.max(rect.right - viewport, -rect.left),
-                            ),
-                        }),
-                    );
-                }
-
-                const extra = element.scrollWidth - element.clientWidth;
-
-                if (extra > 1 && element.clientWidth > 1) {
-                    if (['auto', 'scroll'].includes(style.overflowX)) {
-                        report.innerScroll.push(
-                            describe(element, { by: extra }),
-                        );
-                    } else if (
-                        ['hidden', 'clip'].includes(style.overflowX) &&
-                        style.textOverflow !== 'ellipsis'
-                    ) {
-                        report.clipped.push(describe(element, { by: extra }));
-                    }
-                }
-            }
-
-            const roots = fontRoots
-                .flatMap((selector) => [...document.querySelectorAll(selector)])
-                .filter(shown);
-
-            for (const element of all) {
-                if (
-                    roots.some((root) => root.contains(element)) &&
-                    ownText(element)
-                ) {
-                    const size = parseFloat(getComputedStyle(element).fontSize);
-
-                    if (size < minFont) {
-                        report.smallFont.push(describe(element, { size }));
-                    }
-                }
-            }
-
-            for (const selector of targets) {
-                for (const element of document.querySelectorAll(selector)) {
-                    if (!shown(element)) {
-                        continue;
+            const scan = (doc, label) => {
+                const view = doc.defaultView;
+                const viewport = doc.documentElement.clientWidth;
+                const styleOf = (element) => view.getComputedStyle(element);
+                const ignored = (element) =>
+                    element.closest(
+                        '[data-sonner-toaster], .sr-only, [data-e2e-ignore]',
+                    ) !== null;
+                const shown = (element) => {
+                    if (ignored(element)) {
+                        return false;
                     }
 
                     const rect = element.getBoundingClientRect();
 
-                    if (rect.height < minTarget || rect.width < minTarget) {
-                        report.smallTargets.push(
+                    return (
+                        rect.width > 0 &&
+                        rect.height > 0 &&
+                        (element.checkVisibility?.({
+                            checkOpacity: true,
+                            checkVisibilityCSS: true,
+                        }) ??
+                            true)
+                    );
+                };
+                const describe = (element, extra) => ({
+                    tag: label + element.tagName.toLowerCase(),
+                    name: (
+                        element.getAttribute('aria-label') ||
+                        element.getAttribute('title') ||
+                        element.textContent ||
+                        element.id ||
+                        String(element.className)
+                    )
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .slice(0, 50),
+                    ...extra,
+                });
+                const ownText = (element) =>
+                    [...element.childNodes].some(
+                        (node) =>
+                            node.nodeType === Node.TEXT_NODE &&
+                            node.textContent.trim() !== '',
+                    );
+                /*
+                 * Inside a box that truncates with an ellipsis ("truncate")
+                 * and is itself on screen: the text is cut on purpose and
+                 * the person sees "…" (the same rule as "clipped").
+                 */
+                const truncated = (element) => {
+                    for (
+                        let node = element.parentElement;
+                        node && node !== doc.body;
+                        node = node.parentElement
+                    ) {
+                        const style = styleOf(node);
+
+                        if (
+                            ['hidden', 'clip'].includes(style.overflowX) &&
+                            style.textOverflow === 'ellipsis'
+                        ) {
+                            const rect = node.getBoundingClientRect();
+
+                            return (
+                                rect.left >= -1 && rect.right <= viewport + 1
+                            );
+                        }
+                    }
+
+                    return false;
+                };
+                const all = collect(doc.body ?? doc).filter(shown);
+
+                for (const element of all) {
+                    const style = styleOf(element);
+                    const rect = element.getBoundingClientRect();
+                    const leaf =
+                        ownText(element) ||
+                        element.matches(
+                            'a, button, input, select, textarea, img, svg, [role]',
+                        );
+                    const fixedChecked =
+                        style.position !== 'fixed' ||
+                        element.closest('[data-layout-check]') !== null;
+
+                    if (
+                        leaf &&
+                        fixedChecked &&
+                        !truncated(element) &&
+                        (rect.right > viewport + 1 || rect.left < -1)
+                    ) {
+                        report.offscreen.push(
                             describe(element, {
-                                selector,
-                                size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                                by: Math.round(
+                                    Math.max(rect.right - viewport, -rect.left),
+                                ),
                             }),
                         );
                     }
+
+                    if (leaf || element.hasAttribute('data-layout-box')) {
+                        const box =
+                            element.parentElement?.closest(
+                                '[data-layout-box]',
+                            ) ?? null;
+                        // Pieces positioned on purpose outside the box (the
+                        // "quote" button beside a bubble) are not content:
+                        // they only count through offscreen.
+                        let placed = false;
+
+                        for (
+                            let node = element;
+                            box && node && node !== box;
+                            node = node.parentElement
+                        ) {
+                            if (
+                                ['absolute', 'fixed'].includes(
+                                    styleOf(node).position,
+                                )
+                            ) {
+                                placed = true;
+                                break;
+                            }
+                        }
+
+                        if (box && !placed && shown(box)) {
+                            const outer = box.getBoundingClientRect();
+                            const by = Math.round(
+                                Math.max(
+                                    rect.right - outer.right,
+                                    outer.left - rect.left,
+                                ),
+                            );
+
+                            if (by > 1) {
+                                report.contained.push(
+                                    describe(element, {
+                                        box: box.getAttribute(
+                                            'data-layout-box',
+                                        ),
+                                        by,
+                                    }),
+                                );
+                            }
+                        }
+                    }
+
+                    const extra = element.scrollWidth - element.clientWidth;
+
+                    if (extra > 1 && element.clientWidth > 1) {
+                        if (['auto', 'scroll'].includes(style.overflowX)) {
+                            report.innerScroll.push(
+                                describe(element, { by: extra }),
+                            );
+                        } else if (
+                            ['hidden', 'clip'].includes(style.overflowX) &&
+                            style.textOverflow !== 'ellipsis'
+                        ) {
+                            report.clipped.push(
+                                describe(element, { by: extra }),
+                            );
+                        }
+                    }
+
+                    if (element.tagName === 'IFRAME') {
+                        let inner = null;
+
+                        try {
+                            inner = element.contentDocument;
+                        } catch {
+                            inner = null;
+                        }
+
+                        if (inner?.documentElement) {
+                            const by =
+                                inner.documentElement.scrollWidth -
+                                inner.documentElement.clientWidth;
+
+                            if (by > 0) {
+                                report.frames.push(describe(element, { by }));
+                            }
+
+                            scan(inner, `${label}iframe› `);
+                        }
+                    }
                 }
-            }
+
+                const roots = fontRoots.flatMap((selector) => {
+                    const found = [...doc.querySelectorAll(selector)].filter(
+                        shown,
+                    );
+
+                    if (found.length > 0) {
+                        matchedRoots.add(selector);
+                    }
+
+                    return found;
+                });
+
+                for (const element of all) {
+                    if (
+                        roots.some((root) => root.contains(element)) &&
+                        ownText(element)
+                    ) {
+                        const size = parseFloat(styleOf(element).fontSize);
+
+                        if (size < minFont) {
+                            report.smallFont.push(describe(element, { size }));
+                        }
+                    }
+                }
+
+                for (const selector of targets) {
+                    for (const element of doc.querySelectorAll(selector)) {
+                        if (!shown(element)) {
+                            continue;
+                        }
+
+                        const rect = element.getBoundingClientRect();
+
+                        if (rect.height < minTarget || rect.width < minTarget) {
+                            report.smallTargets.push(
+                                describe(element, {
+                                    selector,
+                                    size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                                }),
+                            );
+                        }
+                    }
+                }
+            };
+
+            scan(document, '');
+
+            report.missingRoots = fontRoots
+                .filter((selector) => !matchedRoots.has(selector))
+                .map((selector) => ({
+                    tag: 'fontRoots',
+                    name: selector,
+                    count: 0,
+                }));
 
             return report;
         },
@@ -659,6 +861,7 @@ export function layoutReport(page, options = {}) {
             minFont: options.minFont ?? 12,
             targets: options.targets ?? [],
             minTarget: options.minTarget ?? 40,
+            configured: width,
         },
     );
 }
@@ -672,14 +875,87 @@ export function layoutProblems(report) {
 
     return [
         report.doc > 0 ? `doc=${report.doc}` : null,
+        report.scale !== 1 ? `scale=${report.scale}` : null,
         list('offscreen', report.offscreen, 'by'),
         list('innerScroll', report.innerScroll, 'by'),
         list('clipped', report.clipped, 'by'),
+        list('contained', report.contained ?? [], 'by'),
+        list('frames', report.frames ?? [], 'by'),
         list('smallFont', report.smallFont, 'size'),
         list('smallTargets', report.smallTargets, 'size'),
+        list('missingRoots', report.missingRoots ?? [], 'count'),
     ]
         .filter(Boolean)
         .join('; ');
+}
+
+/**
+ * The layout of several states of the same page: each state prepares the
+ * page (`prepare(page)`, e.g. open a menu) and is measured with its own
+ * layoutReport options; `cleanup(page)` runs after the measure. Returns
+ * {name, report, problems} per state, problems '' when clean (a state
+ * whose preparation fails reports "not reached: …").
+ */
+export async function layoutMatrix(page, states, defaults = {}) {
+    const measured = [];
+
+    for (const state of states) {
+        try {
+            if (state.prepare) {
+                await state.prepare(page);
+            }
+
+            const report = await layoutReport(page, {
+                ...defaults,
+                ...state.options,
+            });
+            measured.push({
+                name: state.name,
+                report,
+                problems: layoutProblems(report),
+            });
+        } catch (error) {
+            // A state that cannot be reached is a failure of that state,
+            // not of the whole matrix.
+            measured.push({
+                name: state.name,
+                report: null,
+                problems: `not reached: ${String(error).split('\n')[0]}`,
+            });
+        }
+
+        if (state.cleanup) {
+            await Promise.resolve()
+                .then(() => state.cleanup(page))
+                .catch(() => {});
+        }
+    }
+
+    return measured;
+}
+
+/**
+ * Calibration of the detector on a real page: measures it, injects `css`
+ * (a stylesheet that brings back a known overflow, e.g. the implicit
+ * "auto" grid track of the history that let a long PDF name widen the
+ * bubble), measures again and removes it. The detector is trusted only
+ * when the clean page has no problems and the broken one has.
+ */
+export async function calibrateLayout(page, css, options = {}) {
+    const clean = layoutProblems(await layoutReport(page, options));
+    await page.evaluate((text) => {
+        const style = document.createElement('style');
+        style.id = 'e2e-calibration';
+        style.textContent = text;
+        document.head.append(style);
+    }, css);
+    await page.waitForTimeout(100);
+    const broken = layoutProblems(await layoutReport(page, options));
+    await page.evaluate(() =>
+        document.getElementById('e2e-calibration')?.remove(),
+    );
+
+    return { clean, broken, ok: clean === '' && broken !== '' };
 }
 
 export const listRow = (page, name) =>
@@ -716,21 +992,45 @@ export async function runOperation(page, label) {
     await page.getByRole('menuitem', { name: label, exact: true }).click();
 }
 
-/** Switches the inbox view ("Pendientes", …) and waits until it is selected. */
+/**
+ * Switches the inbox view ("Pendientes", …) and waits until the server
+ * answered the list of that view and the chip is still selected (the chip
+ * turns pressed right away, before the list arrives).
+ */
 export async function openInboxView(page, label) {
-    await page
+    const chip = page
         .getByRole('navigation', { name: 'Bandejas' })
-        .getByRole('button', { name: new RegExp(label) })
-        .click();
-    await page.waitForFunction(
-        (text) =>
-            document
-                .querySelector(
-                    'nav[aria-label="Bandejas"] button[aria-pressed="true"]',
-                )
-                ?.textContent?.includes(text) ?? false,
-        label,
-    );
+        .getByRole('button', { name: new RegExp(label) });
+    const pressed = () =>
+        page.waitForFunction(
+            (text) =>
+                document
+                    .querySelector(
+                        'nav[aria-label="Bandejas"] button[aria-pressed="true"]',
+                    )
+                    ?.textContent?.includes(text) ?? false,
+            label,
+        );
+
+    if ((await chip.getAttribute('aria-pressed')) === 'true') {
+        return;
+    }
+
+    const answered = page
+        .waitForResponse(
+            (response) =>
+                new URL(response.url()).pathname === '/conversations' &&
+                response.request().headers()['x-inertia'] !== undefined &&
+                (response.request().headers()['x-inertia-partial-data'] ?? '')
+                    .split(',')
+                    .includes('filters'),
+            { timeout: 15_000 },
+        )
+        .catch(() => null);
+    await chip.click();
+    await pressed();
+    await answered;
+    await pressed();
 }
 
 export async function openConversation(page, id, query = '') {

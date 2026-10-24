@@ -261,6 +261,9 @@ export function useNotificationCenter() {
                     action: item.url
                         ? { label: 'Abrir', onClick: () => open(item) }
                         : undefined,
+                    // Closing (the X, a swipe) only hides the toast; the
+                    // notification stays unread in the bell.
+                    onDismiss: () => toasted.delete(item.id),
                 });
             }
         }

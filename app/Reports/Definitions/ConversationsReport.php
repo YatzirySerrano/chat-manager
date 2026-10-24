@@ -3,6 +3,7 @@
 namespace App\Reports\Definitions;
 
 use App\Actions\Conversations\ConversationInboxQuery;
+use App\Enums\ConnectionChannel;
 use App\Enums\ConversationStatus;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -44,6 +45,7 @@ class ConversationsReport extends ReportDefinition
      * @var array<string, string>
      */
     private const VIEW_LABELS = [
+        ConversationInboxQuery::VIEW_GENERAL => 'Bandeja general (pendientes por aceptar, en atención y en espera)',
         ConversationInboxQuery::VIEW_ALL => 'Todas las de tu alcance',
         ConversationInboxQuery::VIEW_MINE => 'Asignadas a ti',
         ConversationInboxQuery::VIEW_QUEUE => 'En cola para aceptar',
@@ -93,7 +95,11 @@ class ConversationsReport extends ReportDefinition
     {
         $filters = $this->filters($context);
         $actor = $context->actor;
-        $descriptions = ['Vista: '.self::VIEW_LABELS[$filters['view']]];
+        // A personal inbox reaches only its own conversations: "all" of them
+        // are the ones assigned to the actor.
+        $descriptions = ['Vista: '.($filters['personal'] && $filters['view'] === ConversationInboxQuery::VIEW_ALL
+            ? self::VIEW_LABELS[ConversationInboxQuery::VIEW_MINE]
+            : self::VIEW_LABELS[$filters['view']])];
 
         $descriptions[] = 'Estado: '.match ($filters['status']) {
             'active' => 'Sin cerrar',
@@ -117,6 +123,10 @@ class ConversationsReport extends ReportDefinition
             $descriptions[] = 'Conexión: '.(Connection::query()->visibleTo($actor)->whereKey($filters['connection'])->value('name') ?? 'No disponible');
         }
 
+        if (($filters['channel'] ?? null) !== null) {
+            $descriptions[] = 'Canal: '.(ConnectionChannel::tryFrom((string) $filters['channel'])?->label() ?? $filters['channel']);
+        }
+
         if ($filters['search'] !== '') {
             $descriptions[] = (($filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT) === ConversationInboxQuery::SEARCH_MESSAGES
                 ? 'Búsqueda en el contenido de los mensajes: «'
@@ -133,7 +143,7 @@ class ConversationsReport extends ReportDefinition
                 'contact:id,name,phone_e164',
                 'department:id,name',
                 'assignee:id,name',
-                'channelConnection:id,name',
+                'channelConnection:id,name,channel',
             ]);
     }
 

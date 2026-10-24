@@ -77,6 +77,7 @@ class ConnectionListQuery
             ->visibleTo($actor)
             ->inRecordState($filters['record'])
             ->withCount('conversations')
+            ->with('webChatWidget')
             ->with(['departments' => fn (BelongsToMany $query) => $query
                 ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')
                 ->hidingDeletedFrom($actor)

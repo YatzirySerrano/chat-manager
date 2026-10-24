@@ -96,7 +96,8 @@ test('markers are personal: one person reading does not clear the counter of ano
     $this->actingAs($admin)->postJson(route('conversations.read', $this->conversation), ['message_id' => $message->id])->assertOk();
 
     expect(listedRow($this, $this->agent, $this->conversation)['unread_count'])->toBe(1)
-        ->and(listedRow($this, $admin, $this->conversation)['unread_count'])->toBe(0);
+        // The administrator does not attend it: it is in their "all" view.
+        ->and(listedRow($this, $admin, $this->conversation, ['view' => 'all'])['unread_count'])->toBe(0);
 });
 
 test('nobody can create a marker on a conversation outside their reach', function () {
@@ -116,8 +117,7 @@ test('a colleague\'s attended conversation never reaches the list, its previews 
         ->assertDontSee('Dato privado del cliente')
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', [])
-            ->where('counts', fn ($counts) => collect($counts)->sum() === 0)
-            ->where('viewCounts', fn ($counts) => collect($counts)->sum() === 0));
+            ->where('counts', fn ($counts) => collect($counts)->sum() === 0));
 
     $this->actingAs($this->colleague)
         ->get(route('conversations.index', ['search' => $this->conversation->contact->name, 'view' => 'queue']))

@@ -1,4 +1,5 @@
 import type { AppColor } from './admin';
+import type { ConnectionChannel } from './connections';
 import type { ContactAttribution } from './contacts';
 import type { TagOption } from './tags';
 
@@ -38,22 +39,7 @@ export type ConversationSummary = {
         profile_name: string | null;
         phone_e164: string | null;
     };
-    connection: {
-        id: number;
-        name: string;
-        phone: string | null;
-        /** Channel of the connection (ConnectionChannel on the server). */
-        channel: string;
-        channel_label: string;
-        /** Paused (inactive) and deleted connections are told apart. */
-        state: 'active' | 'inactive' | 'deleted';
-        /** Whether a reply can be sent now; the server checks it again. */
-        can_send: boolean;
-        /** Why nothing can be sent through the connection, if so. */
-        send_block_reason: string | null;
-        /** Credentials accepted by Meta (a restored connection is not). */
-        credentials_verified: boolean;
-    };
+    connection: ConversationConnection;
     department: {
         id: number;
         name: string;
@@ -78,6 +64,24 @@ export type ConversationSummary = {
     can: ConversationAbilities;
 };
 
+/** Connection a conversation arrived through. */
+export type ConversationConnection = {
+    id: number;
+    name: string;
+    phone: string | null;
+    /** Channel of the connection (ConnectionChannel on the server). */
+    channel: ConnectionChannel;
+    channel_label: string;
+    /** Paused (inactive) and deleted connections are told apart. */
+    state: 'active' | 'inactive' | 'deleted';
+    /** Whether a reply can be sent now; the server checks it again. */
+    can_send: boolean;
+    /** Why nothing can be sent through the connection, if so. */
+    send_block_reason: string | null;
+    /** Credentials accepted by Meta (a restored connection is not; always false for the web chat). */
+    credentials_verified: boolean;
+};
+
 export type ConversationMessagePreview = {
     id: number;
     direction: MessageDirection;
@@ -85,6 +89,8 @@ export type ConversationMessagePreview = {
     body: string | null;
     status: MessageStatusValue;
     automatic: boolean;
+    /** Error code of a failed message (e.g. delivery_unknown), null otherwise. */
+    error_code: string | null;
     sent_at: string | null;
 };
 
@@ -104,17 +110,31 @@ export type ConversationList = {
 export type ConversationSearchScope = 'contact' | 'messages';
 
 /**
- * Views of the inbox: every authorized conversation (team inboxes), the
- * viewer's own ones, and the pending ones waiting to be accepted in the
- * viewer's departments (personal inboxes).
+ * Views of the inbox: the general inbox of whoever attends conversations
+ * (pending ones they may accept, their own open ones and the ones on hold
+ * within their reach), the viewer's own ones, every authorized conversation
+ * (team inboxes) and 'queue', kept as an alias of general with
+ * status=pending.
  */
-export type ConversationInboxView = 'all' | 'mine' | 'queue';
+export type InboxView = 'general' | 'mine' | 'queue' | 'all';
+
+/** @deprecated Use InboxView ('general' is the default view of whoever attends conversations). */
+export type ConversationInboxView = InboxView;
+
+/** Counters of the inbox chips, computed in one query by the server. */
+export type InboxCounts = {
+    general: number;
+    mine: number;
+    pending: number;
+    attending: number;
+    on_hold: number;
+};
 
 export type ConversationInbox = {
     /** The viewer's reach does not go beyond their own assignments. */
     personal: boolean;
     /** Views the viewer may open; the first one is the default. */
-    views: ConversationInboxView[];
+    views: InboxView[];
 };
 
 export type AgentAvailabilityValue = 'available' | 'unavailable';
@@ -126,11 +146,13 @@ export type ViewerAvailability = {
 };
 
 export type ConversationFilters = {
-    view: ConversationInboxView;
+    view: InboxView;
     status: ConversationStatusFilter;
     department: string | null;
     agent: string | null;
     connection: number | null;
+    /** ConnectionChannel value, or null for every channel. */
+    channel: ConnectionChannel | null;
     search: string;
     search_in: ConversationSearchScope;
     /** The message search has no word it can look for (short words, stopwords). */
@@ -205,6 +227,8 @@ export type ConversationMessage = {
     error_code: string | null;
     error_message: string | null;
     automatic: boolean;
+    /** Sent through the integration API (no human author). */
+    integration?: { name: string } | null;
     /** Sent by the explicitly labelled simulated transport (development). */
     simulated: boolean;
     template: { name: string; language: string | null } | null;
@@ -318,9 +342,17 @@ export type ComposerSettings = {
     }[];
 };
 
+/** State of the customer service window; 'not_applicable' for channels without one (web chat). */
+export type CustomerWindowStatus =
+    | 'none'
+    | 'open'
+    | 'expiring'
+    | 'expired'
+    | 'not_applicable';
+
 /** WhatsApp's 24 hour customer service window, computed by the server in UTC. */
 export type CustomerWindow = {
-    status: 'none' | 'open' | 'expiring' | 'expired';
+    status: CustomerWindowStatus;
     label: string;
     last_inbound_at: string | null;
     expires_at: string | null;

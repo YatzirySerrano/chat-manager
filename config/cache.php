@@ -19,6 +19,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Rate Limiter Store
+    |--------------------------------------------------------------------------
+    |
+    | Store of the rate limiters (null uses the default store). The database
+    | store deadlocks under bursts on the same limiter key, so a public web
+    | chat should keep its limits in Redis (CACHE_LIMITER=redis) even when
+    | the rest of the cache stays in the database.
+    |
+    */
+
+    'limiter' => env('CACHE_LIMITER'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Cache Stores
     |--------------------------------------------------------------------------
     |

@@ -202,3 +202,11 @@ test('contacts with history and tags in use cannot be deleted', function (Closur
         return $tag;
     }],
 ]);
+
+test('the api sync order and the session prune have their own indexes', function () {
+    $columns = fn (string $table): array => collect(Schema::getIndexes($table))->pluck('columns')->all();
+
+    expect($columns('conversations'))->toContain(['updated_at', 'id'])
+        ->and($columns('web_chat_sessions'))->toContain(['expires_at'], ['revoked_at'])
+        ->and($columns('web_chat_sessions'))->not->toContain(['ip_hash', 'created_at']);
+});

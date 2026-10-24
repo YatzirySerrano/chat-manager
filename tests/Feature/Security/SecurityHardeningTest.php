@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AuditAction;
+use App\Http\Middleware\SecurityHeaders;
 use App\Models\AuditLog;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -9,6 +10,7 @@ use App\Models\Department;
 use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Events\RecoveryCodesGenerated;
@@ -175,4 +177,25 @@ test('the forgot password form does not reveal which e-mails have an account', f
     }
 
     Notification::assertSentToTimes($this->owner, ResetPassword::class, 1);
+});
+
+test('only a response that explicitly allows framing goes without X-Frame-Options', function () {
+    Route::get('__test/framed', function (Request $request) {
+        $request->attributes->set(SecurityHeaders::ALLOW_FRAMING, true);
+
+        return response('marco', 200, ['Content-Security-Policy' => "frame-ancestors 'self' https://tienda.test"]);
+    });
+    Route::get('__test/not-framed', fn () => response('página'));
+    Route::get('__test/truthy', function (Request $request) {
+        $request->attributes->set(SecurityHeaders::ALLOW_FRAMING, '1');
+
+        return response('página');
+    });
+
+    $this->get('__test/framed')
+        ->assertHeaderMissing('X-Frame-Options')
+        ->assertHeader('Content-Security-Policy', "frame-ancestors 'self' https://tienda.test")
+        ->assertHeader('X-Content-Type-Options', 'nosniff');
+    $this->get('__test/not-framed')->assertHeader('X-Frame-Options', 'SAMEORIGIN');
+    $this->get('__test/truthy')->assertHeader('X-Frame-Options', 'SAMEORIGIN');
 });

@@ -3,9 +3,11 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vp build",
-        "build:ssr": "vp build && vp build --ssr",
+        "build": "vp build && vp build --config vite.widget.config.ts",
+        "build:ssr": "vp build && vp build --ssr && vp build --config vite.widget.config.ts",
+        "build:widget": "vp build --config vite.widget.config.ts",
         "dev": "vp dev",
+        "dev:widget": "vp build --config vite.widget.config.ts --watch",
         "check": "vp check",
         "check:fix": "vp check --fix",
         "types:check": "vue-tsc --noEmit"

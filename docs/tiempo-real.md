@@ -84,6 +84,35 @@ señales únicamente de conversaciones que están en cola o que acaban de salir 
 cerrada sin responsable previo). Así un agente no se entera ni siquiera del ID de la actividad de conversaciones que
 atiende un compañero (política de visibilidad, sección 7 de la especificación).
 
+### Canal del visitante del chat web
+
+El widget del chat web usa la **misma app de Reverb** (mismo `REVERB_APP_KEY`, mismo origen de la aplicación, sin
+cambios en `REVERB_ALLOWED_ORIGINS`, porque el WebSocket sale del iframe servido por Chat Manager) con un canal privado
+propio por sesión: `webchat.sessions.{session_public_id}` (`private-webchat.sessions.{id}` en el protocolo).
+
+- **Nunca se registra en `routes/channels.php` ni en `routes/channels/*.php`** (el glob de `routes/channels.php`
+  cargaría cualquier archivo nuevo). Por eso el `/broadcasting/auth` de los agentes lo rechaza siempre.
+- Se autoriza solo en `POST /api/v1/widget/broadcasting/auth` (`VisitorBroadcastingAuthController`): Bearer del
+  visitante (`webchat.session`), `channel_name` exactamente igual al de su sesión, `socket_id` que cumpla
+  `^\d+\.\d+$` (si no, 422) y firma del protocolo Pusher `hash_hmac('sha256', socket_id.':'.channel, secreto)`.
+  Canal ajeno o Reverb sin clave o secreto: 403. Sin cookies ni CSRF. Límite `webchat-broadcasting` (30/min).
+- Evento `App\Events\WebChat\VisitorSessionSignal`, `broadcastAs` **`webchat.signal`**, carga `{type: 'messages' |
+'conversation', cursor?}`: nunca contenido. Lo emite `SignalVisitorSessions` en la cola `realtime` (patrón
+  `ShouldBroadcastNow` dentro del listener, protegido con `try/catch`) cuando un saliente web pasa a `accepted`,
+  `delivered` o `read`, cuando entra un mensaje del visitante (para sus otras pestañas) y cuando la conversación se
+  acepta, asigna, auto-asigna, transfiere, reabre o cierra. Destino: todas las sesiones usables del mismo contacto en
+  esa conexión.
+- En el iframe se usa `pusher-js` directo, sin Echo (`resources/js/widget/frame/realtime.ts`), con las opciones que
+  entrega `VisitorRealtimeConfig` en la sesión (`realtime.enabled = false` si `BROADCAST_CONNECTION` no es `reverb`).
+- **Reconexión y respaldo:** al conectar y en cada reconexión el frame pide `GET /api/v1/widget/session/messages?after=
+{último cursor}` y deduplica por cursor (una respuesta que se volvió visible tarde puede volver con `after`). Sin
+  WebSocket, sondeo con ETag/`If-None-Match` (304 sin cambios) cada 4 s con la pestaña visible y 20 s oculta
+  (`webchat.poll.*`); con WebSocket, una lectura de seguridad cada 60 s. Ante 429 respeta `Retry-After` y duplica la
+  espera hasta 120 s; ante errores de red, igual desde 2 s. Un 401 descarta el token y crea otra sesión.
+- **Cuota:** los visitantes comparten la app y su `max_connections` con los agentes; cada visitante con el widget
+  abierto es una conexión. Antes de un volumen alto, valora una segunda app de Reverb para el widget
+  ([infraestructura §10](infraestructura-y-despliegue.md#10-reverb), pregunta abierta).
+
 ## Eventos
 
 Nombres tal como los escucha el cliente (`.nombre`). Las cargas útiles solo llevan IDs y metadatos mínimos: **nunca**
@@ -148,6 +177,8 @@ módulo. Editar solo nombre, correo o contraseña no cambia el acceso y no emite
 - `allowed_origins` se limita al host de `APP_URL` (o `REVERB_ALLOWED_ORIGINS`); los eventos de cliente ("whispers")
   están desactivados (`REVERB_APP_ACCEPT_CLIENT_EVENTS_FROM=none`) y el límite de mensajes por conexión está activo.
 - CSRF: la autorización usa la cookie de sesión y el encabezado `X-XSRF-TOKEN`.
+- El canal del visitante del chat web tiene su propio endpoint de autorización con Bearer y sin cookies; el de agentes
+  nunca lo conoce (ver [Canal del visitante](#canal-del-visitante-del-chat-web)).
 
 ## Reconexión y respaldo
 

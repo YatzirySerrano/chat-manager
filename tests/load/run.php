@@ -6,7 +6,7 @@
 |   php tests/load/run.php <scenario[:n]>[,<scenario[:n]>...]
 |
 |   scenarios: profile | webhooks[:total] | agents[:count] | websocket[:connections] | export
-|              | transfers[:count] | reconnect[:connections]
+|              | transfers[:count] | reconnect[:connections] | widget[:visitors]
 |   e.g.       php tests/load/run.php profile,webhooks:2000
 |              php tests/load/run.php agents:10,agents:25
 |
@@ -36,6 +36,14 @@
 | fixture connections and replies go through WHATSAPP_TRANSPORT=simulated.
 | Nothing is sent to or received from Meta.
 |
+| The "widget" scenario (phase 4) adds a web chat connection routed to
+| Ventas whose widget allows the origin http://tienda.test and drives the
+| visitor API (/widget/v1/frame, /api/v1/widget/...) and the visitor
+| WebSocket channel like many embedded widgets would. Every virtual visitor
+| comes from 127.0.0.1, so the per-IP limits of the web chat are raised for
+| the run (WEBCHAT_*_PER_IP_PER_MINUTE, WEBCHAT_FRAME_PER_MINUTE); the
+| per-session and per-connection limits keep their defaults.
+|
 | Environment (all optional):
 |   E2E_PORT / LOAD_PORT        HTTP port (default 8050)
 |   LOAD_FPM_PORT               PHP-FPM port (default 8052)
@@ -56,6 +64,8 @@
 */
 
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Models\Connection;
+use App\Models\Department;
 use App\Models\User;
 use App\Support\ReadCommittedTransaction;
 use Illuminate\Contracts\Console\Kernel;
@@ -128,6 +138,10 @@ $environment = [
     'REVERB_SERVER_HOST' => '127.0.0.1',
     'REVERB_SERVER_PORT' => (string) $reverbPort,
     'REVERB_ALLOWED_ORIGINS' => '127.0.0.1,localhost',
+    // Every virtual web chat visitor shares 127.0.0.1 (see the header).
+    'WEBCHAT_SESSIONS_PER_IP_PER_MINUTE' => '100000',
+    'WEBCHAT_MESSAGES_PER_IP_PER_MINUTE' => '100000',
+    'WEBCHAT_FRAME_PER_MINUTE' => '100000',
 ];
 
 foreach ([
@@ -365,6 +379,10 @@ if ($serverKind === 'fpm') {
         '    AllowOverride None',
         '    Require all granted',
         '    RewriteEngine On',
+        // As public/.htaccess (not read: AllowOverride None): PHP-FPM only
+        // sees the Bearer tokens of /api/v1 through HTTP_AUTHORIZATION.
+        '    RewriteCond %{HTTP:Authorization} .',
+        '    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]',
         '    RewriteCond %{REQUEST_FILENAME} !-f',
         '    RewriteRule ^ index.php [L]',
         '</Directory>',
@@ -743,6 +761,23 @@ $verify = function (array $run) use ($summarizeSeconds): array {
         ];
     }
 
+    if (! empty($expectations['web_sessions'])) {
+        $webSessions = DB::table('web_chat_sessions')->whereIn('public_id', $expectations['web_sessions'])->get(['public_id', 'connection_id', 'contact_id']);
+        $perVisitor = $webSessions->map(fn (object $session): int => $session->contact_id === null ? 0 : DB::table('conversations')
+            ->where('connection_id', $session->connection_id)
+            ->where('contact_id', $session->contact_id)
+            ->whereNotNull('open_lock')
+            ->count());
+
+        $checks['web_chat'] = [
+            'sessions' => count($expectations['web_sessions']),
+            'stored_sessions' => $webSessions->count(),
+            'distinct_contacts' => $webSessions->pluck('contact_id')->filter()->unique()->count(),
+            'visitors_with_one_open_conversation' => $perVisitor->filter(fn (int $count): bool => $count === 1)->count(),
+            'visitors_with_more_than_one' => $perVisitor->filter(fn (int $count): bool => $count > 1)->count(),
+        ];
+    }
+
     if (! empty($expectations['statuses'])) {
         $expectedStatus = [];
 
@@ -1030,6 +1065,36 @@ $profile = function () use ($app, $manifest): array {
     return ['endpoints' => $results];
 };
 
+/*
+ * The web chat connection of the "widget" scenario (created once per run):
+ * routed to Ventas, its widget allows http://tienda.test. Returns the
+ * variables the scenario needs.
+ *
+ * @return array<string, string>
+ */
+$webChatWidget = function (): array {
+    static $variables = null;
+
+    if ($variables !== null) {
+        return $variables;
+    }
+
+    $origin = 'http://tienda.test';
+    $connection = Connection::factory()->webChat()->create([
+        'name' => 'Carga Chat web Tienda',
+        'default_department_id' => Department::query()->where('slug', 'carga-ventas')->value('id'),
+    ]);
+    $connection->departments()->sync(Department::query()->where('slug', 'carga-ventas')->pluck('id')->all());
+    $widget = $connection->webChatWidget()->firstOrFail();
+    $widget->forceFill(['allowed_origins' => [$origin]])->save();
+
+    return $variables = [
+        'LOAD_WIDGET_KEY' => (string) $widget->public_key,
+        'LOAD_WIDGET_ORIGIN' => $origin,
+        'LOAD_WIDGET_CONNECTION' => (string) $connection->id,
+    ];
+};
+
 /* ----------------------------------------------------------------- run it */
 
 $reverbKey = $reverbCredentials['REVERB_APP_KEY'];
@@ -1089,6 +1154,7 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
         'export' => 'export.mjs',
         'transfers' => 'transfers.mjs',
         'reconnect' => 'reconnect.mjs',
+        'widget' => 'widget.mjs',
         default => $fail("Unknown scenario [{$name}]."),
     };
 
@@ -1100,7 +1166,12 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
             'export' => 'LOAD_EXPORT_WEBHOOKS_PER_S',
             'transfers' => 'LOAD_TRANSFERS',
             'reconnect' => 'LOAD_RECONNECT_CONNECTIONS',
+            'widget' => 'LOAD_WIDGET_VISITORS',
         }] = $parameter;
+    }
+
+    if ($name === 'widget') {
+        $extra = [...$extra, ...$webChatWidget()];
     }
 
     $say("Running scenario {$label}...");

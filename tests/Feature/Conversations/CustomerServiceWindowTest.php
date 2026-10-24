@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Support\WebChatFixtures;
 
 /*
 | WhatsApp's 24 hour customer service window. It depends only on the last
@@ -372,4 +373,30 @@ test('internal notes never reach the transport nor count as messages', function 
         ->and(Message::query()->count())->toBe(0)
         ->and($conversation->refresh()->first_response_at)->toBeNull()
         ->and($conversation->last_outbound_at)->toBeNull();
+});
+
+test('a web chat conversation has no customer service window', function (?int $hoursAgo) {
+    $conversation = attendedConversation($this->agent, $this->department, $hoursAgo === null ? null : CarbonImmutable::now()->subHours($hoursAgo));
+    $conversation->forceFill(['connection_id' => WebChatFixtures::connection()->id])->save();
+
+    $state = app(CustomerServiceWindow::class)->for($conversation->fresh());
+
+    expect($state->status)->toBe(CustomerWindowStatus::NotApplicable)
+        ->and($state->allowsFreeFormMessages())->toBeTrue()
+        ->and($state->toArray())->toMatchArray(['status' => 'not_applicable', 'label' => 'No aplica', 'allows_free_form' => true, 'block_reason' => null]);
+})->with(['visitor wrote 30 hours ago' => [30], 'visitor never wrote' => [null]]);
+
+test('an agent replies to a web chat visitor long after 24 hours without reaching Meta', function () {
+    $whatsapp = recordingTransport();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHours(30));
+    $conversation->forceFill(['connection_id' => WebChatFixtures::connection()->id])->save();
+
+    $this->actingAs($this->agent)
+        ->post(route('conversations.messages.store', $conversation), ['body' => 'Seguimos en contacto', 'client_reference' => (string) Str::uuid()])
+        ->assertSessionHasNoErrors();
+
+    expect(Message::query()->sole())
+        ->status->toBe(MessageStatus::Accepted)
+        ->whatsapp_message_id->toStartWith('web.out.')
+        ->and($whatsapp->sent)->toBe([]);
 });

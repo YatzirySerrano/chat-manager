@@ -4,7 +4,6 @@ import {
     CheckCheck,
     CircleAlert,
     CircleQuestionMark,
-    Clock3,
     LoaderCircle,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -43,7 +42,6 @@ const icon = computed(() => {
 
     switch (props.status) {
         case 'queued':
-            return Clock3;
         case 'sending':
             return LoaderCircle;
         case 'delivered':
@@ -75,10 +73,13 @@ const tone = computed(() => {
 
 const label = computed(() => statusLabel(props.status, props.errorCode));
 
+/** Queued and sending look the same: both read "Enviando". */
+const inProgress = computed(
+    () => props.status === 'queued' || props.status === 'sending',
+);
+
 const labelVisible = computed(
-    () =>
-        props.showProgressLabel &&
-        (props.status === 'queued' || props.status === 'sending'),
+    () => props.showProgressLabel && inProgress.value,
 );
 </script>
 
@@ -87,7 +88,7 @@ const labelVisible = computed(
         <component
             :is="icon"
             class="size-3.5"
-            :class="[tone, status === 'sending' && 'animate-spin']"
+            :class="[tone, inProgress && 'animate-spin']"
             aria-hidden="true"
         />
         <span :class="labelVisible ? tone : 'sr-only'">{{ label }}</span>

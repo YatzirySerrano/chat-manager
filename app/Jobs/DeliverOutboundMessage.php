@@ -7,17 +7,18 @@ use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageStatusChanged;
+use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Messaging\ChannelTransports;
 use App\Services\Meta\ConnectionMonitor;
 use App\Services\Meta\MetaErrorCatalog;
 use App\Services\Meta\MetaGraphException;
 use App\Services\Meta\SendResult;
-use App\Services\Meta\WhatsAppTransport;
 use App\Services\Meta\WhatsAppTransportUnavailable;
 use App\Support\Queues;
 use Carbon\CarbonImmutable;
@@ -32,7 +33,9 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Delivers one queued outbound message (text, media, template) to WhatsApp.
+ * Delivers one queued outbound message (text, media, template) through the
+ * transport of its connection's channel (ChannelTransports): WhatsApp, or the
+ * web chat, whose transport only accepts the message.
  *
  * 1. Claim: under the message row lock, a "queued" message becomes
  *    "sending". A second worker holding the same job finds it claimed and
@@ -122,7 +125,7 @@ class DeliverOutboundMessage implements ShouldQueue
         return $message->delivery_attempts - (is_int($base) ? $base : 0);
     }
 
-    public function handle(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, WhatsAppTransport $transport, ConnectionMonitor $monitor): void
+    public function handle(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, ChannelTransports $transports, ConnectionMonitor $monitor): void
     {
         $startedAt = microtime(true);
         $mustWait = false;
@@ -140,6 +143,10 @@ class DeliverOutboundMessage implements ShouldQueue
 
         $claimedAt = microtime(true);
 
+        /** @var Connection $connection claim() only returns a message whose connection is operational. */
+        $connection = $message->conversation->channelConnection;
+        $transport = $transports->for($connection);
+
         try {
             $requestStartedAt = microtime(true);
             $result = $transport->send($message);
@@ -153,11 +160,12 @@ class DeliverOutboundMessage implements ShouldQueue
             return;
         } catch (Throwable $exception) {
             // Unknown outcome: the request may have left. Leave it for reconciliation.
-            Log::error('Outbound WhatsApp message ended with an unexpected error; left for reconciliation.', [
+            Log::error('Outbound message ended with an unexpected error; left for reconciliation.', [
                 'message_id' => $message->id,
+                'channel' => $connection->channel->value,
                 'exception' => $exception::class,
             ]);
-            $this->leaveUnconfirmed($message, 'Ocurrió un error inesperado durante el envío; se espera la confirmación de WhatsApp.');
+            $this->leaveUnconfirmed($message, "Ocurrió un error inesperado durante el envío; se espera la confirmación de {$connection->channel->label()}.");
 
             return;
         }
@@ -196,7 +204,8 @@ class DeliverOutboundMessage implements ShouldQueue
             // Nothing leaves through a connection that was deleted or deactivated
             // after the message was queued.
             if (! ($conversation->channelConnection?->isOperational() ?? false)) {
-                $this->block($lifecycle, $conversation, $message, 'connection_unavailable', 'La conexión de WhatsApp de esta conversación no está disponible.');
+                $channel = $conversation->channelConnection?->channel->label() ?? 'WhatsApp';
+                $this->block($lifecycle, $conversation, $message, 'connection_unavailable', "La conexión de {$channel} de esta conversación no está disponible.");
 
                 return null;
             }
@@ -519,7 +528,7 @@ class DeliverOutboundMessage implements ShouldQueue
             ]]])->save();
         });
 
-        Log::warning('Outbound WhatsApp message left unconfirmed; it will be reconciled.', ['message_id' => $message->id]);
+        Log::warning('Outbound message left unconfirmed; it will be reconciled.', ['message_id' => $message->id]);
     }
 
     /**

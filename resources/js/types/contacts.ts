@@ -4,7 +4,7 @@ import type { RecordStateValue } from './ui';
 
 export type ContactStatusValue = 'active' | 'archived';
 
-export type ContactSourceValue = 'manual' | 'whatsapp' | 'import';
+export type ContactSourceValue = 'manual' | 'whatsapp' | 'import' | 'web_chat';
 
 export type ContactOriginTypeValue =
     | 'unknown'

@@ -51,7 +51,11 @@ export type LiveReloadOptions = {
  *   an access change) the page reloads once to recover missed signals;
  * - hidden tabs skip refreshes and catch up once when shown again;
  * - a reload waits for the user's own visit in flight (afterUserVisits), so
- *   it never races with the operation that caused the signal.
+ *   it never races with the operation that caused the signal; and a user
+ *   visit that starts while a reload is in flight cancels that reload (it
+ *   is an async request for the previous URL: answered after the user's
+ *   visit, it would bring back the previous filters and URL), which runs
+ *   again once the user's visit finishes.
  */
 export function useLiveReload(options: LiveReloadOptions): {
     /** Requests a debounced reload, merged with any already scheduled or running. */
@@ -74,6 +78,7 @@ export function useLiveReload(options: LiveReloadOptions): {
     let intervalTimer: ReturnType<typeof setInterval> | null = null;
     let reloading = false;
     let pending = false;
+    let cancelReload: (() => void) | null = null;
     let missedWhileHidden = false;
     let disposed = false;
 
@@ -106,7 +111,11 @@ export function useLiveReload(options: LiveReloadOptions): {
 
             router.reload({
                 only: options.only,
+                onCancelToken: (token) => {
+                    cancelReload = () => token.cancel();
+                },
                 onFinish: () => {
+                    cancelReload = null;
                     reloading = false;
 
                     if (pending) {
@@ -201,6 +210,14 @@ export function useLiveReload(options: LiveReloadOptions): {
 
     const stopReconnect = onReconnect(() => reload());
 
+    /* A user visit supersedes the reload in flight (see above). */
+    const stopUserVisit = router.on('start', (event) => {
+        if (!event.detail.visit.async && cancelReload) {
+            pending = true;
+            cancelReload();
+        }
+    });
+
     const onVisibility = (): void => {
         if (!document.hidden && missedWhileHidden) {
             missedWhileHidden = false;
@@ -214,6 +231,7 @@ export function useLiveReload(options: LiveReloadOptions): {
         disposed = true;
         stops.forEach((stop) => stop());
         stopReconnect();
+        stopUserVisit();
         unregisterFallback?.();
         document.removeEventListener('visibilitychange', onVisibility);
 

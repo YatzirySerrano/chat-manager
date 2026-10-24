@@ -38,6 +38,7 @@ Documentos relacionados: [tiempo-real.md](tiempo-real.md) (Reverb en detalle), [
 | `whatsapp:maintenance sync-templates`       | cada 6 h     | WhatsApp: plantillas                         |
 | `analytics:rebuild --days=2`                | diaria 03:30 | reportes                                     |
 | `notifications:prune`                       | diaria 04:10 | notificaciones                               |
+| `webchat:prune-sessions`                    | diaria 04:20 | chat web: sesiones vencidas o revocadas      |
 | `queue:prune-failed --hours=2160`           | diaria 04:30 | operación: fallidos de más de 90 días        |
 | `queue:prune-batches --hours=168`           | diaria 04:40 | operación                                    |
 
@@ -124,34 +125,37 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON chatmanager.* TO 'chatma
 
 Base: `.env.example` (todas las claves comentadas). Valores clave:
 
-| Variable                                                                                | Producción                                           | Notas                                                                                                         |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `APP_ENV` / `APP_DEBUG`                                                                 | `production` / `false`                               | Con debug, cualquier visitante ve trazas y variables                                                          |
-| `APP_KEY`                                                                               | `php artisan key:generate --show`                    | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida                        |
-| `APP_URL`                                                                               | `https://chat.empresa.com`                           | HTTPS obligatorio (Meta y cookies seguras)                                                                    |
-| `TRUSTED_PROXIES`                                                                       | `127.0.0.1`                                          | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real                                      |
-| `SESSION_SECURE_COOKIE`                                                                 | `true` (por defecto si `APP_URL` es https)           | HttpOnly y SameSite=lax por defecto                                                                           |
-| `SESSION_DRIVER` / `CACHE_STORE`                                                        | `database` (o `redis`)                               | Nunca `array`/`cookie`                                                                                        |
-| `QUEUE_CONNECTION`                                                                      | `database` (o `redis`)                               | Nunca `sync` en producción                                                                                    |
-| `DB_QUEUE_RETRY_AFTER`                                                                  | `900`                                                | Mayor que el `--timeout` más largo (exportaciones 660)                                                        |
-| `EXPORTS_QUEUE`                                                                         | `exports`                                            | Worker propio con timeout largo                                                                               |
-| `QUEUE_NAME_*`                                                                          | sin cambios                                          | Solo si varias apps comparten el backend de colas                                                             |
-| `BROADCAST_CONNECTION`                                                                  | `reverb`                                             | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)                                  |
-| `WHATSAPP_TRANSPORT`                                                                    | `meta`                                               | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)                                   |
-| `META_GRAPH_VERSION`                                                                    | `v26.0` (o la vigente)                               | Credenciales por conexión en la interfaz, no en `.env`                                                        |
-| `MAIL_*`                                                                                | SMTP real                                            | Restablecimiento de contraseña y alertas                                                                      |
-| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                                          | buzón de guardia / `true`                            | Destinatarios de alertas operativas                                                                           |
-| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH`                      | rutas absolutas                                      | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                                          |
-| `LOG_STACK` / `LOG_LEVEL`                                                               | `daily` / `warning`                                  | `debug` llena el disco                                                                                        |
-| `SECURITY_CSP_ENABLED`                                                                  | vacío (= activo en producción)                       | Ver §8                                                                                                        |
-| `QUEUE_NAME_REALTIME` / `REALTIME_QUEUE`                                                | sin cambios (`realtime`)                             | Cola dedicada de señales de tiempo real (§9); `REALTIME_QUEUE` tiene prioridad                                |
-| `WHATSAPP_PILOT_RECIPIENTS`                                                             | vacío, o números del piloto                          | Con `meta`, solo envía a esos números ([mensajeria §8](mensajeria-whatsapp.md#8-transportes))                 |
-| `WHATSAPP_WEBHOOK_MAX_AGE_DAYS`                                                         | `7` (opcional)                                       | Antigüedad máxima de errores y señales del webhook que se aplican                                             |
-| `INERTIA_ENCRYPT_HISTORY`                                                               | `true`                                               | Historial del navegador cifrado (requiere HTTPS o localhost)                                                  |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`                              | `php artisan webpush:vapid`                          | Web Push; la privada es secreta; cambiarlas invalida las suscripciones                                        |
-| `WEBPUSH_TTL` / `_THROTTLE_SECONDS` / `_TIMEOUT` / `_RETENTION_DAYS` / `_ALLOWED_HOSTS` | `3600` / `60` / `5` / `120` / por defecto            | Opcionales ([notificaciones §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada)) |
-| `EXPORTS_XLSX_MAX_CELLS`                                                                | `800000`                                             | Tope de celdas del XLSX en memoria (≈ 650 MB)                                                                 |
-| `OPS_PREFLIGHT_MIN_FREE_DISK_MB` / `OPS_BACKUP_DIR` / `OPS_BACKUP_MAX_AGE_HOURS`        | `2048` / `/var/backups/chat-manager/database` / `26` | Comprobaciones de disco y respaldos del preflight (§15)                                                       |
+| Variable                                                                                | Producción                                           | Notas                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `APP_ENV` / `APP_DEBUG`                                                                 | `production` / `false`                               | Con debug, cualquier visitante ve trazas y variables                                                                                                                                                                                             |
+| `APP_KEY`                                                                               | `php artisan key:generate --show`                    | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida                                                                                                                                                           |
+| `APP_URL`                                                                               | `https://chat.empresa.com`                           | HTTPS obligatorio (Meta y cookies seguras)                                                                                                                                                                                                       |
+| `TRUSTED_PROXIES`                                                                       | `127.0.0.1`                                          | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real. **Obligatorio con un chat web activo**: los límites por IP de visitantes y la lista de IPs de los tokens usarían la IP del proxy (Preflight: bloqueante en producción) |
+| `SESSION_SECURE_COOKIE`                                                                 | `true` (por defecto si `APP_URL` es https)           | HttpOnly y SameSite=lax por defecto                                                                                                                                                                                                              |
+| `SESSION_DRIVER` / `CACHE_STORE`                                                        | `database` (o `redis`)                               | Nunca `array`/`cookie`                                                                                                                                                                                                                           |
+| `QUEUE_CONNECTION`                                                                      | `database` (o `redis`)                               | Nunca `sync` en producción                                                                                                                                                                                                                       |
+| `DB_QUEUE_RETRY_AFTER`                                                                  | `900`                                                | Mayor que el `--timeout` más largo (exportaciones 660)                                                                                                                                                                                           |
+| `EXPORTS_QUEUE`                                                                         | `exports`                                            | Worker propio con timeout largo                                                                                                                                                                                                                  |
+| `QUEUE_NAME_*`                                                                          | sin cambios                                          | Solo si varias apps comparten el backend de colas                                                                                                                                                                                                |
+| `BROADCAST_CONNECTION`                                                                  | `reverb`                                             | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)                                                                                                                                                                     |
+| `WHATSAPP_TRANSPORT`                                                                    | `meta`                                               | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)                                                                                                                                                                      |
+| `META_GRAPH_VERSION`                                                                    | `v26.0` (o la vigente)                               | Credenciales por conexión en la interfaz, no en `.env`                                                                                                                                                                                           |
+| `MAIL_*`                                                                                | SMTP real                                            | Restablecimiento de contraseña y alertas                                                                                                                                                                                                         |
+| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                                          | buzón de guardia / `true`                            | Destinatarios de alertas operativas                                                                                                                                                                                                              |
+| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH`                      | rutas absolutas                                      | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                                                                                                                                                                             |
+| `LOG_STACK` / `LOG_LEVEL`                                                               | `daily` / `warning`                                  | `debug` llena el disco                                                                                                                                                                                                                           |
+| `SECURITY_CSP_ENABLED`                                                                  | vacío (= activo en producción)                       | Ver §8                                                                                                                                                                                                                                           |
+| `QUEUE_NAME_REALTIME` / `REALTIME_QUEUE`                                                | sin cambios (`realtime`)                             | Cola dedicada de señales de tiempo real (§9); `REALTIME_QUEUE` tiene prioridad                                                                                                                                                                   |
+| `WHATSAPP_PILOT_RECIPIENTS`                                                             | vacío, o números del piloto                          | Con `meta`, solo envía a esos números ([mensajeria §8](mensajeria-whatsapp.md#8-transportes))                                                                                                                                                    |
+| `WHATSAPP_WEBHOOK_MAX_AGE_DAYS`                                                         | `7` (opcional)                                       | Antigüedad máxima de errores y señales del webhook que se aplican                                                                                                                                                                                |
+| `INERTIA_ENCRYPT_HISTORY`                                                               | `true`                                               | Historial del navegador cifrado (requiere HTTPS o localhost)                                                                                                                                                                                     |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`                              | `php artisan webpush:vapid`                          | Web Push; la privada es secreta; cambiarlas invalida las suscripciones                                                                                                                                                                           |
+| `WEBPUSH_TTL` / `_THROTTLE_SECONDS` / `_TIMEOUT` / `_RETENTION_DAYS` / `_ALLOWED_HOSTS` | `3600` / `60` / `5` / `120` / por defecto            | Opcionales ([notificaciones §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada))                                                                                                                                    |
+| `EXPORTS_XLSX_MAX_CELLS`                                                                | `800000`                                             | Tope de celdas del XLSX en memoria (≈ 650 MB)                                                                                                                                                                                                    |
+| `OPS_PREFLIGHT_MIN_FREE_DISK_MB` / `OPS_BACKUP_DIR` / `OPS_BACKUP_MAX_AGE_HOURS`        | `2048` / `/var/backups/chat-manager/database` / `26` | Comprobaciones de disco y respaldos del preflight (§15)                                                                                                                                                                                          |
+| `WEBCHAT_*` (límites y `WEBCHAT_SESSION_ABSOLUTE_DAYS`)                                 | por defecto                                          | Opcionales ([api-v1.md §8](api-v1.md#8-límites)); `WEBCHAT_DEMO_ENABLED` vacío (la demo solo existe en `local`)                                                                                                                                  |
+| `INTEGRATIONS_READS_PER_MINUTE` / `INTEGRATIONS_WRITES_PER_MINUTE`                      | `600` / `60`                                         | Límites por token de la API de integración                                                                                                                                                                                                       |
+| `SESSION_SAME_SITE`                                                                     | `lax` (no cambiar)                                   | `none` rompería la separación entre la sesión de agentes y el widget incrustado ([seguridad](seguridad-y-auditoria.md#chat-web-y-api-v1))                                                                                                        |
 
 Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el gestor de secretos de la empresa.
 `.env.example` no contiene valores reales.
@@ -165,6 +169,10 @@ Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el ges
    sensibles; solo ejecuta `index.php`; `client_max_body_size 24m` (alineado con `upload_max_filesize=20M` y
    `post_max_size=24M` del pool; súbelo si aumentas `WHATSAPP_DOCUMENT_MAX_BYTES`); proxy de WebSockets en `location ^~ /app/`
    hacia Reverb (con la barra final: un prefijo `/app` capturaría también `/apple-touch-icon.png`); `/apps` (API HTTP de Reverb) no se expone; pasa `$request_id` a Laravel (`X-Request-Id`).
+   **Chat web:** añade el bloque de caché corta del cargador `/widget/v1/chat-manager.js` (`max-age=300,
+stale-while-revalidate`) de [widget-integracion.md §8](widget-integracion.md#8-caché-del-cargador); la plantilla aún
+   no lo incluye. El frame `/widget/v1/frame/{key}` pasa por PHP (su CSP y `Cache-Control: no-store` los pone la app) y
+   `/api/v1` no necesita reglas propias ni cabeceras CORS.
 4. En la aplicación: con `APP_ENV=production` y `APP_URL` https se fuerzan URLs https (`URL::forceHttps`) y se envía
    HSTS en peticiones seguras.
 
@@ -280,7 +288,11 @@ worker nunca lea filas aún no confirmadas.
 ### Opción Redis
 
 Configuración preparada, no activa por defecto: `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` (y opcionalmente
-`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. `REDIS_QUEUE_BLOCK_FOR`
+`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Con un chat web público activo,
+lleva al menos los límites de uso a Redis aunque la caché siga en la base: `CACHE_LIMITER=redis` (`cache.limiter`; vacío
+usa `CACHE_STORE`). El almacén `database` sufre bloqueos mutuos (deadlock 1213) en ráfagas sobre la misma clave del
+limitador y no reintenta; el Preflight avisa en ese caso, y la API responde esos bloqueos como `503
+temporarily_unavailable` reintentable. `REDIS_QUEUE_BLOCK_FOR`
 (segundos, vacío por omisión) activa la espera bloqueante en lugar de consultar cada `--sleep`; déjalo vacío con la
 topología actual: Redis solo bloquea en la **primera** cola de un worker multicola, así que un worker
 `messages,webhooks` ocioso tardaría hasta ese tiempo en ver un webhook. Úsalo solo si todos los workers de la
@@ -295,6 +307,13 @@ Ver [tiempo-real.md §Producción](tiempo-real.md): `REVERB_HOST=127.0.0.1`, `RE
 (publicación interna), `REVERB_CLIENT_HOST=<dominio>`, `REVERB_CLIENT_PORT=443`, `REVERB_CLIENT_SCHEME=https`,
 `REVERB_ALLOWED_ORIGINS=<dominio>`. La salud del sistema abre una conexión TCP a `127.0.0.1:8080` (configurable con
 `OPS_REVERB_PROBE_HOST/PORT`); si no responde es una advertencia: la interfaz sigue funcionando por consulta periódica.
+
+**Cuota con el chat web.** Los visitantes del widget usan la misma app de Reverb (mismo `REVERB_APP_KEY`, sin cambiar
+`REVERB_ALLOWED_ORIGINS`, porque el WebSocket sale del iframe de la propia aplicación) y comparten
+`REVERB_APP_MAX_CONNECTIONS` con los agentes: cada visitante con el widget abierto es una conexión. Dimensiona ese
+valor (y los descriptores de archivo del proceso) con agentes + visitantes simultáneos esperados. Si el volumen de
+visitantes crece, la opción prevista es una segunda app de Reverb para el widget (variables nuevas en `.env`; pendiente
+de aprobación). Sin Reverb el widget funciona por sondeo (4 s visible, 20 s oculto).
 
 ## 11. Programador
 
@@ -428,6 +447,7 @@ Lista previa:
 - [ ] Respaldo reciente verificado (recuperacion-y-respaldos.md) y espacio en disco (el preflight advierte de ambos).
 - [ ] Cambios revisados; migraciones nuevas solo aditivas.
 - [ ] `.env` actualizado con las claves nuevas de `.env.example`.
+- [ ] Con chat web activo: `TRUSTED_PROXIES` configurado y el bloque de caché del cargador en Nginx (§6).
 
 ### Scripts que se ejecutan como root (una vez, y en cada cambio de esos scripts)
 
@@ -495,6 +515,14 @@ Una versión que se conservó con `KEEP_FAILED_RELEASE=1`, o de la que se salió
 de humo), queda marcada con un archivo `FAILED` y `rollback.sh` no vuelve a elegirla.
 
 Después: revisa Administración > Sistema (colas al día, sin fallidos nuevos, latido reciente).
+
+**Fase 4 (chat web y API v1).** `npm run build` ya construye también el widget (`vp build && vp build --config
+vite.widget.config.ts`): genera `public/widget/v1/chat-manager.js`, que está en `.gitignore`, así que sin el build el
+fragmento de los sitios responde 404. CI (`.github/workflows/tests.yml`) ejecuta el mismo `npm run build`. `deploy.sh`
+ejecuta `php artisan app:sync-permissions` justo después de `migrate` (idempotente: crea los permisos nuevos del catálogo,
+como `integrations.view` e `integrations.manage`, y no cambia roles existentes); después concede esos permisos a mano a
+quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
+`web_chat_sessions`, `api_tokens`) son tablas nuevas, aditivas.
 
 ### Webhooks durante la ventana de mantenimiento
 

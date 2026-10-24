@@ -184,7 +184,13 @@ for (let round = 0; round < contentionRounds; round++) {
 
 /* ------------------------------------------------------------------ loops */
 
-const listProps = ['conversations', 'filters', 'counts', 'inbox', 'viewCounts'];
+const listProps = [
+    'conversations',
+    'filters',
+    'counts',
+    'inbox',
+    'unreadCount',
+];
 const selectionProps = [
     'selectedId',
     'conversation',

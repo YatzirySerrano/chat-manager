@@ -1,0 +1,104 @@
+<!doctype html>
+<!--
+  Host page of the widget E2E (tests/e2e/widget.mjs), served by run.php on
+  E2E_HOST_PORT as http://tienda.test:{port}/host-plain.html?base=…&key=….
+  A shop's own page: its own CSS, no jQuery, and the documented snippet
+  (asynchronous loader with a queue of the calls made before it loads).
+-->
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" href="data:," />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <title>Tienda E2E</title>
+        <style>
+            body {
+                font:
+                    18px/1.6 Georgia,
+                    serif;
+                color: rgb(20, 40, 60);
+                margin: 0;
+                padding: 24px;
+            }
+            h1 {
+                color: rgb(200, 0, 0);
+                letter-spacing: 2px;
+            }
+            button {
+                background: rgb(0, 128, 0);
+                padding: 10px;
+            }
+            div {
+                border: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Tienda del cliente</h1>
+        <p>Contenido del sitio anfitrión.</p>
+        <button id="own" type="button">Botón propio</button>
+        <script>
+            // The host's own computed styles, to prove the widget never changes them.
+            window.__styles = function () {
+                var b = getComputedStyle(document.body);
+                var h = getComputedStyle(document.querySelector('h1'));
+                var t = getComputedStyle(document.querySelector('#own'));
+                return JSON.stringify([
+                    b.fontFamily,
+                    b.fontSize,
+                    b.color,
+                    b.margin,
+                    h.color,
+                    h.letterSpacing,
+                    t.backgroundColor,
+                    t.padding,
+                    document.styleSheets.length,
+                    document.head.querySelectorAll('style,link[rel=stylesheet]')
+                        .length,
+                ]);
+            };
+            window.__before = window.__styles();
+            window.__events = [];
+            var params = new URLSearchParams(location.search);
+            window.__cm = { base: params.get('base'), key: params.get('key') };
+        </script>
+        <script>
+            (function (w, d, s, u) {
+                w.ChatManager =
+                    w.ChatManager ||
+                    function () {
+                        (w.ChatManager.q = w.ChatManager.q || []).push(
+                            arguments,
+                        );
+                    };
+                var j = d.createElement(s);
+                j.async = true;
+                j.src = u;
+                d.head.appendChild(j);
+            })(
+                window,
+                document,
+                'script',
+                window.__cm.base + '/widget/v1/chat-manager.js',
+            );
+            ChatManager('init', { key: window.__cm.key });
+            // Queued before the loader exists: replayed in order once it loads.
+            window.__queuedBeforeLoad = ChatManager.q
+                ? ChatManager.q.length
+                : 0;
+            ['ready', 'open', 'close', 'unread', 'error'].forEach(
+                function (name) {
+                    ChatManager('on', name, function (payload) {
+                        window.__events.push({
+                            name: name,
+                            payload: payload === undefined ? null : payload,
+                        });
+                    });
+                },
+            );
+        </script>
+    </body>
+</html>

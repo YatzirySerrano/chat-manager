@@ -178,10 +178,23 @@ class ConversationAccess
         }
 
         if ($conversation->department_id === null) {
-            return $user->dataScope() === DataScope::Global && $this->canAttendConversations($user);
+            return $this->acceptsUnroutedConversations($user);
         }
 
         return in_array($conversation->department_id, $this->acceptableDepartmentIds($user), true);
+    }
+
+    /**
+     * Whether the user may accept pending conversations without a
+     * department: only with the accept permission, global scope and able to
+     * attend (canAccept() for a conversation without department, and the
+     * pending branch of the general inbox).
+     */
+    public function acceptsUnroutedConversations(User $user): bool
+    {
+        return $user->holdsPermission(Permission::AcceptConversations)
+            && $user->dataScope() === DataScope::Global
+            && $this->canAttendConversations($user);
     }
 
     /**

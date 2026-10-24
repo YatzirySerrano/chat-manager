@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\AuditAction;
+use App\Models\ApiToken;
 use App\Models\AuditLog;
 use App\Models\Connection;
 use App\Models\Contact;
@@ -114,6 +115,7 @@ class AuditLogger
             $subject instanceof Tag => $subject->name,
             $subject instanceof QuickReply => "{$subject->title} (/{$subject->shortcut})",
             $subject instanceof TeamThread => $subject->name ?? 'Chat interno',
+            $subject instanceof ApiToken => "Token de API «{$subject->name}»",
             default => null,
         };
     }

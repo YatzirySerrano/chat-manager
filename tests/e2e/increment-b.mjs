@@ -89,6 +89,13 @@ const run = async () => {
         // queue of their department, without the "Solo mías" switch.
         // Selector update (increment C): the queue tab is now labelled
         // "Pendientes" and the agent filter lives in the "Filtros" popover.
+        // Selector update (phase 4): the inbox opens on "Bandeja general"
+        // (pending, attended and on hold together); "Mis conversaciones" and
+        // "Pendientes" are chips of the same "Bandejas" nav, and "Pendientes"
+        // is the general inbox with status=pending (?view=queue is an alias).
+        const generalView = ana.getByRole('button', {
+            name: /^Bandeja general/,
+        });
         const mineView = ana.getByRole('button', {
             name: /^Mis conversaciones/,
         });
@@ -100,18 +107,20 @@ const run = async () => {
         record(
             'agent-personal-inbox',
             'render',
-            (await mineView.count()) === 1 &&
-                (await mineView.getAttribute('aria-pressed')) === 'true' &&
+            (await generalView.count()) === 1 &&
+                (await generalView.getAttribute('aria-pressed')) === 'true' &&
+                (await mineView.count()) === 1 &&
+                (await mineView.getAttribute('aria-pressed')) === 'false' &&
                 (await queueView.count()) === 1 &&
                 (await ana
                     .getByRole('switch', { name: 'Solo mis conversaciones' })
                     .count()) === 0 &&
                 departmentFilter === 1 &&
                 agentFilter === 0,
-            `"Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter (agent=${agentFilter})`,
+            `"Bandeja general" by default + "Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter (agent=${agentFilter})`,
         );
         await queueView.click();
-        await ana.waitForURL(/view=queue/);
+        await ana.waitForURL(/status=pending/);
         await ana.waitForLoadState('networkidle');
         await ana.evaluate(() => (window.__sameDocument = true));
 
@@ -315,7 +324,7 @@ const run = async () => {
         // 8. The receiving department's agent accepts it with the keyboard.
         const carla = await newPage(browser);
         await login(carla, USERS.carla);
-        await carla.goto(`${BASE}/conversations?view=queue`);
+        await carla.goto(`${BASE}/conversations?status=pending`);
         await carla.waitForLoadState('networkidle');
         await becomeAvailable(carla);
         await listRow(carla, 'Cliente E2E Anuncio').focus();
@@ -370,7 +379,9 @@ const run = async () => {
         await shot(admin, 'b03_admin_inbox');
 
         // 9b. Filters survive opening a conversation and reloading.
-        await admin.goto(`${BASE}/conversations?status=all`);
+        // Phase 4: the inbox opens on "Bandeja general"; every authorized
+        // conversation (Carla's included) is the "Todas" view (view=all).
+        await admin.goto(`${BASE}/conversations?view=all&status=all`);
         await admin.waitForLoadState('networkidle');
         await admin.getByRole('button', { name: /^Filtros/ }).click();
         await admin

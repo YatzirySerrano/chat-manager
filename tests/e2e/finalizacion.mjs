@@ -37,6 +37,7 @@ import {
     listRow,
     login,
     openConversation,
+    openInboxView,
     openPage,
     operations,
     overflow,
@@ -231,6 +232,7 @@ const run = async () => {
             'webhook (simulated)',
             ana,
             async () => {
+                // ?view=queue stays an alias of the general inbox with status=pending.
                 await ana.goto(`${BASE}/conversations?view=queue`);
                 await ana.waitForLoadState('networkidle');
                 const body = seed(
@@ -499,6 +501,11 @@ const run = async () => {
             const all = await administrator
                 .getByRole('button', { name: /^Todas/ })
                 .count();
+            // Phase 4: the inbox opens on "Bandeja general" (pending ones and
+            // the person's own); every authorized conversation is the
+            // "Todas" chip.
+            await openInboxView(administrator, 'Todas');
+            await administrator.waitForLoadState('networkidle');
             await administrator
                 .getByRole('button', { name: /^Filtros/ })
                 .click();

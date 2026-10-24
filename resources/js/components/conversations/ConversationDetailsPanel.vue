@@ -10,6 +10,7 @@ import {
     UserRound,
     X,
 } from '@lucide/vue';
+import { computed } from 'vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
@@ -31,12 +32,23 @@ import type {
  * from, the tags, who attends the conversation, its previous conversations
  * (only those the viewer may see) and the contact's latest private notes.
  */
-defineProps<{
+const props = defineProps<{
     conversation: ConversationSummary;
     window: CustomerWindow;
     details: ConversationDetails;
     contactUrl: string | null;
 }>();
+
+const isWebChat = computed(
+    () => props.conversation.connection.channel === 'web_chat',
+);
+const windowApplies = computed(() => props.window.status !== 'not_applicable');
+const differentProfileName = computed(
+    () =>
+        props.details.contact.profile_name !== null &&
+        props.details.contact.profile_name !== '' &&
+        props.details.contact.profile_name !== props.details.contact.name,
+);
 
 const emit = defineEmits<{
     close: [];
@@ -73,7 +85,7 @@ function safeUrl(url: string | null): string | null {
         </header>
 
         <div class="min-h-0 flex-1 overflow-y-auto">
-            <section class="grid gap-3 border-b px-4 py-4">
+            <section class="grid grid-cols-1 gap-3 border-b px-4 py-4">
                 <div class="flex items-start gap-3">
                     <span
                         class="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
@@ -88,14 +100,21 @@ function safeUrl(url: string | null): string | null {
                             {{ details.contact.name }}
                         </p>
                         <p
-                            v-if="
-                                details.contact.profile_name &&
-                                details.contact.profile_name !==
-                                    details.contact.name
-                            "
+                            v-if="isWebChat || differentProfileName"
                             class="truncate text-xs text-muted-foreground"
                         >
-                            En WhatsApp: {{ details.contact.profile_name }}
+                            <template v-if="isWebChat"
+                                >Visitante web<template
+                                    v-if="differentProfileName"
+                                >
+                                    · se presentó como
+                                    {{ details.contact.profile_name }}</template
+                                ></template
+                            >
+                            <template v-else
+                                >En WhatsApp:
+                                {{ details.contact.profile_name }}</template
+                            >
                         </p>
                     </div>
                 </div>
@@ -209,7 +228,21 @@ function safeUrl(url: string | null): string | null {
                         {{ conversation.assignee?.name ?? 'Sin agente' }}
                     </dd>
                     <dt class="text-xs text-muted-foreground">Conexión</dt>
-                    <dd class="truncate">{{ conversation.connection.name }}</dd>
+                    <dd class="truncate" :title="conversation.connection.name">
+                        {{ conversation.connection.name }}
+                    </dd>
+                    <dt class="text-xs text-muted-foreground">Canal</dt>
+                    <dd class="truncate">
+                        {{ conversation.connection.channel_label }}
+                    </dd>
+                    <template v-if="!windowApplies">
+                        <dt class="text-xs text-muted-foreground">
+                            Ventana de 24 h
+                        </dt>
+                        <dd class="text-muted-foreground">
+                            {{ window.label || 'No aplica' }}
+                        </dd>
+                    </template>
                     <dt class="text-xs text-muted-foreground">Inicio</dt>
                     <dd>{{ formatDateTime(conversation.created_at) }}</dd>
                 </dl>
@@ -225,7 +258,7 @@ function safeUrl(url: string | null): string | null {
                     {{ conversation.on_hold_reason }}
                 </p>
                 <CustomerWindowIndicator
-                    v-if="conversation.status !== 'closed'"
+                    v-if="conversation.status !== 'closed' && windowApplies"
                     :window="window"
                 />
                 <div class="grid gap-1.5">
@@ -276,8 +309,11 @@ function safeUrl(url: string | null): string | null {
                     </div>
                 </template>
                 <p v-else class="text-xs text-muted-foreground">
-                    Origen no identificado: Meta no envió una referencia con
-                    esta conversación.
+                    {{
+                        isWebChat
+                            ? 'Origen no identificado.'
+                            : 'Origen no identificado: Meta no envió una referencia con esta conversación.'
+                    }}
                 </p>
             </section>
 

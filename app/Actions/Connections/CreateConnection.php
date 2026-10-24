@@ -13,7 +13,11 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Creates a connection. It always starts inactive: activation is a separate,
- * audited decision that requires the credentials to be saved.
+ * audited decision that requires the connection to be configured (the Meta
+ * credentials for WhatsApp; for the web chat, its widget with at least one
+ * authorized origin). A web chat connection gets its widget in the same
+ * transaction, without origins, so it stays not configured until they are
+ * saved.
  */
 class CreateConnection
 {
@@ -30,8 +34,19 @@ class CreateConnection
 
             try {
                 $connection->save();
-            } catch (UniqueConstraintViolationException) {
+            } catch (UniqueConstraintViolationException $exception) {
+                if ($connection->isWebChat()) {
+                    throw $exception;
+                }
+
                 throw ValidationException::withMessages(['phone_number_id' => 'Este Phone number ID ya está registrado en otra conexión.']);
+            }
+
+            if ($connection->isWebChat()) {
+                $connection->webChatWidget()->create([
+                    'allowed_origins' => [],
+                    'title' => mb_substr($connection->name, 0, 60),
+                ]);
             }
 
             $connection->departments()->sync($data['department_ids']);

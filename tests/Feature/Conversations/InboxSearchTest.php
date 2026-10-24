@@ -74,8 +74,7 @@ test('the contact search finds by word prefix, phone and identity, and never by 
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['search' => 'ana', 'status' => 'all']))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('counts', fn ($counts) => collect($counts)->sum() === 1)
-            ->where('viewCounts.mine', 1));
+            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1, 'on_hold' => 0]));
 });
 
 test('the message search finds conversations by content only within reach, closed ones only with history', function () {

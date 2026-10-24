@@ -92,6 +92,11 @@ enum AuditAction: string
     case AuthTwoFactorDisabled = 'auth.two_factor_disabled';
     case AuthRecoveryCodesRegenerated = 'auth.recovery_codes_regenerated';
     case AuthLockout = 'auth.lockout';
+    case ApiTokenIssued = 'api_token.issued';
+    case ApiTokenRevoked = 'api_token.revoked';
+    case WebChatWidgetUpdated = 'web_chat.widget_updated';
+    case WebChatKeyRotated = 'web_chat.key_rotated';
+    case WebChatIdentitySecretRotated = 'web_chat.identity_secret_rotated';
 
     /**
      * Human readable description of the action.
@@ -145,7 +150,7 @@ enum AuditAction: string
             self::ContactNoteAdded => 'Nota privada agregada al contacto',
             self::ContactTagsChanged => 'Etiquetas del contacto modificadas',
             self::ConversationTagsChanged => 'Etiquetas de la conversación modificadas',
-            self::MessageRetriedWithDuplicateRisk => 'Reintento de un mensaje con entrega sin confirmar (riesgo de duplicado)',
+            self::MessageRetriedWithDuplicateRisk => 'Reintento de un mensaje con entrega no confirmada (riesgo de duplicado)',
             self::ContactIdentityLinked => 'Identidad de WhatsApp vinculada al contacto',
             self::ContactReviewOpened => 'Posible duplicado enviado a revisión',
             self::ContactReviewResolved => 'Revisión de posible duplicado resuelta',
@@ -181,6 +186,11 @@ enum AuditAction: string
             self::AuthTwoFactorDisabled => 'Verificación en dos pasos desactivada',
             self::AuthRecoveryCodesRegenerated => 'Códigos de recuperación regenerados',
             self::AuthLockout => 'Inicio de sesión bloqueado por intentos fallidos',
+            self::ApiTokenIssued => 'Token de la API de integración emitido',
+            self::ApiTokenRevoked => 'Token de la API de integración revocado',
+            self::WebChatWidgetUpdated => 'Configuración del chat web actualizada',
+            self::WebChatKeyRotated => 'Clave pública del chat web rotada',
+            self::WebChatIdentitySecretRotated => 'Secreto de identificación del chat web rotado',
         };
     }
 
@@ -195,21 +205,23 @@ enum AuditAction: string
             self::QuickReplyDeleted,
             self::DepartmentDeleted, self::ConnectionDeleted, self::ContactDeleted, self::TagDeleted,
             self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
-            self::AuthTwoFactorDisabled, self::AuthLockout => 'danger',
+            self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
             self::ContactReviewOpened, self::TeamChatParticipantRemoved, self::TeamChatParticipantRoleChanged,
             self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten, self::MessageRetriedWithDuplicateRisk,
             self::ImportRollbackRequested, self::ImportRolledBack,
-            self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated => 'warning',
+            self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated,
+            self::WebChatKeyRotated, self::WebChatIdentitySecretRotated => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
             self::QuickReplyCreated, self::UserRestored,
             self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
-            self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled => 'success',
+            self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled,
+            self::ApiTokenIssued => 'success',
             default => 'neutral',
         };
     }

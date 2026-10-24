@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Messaging\ReconcileStuckDeliveries;
 use App\Enums\AuditAction;
 use App\Enums\ContactStatus;
 use App\Enums\ConversationEventType;
@@ -7,6 +8,7 @@ use App\Enums\DataScope;
 use App\Enums\DataTransferStatus;
 use App\Enums\ExportFormat;
 use App\Enums\MessageDirection;
+use App\Enums\MessageStatus;
 use App\Enums\Permission;
 use App\Jobs\GenerateReport;
 use App\Models\AuditLog;
@@ -265,6 +267,24 @@ test('the dossier caps the messages and shows the timeline only with the history
         ->and($workbook->getSheetByName('Expediente de conversación')->getHighestDataRow())->toBe(6 + ConversationDossierReport::MAX_MESSAGES);
 });
 
+test('the dossier shows the message states with the same terminology as the conversation', function () {
+    $viewer = reportUser([Permission::ViewConversations, Permission::ExportReports]);
+    $conversation = Conversation::factory()->create();
+    $outbound = ['direction' => MessageDirection::Outbound];
+    Message::factory()->for($conversation)->create([...$outbound, 'body' => 'En camino', 'status' => MessageStatus::Queued]);
+    Message::factory()->for($conversation)->create([...$outbound, 'body' => 'Sin confirmar', 'status' => MessageStatus::Failed, 'error_code' => ReconcileStuckDeliveries::CODE]);
+    Message::factory()->for($conversation)->create([...$outbound, 'body' => 'Rechazado', 'status' => MessageStatus::Failed, 'error_code' => '131026']);
+
+    $path = renderReport('conversation-dossier', $viewer, ExportFormat::Xlsx, ['conversation' => $conversation->id]);
+    $rows = collect(reportWorkbook($path)->getSheetByName('Expediente de conversación')->toArray())
+        ->mapWithKeys(fn (array $row): array => [(string) collect($row)->first(fn (mixed $cell): bool => in_array($cell, ['En camino', 'Sin confirmar', 'Rechazado'], true)) => end($row)]);
+    @unlink($path);
+
+    expect($rows->get('En camino'))->toBe('Enviando')
+        ->and($rows->get('Sin confirmar'))->toBe('Entrega no confirmada')
+        ->and($rows->get('Rechazado'))->toBe('Fallido');
+});
+
 test('the users report never contains credentials', function () {
     $admin = User::factory()->administrator()->create();
     $user = User::factory()->withTwoFactor()->create(['name' => 'Usuaria Segura', 'remember_token' => 'remember-me-token-123']);
@@ -289,6 +309,8 @@ test('the users report never contains credentials', function () {
 test('the connections report never contains credentials', function () {
     $admin = User::factory()->administrator()->create();
     $connection = Connection::factory()->create(['phone_number_id' => '109876543210']);
+    // Its health depends on the widget: never lazy loaded per row.
+    Connection::factory()->webChat()->create(['name' => 'Tienda web']);
 
     $path = renderReport('connections', $admin, ExportFormat::Xlsx);
     $text = reportWorkbookText($path);
@@ -296,7 +318,8 @@ test('the connections report never contains credentials', function () {
     $html = reportHtml('connections', $admin);
 
     expect($text)->toContain('109876543210')
-        ->and($html)->toContain('109876543210');
+        ->and($html)->toContain('109876543210')
+        ->and($html)->toContain('Tienda web');
 
     foreach ([$connection->access_token, $connection->app_secret, $connection->webhook_verify_token] as $secret) {
         expect($text)->not->toContain($secret)

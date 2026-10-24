@@ -4,9 +4,10 @@ namespace App\Actions\Contacts;
 
 use App\Enums\AttributionReliability;
 use App\Enums\AuditAction;
+use App\Enums\ConnectionChannel;
+use App\Enums\ConnectionProvider;
 use App\Enums\ContactOriginType;
 use App\Enums\ContactReviewReason;
-use App\Enums\ContactSource;
 use App\Enums\ContactStatus;
 use App\Enums\InboundContactOutcome;
 use App\Models\Connection;
@@ -32,8 +33,8 @@ use Illuminate\Support\Facades\DB;
  *
  * 1. The provider identity (channel + external id, unique in the database) is
  *    looked up; when known, its contact is reused.
- * 2. Otherwise the phone the provider verified is compared with contacts
- *    registered by hand. Only a single candidate without a WhatsApp identity
+ * 2. Otherwise, for WhatsApp only, the phone the provider verified is
+ *    compared with contacts registered by hand. Only a single candidate without a WhatsApp identity
  *    is linked; any other match registers a new contact and opens a review
  *    case, so people are never merged on ambiguous evidence.
  * 3. The interaction is recorded (first/last interaction of the contact and of
@@ -69,7 +70,7 @@ class RegisterInboundContact
 
             $attribution = $sender->referral === null
                 ? null
-                : $this->recordReferral($contact, $sender->messageId, $sender->referral, $sender->occurredAt);
+                : $this->recordReferral($contact, $sender->messageId, $sender->referral, $sender->occurredAt, $sender->provider);
 
             return new InboundContactRegistration($contact, $identity, $connection, $outcome, $attribution, $reviewCase);
         });
@@ -111,7 +112,12 @@ class RegisterInboundContact
      */
     private function registerIdentity(Connection $connection, InboundSender $sender): array
     {
-        $phone = ctype_digit($sender->externalId) ? PhoneNumber::normalize('+'.$sender->externalId) : null;
+        // Only a WhatsApp id is a phone the provider verified; ids of other
+        // channels (web chat visitors: 'wv:…' / 'wi:…') never enter the
+        // phone matching, so people are never linked through them.
+        $phone = $sender->channel === ConnectionChannel::Whatsapp && ctype_digit($sender->externalId)
+            ? PhoneNumber::normalize('+'.$sender->externalId)
+            : null;
 
         $candidates = $phone === null ? new EloquentCollection : Contact::query()
             ->where('phone_e164', $phone)
@@ -136,13 +142,13 @@ class RegisterInboundContact
         }
 
         $contact = new Contact([
-            'name' => $sender->profileName !== null ? mb_substr($sender->profileName, 0, 160) : ($phone ?? "WhatsApp {$sender->externalId}"),
+            'name' => $sender->profileName !== null ? mb_substr($sender->profileName, 0, 160) : ($phone ?? $sender->channel->fallbackContactName($sender->externalId)),
             'phone_e164' => $phone,
             'profile_name' => $sender->profileName,
         ]);
         $contact->forceFill([
             'status' => ContactStatus::Active,
-            'source' => ContactSource::Whatsapp,
+            'source' => $sender->channel->contactSource(),
             'created_by_user_id' => null,
             'first_interaction_at' => $sender->occurredAt,
             'last_interaction_at' => $sender->occurredAt,
@@ -151,7 +157,7 @@ class RegisterInboundContact
         $identity = $this->createIdentity($contact, $sender);
 
         $this->audit->record(AuditAction::ContactCreated, $contact, [
-            'source' => ContactSource::Whatsapp->value,
+            'source' => $sender->channel->contactSource()->value,
             'automatic' => true,
             'connection_id' => $connection->id,
             'has_phone' => $phone !== null,
@@ -234,7 +240,7 @@ class RegisterInboundContact
      * never replaces other attributions: the origin shown is resolved from
      * all of them (see ResolveContactOrigin).
      */
-    private function recordReferral(Contact $contact, string $messageId, ProviderReferral $referral, CarbonImmutable $at): ContactAttribution
+    private function recordReferral(Contact $contact, string $messageId, ProviderReferral $referral, CarbonImmutable $at, ConnectionProvider $provider): ContactAttribution
     {
         $existing = ContactAttribution::query()->where('provider_message_id', $messageId)->first();
 
@@ -250,7 +256,8 @@ class RegisterInboundContact
                 default => ContactOriginType::Other,
             },
             'reliability' => AttributionReliability::ProviderConfirmed,
-            'provider' => 'meta',
+            // Meta's referrals keep their historical provider name ('meta').
+            'provider' => $provider === ConnectionProvider::MetaCloudApi ? 'meta' : $provider->value,
             'source_id' => $referral->sourceId,
             'source_type' => $referral->sourceType,
             'source_url' => $referral->sourceUrl,

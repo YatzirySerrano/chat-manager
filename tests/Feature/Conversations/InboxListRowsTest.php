@@ -86,23 +86,57 @@ test('a pending row offers accepting only to whoever the policy lets accept it',
     $viewerOnly = conversationUser([Permission::ViewConversations, Permission::ReplyConversations], DataScope::Departments, [$this->sales]);
 
     expect(collect(inboxRows($this->agent, ['view' => 'queue']))->firstWhere('id', $queued->id)['can']['accept'])->toBeTrue()
-        ->and(collect(inboxRows($viewerOnly))->firstWhere('id', $queued->id)['can']['accept'])->toBeFalse();
+        ->and(collect(inboxRows($viewerOnly, ['view' => 'all']))->firstWhere('id', $queued->id)['can']['accept'])->toBeFalse();
 });
 
-test('accepting from the list uses the chat\'s route: the row moves to the agent\'s attended conversations', function () {
-    $queued = Conversation::factory()->inDepartment($this->sales)->create();
+test('accepting from the general inbox uses the chat\'s route and leaves the row in its place, now in attention', function () {
+    $older = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => now()->subHours(2)]);
+    $queued = Conversation::factory()->inDepartment($this->sales)->create(['last_message_at' => now()->subHour()]);
+    $newer = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => now()]);
+
+    expect(collect(inboxRows($this->agent))->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id]);
 
     $this->actingAs($this->agent)
-        ->from(route('conversations.index', ['view' => 'queue']))
+        ->from(route('conversations.index'))
         ->post(route('conversations.accept', $queued))
         ->assertRedirect(route('conversations.show', $queued))
         ->assertSessionHasNoErrors();
 
-    $row = collect(inboxRows($this->agent, ['view' => 'mine']))->firstWhere('id', $queued->id);
+    $rows = collect(inboxRows($this->agent));
 
-    expect($row['status'])->toBe('open')
-        ->and($row['can']['accept'])->toBeFalse()
-        ->and(rowIds(inboxRows($this->agent, ['view' => 'queue'])))->not->toContain($queued->id);
+    expect($rows->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id])
+        ->and($rows->firstWhere('id', $queued->id)['status'])->toBe('open')
+        ->and($rows->firstWhere('id', $queued->id)['can']['accept'])->toBeFalse();
+});
+
+test('accepting from the pending ones opens the general inbox with the conversation, keeping the other filters', function () {
+    $queued = Conversation::factory()->inDepartment($this->sales)->create();
+
+    inboxRows($this->agent, ['status' => 'pending', 'department' => (string) $this->sales->id]);
+
+    $this->actingAs($this->agent)
+        ->post(route('conversations.accept', $queued))
+        ->assertRedirect(route('conversations.index', ['department' => (string) $this->sales->id, 'c' => $queued->id]))
+        ->assertSessionHasNoErrors();
+
+    $rows = inboxRows($this->agent, ['department' => (string) $this->sales->id]);
+
+    expect(collect($rows)->firstWhere('id', $queued->id)['status'])->toBe('open')
+        ->and(rowIds(inboxRows($this->agent, ['status' => 'pending'])))->not->toContain($queued->id);
+});
+
+test('a queue remembered in the session is normalized to the pending ones of the general inbox', function () {
+    $queued = Conversation::factory()->inDepartment($this->sales)->create();
+
+    $this->actingAs($this->agent)
+        ->withSession(['conversations.list_query' => ['view' => 'queue']])
+        ->get(route('conversations.show', $queued))
+        ->assertRedirect(route('conversations.index', ['status' => 'pending', 'c' => $queued->id]));
+
+    $this->actingAs($this->agent)
+        ->withSession(['conversations.list_query' => ['view' => 'queue']])
+        ->post(route('conversations.accept', $queued))
+        ->assertRedirect(route('conversations.index', ['c' => $queued->id]));
 });
 
 test('the second agent accepting from the list gets the conflict, never the conversation', function () {
@@ -171,7 +205,7 @@ test('without a read marker only unanswered customer messages count, and closed 
     $closed = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->closed()->create();
     inboundTo($closed);
 
-    $rows = collect(inboxRows($admin, ['status' => 'all']));
+    $rows = collect(inboxRows($admin, ['view' => 'all', 'status' => 'all']));
 
     expect($rows->firstWhere('id', $answered->id)['unread_count'])->toBe(1)
         ->and($rows->firstWhere('id', $automatic->id)['unread_count'])->toBe(1)
@@ -190,16 +224,17 @@ test('the unread filter combines with the view, status and department filters an
     Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create();
 
     $this->actingAs($admin)
-        ->get(route('conversations.index', ['unread' => 1]))
+        ->get(route('conversations.index', ['view' => 'all', 'unread' => 1]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.unread', true)
             ->where('unreadCount', 2)
             ->where('conversations.data', fn ($rows) => rowIds(collect($rows)->all()) === collect([$unreadSales->id, $unreadSupport->id])->sort()->values()->all())
-            ->where('counts.open', 1)
-            ->where('counts.pending', 1));
+            // The administrator attends nothing: of the unread ones, only the pending one is theirs to take.
+            ->where('counts.pending', 1)
+            ->where('counts.attending', 0));
 
-    expect(rowIds(inboxRows($admin, ['unread' => 1, 'department' => (string) $this->sales->id])))->toBe([$unreadSales->id])
-        ->and(rowIds(inboxRows($admin, ['unread' => 1, 'status' => 'pending'])))->toBe([$unreadSupport->id])
+    expect(rowIds(inboxRows($admin, ['view' => 'all', 'unread' => 1, 'department' => (string) $this->sales->id])))->toBe([$unreadSales->id])
+        ->and(rowIds(inboxRows($admin, ['view' => 'all', 'unread' => 1, 'status' => 'pending'])))->toBe([$unreadSupport->id])
         // Markers are personal: what the administrator read is still unread for the agent.
         ->and(rowIds(inboxRows($this->agent, ['unread' => 1])))->toBe(collect([$unreadSales->id, $readSales->id])->sort()->values()->all())
         ->and(rowIds(inboxRows($this->colleague, ['unread' => 1])))->toBe([]);
@@ -212,7 +247,7 @@ test('the unread counter follows the status tab, as the list it would show', fun
     inboundTo(Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create(['status' => ConversationStatus::Closed]));
 
     $unreadCountFor = fn (string $status): int => $this->actingAs($admin)
-        ->get(route('conversations.index', ['status' => $status]))
+        ->get(route('conversations.index', ['view' => 'all', 'status' => $status]))
         ->viewData('page')['props']['unreadCount'];
 
     expect($unreadCountFor('active'))->toBe(2)
@@ -240,4 +275,18 @@ test('a duplicated webhook of the same message does not count it twice', functio
     receiveWhatsapp($connection, id: 'wamid.duplicated');
 
     expect(collect(inboxRows($admin))->firstWhere('id', $first->conversation->id)['unread_count'])->toBe(1);
+});
+
+test('the preview of a failure of unknown outcome tells its error code', function () {
+    $conversation = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create();
+    Message::factory()->create([
+        'conversation_id' => $conversation->id,
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Failed,
+        'error_code' => 'delivery_unknown',
+        'sender_user_id' => $this->agent->id,
+    ]);
+
+    expect(collect(inboxRows($this->agent))->firstWhere('id', $conversation->id)['last_message'])
+        ->toMatchArray(['status' => 'failed', 'error_code' => 'delivery_unknown']);
 });

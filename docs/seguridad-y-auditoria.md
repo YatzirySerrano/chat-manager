@@ -124,12 +124,55 @@ forgot-password` y `POST reset-password` aceptan 5 solicitudes por minuto por IP
 | Exportaciones, importaciones, reversión de importación                         | 10/min                                            |
 | Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta) | 10/min (hallazgo H-6)                             |
 | `broadcasting/auth`                                                            | 180/min                                           |
+| API de integración `/api/v1` (lecturas / envíos)                               | 600/min / 60/min por token                        |
+| Chat web: frame, sesiones, mensajes, lecturas, `broadcasting/auth` del widget  | ver [api-v1.md §8](api-v1.md#8-límites)           |
 | Sondeo `/health/ready`                                                         | 60/min por IP y veredicto en caché 10 s           |
 
 Cada `throttle:N,M` cuenta por usuario (o IP) **y ruta** (`App\Http\Middleware\ThrottleRequestsPerRoute`, registrado como
 alias `throttle`): el sondeo de la campana o las autorizaciones de canales ya no agotan el límite de exportaciones o
 importaciones. Los limitadores con nombre (`login`, `two-factor`, `password-reset`, `whatsapp-webhooks`) conservan sus
 propias claves.
+
+### Chat web y API v1
+
+Detalle en [canal-chat-web.md](canal-chat-web.md), [widget-integracion.md](widget-integracion.md) y
+[api-v1.md](api-v1.md).
+
+- **Cabeceras del frame.** `GET /widget/v1/frame/{publicKey}` es la única respuesta que otros orígenes pueden
+  incrustar: `WidgetFrameController` activa el atributo `security.allow_framing`, `SecurityHeaders` deja entonces de
+  poner `X-Frame-Options` (no se puede listar orígenes con esa cabecera) y el frame envía **siempre**, también fuera de
+  producción, su propia CSP con `frame-ancestors 'self'` más los orígenes permitidos del widget, `script-src 'self'`
+  con nonce, `connect-src 'self'` más Reverb, `worker-src 'none'`, `frame-src 'none'`, `base-uri 'none'` y
+  `object-src 'none'`, además de `Cache-Control: no-store` y `X-Robots-Tag: noindex`. Las demás rutas conservan
+  `SAMEORIGIN` y `frame-ancestors 'self'`: el panel de agentes sigue protegido contra _clickjacking_.
+- **Origen.** El frame compara el origen del Referer (`referrerpolicy="origin"`) con `allowed_origins` y solo entonces
+  incrusta un ticket HMAC de 600 s que `POST sessions` exige; la sesión guarda ese origen. Origin y Referer se pueden
+  falsificar fuera de un navegador: la barrera dura es `frame-ancestors`, que aplica el navegador.
+- **CORS:** ninguno. `config/cors.php` publica `paths => []` (sin ese archivo el framework abría `api/*` a `*`). La API
+  de integración es servidor a servidor y la del visitante la llama el iframe desde el mismo origen.
+- **Tokens.** Integración `cm_live_{public_id}_{40}` y visitante `wvs_{public_id}_{43}`: solo se guarda el sha256 del
+  secreto, se compara con `hash_equals`, cada middleware rechaza el prefijo del otro y todo fallo es el mismo 401 sin
+  motivo. Los de integración siempre expiran (máx. 365 días), pueden limitarse por IP o CIDR y se revocan con motivo;
+  emisión y revocación se auditan. El token del visitante vive en el `localStorage` del iframe (particionado por sitio)
+  y nunca viaja por `postMessage` ni por la URL. `SensitiveText` enmascara ambos formatos.
+- **Principal sin usuario.** No hay guards nuevos ni Sanctum: el token o la sesión del visitante van en atributos del
+  request y `$request->user()` sigue siendo `null`, así que ninguna política de agentes se evalúa con un principal
+  ajeno. Lo que queda fuera del alcance del token es 404, igual que lo inexistente (ADR-SEC-4).
+- **Invariante SameSite y broadcasting.** Ninguna ruta del widget ni de `/api/v1` pertenece al grupo `web`: no leen la
+  sesión, las cookies ni el CSRF. La cookie de sesión de los agentes es `SameSite=Lax` (`SESSION_SAME_SITE`), así que el
+  navegador no la envía dentro del iframe incrustado en otro sitio; y aunque se enviara, el frame y la API del visitante
+  no la consultan. El `/broadcasting/auth` de agentes exige sesión y CSRF y no conoce el canal `webchat.sessions.*`; el
+  del visitante (`/api/v1/widget/broadcasting/auth`) exige su Bearer y firma solo su propio canal. **No cambies
+  `SESSION_SAME_SITE` a `none`** ni registres canales `webchat*` en `routes/channels*`: romperías esta separación
+  (lo comprueban `VisitorRealtimeTest` y el barrido `RouteAuthorizationSweepTest`).
+- **Abuso del widget.** Sesiones sin mensajes no crean contactos; trampa `website` (422); límites por sesión, por hash
+  de IP (IPv6 agrupadas por /64), por widget (solo cuentan sesiones con ticket válido, así que la basura no lo agota)
+  y un techo de coste alto por conexión (6000/min; un tope compartido bajo serviría para negar el servicio); quitar un
+  dominio de `allowed_origins` termina las sesiones abiertas desde él, y rotar la clave pública invalida también los
+  tickets ya emitidos; mensajes ≤ 2000 caracteres sin caracteres de control. No hay CAPTCHA (pregunta
+  abierta). `TRUSTED_PROXIES` es obligatorio con un chat web activo (Preflight lo marca como error en producción).
+- **Adjuntos al visitante:** URL firmada de 10 min ligada a la sesión, solo salientes visibles, `nosniff`, CSP `sandbox`
+  y descarga salvo imágenes.
 
 ### Webhook de WhatsApp
 
@@ -171,6 +214,8 @@ propias claves.
   `#[Hidden]`, nunca se reflejan como entrada antigua (`dontFlash`) y la bitácora elimina claves sensibles.
 - Los recursos solo informan si el secreto existe (`true/false`). La prueba «connection secrets never reach any page…»
   comprueba que no aparecen en páginas de conexiones, plantillas, sistema, tablero ni en el JSON de salud.
+- `web_chat_widgets.identity_secret` se cifra (cast `encrypted`), está oculto y solo se muestra una vez al generarlo o
+  rotarlo; `api_tokens` y `web_chat_sessions` guardan solo el hash del secreto.
 - `MetaGraphClient` borra `access_token=` de los mensajes de error; `SensitiveText` enmascara tokens, correos y teléfonos en
   los errores recientes de la página de sistema.
 
@@ -192,7 +237,11 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
   restringidas.
 - Permisos que exigen alcance global (`Permission::requiresGlobalScope()`): crear/eliminar departamentos, roles,
   configuración y apariencia, conexiones, administración de plantillas y etiquetas, clasificación de procedencia,
-  importación de contactos y sistema y operación. Algunas capacidades están reservadas al rol raíz.
+  importación de contactos, sistema y operación e integraciones (`integrations.view`, `integrations.manage`: un token
+  abarca conexiones de toda la organización). Algunas capacidades están reservadas al rol raíz.
+- **Integraciones y chat web:** `integrations.view` muestra los tokens; `integrations.manage` (sensible, nunca se
+  concede de forma automática) los emite y revoca. El widget de una conexión se administra con `connections.manage`
+  (política `manageWidget`). `deploy.sh` ejecuta `php artisan app:sync-permissions` (idempotente) en cada despliegue.
 - **Conversaciones** (`ConversationAccess`): un agente ordinario solo ve sus asignadas y los pendientes de colas de sus
   departamentos que puede aceptar; nunca las que ya atiende otro agente del mismo departamento. Supervisores ven su
   departamento; alcance global ve todo. La regla se aplica en listados, contadores, búsquedas, detalle, línea de tiempo,
@@ -251,7 +300,10 @@ se decida, el Administrador no ve la página de Sistema ni recibe las alertas di
 - Se auditan: usuarios, roles y permisos, departamentos y membresías, conexiones y credenciales (sin valores),
   suscripción de app, contactos, etiquetas, respuestas rápidas, configuración y horarios, operaciones de conversación,
   exportaciones, importaciones y su reversión, administración de grupos del chat interno, reintento/descartado de
-  trabajos fallidos y, desde esta auditoría, eventos de seguridad de cuenta (`auth.*`).
+  trabajos fallidos y, desde esta auditoría, eventos de seguridad de cuenta (`auth.*`). Desde la fase 4 también
+  `api_token.issued`, `api_token.revoked`, `web_chat.widget_updated`, `web_chat.key_rotated` y
+  `web_chat.identity_secret_rotated`; como el saneador elimina toda clave que contenga `token` o `secret`, esas
+  entradas usan `public_id`, `name` y `reason`.
 - **Visibilidad restringida:** ver la bitácora requiere `audit.view`; las entradas `restricted` (acciones del rol raíz o
   sobre él, y todo el importador) solo las ve el rol raíz. Exportarla requiere `audit.export`.
 - Los valores de `App\Enums\AuditAction` son permanentes: quitar un caso rompe la lectura de las filas que lo llevan. En

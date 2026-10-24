@@ -112,7 +112,7 @@ class ConversationResource extends JsonResource
      * Short preview of the latest message for the inbox list. Only listed
      * conversations get one, and they are already visible to the viewer.
      *
-     * @return array{id: int, direction: string, type: string, body: string|null, status: string, automatic: bool, sent_at: string|null}|null
+     * @return array{id: int, direction: string, type: string, body: string|null, status: string, error_code: string|null, automatic: bool, sent_at: string|null}|null
      */
     private function lastMessagePreview(): ?array
     {
@@ -128,6 +128,8 @@ class ConversationResource extends JsonResource
             'type' => $message->type->value,
             'body' => $message->body === null ? null : Str::limit(preg_replace('/\s+/u', ' ', $message->body) ?? '', self::PREVIEW_LENGTH),
             'status' => $message->status->value,
+            // Tells a failure of unknown outcome (delivery_unknown) apart.
+            'error_code' => $message->error_code,
             'automatic' => is_array($message->metadata) && ($message->metadata['automatic'] ?? false) === true,
             'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),
         ];

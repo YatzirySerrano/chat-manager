@@ -3,6 +3,7 @@
 namespace App\Services\Meta;
 
 use App\Models\Message;
+use App\Services\Messaging\MessageTransport;
 
 /**
  * Sends one stored outbound message (text, media with optional caption or
@@ -10,7 +11,7 @@ use App\Models\Message;
  * delivery job calls it, after claiming the message and checking the
  * connection, the customer service window and the template rules again.
  */
-interface WhatsAppTransport
+interface WhatsAppTransport extends MessageTransport
 {
     /**
      * @throws WhatsAppTransportUnavailable When this installation cannot send at all.

@@ -34,6 +34,7 @@ test('system.view is ignored outside the organization-wide scope', function () {
 
 test('administrators see health, queues, failed jobs and connections', function (DefaultRole $role) {
     Connection::factory()->create(['name' => 'Ventas WhatsApp']);
+    Connection::factory()->webChat()->create(['name' => 'Tienda web']);
 
     $this->actingAs(User::factory()->withRole($role)->create())
         ->get(route('admin.system.index'))
@@ -45,8 +46,9 @@ test('administrators see health, queues, failed jobs and connections', function 
             ->where('checks.0.status', 'ok')
             ->has('queues', count(Queues::all()))
             ->where('failedJobs.meta.total', 0)
-            ->has('connections', 1)
-            ->where('connections.0.name', 'Ventas WhatsApp')
+            ->has('connections', 2)
+            ->where('connections.0.name', 'Tienda web')
+            ->where('connections.1.name', 'Ventas WhatsApp')
             ->where('canManage', true)
         );
 })->with([

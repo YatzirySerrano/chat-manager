@@ -29,6 +29,9 @@ Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->w
 Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
 Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
 
+// Web chat: visitor sessions expired or revoked more than webchat.prune_after_days ago.
+Schedule::command('webchat:prune-sessions')->dailyAt('04:20')->withoutOverlapping();
+
 // Operations (ops module): scheduler heartbeat (system health) and critical failure alerts.
 Schedule::command('ops:heartbeat')->everyMinute();
 Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping();

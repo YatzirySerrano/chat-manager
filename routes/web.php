@@ -24,9 +24,13 @@ require __DIR__.'/automation.php';
 require __DIR__.'/team-chat.php';
 require __DIR__.'/messaging.php';
 require __DIR__.'/operations.php';
+require __DIR__.'/integrations.php';
 
 // Provider webhooks: public and outside the "web" group (no session, cookies or CSRF).
 Route::withoutMiddleware('web')->group(__DIR__.'/webhooks.php');
+
+// Embeddable web chat frame: public and outside the "web" group as well.
+Route::withoutMiddleware('web')->group(__DIR__.'/web-chat.php');
 
 // Public readiness probe for monitors: outside the "web" group as well.
 Route::withoutMiddleware('web')->group(__DIR__.'/health.php');

@@ -43,25 +43,27 @@ function listedIds(iterable $rows): array
     return collect($rows)->pluck('id')->sort()->values()->all();
 }
 
-test('an agent\'s inbox opens on their own conversations, with the queue as a separate view', function () {
+test('an agent\'s inbox opens on the general inbox: their own conversations and the pending ones they may accept', function () {
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['status' => 'all']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('filters.view', 'mine')
-            ->where('inbox', ['personal' => true, 'views' => ['mine', 'queue']])
-            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->mineClosed]))
-            ->where('viewCounts', ['mine' => 1, 'queue' => 1])
+            ->where('filters.view', 'general')
+            ->where('inbox', ['personal' => true, 'views' => ['general', 'mine']])
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->mineClosed, $this->queued]))
+            ->where('counts', ['general' => 2, 'mine' => 1, 'pending' => 1, 'attending' => 1, 'on_hold' => 0])
             ->where('agents', []));
 
+    // The legacy queue is the general inbox narrowed to the pending ones.
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['view' => 'queue']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('filters.view', 'queue')
+            ->where('filters.view', 'general')
+            ->where('filters.status', 'pending')
             ->where('conversations.data', fn ($rows) => listedIds($rows) === [$this->queued->id])
             ->where('conversations.data.0.can.accept', true)
-            ->where('counts', fn ($counts) => collect($counts)->sum() === 1));
+            ->where('counts.pending', 1));
 });
 
 test('the agent\'s own closed conversations follow the history permission', function () {
@@ -72,11 +74,18 @@ test('the agent\'s own closed conversations follow the history permission', func
     $this->actingAs($agent)
         ->get(route('conversations.index', ['status' => 'all']))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('conversations.data', fn ($rows) => listedIds($rows) === [$open->id])
-            ->where('counts.closed', 0));
+            ->where('canSeeClosed', false)
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$open, $this->queued])));
+
+    // Asking for the closed ones falls back to the active ones.
+    $this->actingAs($agent)
+        ->get(route('conversations.index', ['status' => 'closed']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.status', 'active')
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$open, $this->queued])));
 });
 
-test('without the accept permission an agent has no queue view, even when asking for it', function () {
+test('without the accept permission the pending ones of an agent are always empty, even asking for the queue', function () {
     $agent = conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$this->sales]);
     $own = Conversation::factory()->inDepartment($this->sales)->assignedTo($agent)->create();
 
@@ -84,10 +93,15 @@ test('without the accept permission an agent has no queue view, even when asking
         ->get(route('conversations.index', ['view' => 'queue']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('inbox.views', ['mine'])
-            ->where('filters.view', 'mine')
-            ->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id])
-            ->where('viewCounts', ['mine' => 1]));
+            ->where('inbox.views', ['general', 'mine'])
+            ->where('filters.view', 'general')
+            ->where('filters.status', 'pending')
+            ->where('conversations.data', [])
+            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1, 'on_hold' => 0]));
+
+    $this->actingAs($agent)
+        ->get(route('conversations.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id]));
 });
 
 test('tampering with the view or the filters never widens a personal inbox', function (array $query, Closure $expected) {
@@ -102,14 +116,14 @@ test('tampering with the view or the filters never widens a personal inbox', fun
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds($expected($this)))
-            ->where('counts', fn ($counts) => collect($counts)->sum() === count($expected($this)))
-            ->where('viewCounts', fn ($counts) => $counts['mine'] <= 1 && $counts['queue'] <= 1));
+            ->where('counts', fn ($counts) => $counts['general'] <= 2 && $counts['mine'] <= 1 && $counts['pending'] <= 1 && $counts['on_hold'] === 0));
 })->with([
-    'view of every conversation' => [['view' => 'all'], fn ($test) => [$test->mine, $test->mineClosed]],
-    'a colleague as agent filter' => [['agent' => 'colleague'], fn ($test) => [$test->mine, $test->mineClosed]],
+    'view of every conversation' => [['view' => 'all'], fn ($test) => [$test->mine, $test->mineClosed, $test->queued]],
+    'a colleague as agent filter' => [['agent' => 'colleague'], fn ($test) => [$test->mine, $test->mineClosed, $test->queued]],
     'queue filtered by a colleague' => [['view' => 'queue', 'agent' => 'colleague'], fn ($test) => [$test->queued]],
     'queue of another department' => [['view' => 'queue', 'department' => 'support'], fn ($test) => []],
     'queue without department' => [['view' => 'queue', 'department' => 'none'], fn ($test) => []],
+    'general inbox of another department' => [['view' => 'general', 'department' => 'support'], fn ($test) => []],
     'own view of another department' => [['view' => 'mine', 'department' => 'support'], fn ($test) => []],
 ]);
 
@@ -119,7 +133,7 @@ test('an unknown view is rejected', function () {
         ->assertSessionHasErrors('view');
 });
 
-test('team inboxes list every authorized conversation and offer "only mine" to people who attend', function () {
+test('team inboxes open on the general inbox, with every authorized conversation and "only mine" as views', function () {
     $supervisor = User::factory()->supervisor()->inDepartments($this->sales)->create();
     $own = Conversation::factory()->inDepartment($this->support)->assignedTo($supervisor)->create();
 
@@ -127,27 +141,33 @@ test('team inboxes list every authorized conversation and offer "only mine" to p
         ->get(route('conversations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('inbox', ['personal' => false, 'views' => ['all', 'mine']])
-            ->where('filters.view', 'all')
-            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->colleagues, $this->queued, $own]))
+            ->where('inbox', ['personal' => false, 'views' => ['general', 'mine', 'all']])
+            ->where('filters.view', 'general')
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $own]))
             ->where('agents', fn ($agents) => collect($agents)->pluck('id')->contains($this->colleague->id)));
+
+    $this->actingAs($supervisor)
+        ->get(route('conversations.index', ['view' => 'all']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.view', 'all')
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->colleagues, $this->queued, $own])));
 
     $this->actingAs($supervisor)
         ->get(route('conversations.index', ['view' => 'mine']))
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id]));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['agent' => (string) $this->colleague->id]))
+        ->get(route('conversations.index', ['view' => 'all', 'agent' => (string) $this->colleague->id]))
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$this->colleagues->id]));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['department' => (string) $this->support->id]))
+        ->get(route('conversations.index', ['view' => 'all', 'department' => (string) $this->support->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id])
-            ->where('counts', fn ($counts) => collect($counts)->sum() === 1));
+            ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1, 'on_hold' => 0]));
 });
 
-test('a team inbox without attending conversations has no "only mine" view', function () {
+test('a team inbox without attending conversations only has every authorized conversation', function () {
     $coordinator = conversationUser([Permission::ViewConversations, Permission::AssignConversations], DataScope::Global);
 
     $this->actingAs($coordinator)
@@ -162,7 +182,7 @@ test('a team inbox without attending conversations has no "only mine" view', fun
 test('administrators filter the authorized list by department, agent, status and connection', function () {
     $admin = User::factory()->administrator()->create();
 
-    $filter = fn (array $query) => $this->actingAs($admin)->get(route('conversations.index', $query));
+    $filter = fn (array $query) => $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all', ...$query]));
 
     $filter(['department' => 'none'])->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$this->unrouted->id]));
     $filter(['agent' => 'none'])->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $this->otherQueue, $this->unrouted])));

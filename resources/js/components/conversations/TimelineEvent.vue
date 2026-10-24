@@ -61,7 +61,7 @@ const detail = computed(() => {
 <template>
     <div class="flex justify-center px-2">
         <p
-            class="inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-2xl border bg-muted/60 px-3 py-1 text-center text-xs text-muted-foreground"
+            class="inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-2xl border bg-muted/60 px-3 py-1 text-center text-xs wrap-anywhere text-muted-foreground"
         >
             <History class="size-3.5 shrink-0" aria-hidden="true" />
             <span class="font-medium text-foreground/80">{{ label }}</span>

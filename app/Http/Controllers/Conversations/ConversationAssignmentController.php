@@ -37,7 +37,13 @@ class ConversationAssignmentController extends ConversationOperationController
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Aceptaste la conversación. Ahora eres responsable de atenderla.']);
 
-        return redirect()->route('conversations.show', $conversation);
+        // From the "Pendientes" chip the row would leave the list: the general
+        // inbox keeps it in place, now in attention (listUrlAfterAccepting()).
+        $afterAccepting = ConversationController::listUrlAfterAccepting($conversation);
+
+        return $afterAccepting === null
+            ? redirect()->route('conversations.show', $conversation)
+            : redirect()->to($afterAccepting);
     }
 
     public function assign(AssignConversationRequest $request, Conversation $conversation, AssignConversation $assign): RedirectResponse

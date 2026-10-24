@@ -1,6 +1,48 @@
 import type { AppColor } from './admin';
 import type { RecordStateValue } from './ui';
 
+/** Channel a connection reaches customers through (ConnectionChannel on the server). */
+export type ConnectionChannel = 'whatsapp' | 'web_chat';
+
+export type WebChatPosition = 'right' | 'left';
+
+export type WebChatIdentityMode = 'anonymous' | 'optional' | 'required';
+
+export type WebChatAvailabilityMode = 'always' | 'business_hours';
+
+export type WebChatPrechatField = 'name' | 'email';
+
+/**
+ * Widget settings of a web chat connection, as the administration shows
+ * them. The identity secret is never sent: only whether one is set.
+ */
+export type WebChatWidgetSettings = {
+    public_key: string;
+    allowed_origins: string[];
+    title: string;
+    subtitle: string | null;
+    welcome_text: string | null;
+    offline_text: string | null;
+    position: WebChatPosition;
+    accent_color: string;
+    launcher_enabled: boolean;
+    launcher_label: string | null;
+    avatar_url: string | null;
+    identity_mode: WebChatIdentityMode;
+    prechat: {
+        fields: WebChatPrechatField[];
+        required: boolean;
+        privacy_notice: string | null;
+    };
+    availability_mode: WebChatAvailabilityMode;
+    session_idle_days: number;
+    /** Embed snippet with the public key and the application URL. */
+    snippet: string;
+    frame_url: string;
+    identity_secret_set: boolean;
+    key_rotated_at: string | null;
+};
+
 export type ConnectionHealthValue =
     | 'inactive'
     | 'not_configured'
@@ -49,7 +91,7 @@ export type ConnectionDepartment = {
 export type Connection = {
     id: number;
     name: string;
-    channel: { value: string; label: string };
+    channel: { value: ConnectionChannel; label: string };
     provider: { value: string; label: string };
     display_phone_number: string | null;
     phone_number_id: string | null;
@@ -72,6 +114,8 @@ export type Connection = {
         { enabled: boolean; text: string | null }
     >;
     reopen_window_minutes: number | null;
+    /** Widget settings of a web chat connection (absent or null for WhatsApp). */
+    web_chat_widget?: WebChatWidgetSettings | null;
     health: ConnectionHealthDescriptor;
     configuration_health: ConnectionHealthDescriptor;
     checks: {

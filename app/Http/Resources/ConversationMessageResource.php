@@ -18,6 +18,8 @@ use Illuminate\Support\Str;
  * and inside the same second delivery_retries (manual retries, which requeue
  * without a new attempt) and then delivery_attempts, version the delivery state:
  * the chat keeps the newest one when responses arrive out of order.
+ * Messages sent through the integration API carry the token name in
+ * "integration" (never its id or the text fingerprint).
  *
  * @mixin Message
  */
@@ -46,6 +48,7 @@ class ConversationMessageResource extends JsonResource
             'error_code' => $this->error_code,
             'error_message' => $this->error_message,
             'automatic' => ($metadata['automatic'] ?? false) === true,
+            'integration' => $this->integration($metadata),
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
             'template' => $this->template($metadata),
             'content' => $this->content($metadata),
@@ -92,6 +95,23 @@ class ConversationMessageResource extends JsonResource
             'url' => $url,
             'download_url' => $url.'?download=1',
         ];
+    }
+
+    /**
+     * The integration API token that sent the message (only its name).
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array{name: string}|null
+     */
+    private function integration(array $metadata): ?array
+    {
+        $integration = $metadata['integration'] ?? null;
+
+        if (! is_array($integration)) {
+            return null;
+        }
+
+        return ['name' => is_string($integration['name'] ?? null) && $integration['name'] !== '' ? $integration['name'] : 'Integración'];
     }
 
     /**

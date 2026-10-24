@@ -36,7 +36,7 @@ class ConversationMessageController extends ConversationOperationController
             return (new ConversationMessageResource($message))->response()->setStatusCode(202);
         }
 
-        Inertia::flash('toast', ['type' => 'info', 'message' => 'Mensaje en cola de envío.']);
+        Inertia::flash('toast', ['type' => 'info', 'message' => 'Enviando mensaje…']);
 
         return back();
     }

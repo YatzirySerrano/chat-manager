@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin;
 
 use App\Actions\Connections\ConnectionSecrets;
+use App\Enums\ConnectionChannel;
 use App\Enums\RecordState;
 use App\Models\Connection;
 use App\Models\Department;
@@ -13,7 +14,10 @@ use Illuminate\Validation\Validator;
 
 /**
  * Validation for creating and updating connections. Secret fields are
- * write-only: a blank value keeps the stored one.
+ * write-only: a blank value keeps the stored one. The channel is chosen when
+ * the connection is created and never changes; the Meta identifiers and
+ * secrets only exist for WhatsApp (a web chat connection is configured
+ * through its widget, see WebChatWidgetRequest).
  */
 class ConnectionRequest extends FormRequest
 {
@@ -27,6 +31,13 @@ class ConnectionRequest extends FormRequest
      * Longest reopen window accepted, in minutes (7 days).
      */
     public const REOPEN_WINDOW_MAX_MINUTES = 10080;
+
+    /**
+     * Fields that only a WhatsApp connection has (identifiers and secrets of Meta).
+     *
+     * @var list<string>
+     */
+    public const META_FIELDS = ['display_phone_number', 'phone_number_id', 'business_account_id', 'meta_app_id', 'access_token', 'app_secret', 'webhook_verify_token'];
 
     public function authorize(): bool
     {
@@ -47,7 +58,30 @@ class ConnectionRequest extends FormRequest
             }
         }
 
+        // Clients that predate the channel choice create WhatsApp connections.
+        if (! $this->route('connection') instanceof Connection && ! $this->has('channel')) {
+            $trimmed['channel'] = ConnectionChannel::Whatsapp->value;
+        }
+
         $this->merge($trimmed);
+    }
+
+    /**
+     * Channel of the connection: the stored one when updating, the chosen one
+     * when creating (WhatsApp when the value is not a known channel; the
+     * rules reject it anyway).
+     */
+    public function channel(): ConnectionChannel
+    {
+        $connection = $this->route('connection');
+
+        if ($connection instanceof Connection) {
+            return $connection->channel;
+        }
+
+        $value = $this->input('channel');
+
+        return (is_string($value) ? ConnectionChannel::tryFrom($value) : null) ?? ConnectionChannel::Whatsapp;
     }
 
     /**
@@ -60,7 +94,8 @@ class ConnectionRequest extends FormRequest
         $connection = $this->route('connection');
         $metaId = ['nullable', 'string', 'regex:/^\d{5,64}$/'];
 
-        return [
+        $rules = [
+            'channel' => $connection instanceof Connection ? ['prohibited'] : ['required', Rule::enum(ConnectionChannel::class)],
             'name' => ['required', 'string', 'max:120'],
             'display_phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+?[0-9][0-9 ()\-]{5,31}$/'],
             // A deleted connection keeps its number reserved: that conflict
@@ -85,6 +120,14 @@ class ConnectionRequest extends FormRequest
             'farewell_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:farewell_enabled'],
             'reopen_window_minutes' => ['nullable', 'integer', 'min:1', 'max:'.self::REOPEN_WINDOW_MAX_MINUTES],
         ];
+
+        if ($this->channel() !== ConnectionChannel::Whatsapp) {
+            foreach (self::META_FIELDS as $field) {
+                $rules[$field] = ['prohibited'];
+            }
+        }
+
+        return $rules;
     }
 
     /**
@@ -163,6 +206,8 @@ class ConnectionRequest extends FormRequest
             'webhook_verify_token.regex' => 'El token de verificación no debe contener espacios.',
             'default_department_id.in' => 'El departamento predeterminado debe ser uno de los departamentos autorizados.',
             '*.required_if_accepted' => 'Escribe el mensaje o desactívalo.',
+            'channel.prohibited' => 'El canal de una conexión no se puede cambiar. Crea una conexión nueva para otro canal.',
+            '*.prohibited' => 'Este dato solo existe en las conexiones de WhatsApp.',
         ];
     }
 
@@ -174,6 +219,7 @@ class ConnectionRequest extends FormRequest
     public function attributes(): array
     {
         return [
+            'channel' => 'canal',
             'name' => 'nombre',
             'display_phone_number' => 'número visible',
             'phone_number_id' => 'Phone number ID',
@@ -195,26 +241,39 @@ class ConnectionRequest extends FormRequest
     /**
      * Attributes ready to fill, the secrets that were provided (blank ones are
      * left out so the stored value is kept) and the authorized departments.
+     * Creating also fills the channel and its provider; a web chat
+     * connection never fills Meta identifiers or secrets.
      *
      * @return array{attributes: array<string, mixed>, secrets: array<string, string>, department_ids: list<int>}
      */
     public function payload(): array
     {
+        $channel = $this->channel();
+        $isWhatsapp = $channel === ConnectionChannel::Whatsapp;
         $secrets = [];
 
         foreach (array_keys(ConnectionSecrets::FIELDS) as $field) {
-            if ($this->filled($field)) {
+            if ($isWhatsapp && $this->filled($field)) {
                 $secrets[$field] = (string) $this->input($field);
             }
         }
 
+        $creation = $this->route('connection') instanceof Connection
+            ? []
+            : ['channel' => $channel, 'provider' => $channel->defaultProvider()];
+
+        $meta = $isWhatsapp ? [
+            'display_phone_number' => $this->nullableString('display_phone_number'),
+            'phone_number_id' => $this->nullableString('phone_number_id'),
+            'business_account_id' => $this->nullableString('business_account_id'),
+            'meta_app_id' => $this->nullableString('meta_app_id'),
+        ] : [];
+
         return [
             'attributes' => [
+                ...$creation,
                 'name' => $this->string('name')->value(),
-                'display_phone_number' => $this->nullableString('display_phone_number'),
-                'phone_number_id' => $this->nullableString('phone_number_id'),
-                'business_account_id' => $this->nullableString('business_account_id'),
-                'meta_app_id' => $this->nullableString('meta_app_id'),
+                ...$meta,
                 'default_department_id' => $this->filled('default_department_id') ? $this->integer('default_department_id') : null,
                 'welcome_enabled' => $this->boolean('welcome_enabled'),
                 'welcome_message' => $this->nullableString('welcome_message'),

@@ -7,6 +7,7 @@ import {
     LayoutTemplate,
     MapPin,
     MousePointerClick,
+    Plug,
     Reply,
     RotateCw,
     UserRound,
@@ -139,6 +140,10 @@ const author = computed(() => {
         return 'Mensaje automático';
     }
 
+    if (props.message.integration) {
+        return `Integración: ${props.message.integration.name}`;
+    }
+
     return props.message.sender?.name ?? 'Equipo';
 });
 
@@ -151,7 +156,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
         :class="outbound ? 'justify-end' : 'justify-start'"
     >
         <div
-            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[0.9375rem]/snug shadow-xs sm:max-w-[70%] md:text-sm"
+            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[0.9375rem]/snug wrap-anywhere shadow-xs sm:max-w-[70%] md:text-sm"
             :class="[
                 outbound
                     ? 'rounded-br-md bg-primary-soft text-primary-soft-foreground'
@@ -162,12 +167,18 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                         : 'ring-1 ring-destructive/60'),
             ]"
             :data-message-id="message.id"
+            data-layout-box="bubble"
         >
             <p
                 class="mb-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground"
             >
                 <Bot
                     v-if="message.automatic"
+                    class="size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
+                <Plug
+                    v-else-if="message.integration"
                     class="size-3.5 shrink-0"
                     aria-hidden="true"
                 />
@@ -187,6 +198,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             <button
                 v-if="message.reply_to"
                 type="button"
+                data-layout-box="quote"
                 class="mb-1.5 block w-full rounded-md border-l-2 border-primary/60 bg-background/50 px-2 py-1 text-left text-sm text-muted-foreground hover:bg-background/80 md:text-xs"
                 :aria-label="`Ir al mensaje citado`"
                 @click="emit('jump', message.reply_to.id)"
@@ -198,7 +210,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                             : 'Equipo'
                     }}
                 </span>
-                <span class="line-clamp-2">{{
+                <span class="line-clamp-2 wrap-anywhere">{{
                     message.reply_to.body ?? typeLabel(message.reply_to.type)
                 }}</span>
             </button>
@@ -222,7 +234,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
 
             <div
                 v-if="message.attachments.length > 0"
-                class="mb-1 grid gap-1.5"
+                class="mb-1 grid grid-cols-1 gap-1.5"
             >
                 <MessageAttachmentPreview
                     v-for="attachment in message.attachments"

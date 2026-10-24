@@ -9,10 +9,13 @@ use App\Actions\Connections\RestoreConnection;
 use App\Actions\Connections\UpdateConnection;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
-use App\Enums\ConnectionProvider;
 use App\Enums\RecordState;
+use App\Enums\WebChatAvailabilityMode;
+use App\Enums\WebChatIdentityMode;
+use App\Enums\WebChatPosition;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ConnectionRequest;
+use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Http\Resources\ConnectionResource;
 use App\Models\Connection;
 use App\Models\Department;
@@ -26,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -53,9 +57,11 @@ class ConnectionController extends Controller
         $status = $filters['status'];
         $record = $filters['record'];
 
-        $all = Connection::query()->visibleTo($actor)->notDeleted()->get();
+        // The widget decides whether a web chat connection is configured,
+        // so it is loaded with every connection before deriving its health.
+        $all = Connection::query()->visibleTo($actor)->notDeleted()->with('webChatWidget')->get();
 
-        $connections = $list->matching($actor, $filters);
+        $connections = $list->withHealth($list->handle($actor, $filters)->with('webChatWidget')->get(), $health);
 
         return Inertia::render('connections/Index', [
             'connections' => ConnectionResource::collection($connections)->resolve($request),
@@ -71,7 +77,7 @@ class ConnectionController extends Controller
             'stats' => [
                 'total' => $all->count(),
                 'active' => $all->where('is_active', true)->count(),
-                'verified' => $all->filter(fn (Connection $connection): bool => in_array(
+                'verified' => $all->filter(fn (Connection $connection): bool => ! $connection->isWebChat() && in_array(
                     $connection->configurationHealth(),
                     [ConnectionHealth::CredentialsVerified, ConnectionHealth::Receiving, ConnectionHealth::Operational],
                     true,
@@ -93,14 +99,21 @@ class ConnectionController extends Controller
         ]);
     }
 
+    /**
+     * Form of a new connection for the channel chosen in the list
+     * (?channel=whatsapp|web_chat; WhatsApp when none is given).
+     */
     public function create(Request $request): Response
     {
         Gate::authorize('create', Connection::class);
 
+        $validated = $request->validate(['channel' => ['nullable', Rule::enum(ConnectionChannel::class)]]);
+        $channel = is_string($validated['channel'] ?? null) ? ConnectionChannel::from($validated['channel']) : ConnectionChannel::Whatsapp;
+
         return Inertia::render('connections/Form', [
             'connection' => null,
             'diagnostics' => null,
-            ...$this->formOptions(),
+            ...$this->formOptions($channel),
             'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false],
         ]);
     }
@@ -127,15 +140,16 @@ class ConnectionController extends Controller
 
         $actor = $request->user();
 
-        $connection->load(['departments' => fn (BelongsToMany $query) => $query
+        $connection->load(['webChatWidget', 'departments' => fn (BelongsToMany $query) => $query
             ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')
             ->orderBy('departments.name')]);
         $connection->loadCount('conversations');
 
         return Inertia::render('connections/Form', [
             'connection' => ConnectionResource::make($connection)->resolve($request),
-            'diagnostics' => fn () => app(ConnectionDiagnostics::class)->for($connection, $actor),
-            ...$this->formOptions($connection),
+            // The Meta checklist (webhook, subscription, templates) only applies to WhatsApp.
+            'diagnostics' => fn () => $connection->isWebChat() ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
+            ...$this->formOptions($connection->channel, $connection),
             'can' => [
                 'update' => $actor->can('update', $connection),
                 'changeStatus' => $actor->can('changeStatus', $connection),
@@ -190,19 +204,35 @@ class ConnectionController extends Controller
     }
 
     /**
-     * @return array{channel: array{value: string, label: string}, provider: array{value: string, label: string}, departments: list<array{id: int, name: string, color: string, is_active: bool}>, limits: array{message: int, reopen_window: int}, graphVersion: string}
+     * Options of the form for the channel of the connection. The Graph API
+     * version only applies to WhatsApp; the widget options to the web chat.
+     *
+     * @return array{channel: array{value: string, label: string}, provider: array{value: string, label: string}, departments: list<array{id: int, name: string, color: string, is_active: bool}>, limits: array{message: int, reopen_window: int}, graphVersion: string|null, widgetOptions: array<string, mixed>|null}
      */
-    private function formOptions(?Connection $connection = null): array
+    private function formOptions(ConnectionChannel $channel, ?Connection $connection = null): array
     {
+        $provider = $connection === null ? $channel->defaultProvider() : $connection->provider;
+
         return [
-            'channel' => ['value' => ConnectionChannel::Whatsapp->value, 'label' => ConnectionChannel::Whatsapp->label()],
-            'provider' => ['value' => ConnectionProvider::MetaCloudApi->value, 'label' => ConnectionProvider::MetaCloudApi->label()],
+            'channel' => ['value' => $channel->value, 'label' => $channel->label()],
+            'provider' => ['value' => $provider->value, 'label' => $provider->label()],
             'departments' => $this->departmentOptions($connection),
             'limits' => [
                 'message' => ConnectionRequest::MESSAGE_MAX_LENGTH,
                 'reopen_window' => ConnectionRequest::REOPEN_WINDOW_MAX_MINUTES,
             ],
-            'graphVersion' => (string) config('services.meta.graph_version'),
+            'graphVersion' => $channel === ConnectionChannel::Whatsapp ? (string) config('services.meta.graph_version') : null,
+            'widgetOptions' => $channel === ConnectionChannel::WebChat ? [
+                'positions' => WebChatPosition::options(),
+                'identityModes' => WebChatIdentityMode::options(),
+                'availabilityModes' => WebChatAvailabilityMode::options(),
+                'limits' => [
+                    'origins' => WebChatWidgetRequest::MAX_ORIGINS,
+                    'avatar_kb' => WebChatWidgetRequest::AVATAR_MAX_KB,
+                    'min_contrast' => WebChatWidgetRequest::MIN_CONTRAST,
+                    'session_idle_days' => 90,
+                ],
+            ] : null,
         ];
     }
 

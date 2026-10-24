@@ -14,6 +14,7 @@ use App\Models\WebhookEvent;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\WebChatFixtures;
 use Tests\Support\WhatsAppFixtures;
 
 /*
@@ -263,4 +264,16 @@ test('a stored delivery whose job was lost is queued again on redelivery and by 
     $this->artisan('whatsapp:maintenance', ['task' => 'recover-webhooks'])->assertSuccessful();
     Queue::assertPushedTimes(ProcessWhatsAppWebhook::class, 3);
     expect(WebhookEvent::query()->count())->toBe(1);
+});
+
+test('the webhook key of a web chat connection answers like an unknown one', function () {
+    Queue::fake();
+    $webChat = WebChatFixtures::connection([], ['app_secret' => 'secreto-de-prueba', 'webhook_verify_token' => 'token-de-prueba']);
+
+    $this->get(route('webhooks.whatsapp.verify', ['webhookKey' => $webChat->webhook_key]).'?hub.mode=subscribe&hub.verify_token=token-de-prueba&hub.challenge=1')
+        ->assertNotFound();
+    WhatsAppFixtures::post($this, $webChat, whatsappWebhook($webChat, [whatsappTextMessage('5215512345678')]))->assertNotFound();
+
+    expect(WebhookEvent::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
 });

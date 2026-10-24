@@ -149,7 +149,7 @@ class NotificationPresenter
         $this->related = [
             'departments' => $related['department_id'] === [] ? [] : Department::query()->whereKey(array_unique($related['department_id']))->get()->keyBy('id')->all(),
             'transfers' => $related['transfer_id'] === [] ? [] : DataTransfer::query()->whereKey(array_unique($related['transfer_id']))->get()->keyBy('id')->all(),
-            'connections' => $related['connection_id'] === [] ? [] : Connection::query()->whereKey(array_unique($related['connection_id']))->get()->keyBy('id')->all(),
+            'connections' => $related['connection_id'] === [] ? [] : Connection::query()->with('webChatWidget')->whereKey(array_unique($related['connection_id']))->get()->keyBy('id')->all(),
             'threads' => $related['thread_id'] === [] ? [] : array_fill_keys(array_map('intval', TeamParticipant::query()
                 ->whereIn('team_thread_id', array_unique($related['thread_id']))
                 ->where('user_id', $viewer->id)

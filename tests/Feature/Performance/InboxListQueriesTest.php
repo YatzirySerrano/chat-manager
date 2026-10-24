@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\WebChatFixtures;
 
 /*
 | The inbox list must cost the same number of queries whatever the number of
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Queries run by a partial reload of the inbox list.
  */
-function inboxListQueries(User $viewer, string $view, int $rows): int
+function inboxListQueries(User $viewer, string $view, int $rows, string $props = 'conversations'): int
 {
     DB::flushQueryLog();
     DB::enableQueryLog();
@@ -26,7 +27,7 @@ function inboxListQueries(User $viewer, string $view, int $rows): int
         ->get(route('conversations.index', ['view' => $view]), [
             'X-Inertia' => 'true',
             'X-Inertia-Partial-Component' => 'conversations/Index',
-            'X-Inertia-Partial-Data' => 'conversations',
+            'X-Inertia-Partial-Data' => $props,
             'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(request()),
         ])
         ->assertOk()
@@ -80,17 +81,56 @@ test('the list of a global administrator costs the same queries with 2 or 12 pen
     expect($many)->toBe($few);
 });
 
+test('the general inbox of an agent costs the same queries with 2 or 12 rows', function () {
+    $department = Department::factory()->distribution(DistributionMode::Shared)->create();
+    $agent = User::factory()->agent()->available()->inDepartments($department)->create();
+
+    Conversation::factory()->inDepartment($department)->create();
+    Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
+    inboxListQueries($agent, 'general', 2); // warms per-process caches (permissions, settings)
+    $few = inboxListQueries($agent->fresh(), 'general', 2);
+
+    Conversation::factory()->count(5)->inDepartment($department)->create();
+    Conversation::factory()->count(5)->inDepartment($department)->assignedTo($agent)->create();
+    $many = inboxListQueries($agent->fresh(), 'general', 12);
+
+    expect($many)->toBe($few);
+});
+
+test('a live reload of the general inbox (rows, counters and unread) with WhatsApp and web chat rows costs the same queries', function () {
+    $department = Department::factory()->distribution(DistributionMode::Shared)->create();
+    $admin = User::factory()->administrator()->available()->create();
+    $webs = [WebChatFixtures::connection(), WebChatFixtures::connection()];
+    $props = 'conversations,counts,unreadCount';
+
+    Conversation::factory()->inDepartment($department)->create();
+    Conversation::factory()->inDepartment($department)->create(['connection_id' => $webs[0]->id]);
+    inboxListQueries($admin, 'general', 2, $props); // warms per-process caches (permissions, settings)
+    $few = inboxListQueries($admin->fresh(), 'general', 2, $props);
+
+    Conversation::factory()->count(4)->inDepartment($department)->create();
+    Conversation::factory()->count(3)->inDepartment($department)->create(['connection_id' => $webs[0]->id]);
+    Conversation::factory()->count(3)->inDepartment($department)->create(['connection_id' => $webs[1]->id]);
+    $many = inboxListQueries($admin->fresh(), 'general', 12, $props);
+
+    expect($many)->toBe($few);
+});
+
 test('a department deactivated after a listing no longer lets the same person accept from it', function () {
     $department = Department::factory()->distribution(DistributionMode::Shared)->create();
     $admin = User::factory()->administrator()->available()->create();
     $queued = Conversation::factory()->inDepartment($department)->create();
 
-    $this->actingAs($admin)->get(route('conversations.index'))
+    $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all']))
         ->assertInertia(fn ($page) => $page->where('conversations.data.0.can.accept', true));
 
     $department->forceFill(['is_active' => false])->save();
 
+    // Out of the general inbox (nothing left to accept), still in "all".
     $this->actingAs($admin)->get(route('conversations.index'))
+        ->assertInertia(fn ($page) => $page->where('conversations.data', []));
+
+    $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all']))
         ->assertInertia(fn ($page) => $page->where('conversations.data.0.id', $queued->id)->where('conversations.data.0.can.accept', false));
 });
 

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Enums\Permission;
+use App\Models\ApiToken;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAttribution;
@@ -15,6 +16,8 @@ use App\Models\Role;
 use App\Models\Tag;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Models\WebChatSession;
+use App\Models\WebChatWidget;
 use App\Services\Meta\MetaCloudWhatsAppTransport;
 use App\Services\Meta\SimulatedWhatsAppTransport;
 use App\Services\Meta\UnavailableWhatsAppTransport;
@@ -82,10 +85,95 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('whatsapp-webhooks', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('whatsapp.webhooks.rate_limit_per_minute', 1200)))
             ->by('whatsapp-webhook:'.(string) $request->route('webhookKey')));
 
+        $this->configureApiRateLimiters();
+
         Gate::define('view-settings', fn (User $user): bool => $user->holdsPermission(Permission::ViewSettings));
         Gate::define('update-settings', fn (User $user): bool => $user->holdsPermission(Permission::UpdateSettings));
         Gate::define('view-appearance', fn (User $user): bool => $user->holdsPermission(Permission::ViewAppearance));
         Gate::define('update-appearance', fn (User $user): bool => $user->holdsPermission(Permission::UpdateAppearance));
+    }
+
+    /**
+     * Named limiters of the /api/v1 surfaces and the web chat frame. The
+     * authentication middleware always runs before them, so the principal
+     * (visitor session or API token) is already on the request; the IP is
+     * only used through its HMAC.
+     */
+    protected function configureApiRateLimiters(): void
+    {
+        $perMinute = fn (string $key, int $default): int => max(1, (int) config($key, $default));
+        $ipHash = fn (Request $request): string => (string) WebChatSession::hashIpForLimits($request->ip());
+        $session = function (Request $request) use ($ipHash): string {
+            $session = $request->attributes->get('webchat_session');
+
+            return $session instanceof WebChatSession ? 'session:'.$session->public_id : 'ip:'.$ipHash($request);
+        };
+        $publicKey = function (Request $request): string {
+            $key = $request->route('publicKey');
+
+            if (is_string($key)) {
+                return $key;
+            }
+
+            $widget = $request->attributes->get('webchat_widget');
+
+            if ($widget instanceof WebChatWidget) {
+                return $widget->public_key;
+            }
+
+            $session = $request->attributes->get('webchat_session');
+
+            return $session instanceof WebChatSession ? (string) $session->connection->webChatWidget?->public_key : '';
+        };
+        $token = function (Request $request) use ($ipHash): string {
+            $token = $request->attributes->get('api_token');
+
+            return $token instanceof ApiToken ? 'token:'.$token->public_id : 'ip:'.$ipHash($request);
+        };
+
+        RateLimiter::for('webchat-frame', fn (Request $request): Limit => Limit::perMinute($perMinute('webchat.limits.frame_per_minute', 120))
+            ->by('webchat-frame:'.$publicKey($request).'|'.$ipHash($request)));
+
+        // Only per address: the per-widget cap counts sessions that proved a
+        // valid frame ticket, so it is applied by VisitorSessionController
+        // after verifying it (junk requests must never exhaust it).
+        RateLimiter::for('webchat-sessions', fn (Request $request): Limit => Limit::perMinute($perMinute('webchat.limits.sessions_per_ip_per_minute', 10))
+            ->by('webchat-sessions-ip:'.$publicKey($request).'|'.$ipHash($request)));
+
+        RateLimiter::for('webchat-messages', function (Request $request) use ($perMinute, $ipHash, $session): array {
+            $visitor = $request->attributes->get('webchat_session');
+            $limits = [
+                Limit::perMinute($perMinute('webchat.limits.messages_per_session_per_minute', 20))
+                    ->by('webchat-messages-session:'.$session($request)),
+                Limit::perMinute($perMinute('webchat.limits.messages_per_ip_per_minute', 60))
+                    ->by('webchat-messages-ip:'.$ipHash($request)),
+            ];
+
+            // A shared cap every visitor of the connection draws from is a
+            // denial-of-service lever, so it is only a high cost ceiling
+            // (0 disables it); the per-session and per-address limits are
+            // what stops an abuser.
+            $perConnection = (int) config('webchat.limits.messages_per_connection_per_minute', 6000);
+
+            if ($perConnection > 0) {
+                $limits[] = Limit::perMinute($perConnection)
+                    ->by('webchat-messages-connection:'.($visitor instanceof WebChatSession ? $visitor->connection_id : 'none'));
+            }
+
+            return $limits;
+        });
+
+        RateLimiter::for('webchat-reads', fn (Request $request): Limit => Limit::perMinute($perMinute('webchat.limits.reads_per_minute', 60))
+            ->by('webchat-reads:'.$session($request)));
+
+        RateLimiter::for('webchat-broadcasting', fn (Request $request): Limit => Limit::perMinute($perMinute('webchat.limits.broadcasting_per_minute', 30))
+            ->by('webchat-broadcasting:'.$session($request)));
+
+        RateLimiter::for('api-v1-read', fn (Request $request): Limit => Limit::perMinute($perMinute('integrations.limits.reads_per_minute', 600))
+            ->by('api-v1-read:'.$token($request)));
+
+        RateLimiter::for('api-v1-write', fn (Request $request): Limit => Limit::perMinute($perMinute('integrations.limits.writes_per_minute', 60))
+            ->by('api-v1-write:'.$token($request)));
     }
 
     /**
@@ -110,6 +198,8 @@ class AppServiceProvider extends ServiceProvider
             'tag' => Tag::class,
             'quick_reply' => QuickReply::class,
             'team_thread' => TeamThread::class,
+            'api_token' => ApiToken::class,
+            'web_chat_widget' => WebChatWidget::class,
         ]);
 
         DB::prohibitDestructiveCommands($this->destructiveCommandsAreProhibited());

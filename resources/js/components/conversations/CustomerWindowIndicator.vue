@@ -5,6 +5,10 @@ import FieldHelp from '@/components/FieldHelp.vue';
 import { formatDateTime, formatDuration } from '@/lib/format';
 import type { CustomerWindow } from '@/types';
 
+/**
+ * WhatsApp's 24 hour customer service window. Channels without one (web
+ * chat, status 'not_applicable') render nothing.
+ */
 const props = defineProps<{ window: CustomerWindow }>();
 
 const tone = computed(
@@ -14,6 +18,7 @@ const tone = computed(
             expiring: 'border-warning/40 bg-warning/10 text-warning',
             expired: 'border-destructive/30 bg-destructive/5 text-destructive',
             none: 'border-border bg-muted/40 text-muted-foreground',
+            not_applicable: 'border-border bg-muted/40 text-muted-foreground',
         })[props.window.status],
 );
 
@@ -28,6 +33,7 @@ const icon = computed(() =>
 
 <template>
     <div
+        v-if="window.status !== 'not_applicable'"
         class="flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm"
         :class="tone"
         role="status"

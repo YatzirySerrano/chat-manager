@@ -146,6 +146,9 @@ fi
 log "Running migrations (additive only; destructive commands are blocked in production)"
 "$PHP" artisan migrate --force --no-interaction
 
+log "Adding the catalog permissions this release introduces (idempotent; existing roles are never changed)"
+"$PHP" artisan app:sync-permissions --no-interaction
+
 log "Caching configuration, routes, views and events"
 "$PHP" artisan optimize
 "$PHP" artisan storage:link --relative 2>/dev/null || true

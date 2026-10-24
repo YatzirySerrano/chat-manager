@@ -102,10 +102,19 @@ const reasonDialogOpen = computed({
     },
 });
 
-const reasonCopy: Record<
-    Operation,
-    { title: string; description: string; confirm: string; label: string }
-> = {
+/* Closing never changes WhatsApp's 24 h window; other channels have none. */
+const closeEffect = computed(() =>
+    props.conversation.connection.channel === 'whatsapp'
+        ? 'No se envía ningún mensaje al cliente ni cambia la ventana de WhatsApp.'
+        : `No se envía ningún mensaje al cliente por ${props.conversation.connection.channel_label}.`,
+);
+
+const reasonCopy = computed<
+    Record<
+        Operation,
+        { title: string; description: string; confirm: string; label: string }
+    >
+>(() => ({
     hold: {
         title: 'Poner en espera',
         description:
@@ -122,12 +131,11 @@ const reasonCopy: Record<
     },
     close: {
         title: 'Cerrar conversación',
-        description:
-            'La atención termina y su historial se conserva. No se envía ningún mensaje al cliente ni cambia la ventana de WhatsApp.',
+        description: `La atención termina y su historial se conserva. ${closeEffect.value}`,
         confirm: 'Cerrar conversación',
         label: 'Motivo de cierre',
     },
-};
+}));
 
 function openReasonDialog(operation: Operation): void {
     errors.value = {};

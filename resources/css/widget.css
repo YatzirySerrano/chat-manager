@@ -1,0 +1,36 @@
+/*
+ * Styles of the web chat widget frame (resources/views/widget/frame.blade.php).
+ * Only the frame's own sources are scanned, so the bundle stays small and
+ * independent from the agents' app.css. Dark mode follows the visitor's
+ * prefers-color-scheme (Tailwind's default media strategy).
+ */
+@import 'tailwindcss' source(none);
+
+@source '../js/widget/frame';
+
+@layer base {
+    html,
+    body {
+        margin: 0;
+        height: 100%;
+        background-color: #fff;
+        font-family:
+            system-ui,
+            -apple-system,
+            'Segoe UI',
+            Roboto,
+            sans-serif;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        html,
+        body {
+            background-color: var(--color-gray-950);
+        }
+    }
+
+    #app {
+        height: 100%;
+    }
+}

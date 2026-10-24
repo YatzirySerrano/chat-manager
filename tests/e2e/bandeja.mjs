@@ -166,6 +166,11 @@ const run = async () => {
     startWorker();
 
     const data = JSON.parse(php(SEED, 'prepare'));
+    // Phase 4: the responsive matrix also measures the stress conversation
+    // of chat-movil-seed.php (a closed one: the inbox lists do not change).
+    const stress = JSON.parse(
+        php(join(HERE, 'chat-movil-seed.php'), 'prepare', 'closed'),
+    );
     const conversation = (key) => data.conversations[key].id;
     const connectionName = {
         a: data.connections.a.name,
@@ -217,6 +222,33 @@ const run = async () => {
         const ana = await newSession(browser, 'ana');
         const beto = await newSession(browser, 'beto');
         const admin = await newSession(browser, 'admin');
+        // Inertia visits of the administrator (explains a view that changed
+        // under the scenario's feet).
+        admin.visits$ = [];
+        admin.on('framenavigated', (frame) => {
+            if (frame === admin.mainFrame()) {
+                admin.visits$.push(
+                    `${Date.now()} NAV ${frame.url().replace(BASE, '')}`,
+                );
+            }
+        });
+        admin.on('response', async (response) => {
+            if (response.request().headers()['x-inertia']) {
+                const body = await response.json().catch(() => null);
+                admin.visits$.push(
+                    `${Date.now()} RES ${response.status()} ${body?.url ?? '?'} view=${body?.props?.filters?.view ?? '-'}`,
+                );
+            }
+        });
+        admin.on('request', (request) => {
+            const headers = request.headers();
+
+            if (headers['x-inertia']) {
+                admin.visits$.push(
+                    `${Date.now()} ${request.method()} ${request.url().replace(BASE, '')} [${headers['x-inertia-partial-data'] ?? 'full'}]`,
+                );
+            }
+        });
         const everyone = [ana, beto, admin];
 
         await Promise.all([
@@ -272,6 +304,7 @@ const run = async () => {
 
         // 3. Channel and connection on every row; one customer, two numbers.
         await step('inbox-two-connections', 'render', async () => {
+            const visitsBefore = admin.visits$.length;
             await openInboxView(admin, 'Todas');
             await settled(admin);
             const rows = await admin.locator('[data-inbox-item]').all();
@@ -290,8 +323,11 @@ const run = async () => {
                     /E2E WhatsApp (Ventas|Sucursal)/.test(row.text) &&
                     row.all.includes('WhatsApp:'),
             );
+            // Phase 4: pending rows start with "Pendiente de aceptar: ".
             const norte = described.filter((row) =>
-                row.label.startsWith('Cliente Norte,'),
+                row.label
+                    .replace(/^Pendiente de aceptar: /, '')
+                    .startsWith('Cliente Norte,'),
             );
             const norteConnections = norte
                 .map((row) =>
@@ -308,7 +344,7 @@ const run = async () => {
                 rows.length === 10 &&
                     withConnection.length === rows.length &&
                     norteConnections === 'ab',
-                `rows=${rows.length} (expected 10 active), with channel+connection=${withConnection.length}, Cliente Norte rows on connections "${norteConnections}"`,
+                `rows=${rows.length} (expected 10 active), with channel+connection=${withConnection.length}, Cliente Norte rows on connections "${norteConnections}"${rows.length === 10 ? '' : `; url=${new URL(admin.url()).search}; visits=${JSON.stringify(admin.visits$.slice(Math.max(0, visitsBefore - 8)))}`}`,
             ];
         });
 
@@ -348,13 +384,13 @@ const run = async () => {
                 const unreadB = (await rowNames(ana)).sort();
                 notes.push(`unread+B=${unreadB.join('/')}`);
 
-                await ana
-                    .getByRole('navigation', {
-                        name: 'Estado de las conversaciones',
-                    })
-                    .getByRole('button', { name: /^En espera/ })
-                    .click();
+                // Phase 4: "Mis conversaciones" has no status chips (they
+                // narrow the general inbox); its status is the "Estado"
+                // select of the "Filtros" popover.
+                await ana.getByRole('button', { name: /^Filtros/ }).click();
+                await ana.locator('#inbox-status').selectOption('on_hold');
                 await ana.waitForURL(/status=on_hold/);
+                await ana.keyboard.press('Escape');
                 await settled(ana);
                 const unreadBHold = (await rowNames(ana)).sort();
                 const holdChip = await chipCount(ana);
@@ -381,14 +417,9 @@ const run = async () => {
                 const unreadOffAfterClear =
                     (await unreadChip(ana).getAttribute('aria-pressed')) ===
                     'false';
-                // "Limpiar filtros" keeps the status tab (it is not a filter
-                // of the popover): back to "Activas".
-                await ana
-                    .getByRole('navigation', {
-                        name: 'Estado de las conversaciones',
-                    })
-                    .getByRole('button', { name: /^Activas/ })
-                    .click();
+                // Phase 4: the status of "Mis conversaciones" is a filter of
+                // the popover, so "Limpiar filtros" also brings it back to
+                // the active conversations.
                 await ana.waitForURL(
                     (url) => !/status=on_hold/.test(url.search),
                 );
@@ -398,7 +429,10 @@ const run = async () => {
                 notes.push(`cleared=${cleared.join('/')} url=${clearedUrl}`);
 
                 const same = (list, expected) =>
-                    list.join('/') === [...expected].sort().join('/');
+                    list.join('/') ===
+                    [...expected]
+                        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+                        .join('/');
 
                 return [
                     options.length === 3 &&
@@ -1016,6 +1050,7 @@ const run = async () => {
                     () =>
                         responsive(browser, width, scheme, {
                             chatId: conversation('poniente@b'),
+                            stressId: stress.conversation,
                             storageState,
                         }),
                 );
@@ -1062,7 +1097,7 @@ const TARGETS = {
     dialog: ['[role="dialog"] form > div:last-child > button'],
     list: [
         'nav[aria-label="Bandejas"] button',
-        'nav[aria-label="Estado de las conversaciones"] button',
+        '[data-inbox-unread]',
         'section[aria-label="Lista de conversaciones"] [role="search"] button',
         'section[aria-label="Lista de conversaciones"] input[type="search"]',
         'label:has([role="switch"])',
@@ -1083,7 +1118,12 @@ const TARGETS = {
  * One viewport width and color scheme: Contactos (Index, Import, the
  * contact dialog with two custom fields) and Conversaciones (list, chat).
  */
-async function responsive(browser, width, scheme, { chatId, storageState }) {
+async function responsive(
+    browser,
+    width,
+    scheme,
+    { chatId, stressId, storageState },
+) {
     const phone = width <= 430;
     const page = await openPage(browser, {
         context: {
@@ -1185,7 +1225,20 @@ async function responsive(browser, width, scheme, { chatId, storageState }) {
             .waitFor();
         await settled(page);
         await check('conversations-chat', {
-            fontRoots: ['[role="region"][aria-label^="Conversación con"]'],
+            fontRoots: ['section[aria-label^="Conversación con"]'],
+            targets: TARGETS.chat,
+        });
+
+        // The stress conversation: 120-character PDF name, 90-character
+        // words in a quote and a note, a 300-character URL, 40 emojis and
+        // long names (tests/e2e/chat-movil-seed.php).
+        await page.goto(`${BASE}/conversations?c=${stressId}`);
+        await page
+            .getByRole('log', { name: /Historial de la conversación/ })
+            .waitFor();
+        await settled(page);
+        await check('conversations-stress', {
+            fontRoots: ['section[aria-label^="Conversación con"]'],
             targets: TARGETS.chat,
         });
 

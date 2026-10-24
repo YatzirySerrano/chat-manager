@@ -106,6 +106,17 @@ dentro de cada prefijo.
 - [ADR-QA-5 — Las recargas disparadas por señales esperan la operación del usuario](#adr-qa-5--las-recargas-disparadas-por-señales-esperan-la-operación-del-usuario)
 - [ADR-QA-6 — Escenario E2E multisesión y utilidades compartidas](#adr-qa-6--escenario-e2e-multisesión-y-utilidades-compartidas)
 
+**Chat web y API de integración (fase 4)** ([canal-chat-web.md](canal-chat-web.md), [api-v1.md](api-v1.md)):
+
+- [ADR-WEB-1 — Widget en iframe servido por Chat Manager](#adr-web-1--widget-en-iframe-servido-por-chat-manager)
+- [ADR-WEB-2 — Sin Sanctum: tokens propios con hash y middlewares propios](#adr-web-2--sin-sanctum-tokens-propios-con-hash-y-middlewares-propios)
+- [ADR-WEB-3 — Mismo Reverb para los visitantes, canal autorizado fuera de `routes/channels`](#adr-web-3--mismo-reverb-para-los-visitantes-canal-autorizado-fuera-de-routeschannels)
+- [ADR-WEB-4 — Contacto y conversación con el primer mensaje, por el mismo pipeline](#adr-web-4--contacto-y-conversación-con-el-primer-mensaje-por-el-mismo-pipeline)
+- [ADR-API-1 — El token de integración es el principal, con su propia allowlist](#adr-api-1--el-token-de-integración-es-el-principal-con-su-propia-allowlist)
+- [ADR-API-2 — Idempotencia sin tabla y errores con código estable](#adr-api-2--idempotencia-sin-tabla-y-errores-con-código-estable)
+- [ADR-INBOX-11 — Bandeja general como primera vista, con contadores en una agregación](#adr-inbox-11--bandeja-general-como-primera-vista-con-contadores-en-una-agregación)
+- [ADR-UX-1 — Terminología de estados solo de presentación](#adr-ux-1--terminología-de-estados-solo-de-presentación)
+
 **Documentación** ([README.md](README.md)):
 
 - [ADR-DOC-1 — Un documento por área y documentos transversales](#adr-doc-1--un-documento-por-área-y-documentos-transversales)
@@ -595,3 +606,72 @@ La fase se registra en un documento propio ([estabilizacion-final.md](estabiliza
 problemas del informe anterior, su estado y las funciones existentes intervenidas; las pruebas manuales por módulo
 viven en [guia-pruebas-manuales.md](guia-pruebas-manuales.md). Los demás documentos se actualizaron en su lugar, sin
 duplicarlos ([ADR-DOC-1](#adr-doc-1--un-documento-por-área-y-documentos-transversales)).
+
+## ADR-WEB-1 — Widget en iframe servido por Chat Manager
+
+El sitio solo carga un cargador IIFE sin dependencias (`public/widget/v1/chat-manager.js`) que dibuja el botón en un
+Shadow DOM cerrado y crea un iframe de `GET /widget/v1/frame/{publicKey}`. El token del visitante vive en el
+`localStorage` del iframe y la API y el WebSocket salen del origen de la app: el JavaScript del sitio (o un XSS del
+sitio) no puede leerlos, no hace falta CORS, `REVERB_ALLOWED_ORIGINS` no cambia, el CSS queda aislado y la CSP de la app
+se conserva. Solo el frame levanta `X-Frame-Options` (atributo `security.allow_framing`) y envía su propia
+`frame-ancestors` con los orígenes permitidos. Se descartó montar toda la UI en un Shadow DOM del sitio: el token y el
+socket quedarían en el contexto del sitio y habría que abrir CORS y Reverb por cliente.
+
+## ADR-WEB-2 — Sin Sanctum: tokens propios con hash y middlewares propios
+
+No se instala ninguna dependencia. `api_tokens` y `web_chat_sessions` guardan `sha256` del secreto, se comparan con
+`hash_equals` y los autentican dos middlewares (`api.token`, `webchat.session`) que dejan el principal en atributos del
+request. No se crean guards: `$request->user()` sigue siendo un `User` o `null`, nunca un token que confunda a Gate y a
+las políticas. Sanctum no modela la allowlist de conexiones y departamentos, las IPs, el motivo y autor de la
+revocación ni la expiración deslizante de los visitantes; habría que extenderlo igual
+([ADR-SEC-9](#adr-sec-9--dependencias-estabilidad-antes-que-actualización-y-nada-se-quita-sin-aprobación)).
+
+## ADR-WEB-3 — Mismo Reverb para los visitantes, canal autorizado fuera de `routes/channels`
+
+Los visitantes usan la misma app de Reverb con un canal privado por sesión, `webchat.sessions.{public_id}`, autorizado
+solo por `POST /api/v1/widget/broadcasting/auth` con el Bearer del visitante y la firma del protocolo Pusher. El canal no
+se registra en `routes/channels*.php`, así que el `/broadcasting/auth` de agentes lo rechaza. Las señales
+(`webchat.signal`) son invalidaciones sin contenido, como en
+[ADR-RT-1](#adr-rt-1--señales-de-invalidación-en-lugar-de-datos-por-websocket), con sondeo con ETag de respaldo. Una
+segunda app de Reverb exigiría variables nuevas y despliegue; queda como endurecimiento si la cuota `max_connections`
+compartida se queda corta. Long-poll o SSE retendrían workers de PHP-FPM.
+
+## ADR-WEB-4 — Contacto y conversación con el primer mensaje, por el mismo pipeline
+
+La sesión del visitante se crea al cargar el widget, pero el contacto y la conversación nacen solo con el primer mensaje,
+por `ReceiveInboundMessage` (el mismo de WhatsApp): sin contactos basura y con la misma distribución, horario,
+automatizaciones y reportes. El id de proveedor `web.in.{sesión}.{client_message_id}` da la idempotencia. Las
+identidades firmadas derivan `visitor_id` de la conexión y el `external_id` (prefijo `wi:`) y nunca se fusionan con
+WhatsApp ni con otra conexión; identificar una sesión que ya escribió la reemplaza, para no adjuntar el historial
+anónimo a la persona. Las salidas usan `ChannelTransports` → `WebChatTransport`, sin tocar el transporte de Meta.
+
+## ADR-API-1 — El token de integración es el principal, con su propia allowlist
+
+Cada token lleva `connection_ids` (obligatorio), `department_ids` opcional, capacidades, IPs y expiración obligatoria.
+La visibilidad sale de `ApiToken::scopeConversations()` y lo que queda fuera es el mismo 404 que lo inexistente
+([ADR-SEC-4](#adr-sec-4--404-para-lo-que-está-fuera-de-alcance-403-para-lo-visible-no-permitido)). Los mensajes de la
+integración llevan `sender_user_id` nulo y `metadata.integration`, y `DeliverOutboundMessage` los acepta porque no hay
+autor que revalidar. Una cuenta de servicio `User` exigiría excluirla de distribución, disponibilidad, capacidad,
+reportes y transferencias; ligar el token a una persona rompería la regla de que solo el asignado responde.
+
+## ADR-API-2 — Idempotencia sin tabla y errores con código estable
+
+`Idempotency-Key` es obligatoria y se guarda como `client_reference = UUIDv5(namespace, "{token}:{llave}")` con la
+huella sha256 del texto: el mismo intento responde 200 con el mismo mensaje y otro uso de la llave, 409
+`idempotency_key_reused`. Cada token tiene su espacio de llaves, sin oráculo entre conversaciones ni migración. Todas
+las respuestas de `/api/v1` son `{message, code}` (`ApiResponseHeaders::errorResponse()`), con `Cache-Control: no-store`
+y sin CORS (`config/cors.php` con `paths => []`).
+
+## ADR-INBOX-11 — Bandeja general como primera vista, con contadores en una agregación
+
+Quien atiende conversaciones entra a `view=general`: pendientes que puede aceptar, sus abiertas y las en espera de su
+alcance, de todos los canales, ordenadas por actividad reciente. `queue` se normaliza a general con `status=pending`.
+Los chips usan un único prop `counts` calculado con `SUM(CASE …)` en una consulta y cada número es lo que lista su
+chip con los mismos filtros. Aceptar no toca `last_message_at`, así que la fila no salta. No hizo falta migración.
+
+## ADR-UX-1 — Terminología de estados solo de presentación
+
+Los valores de `MessageStatus` no cambian; las etiquetas sí: «Enviando» (`queued`, `sending`), «Enviado» (`accepted`,
+`sent`), «Entregado», «Leído», «Fallido» y «Entrega no confirmada» (`failed` + `delivery_unknown`), con la acción
+«Reintentar». Se aplica en el enum, `messageFormat.ts`, el expediente, la API v1 y los avisos. Cerrar un toast con la
+X no lo marca como leído.

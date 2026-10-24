@@ -42,6 +42,9 @@ enum Permission: string
     case ViewConnections = 'connections.view';
     case ManageConnections = 'connections.manage';
 
+    case ViewIntegrations = 'integrations.view';
+    case ManageIntegrations = 'integrations.manage';
+
     case ViewTemplates = 'templates.view';
     case ManageTemplates = 'templates.manage';
 
@@ -116,6 +119,8 @@ enum Permission: string
             self::AddConversationNotes => 'Agregar notas internas',
             self::ViewConnections => 'Ver conexiones',
             self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
+            self::ViewIntegrations => 'Ver los tokens de la API de integración',
+            self::ManageIntegrations => 'Emitir y revocar tokens de la API de integración',
             self::ViewTemplates => 'Ver plantillas de WhatsApp',
             self::ManageTemplates => 'Sincronizar plantillas de WhatsApp con Meta',
             self::ViewContacts => 'Ver contactos',
@@ -186,6 +191,7 @@ enum Permission: string
             self::UpdateSettings,
             self::UpdateAppearance,
             self::ManageConnections,
+            self::ManageIntegrations,
             self::ViewSystem,
             self::ManageSystem,
         ], true);
@@ -209,6 +215,8 @@ enum Permission: string
             self::UpdateAppearance,
             self::ViewConnections,
             self::ManageConnections,
+            self::ViewIntegrations,
+            self::ManageIntegrations,
             self::ManageTemplates,
             self::ManageTags,
             self::ClassifyContactOrigin,

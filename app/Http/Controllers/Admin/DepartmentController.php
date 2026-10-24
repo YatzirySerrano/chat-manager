@@ -190,6 +190,7 @@ class DepartmentController extends Controller
 
         return array_values($department->connections()
             ->hidingDeletedFrom($actor)
+            ->with('webChatWidget')
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()

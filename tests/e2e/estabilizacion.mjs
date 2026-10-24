@@ -486,6 +486,14 @@ const run = async () => {
                     'conversation.changed',
                 ),
             ]);
+            // The bubble (message.recorded) and the header (the
+            // conversation reloaded after conversation.changed) are two
+            // live updates: the header gets the same live budget.
+            await waitFor(
+                async () =>
+                    /En atención/.test(await chatHeader(carla).innerText()),
+                LIVE_BUDGET_MS,
+            );
             const carlaHeader = (await chatHeader(carla).innerText()).replace(
                 /\s+/g,
                 ' ',
@@ -557,8 +565,12 @@ const run = async () => {
         // Search by message content: the superadministrator finds it by a
         // word of the first message; Ana (no access any more) does not.
         await step('search-message-content', 'keyboard + mouse', async () => {
-            const search = async (page) => {
-                await page.goto(`${BASE}/conversations`);
+            // Phase 4: the inbox opens on "Bandeja general" (pending ones and
+            // the person's own); the superadministrator searches every
+            // authorized conversation in "Todas" (view=all). Ana has no
+            // "Todas" view: she searches her default inbox.
+            const search = async (page, query = '') => {
+                await page.goto(`${BASE}/conversations${query}`);
                 await page.waitForLoadState('networkidle');
                 await page.getByRole('button', { name: /^Filtros/ }).click();
                 await page.locator('#inbox-search-in').selectOption('messages');
@@ -571,7 +583,7 @@ const run = async () => {
 
                 return listRow(page, CUSTOMER).count();
             };
-            const found = await search(superadmin);
+            const found = await search(superadmin, '?view=all');
             const byContact = await superadmin.request.get(
                 `${BASE}/conversations/page?search=${SEARCH_WORD}`,
                 { headers: { Accept: 'application/json' } },

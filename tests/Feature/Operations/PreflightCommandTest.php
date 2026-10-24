@@ -253,3 +253,22 @@ test('a production preflight without a backup directory warns and a local one sk
 
     expect(preflightCheck(preflightJson(), 'storage.backups')['status'])->toBe('warning');
 });
+
+test('rate limits kept in the database warn while a public web chat is active', function () {
+    config(['cache.default' => 'database', 'cache.limiter' => null]);
+
+    expect(preflightCheck(preflightJson(), 'cache')['status'])->toBe('ok');
+
+    Connection::factory()->webChat()->create();
+
+    $check = preflightCheck(preflightJson(), 'cache');
+
+    expect($check['status'])->toBe('warning')
+        ->and($check['summary'])->toContain('CACHE_LIMITER=redis');
+
+    config(['cache.limiter' => 'file']);
+
+    expect(preflightCheck(preflightJson(), 'cache'))
+        ->status->toBe('ok')
+        ->summary->toContain('límites de uso en file (file)');
+});

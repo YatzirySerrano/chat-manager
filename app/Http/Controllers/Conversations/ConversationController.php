@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Conversations;
 
 use App\Actions\Conversations\ConversationInboxQuery;
 use App\Enums\AgentAvailability;
+use App\Enums\ConnectionChannel;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\Permission;
@@ -73,7 +74,7 @@ class ConversationController extends Controller
      *
      * @var list<string>
      */
-    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'viewCounts', 'unreadCount'];
+    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount'];
 
     /**
      * Props of the selected conversation (chat and details panel).
@@ -88,9 +89,48 @@ class ConversationController extends Controller
      */
     public static function listUrl(): string
     {
-        $query = session()->get(self::LIST_QUERY, []);
+        return route('conversations.index', self::rememberedQuery());
+    }
 
-        return route('conversations.index', is_array($query) ? $query : []);
+    /**
+     * Where accepting a conversation leads: when the list the user left was
+     * narrowed to the pending ones (the "Pendientes" chip, or the legacy
+     * queue), the accepted row would leave it, so they go to the general
+     * inbox with their other filters and the conversation open, where the
+     * row stays in place as "En atención". Null keeps the usual way through
+     * show().
+     */
+    public static function listUrlAfterAccepting(Conversation $conversation): ?string
+    {
+        $query = self::rememberedQuery();
+
+        if (($query['status'] ?? null) !== ConversationStatus::Pending->value) {
+            return null;
+        }
+
+        unset($query['view'], $query['status']);
+
+        return route('conversations.index', [...$query, 'c' => $conversation->id]);
+    }
+
+    /**
+     * The list query remembered in the session. One saved before the
+     * general inbox existed may still say view=queue: it becomes the general
+     * inbox narrowed to the pending ones, so it never comes back as a view.
+     *
+     * @return array<string, mixed>
+     */
+    private static function rememberedQuery(): array
+    {
+        $query = session()->get(self::LIST_QUERY, []);
+        $query = is_array($query) ? $query : [];
+
+        if (($query['view'] ?? null) === ConversationInboxQuery::VIEW_QUEUE) {
+            unset($query['view']);
+            $query['status'] = ConversationStatus::Pending->value;
+        }
+
+        return $query;
     }
 
     /**
@@ -127,7 +167,7 @@ class ConversationController extends Controller
                 $resolved = true;
                 $candidate = isset($validated['c']) ? Conversation::query()->find((int) $validated['c']) : null;
                 $cached = $candidate !== null && $actor->can('view', $candidate) ? $candidate : null;
-                $cached?->load(['contact', 'channelConnection', 'department', 'assignee', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
+                $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
             }
 
             return $cached;
@@ -141,30 +181,33 @@ class ConversationController extends Controller
                 'department' => $filters['department'],
                 'agent' => $filters['agent'],
                 'connection' => $filters['connection'],
+                'channel' => $filters['channel'] ?? null,
                 'search' => $filters['search'],
                 'search_in' => $filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT,
                 'search_ignored' => $inbox->searchIgnored($filters),
                 'tag' => $filters['tag'] ?? null,
-                'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_PRIORITY,
+                'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT,
                 'unread' => $filters['unread'] ?? false,
             ],
-            'counts' => fn (): array => $this->statusCounts($inbox, $actor, $filters),
+            // Counters of every chip in one aggregate query, with the same
+            // filters as the list and always within the actor's reach.
+            'counts' => fn (): array => $inbox->counts($actor, $filters),
             'inbox' => fn (): array => [
                 'personal' => $filters['personal'],
                 'views' => $views,
             ],
-            // Active conversations per view, with the same filters, so the view
-            // switcher tells where work is waiting. Always within the actor's reach.
-            'viewCounts' => fn (): array => collect($views)->mapWithKeys(fn (string $option): array => [
-                $option => $inbox->filtered($actor, $filters, $option)->notClosed()->count(),
-            ])->all(),
             // Conversations with messages unread for the viewer in the current
-            // view, filters and status tab: what the "Unread" filter would list.
+            // view, filters and status (never closed ones): what the "Unread"
+            // filter would list.
             'unreadCount' => fn (): int => $inbox->handle($actor, [...$filters, 'unread' => true])->reorder()->count(),
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'connections' => fn () => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'display_phone_number']),
+            'filterOptions' => fn (): array => [
+                'channels' => $this->channelOptions($actor),
+            ],
+            'canSeeClosed' => fn (): bool => $actor->holdsPermission(Permission::ViewConversationHistory),
             'tags' => fn (): array => $actor->holdsPermission(Permission::ViewTags) || $actor->holdsPermission(Permission::AssignTags)
                 ? $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active']))
                 : [],
@@ -227,9 +270,7 @@ class ConversationController extends Controller
     {
         abort_unless(Gate::allows('view', $conversation), 404);
 
-        $query = $request->session()->get(self::LIST_QUERY, []);
-
-        return redirect()->route('conversations.index', [...(is_array($query) ? $query : []), 'c' => $conversation->id]);
+        return redirect()->route('conversations.index', [...self::rememberedQuery(), 'c' => $conversation->id]);
     }
 
     /**
@@ -249,7 +290,10 @@ class ConversationController extends Controller
 
         return array_filter([
             ...$validated,
+            // As normalized: the legacy queue is remembered as the general
+            // inbox with status=pending, never as a view.
             'view' => $filters['view'] === $filters['views'][0] ? null : $filters['view'],
+            'status' => $filters['status'] === 'active' ? null : $filters['status'],
         ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
@@ -264,7 +308,7 @@ class ConversationController extends Controller
      */
     private function list(ConversationInboxQuery $inbox, User $actor, array $filters, Request $request, ?array $after = null, int $limit = self::LIST_PAGE): array
     {
-        $sort = $filters['sort'] ?? ConversationInboxQuery::SORT_PRIORITY;
+        $sort = $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT;
         $listed = $inbox->handle($actor, $filters);
 
         if ($after !== null) {
@@ -274,7 +318,8 @@ class ConversationController extends Controller
         $rows = $inbox->withListColumns($listed, $actor)
             ->with([
                 'contact',
-                'channelConnection',
+                // The web chat's sending state reads its widget (Connection::isConfigured()).
+                'channelConnection.webChatWidget',
                 'department',
                 'assignee',
                 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name'),
@@ -316,28 +361,30 @@ class ConversationController extends Controller
 
         $messages = $ids === []
             ? collect()
-            : Message::query()->whereKey($ids)->get(['id', 'conversation_id', 'direction', 'type', 'status', 'body', 'metadata', 'sent_at', 'created_at'])->keyBy('id');
+            : Message::query()->whereKey($ids)->get(['id', 'conversation_id', 'direction', 'type', 'status', 'error_code', 'body', 'metadata', 'sent_at', 'created_at'])->keyBy('id');
 
         $rows->each(fn (Conversation $row) => $row->setRelation('lastMessage', $messages->get((int) $row->getAttribute('last_message_id'))));
     }
 
     /**
-     * Conversations per status inside the actor's view and filters.
+     * Channels the actor's visible connections use, in the order of the
+     * enum: the channel filter only appears with more than one.
      *
-     * @param  InboxFilters  $filters
-     * @return array<string, int>
+     * @return list<array{value: string, label: string}>
      */
-    private function statusCounts(ConversationInboxQuery $inbox, User $actor, array $filters): array
+    private function channelOptions(User $actor): array
     {
-        $counts = $inbox->filtered($actor, $filters)
+        $used = Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)
             ->toBase()
-            ->selectRaw('status, COUNT(*) AS total')
-            ->groupBy('status')
-            ->pluck('total', 'status');
+            ->distinct()
+            ->pluck('channel')
+            ->map(fn (mixed $value): string => (string) $value)
+            ->all();
 
-        return collect(ConversationStatus::cases())->mapWithKeys(fn (ConversationStatus $case): array => [
-            $case->value => (int) ($counts[$case->value] ?? 0),
-        ])->all();
+        return array_values(array_map(
+            fn (ConnectionChannel $channel): array => ['value' => $channel->value, 'label' => $channel->label()],
+            array_filter(ConnectionChannel::cases(), fn (ConnectionChannel $channel): bool => in_array($channel->value, $used, true)),
+        ));
     }
 
     /**

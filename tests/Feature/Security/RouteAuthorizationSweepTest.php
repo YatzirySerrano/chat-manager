@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\DataScope;
+use App\Models\ApiToken;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactReviewCase;
@@ -22,6 +23,7 @@ use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as Router;
 use Illuminate\Support\Str;
 use Tests\Feature\Templates\TemplateFixtures;
+use Tests\Support\WebChatFixtures;
 
 /*
 | Route-wide authorization sweep. Every route of the application (vendor
@@ -31,6 +33,11 @@ use Tests\Feature\Templates\TemplateFixtures;
 | authorization or crash: the only acceptable answers are "sign in", 403 and
 | 404 (410 for expired files). New routes are covered automatically; a route
 | that is legitimately self-service must be listed explicitly below.
+|
+| The /api/v1 routes have their own principals (Bearer cm_live_… integration
+| tokens and wvs_… visitor sessions) and ignore the web session, so they
+| answer 401 to a guest and to a signed in user alike; the signed visitor
+| attachment route answers 403 to a request without a valid signature.
 */
 
 /**
@@ -43,6 +50,8 @@ const PUBLIC_ROUTES = [
     'health.ready',
     'webhooks.whatsapp.verify',
     'webhooks.whatsapp.receive',
+    'widget.frame',
+    'api.v1.widget.sessions.store',
 ];
 
 /**
@@ -67,6 +76,29 @@ const SELF_SERVICE_ROUTES = [
     'notifications.push-subscriptions.store',
     'conversations.availability.update',
 ];
+
+/**
+ * Statuses a route may answer in the sweep: bearer-authenticated /api/v1
+ * routes always ask for their own credential (401) and signed routes refuse
+ * a missing signature (403); every other route answers what the test expects.
+ *
+ * @param  list<int>  $default
+ * @return list<int>
+ */
+function expectedSweepStatuses(Route $route, array $default): array
+{
+    $middleware = collect($route->gatherMiddleware())->map(fn (mixed $name): string => is_string($name) ? $name : '');
+
+    if ($middleware->contains(fn (string $name): bool => $name === 'api.token' || $name === 'webchat.session')) {
+        return [401];
+    }
+
+    if ($middleware->contains(fn (string $name): bool => $name === 'signed' || str_starts_with($name, 'signed:'))) {
+        return [403];
+    }
+
+    return $default;
+}
 
 /**
  * @return list<Route>
@@ -118,6 +150,7 @@ beforeEach(function () {
     $teamAttachment = TeamAttachment::factory()->create(['team_message_id' => $teamMessage->id]);
     $export = DataTransfer::factory()->completed()->create(['user_id' => $root->id]);
     $template = TemplateFixtures::stored($connection);
+    $webChat = WebChatFixtures::connection();
 
     $this->parameters = [
         'role' => Role::query()->where('is_root', false)->value('id'),
@@ -142,6 +175,8 @@ beforeEach(function () {
         'report' => 'contacts',
         'format' => 'xlsx',
         'webhookKey' => (string) $connection->webhook_key,
+        'publicKey' => (string) $webChat->webChatWidget?->public_key,
+        'apiToken' => ApiToken::factory()->create(['connection_ids' => [$connection->id]])->id,
     ];
 
     $this->teamParameters = [...$this->parameters, 'message' => $teamMessage->id, 'attachment' => $teamAttachment->id];
@@ -166,7 +201,7 @@ test('every application route asks a guest to sign in', function () {
         $method = sweepMethod($route);
         $response = $this->json($method, sweepUri($route, parametersFor($route, $this)));
 
-        if ($response->getStatusCode() !== 401) {
+        if (! in_array($response->getStatusCode(), expectedSweepStatuses($route, [401]), true)) {
             $failures[] = "{$method} {$route->uri()} answered {$response->getStatusCode()}";
         }
     }
@@ -186,7 +221,7 @@ test('a user whose role grants nothing reaches no record and no operation', func
         $method = sweepMethod($route);
         $response = $this->actingAs($nobody)->json($method, sweepUri($route, parametersFor($route, $this)));
 
-        if (! in_array($response->getStatusCode(), [403, 404], true)) {
+        if (! in_array($response->getStatusCode(), expectedSweepStatuses($route, [403, 404]), true)) {
             $failures[] = "{$method} {$route->uri()} answered {$response->getStatusCode()}";
         }
     }
@@ -207,7 +242,7 @@ test('an ordinary agent reaches no record of a colleague through any nested id',
         $method = sweepMethod($route);
         $response = $this->actingAs($outsider)->json($method, sweepUri($route, parametersFor($route, $this)));
 
-        if (! in_array($response->getStatusCode(), [403, 404], true)) {
+        if (! in_array($response->getStatusCode(), expectedSweepStatuses($route, [403, 404]), true)) {
             $failures[] = "{$method} {$route->uri()} answered {$response->getStatusCode()}";
         }
     }

@@ -12,7 +12,8 @@ use Carbon\CarbonInterface;
  *
  * Precedence (first match wins): inactive overlay, not configured, invalid
  * credentials, error newer than the last success, operational (only with
- * verified credentials), receiving, verified credentials, configured.
+ * verified credentials), receiving, verified credentials, configured. A web
+ * chat connection skips the credential states (see resolveWebChat).
  */
 enum ConnectionHealth: string
 {
@@ -53,6 +54,10 @@ enum ConnectionHealth: string
      */
     public static function resolveConfiguration(Connection $connection): self
     {
+        if ($connection->isWebChat()) {
+            return self::resolveWebChat($connection);
+        }
+
         if (! $connection->hasRequiredCredentials()) {
             return self::NotConfigured;
         }
@@ -84,6 +89,34 @@ enum ConnectionHealth: string
 
         if ($connection->credentials_verified_at !== null) {
             return self::CredentialsVerified;
+        }
+
+        return self::Configured;
+    }
+
+    /**
+     * A web chat connection has no provider credentials: it is configured
+     * with its widget and authorized origins, receiving once a visitor wrote
+     * and operational once a reply was also accepted.
+     */
+    private static function resolveWebChat(Connection $connection): self
+    {
+        if (! $connection->isConfigured()) {
+            return self::NotConfigured;
+        }
+
+        $lastSuccess = self::latest($connection->last_inbound_at, $connection->last_outbound_at);
+
+        if ($connection->last_error_at !== null && ($lastSuccess === null || $connection->last_error_at->greaterThan($lastSuccess))) {
+            return self::Error;
+        }
+
+        if ($connection->last_inbound_at !== null && $connection->last_outbound_at !== null) {
+            return self::Operational;
+        }
+
+        if ($connection->last_inbound_at !== null) {
+            return self::Receiving;
         }
 
         return self::Configured;

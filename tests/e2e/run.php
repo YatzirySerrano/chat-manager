@@ -6,8 +6,11 @@
 |   php tests/e2e/run.php [scenario.mjs]      (default: increment-b.mjs)
 |
 | Scenarios: increment-b.mjs, corrections.mjs, finalizacion.mjs,
-| realtime.mjs, estabilizacion.mjs and bandeja.mjs (the command line of each
-| one is in its header and in docs/pruebas.md §6).
+| realtime.mjs, estabilizacion.mjs, bandeja.mjs, and since phase 4
+| chat-movil.mjs (chat on phones, light and dark), bandeja-general.mjs
+| (general inbox, WhatsApp + web chat, toasts) and widget.mjs (the web chat
+| widget on cross-site host pages; needs E2E_HOST_PORT). The command line
+| of each one is in its header and in docs/pruebas.md §6.
 |
 | It never creates databases: it uses chatmanager_testing (.env.testing),
 | holds the same exclusive lock as the Pest suite (so both never run at the
@@ -28,6 +31,14 @@
 |   E2E_REVERB=1          also start a Reverb server for real-time scenarios,
 |                         with throwaway credentials generated for the run
 |   E2E_REVERB_PORT       Reverb port (default 8081)
+|   E2E_HOST_PORT         also serve tests/e2e/hosts/ (the widget's host
+|                         pages) on this port; the scenarios open them as
+|                         http://tienda.test:{port} and
+|                         http://intruso.test:{port} (Chromium maps both
+|                         names to 127.0.0.1, see launchBrowser in lib.mjs)
+|
+| The widget loader (public/widget/v1/chat-manager.js) is not versioned: it
+| is built with `npm run build:widget` when it is missing.
 */
 
 use Illuminate\Contracts\Console\Kernel;
@@ -97,6 +108,22 @@ if ($playwrightStatus !== 0) {
         .'Playwright is not a project dependency: set PLAYWRIGHT_MODULE to the directory of an installed "playwright" package'
         .' (for example $HOME/.npm/_npx/<hash>/node_modules/playwright, created by `npx playwright@1.63.0 --version`)'
         .' and make sure its Chromium is installed (`npx playwright@1.63.0 install chromium`).');
+}
+
+// The widget loader is a build artifact (npm run build includes it).
+if (! is_file($root.'/public/widget/v1/chat-manager.js')) {
+    echo 'Building the widget loader (npm run build:widget)...'.PHP_EOL;
+    passthru('cd '.escapeshellarg($root).' && npm run build:widget', $built);
+
+    if ($built !== 0 || ! is_file($root.'/public/widget/v1/chat-manager.js')) {
+        $fail('The widget loader could not be built: run `npm run build` (or `npm run build:widget`).');
+    }
+}
+
+$hostPort = (int) (getenv('E2E_HOST_PORT') ?: 0);
+
+if ($hostPort > 0 && @fsockopen('127.0.0.1', $hostPort, timeout: 0.5) !== false) {
+    $fail("Port {$hostPort} is already in use; stop that server or set E2E_HOST_PORT.");
 }
 
 $connection = config('database.connections.'.config('database.default'));
@@ -228,9 +255,39 @@ if (@fsockopen('127.0.0.1', $port, timeout: 0.5) === false) {
     $fail("The local web server did not start on port {$port}".($shots !== null ? " (see {$shots}/php-server.log)." : '.'));
 }
 
+// The widget's host pages: plain static files from another "site".
+$hosts = null;
+
+if ($hostPort > 0) {
+    $hosts = proc_open(
+        [PHP_BINARY, '-S', "127.0.0.1:{$hostPort}", '-t', __DIR__.'/hosts'],
+        [1 => $serverLog('host-server'), 2 => $serverLog('host-server')],
+        $pipes,
+        __DIR__.'/hosts',
+    );
+
+    for ($attempt = 0; $attempt < 50 && @fsockopen('127.0.0.1', $hostPort, timeout: 0.2) === false; $attempt++) {
+        usleep(200_000);
+    }
+
+    if (! is_resource($hosts) || @fsockopen('127.0.0.1', $hostPort, timeout: 0.5) === false) {
+        $stopServer();
+        $stopReverb();
+        $fail("The host pages server did not start on port {$hostPort}.");
+    }
+}
+
+$stopHosts = function () use ($hosts): void {
+    if (is_resource($hosts)) {
+        proc_terminate($hosts);
+        proc_close($hosts);
+    }
+};
+
 $node = proc_open([$nodeBinary, $scenario], [1 => STDOUT, 2 => STDERR], $pipes, $root, $environment);
 $status = is_resource($node) ? proc_close($node) : 1;
 
+$stopHosts();
 $stopServer();
 $stopReverb();
 

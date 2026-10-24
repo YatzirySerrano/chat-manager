@@ -17,13 +17,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
  * A channel the company is reachable through, such as a WhatsApp Business
- * phone number registered in Meta. Credentials are encrypted at rest and never
- * serialized; the health of a connection is derived from recorded evidence
+ * phone number registered in Meta or a web chat widget (webChatWidget).
+ * Credentials are encrypted at rest and never serialized; the health of a connection is derived from recorded evidence
  * (see ConnectionHealth), never stored as a claim.
  *
  * Two independent states: `is_active` is the operational activation with
@@ -201,6 +202,16 @@ class Connection extends Model
     }
 
     /**
+     * Widget settings of a web chat connection (none for WhatsApp).
+     *
+     * @return HasOne<WebChatWidget, $this>
+     */
+    public function webChatWidget(): HasOne
+    {
+        return $this->hasOne(WebChatWidget::class);
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function creator(): BelongsTo
@@ -232,6 +243,25 @@ class Connection extends Model
         return filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token);
     }
 
+    public function isWebChat(): bool
+    {
+        return $this->channel === ConnectionChannel::WebChat;
+    }
+
+    /**
+     * Whether the connection has what its channel needs to operate: the Meta
+     * credentials for WhatsApp, or a widget with at least one authorized
+     * origin for the web chat. hasRequiredCredentials() keeps meaning "Meta
+     * credentials" so nothing calls Meta for a web chat connection.
+     */
+    public function isConfigured(): bool
+    {
+        return match ($this->channel) {
+            ConnectionChannel::Whatsapp => $this->hasRequiredCredentials(),
+            ConnectionChannel::WebChat => ($widget = $this->loadMissing('webChatWidget')->webChatWidget) !== null && $widget->allowed_origins !== [],
+        };
+    }
+
     public function isDeleted(): bool
     {
         return $this->deleted_at !== null;
@@ -249,17 +279,22 @@ class Connection extends Model
     /**
      * Why a reply through this connection is known to fail right now, in
      * Spanish for the agent; null when it may be sent. It covers what is
-     * certain before calling Meta: a deleted or deactivated connection,
-     * missing credentials and credentials Meta rejected in the last
-     * verification. Unverified credentials do not block: Meta decides.
+     * certain before calling the provider: a deleted or deactivated
+     * connection and, for WhatsApp, missing credentials and credentials Meta
+     * rejected in the last verification (unverified credentials do not block:
+     * Meta decides). A web chat connection only needs its widget configured.
      */
     public function sendingBlockReason(): ?string
     {
+        $channel = $this->channel->label();
+
         return match (true) {
-            $this->isDeleted() => "La conexión de WhatsApp «{$this->name}» fue eliminada: ya no se pueden enviar mensajes desde esta conversación. El historial sigue disponible.",
-            ! $this->is_active => "La conexión de WhatsApp «{$this->name}» está desactivada: no se pueden enviar mensajes hasta que un administrador la vuelva a activar.",
-            ! $this->hasRequiredCredentials() => "La conexión de WhatsApp «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
-            filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de WhatsApp «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",
+            $this->isDeleted() => "La conexión de {$channel} «{$this->name}» fue eliminada: ya no se pueden enviar mensajes desde esta conversación. El historial sigue disponible.",
+            ! $this->is_active => "La conexión de {$channel} «{$this->name}» está desactivada: no se pueden enviar mensajes hasta que un administrador la vuelva a activar.",
+            $this->isWebChat() && ! $this->isConfigured() => "La conexión de {$channel} «{$this->name}» no tiene configurado su widget ni sus dominios autorizados: un administrador debe completarlos antes de enviar mensajes.",
+            $this->isWebChat() => null,
+            ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
+            filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de {$channel} «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",
             default => null,
         };
     }

@@ -14,9 +14,19 @@ use Symfony\Component\HttpFoundation\Response;
  * Scripts need the per-request nonce (Vite tags and the inline appearance
  * script carry it); inline styles stay allowed because the interface sets
  * style attributes at runtime.
+ *
+ * Framing: every page may only be framed by the application itself
+ * (X-Frame-Options SAMEORIGIN and frame-ancestors 'self'). The only exception
+ * is a response whose request carries the attribute ALLOW_FRAMING = true (the
+ * web chat frame, which sends its own CSP with the authorized
+ * frame-ancestors): X-Frame-Options is then left out, since it cannot list
+ * other origins.
  */
 class SecurityHeaders
 {
+    /** Request attribute that lets a response be framed by other origins (its own CSP decides which). */
+    public const ALLOW_FRAMING = 'security.allow_framing';
+
     public function handle(Request $request, Closure $next): Response
     {
         $nonce = null;
@@ -36,6 +46,10 @@ class SecurityHeaders
             'Permissions-Policy' => 'camera=(), geolocation=(), payment=(), usb=(), microphone=(self)',
             'Cross-Origin-Opener-Policy' => 'same-origin',
         ];
+
+        if ($request->attributes->get(self::ALLOW_FRAMING) === true) {
+            unset($defaults['X-Frame-Options']);
+        }
 
         foreach ($defaults as $name => $value) {
             if (! $headers->has($name)) {
@@ -89,7 +103,7 @@ class SecurityHeaders
      *
      * @return list<string>
      */
-    private function realtimeOrigins(): array
+    public function realtimeOrigins(): array
     {
         if (config('broadcasting.default') !== 'reverb') {
             return [];

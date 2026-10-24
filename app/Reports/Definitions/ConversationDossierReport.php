@@ -2,6 +2,7 @@
 
 namespace App\Reports\Definitions;
 
+use App\Actions\Messaging\ReconcileStuckDeliveries;
 use App\Enums\AttributionReliability;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
@@ -164,7 +165,7 @@ class ConversationDossierReport extends ReportDefinition
             'sender' => $inbound ? $this->conversation($context)->contact->name : ($record->sender->name ?? 'Sistema'),
             'type' => $this->typeLabel($record->type),
             'body' => $record->body === null || $record->body === '' ? null : Str::limit($record->body, self::BODY_LENGTH),
-            'status' => $this->statusLabel($record->status),
+            'status' => $this->statusLabel($record),
         ];
     }
 
@@ -318,7 +319,7 @@ class ConversationDossierReport extends ReportDefinition
 
         if (! array_key_exists($id, $this->conversations)) {
             $this->conversations[$id] = Conversation::query()
-                ->with(['contact', 'channelConnection:id,name', 'department:id,name', 'assignee:id,name', 'closedBy:id,name'])
+                ->with(['contact', 'channelConnection:id,name,channel', 'department:id,name', 'assignee:id,name', 'closedBy:id,name'])
                 ->find($id);
         }
 
@@ -350,17 +351,16 @@ class ConversationDossierReport extends ReportDefinition
         };
     }
 
-    private function statusLabel(MessageStatus $status): string
+    /**
+     * Same terminology as the conversation screen: a failure of unknown
+     * outcome reads "Entrega no confirmada", not "Fallido".
+     */
+    private function statusLabel(Message $message): string
     {
-        return match ($status) {
-            MessageStatus::Received => 'Recibido',
-            MessageStatus::Queued => 'En cola',
-            MessageStatus::Sending => 'En proceso',
-            MessageStatus::Accepted => 'Aceptado por WhatsApp',
-            MessageStatus::Sent => 'Enviado',
-            MessageStatus::Delivered => 'Entregado',
-            MessageStatus::Read => 'Leído',
-            MessageStatus::Failed => 'Fallido',
-        };
+        if ($message->status === MessageStatus::Failed && $message->error_code === ReconcileStuckDeliveries::CODE) {
+            return 'Entrega no confirmada';
+        }
+
+        return $message->status->label();
     }
 }

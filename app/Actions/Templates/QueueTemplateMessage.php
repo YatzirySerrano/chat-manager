@@ -50,9 +50,12 @@ class QueueTemplateMessage
             }
 
             // Same rule as a free-form reply (QueueOutboundMessage); checked again by the delivery job.
-            $connectionBlock = $conversation->channelConnection === null
-                ? 'La conversación no tiene una conexión de WhatsApp disponible para enviar mensajes.'
-                : $conversation->channelConnection->sendingBlockReason();
+            $connection = $conversation->channelConnection;
+            $connectionBlock = match (true) {
+                $connection === null => 'La conversación no tiene una conexión disponible para enviar mensajes.',
+                ! $connection->channel->supportsTemplates() => "Las plantillas no están disponibles en las conversaciones de {$connection->channel->label()}.",
+                default => $connection->sendingBlockReason(),
+            };
 
             if ($connectionBlock !== null) {
                 throw new ConversationConflict($connectionBlock);

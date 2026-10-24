@@ -10,6 +10,7 @@ enum PermissionGroup: string
     case Roles = 'roles';
     case Conversations = 'conversations';
     case Connections = 'connections';
+    case Integrations = 'integrations';
     case Templates = 'templates';
     case Contacts = 'contacts';
     case Tags = 'tags';
@@ -31,6 +32,7 @@ enum PermissionGroup: string
             self::Roles => 'Roles y permisos',
             self::Conversations => 'Conversaciones',
             self::Connections => 'Conexiones',
+            self::Integrations => 'Integraciones (API)',
             self::Templates => 'Plantillas de WhatsApp',
             self::Contacts => 'Contactos',
             self::Tags => 'Etiquetas',

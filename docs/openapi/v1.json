@@ -1,0 +1,1846 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Chat Manager API v1",
+        "version": "1.0.0",
+        "summary": "API de integración (servidor a servidor) y API del visitante del chat web (solo el iframe del widget).",
+        "description": "Verificado contra php artisan route:list --path=api/v1, los Form Requests de app/Http/Requests/Api/V1 y app/Http/Requests/WebChat, y los Resources de app/Http/Resources/Api/V1 y app/Http/Resources/WebChat. Guía: docs/api-v1.md. Todas las respuestas llevan Cache-Control: no-store y X-Request-Id. No hay CORS."
+    },
+    "servers": [
+        {
+            "url": "https://chat.example.com",
+            "description": "Sustituye por APP_URL."
+        }
+    ],
+    "tags": [
+        {
+            "name": "Integración",
+            "description": "Bearer cm_live_…, middleware api.token y api.ability."
+        },
+        {
+            "name": "Visitante del chat web",
+            "description": "Bearer wvs_…, middleware webchat.session; mismo origen que la app."
+        }
+    ],
+    "paths": {
+        "/api/v1/health": {
+            "get": {
+                "operationId": "api.v1.health",
+                "tags": ["Integración"],
+                "summary": "Estado del token y de sus conexiones",
+                "description": "No requiere capacidad: solo un token válido. Devuelve el nombre, las capacidades y la expiración del token, y cada conexión permitida con su canal y si está operativa.",
+                "security": [
+                    {
+                        "IntegrationToken": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Token válido.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations": {
+            "get": {
+                "operationId": "api.v1.conversations.index",
+                "tags": ["Integración"],
+                "summary": "Conversaciones al alcance del token",
+                "description": "Capacidad conversations:read. Orden: updated_at descendente, id descendente, con cursor opaco. Los filtros solo acotan lo que el token ya alcanza (sus conexiones y, si las tiene, sus departamentos).",
+                "security": [
+                    {
+                        "IntegrationToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["pending", "open", "on_hold", "closed"]
+                        }
+                    },
+                    {
+                        "name": "connection_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "department_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "updated_since",
+                        "in": "query",
+                        "description": "Fecha ISO 8601; incluye las actualizadas en ese instante o después.",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "meta.next_cursor o meta.prev_cursor de una respuesta anterior. Un cursor manipulado responde 422.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 1024
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "description": "Tamaño de página (por defecto 25, máximo 100).",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Página de conversaciones.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data", "meta"],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Conversation"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{conversation}": {
+            "get": {
+                "operationId": "api.v1.conversations.show",
+                "tags": ["Integración"],
+                "summary": "Una conversación",
+                "description": "Capacidad conversations:read.",
+                "security": [
+                    {
+                        "IntegrationToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "conversation",
+                        "in": "path",
+                        "required": true,
+                        "description": "Id numérico de la conversación. Fuera del alcance del token responde el mismo 404 que si no existiera.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "La conversación.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Conversation"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/conversations/{conversation}/messages": {
+            "get": {
+                "operationId": "api.v1.conversations.messages.index",
+                "tags": ["Integración"],
+                "summary": "Mensajes de una conversación",
+                "description": "Capacidad messages:read. Del más antiguo al más nuevo. Los cursores son ids de mensaje: next_cursor se usa como after y prev_cursor como before; son null cuando no queda nada en esa dirección. Las notas internas nunca se listan.",
+                "security": [
+                    {
+                        "IntegrationToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "conversation",
+                        "in": "path",
+                        "required": true,
+                        "description": "Id numérico de la conversación. Fuera del alcance del token responde el mismo 404 que si no existiera.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "after",
+                        "in": "query",
+                        "description": "Mensajes posteriores a este id. Incompatible con before.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "before",
+                        "in": "query",
+                        "description": "Los últimos mensajes anteriores a este id.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "description": "Tamaño de página (por defecto 25, máximo 100).",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Página de mensajes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data", "meta"],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Message"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "api.v1.conversations.messages.store",
+                "tags": ["Integración"],
+                "summary": "Enviar un mensaje de texto",
+                "description": "Capacidad messages:send. Pasa por la misma cola de envío que los agentes (QueueOutboundMessage): mismo bloqueo por conexión y ventana de 24 h, sin cambiar la asignación. El mensaje queda con autor 'integration'. Reintentar con la misma Idempotency-Key y el mismo texto responde 200 con el mismo mensaje; con otro texto o en otra conversación, 409 idempotency_key_reused.",
+                "security": [
+                    {
+                        "IntegrationToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "conversation",
+                        "in": "path",
+                        "required": true,
+                        "description": "Id numérico de la conversación. Fuera del alcance del token responde el mismo 404 que si no existiera.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true,
+                        "description": "Obligatoria. Su espacio es propio de cada token.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{8,64}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SendMessageRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Mensaje encolado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Message"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Reintento idempotente: el mismo mensaje.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/Message"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/{publicKey}/sessions": {
+            "post": {
+                "operationId": "api.v1.widget.sessions.store",
+                "tags": ["Visitante del chat web"],
+                "summary": "Crear la sesión del visitante",
+                "description": "La llama solo el iframe del widget (mismo origen). Exige el ticket que el frame incrusta tras validar el origen del sitio. El contacto y la conversación se crean con el primer mensaje, no aquí. Si el widget es anonymous, identity se ignora.",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "publicKey",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9]{32,64}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StartSessionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Sesión creada; el token solo se entrega aquí.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SessionWithToken"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/session": {
+            "get": {
+                "operationId": "api.v1.widget.session.show",
+                "tags": ["Visitante del chat web"],
+                "summary": "Leer la sesión",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "La sesión.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/VisitorSession"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "api.v1.widget.session.destroy",
+                "tags": ["Visitante del chat web"],
+                "summary": "Terminar la sesión",
+                "description": "Revoca la sesión (motivo visitor_closed). No cierra la conversación.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Sesión revocada."
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/session/identity": {
+            "post": {
+                "operationId": "api.v1.widget.session.identity.store",
+                "tags": ["Visitante del chat web"],
+                "summary": "Identificar al visitante con una identidad firmada",
+                "description": "Si la sesión aún no escribió, cambia de identidad (200, mismo token). Si ya escribió, se revoca (identified) y se emite una sesión nueva (201 con su token): el historial anónimo no se adjunta a la persona.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SignedIdentity"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Misma sesión, ya identificada.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/VisitorSession"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "Sesión nueva identificada.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SessionWithToken"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/session/messages": {
+            "get": {
+                "operationId": "api.v1.widget.session.messages.index",
+                "tags": ["Visitante del chat web"],
+                "summary": "Historial del visitante",
+                "description": "Sin cursor, la última página; con before, mensajes anteriores; con after, lo que llegó después (también respuestas que se volvieron visibles tarde: el cliente debe deduplicar por cursor). Admite ETag e If-None-Match.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "after",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 64
+                        },
+                        "description": "Cursor emitido por el servidor. Incompatible con before."
+                    },
+                    {
+                        "name": "before",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 64
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "If-None-Match",
+                        "in": "header",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Página de mensajes.",
+                        "headers": {
+                            "ETag": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data", "meta"],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/VisitorMessage"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "304": {
+                        "description": "Sin cambios desde el ETag enviado."
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "api.v1.widget.session.messages.store",
+                "tags": ["Visitante del chat web"],
+                "summary": "Escribir un mensaje",
+                "description": "Entra por el mismo pipeline que WhatsApp (ReceiveInboundMessage). El primer mensaje crea el contacto y la conversación. Repetir client_message_id responde 200 con el mismo mensaje.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/VisitorMessageRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Mensaje guardado.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/VisitorMessage"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Duplicado: el mismo mensaje.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["data"],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/VisitorMessage"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/session/receipts": {
+            "post": {
+                "operationId": "api.v1.widget.session.receipts.store",
+                "tags": ["Visitante del chat web"],
+                "summary": "Acuses de entrega y lectura",
+                "description": "Avanza como máximo 100 respuestas por acuse, solo hacia adelante, por RecordMessageStatus.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReceiptRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Acuse registrado."
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/session/attachments/{attachment}": {
+            "get": {
+                "operationId": "api.v1.widget.session.attachments.show",
+                "tags": ["Visitante del chat web"],
+                "summary": "Descargar un adjunto enviado por un agente",
+                "description": "URL temporal firmada (10 min) que entrega VisitorMessage.attachments[].url; no usa Bearer. Solo sirve adjuntos de mensajes salientes visibles para la sesión s. Imágenes en línea; el resto como descarga. Con nosniff y CSP sandbox.",
+                "security": [],
+                "parameters": [
+                    {
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "s",
+                        "in": "query",
+                        "required": true,
+                        "description": "Id público de la sesión.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "expires",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "signature",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "El archivo.",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "contentMediaType": "application/octet-stream"
+                                }
+                            },
+                            "image/*": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        },
+        "/api/v1/widget/broadcasting/auth": {
+            "post": {
+                "operationId": "api.v1.widget.broadcasting.auth",
+                "tags": ["Visitante del chat web"],
+                "summary": "Autorizar el canal privado del visitante",
+                "description": "Firma del protocolo Pusher solo para private-webchat.sessions.{id} de la sesión autenticada. El /broadcasting/auth de los agentes no conoce este canal.",
+                "security": [
+                    {
+                        "VisitorSession": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BroadcastingAuthRequest"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BroadcastingAuthRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Firma de suscripción.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["auth"],
+                                    "properties": {
+                                        "auth": {
+                                            "type": "string",
+                                            "description": "{key}:{hmac-sha256}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationFailed"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "IntegrationToken": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "cm_live_{public_id}_{secret40}",
+                "description": "Token de integración emitido en Administración > Integraciones."
+            },
+            "VisitorSession": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "wvs_{public_id}_{secret43}",
+                "description": "Token de sesión del visitante; vive en el localStorage del iframe."
+            }
+        },
+        "schemas": {
+            "Error": {
+                "type": "object",
+                "required": ["message", "code"],
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Explicación en español, sin detalles internos."
+                    },
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "bad_request",
+                            "unauthenticated",
+                            "forbidden",
+                            "not_found",
+                            "method_not_allowed",
+                            "conflict",
+                            "idempotency_key_reused",
+                            "widget_unavailable",
+                            "conversation_closed",
+                            "connection_unavailable",
+                            "customer_window_closed",
+                            "payload_too_large",
+                            "unsupported_media_type",
+                            "validation_failed",
+                            "rate_limited",
+                            "server_error",
+                            "service_unavailable",
+                            "temporarily_unavailable"
+                        ]
+                    },
+                    "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Solo en 422."
+                    }
+                }
+            },
+            "ListMeta": {
+                "type": "object",
+                "required": ["next_cursor", "prev_cursor", "limit"],
+                "properties": {
+                    "next_cursor": {
+                        "type": ["string", "null"]
+                    },
+                    "prev_cursor": {
+                        "type": ["string", "null"]
+                    },
+                    "limit": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "Health": {
+                "type": "object",
+                "required": [
+                    "status",
+                    "api_version",
+                    "server_time",
+                    "token",
+                    "connections"
+                ],
+                "properties": {
+                    "status": {
+                        "const": "ok"
+                    },
+                    "api_version": {
+                        "const": "v1"
+                    },
+                    "server_time": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "token": {
+                        "type": "object",
+                        "required": ["id", "name", "abilities", "expires_at"],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "abilities": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/Ability"
+                                }
+                            },
+                            "expires_at": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        }
+                    },
+                    "connections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "name",
+                                "channel",
+                                "operational"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "channel": {
+                                    "$ref": "#/components/schemas/Channel"
+                                },
+                                "operational": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Ability": {
+                "type": "string",
+                "enum": ["conversations:read", "messages:read", "messages:send"]
+            },
+            "Channel": {
+                "type": "string",
+                "enum": ["whatsapp", "web_chat"]
+            },
+            "Conversation": {
+                "type": "object",
+                "description": "Sin teléfono, correo ni notas del contacto.",
+                "required": [
+                    "id",
+                    "status",
+                    "status_label",
+                    "connection",
+                    "department",
+                    "contact",
+                    "assigned_agent",
+                    "last_message_at",
+                    "created_at",
+                    "updated_at",
+                    "closed_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "open", "on_hold", "closed"]
+                    },
+                    "status_label": {
+                        "type": "string"
+                    },
+                    "connection": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "channel": {
+                                "$ref": "#/components/schemas/Channel"
+                            }
+                        }
+                    },
+                    "department": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "contact": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "display_name": {
+                                "type": ["string", "null"]
+                            }
+                        }
+                    },
+                    "assigned_agent": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "last_message_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "created_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    },
+                    "closed_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Message": {
+                "type": "object",
+                "description": "Sin metadata ni el texto de error del proveedor.",
+                "required": [
+                    "id",
+                    "conversation_id",
+                    "direction",
+                    "type",
+                    "body",
+                    "status",
+                    "status_label",
+                    "author",
+                    "error_code",
+                    "attachments",
+                    "created_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "conversation_id": {
+                        "type": "integer"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["inbound", "outbound"]
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "text",
+                            "image",
+                            "audio",
+                            "video",
+                            "document",
+                            "sticker",
+                            "location",
+                            "contacts",
+                            "template",
+                            "interactive",
+                            "reaction",
+                            "unsupported"
+                        ]
+                    },
+                    "body": {
+                        "type": ["string", "null"]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "received",
+                            "queued",
+                            "sending",
+                            "accepted",
+                            "sent",
+                            "delivered",
+                            "read",
+                            "failed"
+                        ]
+                    },
+                    "status_label": {
+                        "type": "string",
+                        "enum": [
+                            "Recibido",
+                            "Enviando",
+                            "Enviado",
+                            "Entregado",
+                            "Leído",
+                            "Fallido",
+                            "Entrega no confirmada"
+                        ]
+                    },
+                    "author": {
+                        "type": "string",
+                        "enum": ["contact", "agent", "system", "integration"]
+                    },
+                    "error_code": {
+                        "type": ["string", "null"]
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "file_name": {
+                                    "type": ["string", "null"]
+                                },
+                                "mime_type": {
+                                    "type": ["string", "null"]
+                                },
+                                "size_bytes": {
+                                    "type": ["integer", "null"]
+                                }
+                            }
+                        }
+                    },
+                    "created_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SendMessageRequest": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                    }
+                }
+            },
+            "SignedIdentity": {
+                "type": "object",
+                "description": "signature = hex(HMAC-SHA256(identity_secret, \"v1\\n{public_key}\\n{external_id}\\n{email}\\n{name}\\n{iat}\\n{nonce}\")), con email y name vacíos si faltan. iat ±300 s; nonce de un solo uso.",
+                "required": ["external_id", "iat", "nonce", "signature"],
+                "properties": {
+                    "external_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 191
+                    },
+                    "name": {
+                        "type": ["string", "null"],
+                        "maxLength": 80
+                    },
+                    "email": {
+                        "type": ["string", "null"],
+                        "format": "email",
+                        "maxLength": 191
+                    },
+                    "iat": {
+                        "type": "integer",
+                        "description": "Segundos Unix."
+                    },
+                    "nonce": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,64}$"
+                    },
+                    "signature": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    }
+                }
+            },
+            "StartSessionRequest": {
+                "type": "object",
+                "required": ["ticket"],
+                "properties": {
+                    "ticket": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "description": "Ticket del frame (600 s)."
+                    },
+                    "profile": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "name": {
+                                "type": ["string", "null"],
+                                "maxLength": 80
+                            },
+                            "email": {
+                                "type": ["string", "null"],
+                                "format": "email",
+                                "maxLength": 191
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "identity": {
+                        "$ref": "#/components/schemas/SignedIdentity"
+                    },
+                    "landing_url": {
+                        "type": ["string", "null"],
+                        "format": "uri",
+                        "maxLength": 2048
+                    }
+                }
+            },
+            "Availability": {
+                "type": "object",
+                "required": ["online", "message"],
+                "properties": {
+                    "online": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": ["string", "null"]
+                    }
+                }
+            },
+            "RealtimeConfig": {
+                "type": "object",
+                "description": "Todo null y enabled=false si no hay Reverb: el widget usa sondeo.",
+                "required": [
+                    "enabled",
+                    "key",
+                    "host",
+                    "port",
+                    "scheme",
+                    "path",
+                    "channel",
+                    "auth_endpoint"
+                ],
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "key": {
+                        "type": ["string", "null"]
+                    },
+                    "host": {
+                        "type": ["string", "null"]
+                    },
+                    "port": {
+                        "type": ["integer", "null"]
+                    },
+                    "scheme": {
+                        "type": ["string", "null"],
+                        "enum": ["http", "https", null]
+                    },
+                    "path": {
+                        "type": ["string", "null"]
+                    },
+                    "channel": {
+                        "type": ["string", "null"],
+                        "description": "private-webchat.sessions.{id}"
+                    },
+                    "auth_endpoint": {
+                        "type": ["string", "null"],
+                        "format": "uri"
+                    }
+                }
+            },
+            "VisitorSession": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "identified",
+                    "profile",
+                    "expires_at",
+                    "conversation",
+                    "availability",
+                    "realtime",
+                    "poll"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "identified": {
+                        "type": "boolean"
+                    },
+                    "profile": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": ["string", "null"]
+                            }
+                        }
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "conversation": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "pending",
+                                    "open",
+                                    "on_hold",
+                                    "closed"
+                                ]
+                            },
+                            "agent_name": {
+                                "type": ["string", "null"]
+                            }
+                        }
+                    },
+                    "availability": {
+                        "$ref": "#/components/schemas/Availability"
+                    },
+                    "realtime": {
+                        "$ref": "#/components/schemas/RealtimeConfig"
+                    },
+                    "poll": {
+                        "type": "object",
+                        "properties": {
+                            "visible_seconds": {
+                                "type": "integer"
+                            },
+                            "hidden_seconds": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            },
+            "SessionWithToken": {
+                "type": "object",
+                "required": ["token", "data"],
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "description": "wvs_{public_id}_{secret}. Solo se entrega una vez."
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/VisitorSession"
+                    }
+                }
+            },
+            "VisitorMessage": {
+                "type": "object",
+                "description": "Nunca notas, eventos, metadata, error_code ni ids de usuario.",
+                "required": [
+                    "cursor",
+                    "direction",
+                    "author",
+                    "agent_name",
+                    "body",
+                    "attachments",
+                    "created_at"
+                ],
+                "properties": {
+                    "cursor": {
+                        "type": "string"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["inbound", "outbound"]
+                    },
+                    "author": {
+                        "type": "string",
+                        "enum": ["visitor", "agent", "system"]
+                    },
+                    "agent_name": {
+                        "type": ["string", "null"]
+                    },
+                    "body": {
+                        "type": ["string", "null"]
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "name",
+                                "mime_type",
+                                "size_bytes",
+                                "url"
+                            ],
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "mime_type": {
+                                    "type": ["string", "null"]
+                                },
+                                "size_bytes": {
+                                    "type": ["integer", "null"]
+                                },
+                                "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                }
+                            }
+                        }
+                    },
+                    "created_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "VisitorMessageRequest": {
+                "type": "object",
+                "required": ["client_message_id", "body"],
+                "properties": {
+                    "client_message_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                    },
+                    "website": {
+                        "type": "string",
+                        "maxLength": 0,
+                        "description": "Trampa (honeypot): cualquier valor responde 422."
+                    }
+                }
+            },
+            "ReceiptRequest": {
+                "type": "object",
+                "description": "Al menos uno de los dos.",
+                "properties": {
+                    "delivered_up_to": {
+                        "type": ["string", "null"],
+                        "maxLength": 64
+                    },
+                    "read_up_to": {
+                        "type": ["string", "null"],
+                        "maxLength": 64
+                    }
+                }
+            },
+            "BroadcastingAuthRequest": {
+                "type": "object",
+                "required": ["socket_id", "channel_name"],
+                "properties": {
+                    "socket_id": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+$"
+                    },
+                    "channel_name": {
+                        "type": "string",
+                        "maxLength": 200
+                    }
+                }
+            }
+        },
+        "responses": {
+            "BadRequest": {
+                "description": "Solicitud que el framework rechaza a nivel HTTP. Ninguna ruta lo produce a propósito hoy.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "bad_request"
+                        }
+                    }
+                }
+            },
+            "Unauthenticated": {
+                "description": "Sin token, con el token de la otra superficie, o con un token desconocido, vencido, revocado o (integración) desde una IP fuera de la lista. Nunca dice el motivo.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "WWW-Authenticate": {
+                        "schema": {
+                            "type": "string",
+                            "const": "Bearer"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "unauthenticated"
+                        }
+                    }
+                }
+            },
+            "Forbidden": {
+                "description": "Integración: falta la capacidad. Visitante: ticket inválido o vencido, canal ajeno, o firma de URL inválida o vencida.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "forbidden"
+                        }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "Inexistente o fuera del alcance del principal: siempre el mismo cuerpo.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "not_found"
+                        }
+                    }
+                }
+            },
+            "Conflict": {
+                "description": "conflict, idempotency_key_reused, widget_unavailable, conversation_closed, connection_unavailable o customer_window_closed.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "idempotency_key_reused"
+                        }
+                    }
+                }
+            },
+            "ValidationFailed": {
+                "description": "Datos no válidos.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "Los datos enviados no son válidos.",
+                            "code": "validation_failed",
+                            "errors": {
+                                "text": ["El campo text es obligatorio."]
+                            }
+                        }
+                    }
+                }
+            },
+            "RateLimited": {
+                "description": "Límite de frecuencia superado.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "Retry-After": {
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "rate_limited"
+                        }
+                    }
+                }
+            },
+            "ServerError": {
+                "description": "Error interno, sin detalles.",
+                "headers": {
+                    "Cache-Control": {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "no-store, private"
+                    },
+                    "X-Request-Id": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        },
+                        "example": {
+                            "message": "…",
+                            "code": "server_error"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

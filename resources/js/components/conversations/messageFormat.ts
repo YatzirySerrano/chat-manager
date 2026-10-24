@@ -6,18 +6,20 @@ import type {
 } from '@/types';
 
 /**
- * Human labels of the delivery states. "Entregado" and "Leído" only appear
- * when Meta reported them; nothing is assumed.
+ * Human labels of the delivery states (same table as MessageStatus::label()).
+ * Presentation only: queued and sending read "Enviando", accepted and sent
+ * read "Enviado". "Entregado" and "Leído" only appear when the provider
+ * reported them; nothing is assumed.
  */
 export const messageStatusLabels: Record<MessageStatusValue, string> = {
     received: 'Recibido',
-    queued: 'En cola de envío',
+    queued: 'Enviando',
     sending: 'Enviando',
-    accepted: 'Aceptado por WhatsApp',
+    accepted: 'Enviado',
     sent: 'Enviado',
     delivered: 'Entregado',
     read: 'Leído',
-    failed: 'No se envió',
+    failed: 'Fallido',
 };
 
 export const messageTypeLabels: Record<MessageTypeValue, string> = {
@@ -42,7 +44,7 @@ export const messageTypeLabels: Record<MessageTypeValue, string> = {
  */
 export const DELIVERY_UNKNOWN = 'delivery_unknown';
 
-export const deliveryUnknownLabel = 'Entrega sin confirmar';
+export const deliveryUnknownLabel = 'Entrega no confirmada';
 
 export function statusLabel(status: string, errorCode?: string | null): string {
     if (status === 'failed' && errorCode === DELIVERY_UNKNOWN) {

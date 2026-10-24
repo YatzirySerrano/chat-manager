@@ -4,6 +4,7 @@ import {
     Contact,
     FileDown,
     FileText,
+    KeyRound,
     LayoutGrid,
     MessageCircle,
     MessageSquareText,
@@ -32,6 +33,7 @@ import { index as contactsIndex } from '@/routes/contacts';
 import { index as conversationsIndex } from '@/routes/conversations';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as exportsIndex } from '@/routes/exports';
+import { index as integrationTokensIndex } from '@/routes/integrations/tokens';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
 import { index as reportsIndex } from '@/routes/reports';
 import { index as tagsIndex } from '@/routes/tags';
@@ -179,6 +181,15 @@ export function useNavigation() {
                 description: 'Plantillas aprobadas por Meta',
                 href: templatesIndex(),
                 icon: FileText,
+            });
+        }
+
+        if (canAny('integrations.view', 'integrations.manage')) {
+            admin.push({
+                title: 'Integraciones',
+                description: 'Tokens de la API para otros sistemas',
+                href: integrationTokensIndex(),
+                icon: KeyRound,
             });
         }
 

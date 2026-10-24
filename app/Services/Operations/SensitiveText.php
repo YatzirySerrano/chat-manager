@@ -20,6 +20,9 @@ final class SensitiveText
     private const PATTERNS = [
         // Query exceptions append the SQL with its bindings (customer data).
         '/\s*\((Connection|SQL):.*$/s' => '',
+        // Integration API tokens and web chat visitor tokens.
+        '/cm_live_[a-z0-9]+_[A-Za-z0-9]+/' => self::MASK,
+        '/wvs_[a-z0-9]+_[A-Za-z0-9]+/' => self::MASK,
         // Authorization headers and bearer tokens.
         '/\b(Bearer|Basic)\s+[A-Za-z0-9._~+\/=-]+/i' => '$1 '.self::MASK,
         // key=value or "key":"value" pairs whose key names a secret.

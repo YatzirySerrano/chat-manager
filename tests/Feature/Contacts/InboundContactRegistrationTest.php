@@ -438,3 +438,24 @@ test('a deleted contact keeps receiving the messages of its sender instead of be
         ->and($linked->contact->id)->toBe($deletedByHand->id)
         ->and(Contact::query()->count())->toBe(2);
 });
+
+test('a web chat visitor never enters the phone matching, even with a numeric id', function (string $visitorId) {
+    $manual = Contact::factory()->create(['phone_e164' => '+525512345678']);
+    $sender = new InboundSender(ConnectionChannel::WebChat, ConnectionProvider::WebWidget, $visitorId, null, 'web.in.'.fake()->uuid(), CarbonImmutable::now());
+
+    $registration = registerInbound(Connection::factory()->webChat()->create(), $sender);
+
+    expect($registration->outcome)->toBe(InboundContactOutcome::Created)
+        ->and($registration->contact->id)->not->toBe($manual->id)
+        ->and($registration->contact)
+        ->phone_e164->toBeNull()
+        ->source->toBe(ContactSource::WebChat)
+        ->name->toBe('Visitante web '.mb_substr($visitorId, -6))
+        ->and($registration->identity)->channel->toBe(ConnectionChannel::WebChat)->provider->toBe(ConnectionProvider::WebWidget)
+        ->and($manual->identities()->count())->toBe(0)
+        ->and(ContactReviewCase::query()->count())->toBe(0)
+        ->and(AuditLog::query()->where('action', AuditAction::ContactCreated)->sole()->properties['source'] ?? null)->toBe(ContactSource::WebChat->value);
+})->with([
+    'anonymous visitor' => ['wv:01jbz8k3m4n5p6q7r8s9t0v1w2'],
+    'numeric id' => ['5215512345678'],
+]);

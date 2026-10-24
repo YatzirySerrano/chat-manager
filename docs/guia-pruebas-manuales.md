@@ -2,8 +2,8 @@
 
 Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
 cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
-qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están al
-final (§27).
+qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están en
+§27 y las del chat web y la API de integración (fase 4), en §28.
 
 > **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
 > WhatsApp. Lo simulado lleva la etiqueta «Simulación».
@@ -98,7 +98,7 @@ departamento y un enlace «Abre:». Para obtener el id de un mensaje saliente (l
 | Duplicado                          | `php artisan chat-manager:simulate-inbound laura --duplicate --confirm`                                                                                              | «Duplicado: no se guardó otra vez» (mismo `wamid`)                                                                                                                                                                                                                                             |
 | Entregado                          | `php artisan chat-manager:simulate-inbound --status=delivered --message=<id saliente> --confirm`                                                                     | La burbuja pasa a dos marcas (Entregado)                                                                                                                                                                                                                                                       |
 | Leído                              | `php artisan chat-manager:simulate-inbound --status=read --message=<id saliente> --confirm` (añade `--out-of-order` para mandar `read` antes que `delivered`)        | Dos marcas de color (Leído) con hora de entrega; fuera de orden queda igual de correcto                                                                                                                                                                                                        |
-| Error de envío                     | `php artisan chat-manager:simulate-inbound --status=failed --message=<id saliente> --error-code=131026 --confirm`                                                    | «No se envió» con el motivo de Meta; con `--error-code=131047` el texto de ventana de 24 h vencida. Códigos: 131026, 131047, 131049, 131050, 131056, 130429, 131000, 131031                                                                                                                    |
+| Error de envío                     | `php artisan chat-manager:simulate-inbound --status=failed --message=<id saliente> --error-code=131026 --confirm`                                                    | «Fallido» con el motivo de Meta; con `--error-code=131047` el texto de ventana de 24 h vencida. Códigos: 131026, 131047, 131049, 131050, 131056, 130429, 131000, 131031                                                                                                                        |
 | Ventana de 24 h vencida            | `php artisan chat-manager:simulate-inbound laura --expire-window --confirm`                                                                                          | El último mensaje del cliente pasa a hace 24 h 5 min; al recargar, «Ventana 24 h: Vencida» y solo se ofrece plantilla. Si se rechaza por mensajes recientes, usa `php artisan chat-manager:simulate-inbound 5215500000160 "Hola" --minutes-ago=1500 --confirm` (conversación nueva ya vencida) |
 | Reapertura                         | Cierra una conversación desde la bandeja y, antes de 120 min: `php artisan chat-manager:simulate-inbound sofia "Una duda más" --confirm` (si la cerrada es de Sofía) | «Conversación reabierta». Pasados 120 min: «Conversación nueva»                                                                                                                                                                                                                                |
 | Transferencia                      | No es un evento de Meta: se hace en la interfaz (módulo 14)                                                                                                          | Evento «Transferida» en el historial                                                                                                                                                                                                                                                           |
@@ -204,7 +204,7 @@ no aparece en eliminados.
 
 **6.1 Ficha y diagnóstico.** Cuenta: Superadministrador. Acción: Conexiones → Demo B · WhatsApp simulado. Resultado:
 estado (activa tras §0.3), salud (no «Operativa» porque las credenciales no están verificadas), URL del webhook,
-diagnóstico (entregas sin confirmar de 7 días con enlaces) y «Simulación». Sin `WHATSAPP_PILOT_RECIPIENTS` no aparece
+diagnóstico (entregas no confirmadas de 7 días con enlaces) y «Simulación». Sin `WHATSAPP_PILOT_RECIPIENTS` no aparece
 «Piloto controlado». Error: aparece «Operativa» sin credenciales verificadas o se muestran secretos.
 
 **6.2 Pausar con una conversación abierta.** Cuenta: Administrador; Valeria con una conversación propia abierta en la
@@ -287,7 +287,7 @@ mensajes encuentra notas internas.
 ## 11. Mensajes
 
 **11.1 Responder.** Cuenta: Valeria en su conversación. Acción: escribir «Con gusto le ayudo» y Enter. Resultado: la
-burbuja pasa por En cola → Enviando → Aceptado y lleva la etiqueta «Simulación». Con `WHATSAPP_SIMULATE_STATUSES` pasa
+burbuja pasa por Enviando → Enviado y lleva la etiqueta «Simulación». Con `WHATSAPP_SIMULATE_STATUSES` pasa
 sola a Entregado/Leído; si no, usa los comandos «Entregado» y «Leído» de §0.4. El administrador lo ve en vivo.
 Registro: evento en el historial; mensaje con `client_reference`. Error: el mensaje se duplica al reintentar por red o
 aparece «Entregado» sin señal (simulada) de estado.
@@ -297,8 +297,8 @@ Resultado: nota con otro color; el Superadministrador la ve en vivo; nunca sale 
 Registro: evento «Nota agregada». Error: la nota aparece como mensaje al cliente.
 
 **11.3 Error de envío y reintento.** Cuenta: Valeria. Acción: comando «Error de envío» de §0.4 con el id de su último
-mensaje y `--error-code=131026`; después «Reintentar». Resultado: «No se envió» con el motivo; al reintentar vuelve a
-la cola en la misma fila. Para «Entrega sin confirmar» (`delivery_unknown`, tras `php artisan whatsapp:maintenance
+mensaje y `--error-code=131026`; después «Reintentar». Resultado: «Fallido» con el motivo; al reintentar vuelve a
+la cola en la misma fila. Para «Entrega no confirmada» (`delivery_unknown`, tras `php artisan whatsapp:maintenance
 reconcile-deliveries` con un mensaje atascado en Enviando) se ve en ámbar y el reintento pide confirmar el riesgo de
 duplicado. Registro: evento «Reintentado»; con riesgo de duplicado, además
 `conversation.message_retried_duplicate_risk` en Auditoría. Error: se reintenta sin confirmación o se crea otra fila.
@@ -507,7 +507,7 @@ ejecuta en el navegador.
 ## 25. Modo oscuro
 
 **25.1 Apariencia personal.** Cuenta: cualquiera. Acción: Configuración → Apariencia → Oscuro; recorrer Panel,
-Conversaciones (incluido el compositor bloqueado y «Entrega sin confirmar»), Chat interno (reacciones, «En línea»),
+Conversaciones (incluido el compositor bloqueado y «Entrega no confirmada»), Chat interno (reacciones, «En línea»),
 Reportes y Notificaciones push. Resultado: contraste legible y colores del tema en todo; al elegir «Sistema» sigue al
 sistema operativo. Error: textos invisibles, fondos blancos o iconos sin contraste.
 
@@ -542,9 +542,68 @@ con una app de Meta, WABA, número de prueba y token permanente, `WHATSAPP_TRANS
    tamaño) y enviar un archivo (subida multipart).
 7. **Plantillas**: sincronizar, recibir el webhook de aprobación y enviar una plantilla con la ventana cerrada.
 8. **Errores reales**: ventana vencida (131047), límites (429/130429) y textos de cURL del servidor que distinguen «no
-   llegó a Meta» de «entrega sin confirmar».
+   llegó a Meta» de «Entrega no confirmada».
 9. **Credenciales rechazadas**: con un token revocado, la verificación falla y el compositor bloquea el envío con
    «Meta rechazó las credenciales…»; un reintento y una plantilla también responden 409.
 
 Registra los resultados y cualquier diferencia de formato en
 [mensajeria-whatsapp.md §10](mensajeria-whatsapp.md#10-lo-que-no-se-ha-validado-contra-meta-real).
+
+## 28. Chat web e integraciones
+
+**Antes de empezar.** La base local `chatmanager` **no** tiene todavía las tablas de la fase 4: hay que decidir y
+ejecutar a mano `php artisan migrate` (crea `web_chat_widgets`, `web_chat_sessions` y `api_tokens`, aditivas) y
+`php artisan app:sync-permissions` (crea `integrations.view` e `integrations.manage`), con respaldo previo. Construye el
+widget con `npm run build` (o `npm run build:widget`; `npm run dev:widget` lo reconstruye al guardar). Para la página de
+ejemplo: `WEBCHAT_DEMO_ENABLED=true` en `.env` y `php artisan config:clear`. Detalle del canal en
+[canal-chat-web.md](canal-chat-web.md) y de la integración en [widget-integracion.md](widget-integracion.md).
+
+**28.1 Crear una conexión de chat web.** Cuenta: Superadministrador. Acción: Conexiones → Nueva conexión → «Chat web»;
+nombre «Chat web local», departamento Demo B · Ventas; en el widget, origen `http://localhost:8000` (el de tu
+`APP_URL`), título «Hola»; guardar y activar. Resultado: la fila muestra el icono y la etiqueta «Chat web»; la salud
+pasa de «Sin configurar» a «Configurada»; la tarjeta muestra el código para insertar y la vista previa real. Registro:
+`web_chat.widget_updated` en Auditoría. Error: se puede activar sin orígenes, `http://tienda.com` (http no local) se
+acepta o la vista previa abre una sesión.
+
+**28.2 Widget en la página de ejemplo.** Cuenta: ninguna (visitante). Acción: abrir
+`http://localhost:8000/widget/v1/demo/{clave pública}`, pulsar el botón, escribir «Quiero información». Resultado: el
+mensaje queda «Enviado»; en la bandeja general de Valeria aparece en vivo una conversación pendiente «Visitante web …»
+con el canal Chat web, el panel de detalles dice «Visitante web» y la ventana «No aplica». Error: el contacto se crea
+al abrir el widget sin escribir, o aparece en Soporte.
+
+**28.3 Respuesta y acuses.** Cuenta: Valeria. Acción: aceptar y responder «Con gusto». Resultado: el visitante recibe la
+respuesta en segundos (con Reverb) o en ≤ 4 s (sondeo); al verla, la burbuja del agente pasa a «Entregado» y «Leído»;
+la fila sigue en su sitio con «En atención». Error: la respuesta no llega sin recargar o se duplica tras una recarga del
+visitante.
+
+**28.4 Origen no permitido.** Acción: servir el mismo fragmento desde otro origen (por ejemplo
+`python3 -m http.server 8099` con una página que lo contenga, en `http://127.0.0.1:8099`). Resultado: el widget no monta
+(la consola muestra el bloqueo de `frame-ancestors`) y a los 20 s `[ChatManager] El chat no respondió…`; no se crea
+ninguna sesión. Error: el chat funciona desde un origen no listado.
+
+**28.5 Rotar la clave.** Cuenta: Superadministrador. Acción: «Rotar clave» y confirmar; recargar la página de ejemplo
+antigua. Resultado: la sesión anterior deja de funcionar y el fragmento viejo responde 404; con la clave nueva vuelve a
+funcionar. Registro: `web_chat.key_rotated`. Error: la clave vieja sigue sirviendo.
+
+**28.6 Identidad firmada.** Cuenta: Superadministrador. Acción: modo «Identificación opcional», «Generar secreto»
+(se muestra una sola vez); con el ejemplo PHP de [canal-chat-web.md §5](canal-chat-web.md#5-identidad-firmada) generar
+una identidad y llamar a `ChatManager('identify', …)` desde la consola de la página de ejemplo. Resultado: la sesión
+queda identificada; repetir la misma firma (mismo nonce) falla con `identity_rejected`. Error: una firma reutilizada o
+con otro secreto se acepta.
+
+**28.7 Conexión desactivada.** Acción: desactivar la conexión con el widget abierto y escribir. Resultado: el widget
+muestra que el chat no está disponible (409 `widget_unavailable`) sin perder la sesión; al reactivar, vuelve a
+funcionar. Error: el mensaje se guarda o la sesión se revoca.
+
+**28.8 Token de integración.** Cuenta: Superadministrador (o quien tenga `integrations.manage`). Acción: Administración
+→ Integraciones → emitir un token con «messages:send» y «conversations:read» para «Chat web local», con vencimiento en
+30 días; copiarlo. Resultado: el token completo se muestra una sola vez; la lista muestra «Activo». Registro:
+`api_token.issued` (sin el secreto). Después, con los ejemplos `curl` de [api-v1.md §9](api-v1.md#9-ejemplos-con-curl):
+`GET /api/v1/health` responde 200; `GET /api/v1/conversations/{id}` de una conversación de WhatsApp (fuera de la
+allowlist) responde 404; `POST …/messages` con `Idempotency-Key` responde 201 y repetirlo, 200; la respuesta aparece en
+la bandeja con el nombre del token. Revocar con motivo: la siguiente solicitud responde 401. Error: un token revocado
+sigue funcionando, se ve una conversación fuera de la allowlist o el reintento duplica el mensaje.
+
+**28.9 Toast con X.** Cuenta: Valeria. Acción: con una notificación nueva en pantalla, pulsar la X «Cerrar
+notificación». Resultado: el toast desaparece y la campana conserva su contador (cerrar no es leer). Error: la
+notificación queda leída.

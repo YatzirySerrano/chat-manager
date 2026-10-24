@@ -1,12 +1,16 @@
 <?php
 
 use App\Exceptions\ConversationConflict;
+use App\Http\Middleware\Api\ApiResponseHeaders;
+use App\Http\Middleware\Api\AuthenticateApiToken;
+use App\Http\Middleware\Api\EnsureApiTokenAbility;
 use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
+use App\Http\Middleware\WebChat\AuthenticateVisitorSession;
 use App\Models\Conversation;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\QueryException;
@@ -17,12 +21,18 @@ use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        // Integration (Bearer cm_live_…) and web chat visitor (Bearer wvs_…)
+        // APIs under /api/v1: the stateless "api" group, without session,
+        // cookies, CSRF or CORS.
+        api: __DIR__.'/../routes/api.php',
+        apiPrefix: 'api',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -37,7 +47,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         // "throttle:attempts,minutes" counts per route, not one shared counter per user.
-        $middleware->alias(['throttle' => ThrottleRequestsPerRoute::class]);
+        $middleware->alias([
+            'throttle' => ThrottleRequestsPerRoute::class,
+            'api.token' => AuthenticateApiToken::class,
+            'api.ability' => EnsureApiTokenAbility::class,
+            'webchat.session' => AuthenticateVisitorSession::class,
+        ]);
 
         // Every response (pages, webhooks, health): correlation id and browser hardening headers.
         $middleware->append([AssignRequestId::class, SecurityHeaders::class]);
@@ -48,6 +63,9 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // /api/v1: JSON clients, Cache-Control: no-store on every response.
+        $middleware->api(append: [ApiResponseHeaders::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Meta credentials must never be stored as old input in the session.
@@ -56,6 +74,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // Every /api/v1 error has the same body, {message, code} (plus
+        // "errors" on 422), whatever raised it: see ApiResponseHeaders.
+        $exceptions->respond(function (Response $response, Throwable $e, Request $request): Response {
+            return ApiResponseHeaders::applies($request) ? ApiResponseHeaders::errorResponse($response, $e) : $response;
+        });
 
         // A record outside the actor's scope must look exactly like one that
         // does not exist, so JSON 404 responses never carry the model name,

@@ -1,6 +1,7 @@
 # Documentación de Chat Manager
 
-Chat Manager es una bandeja multiagente para WhatsApp Business sobre la API oficial de WhatsApp Cloud de Meta, con
+Chat Manager es una bandeja multiagente para WhatsApp Business sobre la API oficial de WhatsApp Cloud de Meta y, desde
+la fase 4, para un canal de **Chat web** insertable en sitios externos, con una API de integración `/api/v1`. Incluye
 departamentos, asignación, tiempo real, chat interno, reportes y exportaciones. Esta carpeta contiene un documento por
 área; cada tema se explica en un solo lugar y los demás lo enlazan.
 
@@ -14,6 +15,9 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | [arquitectura.md](arquitectura.md)                                 | Arquitectura general, mapa de módulos, modelo de datos, flujos, estados, disponibilidad, colas               |
 | [bandejas-y-asignacion.md](bandejas-y-asignacion.md)               | Bandeja de tres paneles, compositor, búsqueda y paginación, visibilidad, distribución, asignación, capacidad |
 | [mensajeria-whatsapp.md](mensajeria-whatsapp.md)                   | Webhooks, conexiones, mensajes entrantes y salientes, multimedia, plantillas, simulador, activación real     |
+| [canal-chat-web.md](canal-chat-web.md)                             | Canal Chat web: arquitectura, modelo, configuración, ciclo del visitante, identidad firmada, privacidad      |
+| [widget-integracion.md](widget-integracion.md)                     | Insertar el widget: fragmento, API JS, jQuery, `postMessage`, CSP del sitio, móviles, caché, tamaños, demo   |
+| [api-v1.md](api-v1.md) y [openapi/v1.json](openapi/v1.json)        | API `/api/v1`: integración y visitante, tokens, capacidades, errores, paginación, límites, idempotencia      |
 | [tiempo-real.md](tiempo-real.md)                                   | Reverb, canales privados y de presencia, eventos, cola `realtime`, reconexión y respaldo por sondeo          |
 | [chat-interno.md](chat-interno.md)                                 | Chat entre empleados: privacidad, grupos, menciones, reacciones, «escribiendo…», presencia, adjuntos         |
 | [notificaciones-y-horarios.md](notificaciones-y-horarios.md)       | Notificaciones, Web Push, horario de atención, días no laborables, mensajes automáticos                      |
@@ -57,6 +61,28 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | 22  | Procedimiento de despliegue          | [infraestructura-y-despliegue.md §16–§18](infraestructura-y-despliegue.md#16-despliegue)                                                                                                                                                                                        |
 | 23  | Recuperación y respaldos             | [recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)                                                                                                                                                                                                                      |
 | 24  | Limitaciones y dependencias externas | [limitaciones.md](limitaciones.md) y el registro de la fase [estabilizacion-final.md](estabilizacion-final.md)                                                                                                                                                                  |
+
+### Fase 4: chat web y API de integración (§16)
+
+| #   | Tema                        | Dónde                                                                                                                                                                                                                                                              |
+| --- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Arquitectura del canal      | [canal-chat-web.md §1](canal-chat-web.md#1-arquitectura-del-canal) y [§2 Modelo](canal-chat-web.md#2-modelo); decisiones [ADR-WEB-1 a 4](decisiones.md#adr-web-1--widget-en-iframe-servido-por-chat-manager)                                                       |
+| 2   | Instalación                 | [widget-integracion.md §1](widget-integracion.md#1-instalación)                                                                                                                                                                                                    |
+| 3   | Ejemplo JavaScript          | [widget-integracion.md §2](widget-integracion.md#2-api-javascript)                                                                                                                                                                                                 |
+| 4   | Ejemplo jQuery              | [widget-integracion.md §3](widget-integracion.md#3-adaptador-jquery)                                                                                                                                                                                               |
+| 5   | Configuración de conexiones | [canal-chat-web.md §3](canal-chat-web.md#3-configuración-de-conexiones)                                                                                                                                                                                            |
+| 6   | API v1                      | [api-v1.md](api-v1.md) y [openapi/v1.json](openapi/v1.json)                                                                                                                                                                                                        |
+| 7   | Autenticación y seguridad   | [api-v1.md §3](api-v1.md#3-autenticación-y-seguridad), [seguridad §Chat web y API v1](seguridad-y-auditoria.md#chat-web-y-api-v1), [widget-integracion.md §5–§6](widget-integracion.md#5-aislamiento) e [identidad firmada](canal-chat-web.md#5-identidad-firmada) |
+| 8   | Permisos y tokens           | [api-v1.md §2](api-v1.md#2-tokens-de-integración) y [seguridad §3](seguridad-y-auditoria.md#3-modelo-de-permisos)                                                                                                                                                  |
+| 9   | WebSocket y reconexión      | [tiempo-real.md §Canal del visitante](tiempo-real.md#canal-del-visitante-del-chat-web)                                                                                                                                                                             |
+| 10  | Errores                     | [api-v1.md §4](api-v1.md#4-respuestas-y-errores) y [widget-integracion.md §11](widget-integracion.md#11-problemas-frecuentes)                                                                                                                                      |
+| 11  | Límites                     | [api-v1.md §8](api-v1.md#8-límites) y [canal-chat-web.md §4](canal-chat-web.md#política-de-inactividad-wc-09)                                                                                                                                                      |
+| 12  | Pruebas manuales            | [guia-pruebas-manuales.md §28](guia-pruebas-manuales.md#28-chat-web-e-integraciones); automáticas en [pruebas.md §2.2 y §6.2](pruebas.md#22-pruebas-añadidas-en-la-fase-4)                                                                                         |
+| 13  | Infraestructura             | [infraestructura-y-despliegue.md §5, §6 y §10](infraestructura-y-despliegue.md#10-reverb) y [widget-integracion.md §8](widget-integracion.md#8-caché-del-cargador)                                                                                                 |
+| 14  | Producción                  | [infraestructura-y-despliegue.md §16](infraestructura-y-despliegue.md#16-despliegue) y [limitaciones.md §8](limitaciones.md#8-antes-de-producción)                                                                                                                 |
+
+Bandeja general con ambos canales: [bandejas-y-asignacion.md](bandejas-y-asignacion.md#vista-general-chips-y-contadores).
+Terminología de estados: [arquitectura.md §8](arquitectura.md#8-estados-de-mensajes).
 
 Registro de decisiones: [decisiones.md](decisiones.md).
 

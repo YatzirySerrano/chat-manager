@@ -136,6 +136,7 @@ class DashboardMetrics
     {
         return Cache::remember('dashboard:messaging-connected', 60, fn (): bool => Connection::query()
             ->active()
+            ->with('webChatWidget')
             ->get()
             ->contains(fn (Connection $connection): bool => $connection->configurationHealth()->hasConfirmedTraffic()));
     }

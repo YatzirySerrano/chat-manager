@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import { ArrowLeft, PanelRight, PanelRightClose } from '@lucide/vue';
+import {
+    ArrowLeft,
+    Globe,
+    MessageCircle,
+    PanelRight,
+    PanelRightClose,
+} from '@lucide/vue';
 import { useDocumentVisibility, watchDebounced } from '@vueuse/core';
 import { computed, onScopeDispose, ref, toRef, watch } from 'vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
@@ -259,6 +265,13 @@ function onTemplateSent(): void {
     router.reload({ only: ['conversation', 'window', 'conversations'] });
 }
 
+/* Channel the conversation arrived through, always visible in the header. */
+const channelIcon = computed(() =>
+    props.conversation.connection.channel === 'web_chat'
+        ? Globe
+        : MessageCircle,
+);
+
 const phone = computed(() =>
     props.conversation.contact.phone_e164
         ? formatPhone(props.conversation.contact.phone_e164)
@@ -298,6 +311,19 @@ const phone = computed(() =>
                 <p
                     class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
                 >
+                    <span
+                        class="inline-flex shrink-0 items-center gap-1"
+                        :title="`Canal: ${conversation.connection.channel_label}`"
+                        data-channel-indicator
+                    >
+                        <component
+                            :is="channelIcon"
+                            class="size-3.5 shrink-0"
+                            aria-hidden="true"
+                        />
+                        <span class="sr-only">Canal:</span>
+                        {{ conversation.connection.channel_label }}
+                    </span>
                     <span v-if="phone" class="truncate tabular-nums">{{
                         phone
                     }}</span>

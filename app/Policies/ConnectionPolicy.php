@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\ConnectionChannel;
 use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\User;
@@ -52,9 +53,22 @@ class ConnectionPolicy
         return $this->update($actor, $connection);
     }
 
+    /**
+     * Verifying credentials and managing the app subscription only exist for
+     * WhatsApp: a web chat connection has nothing to verify with Meta.
+     */
     public function verify(User $actor, Connection $connection): bool
     {
-        return $this->update($actor, $connection);
+        return $connection->channel === ConnectionChannel::Whatsapp && $this->update($actor, $connection);
+    }
+
+    /**
+     * The widget settings (and the rotation of its key and identity secret)
+     * of a web chat connection are managed with the connections permission.
+     */
+    public function manageWidget(User $actor, Connection $connection): bool
+    {
+        return $connection->isWebChat() && $this->update($actor, $connection);
     }
 
     public function delete(User $actor, Connection $connection): bool

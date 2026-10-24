@@ -22,14 +22,17 @@ enum MessageStatus: string
     case Read = 'read';
     case Failed = 'failed';
 
+    /**
+     * Label shown to people. Presentation only: queued and sending both read
+     * "Enviando", and accepted and sent both read "Enviado"; the stored
+     * values keep the full progression.
+     */
     public function label(): string
     {
         return match ($this) {
             self::Received => 'Recibido',
-            self::Queued => 'Pendiente',
-            self::Sending => 'En proceso',
-            self::Accepted => 'Aceptado por WhatsApp',
-            self::Sent => 'Enviado',
+            self::Queued, self::Sending => 'Enviando',
+            self::Accepted, self::Sent => 'Enviado',
             self::Delivered => 'Entregado',
             self::Read => 'Leído',
             self::Failed => 'Fallido',

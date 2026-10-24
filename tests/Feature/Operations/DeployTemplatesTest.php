@@ -46,6 +46,23 @@ test('commands run as root never execute a script from the application tree', fu
         ->and($sudoers)->toContain('/usr/local/sbin/chat-manager-backup-database ""');
 });
 
+test('a deployment adds the new catalog permissions right after migrating', function () {
+    $deploy = File::get(base_path('deploy/scripts/deploy.sh'));
+
+    expect($deploy)->toContain('"$PHP" artisan app:sync-permissions --no-interaction')
+        ->and(strpos($deploy, 'artisan app:sync-permissions'))->toBeGreaterThan((int) strpos($deploy, 'artisan migrate --force'))
+        ->and(strpos($deploy, 'artisan app:sync-permissions'))->toBeLessThan((int) strpos($deploy, 'Switching current'));
+});
+
+test('the web chat loader is served with a short cache and nosniff', function () {
+    $nginx = File::get(base_path('deploy/nginx/chat-manager.conf'));
+
+    expect(preg_match('/location = \/widget\/v1\/chat-manager\.js \{(.*?)\}/s', $nginx, $block))->toBe(1)
+        ->and($block[1])->toContain('try_files $uri =404;')
+        ->toContain('Cache-Control "public, max-age=300, stale-while-revalidate=86400" always')
+        ->toContain('X-Content-Type-Options nosniff always');
+});
+
 test('every deployment script has valid bash syntax', function (string $script) {
     $result = Process::run(['bash', '-n', base_path("deploy/scripts/{$script}")]);
 

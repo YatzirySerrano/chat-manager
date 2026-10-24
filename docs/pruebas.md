@@ -88,6 +88,24 @@ límite de carga en `ConversationLifecycleTest`, la carga incremental en `InboxR
 `SystemPageTest`, la señal de notificación en `NotificationDeliveryTest`, los 403 → 404 fuera de alcance y las
 exportaciones de `get()` a `post()`.
 
+### 2.2 Pruebas añadidas en la fase 4
+
+| Área                   | Archivos                                                                                                                                                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Esquema y modelos      | `tests/Feature/Database/WebChatSchemaTest.php` (up/down solo en `chatmanager_testing`), `tests/Feature/WebChat/WebChatModelsTest.php`, `tests/Feature/Api/ApiTokenModelTest.php`                                                                                                             |
+| Visitante del chat web | `tests/Feature/WebChat/*`: frame y CSP, sesiones, identidad firmada, mensajes, acuses, límites (también aislamiento por sesión), tiempo real y adjuntos                                                                                                                                      |
+| Conexiones web         | `tests/Feature/Connections/WebChatWidgetManagementTest.php`, `WebChatConnectionStateTest.php`                                                                                                                                                                                                |
+| Transporte por canal   | `tests/Feature/Messaging/ChannelTransportsTest.php`                                                                                                                                                                                                                                          |
+| Bandeja general        | `tests/Feature/Conversations/GeneralInboxTest.php` y las pruebas de bandeja actualizadas                                                                                                                                                                                                     |
+| API de integración     | `tests/Feature/Api/V1/*` (autenticación, conversaciones, límites por token, envío idempotente), `ApiErrorFormatTest.php`, `tests/Feature/Admin/ApiTokenManagementTest.php`                                                                                                                   |
+| Documento OpenAPI      | `tests/Feature/Api/OpenApiDocumentTest.php`: cada ruta `api/v1` de `route:list` (método y ruta) está en `docs/openapi/v1.json` con su nombre como `operationId`, y viceversa                                                                                                                 |
+| Seguridad              | `tests/Feature/Security/CorsTest.php` y `RouteAuthorizationSweepTest.php` (rutas `api.token` y `webchat.session` esperan 401 también con sesión de agente)                                                                                                                                   |
+| Concurrencia           | `tests/Feature/Concurrency/WebWidgetConcurrencyTest.php` con procesos PHP reales: dos conexiones web a la vez, webhooks y widget en el mismo departamento, aceptación disputada, pestañas del mismo visitante, `client_message_id` repetido y el límite por sesión compartido entre procesos |
+
+```bash
+TEST_DB_LOCK_WAIT=3600 php artisan test --compact tests/Feature/WebChat tests/Feature/Api tests/Feature/Concurrency/WebWidgetConcurrencyTest.php
+```
+
 ## 3. Análisis estático, formato y frontend
 
 ```bash
@@ -217,6 +235,37 @@ generó aparte sin errores.
 | `estabilizacion.mjs` | `E2E_REVERB=1 E2E_PORT=8050 E2E_REVERB_PORT=8111 WHATSAPP_TRANSPORT=simulated`                          | 17/17     | 4 roles; 14 actualizaciones en vivo, la más lenta 1 999 ms en la interfaz (presupuesto 8 s; sondeo 20 s) |
 
 Total: 98/98 pasos, 0 errores de consola, 0 errores de página y 0 respuestas 5xx en los cinco escenarios.
+
+### 6.2 Escenarios de la fase 4
+
+| Escenario             | Contenido                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat-movil.mjs`      | El chat en teléfonos (320–430 px), claro y oscuro: carga, scroll al primer mensaje, cita de una palabra de 90 caracteres, adjunto con nombre muy largo, menú de acciones, mensaje en vivo con palabra larga y panel de detalles (Sheet), sin scroll horizontal. Semilla `chat-movil-seed.php`                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `bandeja-general.mjs` | Bandeja general con WhatsApp y Chat web: solo lo que espera a Ana, cada número de chip igual a lo que lista, filtro «Canal», aceptar sin que la fila salte («En atención»), un visitante nuevo llega en vivo a dos agentes que aceptan a la vez (uno gana, un evento), y la X «Cerrar notificación» a 375 y 1280 px sin marcar leída. Semilla `bandeja-general-seed.php`                                                                                                                                                                                                                                                                                                                                                        |
+| `widget.mjs`          | El widget en páginas host de **otro sitio** (`tests/e2e/hosts/`, servidas en `E2E_HOST_PORT` como `http://tienda.test:{puerto}`; Chromium resuelve `tienda.test` e `intruso.test` a 127.0.0.1): cola del fragmento, `init` idempotente, abrir/cerrar/Escape, `postMessage` falsificado ignorado, token ilegible para el sitio y nunca en una URL, `intruso.test` no monta (frame-ancestors) ni obtiene sesiones, CSS hostil, anchos sin desborde (también dentro del iframe), ida y vuelta con un agente por Reverb o por sondeo, recarga y reconexión con la misma sesión, `destroy` sin restos, adaptador jQuery con `jquery-stub.js` (la URL del CDN se responde en local) y 0 errores sin jQuery. Semilla `widget-seed.php` |
+
+```bash
+E2E_REVERB=1 E2E_PORT=8070 E2E_REVERB_PORT=8131 WHATSAPP_TRANSPORT=simulated \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php chat-movil.mjs
+E2E_REVERB=1 E2E_PORT=8080 E2E_REVERB_PORT=8141 WHATSAPP_TRANSPORT=simulated \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php bandeja-general.mjs
+E2E_REVERB=1 E2E_PORT=8090 E2E_REVERB_PORT=8151 E2E_HOST_PORT=8092 \
+  WHATSAPP_TRANSPORT=simulated TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php widget.mjs
+```
+
+- Sin `E2E_REVERB` el mensaje en vivo y la ida y vuelta del widget se comprueban por el sondeo de respaldo.
+- `bandeja.mjs`, `increment-b.mjs`, `finalizacion.mjs`, `realtime.mjs` y `estabilizacion.mjs` se adaptaron a la bandeja
+  general (chips con los mismos textos). `openInboxView` (`lib.mjs`) espera la respuesta Inertia de la lista antes de
+  leerla, y el detector de desbordes se reforzó.
+- Defectos que encontraron estos escenarios y se corrigieron: una recarga en vivo pisaba el filtro elegido
+  (`useLiveReload.ts`), un nombre largo desbordaba el panel de detalles a 1280/1440 px, el panel principal daba 500 con
+  un chat web activo y el límite «por sesión» de mensajes del visitante se contaba por IP.
+- **Carga:** escenario `widget` de `tests/load/run.php` (frame → sesión → WebSocket opcional → mensajes con reenvío
+  idempotente → sondeo final), por ejemplo `php tests/load/run.php widget:40,agents:5`. Perillas
+  `LOAD_WIDGET_VISITORS`, `LOAD_WIDGET_MESSAGES`, `LOAD_WIDGET_CONCURRENCY`, `LOAD_WIDGET_SOCKET_SHARE`
+  ([rendimiento-y-carga.md](rendimiento-y-carga.md)). Medido solo con 40 visitantes y 5 agentes sobre 1 000
+  conversaciones.
+- No se ejecutaron al cerrar la fase la suite Pest completa ni todos los E2E en serie: quedan para quien integra.
 
 ## 7. Carga y resistencia
 

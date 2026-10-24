@@ -127,6 +127,7 @@ class SystemController extends Controller
 
         return array_values(Connection::query()
             ->notDeleted()
+            ->with('webChatWidget')
             ->orderBy('name')
             ->limit(100)
             ->get()

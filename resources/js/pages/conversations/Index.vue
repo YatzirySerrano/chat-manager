@@ -32,13 +32,14 @@ import type {
     ComposerSettings,
     ConversationDetails,
     ConversationFilters,
+    ConnectionChannel,
     ConversationInbox,
-    ConversationInboxView,
     ConversationList,
     ConversationStatusValue,
     ConversationSummary,
     ConversationTimelinePage,
     CustomerWindow,
+    InboxCounts,
     TagOption,
     ViewerAvailability,
 } from '@/types';
@@ -52,9 +53,8 @@ defineOptions({
 const props = defineProps<{
     conversations: ConversationList;
     filters: ConversationFilters;
-    counts: Record<ConversationStatusValue, number>;
+    counts: InboxCounts;
     inbox: ConversationInbox;
-    viewCounts: Partial<Record<ConversationInboxView, number>>;
     statuses: { value: ConversationStatusValue; label: string }[];
     departments: { id: number; name: string; is_active: boolean }[];
     agents: { id: number; name: string; is_active: boolean }[];
@@ -64,8 +64,12 @@ const props = defineProps<{
         display_phone_number: string | null;
     }[];
     unreadCount: number;
+    filterOptions: {
+        channels: { value: ConnectionChannel; label: string }[];
+    };
     tags: TagOption[];
     canSeeUnrouted: boolean;
+    canSeeClosed: boolean;
     canExport: boolean;
     availability: ViewerAvailability;
     composer: ComposerSettings;
@@ -85,16 +89,10 @@ const LIST_PROPS = [
     'filters',
     'counts',
     'inbox',
-    'viewCounts',
     'unreadCount',
 ];
 /** Props a live change refreshes in the list. */
-const LIVE_LIST_PROPS = [
-    'conversations',
-    'counts',
-    'viewCounts',
-    'unreadCount',
-];
+const LIVE_LIST_PROPS = ['conversations', 'counts', 'unreadCount'];
 /** Props of the selected conversation (center and right panels). */
 const SELECTION_PROPS = [
     'selectedId',
@@ -350,7 +348,12 @@ function reloadIfSignaledDuringFilter(): void {
     liveList.schedule();
 }
 
-/* Accepting a pending row: the same route and action as in the chat. */
+/*
+ * Accepting a pending row: the same route and action as in the chat. In the
+ * general inbox the row stays where it was (its order is the latest
+ * activity, which accepting does not change) and only its indicator turns
+ * into "En atención"; nothing is merged on the client.
+ */
 const { acceptingId, accept: acceptConversation } = useConversationAccept();
 
 function acceptFromList(id: number): void {
@@ -469,14 +472,15 @@ const title = computed(() =>
                 :filters="filters"
                 :counts="counts"
                 :inbox="inbox"
-                :view-counts="viewCounts"
                 :statuses="statuses"
                 :departments="departments"
                 :agents="agents"
                 :connections="connections"
                 :unread-count="unreadCount"
+                :filter-options="filterOptions"
                 :tags="tags"
                 :can-see-unrouted="canSeeUnrouted"
+                :can-see-closed="canSeeClosed"
                 :can-export="canExport"
                 :availability="availability"
                 :selected-id="selectedId"

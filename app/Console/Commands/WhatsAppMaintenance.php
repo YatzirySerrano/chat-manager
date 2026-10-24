@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Messaging\PruneWebhookEvents;
 use App\Actions\Messaging\ReconcileStuckDeliveries;
+use App\Enums\ConnectionChannel;
 use App\Enums\WebhookEventStatus;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Jobs\SyncConnectionTemplates;
@@ -15,7 +16,8 @@ use Illuminate\Console\Command;
  * Operational tasks of the WhatsApp Cloud API integration (scheduled in
  * routes/console.php):
  *
- * - reconcile-deliveries: messages stuck "sending" become delivery_unknown;
+ * - reconcile-deliveries: messages stuck "sending" become delivery_unknown
+ *   (web chat replies are queued again: their outcome is never ambiguous);
  * - prune-webhooks: removes the raw webhook log after its retention;
  * - retry-webhooks: queues failed webhook deliveries again (manual review);
  * - recover-webhooks: queues again deliveries still waiting after
@@ -38,7 +40,7 @@ class WhatsAppMaintenance extends Command
     {
         switch ($this->argument('task')) {
             case 'reconcile-deliveries':
-                $this->info('Mensajes sin confirmación marcados como delivery_unknown: '.$reconcile->handle());
+                $this->info('Mensajes sin confirmación reconciliados (delivery_unknown, o reencolados si son del chat web): '.$reconcile->handle());
 
                 return self::SUCCESS;
             case 'prune-webhooks':
@@ -80,6 +82,7 @@ class WhatsAppMaintenance extends Command
                 return self::SUCCESS;
             case 'sync-templates':
                 $connections = Connection::query()
+                    ->where('channel', ConnectionChannel::Whatsapp)
                     ->active()
                     ->notDeleted()
                     ->when($this->option('connection'), fn ($query, $id) => $query->whereKey((int) $id))

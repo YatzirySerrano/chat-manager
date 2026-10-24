@@ -8,11 +8,13 @@ namespace App\Enums;
 enum ConnectionProvider: string
 {
     case MetaCloudApi = 'meta_cloud_api';
+    case WebWidget = 'web_widget';
 
     public function label(): string
     {
         return match ($this) {
             self::MetaCloudApi => 'WhatsApp Cloud API (Meta)',
+            self::WebWidget => 'Widget de chat web',
         };
     }
 
@@ -20,6 +22,7 @@ enum ConnectionProvider: string
     {
         return match ($this) {
             self::MetaCloudApi => ConnectionChannel::Whatsapp,
+            self::WebWidget => ConnectionChannel::WebChat,
         };
     }
 

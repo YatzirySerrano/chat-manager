@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionProvider;
 use App\Models\Connection;
+use App\Models\WebChatWidget;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -96,5 +97,24 @@ class ConnectionFactory extends Factory
             'last_outbound_at' => now()->subMinutes(30),
             'last_activity_at' => now()->subMinutes(30),
         ]);
+    }
+
+    /**
+     * An active web chat connection: no Meta identifiers or credentials and a
+     * widget authorized for https://tienda.test, so it may operate.
+     */
+    public function webChat(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'channel' => ConnectionChannel::WebChat,
+            'provider' => ConnectionProvider::WebWidget,
+            'display_phone_number' => null,
+            'phone_number_id' => null,
+            'business_account_id' => null,
+            'access_token' => null,
+            'app_secret' => null,
+            'webhook_verify_token' => null,
+            'is_active' => true,
+        ])->has(WebChatWidget::factory(), 'webChatWidget');
     }
 }

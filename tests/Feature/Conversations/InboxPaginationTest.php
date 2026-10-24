@@ -8,8 +8,8 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 
 /*
-| The inbox list is paged with a keyset cursor over its order (status
-| priority, last activity, id): following the cursor reaches every
+| The inbox list is paged with a keyset cursor over its order (latest
+| activity by default, or status priority, then id): following the cursor reaches every
 | conversation the viewer may see exactly once, with no upper bound, and
 | never one outside their reach.
 */
@@ -58,10 +58,10 @@ test('following the cursor lists every conversation once and in order, whatever 
     }
 
     $inbox = app(ConversationInboxQuery::class);
-    $expected = $inbox->handle($this->admin, $inbox->filters($this->admin, ['status' => 'all', 'sort' => $sort]))->pluck('conversations.id')->all();
+    $expected = $inbox->handle($this->admin, $inbox->filters($this->admin, ['view' => 'all', 'status' => 'all', 'sort' => $sort]))->pluck('conversations.id')->all();
 
     expect($expected)->toHaveCount(20)
-        ->and(followInbox($this, $this->admin, ['status' => 'all', 'sort' => $sort], 3))->toBe($expected);
+        ->and(followInbox($this, $this->admin, ['view' => 'all', 'status' => 'all', 'sort' => $sort], 3))->toBe($expected);
 })->with(['priority', 'recent', 'oldest']);
 
 test('paging never reaches conversations outside the viewer\'s reach', function () {

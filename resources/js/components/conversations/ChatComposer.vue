@@ -37,14 +37,17 @@ import type {
 /**
  * Composer of the chat. Two clearly separated modes:
  *
- * - "Responder": a WhatsApp message to the customer (text, or one file with
- *   an optional caption). Only the responsible agent can use it while the
- *   customer service window is open; otherwise it explains why and, when
- *   the window closed, offers the approved template flow. Nothing (text,
+ * - "Responder": a message to the customer through the conversation's
+ *   channel (text, or one file with an optional caption). Only the
+ *   responsible agent can use it. On WhatsApp it also needs the customer
+ *   service window open; when it closed, the approved template flow is
+ *   offered. Channels without that window (web chat) show neither the
+ *   window nor the templates. Nothing (text,
  *   file or template) can be sent through a paused, deleted or misconfigured
  *   connection: the reason is shown instead and notes stay available.
  * - "Nota interna": a private note for the team, in another color and with
- *   an explicit label. It goes to a different endpoint and never to Meta.
+ *   an explicit label. It goes to a different endpoint and never reaches
+ *   the customer.
  *
  * Every send attempt carries a client reference: retrying after a network
  * error reuses it, so the server stores the message once; the button is
@@ -71,6 +74,14 @@ const { can: holdsPermission } = usePermissions();
 const userId = computed(() => page.props.auth?.user?.id ?? 0);
 
 const canReply = computed(() => props.conversation.can.reply);
+const channelLabel = computed(
+    () => props.conversation.connection.channel_label,
+);
+const isWhatsApp = computed(
+    () => props.conversation.connection.channel === 'whatsapp',
+);
+/* Channels without the 24 h window (web chat): no window and no templates. */
+const windowApplies = computed(() => props.window.status !== 'not_applicable');
 const canNote = computed(() => props.conversation.can.addNote);
 const mode = ref<Mode>(canReply.value || !canNote.value ? 'reply' : 'note');
 
@@ -177,7 +188,7 @@ const replyBlock = computed<string | null>(() => {
     if (!conversation.connection.can_send) {
         const reason =
             conversation.connection.send_block_reason ??
-            `La conexión de WhatsApp «${conversation.connection.name}» no puede enviar mensajes en este momento.`;
+            `La conexión de ${channelLabel.value} «${conversation.connection.name}» no puede enviar mensajes en este momento.`;
 
         return canNote.value
             ? `${reason} Puedes seguir agregando notas internas.`
@@ -187,7 +198,9 @@ const replyBlock = computed<string | null>(() => {
     if (!props.window.allows_free_form) {
         return (
             props.window.block_reason ??
-            'La ventana de atención de 24 horas está cerrada: solo puedes enviar una plantilla aprobada.'
+            (windowApplies.value
+                ? 'La ventana de atención de 24 horas está cerrada: solo puedes enviar una plantilla aprobada.'
+                : 'No se pueden enviar mensajes por esta conexión en este momento.')
         );
     }
 
@@ -202,13 +215,19 @@ const windowClosed = computed(
         !props.window.allows_free_form,
 );
 
-/* Sending may work, but nothing proves the credentials (e.g. restored). */
+/*
+ * Sending may work, but Meta has not accepted the credentials (e.g. a
+ * restored connection). The web chat has no Meta credentials to verify.
+ */
 const unverifiedConnection = computed(
     () =>
+        isWhatsApp.value &&
         props.conversation.connection.can_send &&
         !props.conversation.connection.credentials_verified,
 );
-const canUseTemplates = computed(() => windowClosed.value);
+const canUseTemplates = computed(
+    () => windowClosed.value && windowApplies.value && isWhatsApp.value,
+);
 const canUseQuickReplies = computed(() => holdsPermission('quick-replies.use'));
 
 const disabledReason = computed<string | null>(() => {
@@ -298,8 +317,7 @@ function chooseFile(event: Event): void {
     attachment.value = file;
 
     if (!rule && file.type !== '') {
-        attachmentError.value =
-            'Este tipo de archivo no se puede enviar por WhatsApp.';
+        attachmentError.value = `Este tipo de archivo no se puede enviar por ${channelLabel.value}.`;
     } else if (!rule) {
         // The browser could not tell the type: the server reads the bytes.
         if (file.size > largestLimit.value) {
@@ -324,7 +342,11 @@ const attachmentKind = computed(() =>
 const windowBadge = computed(() => {
     const current = props.window;
 
-    if (props.conversation.status === 'closed' || current.status === 'none') {
+    if (
+        props.conversation.status === 'closed' ||
+        current.status === 'none' ||
+        current.status === 'not_applicable'
+    ) {
         return null;
     }
 
@@ -332,7 +354,6 @@ const windowBadge = computed(() => {
         open: 'border-success/30 bg-success/10 text-success',
         expiring: 'border-warning/40 bg-warning/10 text-warning',
         expired: 'border-destructive/30 bg-destructive/10 text-destructive',
-        none: '',
     }[current.status];
 
     return {
@@ -676,7 +697,7 @@ defineExpose({ focus });
                     <span class="font-medium text-foreground">{{
                         recipient
                     }}</span>
-                    por WhatsApp · {{ conversation.connection.name }}
+                    por {{ channelLabel }} · {{ conversation.connection.name }}
                 </template>
                 <span
                     v-else
@@ -706,9 +727,15 @@ defineExpose({ focus });
             </Button>
         </div>
 
-        <form v-else novalidate class="grid gap-2" @submit.prevent="submit">
+        <form
+            v-else
+            novalidate
+            class="grid grid-cols-1 gap-2"
+            @submit.prevent="submit"
+        >
             <div
                 v-if="replyTo && mode === 'reply'"
+                data-layout-box="quote"
                 class="flex items-start gap-2 rounded-lg border-l-2 border-primary bg-muted/50 px-3 py-1.5 text-sm md:text-xs"
             >
                 <div class="min-w-0 flex-1">
@@ -720,7 +747,7 @@ defineExpose({ focus });
                                 : 'un mensaje del equipo'
                         }}
                     </p>
-                    <p class="line-clamp-2 text-muted-foreground">
+                    <p class="line-clamp-2 wrap-anywhere text-muted-foreground">
                         {{ replyTo.body ?? typeLabel(replyTo.type) }}
                     </p>
                 </div>
@@ -737,6 +764,7 @@ defineExpose({ focus });
 
             <div
                 v-if="attachment && mode === 'reply'"
+                data-layout-box="attachment"
                 class="flex items-center gap-3 rounded-lg border px-3 py-2"
                 :class="attachmentError && 'border-destructive/60'"
             >

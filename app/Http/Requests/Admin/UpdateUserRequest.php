@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Actions\Users\UpdatePersonalQuickRepliesGrant;
 use App\Concerns\ProfileValidationRules;
 use App\Enums\DataScope;
 use App\Enums\RecordState;
@@ -32,7 +33,19 @@ class UpdateUserRequest extends FormRequest
 
         $response = Gate::inspect('update', $user);
 
+        if ($response->allowed() && $this->has('personal_quick_replies') && ! app(UpdatePersonalQuickRepliesGrant::class)->allows($this->user(), $user)) {
+            return Response::deny('No puedes cambiar los permisos individuales de este usuario.');
+        }
+
         return $response->denied() || ! $this->changesRole($user) ? $response : Gate::inspect('assignRole', $user);
+    }
+
+    /**
+     * Whether the form sent the per-user grant of personal quick replies.
+     */
+    public function updatesPersonalQuickReplies(): bool
+    {
+        return $this->has('personal_quick_replies');
     }
 
     /**
@@ -73,6 +86,7 @@ class UpdateUserRequest extends FormRequest
             'role_change_fingerprint' => ['nullable', 'string', 'size:64'],
             'department_ids' => ['sometimes', 'array'],
             'max_open_conversations' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:200'],
+            'personal_quick_replies' => ['sometimes', 'boolean'],
             'department_ids.*' => [
                 'integer',
                 'distinct',
@@ -98,6 +112,7 @@ class UpdateUserRequest extends FormRequest
             'department_ids' => 'departamentos',
             'department_ids.*' => 'departamento',
             'max_open_conversations' => 'límite de conversaciones',
+            'personal_quick_replies' => 'respuestas rápidas personales',
         ];
     }
 

@@ -52,6 +52,17 @@ class ContactPolicy
     }
 
     /**
+     * Saving a provisional contact (an unknown sender registered
+     * automatically) puts it into the shared directory, so it takes the same
+     * permission as creating one; the contact must be within the actor's
+     * scope and not deleted.
+     */
+    public function saveToDirectory(User $actor, Contact $contact): Response
+    {
+        return $this->allowOnLiveContact($actor, $contact, Permission::CreateContacts);
+    }
+
+    /**
      * Logical deletion (archiving).
      */
     public function delete(User $actor, Contact $contact): Response

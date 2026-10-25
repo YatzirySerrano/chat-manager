@@ -2,7 +2,6 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
-import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,11 +55,9 @@ function submit(): void {
     <h1 class="sr-only">Perfil</h1>
 
     <div class="flex flex-col space-y-6">
-        <Heading
-            variant="small"
-            title="Perfil"
-            description="Actualiza tu nombre y correo electrónico"
-        />
+        <p class="text-sm text-pretty text-muted-foreground">
+            Actualiza tu nombre y correo electrónico.
+        </p>
 
         <form class="space-y-6" novalidate @submit.prevent="submit">
             <div class="grid gap-2">

@@ -29,7 +29,7 @@ const { setOpenMobile } = useSidebar();
 <template>
     <SidebarGroup class="px-3 py-1">
         <SidebarGroupLabel
-            class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+            class="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
         >
             {{ label }}
         </SidebarGroupLabel>
@@ -52,7 +52,7 @@ const { setOpenMobile } = useSidebar();
                 </SidebarMenuButton>
                 <SidebarMenuBadge
                     v-if="item.badge"
-                    class="rounded-full bg-primary px-1.5 text-[11px] text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
+                    class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
                     :aria-label="`${item.badge} sin leer`"
                 >
                     {{ item.badge > 99 ? '99+' : item.badge }}

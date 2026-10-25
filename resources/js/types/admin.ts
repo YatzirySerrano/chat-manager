@@ -160,6 +160,12 @@ export type AdminUser = {
     deleted_at: string | null;
     created_at: string | null;
     departments: DepartmentOption[];
+    /** Per-user grant of personal quick replies, on top of the role. */
+    personal_quick_replies: {
+        granted_by_role: boolean;
+        granted_directly: boolean;
+        can_toggle: boolean;
+    };
     is_current_user: boolean;
     can: {
         update: boolean;
@@ -274,14 +280,41 @@ export type MemberCandidate = {
 
 export type AuditTone = 'success' | 'warning' | 'danger' | 'neutral';
 
+export type AuditChange = {
+    field: string;
+    label: string;
+    before: string;
+    after: string;
+};
+
+export type AuditDetail = { key: string; label: string; value: string };
+
 export type AuditLogEntry = {
     id: number;
     action: { value: string; label: string; tone: AuditTone };
     actor: { id: number | null; name: string };
-    subject: { type: string | null; id: number | null; label: string | null };
-    properties: Record<string, unknown>;
+    subject: {
+        type: string | null;
+        type_label: string | null;
+        id: number | null;
+        label: string | null;
+        /** Page of the entity, only when the viewer may open it. */
+        url: string | null;
+    };
+    /** What happened, on which entity, who and when, in plain Spanish. */
+    summary: string;
+    changes: AuditChange[];
+    details: AuditDetail[];
+    result: { tone: 'success' | 'warning' | 'danger'; label: string } | null;
+    error: string | null;
+    /** Raw data, only for viewers with system.view or audit.export. */
+    technical: {
+        action: string;
+        properties: Record<string, unknown>;
+        user_agent: string | null;
+        error: string | null;
+    } | null;
     ip_address: string | null;
-    user_agent: string | null;
     /** Entry about the root authority, only visible to superadministrators. */
     restricted: boolean;
     created_at: string;
@@ -350,6 +383,7 @@ export type DashboardOverview = {
     first_response_samples: number;
     received: { value: number | null; previous: number | null };
     trend: { label: string; received: number }[];
-    agents: { registered: number | null; available: number | null };
+    /** Active accounts with an active role able to attend (no manual availability). */
+    agents: { active: number | null };
     departments: { active: number; total: number } | null;
 };

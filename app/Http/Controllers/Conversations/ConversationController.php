@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Conversations;
 
 use App\Actions\Conversations\ConversationInboxQuery;
-use App\Enums\AgentAvailability;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
@@ -23,9 +22,11 @@ use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
-use App\Services\Conversations\OutboundAttachmentRules;
 use App\Services\Exports\ReportExporter;
+use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
+use App\Support\Attachments\ChannelAttachmentPolicy;
+use App\Support\Personalization\ViewerAlias;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\JsonResponse;
@@ -81,7 +82,7 @@ class ConversationController extends Controller
      *
      * @var list<string>
      */
-    public const SELECTION_PROPS = ['selectedId', 'conversation', 'window', 'timeline', 'details', 'contactUrl', 'availability'];
+    public const SELECTION_PROPS = ['selectedId', 'conversation', 'window', 'timeline', 'details', 'contactUrl'];
 
     /**
      * The list as the user last left it, so going back to it after an
@@ -137,7 +138,7 @@ class ConversationController extends Controller
      * The inbox, optionally with a conversation open. A conversation the
      * viewer cannot see is treated exactly like one that does not exist.
      */
-    public function index(Request $request, ConversationInboxQuery $inbox, ReportExporter $exporter, CustomerServiceWindow $window, ConversationTimeline $timeline, PlatformSettings $settings, OutboundAttachmentRules $attachmentRules): Response
+    public function index(Request $request, ConversationInboxQuery $inbox, ReportExporter $exporter, CustomerServiceWindow $window, ConversationTimeline $timeline, PlatformSettings $settings, ChannelAttachmentPolicy $attachmentPolicy): Response
     {
         Gate::authorize('viewAny', Conversation::class);
 
@@ -158,6 +159,11 @@ class ConversationController extends Controller
 
         $request->session()->put(self::LIST_QUERY, $this->listQuery($validated, $filters));
 
+        // Read once per request: the filter options and the details panel
+        // share them (one Connection query, one Tag catalog query).
+        $connections = $this->memoize(fn (): Collection => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'display_phone_number', 'channel']));
+        $tagCatalog = $this->memoize(fn (): array => $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active'])));
+
         // Resolved once and only when a selection prop is requested, so list
         // reloads never pay for the open conversation.
         $resolved = false;
@@ -168,6 +174,10 @@ class ConversationController extends Controller
                 $candidate = isset($validated['c']) ? Conversation::query()->find((int) $validated['c']) : null;
                 $cached = $candidate !== null && $actor->can('view', $candidate) ? $candidate : null;
                 $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
+                if ($cached !== null) {
+                    // The viewer's private alias of the contact (PERSONALIZATION).
+                    ViewerAlias::load($cached, $actor);
+                }
             }
 
             return $cached;
@@ -185,7 +195,8 @@ class ConversationController extends Controller
                 'search' => $filters['search'],
                 'search_in' => $filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT,
                 'search_ignored' => $inbox->searchIgnored($filters),
-                'tag' => $filters['tag'] ?? null,
+                'tags' => $filters['tags'] ?? [],
+                'tag_match' => $filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY,
                 'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT,
                 'unread' => $filters['unread'] ?? false,
             ],
@@ -203,33 +214,71 @@ class ConversationController extends Controller
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
-            'connections' => fn () => Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'display_phone_number']),
+            'connections' => fn (): array => array_values($connections()->map(fn (Connection $connection): array => [
+                'id' => $connection->id,
+                'name' => $connection->name,
+                'display_phone_number' => $connection->display_phone_number,
+            ])->all()),
             'filterOptions' => fn (): array => [
-                'channels' => $this->channelOptions($actor),
+                'channels' => $this->channelOptions($connections()),
             ],
-            'canSeeClosed' => fn (): bool => $actor->holdsPermission(Permission::ViewConversationHistory),
+            'canSeeClosed' => fn (): bool => $this->access->readsClosedConversations($actor),
             'tags' => fn (): array => $actor->holdsPermission(Permission::ViewTags) || $actor->holdsPermission(Permission::AssignTags)
-                ? $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active']))
+                ? $tagCatalog()
                 : [],
+            // What the list shows the viewer: operational badges (department,
+            // responsible agent, connection) only for whoever supervises or
+            // distributes work, or has global reach (DESIGN decision 3).
+            'viewer' => fn (): array => [
+                'can_supervise' => $actor->holdsPermission(Permission::SuperviseConversations)
+                    || $actor->holdsPermission(Permission::AssignConversations)
+                    || $actor->dataScope() === DataScope::Global,
+            ],
             'canSeeUnrouted' => fn (): bool => $actor->dataScope() === DataScope::Global,
             'canExport' => fn (): bool => $exporter->allowsReport('conversations', $actor),
-            'availability' => fn (): array => $this->availability($actor),
             'composer' => fn (): array => [
                 'body_max' => OutboundMessageRequest::BODY_MAX_LENGTH,
                 'caption_max' => 1024,
                 'note_max' => ConversationNoteRequest::BODY_MAX_LENGTH,
-                'attachments' => $attachmentRules->describe(),
+                // Per channel: the composer applies the one of the open conversation.
+                'attachments' => $attachmentPolicy->describeAll(),
             ],
 
             'selectedId' => fn (): ?int => $selection()?->id,
             'selectionMissing' => fn (): bool => isset($validated['c']) && $selection() === null,
-            'conversation' => fn (): ?array => ($selected = $selection()) === null ? null : ConversationResource::make($selected)->resolve($request),
+            'conversation' => fn (): ?array => ($selected = $selection()) === null ? null : [
+                ...ConversationResource::make($selected)->resolve($request),
+                // The viewer's own chat colors only (PERSONALIZATION); never another user's.
+                'appearance' => app(ChatAppearances::class)->forViewer($actor, $selected),
+            ],
             'window' => fn (): ?array => ($selected = $selection()) === null ? null : $window->for($selected)->toArray(),
             'timeline' => fn (): ?array => ($selected = $selection()) === null ? null : $timeline->page($selected, $request),
-            'details' => fn (): ?array => ($selected = $selection()) === null ? null : $this->details($selected, $actor, $request),
+            'details' => fn (): ?array => ($selected = $selection()) === null ? null : $this->details($selected, $actor, $request, $tagCatalog),
             'contactUrl' => fn (): ?string => ($selected = $selection()) !== null && $actor->can('view', $selected->contact) ? route('contacts.show', $selected->contact) : null,
             'transferReasonRequired' => fn (): bool => (bool) $settings->get('operations.transfer_reason_required'),
         ]);
+    }
+
+    /**
+     * A lazy value computed at most once, the first time it is asked for
+     * (props that are not requested never pay for it).
+     *
+     * @template TValue
+     *
+     * @param  callable(): TValue  $resolve
+     * @return callable(): TValue
+     */
+    private function memoize(callable $resolve): callable
+    {
+        $cache = [];
+
+        return function () use ($resolve, &$cache): mixed {
+            if (! array_key_exists('value', $cache)) {
+                $cache['value'] = $resolve();
+            }
+
+            return $cache['value'];
+        };
     }
 
     /**
@@ -332,6 +381,11 @@ class ConversationController extends Controller
         $last = $rows->last();
 
         $this->attachLastMessages($rows);
+        // The viewer's private aliases of the page's contacts, in one query (PERSONALIZATION).
+        ViewerAlias::load($rows, $actor);
+        // Rows visible only through the supervisor's departments history:
+        // their passage resolved with one query for the page.
+        $this->access->rememberPassages($actor, $rows);
 
         // The abilities of every row ask which departments the actor may
         // accept from: computed once for the whole page (INB-03).
@@ -361,7 +415,7 @@ class ConversationController extends Controller
 
         $messages = $ids === []
             ? collect()
-            : Message::query()->whereKey($ids)->get(['id', 'conversation_id', 'direction', 'type', 'status', 'error_code', 'body', 'metadata', 'sent_at', 'created_at'])->keyBy('id');
+            : Message::query()->whereKey($ids)->get(['id', 'conversation_id', 'direction', 'type', 'status', 'error_code', 'body', 'metadata', 'sent_at', 'created_at', 'updated_at'])->keyBy('id');
 
         $rows->each(fn (Conversation $row) => $row->setRelation('lastMessage', $messages->get((int) $row->getAttribute('last_message_id'))));
     }
@@ -370,16 +424,12 @@ class ConversationController extends Controller
      * Channels the actor's visible connections use, in the order of the
      * enum: the channel filter only appears with more than one.
      *
+     * @param  Collection<int, Connection>  $connections
      * @return list<array{value: string, label: string}>
      */
-    private function channelOptions(User $actor): array
+    private function channelOptions(Collection $connections): array
     {
-        $used = Connection::query()->visibleTo($actor)->hidingDeletedFrom($actor)
-            ->toBase()
-            ->distinct()
-            ->pluck('channel')
-            ->map(fn (mixed $value): string => (string) $value)
-            ->all();
+        $used = $connections->map(fn (Connection $connection): string => $connection->channel->value)->unique()->all();
 
         return array_values(array_map(
             fn (ConnectionChannel $channel): array => ['value' => $channel->value, 'label' => $channel->label()],
@@ -391,9 +441,10 @@ class ConversationController extends Controller
      * The details panel: contact, verified origin, tags, previous
      * conversations the viewer may see and the contact's latest notes.
      *
+     * @param  callable(): list<array{id: int, name: string, color: string, is_active: bool}>  $tagCatalog
      * @return array<string, mixed>
      */
-    private function details(Conversation $conversation, User $actor, Request $request): array
+    private function details(Conversation $conversation, User $actor, Request $request, callable $tagCatalog): array
     {
         $contact = $conversation->contact;
         $contact->loadMissing(['tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
@@ -414,10 +465,16 @@ class ConversationController extends Controller
                 'name' => $contact->name,
                 'profile_name' => $contact->profile_name,
                 'phone_e164' => $contact->phone_e164,
+                // The viewer's private alias (only theirs) and the name shown to them.
+                'alias' => $alias = ViewerAlias::of($contact, $actor),
+                'display_name' => ViewerAlias::displayName($contact, $alias),
                 'email' => $contact->email,
                 'first_interaction_at' => $contact->first_interaction_at?->toIso8601String(),
                 'last_interaction_at' => $contact->last_interaction_at?->toIso8601String(),
                 'tags' => $this->tagOptions($contact->tags),
+                // Provisional contacts can be saved into the directory from the panel.
+                'is_saved' => $contact->isSaved(),
+                'can_save' => ! $contact->isSaved() && $actor->can('saveToDirectory', $contact),
             ],
             'origin' => ContactAttributionResource::collection($conversation->attributions()->with('recorder')->orderBy('captured_at')->get())->resolve($request),
             'history' => array_values($history->map(fn (Conversation $previous): array => [
@@ -442,9 +499,7 @@ class ConversationController extends Controller
                     'created_at' => $note->created_at?->toIso8601String(),
                 ])->all())
                 : null,
-            'availableTags' => $canTag
-                ? $this->tagOptions(Tag::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'color', 'is_active']))
-                : [],
+            'availableTags' => $canTag ? $tagCatalog() : [],
             'canExportDossier' => $actor->holdsPermission(Permission::ExportReports),
         ];
     }
@@ -462,19 +517,5 @@ class ConversationController extends Controller
         }
 
         return $options;
-    }
-
-    /**
-     * The actor's declared availability and the options to change it.
-     *
-     * @return array{value: string, label: string, options: list<array{value: string, label: string}>}
-     */
-    private function availability(User $actor): array
-    {
-        return [
-            'value' => $actor->availability->value,
-            'label' => $actor->availability->label(),
-            'options' => array_map(fn (AgentAvailability $option): array => ['value' => $option->value, 'label' => $option->label()], AgentAvailability::cases()),
-        ];
     }
 }

@@ -2,7 +2,6 @@
 
 namespace App\Actions\Conversations;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Enums\DistributionMode;
@@ -17,11 +16,13 @@ use Throwable;
 
 /**
  * Automatic distribution of departments configured for it: the pending
- * conversation goes to the available eligible member with the fewest
- * conversations in attention; ties go to whoever waited longest since their
- * last assignment. Agents at their limit (own, department or platform, see
- * ConversationAccess::attentionLimit()), unavailable or no longer eligible
- * are skipped; when nobody qualifies it stays pending in the queue, visible
+ * conversation goes to the eligible member (active account and role, able
+ * to attend the department, see ConversationAccess::canAttend()) with the
+ * fewest conversations in attention; ties go to whoever waited longest since
+ * their last assignment. Agents at their limit (own, department or platform,
+ * see ConversationAccess::attentionLimit()) or no longer eligible are
+ * skipped. There is no manual availability: the users.availability column is
+ * not read; when nobody qualifies it stays pending in the queue, visible
  * to whoever manages it, and is offered again when capacity frees up
  * (distributeForAgent(), distributeQueue()). A customer message is never
  * rejected for lack of capacity.
@@ -98,11 +99,10 @@ class AssignAutomatically
         $candidates = $department->members()
             ->with(['roles', 'departments'])
             ->where('users.is_active', true)
-            ->where('users.availability', AgentAvailability::Available)
             ->whereNotIn('users.id', $excludedUserIds)
             ->withPermission(Permission::ReplyConversations)
             ->withCount(['assignedConversations as attention_load' => fn ($query) => $query
-                ->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold])])
+                ->whereIn('status', ConversationStatus::attending())])
             ->get()
             ->filter(fn (User $user): bool => $this->access->canAttend($user, $department))
             ->filter(function (User $user) use ($department): bool {
@@ -122,7 +122,7 @@ class AssignAutomatically
 
     /**
      * Offer the waiting conversations of the agent's automatic departments
-     * once the agent may take more: they became available, one of their
+     * once the agent may take more: they joined a department, one of their
      * conversations was closed or handed to someone else, or their limit was
      * raised. Must be called outside any transaction (after commit), so each
      * conversation keeps the engine's lock order in its own transaction.
@@ -133,7 +133,7 @@ class AssignAutomatically
     {
         $agent = User::query()->find($agent->id);
 
-        if ($agent === null || ! $agent->is_active || $agent->availability !== AgentAvailability::Available) {
+        if ($agent === null || ! $agent->is_active) {
             return 0;
         }
 
@@ -209,7 +209,7 @@ class AssignAutomatically
     }
 
     /**
-     * Offer the department's waiting conversations to its available agents,
+     * Offer the department's waiting conversations to its eligible agents,
      * oldest first. Bounded: at most 100 conversations per call, each one in
      * its own short transaction (no lock over the whole queue), stopping at
      * the first one nobody can take.

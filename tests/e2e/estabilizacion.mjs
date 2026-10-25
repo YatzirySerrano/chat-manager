@@ -264,7 +264,7 @@ const run = async () => {
         await step('reply-simulated', 'keyboard', async () => {
             const text = 'Con gusto te cotizo el equipo.';
             await ana
-                .locator('[role="tab"][aria-selected="true"]', {
+                .locator('button[aria-pressed="true"]', {
                     hasText: 'Responder al cliente',
                 })
                 .waitFor();
@@ -303,7 +303,9 @@ const run = async () => {
         // 6. Internal note: not a message, seen live by the administrator.
         await step('internal-note', 'keyboard', async () => {
             const text = 'Nota estabilización: cliente mayorista';
-            await ana.getByRole('tab', { name: 'Nota interna' }).click();
+            await ana
+                .getByRole('button', { name: 'Nota interna', exact: true })
+                .click();
             await ana.locator('#chat-composer').click();
             await ana.keyboard.type(text);
             const since = Date.now();
@@ -319,7 +321,10 @@ const run = async () => {
             );
             const asMessage = await bubble(ana, text).count();
             await ana
-                .getByRole('tab', { name: 'Responder al cliente' })
+                .getByRole('button', {
+                    name: 'Responder al cliente',
+                    exact: true,
+                })
                 .click();
 
             return [
@@ -343,7 +348,7 @@ const run = async () => {
                     .locator('#transfer-department')
                     .selectOption({ label: 'E2E Soporte' });
                 const option = dialog.locator('#route-agent option', {
-                    hasText: 'E2E Carla · Disponible',
+                    hasText: 'E2E Carla',
                 });
                 await option.waitFor({ state: 'attached' });
                 const offered = (
@@ -533,7 +538,9 @@ const run = async () => {
             );
             const replyBox = await carla.locator('#chat-composer').count();
             const note = 'Nota con la conexión pausada';
-            await carla.getByRole('tab', { name: 'Nota interna' }).click();
+            await carla
+                .getByRole('button', { name: 'Nota interna', exact: true })
+                .click();
             await carla.locator('#chat-composer').click();
             await carla.keyboard.type(note);
             await carla.getByRole('button', { name: 'Guardar nota' }).click();
@@ -541,7 +548,10 @@ const run = async () => {
                 .locator('[aria-label^="Nota interna de"]', { hasText: note })
                 .waitFor();
             await carla
-                .getByRole('tab', { name: 'Responder al cliente' })
+                .getByRole('button', {
+                    name: 'Responder al cliente',
+                    exact: true,
+                })
                 .click();
 
             const sinceActive = Date.now();

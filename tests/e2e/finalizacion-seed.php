@@ -20,11 +20,9 @@
 */
 
 use App\Actions\Conversations\AcceptConversation;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\ProcessInboundMessages;
 use App\Actions\Conversations\QueueOutboundMessage;
 use App\Actions\Conversations\TransferConversation;
-use App\Enums\AgentAvailability;
 use App\Enums\DefaultRole;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -149,11 +147,14 @@ $receive = function (string $waId, string $name, string $text, int $minutesAgo):
     return $receipts[0]->conversation;
 };
 
-app(ChangeAgentAvailability::class)->handle($ana, AgentAvailability::Available);
-
 // A customer who wrote 26 hours ago: the 24-hour window is closed.
 $closed = $receive('5215511114444', 'Cliente Ventana Cerrada', 'Escribí ayer', 26 * 60);
 app(AcceptConversation::class)->handle($closed->refresh(), $ana->refresh());
+
+// Templates are an administrative send (templates.send, global scope only):
+// a second closed-window conversation the Administrador attends.
+$closedAdministrator = $receive('5215511118888', 'Cliente Plantilla Admin', 'Escribí anteayer', 27 * 60);
+app(AcceptConversation::class)->handle($closedAdministrator->refresh(), $administrator->refresh());
 
 // A reply that failed because WhatsApp was unavailable (transport "unavailable").
 $retry = $receive('5215511115555', 'Cliente Reintento', 'Sigo esperando', 5);
@@ -161,8 +162,6 @@ app(AcceptConversation::class)->handle($retry->refresh(), $ana->refresh());
 config(['whatsapp.transport' => 'unavailable']);
 app()->forgetInstance(WhatsAppTransport::class);
 $failed = app(QueueOutboundMessage::class)->handle($retry->refresh(), $ana->refresh(), 'Te confirmo tu pedido', (string) Str::uuid());
-
-app(ChangeAgentAvailability::class)->handle($ana->refresh(), AgentAvailability::Unavailable);
 
 // A conversation of another department: Ventas agents must never reach it.
 $support = Department::query()->where('slug', 'e2e-soporte')->firstOrFail();
@@ -176,6 +175,6 @@ echo json_encode([
     'app_secret' => $appSecret,
     'administrator' => $administrator->email,
     'template' => $template->name,
-    'conversations' => ['closed' => $closed->id, 'retry' => $retry->id, 'private' => $private->id],
+    'conversations' => ['closed' => $closed->id, 'closed_administrator' => $closedAdministrator->id, 'retry' => $retry->id, 'private' => $private->id],
     'failed_message' => ['id' => $failed->id, 'status' => $failed->refresh()->status->value, 'error' => $failed->error_code],
 ]), PHP_EOL;

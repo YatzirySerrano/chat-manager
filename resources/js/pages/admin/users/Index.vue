@@ -229,6 +229,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="usuarios"
             title="Usuarios"
             description="Administra las cuentas de los empleados, sus roles y departamentos."
         >
@@ -245,7 +246,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
             </template>
         </PageHeader>
 
-        <div class="grid gap-4 sm:grid-cols-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <StatCard
                 label="Activos"
                 :value="stats.active"

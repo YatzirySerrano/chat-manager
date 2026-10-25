@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Analytics\RebuildConversationMetrics;
+use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
@@ -42,8 +43,8 @@ test('conversation metrics are unavailable until a WhatsApp number is connected'
                 ->where('overview.messaging_connected', false)
                 ->where('overview.conversations.active', null)
                 ->where('overview.average_first_response_seconds', null)
-                // Availability is declared by each person, so it is real even without messaging.
-                ->where('overview.agents.available', 0)
+                // Active agents do not depend on messaging: the super administrator can attend.
+                ->where('overview.agents.active', 1)
                 ->where('overview.departments.active', 2)
             )
         );
@@ -124,7 +125,7 @@ test('the dashboard figures never exceed the permissions and departments of the 
             ->where('overview.scope', 'departments')
             ->where('overview.conversations.pending', 1)
             ->where('overview.departments.total', 1)
-            ->where('overview.agents.registered', 2)));
+            ->where('overview.agents.active', 2)));
 
     $this->actingAs($withoutConversations)->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
@@ -135,18 +136,18 @@ test('the dashboard figures never exceed the permissions and departments of the 
     expect($teammate->departmentIds())->toBe([$own->id]);
 });
 
-test('available agents come from the declared availability within the viewer reach', function () {
+test('active agents are the active accounts able to attend within the viewer reach, whatever their legacy availability', function () {
     $own = Department::factory()->create();
     $other = Department::factory()->create();
     User::factory()->agent()->available()->inDepartments($own)->count(2)->create();
-    User::factory()->agent()->inDepartments($own)->create();
+    User::factory()->agent()->inDepartments($own)->create(['availability' => AgentAvailability::Unavailable]);
+    User::factory()->agent()->inDepartments($own)->create(['is_active' => false]);
     User::factory()->agent()->available()->inDepartments($other)->create();
     $supervisor = User::factory()->supervisor()->inDepartments($own)->create();
 
     $this->actingAs($supervisor)->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(fn (Assert $reload) => $reload
-            ->where('overview.agents.available', 2)
-            ->where('overview.agents.registered', 4)));
+            ->where('overview.agents', ['active' => 4])));
 });
 
 test('the dashboard filters narrow the live figures and ignore unreachable values', function () {

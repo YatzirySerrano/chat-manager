@@ -75,8 +75,10 @@ class ProcessWebhookPayload
                 continue;
             }
 
+            // The plain explanation only: Meta's code and English title stay in the log.
             $code = $error['code'];
-            $this->monitor->failure($connection, Str::limit((MetaErrorCatalog::messageFor($code) ?? $error['title'] ?? 'Meta reportó un error en el webhook.').($code !== null ? " (código {$code})" : ''), 500, ''));
+            Log::warning('Meta reported a webhook-level error.', ['connection_id' => $connection->id, 'meta_code' => $code, 'title' => $error['title']]);
+            $this->monitor->failure($connection, Str::limit(MetaErrorCatalog::explain($code, 'Meta reportó un error en el webhook.'), 500, ''));
         }
 
         foreach (MetaInboundPayload::changes($payload) as ['field' => $field, 'entry_time' => $entryTime, 'value' => $value]) {

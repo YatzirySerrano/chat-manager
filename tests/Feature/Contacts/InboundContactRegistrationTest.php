@@ -367,7 +367,10 @@ test('automatic registration does not widen what each employee can see', functio
     $this->actingAs($agent)->get(route('contacts.show', $registration->contact))->assertNotFound();
     $this->actingAs($agent)->get(route('contacts.index', ['search' => 'Reservado']))
         ->assertInertia(fn ($page) => $page->has('contacts.data', 0));
-    $this->actingAs($admin)->get(route('contacts.index', ['search' => 'Reservado']))
+    $this->actingAs($agent)->get(route('contacts.index', ['search' => 'Reservado', 'include_provisional' => 1]))
+        ->assertInertia(fn ($page) => $page->has('contacts.data', 0));
+    // Provisional (not saved into the directory): listed only when asked for.
+    $this->actingAs($admin)->get(route('contacts.index', ['search' => 'Reservado', 'include_provisional' => 1]))
         ->assertInertia(fn ($page) => $page->has('contacts.data', 1)->where('contacts.data.0.source', 'whatsapp'));
 });
 

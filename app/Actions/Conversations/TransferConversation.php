@@ -2,7 +2,6 @@
 
 namespace App\Actions\Conversations;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Enums\Permission;
@@ -26,10 +25,10 @@ use Illuminate\Validation\ValidationException;
  * distributed automatically when that department does so). No message is
  * ever sent to the customer.
  *
- * Handing it to an agent declared unavailable, or to one who already
- * attends their maximum of conversations, is an exception reserved to users
- * who can assign, with explicit confirmation; it is recorded in the event
- * and never changes the agent's availability or limit. Transferring to a
+ * Handing it to an agent who already attends their maximum of
+ * conversations is an exception reserved to users who can assign, with
+ * explicit confirmation; it is recorded in the event and never changes the
+ * agent's limit. Transferring to a
  * queue is never blocked by capacity.
  *
  * Locks: the conversation, then the destination department, then the
@@ -49,12 +48,11 @@ class TransferConversation
     /**
      * @param  Department|null  $department  Destination department; null keeps the current one.
      * @param  User|null  $agent  Receiving agent; null leaves it pending in the destination queue.
-     * @param  bool  $confirmUnavailable  The actor confirmed handing it to an unavailable agent.
      * @param  bool  $confirmOverCapacity  The actor confirmed handing it to an agent at their limit.
      *
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $confirmUnavailable = false, bool $confirmOverCapacity = false): Conversation
+    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $confirmOverCapacity = false): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
@@ -62,7 +60,7 @@ class TransferConversation
             throw ValidationException::withMessages(['reason' => 'Indica el motivo de la transferencia.']);
         }
 
-        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmUnavailable, $confirmOverCapacity): Conversation {
+        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmOverCapacity): Conversation {
             $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
             $actor = $this->lifecycle->authorize($actor, 'transfer', $conversation);
 
@@ -103,16 +101,6 @@ class TransferConversation
                 throw new ConversationConflict('Elige un destino distinto al actual.');
             }
 
-            $unavailable = $agent !== null && $agent->availability !== AgentAvailability::Available;
-
-            if ($unavailable && ! $actor->holdsPermission(Permission::AssignConversations)) {
-                throw ValidationException::withMessages(['user_id' => "{$agent->name} está como No disponible. Transfiérela a la cola del departamento o pide a quien asigna conversaciones que lo autorice."]);
-            }
-
-            if ($unavailable && ! $confirmUnavailable) {
-                throw ValidationException::withMessages(['user_id' => $this->access->unavailableConfirmation($agent)]);
-            }
-
             $limit = $agent === null || $agent->id === $fromUser ? null : $this->access->reachedLimit($agent, $destination, lockingRead: true);
 
             if ($limit !== null && ! $actor->holdsPermission(Permission::AssignConversations)) {
@@ -124,7 +112,6 @@ class TransferConversation
             }
 
             $exceptions = array_filter([
-                'assigned_while_unavailable' => $unavailable,
                 'assigned_over_limit' => $limit !== null,
                 'limit' => $limit,
             ]);

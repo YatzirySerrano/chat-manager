@@ -675,3 +675,26 @@ Los valores de `MessageStatus` no cambian; las etiquetas sí: «Enviando» (`que
 `sent`), «Entregado», «Leído», «Fallido» y «Entrega no confirmada» (`failed` + `delivery_unknown`), con la acción
 «Reintentar». Se aplica en el enum, `messageFormat.ts`, el expediente, la API v1 y los avisos. Cerrar un toast con la
 X no lo marca como leído.
+
+## ADR-CONTACTS-1 — Contactos provisionales: escribir no guarda en el directorio
+
+Quien escribe por primera vez (WhatsApp, Chat web, Messenger, Instagram) se registra con `RegisterInboundContact` como
+**contacto provisional** (`contacts.saved_at` nulo): conserva su identidad técnica, sus conversaciones, las respuestas y
+la resolución del destinatario exactamente igual que antes, pero no forma parte del directorio comercial. Entra al
+directorio con `saved_at`/`saved_by_user_id` cuando: alguien lo crea a mano (`CreateContact`), una importación lo crea,
+una fila de importación con «completar campos vacíos» coincide con él (se guarda aunque no haya campos que completar;
+revertir el lote no lo vuelve provisional), o alguien con `contacts.create` pulsa «Guardar contacto» en la conversación o
+en su ficha (`SaveContactToDirectory`: bloquea la fila, reautoriza, actualiza nombre/correo oficiales con la auditoría de
+`UpdateContact`, nota privada opcional con permiso de notas, audita `contact.saved` y emite `ConversationChanged`
+«contact» para sus conversaciones abiertas). El teléfono y las identidades nunca cambian al guardar.
+
+- Todos los contactos que existían antes de la migración quedaron guardados (`saved_at = created_at`).
+- Solo cuentan contactos guardados: el directorio (`ContactListQuery`, con el filtro «Incluir no guardados»), el reporte y
+  la exportación de contactos (`ContactsReport`, el mismo filtro) y el número de contactos por etiqueta (`TagCatalogQuery`,
+  pantalla y reporte de etiquetas).
+- Siguen viendo los provisionales: la búsqueda de la bandeja, las políticas (su ficha es accesible con un aviso y la
+  acción de guardar), la detección de duplicados (marca `is_saved = false` y el formulario ofrece «Guardar este
+  contacto» en vez de duplicarlo) y la revisión de duplicados.
+- `is_saved` se expone en `ContactResource`, en el `contact` de `ConversationResource` y en la API v1.
+- Se distinguen cuatro cosas: datos técnicos de la conversación (identidad del canal), contacto corporativo del
+  directorio (compartido), alias personal (solo lo ve su autor, nunca cambia la ficha) y etiquetas corporativas.

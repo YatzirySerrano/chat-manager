@@ -12,9 +12,11 @@ use Tests\Support\WebChatFixtures;
 
 /*
 | The general inbox, default view of whoever attends conversations: in one
-| query within their reach, the pending conversations they may accept, the
-| open ones they attend and the ones on hold within reach, by latest
-| activity. Its chips and counters always agree with what they list.
+| query within their reach, the pending conversations they may accept and
+| the open ones they attend, by latest activity. "On hold" is retired: legacy
+| rows in that status leave the general inbox and its counters, and stay
+| readable in "mine" and "all". Its chips and counters always agree with
+| what they list.
 */
 
 beforeEach(function () {
@@ -58,20 +60,35 @@ function idsOf(array $conversations): array
     return collect($conversations)->pluck('id')->sort()->values()->all();
 }
 
-test('an agent\'s general inbox holds their open and on hold conversations and the pending ones they may accept', function () {
-    expect(generalIds($this->agent))->toBe(idsOf([$this->mineOpen, $this->mineOnHold, $this->salesPending]));
+test('an agent\'s general inbox holds their open conversations and the pending ones they may accept', function () {
+    expect(generalIds($this->agent))->toBe(idsOf([$this->mineOpen, $this->salesPending]));
 });
 
-test('a supervisor\'s general inbox adds the conversations on hold of their departments, never colleagues\' open ones', function () {
-    expect(generalIds($this->supervisor))->toBe(idsOf([$this->mineOnHold, $this->colleagueOnHold, $this->salesPending]))
-        ->and(generalIds($this->supervisor, ['status' => 'all']))->toBe(idsOf([$this->mineOnHold, $this->colleagueOnHold, $this->salesPending, $this->mineClosed]));
+test('legacy conversations on hold leave the general inbox but stay readable in "mine"', function () {
+    expect(generalIds($this->agent))->not->toContain($this->mineOnHold->id)
+        ->and(generalIds($this->agent, ['view' => 'mine']))->toBe(idsOf([$this->mineOpen, $this->mineOnHold]));
 });
 
-test('a global general inbox adds the pending conversations without department and every one on hold', function () {
+test('a supervisor\'s general inbox never lists colleagues\' open or legacy on hold conversations', function () {
+    expect(generalIds($this->supervisor))->toBe(idsOf([$this->salesPending]))
+        ->and(generalIds($this->supervisor, ['status' => 'all']))->toBe(idsOf([$this->salesPending, $this->mineClosed]));
+});
+
+test('a global general inbox adds the pending conversations without department', function () {
     expect(generalIds($this->admin))->toBe(idsOf([
-        $this->mineOnHold, $this->colleagueOnHold, $this->supportOnHold,
         $this->salesPending, $this->supportPending, $this->unroutedPending,
     ]));
+});
+
+test('an old link to the on hold chip falls back to the active conversations', function () {
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['status' => 'on_hold']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.status', 'active')
+            ->where('counts', fn ($counts) => ! array_key_exists('on_hold', is_array($counts) ? $counts : $counts->all())));
+
+    expect(generalIds($this->agent, ['status' => 'on_hold']))->toBe(generalIds($this->agent));
 });
 
 test('every counter is exactly what its chip lists with the same filters', function (string $viewer, array $filters) {
@@ -81,7 +98,6 @@ test('every counter is exactly what its chip lists with the same filters', funct
         'mine' => ['view' => 'mine'],
         'pending' => ['status' => 'pending'],
         'attending' => ['status' => 'open'],
-        'on_hold' => ['status' => 'on_hold'],
     ];
 
     $counts = $this->actingAs($user)->get(route('conversations.index', $filters))->viewData('page')['props']['counts'];
@@ -133,7 +149,7 @@ test('the general inbox follows the latest activity, and its cursor reaches ever
         $after = $page['next_cursor'];
     } while ($page['has_more']);
 
-    expect($expected)->toHaveCount(9)
+    expect($expected)->toHaveCount(8)
         ->and($listed)->toBe($expected)
         ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('recent');
 });

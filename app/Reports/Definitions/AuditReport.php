@@ -18,7 +18,7 @@ use App\Reports\Orientation;
 use App\Reports\PdfOptions;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
-use App\Services\AuditLogger;
+use App\Support\Audit\AuditPresenter;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -32,8 +32,8 @@ use Illuminate\Support\Str;
  *
  * Exporting requires audit.view and audit.export (not reports.export): the
  * audit trail is sensitive and is granted separately from module reports.
- * Properties were redacted when written; they are summarized here with the
- * same redaction applied again.
+ * Properties were redacted when written; they are summarized here in plain
+ * Spanish by the AuditPresenter, with the same redaction applied again.
  *
  * @phpstan-import-type AuditFilters from AuditLogQuery
  *
@@ -50,24 +50,9 @@ class AuditReport extends ReportDefinition
 
     private const TOP_ACTIONS = 8;
 
-    /**
-     * @var array<string, string>
-     */
-    private const SUBJECT_TYPES = [
-        'App\Models\User' => 'Usuario',
-        'App\Models\Role' => 'Rol',
-        'App\Models\Department' => 'Departamento',
-        'App\Models\Connection' => 'Conexión',
-        'App\Models\Contact' => 'Contacto',
-        'App\Models\Tag' => 'Etiqueta',
-        'App\Models\QuickReply' => 'Respuesta rápida',
-        'App\Models\Conversation' => 'Conversación',
-        'App\Models\Setting' => 'Configuración',
-    ];
-
     public function __construct(
         private AuditLogQuery $audit,
-        private AuditLogger $logger,
+        private AuditPresenter $presenter,
     ) {}
 
     public function key(): string
@@ -166,14 +151,14 @@ class AuditReport extends ReportDefinition
      */
     public function map(Model $record, ReportContext $context): array
     {
-        $type = $record->auditable_type === null ? null : (self::SUBJECT_TYPES[$record->auditable_type] ?? class_basename($record->auditable_type));
+        $type = $this->presenter->subjectTypeLabel($record->auditable_type);
 
         return [
             'created_at' => $record->created_at,
             'actor' => $record->actor_name ?? 'Sistema',
             'action' => $record->action->label(),
             'subject' => $type === null ? $record->auditable_label : $type.': '.($record->auditable_label ?? '#'.$record->auditable_id),
-            'details' => $this->summarize($record->properties ?? []),
+            'details' => $this->summarize($record),
             'ip' => $record->ip_address,
         ];
     }
@@ -230,51 +215,15 @@ class AuditReport extends ReportDefinition
     }
 
     /**
-     * One line "key: value · key: value", redacted again and truncated.
-     *
-     * @param  array<array-key, mixed>  $properties
+     * The entry's changes and details in plain Spanish (AuditPresenter, which
+     * redacts the properties again), truncated. The export requires
+     * audit.export, so identifiers and Meta codes are included.
      */
-    private function summarize(array $properties): ?string
+    private function summarize(AuditLog $record): ?string
     {
-        $parts = [];
-        $this->flatten($this->logger->sanitize($properties), '', $parts);
+        $lines = $this->presenter->lines($record, includeTechnical: true);
 
-        return $parts === [] ? null : Str::limit(implode(' · ', $parts), self::SUMMARY_LENGTH);
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $values
-     * @param  list<string>  $parts
-     */
-    private function flatten(array $values, string $prefix, array &$parts): void
-    {
-        foreach ($values as $key => $value) {
-            $name = $prefix === '' ? (string) $key : (array_is_list($values) ? $prefix : "{$prefix}.{$key}");
-
-            if (is_array($value)) {
-                if (array_is_list($value) && array_filter($value, 'is_array') === []) {
-                    $parts[] = "{$name}: ".($value === [] ? '—' : implode(', ', array_map(fn (mixed $item): string => $this->scalar($item), $value)));
-
-                    continue;
-                }
-
-                $this->flatten($value, $name, $parts);
-
-                continue;
-            }
-
-            $parts[] = "{$name}: ".$this->scalar($value);
-        }
-    }
-
-    private function scalar(mixed $value): string
-    {
-        return match (true) {
-            is_bool($value) => $value ? 'sí' : 'no',
-            $value === null => '—',
-            is_scalar($value) => Str::limit((string) $value, 120),
-            default => '…',
-        };
+        return $lines === [] ? null : Str::limit(implode(' · ', $lines), self::SUMMARY_LENGTH);
     }
 
     /**

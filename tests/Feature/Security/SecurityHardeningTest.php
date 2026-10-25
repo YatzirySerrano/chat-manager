@@ -36,8 +36,6 @@ test('an out of reach conversation answers 404 before its input is validated', f
     $hidden->assertNotFound();
     expect($hidden->json())->toBe($missing->json());
 })->with([
-    'hold' => ['POST', fn (Conversation $c) => "/conversations/{$c->id}/hold"],
-    'resume' => ['POST', fn (Conversation $c) => "/conversations/{$c->id}/resume"],
     'close' => ['POST', fn (Conversation $c) => "/conversations/{$c->id}/close"],
     'reopen' => ['POST', fn (Conversation $c) => "/conversations/{$c->id}/reopen"],
     'release' => ['POST', fn (Conversation $c) => "/conversations/{$c->id}/release"],
@@ -57,7 +55,7 @@ test('editing a note of an out of reach conversation answers 404 before validati
 
 test('the people who can see the conversation still get validation errors', function () {
     $this->actingAs($this->owner)
-        ->postJson(route('conversations.hold', $this->conversation), [])
+        ->postJson(route('conversations.close', $this->conversation), [])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('version');
 });

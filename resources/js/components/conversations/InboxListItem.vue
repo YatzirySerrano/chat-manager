@@ -2,22 +2,34 @@
 import {
     Bot,
     CircleDot,
-    Globe,
+    EllipsisVertical,
     Hand,
     Hourglass,
-    MessageCircle,
+    MailOpen,
+    MessageSquareText,
+    Tags,
+    UserPen,
     UserRound,
 } from '@lucide/vue';
 import { computed } from 'vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
     listTime,
     previewText,
+    statusLabel,
 } from '@/components/conversations/messageFormat';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/composables/useInitials';
 import { formatDateTime } from '@/lib/format';
@@ -25,35 +37,80 @@ import { formatPhone } from '@/lib/phone';
 import type { ConversationSummary } from '@/types';
 
 /**
- * One row of the inbox list. Pending conversations (waiting in a queue) are
- * set apart from the ones someone attends with a text badge «Pendiente»
- * and an icon (never by color alone), and a dot marks those where the
- * customer wrote last and is still waiting for an answer. Every row tells
- * its status, department, responsible agent and the connection (channel,
- * name and number) the customer wrote to. A pending row the server lets the
- * viewer accept (`can.accept`) offers "Aceptar" without opening it first.
+ * One row of the inbox list. Every viewer sees the essentials: the contact
+ * (their private alias when they set one), the latest message with its
+ * delivery state, the time, unread messages and the conversation's tags.
+ * Pending conversations are set apart with a text badge «Pendiente» and an
+ * icon (never by color alone), and a dot marks those where the customer
+ * wrote last and is still waiting. Operational badges (status, department,
+ * responsible agent, connection) only appear for viewers who supervise or
+ * distribute work (`showOperational`), so an agent's row stays clean.
+ *
+ * Row actions live in a menu next to the row button (never nested in it):
+ * open, mark as read, manage tags (when `can.tag`) and the personal alias
+ * (when the parent offers it). A pending row the server lets the viewer
+ * accept (`can.accept`) offers "Aceptar" without opening it first.
  */
-const props = defineProps<{
-    conversation: ConversationSummary;
-    selected: boolean;
-    /** Unread counter to show (0 while the chat is open on screen). */
-    unread: number;
-    /** Personal inboxes do not repeat the responsible agent (it is the viewer). */
-    showAssignee: boolean;
-    /** The viewer's connections span more than one channel: tell it. */
-    showChannel?: boolean;
-    /** The viewer is not available: accepting is disabled, as in the chat. */
-    unavailable: boolean;
-    /** Conversation being accepted from the list, if any (one at a time). */
-    acceptingId: number | null;
-}>();
+const props = withDefaults(
+    defineProps<{
+        conversation: ConversationSummary;
+        selected: boolean;
+        /** Unread counter to show (0 while the chat is open on screen). */
+        unread: number;
+        /** Department, status and connection badges (supervision). */
+        showOperational?: boolean;
+        /** Responsible agent badge (team inboxes of supervisors). */
+        showAssignee?: boolean;
+        /** The viewer's connections span more than one channel: tell it. */
+        showChannel?: boolean;
+        /** Conversation being accepted from the list, if any (one at a time). */
+        acceptingId: number | null;
+        /** The row menu offers "Asignar alias personal". */
+        canEditAlias?: boolean;
+    }>(),
+    {
+        showOperational: false,
+        showAssignee: false,
+        showChannel: false,
+        canEditAlias: false,
+    },
+);
 
 const emit = defineEmits<{
     select: [id: number];
     accept: [id: number];
+    manageTags: [conversation: ConversationSummary];
+    markRead: [id: number];
+    editAlias: [conversation: ConversationSummary];
 }>();
 
 const { getInitials } = useInitials();
+
+/*
+ * Name shown: the viewer's private alias when PERSONALIZATION provides it
+ * (contact.display_name), the official name otherwise.
+ */
+type ListedContact = ConversationSummary['contact'] & {
+    display_name?: string | null;
+    alias?: string | null;
+};
+
+const contact = computed(() => props.conversation.contact as ListedContact);
+const displayName = computed(
+    () =>
+        contact.value.display_name ||
+        contact.value.name ||
+        contact.value.profile_name ||
+        (contact.value.phone_e164
+            ? formatPhone(contact.value.phone_e164)
+            : 'Contacto'),
+);
+const hasAlias = computed(() => Boolean(contact.value.alias));
+const aliasTitle = computed(() =>
+    contact.value.name
+        ? `Alias personal. Nombre oficial: ${contact.value.name}`
+        : 'Alias personal',
+);
 
 const preview = computed(() =>
     props.conversation.last_message
@@ -67,14 +124,6 @@ const hiddenTags = computed(
 );
 const canAccept = computed(() => props.conversation.can.accept);
 const accepting = computed(() => props.acceptingId === props.conversation.id);
-const acceptHint = computed(() =>
-    props.unavailable
-        ? 'Cambia tu disponibilidad a Disponible para aceptar conversaciones.'
-        : 'Hacerte responsable de esta conversación',
-);
-const acceptHintId = computed(
-    () => `inbox-accept-hint-${props.conversation.id}`,
-);
 const connectionPhone = computed(() =>
     props.conversation.connection.phone
         ? formatPhone(props.conversation.connection.phone)
@@ -93,16 +142,15 @@ const connectionTitle = computed(() =>
         .filter(Boolean)
         .join(' · '),
 );
-const channelIcon = computed(() =>
-    props.conversation.connection.channel === 'web_chat'
-        ? Globe
-        : MessageCircle,
-);
 const label = computed(() => {
     // Whoever may accept it hears it first: the status is part of the prefix.
     const parts = canAccept.value
-        ? [`Pendiente de aceptar: ${props.conversation.contact.name}`]
-        : [props.conversation.contact.name, props.conversation.status_label];
+        ? [`Pendiente de aceptar: ${displayName.value}`]
+        : [displayName.value, props.conversation.status_label];
+
+    if (hasAlias.value && contact.value.name) {
+        parts.push(`alias personal de ${contact.value.name}`);
+    }
 
     if (props.unread > 0) {
         parts.push(
@@ -116,7 +164,7 @@ const label = computed(() => {
         parts.push('esperando respuesta');
     }
 
-    if (props.conversation.department) {
+    if (props.showOperational && props.conversation.department) {
         parts.push(`departamento ${props.conversation.department.name}`);
     }
 
@@ -124,24 +172,50 @@ const label = computed(() => {
         parts.push(`responsable ${props.conversation.assignee.name}`);
     }
 
-    parts.push(`recibida en ${connectionTitle.value}`);
+    if (props.showOperational || props.showChannel) {
+        parts.push(`recibida en ${connectionTitle.value}`);
+    }
+
+    // The visible row is replaced by this label: it also carries the last
+    // message (with its delivery state when it is ours) and its time.
+    const last = props.conversation.last_message;
+
+    if (last && preview.value) {
+        const text =
+            preview.value.length > 140
+                ? `${preview.value.slice(0, 140)}…`
+                : preview.value;
+        const delivery =
+            last.direction === 'outbound'
+                ? ` (${statusLabel(last.status, last.error_code).toLowerCase()})`
+                : '';
+
+        parts.push(
+            `${last.direction === 'outbound' ? 'último mensaje enviado' : 'último mensaje'}${delivery}: ${text}`,
+        );
+    }
+
+    if (props.conversation.last_message_at) {
+        parts.push(listTime(props.conversation.last_message_at));
+    }
 
     return parts.join(', ');
 });
 </script>
 
 <template>
-    <div class="relative">
+    <div class="group/row relative">
         <button
             type="button"
-            class="group relative flex w-full items-start gap-3 border-l-[3px] px-3 py-3 text-left transition-colors outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
             :class="[
                 selected
-                    ? 'border-l-primary bg-accent/80'
+                    ? 'border-l-primary bg-accent'
                     : pending
-                      ? 'border-l-warning hover:bg-accent/50'
-                      : 'border-l-transparent hover:bg-accent/50',
-                conversation.status === 'closed' && 'opacity-75',
+                      ? 'border-l-warning hover:bg-accent/60'
+                      : unread > 0
+                        ? 'border-l-primary/40 hover:bg-accent/60'
+                        : 'border-l-transparent hover:bg-accent/60',
             ]"
             :aria-current="selected ? 'true' : undefined"
             :aria-label="label"
@@ -150,14 +224,15 @@ const label = computed(() => {
         >
             <span
                 class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
-                :class="
+                :class="[
                     pending
                         ? 'bg-warning/15 text-foreground'
-                        : 'bg-primary-soft text-primary-soft-foreground'
-                "
+                        : 'bg-primary-soft text-primary-soft-foreground',
+                    conversation.status === 'closed' && 'opacity-70',
+                ]"
                 aria-hidden="true"
             >
-                {{ getInitials(conversation.contact.name) }}
+                {{ getInitials(displayName) }}
                 <Hourglass
                     v-if="pending"
                     class="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-background p-0.5 text-warning"
@@ -166,15 +241,30 @@ const label = computed(() => {
 
             <span class="min-w-0 flex-1">
                 <span class="flex items-baseline justify-between gap-2">
-                    <span
-                        class="truncate text-[15px] lg:text-sm"
-                        :class="unread > 0 ? 'font-semibold' : 'font-medium'"
-                        :title="conversation.contact.name"
-                        >{{ conversation.contact.name }}</span
-                    >
+                    <span class="flex min-w-0 items-center gap-1.5">
+                        <span
+                            class="truncate text-[15px] leading-5"
+                            :class="
+                                unread > 0
+                                    ? 'font-semibold text-foreground'
+                                    : 'font-medium'
+                            "
+                            :title="displayName"
+                            >{{ displayName }}</span
+                        >
+                        <span
+                            v-if="hasAlias"
+                            class="inline-flex shrink-0 items-center gap-0.5 rounded border px-1 text-xs leading-4 text-muted-foreground"
+                            :title="aliasTitle"
+                            data-inbox-alias
+                        >
+                            <UserPen class="size-3" aria-hidden="true" />
+                            alias
+                        </span>
+                    </span>
                     <time
                         v-if="conversation.last_message_at"
-                        class="shrink-0 text-xs"
+                        class="shrink-0 text-xs tabular-nums"
                         :class="
                             unread > 0
                                 ? 'font-semibold text-primary'
@@ -186,7 +276,7 @@ const label = computed(() => {
                     >
                 </span>
 
-                <span class="mt-0.5 flex items-center gap-1.5">
+                <span class="mt-1 flex items-center gap-1.5">
                     <span
                         class="flex min-w-0 flex-1 items-center gap-1 truncate text-sm"
                         :class="
@@ -214,8 +304,8 @@ const label = computed(() => {
                             <span class="truncate">{{ preview }}</span>
                         </template>
                         <span v-else class="truncate">{{
-                            conversation.contact.phone_e164
-                                ? formatPhone(conversation.contact.phone_e164)
+                            contact.phone_e164
+                                ? formatPhone(contact.phone_e164)
                                 : 'Sin mensajes'
                         }}</span>
                     </span>
@@ -232,7 +322,15 @@ const label = computed(() => {
                     >
                 </span>
 
-                <span class="mt-1.5 flex flex-wrap items-center gap-1">
+                <span
+                    v-if="
+                        pending ||
+                        showOperational ||
+                        conversation.status === 'closed' ||
+                        visibleTags.length > 0
+                    "
+                    class="mt-1.5 flex flex-wrap items-center gap-1"
+                >
                     <!-- Pending: text and icon on a warning tint, with the
                          foreground color so it keeps ≥4.5:1 in both themes. -->
                     <span
@@ -247,15 +345,18 @@ const label = computed(() => {
                         {{ conversation.status_label }}
                     </span>
                     <ConversationStatusBadge
-                        v-else
+                        v-else-if="
+                            showOperational || conversation.status === 'closed'
+                        "
                         :status="conversation.status"
                         :label="conversation.status_label"
                     />
                     <DepartmentTag
-                        v-if="conversation.department"
+                        v-if="showOperational && conversation.department"
                         :name="conversation.department.name"
                         :color="conversation.department.color"
                         :muted="!conversation.department.is_active"
+                        data-inbox-department
                     />
                     <span
                         v-if="showAssignee && conversation.assignee"
@@ -286,16 +387,16 @@ const label = computed(() => {
                 </span>
 
                 <span
+                    v-if="showOperational || showChannel"
                     class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
                     :class="[
                         canAccept && 'min-h-8 pr-24 pointer-coarse:min-h-10',
-                        conversation.connection.state !== 'active' &&
-                            'opacity-70',
+                        conversation.connection.state !== 'active' && 'italic',
                     ]"
                     :title="connectionTitle"
                 >
-                    <component
-                        :is="channelIcon"
+                    <ChannelIcon
+                        :channel="conversation.connection.channel"
                         class="size-3.5 shrink-0"
                         aria-hidden="true"
                     />
@@ -305,44 +406,84 @@ const label = computed(() => {
                         data-inbox-channel
                         >{{ conversation.connection.channel_label }}</span
                     >
-                    <span v-else class="sr-only"
-                        >{{ conversation.connection.channel_label }}:</span
-                    >
-                    <span class="truncate">{{
-                        conversation.connection.name
-                    }}</span>
-                    <span v-if="connectionPhone" class="shrink-0 tabular-nums"
-                        >· {{ connectionPhone }}</span
-                    >
+                    <template v-if="showOperational">
+                        <span class="truncate">{{
+                            conversation.connection.name
+                        }}</span>
+                        <span
+                            v-if="connectionPhone"
+                            class="shrink-0 tabular-nums"
+                            >· {{ connectionPhone }}</span
+                        >
+                    </template>
                 </span>
+                <span
+                    v-else-if="canAccept"
+                    class="block min-h-8 pointer-coarse:min-h-10"
+                    aria-hidden="true"
+                />
             </span>
         </button>
 
-        <span
-            v-if="canAccept"
-            class="absolute right-3 bottom-3"
-            :title="acceptHint"
-        >
-            <!-- Unavailable: aria-disabled keeps it focusable, so screen
-                 readers and touch users get the reason (aria-describedby). -->
+        <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="absolute top-2 right-1.5 text-muted-foreground opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 pointer-coarse:opacity-100"
+                    :aria-label="`Acciones de la conversación con ${displayName}`"
+                    data-inbox-row-menu
+                >
+                    <EllipsisVertical aria-hidden="true" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-56">
+                <DropdownMenuItem @select="emit('select', conversation.id)">
+                    <MessageSquareText aria-hidden="true" />
+                    Abrir
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    v-if="unread > 0"
+                    @select="emit('markRead', conversation.id)"
+                >
+                    <MailOpen aria-hidden="true" />
+                    Marcar como leída
+                </DropdownMenuItem>
+                <template v-if="conversation.can.tag || canEditAlias">
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                        v-if="conversation.can.tag"
+                        @select="emit('manageTags', conversation)"
+                    >
+                        <Tags aria-hidden="true" />
+                        Administrar etiquetas
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        v-if="canEditAlias"
+                        @select="emit('editAlias', conversation)"
+                    >
+                        <UserPen aria-hidden="true" />
+                        Asignar alias personal
+                    </DropdownMenuItem>
+                </template>
+            </DropdownMenuContent>
+        </DropdownMenu>
+
+        <span v-if="canAccept" class="absolute right-3 bottom-3">
             <Button
                 size="sm"
                 variant="outline"
-                class="bg-background aria-disabled:cursor-not-allowed aria-disabled:opacity-50 pointer-coarse:h-10"
+                class="bg-background pointer-coarse:h-10"
                 :disabled="acceptingId !== null"
-                :aria-disabled="unavailable || undefined"
-                :aria-label="`Aceptar la conversación de ${conversation.contact.name}`"
-                :aria-describedby="unavailable ? acceptHintId : undefined"
+                :aria-label="`Aceptar la conversación de ${displayName}`"
+                title="Hacerte responsable de esta conversación"
                 data-inbox-accept
-                @click="unavailable || emit('accept', conversation.id)"
+                @click="emit('accept', conversation.id)"
             >
                 <Spinner v-if="accepting" />
                 <Hand v-else aria-hidden="true" />
                 Aceptar
             </Button>
-            <span v-if="unavailable" :id="acceptHintId" class="sr-only">{{
-                acceptHint
-            }}</span>
         </span>
     </div>
 </template>

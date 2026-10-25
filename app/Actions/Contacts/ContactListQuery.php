@@ -18,10 +18,16 @@ use Illuminate\Validation\Rule;
  * phone (ContactSearch), tags, source, origin and the chosen order, always
  * ending in the id so pages never repeat or skip a contact.
  *
+ * Only contacts saved into the directory are listed by default: provisional
+ * ones (unknown senders registered automatically by an inbound message) are
+ * technical records of the conversations and are included only when asked
+ * for ("Incluir no guardados"). Inbox search, duplicate detection and reviews
+ * do not use this query and keep finding them.
+ *
  * Shared by the contacts screen and the contacts report, so both always
  * agree on what "these contacts" means.
  *
- * @phpstan-type ContactFilters array{search: string, record: RecordState, tags: list<int>, source: string|null, origin: string|null, sort: string}
+ * @phpstan-type ContactFilters array{search: string, record: RecordState, tags: list<int>, source: string|null, origin: string|null, sort: string, include_provisional: bool}
  */
 class ContactListQuery
 {
@@ -54,6 +60,7 @@ class ContactListQuery
             'source' => ['nullable', Rule::enum(ContactSource::class)],
             'origin' => ['nullable', Rule::enum(ContactOriginType::class)],
             'sort' => ['nullable', Rule::in(self::SORTS)],
+            'include_provisional' => ['nullable', 'boolean'],
         ];
     }
 
@@ -77,6 +84,7 @@ class ContactListQuery
             'source' => is_string($source) ? $source : null,
             'origin' => is_string($origin) ? $origin : null,
             'sort' => is_string($sort) && in_array($sort, self::SORTS, true) ? $sort : 'recent',
+            'include_provisional' => filter_var($validated['include_provisional'] ?? false, FILTER_VALIDATE_BOOLEAN),
         ];
     }
 
@@ -92,6 +100,7 @@ class ContactListQuery
         return Contact::query()
             ->visibleTo($actor)
             ->inRecordState($filters['record'])
+            ->when(! $filters['include_provisional'], fn (Builder $query) => $query->savedInDirectory())
             ->when($search !== '', fn (Builder $query) => $this->search->constrain($query, $search))
             ->when($filters['tags'] !== [], fn (Builder $query) => $query->whereHas(
                 'tags',

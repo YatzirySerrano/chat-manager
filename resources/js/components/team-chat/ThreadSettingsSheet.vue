@@ -414,7 +414,6 @@ function restoreGroup(): void {
                             <TeamAvatar
                                 :name="participant.name"
                                 :deleted="participant.deleted"
-                                :availability="participant.availability"
                                 :online="isOnline(participant.id)"
                                 size="sm"
                             />
@@ -431,18 +430,10 @@ function restoreGroup(): void {
                                     {{
                                         participant.deleted
                                             ? 'Cuenta eliminada'
-                                            : participant.availability ===
-                                                'available'
-                                              ? 'Disponible'
-                                              : 'No disponible'
-                                    }}<template
-                                        v-if="
-                                            !participant.deleted &&
-                                            isOnline(participant.id)
-                                        "
-                                    >
-                                        · En línea</template
-                                    >
+                                            : isOnline(participant.id)
+                                              ? 'En línea'
+                                              : 'Sin conexión'
+                                    }}
                                 </p>
                             </div>
                             <Badge

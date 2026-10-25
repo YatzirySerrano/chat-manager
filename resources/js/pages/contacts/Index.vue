@@ -19,6 +19,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
 import ContactOriginBadge from '@/components/contacts/ContactOriginBadge.vue';
 import ContactTagList from '@/components/contacts/ContactTagList.vue';
+import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
@@ -109,8 +110,9 @@ const props = defineProps<{
 }>();
 
 /**
- * Contacts registered automatically from inbound messages appear without any
- * action: new conversations and messages in the inboxes the user can see
+ * The directory lists saved contacts; people who wrote in and nobody saved
+ * yet (provisional contacts) only appear with "Incluir no guardados". The
+ * list refreshes without any action: new conversations and messages in the inboxes the user can see
  * (and finished imports) reload the list with the current filters, search
  * and page. Without real-time the list refreshes every 30 seconds.
  */
@@ -158,6 +160,7 @@ const filterState = reactive({
     source: props.filters.source ?? ALL,
     origin: props.filters.origin ?? ALL,
     sort: props.filters.sort ?? 'recent',
+    includeProvisional: props.filters.include_provisional ?? false,
 });
 
 const hasFilters = computed(
@@ -166,7 +169,8 @@ const hasFilters = computed(
         filterState.record !== 'active' ||
         filterState.tags.length > 0 ||
         filterState.source !== ALL ||
-        filterState.origin !== ALL,
+        filterState.origin !== ALL ||
+        filterState.includeProvisional,
 );
 
 const loading = ref(false);
@@ -208,6 +212,10 @@ function applyFilters(): void {
         query.sort = filterState.sort;
     }
 
+    if (filterState.includeProvisional) {
+        query.include_provisional = '1';
+    }
+
     router.get(contactsIndex.url({ query }), undefined, {
         preserveState: true,
         preserveScroll: true,
@@ -231,6 +239,12 @@ function clearFilters(): void {
     filterState.tags = [];
     filterState.source = ALL;
     filterState.origin = ALL;
+    filterState.includeProvisional = false;
+    applyFilters();
+}
+
+function toggleProvisional(): void {
+    filterState.includeProvisional = !filterState.includeProvisional;
     applyFilters();
 }
 
@@ -324,6 +338,7 @@ function contactSubtitle(contact: Contact): string | null {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="contactos"
             title="Contactos"
             description="Personas que atiende tu equipo, con su origen, etiquetas e historial."
         >
@@ -601,6 +616,20 @@ function contactSubtitle(contact: Contact): string | null {
                     </Select>
 
                     <Button
+                        variant="outline"
+                        class="w-full lg:w-auto"
+                        :class="
+                            filterState.includeProvisional &&
+                            'border-primary bg-primary-soft text-primary-soft-foreground'
+                        "
+                        :aria-pressed="filterState.includeProvisional"
+                        title="Muestra también a quienes escribieron y se registraron automáticamente, pero nadie ha guardado en el directorio."
+                        @click="toggleProvisional"
+                    >
+                        Incluir no guardados
+                    </Button>
+
+                    <Button
                         v-if="hasFilters"
                         variant="ghost"
                         @click="clearFilters"
@@ -701,6 +730,10 @@ function contactSubtitle(contact: Contact): string | null {
                                 v-if="contact.is_deleted"
                                 class="mt-1 ml-12 sm:hidden"
                             />
+                            <UnsavedContactBadge
+                                v-else-if="!contact.is_saved"
+                                class="mt-1 ml-12 sm:hidden"
+                            />
                         </TableCell>
                         <TableCell
                             class="hidden font-mono text-sm tabular-nums lg:table-cell"
@@ -734,6 +767,9 @@ function contactSubtitle(contact: Contact): string | null {
                         </TableCell>
                         <TableCell class="hidden sm:table-cell">
                             <DeletedBadge v-if="contact.is_deleted" />
+                            <UnsavedContactBadge
+                                v-else-if="!contact.is_saved"
+                            />
                             <span v-else class="text-xs text-muted-foreground"
                                 >Activo</span
                             >
@@ -782,6 +818,9 @@ function contactSubtitle(contact: Contact): string | null {
                         </template>
                         <template #badges>
                             <DeletedBadge v-if="contact.is_deleted" />
+                            <UnsavedContactBadge
+                                v-else-if="!contact.is_saved"
+                            />
                             <ContactOriginBadge :origin="contact.origin" />
                         </template>
                         <p

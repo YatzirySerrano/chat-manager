@@ -8,6 +8,7 @@ use App\Enums\ConversationStatus;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
+use App\Models\Tag;
 use App\Models\User;
 use App\Reports\Chart;
 use App\Reports\ChartSeries;
@@ -45,7 +46,7 @@ class ConversationsReport extends ReportDefinition
      * @var array<string, string>
      */
     private const VIEW_LABELS = [
-        ConversationInboxQuery::VIEW_GENERAL => 'Bandeja general (pendientes por aceptar, en atención y en espera)',
+        ConversationInboxQuery::VIEW_GENERAL => 'Bandeja general (pendientes por aceptar y en atención)',
         ConversationInboxQuery::VIEW_ALL => 'Todas las de tu alcance',
         ConversationInboxQuery::VIEW_MINE => 'Asignadas a ti',
         ConversationInboxQuery::VIEW_QUEUE => 'En cola para aceptar',
@@ -127,6 +128,16 @@ class ConversationsReport extends ReportDefinition
             $descriptions[] = 'Canal: '.(ConnectionChannel::tryFrom((string) $filters['channel'])?->label() ?? $filters['channel']);
         }
 
+        $tagIds = $filters['tags'] ?? [];
+
+        if ($tagIds !== []) {
+            $names = Tag::query()->whereKey($tagIds)->orderBy('name')->pluck('name')->all();
+            $matchesAll = ($filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY) === ConversationInboxQuery::TAG_MATCH_ALL;
+            $descriptions[] = (count($names) > 1
+                ? ($matchesAll ? 'Etiquetas (todas, Y): ' : 'Etiquetas (cualquiera, O): ')
+                : 'Etiqueta: ').implode(', ', $names === [] ? ['No disponible'] : $names);
+        }
+
         if ($filters['search'] !== '') {
             $descriptions[] = (($filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT) === ConversationInboxQuery::SEARCH_MESSAGES
                 ? 'Búsqueda en el contenido de los mensajes: «'
@@ -200,7 +211,7 @@ class ConversationsReport extends ReportDefinition
             new Metric('Conversaciones', $total, 'Con los filtros aplicados'),
             ...array_map(
                 fn (ConversationStatus $status): Metric => new Metric($status->label(), $byStatus[$status->value], $this->shareOf($byStatus[$status->value], $total)),
-                ConversationStatus::cases(),
+                ConversationStatus::operational(),
             ),
         ];
     }
@@ -224,7 +235,7 @@ class ConversationsReport extends ReportDefinition
             new Chart(
                 ChartType::Donut,
                 'Conversaciones por estado',
-                array_map(fn (ConversationStatus $status): string => $status->label(), ConversationStatus::cases()),
+                array_map(fn (ConversationStatus $status): string => $status->label(), ConversationStatus::operational()),
                 [new ChartSeries('Conversaciones', array_values($byStatus))],
                 'Distribución de las conversaciones exportadas',
             ),
@@ -244,7 +255,9 @@ class ConversationsReport extends ReportDefinition
     }
 
     /**
-     * @return array<string, int> Status value => count, in the statuses' order.
+     * Legacy on_hold rows (not migrated yet) are counted as open.
+     *
+     * @return array<string, int> Status value => count, in the operational statuses' order.
      */
     private function statusCounts(ReportContext $context): array
     {
@@ -256,8 +269,11 @@ class ConversationsReport extends ReportDefinition
 
         $result = [];
 
-        foreach (ConversationStatus::cases() as $status) {
-            $result[$status->value] = (int) ($counts[$status->value] ?? 0);
+        $legacyOnHold = (int) ($counts[ConversationStatus::OnHold->value] ?? 0);
+
+        foreach (ConversationStatus::operational() as $status) {
+            $result[$status->value] = (int) ($counts[$status->value] ?? 0)
+                + ($status === ConversationStatus::Open ? $legacyOnHold : 0);
         }
 
         return $result;

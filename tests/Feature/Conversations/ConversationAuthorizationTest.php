@@ -98,7 +98,6 @@ test('operations on a conversation outside the agent\'s reach look like a missin
     'assign to self' => ['conversations.assign', ['user_id' => 'self']],
     'transfer' => ['conversations.transfer', ['department_id' => 'sales']],
     'release' => ['conversations.release', []],
-    'hold' => ['conversations.hold', []],
     'close' => ['conversations.close', []],
     'note' => ['conversations.notes.store', ['body' => 'Intrusión']],
 ]);
@@ -206,7 +205,7 @@ test('an agent may choose an eligible colleague without seeing anything else abo
         ->json('departments'))->firstWhere('id', $this->sales->id)['agents'];
 
     expect(collect($agents)->pluck('id')->all())->toEqualCanonicalizing([$this->agent->id, $this->colleague->id])
-        ->and(collect($agents)->every(fn (array $agent): bool => array_keys($agent) === ['id', 'name', 'availability', 'at_capacity']))->toBeTrue();
+        ->and(collect($agents)->every(fn (array $agent): bool => array_keys($agent) === ['id', 'name', 'at_capacity']))->toBeTrue();
 
     $this->actingAs($this->agent)
         ->get(route('conversations.show', $this->colleagues))

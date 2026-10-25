@@ -167,13 +167,11 @@ class RecordMessageStatus
     {
         $error = $this->firstError($status);
         $code = $error['code'] ?? null;
-        $explanation = MetaErrorCatalog::messageFor($code)
-            ?? ($error['title'] ?? null)
-            ?? 'WhatsApp informó que el mensaje no se pudo entregar.';
+        $explanation = MetaErrorCatalog::explain($code, 'WhatsApp informó que el mensaje no se pudo entregar.');
 
         $message->forceFill([
             'error_code' => $code === null ? 'provider_failed' : 'meta_'.$code,
-            'error_message' => Str::limit($explanation.($code !== null ? " (código {$code})" : ''), 500, ''),
+            'error_message' => Str::limit($explanation, 500, ''),
             'failed_at' => $status->occurredAt,
         ]);
     }

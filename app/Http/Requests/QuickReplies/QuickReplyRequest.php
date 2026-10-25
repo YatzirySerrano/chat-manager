@@ -19,6 +19,10 @@ use Illuminate\Validation\Validator;
 /**
  * Validation for creating and updating quick replies. Shortcut uniqueness in
  * its scope is checked under a lock when saving (EnsureShortcutIsAvailable).
+ *
+ * A new reply is personal when `type` is "personal" (it then needs
+ * quick-replies.personal and takes no availability); an existing reply keeps
+ * its type, so a personal reply never becomes corporate or vice versa.
  */
 class QuickReplyRequest extends FormRequest
 {
@@ -33,9 +37,23 @@ class QuickReplyRequest extends FormRequest
     {
         $quickReply = $this->route('quickReply');
 
+        if ($quickReply instanceof QuickReply) {
+            return Gate::inspect('update', $quickReply);
+        }
+
+        return Gate::inspect($this->isPersonal() ? 'createPersonal' : 'create', QuickReply::class);
+    }
+
+    /**
+     * Whether the reply being created or updated is personal.
+     */
+    public function isPersonal(): bool
+    {
+        $quickReply = $this->route('quickReply');
+
         return $quickReply instanceof QuickReply
-            ? Gate::inspect('update', $quickReply)
-            : Gate::inspect('create', QuickReply::class);
+            ? $quickReply->isPersonal()
+            : $this->input('type') === 'personal';
     }
 
     /**
@@ -71,8 +89,9 @@ class QuickReplyRequest extends FormRequest
             'title' => ['required', 'string', 'max:120'],
             'shortcut' => ['required', 'string', 'max:32', 'regex:'.self::SHORTCUT_PATTERN],
             'body' => ['required', 'string', 'max:'.self::BODY_MAX_LENGTH, new QuickReplyBody],
-            'is_global' => ['required', 'boolean'],
-            'department_ids' => [Rule::excludeIf(fn (): bool => $this->boolean('is_global')), 'required', 'array', 'min:1', 'max:100'],
+            'type' => ['sometimes', 'nullable', Rule::in(['corporate', 'personal'])],
+            'is_global' => [Rule::excludeIf(fn (): bool => $this->isPersonal()), 'required', 'boolean'],
+            'department_ids' => [Rule::excludeIf(fn (): bool => $this->isPersonal() || $this->boolean('is_global')), 'required', 'array', 'min:1', 'max:100'],
             'department_ids.*' => ['integer', 'distinct', Rule::exists(Department::class, 'id')],
         ];
     }
@@ -88,7 +107,7 @@ class QuickReplyRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if ($validator->errors()->hasAny(['is_global', 'department_ids', 'department_ids.*'])) {
+                if ($this->isPersonal() || $validator->errors()->hasAny(['is_global', 'department_ids', 'department_ids.*'])) {
                     return;
                 }
 
@@ -155,6 +174,7 @@ class QuickReplyRequest extends FormRequest
             'title' => 'título',
             'shortcut' => 'atajo',
             'body' => 'mensaje',
+            'type' => 'tipo',
             'is_global' => 'disponibilidad',
             'department_ids' => 'departamentos',
             'department_ids.*' => 'departamento',
@@ -165,10 +185,21 @@ class QuickReplyRequest extends FormRequest
      * Departments of the reply that are deleted are kept (they are not offered
      * in the form): they become effective again when restored.
      *
-     * @return array{title: string, shortcut: string, body: string, is_global: bool, department_ids: list<int>}
+     * @return array{title: string, shortcut: string, body: string, is_global: bool, department_ids: list<int>, personal: bool}
      */
     public function payload(): array
     {
+        if ($this->isPersonal()) {
+            return [
+                'title' => (string) $this->validated('title'),
+                'shortcut' => (string) $this->validated('shortcut'),
+                'body' => (string) $this->validated('body'),
+                'is_global' => false,
+                'department_ids' => [],
+                'personal' => true,
+            ];
+        }
+
         $isGlobal = $this->boolean('is_global');
         $quickReply = $this->route('quickReply');
         $keptDeleted = $quickReply instanceof QuickReply && ! $isGlobal
@@ -181,6 +212,7 @@ class QuickReplyRequest extends FormRequest
             'body' => (string) $this->validated('body'),
             'is_global' => $isGlobal,
             'department_ids' => $isGlobal ? [] : array_values(array_unique([...$this->departmentIds(), ...$keptDeleted])),
+            'personal' => false,
         ];
     }
 

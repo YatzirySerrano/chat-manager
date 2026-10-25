@@ -38,6 +38,7 @@ enum Permission: string
 
     case AcceptConversations = 'conversations.accept';
     case AddConversationNotes = 'conversations.notes';
+    case SuperviseConversations = 'conversations.supervise';
 
     case ViewConnections = 'connections.view';
     case ManageConnections = 'connections.manage';
@@ -47,6 +48,7 @@ enum Permission: string
 
     case ViewTemplates = 'templates.view';
     case ManageTemplates = 'templates.manage';
+    case SendTemplates = 'templates.send';
 
     case ViewContacts = 'contacts.view';
     case CreateContacts = 'contacts.create';
@@ -62,6 +64,7 @@ enum Permission: string
 
     case UseQuickReplies = 'quick-replies.use';
     case ManageQuickReplies = 'quick-replies.manage';
+    case CreatePersonalQuickReplies = 'quick-replies.personal';
 
     case UseTeamChat = 'team-chat.use';
     case CreateTeamChatGroups = 'team-chat.create-groups';
@@ -78,6 +81,9 @@ enum Permission: string
     case UpdateAppearance = 'appearance.update';
 
     case ViewDeletedRecords = 'records.view-deleted';
+
+    case ViewPersonalItems = 'supervision.view-personal';
+    case ManagePersonalItems = 'supervision.manage-personal';
 
     case ViewAuditLog = 'audit.view';
     case ExportAuditLog = 'audit.export';
@@ -117,12 +123,14 @@ enum Permission: string
             self::ViewConversationHistory => 'Consultar conversaciones cerradas y su historial',
             self::AcceptConversations => 'Aceptar conversaciones pendientes de sus departamentos',
             self::AddConversationNotes => 'Agregar notas internas',
+            self::SuperviseConversations => 'Supervisar conversaciones de su alcance (solo lectura)',
             self::ViewConnections => 'Ver conexiones',
             self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
             self::ViewIntegrations => 'Ver los tokens de la API de integración',
             self::ManageIntegrations => 'Emitir y revocar tokens de la API de integración',
             self::ViewTemplates => 'Ver plantillas de WhatsApp',
             self::ManageTemplates => 'Sincronizar plantillas de WhatsApp con Meta',
+            self::SendTemplates => 'Enviar plantillas de WhatsApp (administrativo)',
             self::ViewContacts => 'Ver contactos',
             self::CreateContacts => 'Crear contactos',
             self::UpdateContacts => 'Editar contactos',
@@ -135,6 +143,7 @@ enum Permission: string
             self::AssignTags => 'Asignar etiquetas a contactos y conversaciones',
             self::UseQuickReplies => 'Usar respuestas rápidas',
             self::ManageQuickReplies => 'Administrar respuestas rápidas (crear, editar, eliminar y restaurar)',
+            self::CreatePersonalQuickReplies => 'Crear y administrar sus respuestas rápidas personales',
             self::UseTeamChat => 'Usar el chat interno',
             self::CreateTeamChatGroups => 'Crear grupos internos',
             self::ManageTeamChatGroups => 'Administrar los grupos internos en los que participa',
@@ -146,6 +155,8 @@ enum Permission: string
             self::ViewAppearance => 'Ver personalización',
             self::UpdateAppearance => 'Modificar la apariencia global',
             self::ViewDeletedRecords => 'Consultar registros eliminados',
+            self::ViewPersonalItems => 'Consultar elementos personales de otros usuarios (alias, apariencia, respuestas personales)',
+            self::ManagePersonalItems => 'Editar o eliminar elementos personales de otros usuarios',
             self::ViewAuditLog => 'Ver registros de auditoría',
             self::ExportAuditLog => 'Exportar registros de auditoría',
             self::ViewSystem => 'Ver el estado técnico del sistema (colas, trabajos fallidos, salud)',
@@ -187,6 +198,8 @@ enum Permission: string
             self::DeleteContacts,
             self::ImportContacts,
             self::ViewDeletedRecords,
+            self::ManagePersonalItems,
+            self::SendTemplates,
             self::ExportAuditLog,
             self::UpdateSettings,
             self::UpdateAppearance,
@@ -218,6 +231,7 @@ enum Permission: string
             self::ViewIntegrations,
             self::ManageIntegrations,
             self::ManageTemplates,
+            self::SendTemplates,
             self::ManageTags,
             self::ClassifyContactOrigin,
             self::ImportContacts,

@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Notification;
  * (the conversation may have moved on since the event):
  *
  * - entering the queue (created, released, transferred to a department,
- *   reopened without agent) notifies the available users who can accept it,
+ *   reopened without agent) notifies the active users who can accept it,
  *   unless it was already taken;
  * - assignments (manual, automatic, return on reopen) notify the new
  *   responsible agent, never the person who did it themselves;

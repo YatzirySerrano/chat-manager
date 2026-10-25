@@ -2,7 +2,6 @@
 
 use App\Actions\Conversations\AcceptConversation;
 use App\Actions\Conversations\AssignAutomatically;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\CloseInactiveConversations;
 use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
@@ -343,7 +342,7 @@ test('the transfer reason is required only when the configuration asks for it', 
     expect($conversation->refresh()->assigned_user_id)->toBe($this->colleague->id);
 });
 
-test('hold, resume, release, close and reopen follow the state matrix and are recorded', function () {
+test('release, close and reopen follow the state matrix and are recorded', function () {
     $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
     $post = fn (string $route, int $version, array $input = [], ?User $actor = null) => $this->actingAs($actor ?? $this->agent)
         ->from(route('conversations.show', $conversation))
@@ -351,34 +350,22 @@ test('hold, resume, release, close and reopen follow the state matrix and are re
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    $post('conversations.hold', 0, ['reason' => 'Esperando comprobante de pago']);
-    expect($conversation->refresh())
-        ->status->toBe(ConversationStatus::OnHold)
-        ->on_hold_reason->toBe('Esperando comprobante de pago')
-        ->assigned_user_id->toBe($this->agent->id)
-        ->on_hold_at->not->toBeNull();
-
-    $post('conversations.resume', 1);
-    expect($conversation->refresh())->status->toBe(ConversationStatus::Open)->on_hold_at->toBeNull();
-
-    $post('conversations.close', 2, ['reason' => 'Resuelto']);
+    $post('conversations.close', 0, ['reason' => 'Resuelto']);
     expect($conversation->refresh())
         ->status->toBe(ConversationStatus::Closed)
         ->closed_by_user_id->toBe($this->agent->id)
         ->assigned_user_id->toBe($this->agent->id);
 
-    $post('conversations.reopen', 3, actor: $this->admin);
+    $post('conversations.reopen', 1, actor: $this->admin);
     expect($conversation->refresh())
         ->status->toBe(ConversationStatus::Open)
         ->assigned_user_id->toBe($this->agent->id)
         ->reopen_count->toBe(1);
 
-    $this->actingAs($this->agent)->post(route('conversations.release', $conversation), ['version' => 4])->assertSessionHasNoErrors();
+    $this->actingAs($this->agent)->post(route('conversations.release', $conversation), ['version' => 2])->assertSessionHasNoErrors();
     expect($conversation->refresh())->status->toBe(ConversationStatus::Pending)->assigned_user_id->toBeNull();
 
     expect($conversation->events()->orderBy('id')->pluck('type')->all())->toBe([
-        ConversationEventType::PutOnHold,
-        ConversationEventType::Resumed,
         ConversationEventType::Closed,
         ConversationEventType::Reopened,
         ConversationEventType::Unassigned,
@@ -396,15 +383,13 @@ test('transitions outside the matrix are rejected', function (string $state, str
 
     expect($conversation->refresh()->status->value)->toBe($state);
 })->with([
-    'resume an open conversation' => ['open', 'conversations.resume'],
-    'hold a conversation on hold' => ['on_hold', 'conversations.hold'],
     'reopen an open conversation' => ['open', 'conversations.reopen'],
     'close a closed conversation' => ['closed', 'conversations.close'],
-    'hold a pending conversation' => ['pending', 'conversations.hold'],
 ]);
 
 test('the state matrix only allows the documented transitions', function () {
     expect(ConversationStatus::Pending->canTransitionTo(ConversationStatus::OnHold))->toBeFalse()
+        ->and(ConversationStatus::Open->canTransitionTo(ConversationStatus::OnHold))->toBeFalse()
         ->and(ConversationStatus::Closed->canTransitionTo(ConversationStatus::OnHold))->toBeFalse()
         ->and(ConversationStatus::Closed->canTransitionTo(ConversationStatus::Closed))->toBeFalse()
         ->and(ConversationStatus::OnHold->canTransitionTo(ConversationStatus::OnHold))->toBeFalse()
@@ -460,11 +445,11 @@ test('a note cannot be edited through another conversation', function () {
         ->assertNotFound();
 });
 
-test('automatic distribution picks the available eligible agent with the lowest load', function () {
+test('automatic distribution picks the eligible agent with the lowest load, whatever their legacy availability', function () {
     $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
     $busy = User::factory()->agent()->available()->inDepartments($department)->create();
     $free = User::factory()->agent()->available()->inDepartments($department)->create();
-    User::factory()->agent()->inDepartments($department)->create(['availability' => AgentAvailability::Unavailable]);
+    $legacyUnavailable = User::factory()->agent()->inDepartments($department)->create(['availability' => AgentAvailability::Unavailable]);
     User::factory()->agent()->available()->inactive()->inDepartments($department)->create();
     Conversation::factory()->inDepartment($department)->assignedTo($busy)->create();
 
@@ -473,7 +458,7 @@ test('automatic distribution picks the available eligible agent with the lowest 
     )));
 
     expect($conversations->map(fn (Conversation $conversation) => $conversation->refresh()->assigned_user_id)->all())
-        ->toBe([$free->id, $busy->id, $free->id]);
+        ->toBe([$free->id, $legacyUnavailable->id, $busy->id]);
 });
 
 test('automatic distribution respects the attention limit and leaves the rest in the queue', function () {
@@ -489,25 +474,6 @@ test('automatic distribution respects the attention limit and leaves the rest in
         ->and($conversation->refresh()->status)->toBe(ConversationStatus::Pending);
 });
 
-test('becoming available receives the waiting conversations, becoming unavailable keeps the current ones', function () {
-    $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
-    $agent = User::factory()->agent()->inDepartments($department)->create();
-    $waiting = pendingIn($department);
-    $owned = Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
-
-    $this->actingAs($agent)
-        ->put(route('conversations.availability.update'), ['availability' => 'available'])
-        ->assertSessionHasNoErrors();
-
-    expect($waiting->refresh()->assigned_user_id)->toBe($agent->id)
-        ->and($agent->refresh()->availability)->toBe(AgentAvailability::Available);
-
-    app(ChangeAgentAvailability::class)->handle($agent, AgentAvailability::Unavailable);
-
-    expect($owned->refresh()->assigned_user_id)->toBe($agent->id)
-        ->and($waiting->refresh()->assigned_user_id)->toBe($agent->id);
-});
-
 test('releasing in an automatic department offers the conversation to another agent', function () {
     $department = Department::factory()->distribution(DistributionMode::Automatic)->create();
     $releasing = User::factory()->agent()->available()->inDepartments($department)->create();
@@ -520,7 +486,7 @@ test('releasing in an automatic department offers the conversation to another ag
 });
 
 test('switching a department to automatic distributes its waiting queue', function () {
-    User::query()->whereKey([$this->agent->id, $this->colleague->id])->update(['availability' => AgentAvailability::Unavailable]);
+    User::query()->whereKey([$this->agent->id, $this->colleague->id])->update(['is_active' => false]);
     $agent = User::factory()->agent()->available()->inDepartments($this->department)->create();
     $waiting = pendingIn($this->department);
 

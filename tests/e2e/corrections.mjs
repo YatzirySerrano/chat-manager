@@ -102,19 +102,27 @@ const run = async () => {
             'help-on-hover-never-toggles-switch',
             'hover + click',
             async () => {
-                await ana.goto(`${BASE}/conversations`);
-                const toggle = ana.getByRole('switch').first();
+                // Phase 5 removed the agent availability switch: the help
+                // beside the "Motivo obligatorio al transferir" switch of
+                // the platform settings covers the same behavior.
+                const settings = await newPage(browser);
+                await login(settings, USERS.admin);
+                await settings.goto(`${BASE}/admin/settings`);
+                const toggle = settings.getByRole('switch', {
+                    name: 'Motivo obligatorio al transferir',
+                });
                 const before = await toggle.getAttribute('aria-checked');
-                const help = ana.getByRole('button', {
-                    name: 'Ayuda: Disponibilidad',
+                const help = settings.getByRole('button', {
+                    name: 'Ayuda: Motivo obligatorio al transferir',
                 });
                 await help.hover();
-                await ana
-                    .getByText(/asignación automática|disponib/i)
-                    .nth(1)
+                await settings
+                    .getByText(/por qué se transfiere/i)
+                    .first()
                     .waitFor({ timeout: 3_000 });
                 await help.click();
                 const after = await toggle.getAttribute('aria-checked');
+                await settings.context().close();
 
                 return [before === after, `switch ${before} -> ${after}`];
             },

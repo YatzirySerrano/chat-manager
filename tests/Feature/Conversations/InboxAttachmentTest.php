@@ -104,7 +104,7 @@ test('a file is judged by its content, not by its name', function (Closure $file
 })->with([
     'executable renamed as PDF' => [fn () => UploadedFile::fake()->createWithContent('factura.pdf', "MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00".str_repeat("\x00", 64).'This program cannot be run in DOS mode.'), 'no se puede enviar'],
     'HTML page renamed as image' => [fn () => UploadedFile::fake()->createWithContent('foto.jpg', '<!DOCTYPE html><html><script>alert(1)</script></html>'), 'no se puede enviar'],
-    'zip archive WhatsApp would reject' => [fn () => UploadedFile::fake()->createWithContent('respaldo.zip', zipBytes('notas.txt')), 'no se puede enviar'],
+    // A plain .zip is sent as a download link (OutboundAttachmentPolicyTest).
     'zip archive renamed as PDF' => [fn () => UploadedFile::fake()->createWithContent('contrato.pdf', zipBytes('notas.txt')), 'no se puede enviar'],
 ]);
 
@@ -260,6 +260,6 @@ test('the composer receives the same limits the server enforces', function () {
     $this->actingAs($this->agent)
         ->get(route('conversations.index', ['c' => $this->conversation->id]))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('composer.attachments', fn ($rules) => collect($rules)->firstWhere('type', 'video')['max_bytes'] === 2048
-                && in_array('application/pdf', collect($rules)->firstWhere('type', 'document')['mimes'], true)));
+            ->where('composer.attachments.whatsapp.kinds', fn ($rules) => collect($rules)->firstWhere('type', 'video')['max_bytes'] === 2048
+                && in_array('application/pdf', collect($rules)->firstWhere('key', 'document')['mimes'], true)));
 });

@@ -134,9 +134,32 @@ class RealtimeSignals
     }
 
     /**
+     * Lightweight delivery update of a conversation's latest message for the
+     * inbox lists: the same audience as inboxChanged() (inbox channels and
+     * the responsible agent) in one publication. Lists patch the row's
+     * status icon with it and never reload; the payload carries ids and
+     * the state only, never content.
+     *
+     * @param  array{conversation_id: int, message_id: int, status: string, error_code: string|null, updated_at: string|null}  $payload
+     */
+    public function inboxMessageStatus(Conversation $conversation, array $payload): bool
+    {
+        $channels = $this->inboxChannels($conversation, 'message_status', null);
+
+        if ($conversation->assigned_user_id !== null && $conversation->assigned_user_id > 0) {
+            $channels[] = RealtimeChannels::user($conversation->assigned_user_id);
+        }
+
+        return $this->send($channels, 'inbox.message_status', $payload);
+    }
+
+    /**
+     * Channels of every inbox that lists the conversation (global, its
+     * departments and, while queued, its department queue).
+     *
      * @return list<string>
      */
-    private function inboxChannels(Conversation $conversation, string $reason, ?ConversationEvent $event): array
+    public function inboxChannels(Conversation $conversation, string $reason, ?ConversationEvent $event): array
     {
         $channels = [RealtimeChannels::globalInbox()];
 

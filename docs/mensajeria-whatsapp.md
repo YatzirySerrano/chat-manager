@@ -200,7 +200,7 @@ Tipos admitidos y texto legible guardado en `messages.body` (el contenido origin
    desde hosts de Meta** (`*.fbsbx.com`, `*.facebook.com`, `*.fbcdn.net`, `*.whatsapp.net`). El token nunca va en la URL
    ni en logs.
 3. `MediaStorage` valida el tipo real con `finfo` y el tamaño (límites en `config/whatsapp.php`, alineados a Meta:
-   imagen JPEG/PNG 5 MB, sticker WebP 500 KB, audio AAC/MP4/MPEG/AMR/OGG 16 MB, video MP4/3GPP 16 MB, documento 16 MB
+   imagen JPEG/PNG 5 MB, sticker WebP 500 KB, audio AAC/MP4/MPEG/AMR/OGG 16 MB, video MP4/3GPP 16 MB, documento 100 MB
    configurable con `WHATSAPP_DOCUMENT_MAX_BYTES`) y lo guarda en el disco privado `filesystems.media_disk`
    (`MEDIA_DISK`, por defecto `local` = `storage/app/private`) en `media/{aaaa}/{mm}/{uuid}`, sin extensión ni nombre
    original.
@@ -214,10 +214,54 @@ mensaje. Las descargas para agentes se sirven solo por la ruta autorizada de la 
 
 ### 4.2 Saliente
 
-La bandeja guarda el archivo validado en el disco privado (`QueueOutboundMessage`). Al enviarlo, el transporte lo sube
-a WhatsApp (`POST /{phone-number-id}/media`, multipart) y envía el mensaje por ID; el ID de Meta queda en
+La bandeja guarda el archivo validado en el disco privado (`QueueOutboundMessage`, `storeAs` en streaming y SHA-256
+con `hash_file`, sin cargar el archivo en memoria). Al enviarlo, el transporte lo sube a WhatsApp
+(`POST /{phone-number-id}/media`, multipart en streaming) y envía el mensaje por ID; el ID de Meta queda en
 `whatsapp_media_id`, de modo que un reintento no lo vuelve a subir. Los documentos llevan su nombre; imagen, video y
 documento admiten pie de foto.
+
+**Política por canal** (`App\Support\Attachments\ChannelAttachmentPolicy`, enviada al compositor como
+`composer.attachments.{canal}` para validar antes de subir; el servidor vuelve a validar). El tipo real se lee de los
+bytes (`finfo`) y la extensión del nombre debe corresponder a ese contenido (un `.exe` renombrado `.pdf`, una imagen
+llamada `.pdf` o un ZIP llamado `.pdf` se rechazan). Los Office que `finfo` reporta como ZIP/OLE genéricos se
+reconocen solo con su extensión Office.
+
+| Canal     | Imagen            | Audio                                                                              | Video                          | Documento                               | ZIP                        | Texto con el archivo |
+| --------- | ----------------- | ---------------------------------------------------------------------------------- | ------------------------------ | --------------------------------------- | -------------------------- | -------------------- |
+| WhatsApp  | JPEG/PNG 5 MB     | AAC, AMR, MP3, M4A, OGG (solo Opus mono; se verifica la cabecera `OpusHead`) 16 MB | MP4/3GPP 16 MB                 | PDF, TXT, DOC(X), XLS(X), PPT(X) 100 MB | enlace de descarga, 100 MB | sí, salvo audio      |
+| Chat web  | JPEG/PNG/WebP/GIF | MP3, M4A, AAC, OGG, WAV, WebM                                                      | MP4, WebM, MOV, OGG            | PDF, TXT, CSV, Office                   | nativo                     | sí                   |
+| Messenger | JPEG/PNG/GIF 8 MB | MP3, M4A, AAC, WAV, OGG 25 MB                                                      | MP4/MOV 25 MB                  | PDF, TXT, CSV, Office 25 MB             | enlace de descarga         | no                   |
+| Instagram | PNG/JPEG 8 MB     | AAC, M4A, WAV 25 MB                                                                | MP4, OGG, AVI, MOV, WebM 25 MB | solo PDF 25 MB                          | enlace de descarga         | no                   |
+
+El chat web usa un único límite configurable (`WEBCHAT_ATTACHMENT_MAX_BYTES`, 25 MB). Los stickers no se envían desde
+el compositor. Cualquier otro tipo (ejecutables, scripts, HTML…) se rechaza con la lista de lo que sí se acepta. El
+tope de la petición es el máximo del canal de la conversación.
+
+**Entrega como enlace** (WhatsApp no tiene tipo ZIP; `whatsapp.media.link_fallback` / `WHATSAPP_MEDIA_LINK_FALLBACK`,
+activo por defecto; Messenger/Instagram: `attachments.link_fallback.*`). El archivo queda en el disco privado con
+`message_attachments.delivery_method = link` y el cliente recibe un **mensaje de texto** con el pie de foto, el nombre
+y tamaño del archivo y una URL firmada de la ruta pública `GET /descargas/{id}` (`attachments.link`) que vence a los
+`ATTACHMENT_LINK_TTL_DAYS` días (7 por defecto) desde que se encoló (`messages.metadata.download_link.expires_at`;
+todos los reintentos envían la misma URL; si venció antes de enviarse, el envío falla con un motivo claro). La ruta
+exige firma válida (`signed`), limita por dirección (`ATTACHMENT_LINK_DOWNLOADS_PER_MINUTE`, 30), busca el archivo por
+su id y lo sirve desde su ruta guardada (nada de la URL llega al disco), solo si es un adjunto saliente entregado como
+enlace y disponible; siempre como descarga (`Content-Disposition: attachment`, `nosniff`, sandbox, `no-store`) y
+registra cada descarga en el log (ids y hash de la IP). Firma alterada o vencida → 403 con un texto en español. El
+compositor lo anuncia («Se enviará como enlace de descarga seguro porque WhatsApp no admite archivos ZIP») y la
+burbuja lo muestra («Enlace de descarga · vence el …»). Los transportes de Messenger/Instagram construyen el
+texto con `AttachmentDownloadLink::text()` (en Instagram, forma compacta de ≤ 1000 bytes).
+
+**Revocar un enlace.** Quien envió el archivo o quien puede responder la conversación puede desactivarlo antes de que
+venza: `POST conversations/{c}/messages/{m}/attachments/{a}/revoke-link` (`conversations.messages.attachments.revoke-link`,
+30/min) guarda `messages.metadata.download_link.revoked_at` y `revoked_by_user_id`, audita
+`conversation.attachment_link_revoked` y desde entonces la descarga responde **410** («Este enlace de descarga fue
+desactivado…») y ningún transporte vuelve a enviar ese enlace (un reintento falla con «fue revocado»). Revocar dos veces
+no cambia nada. El recurso del mensaje expone `link_revoked_at` y `link_revoke_url` por adjunto.
+
+**Límites del servidor.** Un archivo mayor que `upload_max_filesize` de PHP no llega a Laravel: el compositor muestra
+«El servidor no pudo recibir el archivo (su límite de subida es …)». Una petición mayor que `post_max_size` responde
+413 con una explicación en español. Ver [infraestructura-y-despliegue.md §6](infraestructura-y-despliegue.md#6-https-y-nginx)
+para los valores necesarios.
 
 ## 5. Mensajes salientes y estados
 
@@ -310,7 +354,18 @@ de reintentos automáticos.
 
 - La ventana de 24 h depende solo del último mensaje del cliente (`CustomerServiceWindow`); abrir o cerrar un ticket
   no la modifica. Se valida en la acción y otra vez en el job.
-- Fuera de la ventana solo se envían **plantillas aprobadas**.
+- Fuera de la ventana solo se envían **plantillas aprobadas**, y solo quien tiene `templates.send` (permiso
+  administrativo de alcance global; ver §7).
+- Reglas verificadas con pruebas (fase 5): un mensaje del cliente abre la ventana y otro la renueva; responder,
+  notas, transferir, cerrar o reabrir nunca la extienden; un webhook duplicado no cambia nada; un mensaje más antiguo
+  que llega tarde no la mueve hacia atrás (`last_inbound_at` toma el máximo). El texto libre fuera de ventana se
+  rechaza en la bandeja, la API v1 (`customer_window_closed`), los mensajes automáticos, los reintentos y otra vez en
+  el job de entrega. Messenger e Instagram usan la misma ventana (`ConnectionChannel::usesCustomerServiceWindow()`);
+  el chat web no tiene ventana.
+- La interfaz cuenta los segundos restantes en el navegador a partir de `remaining_seconds` (medidos desde que llegó
+  el dato, sin depender del reloj del equipo) y pasa a «Ventana vencida» al vencer, sin recargar.
+- Pendiente (agente META): limitar a `now()` las marcas de tiempo futuras de Meta en `MetaInboundPayload`; un reloj
+  adelantado del proveedor extendería la ventana.
 - La categoría de la plantilla (Marketing, Utilidad, Autenticación) y los bloques `pricing`/`conversation` de Meta se
   guardan como datos informativos. La aplicación **no calcula ni muestra costos**: las tarifas vigentes deben
   consultarse en Meta.
@@ -335,12 +390,15 @@ de reintentos automáticos.
   estado según Meta y variables. Usuarios sin alcance global solo ven las plantillas de las conexiones de sus
   departamentos.
 - **Envío desde la conversación:** `GET conversations/{conversation}/templates` devuelve en JSON las plantillas
-  aprobadas y enviables de la conexión de la conversación (solo a quien puede responder) junto con el estado de la
-  ventana. `POST conversations/{conversation}/templates` con `template_id`, `client_reference` (UUID) y `parameters`
+  aprobadas y enviables de la conexión de la conversación (solo a quien puede responder **y** tiene
+  `templates.send`; si no, `403`) junto con el estado de la ventana. `POST conversations/{conversation}/templates` con `template_id`, `client_reference` (UUID) y `parameters`
   (`{"header.1": "…", "body.1": "…", "button.0.1": "…", "header.media": "https://…"}`) valida cada variable (todas
   obligatorias, sin saltos de línea, tabuladores ni más de 4 espacios seguidos, encabezado ≤ 60 caracteres, cuerpo ≤
   1024 por variable, sin variables desconocidas), rechaza plantillas no aprobadas o de otra conexión, guarda el texto
-  renderizado como cuerpo del mensaje y funciona fuera de la ventana. Si la conexión no puede enviar (desactivada,
+  renderizado como cuerpo del mensaje y funciona fuera de la ventana. `templates.send` se exige en el listado, el
+  envío (controlador y `QueueTemplateMessage` bajo bloqueo), el reintento de un mensaje de plantilla
+  (`RetryOutboundMessage`) y otra vez al entregar (`DeliverOutboundMessage`: si se retiró, falla con
+  `sender_not_allowed`). Sincronización, webhooks y estados no dependen de él. La API v1 no envía plantillas. Si la conexión no puede enviar (desactivada,
   eliminada, sin credenciales guardadas o con credenciales rechazadas por Meta) responde `409` con el motivo de
   `Connection::sendingBlockReason()` y no guarda ni encola nada (§2.5); la interfaz ni siquiera abre el selector.
 - **No enviables desde la bandeja** (se muestran con el motivo): autenticación (OTP), encabezados de ubicación,

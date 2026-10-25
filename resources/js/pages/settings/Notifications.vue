@@ -2,7 +2,6 @@
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { BellRing, MonitorSmartphone, Trash2, Volume2 } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
-import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
@@ -216,11 +215,10 @@ function submit(): void {
     <h1 class="sr-only">Notificaciones</h1>
 
     <div class="space-y-6">
-        <Heading
-            variant="small"
-            title="Notificaciones"
-            description="Elige qué avisos quieres recibir dentro de la plataforma, con sonido o como notificación del navegador."
-        />
+        <p class="text-sm text-pretty text-muted-foreground">
+            Elige qué avisos quieres recibir dentro de la plataforma, con sonido
+            o como notificación del navegador.
+        </p>
 
         <div class="rounded-xl border bg-card p-4 shadow-card">
             <div class="flex items-start gap-3">
@@ -386,7 +384,7 @@ function submit(): void {
                             >
                                 {{ kind.label }}
                                 <span
-                                    class="rounded-full border px-1.5 text-[11px] font-normal"
+                                    class="rounded-full border px-1.5 text-xs font-normal"
                                     :class="
                                         kind.level === 'urgent'
                                             ? 'border-destructive/30 text-destructive'

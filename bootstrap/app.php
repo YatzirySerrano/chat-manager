@@ -17,13 +17,15 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Exceptions\InvalidSignatureException;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -84,12 +86,40 @@ return Application::configure(basePath: dirname(__DIR__))
         // A record outside the actor's scope must look exactly like one that
         // does not exist, so JSON 404 responses never carry the model name,
         // the id or any other detail that would tell them apart.
-        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
-            if (! $request->is('api/*') && ! $request->expectsJson()) {
+        $exceptions->render(function (HttpExceptionInterface $e, Request $request) {
+            if ($e->getStatusCode() !== 404 || (! $request->is('api/*') && ! $request->expectsJson())) {
                 return null;
             }
 
-            return response()->json(['message' => 'Not Found'], 404);
+            return response()->json(['message' => 'No se encontró la página o el recurso solicitado.'], 404);
+        });
+
+        // A request larger than PHP's post_max_size arrives without its
+        // fields (the file never reaches validation): explain it in Spanish.
+        $exceptions->render(function (PostTooLargeException $e, Request $request) {
+            if (! $request->expectsJson()) {
+                return null;
+            }
+
+            $limit = trim((string) ini_get('post_max_size'));
+
+            return response()->json([
+                'message' => 'El archivo es demasiado grande para que el servidor lo reciba'.($limit !== '' ? " (límite actual: {$limit}B)" : '').'. Intenta con un archivo más pequeño o pide a un administrador que amplíe el límite de subida.',
+            ], 413);
+        });
+
+        // Download links sent to customers: an altered or expired link gets
+        // a plain explanation instead of a technical error page.
+        $exceptions->render(function (InvalidSignatureException $e, Request $request) {
+            if (! $request->routeIs('attachments.link')) {
+                return null;
+            }
+
+            return response('El enlace de descarga no es válido o ya venció. Pide a quien te atendió que te envíe el archivo de nuevo.', 403, [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'no-store',
+            ]);
         });
 
         // Two operations on the same data can deadlock in MariaDB; the loser of

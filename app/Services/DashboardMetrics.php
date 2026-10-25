@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\Permission;
@@ -40,7 +39,7 @@ use Illuminate\Support\Facades\Cache;
  *     first_response_samples: int,
  *     received: array{value: int|null, previous: int|null},
  *     trend: list<array{label: string, received: int}>,
- *     agents: array{registered: int|null, available: int|null},
+ *     agents: array{active: int|null},
  *     departments: array{active: int, total: int}|null,
  * }
  */
@@ -79,7 +78,7 @@ class DashboardMetrics
     public function overviewFor(User $user, ?AnalyticsFilters $filters = null): array
     {
         if (! $user->holdsPermission(Permission::ViewDashboard)) {
-            throw new AuthorizationException('The dashboard requires the dashboard.view permission.');
+            throw new AuthorizationException('No tienes permiso para ver el panel principal.');
         }
 
         $filters ??= $this->filters($user);
@@ -121,8 +120,8 @@ class DashboardMetrics
                 )
                 : [],
             'agents' => [
-                'registered' => $canSeeTeam ? $this->agents($user, $filters)->count() : null,
-                'available' => $canSeeTeam ? $this->agents($user, $filters)->where('availability', AgentAvailability::Available)->count() : null,
+                // Active accounts with an active role that can attend (no manual availability).
+                'active' => $canSeeTeam ? $this->agents($user, $filters)->count() : null,
             ],
             'departments' => $canSeeTeam ? $this->departmentCounts($user) : null,
         ];
@@ -155,7 +154,7 @@ class DashboardMetrics
             ->when($filters->agentId !== null, fn (Builder $query) => $query->where('conversations.assigned_user_id', $filters->agentId))
             ->when($filters->connectionId !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters->connectionId))
             ->toBase()
-            ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS active', [ConversationStatus::Open->value, ConversationStatus::OnHold->value])
+            ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS active', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()))
             ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending', [ConversationStatus::Pending->value])
             ->selectRaw('SUM(CASE WHEN status = ? AND closed_at >= ? THEN 1 ELSE 0 END) AS closed_today', [ConversationStatus::Closed->value, $startOfToday])
             ->first();

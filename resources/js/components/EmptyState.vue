@@ -15,14 +15,14 @@ const props = defineProps<{
     <div
         :class="
             cn(
-                'flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-card/60 px-6 py-14 text-center',
+                'flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-card/60 px-6 py-10 text-center',
                 props.class,
             )
         "
     >
         <div
             v-if="icon"
-            class="flex size-11 items-center justify-center rounded-xl bg-primary-soft text-primary-soft-foreground"
+            class="flex size-10 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
         >
             <component :is="icon" class="size-5" aria-hidden="true" />
         </div>

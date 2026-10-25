@@ -27,8 +27,14 @@ const props = withDefaults(
         errorCode?: string | null;
         /** Show the label of the in-progress states as visible text. */
         showProgressLabel?: boolean;
+        /**
+         * Follow the surrounding text color (personal chat colors): theme
+         * tones are not guaranteed to contrast with a custom bubble, so the
+         * read state is told by thicker ticks instead of their color.
+         */
+        inheritColor?: boolean;
     }>(),
-    { errorCode: null, showProgressLabel: false },
+    { errorCode: null, showProgressLabel: false, inheritColor: false },
 );
 
 const unknownDelivery = computed(
@@ -55,6 +61,10 @@ const icon = computed(() => {
 });
 
 const tone = computed(() => {
+    if (props.inheritColor) {
+        return props.status === 'read' ? 'stroke-3' : '';
+    }
+
     if (unknownDelivery.value) {
         return 'text-warning';
     }

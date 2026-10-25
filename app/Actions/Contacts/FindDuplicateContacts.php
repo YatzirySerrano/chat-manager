@@ -15,12 +15,15 @@ use Illuminate\Database\Eloquent\Builder;
  * case-insensitive collation (so its index is used). Contacts are never
  * merged. Deleted contacts are only shown to people who can consult deleted
  * records; for everybody else they count as hidden duplicates (see
- * FlagHiddenDuplicates).
+ * FlagHiddenDuplicates). Provisional contacts (unknown senders registered
+ * automatically, not saved into the directory) are matched too and flagged
+ * with is_saved = false, so the form offers to save that contact instead of
+ * creating a second one.
  */
 class FindDuplicateContacts
 {
     /**
-     * @return list<array{id: int, name: string, phone_e164: string|null, email: string|null, status: string, matches: list<'phone'|'email'>}>
+     * @return list<array{id: int, name: string, phone_e164: string|null, email: string|null, status: string, is_saved: bool, matches: list<'phone'|'email'>}>
      */
     public function handle(?string $phone, ?string $email, User $actor, ?Contact $ignore = null): array
     {
@@ -39,7 +42,7 @@ class FindDuplicateContacts
             ->when($ignore !== null, fn (Builder $query) => $query->whereKeyNot($ignore->id))
             ->orderBy('id')
             ->limit(50)
-            ->get(['id', 'name', 'phone_e164', 'email', 'status']);
+            ->get(['id', 'name', 'phone_e164', 'email', 'status', 'saved_at']);
 
         $duplicates = [];
 
@@ -60,6 +63,7 @@ class FindDuplicateContacts
                 'phone_e164' => $match->phone_e164,
                 'email' => $match->email,
                 'status' => $match->status->value,
+                'is_saved' => $match->isSaved(),
                 'matches' => $reasons,
             ];
         }

@@ -4,8 +4,10 @@ namespace App\Providers;
 
 use App\Enums\Permission;
 use App\Models\ApiToken;
+use App\Models\ChatAppearance;
 use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\ContactAlias;
 use App\Models\ContactAttribution;
 use App\Models\ContactNote;
 use App\Models\Conversation;
@@ -84,6 +86,17 @@ class AppServiceProvider extends ServiceProvider
         // never throttles another.
         RateLimiter::for('whatsapp-webhooks', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('whatsapp.webhooks.rate_limit_per_minute', 1200)))
             ->by('whatsapp-webhook:'.(string) $request->route('webhookKey')));
+
+        // Meta app webhook (Messenger/Instagram): one fixed public URL, so the
+        // limits are per source address; invalid signatures are counted apart
+        // in MetaWebhookController. The media route is fetched by Meta's few
+        // crawler addresses, already protected by the URL signature.
+        RateLimiter::for('meta-webhooks', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('services.meta.webhook_rate_limit_per_minute', 6000)))
+            ->by('meta-webhook:'.$request->ip()));
+        RateLimiter::for('meta-webhook-verify', fn (Request $request): Limit => Limit::perMinute(30)
+            ->by('meta-webhook-verify:'.$request->ip()));
+        RateLimiter::for('meta-media', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('services.meta.media_rate_limit_per_minute', 1200)))
+            ->by('meta-media:'.$request->ip()));
 
         $this->configureApiRateLimiters();
 
@@ -191,6 +204,8 @@ class AppServiceProvider extends ServiceProvider
             'connection' => Connection::class,
             'contact' => Contact::class,
             'contact_note' => ContactNote::class,
+            'contact_alias' => ContactAlias::class,
+            'chat_appearance' => ChatAppearance::class,
             'contact_attribution' => ContactAttribution::class,
             'conversation' => Conversation::class,
             'message' => Message::class,

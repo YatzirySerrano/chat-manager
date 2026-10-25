@@ -239,14 +239,14 @@ function clearSelection(): void {
                                     <Badge
                                         v-if="locked.includes(permission.value)"
                                         variant="secondary"
-                                        class="gap-1 text-[10px] font-normal"
+                                        class="gap-1 text-xs font-normal"
                                     >
                                         <Lock class="size-3" /> Obligatorio
                                     </Badge>
                                     <Badge
                                         v-if="permission.reserved"
                                         variant="outline"
-                                        class="gap-1 border-primary/40 text-[10px] font-normal text-primary"
+                                        class="gap-1 border-primary/40 text-xs font-normal text-primary"
                                     >
                                         <ShieldCheck class="size-3" /> Solo
                                         superadministrador
@@ -254,7 +254,7 @@ function clearSelection(): void {
                                     <Badge
                                         v-if="permission.sensitive"
                                         variant="outline"
-                                        class="border-warning/40 text-[10px] font-normal text-warning"
+                                        class="border-warning/40 text-xs font-normal text-warning"
                                     >
                                         Sensible
                                     </Badge>
@@ -264,7 +264,7 @@ function clearSelection(): void {
                                             !globalScope
                                         "
                                         variant="outline"
-                                        class="text-[10px] font-normal"
+                                        class="text-xs font-normal"
                                     >
                                         Requiere alcance de toda la organización
                                     </Badge>
@@ -278,7 +278,7 @@ function clearSelection(): void {
                                             )
                                         "
                                         variant="outline"
-                                        class="text-[10px] font-normal"
+                                        class="text-xs font-normal"
                                     >
                                         No puedes otorgarlo
                                     </Badge>
@@ -288,7 +288,7 @@ function clearSelection(): void {
                                             !group.future
                                         "
                                         variant="outline"
-                                        class="text-[10px] font-normal"
+                                        class="text-xs font-normal"
                                     >
                                         Próximamente
                                     </Badge>

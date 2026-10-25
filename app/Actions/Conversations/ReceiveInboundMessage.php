@@ -4,6 +4,7 @@ namespace App\Actions\Conversations;
 
 use App\Actions\Contacts\RegisterInboundContact;
 use App\Enums\AttachmentStatus;
+use App\Enums\ConnectionChannel;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Enums\DistributionMode;
@@ -47,7 +48,12 @@ use Illuminate\Support\Str;
  *    back) and links the provider's referral to the conversation;
  * 5. distributes the conversation when its department does so automatically;
  * 6. registers the media it announces as a pending attachment and queues
- *    its download (DownloadInboundMedia), never inside this transaction.
+ *    its download (DownloadInboundMedia), never inside this transaction:
+ *    a WhatsApp media id, or the CDN URL of a Messenger/Instagram attachment.
+ *
+ * Every channel (WhatsApp, Messenger, Instagram, web chat) enters through
+ * here; the provider message id is unique across channels (wamid, Meta
+ * "mid", web.in.*), see MetaMessagingPayload::messageId().
  *
  * A repeated delivery of an already stored message is answered before the
  * directory is touched, so duplicates never update the contact's
@@ -120,6 +126,9 @@ class ReceiveInboundMessage
                 'context' => $inbound->context,
                 'reply_to' => is_string($inbound->context['id'] ?? null) ? ['message_id' => $inbound->context['id']] : null,
                 'profile_name' => $inbound->sender->profileName,
+                // PSID / IGSID: scoped to this page or Instagram account, so
+                // replies of this conversation go back to this exact id.
+                'sender_external_id' => in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true) ? $inbound->sender->externalId : null,
             ], fn (mixed $value): bool => $value !== null),
         ]);
         $message->forceFill(['sent_at' => $sentAt])->save();
@@ -210,8 +219,11 @@ class ReceiveInboundMessage
         }
 
         $mediaId = $inbound->content['id'] ?? null;
+        $sourceUrl = ($inbound->content['source'] ?? null) === 'url' && is_string($inbound->content['url'] ?? null) ? $inbound->content['url'] : null;
 
-        if (! is_string($mediaId) || $mediaId === '') {
+        // WhatsApp announces a media id; Messenger and Instagram a URL of
+        // Meta's CDN, kept in the message content for the download job.
+        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null) {
             return null;
         }
 
@@ -221,7 +233,7 @@ class ReceiveInboundMessage
         $attachment = new MessageAttachment;
         $attachment->forceFill([
             'message_id' => $message->id,
-            'whatsapp_media_id' => Str::limit($mediaId, 128, ''),
+            'whatsapp_media_id' => is_string($mediaId) && $mediaId !== '' ? Str::limit($mediaId, 128, '') : null,
             'disk' => (string) config('filesystems.media_disk', 'local'),
             'path' => null,
             'mime_type' => $mime,

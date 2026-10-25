@@ -2,7 +2,6 @@
 
 namespace App\Actions\Conversations;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Exceptions\ConversationConflict;
@@ -17,9 +16,9 @@ use Illuminate\Support\Facades\DB;
  * The conversation row is locked, so when two agents accept at once the
  * second one finds it already taken and receives a controlled conflict.
  *
- * Only an agent declared available takes new conversations. Availability is
- * read from the locked, freshly read user, so switching to unavailable while
- * an accept waits for the lock is honored when it proceeds.
+ * Eligibility (active account and role, permission, department membership,
+ * department active) and the capacity limit are read from the locked,
+ * freshly read user; there is no manual availability to check.
  */
 class AcceptConversation
 {
@@ -46,10 +45,6 @@ class AcceptConversation
             $department = $this->lifecycle->lockDepartment($conversation->department_id);
             $actor = $this->lifecycle->freshUser($actor->id);
             $this->lifecycle->authorize($actor, 'accept', $conversation);
-
-            if ($actor->availability !== AgentAvailability::Available) {
-                throw ConversationConflict::unavailableToAccept();
-            }
 
             $limit = $this->access->reachedLimit($actor, $department, lockingRead: true);
 

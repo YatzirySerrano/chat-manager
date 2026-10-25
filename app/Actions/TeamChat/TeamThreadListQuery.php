@@ -86,7 +86,7 @@ class TeamThreadListQuery
                 ->where(fn ($visible) => $visible
                     ->where('user_id', $viewer->id)
                     ->orWhereHas('thread', fn (Builder $thread) => $thread->where('type', TeamThreadType::Direct))),
-            'activeParticipations.user:id,name,is_active,availability',
+            'activeParticipations.user:id,name,is_active',
         ]);
         $threads->loadCount('activeParticipations as participants_count');
 

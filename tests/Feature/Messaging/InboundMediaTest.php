@@ -162,7 +162,8 @@ test('a token rejected while downloading media marks the connection credentials 
 
     expect($this->connection->refresh())
         ->credentials_verified_at->toBeNull()
-        ->credentials_error->toContain('190')
+        ->credentials_error->toStartWith('El token de acceso')
+        ->credentials_error->not->toContain('Invalid OAuth')
         ->credentials_error->not->toContain(MEDIA_TOKEN);
 });
 

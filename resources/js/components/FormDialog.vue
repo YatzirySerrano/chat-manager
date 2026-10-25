@@ -32,6 +32,11 @@ const props = withDefaults(
         submitLabel?: string;
         submitDisabled?: boolean;
         validation?: FormValidation;
+        /**
+         * Element to focus when the dialog closes, for when its trigger may
+         * no longer exist (e.g. the button disappears once saved).
+         */
+        returnFocus?: () => HTMLElement | null | undefined;
     }>(),
     {
         description: undefined,
@@ -41,6 +46,7 @@ const props = withDefaults(
         submitLabel: 'Guardar',
         submitDisabled: false,
         validation: undefined,
+        returnFocus: undefined,
     },
 );
 
@@ -126,6 +132,15 @@ function focusFirstField(event: Event): void {
     }
 }
 
+function restoreFocus(event: Event): void {
+    const target = props.returnFocus?.();
+
+    if (target) {
+        event.preventDefault();
+        target.focus();
+    }
+}
+
 function discard(): void {
     confirmDiscard.value = false;
     open.value = false;
@@ -140,6 +155,7 @@ function discard(): void {
                 widthClass,
             ]"
             @open-auto-focus="focusFirstField"
+            @close-auto-focus="restoreFocus"
         >
             <DialogHeader class="border-b px-6 pt-5 pb-4 text-left">
                 <DialogTitle class="text-base font-semibold">

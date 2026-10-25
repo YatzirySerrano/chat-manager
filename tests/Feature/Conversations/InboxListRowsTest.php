@@ -252,7 +252,8 @@ test('the unread counter follows the status tab, as the list it would show', fun
 
     expect($unreadCountFor('active'))->toBe(2)
         ->and($unreadCountFor('pending'))->toBe(1)
-        ->and($unreadCountFor(ConversationStatus::OnHold->value))->toBe(0)
+        // The retired "on hold" tab falls back to the active conversations.
+        ->and($unreadCountFor(ConversationStatus::OnHold->value))->toBe(2)
         ->and($unreadCountFor(ConversationStatus::Closed->value))->toBe(0);
 });
 
@@ -289,4 +290,52 @@ test('the preview of a failure of unknown outcome tells its error code', functio
 
     expect(collect(inboxRows($this->agent))->firstWhere('id', $conversation->id)['last_message'])
         ->toMatchArray(['status' => 'failed', 'error_code' => 'delivery_unknown']);
+});
+
+test('operational badges are offered only to viewers who supervise, assign or have global reach', function () {
+    $supervisor = User::factory()->supervisor()->inDepartments($this->sales)->create();
+    $admin = User::factory()->administrator()->create();
+    $canSupervise = fn (User $viewer): bool => $this->actingAs($viewer)
+        ->get(route('conversations.index'))
+        ->viewData('page')['props']['viewer']['can_supervise'];
+
+    expect($canSupervise($this->agent))->toBeFalse()
+        ->and($canSupervise($supervisor))->toBeTrue()
+        ->and($canSupervise($admin))->toBeTrue();
+});
+
+test('the preview versions the delivery state of the latest message', function () {
+    $conversation = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create();
+    $message = Message::factory()->for($conversation)->create(['direction' => MessageDirection::Outbound, 'status' => MessageStatus::Sent]);
+
+    $row = collect(inboxRows($this->agent))->firstWhere('id', $conversation->id);
+
+    expect($row['last_message']['id'])->toBe($message->id)
+        ->and($row['last_message']['status'])->toBe('sent')
+        ->and($row['last_message']['updated_at'])->toBe($message->fresh()->updated_at->toIso8601String());
+});
+
+test('the rows carry the operational data and the viewer decides the badges', function () {
+    $conversation = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create();
+    $supervisor = User::factory()->supervisor()->inDepartments($this->sales)->create();
+
+    $payloadFor = function (User $viewer, array $query = []) use ($conversation): array {
+        $props = $this->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props'];
+
+        return [$props['viewer']['can_supervise'], collect($props['conversations']['data'])->firstWhere('id', $conversation->id)];
+    };
+
+    [$agentSupervises, $agentRow] = $payloadFor($this->agent);
+    [$supervisorSupervises, $supervisorRow] = $payloadFor($supervisor, ['view' => 'all']);
+
+    foreach ([$agentRow, $supervisorRow] as $row) {
+        expect($row['department'])->toMatchArray(['id' => $this->sales->id, 'name' => 'Ventas'])
+            ->and($row['assignee'])->toMatchArray(['id' => $this->agent->id])
+            ->and($row['connection'])->toHaveKey('id', $conversation->connection_id);
+    }
+
+    expect($agentSupervises)->toBeFalse()
+        ->and($agentRow['can']['supervise'])->toBeFalse()
+        ->and($supervisorSupervises)->toBeTrue()
+        ->and($supervisorRow['can']['supervise'])->toBeTrue();
 });

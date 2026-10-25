@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
+use App\Support\Personalization\ViewerAlias;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -40,6 +41,11 @@ class ConversationResource extends JsonResource
                 'name' => $this->contact->name,
                 'profile_name' => $this->contact->profile_name,
                 'phone_e164' => $this->contact->phone_e164,
+                // Private alias of the viewer only (null when none or not loaded) and the name shown to them; `name` stays official.
+                'alias' => $alias = ViewerAlias::of($this->contact, $viewer),
+                'display_name' => ViewerAlias::displayName($this->contact, $alias),
+                // False while the customer is only a provisional contact (not saved into the directory).
+                'is_saved' => $this->contact->isSaved(),
             ]),
             'connection' => $this->whenLoaded('channelConnection', fn (): array => [
                 'id' => $this->channelConnection->id,
@@ -72,8 +78,6 @@ class ConversationResource extends JsonResource
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'last_inbound_at' => $this->last_inbound_at?->toIso8601String(),
             'assigned_at' => $this->assigned_at?->toIso8601String(),
-            'on_hold_at' => $this->on_hold_at?->toIso8601String(),
-            'on_hold_reason' => $this->on_hold_reason,
             'closed_at' => $this->closed_at?->toIso8601String(),
             'reopen_count' => $this->reopen_count,
             'created_at' => $this->created_at?->toIso8601String(),
@@ -96,14 +100,15 @@ class ConversationResource extends JsonResource
                 'assign' => $viewer->can('assign', $this->resource),
                 'transfer' => $viewer->can('transfer', $this->resource),
                 'release' => $viewer->can('release', $this->resource),
-                'hold' => $viewer->can('hold', $this->resource),
-                'resume' => $viewer->can('resume', $this->resource),
                 'close' => $viewer->can('close', $this->resource),
                 'reopen' => $viewer->can('reopen', $this->resource),
                 'addNote' => $viewer->can('addNote', $this->resource),
                 'reply' => $viewer->can('reply', $this->resource),
                 'tag' => $viewer->can('tag', $this->resource),
                 'viewHistory' => $viewer->can('viewHistory', $this->resource),
+                // Read-only supervision of the viewer's reach (never grants operations).
+                'supervise' => $viewer->can('supervise', $this->resource),
+                'send_templates' => $viewer->can('sendTemplate', $this->resource),
             ],
         ];
     }
@@ -112,7 +117,10 @@ class ConversationResource extends JsonResource
      * Short preview of the latest message for the inbox list. Only listed
      * conversations get one, and they are already visible to the viewer.
      *
-     * @return array{id: int, direction: string, type: string, body: string|null, status: string, error_code: string|null, automatic: bool, sent_at: string|null}|null
+     * `updated_at` versions the delivery state, so the list can tell a
+     * real-time status update (inbox.message_status) older than the row.
+     *
+     * @return array{id: int, direction: string, type: string, body: string|null, status: string, error_code: string|null, automatic: bool, sent_at: string|null, updated_at: string|null}|null
      */
     private function lastMessagePreview(): ?array
     {
@@ -132,6 +140,7 @@ class ConversationResource extends JsonResource
             'error_code' => $message->error_code,
             'automatic' => is_array($message->metadata) && ($message->metadata['automatic'] ?? false) === true,
             'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),
+            'updated_at' => $message->updated_at?->toIso8601String(),
         ];
     }
 }

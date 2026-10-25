@@ -2,8 +2,10 @@
 
 use App\Enums\DataScope;
 use App\Models\ApiToken;
+use App\Models\ChatAppearance;
 use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\ContactAlias;
 use App\Models\ContactReviewCase;
 use App\Models\Conversation;
 use App\Models\ConversationNote;
@@ -50,6 +52,12 @@ const PUBLIC_ROUTES = [
     'health.ready',
     'webhooks.whatsapp.verify',
     'webhooks.whatsapp.receive',
+    // Meta app webhook and callbacks: authenticated by Meta's signature (signed_request / X-Hub-Signature-256).
+    'webhooks.meta.verify',
+    'webhooks.meta.receive',
+    'meta.deauthorize',
+    'meta.data-deletion',
+    'meta.data-deletion.status',
     'widget.frame',
     'api.v1.widget.sessions.store',
 ];
@@ -74,7 +82,6 @@ const SELF_SERVICE_ROUTES = [
     'notifications.preferences.edit',
     'notifications.preferences.update',
     'notifications.push-subscriptions.store',
-    'conversations.availability.update',
 ];
 
 /**
@@ -175,8 +182,13 @@ beforeEach(function () {
         'report' => 'contacts',
         'format' => 'xlsx',
         'webhookKey' => (string) $connection->webhook_key,
+        'channel' => 'messenger',
+        'code' => Str::lower(Str::random(20)),
         'publicKey' => (string) $webChat->webChatWidget?->public_key,
         'apiToken' => ApiToken::factory()->create(['connection_ids' => [$connection->id]])->id,
+        // Personal items of a colleague (supervision endpoints).
+        'alias' => ContactAlias::factory()->create(['user_id' => $colleague->id, 'contact_id' => $contact->id])->id,
+        'appearance' => ChatAppearance::factory()->create(['user_id' => $colleague->id])->id,
     ];
 
     $this->teamParameters = [...$this->parameters, 'message' => $teamMessage->id, 'attachment' => $teamAttachment->id];
@@ -235,7 +247,7 @@ test('an ordinary agent reaches no record of a colleague through any nested id',
 
     foreach (applicationRoutes() as $route) {
         if (in_array($route->getName(), [...PUBLIC_ROUTES, ...SELF_SERVICE_ROUTES], true)
-            || preg_match('/\{(conversation|thread|transfer|contact|note|attachment|contactReviewCase)\}/', $route->uri()) !== 1) {
+            || preg_match('/\{(conversation|thread|transfer|contact|note|attachment|contactReviewCase|alias|appearance|quickReply|connection)\}/', $route->uri()) !== 1) {
             continue;
         }
 

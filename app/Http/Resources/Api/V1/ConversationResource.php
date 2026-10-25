@@ -36,6 +36,8 @@ class ConversationResource extends JsonResource
             'contact' => [
                 'id' => $this->contact_id,
                 'display_name' => $this->contact?->name,
+                // False while the customer is a provisional contact, not saved into the directory.
+                'is_saved' => $this->contact?->isSaved() ?? false,
             ],
             'assigned_agent' => $this->assignee === null ? null : [
                 'id' => $this->assignee->id,

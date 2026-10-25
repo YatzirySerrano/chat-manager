@@ -8,6 +8,7 @@ use App\Models\Connection;
 use App\Models\WebhookEvent;
 use App\Services\Meta\ConnectionMonitor;
 use App\Services\Meta\MetaInboundPayload;
+use App\Services\Meta\MetaMessagingPayload;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 
@@ -33,7 +34,10 @@ class StoreWebhookDelivery
     public function handle(Connection $connection, string $body, array $payload): WebhookEvent
     {
         $hash = hash('sha256', $body);
-        $fields = implode(',', array_values(array_unique(array_column(MetaInboundPayload::changes($payload), 'field'))));
+        // Messenger/Instagram bodies have messaging items instead of changes.
+        $fields = implode(',', MetaMessagingPayload::channelOf($payload['object'] ?? null) !== null
+            ? MetaMessagingPayload::fields($payload)
+            : array_values(array_unique(array_column(MetaInboundPayload::changes($payload), 'field'))));
 
         $event = WebhookEvent::query()->where('connection_id', $connection->id)->where('payload_hash', $hash)->first();
         $dispatch = false;

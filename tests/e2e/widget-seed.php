@@ -21,8 +21,6 @@
 |   php tests/e2e/widget-seed.php check <connection id>    -> conversations, messages, sessions
 */
 
-use App\Actions\Conversations\ChangeAgentAvailability;
-use App\Enums\AgentAvailability;
 use App\Enums\WebChatIdentityMode;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -108,7 +106,6 @@ $members = $widgetConnection('E2E Chat web Socios', [$shopOrigin], [
 ]);
 
 $ana = User::query()->where('email', 'e2e-ana@example.test')->firstOrFail();
-app(ChangeAgentAvailability::class)->handle($ana, AgentAvailability::Available);
 
 echo json_encode([
     'shop' => ['id' => $shop->id, 'key' => $shop->webChatWidget->public_key, 'origins' => $shop->webChatWidget->allowed_origins],

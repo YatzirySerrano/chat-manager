@@ -1,7 +1,9 @@
 <?php
 
+use App\Actions\Templates\QueueTemplateMessage;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
+use App\Enums\Permission;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\Connection;
 use App\Models\ContactIdentity;
@@ -10,16 +12,19 @@ use App\Models\Department;
 use App\Models\Message;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Feature\Templates\TemplateFixtures;
 
 /*
 | Templates from the composer: only approved templates of the conversation's
 | own connection, validated variables, allowed outside the 24 hour window,
-| and re-checked by the delivery job.
+| and re-checked by the delivery job. Sending one is administrative: it
+| requires templates.send (global only) on top of being able to reply.
 */
 
 beforeEach(function () {
@@ -27,7 +32,8 @@ beforeEach(function () {
     config(['services.meta.graph_version' => 'v26.0', 'whatsapp.transport' => 'meta']);
     $this->travelTo(CarbonImmutable::parse('2026-10-20 15:00:00', 'UTC'));
     $this->department = Department::factory()->create();
-    $this->agent = User::factory()->agent()->inDepartments($this->department)->create();
+    // The responsible person holds templates.send (Administrador); plain agents do not.
+    $this->agent = User::factory()->administrator()->inDepartments($this->department)->create();
     $this->connection = Connection::factory()->verified()->create(['phone_number_id' => '106540352242922']);
     // The customer wrote two days ago: free text is no longer allowed.
     $this->conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create([
@@ -157,6 +163,57 @@ test('a repeated submission stores the template message once', function () {
     Queue::assertPushedTimes(DeliverOutboundMessage::class, 1);
 });
 
+test('an agent responsible for the conversation cannot list nor send templates without templates.send', function () {
+    Queue::fake();
+    $agent = User::factory()->agent()->inDepartments($this->department)->create();
+    $this->conversation->forceFill(['assigned_user_id' => $agent->id])->save();
+
+    $this->actingAs($agent)->getJson(route('conversations.templates.index', $this->conversation))->assertForbidden();
+    ($this->send)(['parameters' => $this->values], $agent)->assertForbidden();
+
+    expect(fn () => app(QueueTemplateMessage::class)->handle($this->conversation, $agent, $this->template, $this->values, (string) Str::uuid()))
+        ->toThrow(AuthorizationException::class)
+        ->and(Message::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+test('the conversation tells the composer whether the viewer may send templates', function () {
+    $agent = User::factory()->agent()->inDepartments($this->department)->create();
+    $agentsConversation = Conversation::factory()->inDepartment($this->department)->assignedTo($agent)->create(['connection_id' => $this->connection->id]);
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $this->conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page->where('conversation.can.send_templates', true));
+
+    $this->actingAs($agent)
+        ->get(route('conversations.index', ['c' => $agentsConversation->id]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('conversation.can.reply', true)
+            ->where('conversation.can.send_templates', false));
+});
+
+test('a template queued before templates.send was revoked is not delivered', function () {
+    Queue::fake();
+    Http::fake();
+
+    ($this->send)(['parameters' => $this->values])->assertStatus(202);
+    $message = Message::query()->sole();
+    $role = $this->agent->roles()->firstOrFail();
+    $role->revokePermissionTo(Permission::SendTemplates->value);
+
+    app()->call([new DeliverOutboundMessage($message->id), 'handle']);
+
+    expect($message->refresh())->status->toBe(MessageStatus::Failed)->error_code->toBe('sender_not_allowed');
+    Http::assertNothingSent();
+});
+
+test('the integrations API offers no way to send a template', function () {
+    $apiTemplateRoutes = collect(app('router')->getRoutes()->getRoutes())
+        ->filter(fn ($route): bool => str_starts_with($route->uri(), 'api/v1') && str_contains($route->uri(), 'template'));
+
+    expect($apiTemplateRoutes)->toBeEmpty();
+});
+
 test('only the responsible agent can list or send templates; others get nothing', function () {
     Queue::fake();
     $colleague = User::factory()->agent()->inDepartments($this->department)->create();
@@ -171,3 +228,53 @@ test('only the responsible agent can list or send templates; others get nothing'
 
     expect(Message::query()->count())->toBe(0);
 });
+
+test('an administrator holding templates.send who is not the responsible agent cannot list or send templates', function () {
+    Queue::fake();
+    $otherAdmin = User::factory()->administrator()->inDepartments($this->department)->create();
+    $pending = Conversation::factory()->inDepartment($this->department)->create(['connection_id' => $this->connection->id, 'last_inbound_at' => now()->subDays(2)]);
+
+    expect($otherAdmin->holdsPermission(Permission::SendTemplates))->toBeTrue();
+
+    $this->actingAs($otherAdmin)->getJson(route('conversations.templates.index', $this->conversation))->assertForbidden();
+    ($this->send)(['parameters' => $this->values], $otherAdmin)->assertForbidden();
+    $this->actingAs($otherAdmin)->getJson(route('conversations.templates.index', $pending))->assertForbidden();
+    $this->actingAs($otherAdmin)->postJson(route('conversations.templates.store', $pending), [
+        'template_id' => $this->template->id,
+        'client_reference' => (string) Str::uuid(),
+        'parameters' => $this->values,
+    ])->assertForbidden();
+
+    expect(Message::query()->count())->toBe(0);
+});
+
+test('templates never open an expired Messenger or Instagram conversation', function (string $channel) {
+    $meta = Connection::factory()->{$channel}()->create();
+    $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create([
+        'connection_id' => $meta->id,
+        'last_inbound_at' => now()->subDays(2),
+    ]);
+    // Even a template row stored for that connection cannot be sent.
+    $forged = TemplateFixtures::stored($meta, ['name' => 'forged_one']);
+    Http::fake();
+
+    $this->actingAs($this->agent)->postJson(route('conversations.templates.store', $conversation), [
+        'template_id' => $forged->id,
+        'client_reference' => (string) Str::uuid(),
+        'parameters' => $this->values,
+    ])->assertForbidden();
+
+    $this->actingAs($this->agent)->postJson(route('conversations.templates.store', $conversation), [
+        'template_id' => $this->template->id,
+        'client_reference' => (string) Str::uuid(),
+        'parameters' => $this->values,
+    ])->assertForbidden();
+    $this->actingAs($this->agent)->getJson(route('conversations.templates.index', $conversation))->assertForbidden();
+
+    $this->actingAs($this->agent)
+        ->get(route('conversations.index', ['c' => $conversation->id]))
+        ->assertInertia(fn (Assert $page) => $page->where('conversation.can.send_templates', false));
+
+    expect(Message::query()->count())->toBe(0);
+    Http::assertNothingSent();
+})->with(['messenger', 'instagram']);

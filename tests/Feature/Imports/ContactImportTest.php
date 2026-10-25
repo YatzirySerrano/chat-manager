@@ -361,3 +361,26 @@ test('imports are not listed nor downloadable as exports', function () {
 
     $this->actingAs($root)->get(route('exports.transfers.download', $transfer))->assertNotFound();
 });
+
+test('completing a row that matches a provisional contact saves it into the directory', function () {
+    $root = User::factory()->superAdministrator()->create();
+    $provisional = Contact::factory()->provisional()->create(['name' => 'Escribió por WhatsApp', 'phone_e164' => '+525511112222', 'email' => null]);
+
+    $transfer = runImport($root, importCsv("Nombre,Teléfono,Correo\nNombre del archivo,5511112222,\n"), 'fill_empty');
+
+    expect($transfer->summary)->toBe(['created' => 0, 'updated' => 1, 'skipped' => 0, 'failed' => 0])
+        ->and($provisional->refresh()->isSaved())->toBeTrue()
+        ->and($provisional->saved_by_user_id)->toBe($root->id)
+        ->and($provisional->name)->toBe('Escribió por WhatsApp')
+        ->and(AuditLog::query()->where('action', AuditAction::ContactSaved)->sole()->properties)->toMatchArray(['via' => 'import']);
+});
+
+test('imported contacts are saved into the directory', function () {
+    $root = User::factory()->superAdministrator()->create();
+
+    runImport($root, importCsv("Nombre,Teléfono,Correo\nAna,5512345678,ana@ejemplo.com\n"));
+
+    expect(Contact::query()->where('name', 'Ana')->sole())
+        ->isSaved()->toBeTrue()
+        ->saved_by_user_id->toBe($root->id);
+});

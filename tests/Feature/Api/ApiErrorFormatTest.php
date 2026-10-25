@@ -114,5 +114,5 @@ test('successful api v1 answers are not cached either', function () {
 });
 
 test('web pages keep their usual error answers', function () {
-    $this->getJson('/no-existe-esta-pagina')->assertNotFound()->assertExactJson(['message' => 'Not Found']);
+    $this->getJson('/no-existe-esta-pagina')->assertNotFound()->assertExactJson(['message' => 'No se encontró la página o el recurso solicitado.']);
 });

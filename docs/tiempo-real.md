@@ -118,24 +118,25 @@ propio por sesión: `webchat.sessions.{session_public_id}` (`private-webchat.ses
 Nombres tal como los escucha el cliente (`.nombre`). Las cargas útiles solo llevan IDs y metadatos mínimos: **nunca**
 cuerpos de mensaje, teléfonos, texto de notas ni nombres de archivo.
 
-| Canal                                             | Evento                                 | Carga                                       | Origen                                                                                                                         |
-| ------------------------------------------------- | -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `conversations.{id}`                              | `.conversation.changed`                | `{reason, version}`                         | `ConversationChanged` (todo `conversation_event` + `tags`, `routing`; `message` solo al terminar una descarga multimedia)      |
-| `conversations.{id}`                              | `.message.recorded`                    | `{message_id, direction}`                   | `MessageRecorded` (con `inbound` el chat recarga también la cabecera: ventana de 24 h)                                         |
-| `conversations.{id}`                              | `.message.status`                      | `{message_id, status}`                      | `MessageStatusChanged`                                                                                                         |
-| `conversations.{id}`                              | `.note.saved`                          | `{note_id}`                                 | `ConversationNoteSaved`                                                                                                        |
-| bandejas + `users.{id}`                           | `.inbox.changed`                       | `{conversation_id, reason}`                 | `ConversationChanged`, `MessageRecorded` (`reason: message`)                                                                   |
-| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: read}`           | `ConversationChanged` con `reason=read` (solo al lector)                                                                       |
-| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: message_failed}` | `MessageStatusChanged` con `failed` (al responsable)                                                                           |
-| `users.{id}`                                      | `.availability.changed`                | `{availability}`                            | `AgentAvailabilityChanged`                                                                                                     |
-| `inbox.global`, `inbox.departments.{id}`          | `.availability.changed`                | `{user_id, availability}`                   | `AgentAvailabilityChanged` (departamentos del agente)                                                                          |
-| `users.{id}`                                      | `.access.changed`                      | `{reason}`                                  | `UserAccessChanged`                                                                                                            |
-| `users.{id}`                                      | `.transfer.changed`                    | `{transfer_id, type, status}`               | `DataTransfers\DataTransferFinished` (exportación/importación terminada; lo emite el modelo `DataTransfer` tras confirmar)     |
-| `users.{id}`                                      | `.notification`                        | `{id, kind}`                                | `NotificationSignal` → `BroadcastNotificationSignal` (sin trabajo en cola propio)                                              |
-| `users.{id}`                                      | `.team-chat.changed`                   | ver [chat-interno.md](chat-interno.md)      | chat interno (cola `realtime`)                                                                                                 |
-| `conversations.{id}`                              | `.conversation.changed`                | `{reason: connection_changed}`              | `ConnectionStatusChanged` / `ConnectionHealthChanged` → `BroadcastConnectionChange` (conversaciones no cerradas, lotes de 100) |
-| `team-chat.threads.{id}`                          | `.typing`                              | `{user_id}` (lo pone el servidor)           | `POST team-chat/threads/{id}/typing`: única señal síncrona, emitida en la propia petición y protegida con `rescue`             |
-| `presence-team`, `presence-team.departments.{id}` | presencia (`here`/`joining`/`leaving`) | `{id}`                                      | Canales de presencia del chat interno (ver [chat-interno.md](chat-interno.md#tiempo-real))                                     |
+| Canal                                             | Evento                                 | Carga                                                           | Origen                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `conversations.{id}`                              | `.conversation.changed`                | `{reason, version}`                                             | `ConversationChanged` (todo `conversation_event` + `tags`, `routing`; `message` solo al terminar una descarga multimedia)      |
+| `conversations.{id}`                              | `.message.recorded`                    | `{message_id, direction}`                                       | `MessageRecorded` (con `inbound` el chat recarga también la cabecera: ventana de 24 h)                                         |
+| `conversations.{id}`                              | `.message.status`                      | `{message_id, status, error_code, updated_at}`                  | `MessageStatusChanged`                                                                                                         |
+| bandejas + `users.{responsable}`                  | `.inbox.message_status`                | `{conversation_id, message_id, status, error_code, updated_at}` | `MessageStatusChanged`, solo si es el **último** mensaje de la conversación (`BroadcastMessageStatus`)                         |
+| `conversations.{id}`                              | `.note.saved`                          | `{note_id}`                                                     | `ConversationNoteSaved`                                                                                                        |
+| bandejas + `users.{id}`                           | `.inbox.changed`                       | `{conversation_id, reason}`                                     | `ConversationChanged`, `MessageRecorded` (`reason: message`)                                                                   |
+| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: read}`                               | `ConversationChanged` con `reason=read` (solo al lector)                                                                       |
+| `users.{id}`                                      | `.inbox.changed`                       | `{conversation_id, reason: message_failed}`                     | `MessageStatusChanged` con `failed` (al responsable)                                                                           |
+| `users.{id}`                                      | `.availability.changed`                | `{availability}`                                                | `AgentAvailabilityChanged`                                                                                                     |
+| `inbox.global`, `inbox.departments.{id}`          | `.availability.changed`                | `{user_id, availability}`                                       | `AgentAvailabilityChanged` (departamentos del agente)                                                                          |
+| `users.{id}`                                      | `.access.changed`                      | `{reason}`                                                      | `UserAccessChanged`                                                                                                            |
+| `users.{id}`                                      | `.transfer.changed`                    | `{transfer_id, type, status}`                                   | `DataTransfers\DataTransferFinished` (exportación/importación terminada; lo emite el modelo `DataTransfer` tras confirmar)     |
+| `users.{id}`                                      | `.notification`                        | `{id, kind}`                                                    | `NotificationSignal` → `BroadcastNotificationSignal` (sin trabajo en cola propio)                                              |
+| `users.{id}`                                      | `.team-chat.changed`                   | ver [chat-interno.md](chat-interno.md)                          | chat interno (cola `realtime`)                                                                                                 |
+| `conversations.{id}`                              | `.conversation.changed`                | `{reason: connection_changed}`                                  | `ConnectionStatusChanged` / `ConnectionHealthChanged` → `BroadcastConnectionChange` (conversaciones no cerradas, lotes de 100) |
+| `team-chat.threads.{id}`                          | `.typing`                              | `{user_id}` (lo pone el servidor)                               | `POST team-chat/threads/{id}/typing`: única señal síncrona, emitida en la propia petición y protegida con `rescue`             |
+| `presence-team`, `presence-team.departments.{id}` | presencia (`here`/`joining`/`leaving`) | `{id}`                                                          | Canales de presencia del chat interno (ver [chat-interno.md](chat-interno.md#tiempo-real))                                     |
 
 La señal `connection_changed` se emite al activar, desactivar, eliminar, restaurar, verificar o reemplazar las
 credenciales de una conexión y cuando cambia su salud; el chat abierto recarga su estado y el compositor se bloquea o
@@ -145,6 +146,23 @@ Destinatarios de `.inbox.changed` por un cambio de conversación: `inbox.global`
 actual y de los departamentos de origen/destino del evento; cola del departamento si está en cola (o si acaba de salir
 de ella); y canales personales del responsable actual y de los usuarios de origen/destino (transferencias,
 reasignaciones). Las notas solo refrescan la conversación; `outbound_blocked` solo la conversación y su responsable.
+
+`.inbox.message_status` (fase 5) corrige el icono de entrega de la fila de la bandeja sin recargar la lista. Se envía
+a la misma audiencia que `.inbox.changed` (`RealtimeSignals::inboxMessageStatus()` reutiliza `inboxChannels()` y añade el
+canal personal del responsable, en una sola publicación) y solo cuando el mensaje es el último de la conversación
+(comprobación `EXISTS id > ?` sobre el índice `messages(conversation_id, id)`): los mensajes anteriores no aparecen en
+la fila. `error_code` solo acompaña a `failed` (p. ej. `delivery_unknown`); `updated_at` versiona el estado. El
+servidor ya garantiza estados monótonos e idempotentes (`RecordMessageStatus`, `DeliverOutboundMessage`); el cliente
+(`useInboxMessageStatus.ts` + `canAdvanceDeliveryState()` en `messageFormat.ts`, con el `STATUS_RANK` compartido con el
+chat) aplica una actualización solo si avanza el estado mostrado, nunca muestra «Enviado» antes de que el servidor lo
+confirme, y la olvida cuando una recarga trae ese estado o uno más nuevo (`last_message.updated_at`). El chat abierto
+reenvía su `.message.status` al mismo almacén, así que fila y chat coinciden. No se añadió ningún sondeo.
+
+Prueba manual (no hay pruebas JS unitarias en el proyecto): con Reverb activo, abre la bandeja en dos navegadores (agente
+responsable y supervisor), envía una respuesta y observa que el icono de la fila pasa de «Enviando» a «Enviado»,
+«Entregado» y «Leído» sin recargar en ambos; repite con un webhook duplicado o desordenado (`read` y luego `delivered`)
+y comprueba que el icono no retrocede; con la conexión de tiempo real caída, la lista se pone al día con su recarga de
+respaldo.
 
 ### Puntos de emisión de `UserAccessChanged`
 

@@ -112,6 +112,8 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="dashboard"
+            show-title
             :title="`Hola, ${firstName}`"
             :description="scopeDescription"
         >
@@ -152,7 +154,7 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
         <Deferred v-if="canViewMetrics" data="overview">
             <template #fallback>
                 <div
-                    class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+                    class="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6"
                     aria-busy="true"
                     aria-label="Cargando indicadores"
                 >
@@ -205,7 +207,7 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                     >
                         Conversaciones
                     </h2>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <StatCard
                             label="Activas"
                             :icon="MessageCircle"
@@ -282,7 +284,7 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                             <ArrowRight class="size-3.5" aria-hidden="true" />
                         </Link>
                     </div>
-                    <div class="grid gap-4 lg:grid-cols-3">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
                         <KpiCard
                             label="Conversaciones recibidas"
                             :value="
@@ -341,16 +343,12 @@ const messagingUnavailable = 'Disponible al conectar WhatsApp';
                     >
                         Equipo
                     </h2>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <StatCard
-                            label="Agentes disponibles ahora"
+                            label="Agentes activos"
                             :icon="UserRoundCheck"
-                            :value="overview.agents.available"
-                            :hint="
-                                overview.agents.registered === null
-                                    ? undefined
-                                    : `De ${overview.agents.registered} ${overview.agents.registered === 1 ? 'persona activa que puede atender' : 'personas activas que pueden atender'} (disponibilidad declarada)`
-                            "
+                            :value="overview.agents.active"
+                            hint="Cuentas y roles activos que pueden atender conversaciones"
                             unavailable-label="Sin datos"
                         />
                         <StatCard

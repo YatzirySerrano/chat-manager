@@ -27,11 +27,8 @@
 */
 
 use App\Actions\Conversations\AcceptConversation;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\ProcessInboundMessages;
-use App\Actions\Conversations\PutConversationOnHold;
 use App\Actions\WebChat\ReceiveVisitorMessage;
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Models\Connection;
 use App\Models\Conversation;
@@ -166,7 +163,6 @@ $ana = $users['e2e-ana@example.test'];
 $beto = $users['e2e-beto@example.test'];
 
 foreach ([$ana, $beto] as $agent) {
-    app(ChangeAgentAvailability::class)->handle($agent, AgentAvailability::Available);
 }
 
 $conversations = [];
@@ -176,13 +172,9 @@ $conversations['wa-pending'] = $whatsappWrites('5215511140001', 'Cliente WhatsAp
 $conversations['web-pending'] = $visitorWrites('Visitante Pendiente', 'Hola desde la tienda en línea')['conversation'];
 $conversations['web-to-accept'] = $visitorWrites('Visitante Por Aceptar', 'Quiero cambiar mi pedido')['conversation'];
 
-// Ana's own: one WhatsApp attended, one web chat on hold.
+// Ana's own: one WhatsApp and one web chat attended ("en espera" was retired).
 $conversations['wa-ana'] = app(AcceptConversation::class)->handle($whatsappWrites('5215511140002', 'Cliente WhatsApp Ana', 'Necesito mi factura'), $ana);
-$conversations['web-ana-hold'] = app(PutConversationOnHold::class)->handle(
-    app(AcceptConversation::class)->handle($visitorWrites('Visitante En Espera', '¿Me avisan cuando llegue?')['conversation'], $ana),
-    $ana,
-    'Esperando confirmación del almacén',
-);
+$conversations['web-ana-hold'] = app(AcceptConversation::class)->handle($visitorWrites('Visitante En Espera', '¿Me avisan cuando llegue?')['conversation'], $ana);
 
 // Beto's: never in Ana's general inbox.
 $conversations['wa-beto'] = app(AcceptConversation::class)->handle($whatsappWrites('5215511140003', 'Cliente WhatsApp Beto', 'Hola Beto'), $beto);

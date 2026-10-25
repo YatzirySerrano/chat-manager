@@ -31,7 +31,6 @@ import {
     HERE,
     SHOTS,
     USERS,
-    becomeAvailable,
     chromium,
     exitWithSummary,
     listRow,
@@ -112,7 +111,9 @@ async function waitStatus(page, text, expected, timeout = 30_000) {
 }
 
 async function sendReply(page, text) {
-    await page.getByRole('tab', { name: 'Responder al cliente' }).click();
+    await page
+        .getByRole('button', { name: 'Responder al cliente', exact: true })
+        .click();
     await page.locator('#chat-composer').click();
     await page.keyboard.type(text);
     await page.keyboard.press('Enter');
@@ -254,7 +255,6 @@ const run = async () => {
         );
 
         await step('accept', 'mouse', ana, async () => {
-            await becomeAvailable(ana);
             await listRow(ana, customer).click();
             await ana.waitForURL(/c=\d+/);
             finalId = Number(new URL(ana.url()).searchParams.get('c'));
@@ -328,7 +328,7 @@ const run = async () => {
                 writeFileSync(file, Buffer.from(PNG, 'base64'));
                 await ana.locator('input[type="file"]').setInputFiles(file);
                 const preview = ana.getByAltText(
-                    'Vista previa del archivo adjunto',
+                    'Vista previa de foto-e2e.png',
                 );
                 await preview.waitFor();
                 await ana.locator('#chat-composer').click();
@@ -356,7 +356,9 @@ const run = async () => {
         );
 
         await step('internal-note', 'keyboard', ana, async () => {
-            await ana.getByRole('tab', { name: 'Nota interna' }).click();
+            await ana
+                .getByRole('button', { name: 'Nota interna', exact: true })
+                .click();
             await ana.locator('#chat-composer').click();
             await ana.keyboard.type('Cliente pide factura');
             await ana.getByRole('button', { name: 'Guardar nota' }).click();
@@ -396,7 +398,6 @@ const run = async () => {
         await step('close', 'mouse + keyboard', carla, async () => {
             await login(carla, USERS.carla);
             await carla.goto(`${BASE}/conversations?view=queue`);
-            await becomeAvailable(carla);
             await openConversation(carla, finalId);
             await operations(carla)
                 .getByRole('button', { name: 'Aceptar', exact: true })
@@ -468,13 +469,24 @@ const run = async () => {
             'mouse + keyboard',
             ana,
             async () => {
+                // Phase 5: templates are an administrative send
+                // (templates.send, global scope): the agent gets neither
+                // the free-form composer nor the template button, and the
+                // Administrador sends it on the conversation they attend.
                 await openConversation(ana, data.conversations.closed);
                 const blocked =
                     (await ana.locator('#chat-composer').count()) === 0;
-                await ana
+                const agentTemplateButton = await ana
+                    .getByRole('button', { name: 'Enviar plantilla' })
+                    .count();
+                await openConversation(
+                    administrator,
+                    data.conversations.closed_administrator,
+                );
+                await administrator
                     .getByRole('button', { name: 'Enviar plantilla' })
                     .click();
-                const dialog = ana.getByRole('dialog');
+                const dialog = administrator.getByRole('dialog');
                 await dialog
                     .getByRole('option', { name: new RegExp(data.template) })
                     .click();
@@ -486,11 +498,11 @@ const run = async () => {
                     .getByRole('button', { name: 'Enviar plantilla' })
                     .click();
                 await dialog.waitFor({ state: 'detached' });
-                await bubble(ana, 'retomamos tu solicitud').waitFor();
+                await bubble(administrator, 'retomamos tu solicitud').waitFor();
 
                 return [
-                    blocked,
-                    `free-form composer hidden=${blocked}; template sent`,
+                    blocked && agentTemplateButton === 0,
+                    `agent: free-form composer hidden=${blocked}, template button=${agentTemplateButton}; administrator sent the template`,
                 ];
             },
         );
@@ -498,17 +510,17 @@ const run = async () => {
         await step('admin-inbox', 'render', administrator, async () => {
             await administrator.goto(`${BASE}/conversations`);
             await administrator.waitForLoadState('networkidle');
-            const all = await administrator
-                .getByRole('button', { name: /^Todas/ })
-                .count();
-            // Phase 4: the inbox opens on "Bandeja general" (pending ones and
+            // Phase 5: the inbox opens on "Bandeja general" (pending ones and
             // the person's own); every authorized conversation is the
-            // "Todas" chip.
+            // "Todas las visibles" view of the "Filtros" panel.
             await openInboxView(administrator, 'Todas');
             await administrator.waitForLoadState('networkidle');
             await administrator
                 .getByRole('button', { name: /^Filtros/ })
                 .click();
+            const all = await administrator
+                .getByRole('radio', { name: 'Todas las visibles', exact: true })
+                .count();
             const agentFilter = await administrator
                 .locator('#inbox-agent')
                 .count();

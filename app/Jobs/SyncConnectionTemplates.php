@@ -44,7 +44,7 @@ class SyncConnectionTemplates implements ShouldBeUnique, ShouldQueue
     {
         $connection = Connection::query()->find($this->connectionId);
 
-        if ($connection === null || $connection->isDeleted() || ! $connection->hasRequiredCredentials()) {
+        if ($connection === null || $connection->isDeleted() || ! $connection->channel->supportsTemplates() || ! $connection->hasRequiredCredentials()) {
             return;
         }
 

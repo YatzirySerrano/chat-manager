@@ -17,15 +17,16 @@ use Inertia\Inertia;
 
 /**
  * Templates from the conversation composer: the approved templates of the
- * conversation's connection (only for whoever can reply in it) and sending
- * one, also outside the customer service window.
+ * conversation's connection and sending one, also outside the customer
+ * service window. Only for whoever can reply in it AND holds the
+ * administrative templates.send permission (ConversationPolicy::sendTemplate()).
  */
 class ConversationTemplateController extends Controller
 {
     public function index(Request $request, Conversation $conversation, CustomerServiceWindow $window): JsonResponse
     {
         abort_unless(Gate::allows('view', $conversation), 404);
-        Gate::authorize('reply', $conversation);
+        Gate::authorize('sendTemplate', $conversation);
 
         $templates = MessageTemplate::query()
             ->approved()
@@ -43,6 +44,7 @@ class ConversationTemplateController extends Controller
     public function store(Request $request, Conversation $conversation, QueueTemplateMessage $queue): RedirectResponse|JsonResponse
     {
         abort_unless(Gate::allows('view', $conversation), 404);
+        Gate::authorize('sendTemplate', $conversation);
 
         $data = $request->validate([
             'template_id' => ['required', 'integer', Rule::exists('message_templates', 'id')->where('connection_id', $conversation->connection_id)],

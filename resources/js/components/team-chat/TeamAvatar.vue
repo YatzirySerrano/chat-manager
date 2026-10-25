@@ -3,36 +3,28 @@ import { UsersRound } from '@lucide/vue';
 import { computed } from 'vue';
 import { getInitials } from '@/composables/useInitials';
 import { cn } from '@/lib/utils';
-import type { TeamAvailability } from '@/types/team-chat';
 
 /**
- * Initials of a person (or a group icon) with two separate indicators:
- * - the dot is the availability declared by the person (Disponible / No
- *   disponible), an operational state;
- * - the ring means "En línea": the person has the application open now
- *   (presence channel), whatever their declared availability.
+ * Initials of a person (or a group icon). The ring and the dot mean
+ * "En línea": the person has the application open now (presence channel).
+ * There is no declared availability any more.
  */
 const props = withDefaults(
     defineProps<{
         name: string;
         group?: boolean;
         deleted?: boolean;
-        availability?: TeamAvailability | null;
         online?: boolean;
         size?: 'sm' | 'md';
     }>(),
     {
         group: false,
         deleted: false,
-        availability: null,
         online: false,
         size: 'md',
     },
 );
 
-const availabilityLabel = computed(() =>
-    props.availability === 'available' ? 'Disponible' : 'No disponible',
-);
 const isOnline = computed(() => props.online && !props.group && !props.deleted);
 </script>
 
@@ -55,16 +47,9 @@ const isOnline = computed(() => props.online && !props.group && !props.deleted);
         <UsersRound v-if="group" class="size-4" />
         <template v-else>{{ deleted ? '?' : getInitials(name) }}</template>
         <span
-            v-if="!group && !deleted && availability"
-            :class="
-                cn(
-                    'absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-background',
-                    availability === 'available'
-                        ? 'bg-success'
-                        : 'bg-muted-foreground/50',
-                )
-            "
-            :title="availabilityLabel"
+            v-if="isOnline"
+            class="absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-background bg-success"
+            title="En línea"
         />
     </span>
 </template>

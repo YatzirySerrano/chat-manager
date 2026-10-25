@@ -41,11 +41,6 @@ class ConversationConflict extends RuntimeException
         return new self('Este contacto ya tiene otra conversación activa en esta conexión; continúa la atención en ella.');
     }
 
-    public static function unavailableToAccept(): self
-    {
-        return new self('Estás como No disponible. Cambia tu disponibilidad a Disponible para aceptar conversaciones.');
-    }
-
     /**
      * Replaces the default reporting (which logs at error level).
      */

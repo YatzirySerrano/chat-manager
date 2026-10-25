@@ -1,24 +1,22 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import {
-    ArrowLeft,
-    Globe,
-    MessageCircle,
-    PanelRight,
-    PanelRightClose,
-} from '@lucide/vue';
+import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
 import { useDocumentVisibility, watchDebounced } from '@vueuse/core';
-import { computed, onScopeDispose, ref, toRef, watch } from 'vue';
+import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
 import ChatTimeline from '@/components/conversations/ChatTimeline.vue';
 import ConversationActions from '@/components/conversations/ConversationActions.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import TemplatePickerDialog from '@/components/conversations/TemplatePickerDialog.vue';
 import { useConversationTimeline } from '@/components/conversations/useConversationTimeline';
+import { reportMessageStatus } from '@/components/conversations/useInboxMessageStatus';
 import DepartmentTag from '@/components/DepartmentTag.vue';
+import ChatAppearanceDialog from '@/components/personalization/ChatAppearanceDialog.vue';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/composables/useChannel';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
+import { CUSTOM_CHAT_COLORS, chatColorVariables } from '@/lib/chatAppearance';
 import { afterUserVisits, onReconnect } from '@/lib/realtime';
 import { formatPhone } from '@/lib/phone';
 import { read as markRead } from '@/routes/conversations';
@@ -28,7 +26,7 @@ import type {
     ConversationSummary,
     ConversationTimelinePage,
     CustomerWindow,
-    ViewerAvailability,
+    ViewerChatAppearance,
 } from '@/types';
 
 /**
@@ -41,7 +39,6 @@ const props = defineProps<{
     conversation: ConversationSummary;
     window: CustomerWindow;
     timeline: ConversationTimelinePage | null;
-    availability: ViewerAvailability;
     transferReasonRequired: boolean;
     composer: ComposerSettings;
     detailsOpen: boolean;
@@ -124,6 +121,8 @@ useChannel(
         },
         '.message.status': (payload) => {
             const id = Number(payload.message_id);
+            // The inbox row of this conversation follows the thread (INBOX).
+            reportMessageStatus(payload);
 
             if (Number.isInteger(id) && id > 0) {
                 afterVisit(() => void timeline.refresh({ messages: [id] }));
@@ -265,24 +264,36 @@ function onTemplateSent(): void {
     router.reload({ only: ['conversation', 'window', 'conversations'] });
 }
 
-/* Channel the conversation arrived through, always visible in the header. */
-const channelIcon = computed(() =>
-    props.conversation.connection.channel === 'web_chat'
-        ? Globe
-        : MessageCircle,
-);
-
 const phone = computed(() =>
     props.conversation.contact.phone_e164
         ? formatPhone(props.conversation.contact.phone_e164)
         : null,
 );
+
+/*
+ * The viewer's own chat colors (PERSONALIZATION): CSS variables on the chat
+ * container only, replaced right after saving without reloading the page.
+ */
+const appearance = ref<ViewerChatAppearance | null>(
+    props.conversation.appearance ?? null,
+);
+const appearanceOpen = ref(false);
+
+watch(
+    () => props.conversation.appearance,
+    (value) => (appearance.value = value ?? null),
+);
+
+const customColors = computed(() => Boolean(appearance.value?.colors));
+const chatStyle = computed(() => chatColorVariables(appearance.value?.colors));
+
+provide(CUSTOM_CHAT_COLORS, customColors);
 </script>
 
 <template>
     <section
         class="flex h-full min-h-0 min-w-0 flex-col bg-background"
-        :aria-label="`Conversación con ${conversation.contact.name}`"
+        :aria-label="`Conversación con ${conversation.contact.display_name}`"
     >
         <header class="flex items-center gap-2 border-b px-2 py-2 sm:px-4">
             <Button
@@ -305,8 +316,24 @@ const phone = computed(() =>
                 "
                 @click="emit('toggleDetails')"
             >
-                <h2 class="truncate text-base font-semibold">
-                    {{ conversation.contact.name }}
+                <h2
+                    class="flex min-w-0 items-center gap-2 text-base font-semibold"
+                >
+                    <span class="truncate">{{
+                        conversation.contact.display_name
+                    }}</span>
+                    <span
+                        v-if="conversation.contact.alias"
+                        class="shrink-0 rounded-full border px-1.5 py-px text-xs font-medium text-muted-foreground"
+                        :title="`Alias personal: solo tú lo ves. Nombre oficial: ${conversation.contact.name}`"
+                        data-alias-badge
+                    >
+                        Alias personal
+                        <span class="sr-only"
+                            >. Nombre oficial:
+                            {{ conversation.contact.name }}</span
+                        >
+                    </span>
                 </h2>
                 <p
                     class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
@@ -316,8 +343,8 @@ const phone = computed(() =>
                         :title="`Canal: ${conversation.connection.channel_label}`"
                         data-channel-indicator
                     >
-                        <component
-                            :is="channelIcon"
+                        <ChannelIcon
+                            :channel="conversation.connection.channel"
                             class="size-3.5 shrink-0"
                             aria-hidden="true"
                         />
@@ -349,9 +376,19 @@ const phone = computed(() =>
             </button>
             <ConversationActions
                 :conversation="conversation"
-                :availability="availability"
                 :transfer-reason-required="transferReasonRequired"
             />
+            <Button
+                v-if="appearance"
+                variant="ghost"
+                size="icon"
+                class="shrink-0 pointer-coarse:size-10"
+                title="Apariencia del chat"
+                aria-label="Cambiar los colores de tu chat"
+                @click="appearanceOpen = true"
+            >
+                <Palette aria-hidden="true" />
+            </Button>
             <Button
                 variant="ghost"
                 size="icon"
@@ -371,6 +408,7 @@ const phone = computed(() =>
         </header>
 
         <ChatTimeline
+            :style="chatStyle"
             :conversation="conversation"
             :items="timeline.items.value"
             :has-more="timeline.hasMore.value"
@@ -396,6 +434,14 @@ const phone = computed(() =>
             v-model:open="templatesOpen"
             :conversation="conversation"
             @sent="onTemplateSent"
+        />
+
+        <ChatAppearanceDialog
+            v-if="appearance"
+            v-model:open="appearanceOpen"
+            :conversation-id="conversation.id"
+            :appearance="appearance"
+            @saved="(value) => (appearance = value)"
         />
     </section>
 </template>

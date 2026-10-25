@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AttachmentDeliveryMethod;
+use App\Enums\MessageDirection;
 use App\Enums\MessageType;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Support\Attachments\AttachmentDownloadLink;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -47,6 +50,7 @@ class ConversationMessageResource extends JsonResource
             ]),
             'error_code' => $this->error_code,
             'error_message' => $this->error_message,
+            'delivery_warning' => is_string($metadata['delivery_warning'] ?? null) ? $metadata['delivery_warning'] : null,
             'automatic' => ($metadata['automatic'] ?? false) === true,
             'integration' => $this->integration($metadata),
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
@@ -84,6 +88,8 @@ class ConversationMessageResource extends JsonResource
             'attachment' => $attachment->id,
         ]);
         $status = $attachment->getAttribute('status');
+        $delivery = $attachment->getAttribute('delivery_method');
+        $delivery = $delivery instanceof AttachmentDeliveryMethod ? $delivery : AttachmentDeliveryMethod::Native;
 
         return [
             'id' => $attachment->id,
@@ -94,6 +100,13 @@ class ConversationMessageResource extends JsonResource
             'status' => is_string($status) ? $status : null,
             'url' => $url,
             'download_url' => $url.'?download=1',
+            // "link": the customer received a secure download link that works until link_expires_at.
+            'delivery_method' => $delivery->value,
+            'link_expires_at' => $delivery === AttachmentDeliveryMethod::Link ? AttachmentDownloadLink::expiresAt($this->resource)?->toIso8601String() : null,
+            'link_revoked_at' => $delivery === AttachmentDeliveryMethod::Link ? AttachmentDownloadLink::revokedAt($this->resource)?->toIso8601String() : null,
+            'link_revoke_url' => $delivery === AttachmentDeliveryMethod::Link && $this->direction === MessageDirection::Outbound
+                ? route('conversations.messages.attachments.revoke-link', ['conversation' => $this->conversation_id, 'message' => $this->id, 'attachment' => $attachment->id])
+                : null,
         ];
     }
 

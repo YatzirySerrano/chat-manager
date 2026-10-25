@@ -2,13 +2,19 @@
 import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
 import { MessagesSquare, SearchX } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import InboxList from '@/components/conversations/InboxList.vue';
 import { useConversationAccept } from '@/components/conversations/useConversationAccept';
+import {
+    forgetSettledStatuses,
+    reportMessageStatus,
+    withReportedStatus,
+} from '@/components/conversations/useInboxMessageStatus';
 import EmptyState from '@/components/EmptyState.vue';
+import AliasDialog from '@/components/personalization/AliasDialog.vue';
 import {
     Sheet,
     SheetContent,
@@ -19,14 +25,14 @@ import { useLiveReload } from '@/composables/useLiveReload';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 import {
     inboxChannelNames,
-    useUserChannel,
     userChannelName,
 } from '@/composables/useUserChannel';
-import { afterUserVisits } from '@/lib/realtime';
+import { subscribe } from '@/lib/realtime';
 import type { LiveChannel } from '@/lib/realtime';
 import {
     index as conversationsIndex,
     page as conversationsPage,
+    read as markConversationRead,
 } from '@/routes/conversations';
 import type {
     ComposerSettings,
@@ -40,8 +46,8 @@ import type {
     ConversationTimelinePage,
     CustomerWindow,
     InboxCounts,
+    InboxViewer,
     TagOption,
-    ViewerAvailability,
 } from '@/types';
 
 defineOptions({
@@ -71,7 +77,7 @@ const props = defineProps<{
     canSeeUnrouted: boolean;
     canSeeClosed: boolean;
     canExport: boolean;
-    availability: ViewerAvailability;
+    viewer: InboxViewer;
     composer: ComposerSettings;
     selectedId: number | null;
     selectionMissing: boolean;
@@ -107,7 +113,9 @@ const SELECTION_PROPS = [
 const REFRESH_MAX = 500;
 
 const page = usePage();
-const listQuery = ref<Record<string, string>>({});
+type ListQuery = Record<string, string | string[]>;
+
+const listQuery = ref<ListQuery>({});
 const loadingList = ref(false);
 const loadingMore = ref(false);
 /*
@@ -128,27 +136,39 @@ let listGeneration = 0;
 const moreHttp = useHttp<Record<string, never>, ConversationList>({});
 const refreshHttp = useHttp<Record<string, never>, ConversationList>({});
 
+/*
+ * Rows as shown: the first page plus "load more", with the delivery state
+ * of each row's latest message patched by real-time status updates when
+ * they move it forward (useInboxMessageStatus).
+ */
 const list = computed<ConversationList>(() => {
-    if (more.value === null) {
-        return props.conversations;
-    }
-
     const first = new Set(props.conversations.data.map((row) => row.id));
+    const rows =
+        more.value === null
+            ? props.conversations.data
+            : [
+                  ...props.conversations.data,
+                  ...more.value.data.filter((row) => !first.has(row.id)),
+              ];
 
     return {
-        data: [
-            ...props.conversations.data,
-            ...more.value.data.filter((row) => !first.has(row.id)),
-        ],
-        has_more: more.value.has_more,
-        next_cursor: more.value.next_cursor,
+        data: rows.map(withReportedStatus),
+        has_more: (more.value ?? props.conversations).has_more,
+        next_cursor: (more.value ?? props.conversations).next_cursor,
     };
 });
+
+/* Rows read again from the server settle the states they already show. */
+watch(
+    () => [props.conversations, more.value] as const,
+    ([first, loaded]) =>
+        forgetSettledStatuses([...first.data, ...(loaded?.data ?? [])]),
+);
 
 /** Query string of the current list, as the list component builds it. */
 const inboxList = ref<InstanceType<typeof InboxList> | null>(null);
 
-function url(selected: number | null, query: Record<string, string>): string {
+function url(selected: number | null, query: ListQuery): string {
     return conversationsIndex.url({
         query: {
             ...query,
@@ -157,7 +177,7 @@ function url(selected: number | null, query: Record<string, string>): string {
     });
 }
 
-function currentQuery(): Record<string, string> {
+function currentQuery(): ListQuery {
     return inboxList.value?.query() ?? listQuery.value;
 }
 
@@ -178,7 +198,7 @@ function select(id: number | null): void {
     mobilePane.value = id === null ? 'list' : 'chat';
 }
 
-function filter(query: Record<string, string>): void {
+function filter(query: ListQuery): void {
     listQuery.value = query;
     listGeneration++;
     loadMoreAfterRefresh = false;
@@ -317,6 +337,29 @@ const liveChannels = computed<LiveChannel[]>(() => {
 });
 
 /*
+ * Delivery updates of the rows' latest messages (inbox.message_status, same
+ * channels): they only patch the status icon, never reload the list.
+ */
+let stopStatusSignals: (() => void)[] = [];
+
+watch(
+    liveChannels,
+    (channels) => {
+        stopStatusSignals.forEach((stop) => stop());
+        stopStatusSignals = channels.map((channel) =>
+            subscribe(
+                channel.name,
+                '.inbox.message_status',
+                reportMessageStatus,
+            ),
+        );
+    },
+    { immediate: true },
+);
+
+onScopeDispose(() => stopStatusSignals.forEach((stop) => stop()));
+
+/*
  * A signal that arrives while a filter change is loading is not lost: the
  * filter's response may have been read before that change was committed,
  * so the list reloads once more when the filter finishes.
@@ -367,12 +410,6 @@ function acceptFromList(id: number): void {
     });
 }
 
-/* The viewer's availability changed (another tab or device): follow it. */
-useUserChannel({
-    '.availability.changed': () =>
-        afterUserVisits(() => router.reload({ only: ['availability'] })),
-});
-
 /*
  * The read marker moved: refresh the unread counters of the list. With
  * real-time the personal channel already signals it to every tab.
@@ -383,6 +420,46 @@ function onRead(): void {
     if (realtimeState.value !== 'connected' && !loadingList.value) {
         router.reload({ only: ['conversations', 'unreadCount'] });
     }
+}
+
+/* "Marcar como leída" from a row: the same personal read marker as the chat. */
+const readHttp = useHttp<{ message_id: number | null }, { moved: boolean }>({
+    message_id: null,
+});
+
+/*
+ * One request instance serves every row: quick clicks on several rows are
+ * queued and sent one after another, so none cancels the previous one.
+ */
+const readQueue: number[] = [];
+let drainingReadQueue = false;
+
+async function markReadFromList(id: number): Promise<void> {
+    if (!readQueue.includes(id)) {
+        readQueue.push(id);
+    }
+
+    if (drainingReadQueue) {
+        return;
+    }
+
+    drainingReadQueue = true;
+
+    try {
+        while (readQueue.length > 0) {
+            const next = readQueue.shift() as number;
+
+            try {
+                await readHttp.post(markConversationRead.url(next));
+            } catch {
+                toast.error('No se pudo marcar la conversación como leída.');
+            }
+        }
+    } finally {
+        drainingReadQueue = false;
+    }
+
+    onRead();
 }
 
 /* Layout: three panels on wide screens, list ↔ chat on small ones. */
@@ -447,11 +524,30 @@ const showDetailsColumn = computed(
         props.details !== null,
 );
 
-const title = computed(() =>
-    props.conversation
-        ? `Conversación con ${props.conversation.contact.name}`
-        : 'Conversaciones',
-);
+const title = computed(() => {
+    const contact = props.conversation?.contact as
+        | (ConversationSummary['contact'] & { display_name?: string | null })
+        | undefined;
+
+    return contact
+        ? `Conversación con ${contact.display_name || contact.name}`
+        : 'Conversaciones';
+});
+
+/*
+ * Private alias from the row menu (PERSONALIZATION): only the viewer's own
+ * view changes, so the list rows and the open conversation reload.
+ */
+const aliasTarget = ref<ConversationSummary | null>(null);
+
+function onAliasSaved(): void {
+    router.reload({
+        only:
+            props.selectedId === aliasTarget.value?.id
+                ? ['conversations', 'conversation', 'details']
+                : ['conversations'],
+    });
+}
 </script>
 
 <template>
@@ -472,7 +568,6 @@ const title = computed(() =>
                 :filters="filters"
                 :counts="counts"
                 :inbox="inbox"
-                :statuses="statuses"
                 :departments="departments"
                 :agents="agents"
                 :connections="connections"
@@ -482,14 +577,17 @@ const title = computed(() =>
                 :can-see-unrouted="canSeeUnrouted"
                 :can-see-closed="canSeeClosed"
                 :can-export="canExport"
-                :availability="availability"
+                :viewer="viewer"
                 :selected-id="selectedId"
                 :loading="loadingList || loadingMore"
                 :accepting-id="acceptingId"
                 @select="select"
                 @accept="acceptFromList"
+                @mark-read="markReadFromList"
                 @filter="filter"
                 @load-more="loadMore"
+                :can-edit-alias="true"
+                @edit-alias="(row) => (aliasTarget = row)"
             />
         </div>
 
@@ -498,13 +596,19 @@ const title = computed(() =>
             class="relative min-h-0 min-w-0"
             :aria-busy="loadingSelection"
         >
+            <h1 v-if="!showList" class="sr-only">
+                {{
+                    conversation
+                        ? `Conversación con ${conversation.contact.display_name}`
+                        : 'Conversaciones'
+                }}
+            </h1>
             <ConversationChat
                 v-if="conversation && window"
                 :key="conversation.id"
                 :conversation="conversation"
                 :window="window"
                 :timeline="timeline"
-                :availability="availability"
                 :transfer-reason-required="transferReasonRequired"
                 :composer="composer"
                 :details-open="extraWide ? detailsOpen : sheetDetailsOpen"
@@ -577,5 +681,15 @@ const title = computed(() =>
                 />
             </SheetContent>
         </Sheet>
+
+        <AliasDialog
+            v-if="aliasTarget"
+            :open="aliasTarget !== null"
+            :conversation-id="aliasTarget.id"
+            :contact-name="aliasTarget.contact.name"
+            :alias="aliasTarget.contact.alias ?? null"
+            @update:open="(value) => !value && (aliasTarget = null)"
+            @saved="onAliasSaved"
+        />
     </div>
 </template>

@@ -25,7 +25,8 @@ class ListConversationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['nullable', 'string', Rule::enum(ConversationStatus::class)],
+            // The retired on_hold state is not offered (422), DESIGN decision 1.
+            'status' => ['nullable', 'string', Rule::enum(ConversationStatus::class)->only(ConversationStatus::operational())],
             'connection_id' => ['nullable', 'integer', 'min:1'],
             'department_id' => ['nullable', 'integer', 'min:1'],
             'updated_since' => ['nullable', 'date'],

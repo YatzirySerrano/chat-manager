@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
-import Heading from '@/components/Heading.vue';
 import { edit } from '@/routes/appearance';
 
 defineOptions({
@@ -22,11 +21,9 @@ defineOptions({
     <h1 class="sr-only">Apariencia</h1>
 
     <div class="space-y-6">
-        <Heading
-            variant="small"
-            title="Apariencia"
-            description="Elige el tema de la interfaz"
-        />
+        <p class="text-sm text-pretty text-muted-foreground">
+            Elige el tema de la interfaz.
+        </p>
         <AppearanceTabs />
     </div>
 </template>

@@ -164,6 +164,7 @@ function usageLabel(
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="etiquetas"
             title="Etiquetas"
             description="Clasifica contactos y conversaciones con etiquetas de color. Solo clasifican: no otorgan permisos ni cambian estados."
         >

@@ -20,6 +20,7 @@ enum PermissionGroup: string
     case Settings = 'settings';
     case Appearance = 'appearance';
     case Records = 'records';
+    case Supervision = 'supervision';
     case Audit = 'audit';
     case System = 'system';
 
@@ -42,6 +43,7 @@ enum PermissionGroup: string
             self::Settings => 'Configuración',
             self::Appearance => 'Personalización',
             self::Records => 'Registros eliminados',
+            self::Supervision => 'Supervisión de elementos personales',
             self::Audit => 'Auditoría',
             self::System => 'Sistema y operación',
         };

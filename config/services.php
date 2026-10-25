@@ -37,6 +37,37 @@ return [
         'graph_version' => env('META_GRAPH_VERSION') ?: 'v26.0',
         'base_url' => env('META_GRAPH_BASE_URL') ?: 'https://graph.facebook.com',
         'timeout' => (int) (env('META_GRAPH_TIMEOUT') ?: 10),
+
+        /*
+        | Meta app used to authorize Facebook Messenger pages and Instagram
+        | professional accounts (Facebook Login for Business) and to verify the
+        | app-level webhook (webhooks/meta). WhatsApp connections keep their
+        | own credentials per connection. Without these values the Messenger
+        | and Instagram authorization is unavailable.
+        */
+        'app_id' => env('META_APP_ID'),
+        'app_secret' => env('META_APP_SECRET'),
+        'login_config_id' => env('META_LOGIN_CONFIG_ID'),
+        'instagram_app_id' => env('META_INSTAGRAM_APP_ID'),
+        'instagram_app_secret' => env('META_INSTAGRAM_APP_SECRET'),
+        'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
+
+        /*
+        | Limits of the public Meta routes per source address: valid webhook
+        | deliveries, invalid signatures (refused with 429 once exceeded) and
+        | the signed media URLs Meta fetches for outbound attachments.
+        */
+        'webhook_rate_limit_per_minute' => (int) (env('META_WEBHOOK_RATE_LIMIT') ?: 6000),
+        'webhook_invalid_signatures_per_minute' => (int) (env('META_WEBHOOK_INVALID_SIGNATURE_LIMIT') ?: 30),
+        'media_rate_limit_per_minute' => (int) (env('META_MEDIA_RATE_LIMIT') ?: 1200),
+
+        /*
+        | Instagram API with Instagram Login hosts (docs/meta-messenger-instagram.md).
+        | The HUMAN_AGENT message tag (7-day window for human replies) requires
+        | Meta's approval of the Human Agent feature: it stays off by default.
+        */
+        'instagram_base_url' => env('META_INSTAGRAM_GRAPH_BASE_URL') ?: 'https://graph.instagram.com',
+        'human_agent_tag' => (bool) env('META_HUMAN_AGENT_TAG', false),
     ],
 
     'slack' => [

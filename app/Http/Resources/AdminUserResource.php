@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Actions\Users\UpdatePersonalQuickRepliesGrant;
 use App\Models\Department;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class AdminUserResource extends JsonResource
     public function toArray(Request $request): array
     {
         $role = $this->role();
+        $personalGrant = app(UpdatePersonalQuickRepliesGrant::class);
 
         return [
             'id' => $this->id,
@@ -44,6 +46,12 @@ class AdminUserResource extends JsonResource
                 'color' => $department->color->value,
                 'is_active' => $department->is_active,
             ])->values()->all(),
+            // Per-user grant of quick-replies.personal (on top of the role).
+            'personal_quick_replies' => [
+                'granted_by_role' => $personalGrant->grantedByRole($this->resource),
+                'granted_directly' => $personalGrant->grantedDirectly($this->resource),
+                'can_toggle' => $request->user() !== null && $personalGrant->allows($request->user(), $this->resource),
+            ],
             'is_current_user' => $request->user()?->is($this->resource) ?? false,
             'can' => [
                 'update' => $request->user()?->can('update', $this->resource) ?? false,

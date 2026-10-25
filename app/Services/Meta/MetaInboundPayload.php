@@ -211,7 +211,7 @@ class MetaInboundPayload
                         externalId: $from,
                         profileName: $profileNames[$from] ?? null,
                         messageId: $messageId,
-                        occurredAt: CarbonImmutable::createFromTimestampUTC((int) $timestamp),
+                        occurredAt: self::notAfterNow(CarbonImmutable::createFromTimestampUTC((int) $timestamp)),
                         referral: is_array($message['referral'] ?? null) ? ProviderReferral::fromArray($message['referral']) : null,
                     ),
                     type: self::typeOf($type),
@@ -320,6 +320,17 @@ class MetaInboundPayload
         }
 
         return $names === [] ? null : 'Contacto compartido: '.implode(', ', $names);
+    }
+
+    /**
+     * A message time later than now (clock skew on Meta's side) is capped at
+     * now, so it can never extend the 24 hour customer service window.
+     */
+    private static function notAfterNow(CarbonImmutable $at): CarbonImmutable
+    {
+        $now = CarbonImmutable::now('UTC');
+
+        return $at->greaterThan($now) ? $now : $at;
     }
 
     /**

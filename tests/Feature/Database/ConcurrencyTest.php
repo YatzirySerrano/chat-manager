@@ -10,14 +10,12 @@ use App\Actions\Contacts\RegisterInboundContact;
 use App\Actions\Conversations\AcceptConversation;
 use App\Actions\Conversations\AssignAutomatically;
 use App\Actions\Conversations\AssignConversation;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\CloseConversation;
 use App\Actions\Conversations\ReleaseAssignedConversations;
 use App\Actions\Conversations\ReopenConversation;
 use App\Actions\Conversations\TransferConversation;
 use App\Actions\Departments\RemoveDepartmentMember;
 use App\Actions\Users\DeleteUser;
-use App\Enums\AgentAvailability;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionProvider;
 use App\Enums\ConversationEventType;
@@ -500,28 +498,30 @@ test('an operation whose snapshot predates a membership removal decides on the c
     $second->rollBack();
 });
 
-test('an agent switching to unavailable while their accept waits is refused once the change commits', function () {
+test('an agent removed from the department while their accept waits is refused once the change commits', function () {
     $first = concurrentConnection('first');
     concurrentConnection('second');
 
-    [$agent, $conversation] = throughConnection('first', function () {
+    [$admin, $agent, $department, $conversation] = throughConnection('first', function () {
         $department = Department::factory()->create();
 
         return [
-            User::factory()->agent()->available()->inDepartments($department)->create(),
+            User::factory()->administrator()->create(),
+            User::factory()->agent()->inDepartments($department)->create(),
+            $department,
             Conversation::factory()->inDepartment($department)->create(),
         ];
     });
     $accept = fn () => app(AcceptConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($agent->id));
 
     $first->beginTransaction();
-    throughConnection('first', fn () => app(ChangeAgentAvailability::class)->handle(User::query()->findOrFail($agent->id), AgentAvailability::Unavailable));
+    throughConnection('first', fn () => app(RemoveDepartmentMember::class)->handle(Department::query()->findOrFail($department->id), User::query()->findOrFail($agent->id), User::query()->findOrFail($admin->id)));
 
     expect(fn () => throughConnection('second', $accept))->toThrow(QueryException::class, 'Lock wait timeout');
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $accept))->toThrow(ConversationConflict::class, 'Estás como No disponible.')
+    expect(fn () => throughConnection('second', $accept))->toThrow(AuthorizationException::class)
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
         ->assigned_user_id->toBeNull()
         ->status->toBe(ConversationStatus::Pending)
@@ -538,13 +538,13 @@ test('automatic and manual assignment at the same time leave a single responsibl
         return [
             User::factory()->administrator()->create(),
             User::factory()->agent()->available()->inDepartments($department)->create(),
-            User::factory()->agent()->inDepartments($department)->create(['availability' => AgentAvailability::Unavailable]),
+            User::factory()->agent()->inDepartments($department)->create(),
             $department,
             Conversation::factory()->inDepartment($department)->create(),
         ];
     });
     $assignByHand = fn () => app(AssignConversation::class)->handle(
-        Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($beto->id), User::query()->findOrFail($admin->id), 0, confirmUnavailable: true,
+        Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($beto->id), User::query()->findOrFail($admin->id), 0,
     );
 
     // The distribution holds the conversation while the supervisor assigns it by hand.

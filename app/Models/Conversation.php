@@ -160,6 +160,17 @@ class Conversation extends Model
     }
 
     /**
+     * Personal chat colors users chose for this conversation (each user
+     * only ever applies their own).
+     *
+     * @return HasMany<ChatAppearance, $this>
+     */
+    public function chatAppearances(): HasMany
+    {
+        return $this->hasMany(ChatAppearance::class);
+    }
+
+    /**
      * @return HasMany<ConversationEvent, $this>
      */
     public function events(): HasMany
@@ -197,13 +208,14 @@ class Conversation extends Model
     }
 
     /**
-     * Conversations an agent is responsible for (in attention or on hold).
+     * Conversations an agent is responsible for (in attention, including
+     * legacy on_hold rows not migrated yet).
      *
      * @param  Builder<Conversation>  $query
      */
     #[Scope]
     protected function attended(Builder $query): void
     {
-        $query->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold]);
+        $query->whereIn('status', ConversationStatus::attending());
     }
 }

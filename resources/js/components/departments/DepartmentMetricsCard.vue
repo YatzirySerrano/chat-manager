@@ -29,7 +29,7 @@ defineProps<{
     >
         <div
             v-if="metrics.total > 0"
-            class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+            class="grid grid-cols-2 gap-3 sm:grid-cols-3"
         >
             <StatCard
                 label="Pendientes"

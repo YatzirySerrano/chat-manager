@@ -166,10 +166,12 @@ urgentes, `normal` el resto) y `Topic: notifications` (el servicio push sustituy
    log nunca incluye el endpoint.
 4. El _service worker_ (`public/sw.js`, alcance `/`) recibe el push y pide `GET /notifications/summary` al mismo
    origen con la cookie de sesión del usuario. Muestra un texto genérico («Tienes 3 notificaciones sin leer (1
-   urgente).») con _tag_ único `chat-manager-push` y `renotify: false`. Si hay una ventana de la plataforma visible y
-   enfocada, no muestra nada. Si la sesión ya no es válida (401), muestra «Tienes notificaciones nuevas. Inicia
-   sesión para verlas.», sin datos (Chrome exige mostrar algo por cada push). Al pulsarlo enfoca una pestaña abierta o
-   abre `/dashboard`.
+   urgente).») con _tag_ único `chat-manager-push` y `renotify: false`. Siempre muestra una notificación (Safari en iOS revoca
+   las suscripciones cuyos push no muestran nada); si hay una ventana de la plataforma visible y enfocada, es
+   silenciosa y se cierra a los 4 s. Si la sesión ya no es válida (401), muestra «Tienes notificaciones nuevas. Inicia
+   sesión para verlas.», sin datos. Al pulsarla enfoca una ventana que ya muestre su URL (`/dashboard`), lleva ahí una
+   ventana abierta de la plataforma o abre esa URL. Una suscripción cuya baja no llegó al servidor (tiempo agotado al
+   cerrar sesión, sesión vencida) sigue recibiendo avisos genéricos hasta que el navegador o el servidor la descarten.
 
 **Suscripciones.** Se activan solo desde _Mi cuenta › Notificaciones_ con «Activar en este navegador», que pide el
 permiso (`Notification.requestPermission`) tras el clic, registra el _service worker_ y la suscripción con la clave
@@ -287,8 +289,9 @@ automática y, ahora, quién recibe avisos de cola.
 - El aviso duplicado pestaña + push (pestaña abierta pero oculta) quedó resuelto: con una suscripción push activa en
   ese navegador la página no muestra su aviso del sistema y solo aparece el aviso genérico del _service worker_. En
   un navegador sin suscripción push se mantiene el aviso de la pestaña.
-- iOS/iPadOS necesitaría instalar la plataforma como app (PWA con _manifest_), que no existe. El título del aviso
-  push es genérico («Notificaciones nuevas») y no usa el nombre configurable de la plataforma.
+- iOS/iPadOS (16.4+) solo admite Web Push con la plataforma instalada en la pantalla de inicio; desde la fase 5 existe
+  _manifest_ y PWA ([infraestructura §20](infraestructura-y-despliegue.md#20-aplicación-instalable-pwa)), pero no se ha
+  probado en un iPhone real. El título del aviso push es genérico («Notificaciones nuevas») y no usa el nombre configurable de la plataforma.
 - Al cerrar sesión la suscripción del navegador se conserva: los siguientes push muestran el aviso genérico sin datos.
   Cada envío correcto renueva la suscripción, así que la poda no la elimina mientras el usuario siga recibiendo
   notificaciones; se conserva hasta que se desactive desde _Preferencias_, el servicio push la invalide (404/410) o

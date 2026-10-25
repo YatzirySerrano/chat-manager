@@ -42,7 +42,7 @@ class UsersReport extends ReportDefinition
      * @var list<string>
      */
     private const SAFE_COLUMNS = [
-        'users.id', 'users.name', 'users.email', 'users.is_active', 'users.availability',
+        'users.id', 'users.name', 'users.email', 'users.is_active',
         'users.two_factor_confirmed_at', 'users.last_login_at', 'users.created_at',
     ];
 
@@ -144,7 +144,6 @@ class UsersReport extends ReportDefinition
             new Column('role', 'Rol', width: 18),
             new Column('scope', 'Alcance', width: 18),
             new Column('departments', 'Departamentos', width: 24),
-            new Column('availability', 'Disponibilidad', width: 15),
             new Column('status', 'Estado', width: 11),
             new Column('two_factor', 'Doble factor', ColumnType::Boolean, width: 12),
             new Column('last_login_at', 'Último acceso', ColumnType::DateTime, width: 16),
@@ -165,7 +164,6 @@ class UsersReport extends ReportDefinition
             'role' => $role === null ? 'Sin rol' : $role->label.($role->is_active ? '' : ' (rol eliminado)'),
             'scope' => $role?->scope->label(),
             'departments' => $record->departments->pluck('name')->implode(', ') ?: null,
-            'availability' => $record->availability->label(),
             'status' => $record->isDeleted() ? 'Eliminado' : 'Activo',
             'two_factor' => $record->two_factor_confirmed_at !== null,
             'last_login_at' => $record->last_login_at,

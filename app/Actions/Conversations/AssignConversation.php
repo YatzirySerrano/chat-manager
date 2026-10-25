@@ -2,7 +2,6 @@
 
 namespace App\Actions\Conversations;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Exceptions\ConversationConflict;
@@ -18,10 +17,9 @@ use Illuminate\Validation\ValidationException;
  * keeping its department. The agent must be able to attend it: active,
  * allowed to reply and reaching the department. Assigning by hand may go
  * past the agent's limit: it is a decision of someone with authority, but
- * it is never silent: assigning to an agent declared
- * unavailable, or to one who already attends their maximum of conversations,
- * must be confirmed explicitly; the exception is recorded in the event and
- * never changes the agent's availability or limit. Once committed, the
+ * it is never silent: assigning to an agent who already attends their
+ * maximum of conversations must be confirmed explicitly; the exception is
+ * recorded in the event and never changes the agent's limit. Once committed, the
  * previous responsible's automatic queues are offered again.
  */
 class AssignConversation
@@ -35,9 +33,9 @@ class AssignConversation
     /**
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, User $agent, User $actor, ?int $expectedVersion = null, bool $confirmUnavailable = false, bool $confirmOverCapacity = false): Conversation
+    public function handle(Conversation $conversation, User $agent, User $actor, ?int $expectedVersion = null, bool $confirmOverCapacity = false): Conversation
     {
-        return DB::transaction(function () use ($conversation, $agent, $actor, $expectedVersion, $confirmUnavailable, $confirmOverCapacity): Conversation {
+        return DB::transaction(function () use ($conversation, $agent, $actor, $expectedVersion, $confirmOverCapacity): Conversation {
             $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
             $actor = $this->lifecycle->authorize($actor, 'assign', $conversation);
 
@@ -53,12 +51,6 @@ class AssignConversation
                 throw new ConversationConflict($refusal);
             }
 
-            $unavailable = $agent->availability !== AgentAvailability::Available;
-
-            if ($unavailable && ! $confirmUnavailable) {
-                throw ValidationException::withMessages(['user_id' => $this->access->unavailableConfirmation($agent)]);
-            }
-
             $previous = $conversation->assigned_user_id;
             $limit = $previous === $agent->id ? null : $this->access->reachedLimit($agent, $department, lockingRead: true);
 
@@ -67,7 +59,6 @@ class AssignConversation
             }
 
             $exceptions = array_filter([
-                'assigned_while_unavailable' => $unavailable,
                 'assigned_over_limit' => $limit !== null,
                 'limit' => $limit,
             ]);

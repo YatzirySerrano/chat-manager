@@ -10,6 +10,7 @@ use App\Http\Resources\AuditLogResource;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
+use App\Support\Audit\AuditPresenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -20,7 +21,7 @@ class AuditLogController extends Controller
     /**
      * The entries the viewer may read (the same query as the audit report).
      */
-    public function index(Request $request, AuditLogQuery $audit, ReportExporter $exporter): Response
+    public function index(Request $request, AuditLogQuery $audit, ReportExporter $exporter, AuditPresenter $presenter): Response
     {
         Gate::authorize('viewAny', AuditLog::class);
 
@@ -33,6 +34,8 @@ class AuditLogController extends Controller
         $logs = $audit->handle($viewer, $filters)
             ->paginate(25)
             ->withQueryString();
+
+        $presenter->loadSubjects($logs->getCollection());
 
         return Inertia::render('admin/audit/Index', [
             'logs' => AuditLogResource::collection($logs),

@@ -35,8 +35,8 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property bool $is_active
- * @property AgentAvailability $availability Declared by the person; only decides automatic assignments.
- * @property Carbon|null $availability_changed_at
+ * @property AgentAvailability $availability Deprecated: the manual availability was removed; the column is kept (history) but nothing reads it for operational decisions.
+ * @property Carbon|null $availability_changed_at Deprecated together with `availability`.
  * @property int|null $max_open_conversations Own capacity override; null inherits the department and platform limits.
  * @property Carbon|null $last_assigned_at
  * @property Carbon|null $deactivated_at
@@ -104,6 +104,36 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function assignedConversations(): HasMany
     {
         return $this->hasMany(Conversation::class, 'assigned_user_id');
+    }
+
+    /**
+     * Private aliases the user gave contacts.
+     *
+     * @return HasMany<ContactAlias, $this>
+     */
+    public function contactAliases(): HasMany
+    {
+        return $this->hasMany(ContactAlias::class);
+    }
+
+    /**
+     * The user's chat colors: the default (no conversation) and per-chat overrides.
+     *
+     * @return HasMany<ChatAppearance, $this>
+     */
+    public function chatAppearances(): HasMany
+    {
+        return $this->hasMany(ChatAppearance::class);
+    }
+
+    /**
+     * Quick replies the user owns (personal replies).
+     *
+     * @return HasMany<QuickReply, $this>
+     */
+    public function personalQuickReplies(): HasMany
+    {
+        return $this->hasMany(QuickReply::class, 'owner_user_id');
     }
 
     /**

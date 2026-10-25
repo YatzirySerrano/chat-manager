@@ -8,8 +8,8 @@ import type { RealtimeConfig } from '@/lib/realtime';
  * learned from the presence channels the server lists for the user
  * (`realtime.presence_channels`). Each channel only gathers people who may
  * chat with each other and only reports ids, so names keep coming from the
- * pages. It is independent from the declared availability (Disponible /
- * No disponible), which is an operational state, not a connection.
+ * pages. It is the only "available" signal shown (there is no declared
+ * availability any more).
  *
  * One connection per tab: useTeamPresenceConnection() runs in the
  * authenticated layout; components read it with useTeamPresence().

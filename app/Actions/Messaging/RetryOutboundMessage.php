@@ -18,6 +18,7 @@ use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -37,7 +38,8 @@ use Illuminate\Validation\ValidationException;
  *   (Connection::sendingBlockReason(), the same rule as a new reply);
  * - the conversation rules apply now: the agent must be able to reply, the
  *   window must allow free text (templates are exempt) and a template must
- *   still be approved; the delivery job checks them again.
+ *   still be approved and the agent hold templates.send (templates are an
+ *   administrative send); the delivery job checks them again.
  */
 class RetryOutboundMessage
 {
@@ -77,6 +79,8 @@ class RetryOutboundMessage
             }
 
             if ($message->type === MessageType::Template) {
+                Gate::forUser($actor)->authorize('sendTemplate', $conversation);
+
                 $templateId = $message->metadata['template']['id'] ?? null;
                 $template = is_int($templateId) ? MessageTemplate::query()->find($templateId) : null;
 

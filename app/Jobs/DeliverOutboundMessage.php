@@ -363,7 +363,10 @@ class DeliverOutboundMessage implements ShouldQueue
 
         $sender = User::query()->with(['roles', 'departments'])->find($senderId);
 
-        return $sender !== null && Gate::forUser($sender)->allows('reply', $conversation);
+        // A template is an administrative send: its sender must still hold templates.send.
+        $ability = $message->type === MessageType::Template ? 'sendTemplate' : 'reply';
+
+        return $sender !== null && Gate::forUser($sender)->allows($ability, $conversation);
     }
 
     private function templateRefusal(Message $message, Conversation $conversation): ?string
@@ -403,6 +406,10 @@ class DeliverOutboundMessage implements ShouldQueue
 
             if ($result->simulated) {
                 $current->metadata = [...($current->metadata ?? []), 'simulated' => true];
+            }
+
+            if ($result->warning !== null) {
+                $current->metadata = [...($current->metadata ?? []), 'delivery_warning' => mb_substr($result->warning, 0, 500)];
             }
 
             $acceptedAt = microtime(true);

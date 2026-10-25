@@ -3,7 +3,7 @@
 Visión transversal del sistema: piezas, módulos, modelo de datos, flujos de mensajes, estados, disponibilidad,
 colas y tareas programadas. El detalle de cada área está en su documento (ver [README](README.md)); aquí solo se
 resume y se enlaza, sin repetirlo. Los números de sección siguen los temas de la documentación obligatoria (1–5, 8 y
-11); la sección 12 resume colas y programador.
+11); la sección 12 resume colas y programador y la 13, la ayuda por módulo, el lenguaje claro y la bitácora.
 
 > **Estado de validación:** la integración con WhatsApp Cloud API **no se ha probado contra Meta real**. Los flujos de
 > este documento se verificaron con webhooks firmados de prueba, el transporte simulado y pruebas contractuales
@@ -115,7 +115,7 @@ Generado a partir del esquema real (`php artisan db:show` / `db:table`, solo lec
 | Conversaciones            | `conversations`, `conversation_events`, `conversation_notes`, `conversation_tag`, `conversation_reads`                                                                              | `conversations` → `connections`, `contacts`, `departments`, `users` (responsable); clave única `(connection_id, contact_id, open_lock)`: una sola abierta por contacto y conexión; `version` para concurrencia optimista            |
 | Mensajes                  | `messages`, `message_attachments`, `message_templates`                                                                                                                              | `messages.whatsapp_message_id` y `client_reference` únicos (idempotencia); FULLTEXT sobre `body` (búsqueda en mensajes); índice `(updated_at, conversation_id)`; `reply_to_message_id`; adjuntos con `status` y `whatsapp_media_id` |
 | Webhooks                  | `webhook_events`                                                                                                                                                                    | Cuerpo crudo por conexión, deduplicado por `payload_hash`, con estado e intentos                                                                                                                                                    |
-| Respuestas rápidas        | `quick_replies`, `department_quick_reply`                                                                                                                                           | Por departamento                                                                                                                                                                                                                    |
+| Respuestas rápidas        | `quick_replies`, `department_quick_reply`                                                                                                                                           | Corporativas: globales o por departamento; personales: solo su propietario (`owner_user_id`), nunca por departamento                                                                                                                |
 | Chat interno              | `team_threads`, `team_participants`, `team_messages`, `team_attachments`, `team_message_reactions`                                                                                  | Sin relación con conversaciones de clientes ([chat-interno.md](chat-interno.md#modelo-de-datos))                                                                                                                                    |
 | Notificaciones            | `notifications`, `notification_receipts`, `user_notification_preferences`, `push_subscriptions`                                                                                     | Deduplicación por recibo y agrupación por clave ([notificaciones](notificaciones-y-horarios.md#11-modelo))                                                                                                                          |
 | Transferencias de datos   | `data_transfers`, `import_batch_records`                                                                                                                                            | Exportaciones e importaciones; trazabilidad y reversión por lote ([migración](migracion-whaticket.md#trazabilidad-por-lote))                                                                                                        |
@@ -180,7 +180,7 @@ ProcessWhatsAppWebhook (5 intentos) → ProcessWebhookPayload
         ├─ plantillas / avisos ──▶ message_templates, connections.provider_signals
         └─ messages ─────────────▶ ProcessInboundMessages → ReceiveInboundMessage (READ COMMITTED, reintentos)
                                      1. duplicado por wamid → se responde sin tocar nada
-                                     2. RegisterInboundContact (contacto, identidad, procedencia)
+                                     2. RegisterInboundContact (contacto provisional si es nuevo, identidad, procedencia)
                                      3. conversación no cerrada | reapertura en ventana | nueva (ConversationRouter)
                                      4. guarda el mensaje; fechas de actividad solo avanzan
                                      5. AssignAutomatically si el departamento es automático
@@ -202,6 +202,11 @@ ProcessWhatsAppWebhook (5 intentos) → ProcessWebhookPayload
   (`App\Support\ReadCommittedTransaction`, [ADR-LOAD-2](decisiones.md#adr-load-2--transacción-read-committed-compartida-y-upsert-de-notificaciones-agregadas)).
 - Recuperación: `whatsapp:maintenance recover-webhooks` (cada 10 min) reencola eventos `received` atascados;
   `retry-webhooks` reprocesa fallidos manualmente.
+- **Facebook Messenger e Instagram** entran por el webhook de la app `POST /webhooks/meta` (firma con la clave de la app
+  de Facebook o de Instagram), que reparte cada `entry` a su conexión por `external_account_id`, la guarda en
+  `webhook_events` y la procesa en la misma cola con `ProcessMetaMessagingPayload` → `ReceiveInboundMessage` (mismo
+  contacto provisional, conversación, enrutamiento, asignación y notificaciones). Marcas de entrega/lectura →
+  `RecordMessageStatus`. Detalle en [meta-messenger-instagram.md](meta-messenger-instagram.md).
 
 ## 5. Flujo de mensajes salientes
 
@@ -228,6 +233,9 @@ DeliverOutboundMessage
 Webhooks de estado → sent / delivered / read   ·   reconcile-deliveries (5 min) → failed/delivery_unknown
 ```
 
+- `ChannelTransports` elige el transporte por canal: WhatsApp (`WhatsAppTransport`), Chat web (`WebChatTransport`) y
+  Messenger / Instagram (`MetaMessagingTransport`, Send API con `appsecret_proof`, `messaging_type: RESPONSE`, archivos
+  por URL firmada; [meta-messenger-instagram.md §6](meta-messenger-instagram.md#6-recepción-y-envío)).
 - Los mensajes automáticos (bienvenida, fuera de horario, despedida) usan el mismo camino con referencia determinista
   ([notificaciones §3](notificaciones-y-horarios.md#3-mensajes-automáticos)).
 - Reintento manual: misma fila, confirmación obligatoria para `delivery_unknown`
@@ -276,23 +284,24 @@ transporte simulado esos estados son **simulados** y llevan la etiqueta «Simula
 
 ## 11. Disponibilidad de agentes
 
-- `users.availability`: `available` («Disponible») o `unavailable` («No disponible», valor inicial de toda cuenta). La
-  declara cada persona desde la bandeja (`PUT conversations/availability`, `ChangeAgentAvailability`); queda auditada
-  (`user.availability_changed`) y emite `AgentAvailabilityChanged`. No es presencia en línea.
-- **No disponible** no quita las conversaciones que ya atiende; impide aceptar nuevas, recibir asignaciones automáticas
-  y avisos de cola.
-- Al pasar a **Disponible** se reparte de inmediato la cola de sus departamentos automáticos.
-- La asignación automática elige, entre los disponibles elegibles por debajo de su límite (propio del agente >
-  por agente del departamento > `operations.max_open_conversations_per_agent`), la menor carga; empate por quien lleva más tiempo sin recibir una
-  (`last_assigned_at`) y luego por id ([bandejas §4](bandejas-y-asignacion.md#4-bandeja-compartida-aceptación-y-asignación)).
-- Asignar o transferir a alguien No disponible o al límite exige `conversations.assign` y confirmación explícita, y
-  queda en el evento (`assigned_while_unavailable`, `assigned_over_limit`).
-- En tiempo real, el cambio llega por `.availability.changed` a la persona (sus otras pestañas) y a las bandejas de sus
-  departamentos (diálogos de asignar y transferir abiertos).
+- **Fase 5: no hay disponibilidad manual.** Se retiraron el interruptor «Disponible / No disponible», su ruta, la acción
+  `ChangeAgentAvailability`, la señal `.availability.changed` y las confirmaciones «asignar a alguien no disponible».
+  Las columnas `users.availability` y `availability_changed_at` se conservan sin uso operativo (historial y entradas
+  antiguas de bitácora `user.availability_changed`, que se siguen mostrando).
+- Puede recibir, aceptar, transferir o ser asignado quien cumple: cuenta activa, rol activo, permiso, pertenencia a un
+  departamento activo y límite de carga (más el horario donde ya aplicaba). Panel y reportes cuentan «Agentes activos».
+- La asignación automática elige, entre los elegibles por debajo de su límite (propio del agente > por agente del
+  departamento > `operations.max_open_conversations_per_agent`), la menor carga; empate por quien lleva más tiempo sin
+  recibir una (`last_assigned_at`) y luego por id ([bandejas §4](bandejas-y-asignacion.md#4-bandeja-compartida-aceptación-y-asignación)).
+- Asignar o transferir por encima del límite exige `conversations.assign` y confirmación explícita, y queda en el evento
+  (`assigned_over_limit`).
+- Chat web: «disponible» = conexión operativa y configurada, modo «siempre» u horario abierto, y al menos un miembro
+  activo del departamento por defecto que podría atender; no depende de presencia
+  ([canal-chat-web.md](canal-chat-web.md)).
 - Perder el acceso (baja, cambio de rol, retiro de departamento, quitar «responder» a un rol) devuelve sus
   conversaciones a la cola mediante `ReleaseAssignedConversations` ([bandejas §5](bandejas-y-asignacion.md#5-ausencias-y-cambios-de-acceso)).
-- Cuando se libera capacidad (cerrar, liberar, reasignar, transferir, volver a Disponible, subir o quitar un límite)
-  la cola se redistribuye después del commit, acotada a 100 conversaciones por departamento
+- Cuando se libera capacidad (cerrar, liberar, reasignar, transferir, subir o quitar un límite) la cola se redistribuye
+  después del commit, acotada a 100 conversaciones por departamento
   ([bandejas §4 «Capacidad»](bandejas-y-asignacion.md#capacidad)).
 
 ## 12. Colas y tareas programadas
@@ -336,9 +345,49 @@ evento lo descartan en `shouldQueue()` y no encolan trabajos vacíos.
 | `webchat:prune-sessions`                    | diaria 04:20 |
 | `queue:prune-failed --hours=2160`           | diaria 04:30 |
 | `queue:prune-batches --hours=168`           | diaria 04:40 |
+| `meta:refresh-instagram-tokens`             | diaria 03:50 |
 
 El programador corre con `schedule:work` (Supervisor) o cron `schedule:run`; su latido alimenta la salud del sistema
 ([infraestructura §11](infraestructura-y-despliegue.md#11-programador)).
+
+## 13. Ayuda por módulo, lenguaje claro y presentación de la bitácora (fase 5)
+
+### Ayuda «¿Cómo funciona?»
+
+- Contenido en `resources/js/help/<módulo>.ts` (tipo `ModuleHelp` de `help/types.ts`: objetivo, acciones, flujo, campos,
+  estados, permisos, errores comunes, consejos y ejemplos), en español claro y sin claves internas.
+- `resources/js/help/index.ts` es el registro: cada clave (`ModuleHelpKey`) carga su archivo bajo demanda (un fragmento
+  por módulo, memorizado), así las páginas no incluyen todos los textos.
+- `components/help/ModuleHelpButton.vue` (props `module`, `label` = «¿Cómo funciona?», `iconOnly`) abre
+  `ModuleHelpSheet.vue`. `PageHeader` acepta la prop `help` con la clave y pinta el botón junto a las acciones; su `h1`
+  es `sr-only` salvo `show-title` (el título visible lo da el layout: sin títulos duplicados).
+- **Añadir un módulo:** crear `help/<clave>.ts` con `export default {…} satisfies ModuleHelp`, registrar la clave en
+  `loaders` de `index.ts` y pasar `help="<clave>"` al `PageHeader` (o usar `ModuleHelpButton` donde no hay encabezado).
+  Si una funcionalidad cambia, actualizar su archivo de ayuda en el mismo cambio.
+
+### Presentación de la bitácora (`app/Support/Audit/*`)
+
+- `AuditPresenter` traduce cada entrada para `AuditLogResource` (pantalla) y `AuditReport` (exportación): resumen en
+  una frase (qué, sobre qué, quién, cuándo), sujeto con tipo y enlace si quien mira puede abrirlo, cambios antes/después
+  para cualquier forma guardada, detalles con etiquetas en español y resultado/error (p. ej.
+  `connection.credentials_verified` muestra «Credenciales de la conexión verificadas» con su resultado, no
+  `verification_result: ok`).
+- Apoyos: `AuditFieldLabels` (nombres de campos), `AuditValueFormatter` (enums, fechas, booleanos), `AuditSubjectTypes`
+  (alias del morph map → «Usuario», «Conexión»…, y su página).
+- La sección **técnica** (clave de la acción, propiedades crudas saneadas otra vez con las reglas de `AuditLogger`,
+  navegador, códigos de Meta e ids de `TECHNICAL_KEYS`) solo llega a quien tiene `system.view` o `audit.export`.
+- Solo lectura: los eventos guardados no se modifican; los valores de `AuditAction` siguen siendo permanentes.
+
+### Errores en lenguaje claro
+
+- `App\Services\Meta\MetaErrorCatalog`: explicación en español por código de WhatsApp Cloud/Graph API (qué pasó y qué
+  hacer), con grupos de limitación (`THROTTLING`) y fallas temporales (`TEMPORARY`). El texto en inglés de Meta nunca se
+  muestra: el código queda en `messages.error_code` (`meta_N`) y en la bitácora, y el detalle crudo solo en el log.
+  `separateTechnicalDetail()` (y `resources/js/lib/metaErrors.ts` en el cliente) separa la cola técnica de textos
+  antiguos, que se muestra solo a administradores bajo «Detalles técnicos».
+- `lang/es/validation.php`: todas las reglas y `attributes` en español, para que los formularios digan «El campo
+  correo electrónico es obligatorio» en vez de claves técnicas. Las páginas de error (`resources/views/errors/*`: 403,
+  404, 410, 419, 429, 500, 503) también están en español.
 
 ## Temas que viven en otros documentos
 

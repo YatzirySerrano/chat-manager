@@ -31,7 +31,7 @@ export const connectionFieldHelp = {
         howTo: 'Cópialo en Configuración de la API de tu app («Identificador de la cuenta de WhatsApp Business») o en Business Manager › Cuentas › Cuentas de WhatsApp.',
         example: '102290129340398',
         warning:
-            'La verificación de credenciales comprueba el número y el token; el WABA ID se usará al configurar el webhook en el incremento de integración.',
+            'Es obligatorio para activar la conexión: con él se suscribe la app al webhook y se sincronizan las plantillas.',
     },
     metaAppId: {
         description:
@@ -49,15 +49,15 @@ export const connectionFieldHelp = {
     },
     appSecret: {
         description:
-            'Clave secreta de tu app de Meta. Servirá para comprobar que los avisos (webhooks) realmente vienen de Meta.',
+            'Clave secreta de tu app de Meta. Con ella se comprueba que cada aviso del webhook realmente viene de Meta.',
         howTo: 'En tu app › Configuración de la app › Básica, pulsa «Mostrar» junto a «Clave secreta de la app».',
         warning:
-            'Se guarda cifrada y nunca se vuelve a mostrar. Se usará cuando se habilite la recepción de mensajes.',
+            'Se guarda cifrada y nunca se vuelve a mostrar. Sin ella el webhook rechaza los mensajes entrantes.',
     },
     webhookVerifyToken: {
         description:
             'Texto secreto que tú eliges. Meta lo enviará al configurar el webhook para confirmar que la URL te pertenece.',
-        howTo: 'Pulsa «Generar» o escribe un texto aleatorio de al menos 16 caracteres, y guárdalo: deberás pegarlo en Meta cuando se habilite el webhook.',
+        howTo: 'Pulsa «Generar» o escribe un texto aleatorio de al menos 16 caracteres, y guárdalo: deberás pegarlo en Meta al configurar la URL del webhook que muestra el diagnóstico.',
         example: '9f2c4e7a1b8d6f3e0a5c2b9d',
         warning:
             'Se guarda cifrado y no podrás volver a verlo aquí; cópialo antes de guardar si lo necesitas.',
@@ -67,7 +67,7 @@ export const connectionFieldHelp = {
             'Departamentos que pueden recibir conversaciones de este número.',
         howTo: 'Marca uno o varios. Solo se pueden autorizar departamentos activos.',
         warning:
-            'Si no autorizas ninguno, las conversaciones irán al departamento predeterminado de la plataforma cuando se habilite la recepción.',
+            'Si no autorizas ninguno, las conversaciones nuevas irán al departamento predeterminado de la plataforma.',
     },
     defaultDepartment: {
         description:

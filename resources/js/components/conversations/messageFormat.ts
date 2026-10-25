@@ -46,6 +46,63 @@ export const DELIVERY_UNKNOWN = 'delivery_unknown';
 
 export const deliveryUnknownLabel = 'Entrega no confirmada';
 
+/**
+ * Order of the delivery states when the delivery attempt is unknown (shared
+ * by the thread and the inbox list): replies only move forward, and a
+ * failure, being terminal until an explicit retry, wins a tie.
+ */
+export const STATUS_RANK: Record<MessageStatusValue, number> = {
+    received: 0,
+    queued: 1,
+    sending: 2,
+    accepted: 3,
+    sent: 4,
+    delivered: 5,
+    read: 6,
+    failed: 7,
+};
+
+/** A delivery state as the list shows it. */
+export type MessageDeliveryState = {
+    status: MessageStatusValue;
+    error_code: string | null;
+};
+
+/**
+ * Whether a reported delivery state may replace the one shown, exactly as
+ * the server's MessageStatus::canAdvanceTo() (plus RecordMessageStatus'
+ * rule that Meta's evidence wins over a failure of unknown outcome):
+ * - inbound messages ("received") never change;
+ * - a failure is terminal, except delivery_unknown, which Meta's later
+ *   accepted/sent/delivered/read evidence replaces;
+ * - a failure only replaces a state before "delivered";
+ * - otherwise only a higher rank moves forward (queued → sending →
+ *   accepted → sent → delivered → read). Nothing is ever assumed: a state
+ *   shows only once the server reported it.
+ */
+export function canAdvanceDeliveryState(
+    current: MessageDeliveryState,
+    next: MessageDeliveryState,
+): boolean {
+    if (current.status === 'received' || next.status === 'received') {
+        return false;
+    }
+
+    if (current.status === 'failed') {
+        return (
+            current.error_code === DELIVERY_UNKNOWN &&
+            STATUS_RANK[next.status] >= STATUS_RANK.accepted &&
+            next.status !== 'failed'
+        );
+    }
+
+    if (next.status === 'failed') {
+        return STATUS_RANK[current.status] < STATUS_RANK.delivered;
+    }
+
+    return STATUS_RANK[next.status] > STATUS_RANK[current.status];
+}
+
 export function statusLabel(status: string, errorCode?: string | null): string {
     if (status === 'failed' && errorCode === DELIVERY_UNKNOWN) {
         return deliveryUnknownLabel;

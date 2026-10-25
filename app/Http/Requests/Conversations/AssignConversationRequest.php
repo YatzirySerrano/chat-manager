@@ -14,7 +14,6 @@ class AssignConversationRequest extends ConversationOperationRequest
         return [
             ...parent::rules(),
             'user_id' => ['required', 'integer'],
-            'confirm_unavailable' => ['sometimes', 'boolean'],
             'confirm_over_capacity' => ['sometimes', 'boolean'],
         ];
     }
@@ -24,16 +23,7 @@ class AssignConversationRequest extends ConversationOperationRequest
      */
     public function attributes(): array
     {
-        return [...parent::attributes(), 'user_id' => 'agente', 'confirm_unavailable' => 'confirmación', 'confirm_over_capacity' => 'confirmación'];
-    }
-
-    /**
-     * Whether the actor explicitly confirmed handing the conversation to an
-     * agent declared unavailable.
-     */
-    public function confirmsUnavailable(): bool
-    {
-        return $this->boolean('confirm_unavailable');
+        return [...parent::attributes(), 'user_id' => 'agente', 'confirm_over_capacity' => 'confirmación'];
     }
 
     /**

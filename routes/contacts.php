@@ -2,8 +2,10 @@
 
 use App\Http\Controllers\Contacts\ContactAttributionController;
 use App\Http\Controllers\Contacts\ContactController;
+use App\Http\Controllers\Contacts\ContactDirectoryController;
 use App\Http\Controllers\Contacts\ContactNoteController;
 use App\Http\Controllers\Contacts\ContactReviewController;
+use App\Http\Controllers\Conversations\ConversationContactController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -23,4 +25,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('contacts/{contact}/restore', [ContactController::class, 'restore'])->name('contacts.restore');
     Route::post('contacts/{contact}/notes', [ContactNoteController::class, 'store'])->name('contacts.notes.store');
     Route::post('contacts/{contact}/attributions', [ContactAttributionController::class, 'store'])->name('contacts.attributions.store');
+    // "Guardar contacto": a provisional contact enters the shared directory.
+    Route::post('contacts/{contact}/save', [ContactDirectoryController::class, 'store'])->name('contacts.save');
+    Route::post('conversations/{conversation}/contact/save', [ConversationContactController::class, 'store'])->name('conversations.contact.save');
 });

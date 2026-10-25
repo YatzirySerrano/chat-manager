@@ -33,6 +33,10 @@ class AvailableQuickReplyController extends Controller
      * agent is never offered twice. Every reply names the departments it
      * belongs to (only those the actor reaches) to tell apart same-shortcut
      * replies when no department is given.
+     *
+     * The actor's own personal replies are always offered (never anybody
+     * else's) and listed first, flagged with `is_personal` so the picker
+     * groups them under «Mis respuestas».
      */
     public function __invoke(Request $request, QuickReplyRenderer $renderer, PrivilegeGuard $guard): JsonResponse
     {
@@ -62,12 +66,14 @@ class AvailableQuickReplyController extends Controller
         $quickReplies = QuickReply::query()
             ->usableBy($actor)
             ->when($department !== null, fn (Builder $query) => $query->where(fn (Builder $inDepartment) => $inDepartment
-                ->where('is_global', true)
+                ->where('owner_user_id', $actor->id)
+                ->orWhere('is_global', true)
                 ->orWhereHas('departments', fn (Builder $departments) => $departments->whereKey($department?->id)->where('departments.is_active', true))))
             ->with(['departments' => fn (BelongsToMany $departments) => $departments
                 ->select('departments.id', 'departments.name')
                 ->where('departments.is_active', true)
                 ->orderBy('departments.name')])
+            ->orderByRaw('CASE WHEN owner_user_id IS NULL THEN 1 ELSE 0 END')
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $prefix = addcslashes($search, '\\%_').'%';
                 $term = '%'.addcslashes($search, '\\%_').'%';
@@ -77,7 +83,7 @@ class AvailableQuickReplyController extends Controller
             ->orderBy('shortcut')
             ->orderBy('id')
             ->limit(self::LIMIT)
-            ->get(['id', 'title', 'shortcut', 'body', 'is_global']);
+            ->get(['id', 'title', 'shortcut', 'body', 'is_global', 'owner_user_id']);
 
         $reachableDepartmentIds = $actor->dataScope() === DataScope::Global ? null : $actor->departmentIds();
 
@@ -91,6 +97,7 @@ class AvailableQuickReplyController extends Controller
                     'shortcut' => $quickReply->shortcut,
                     'body' => $quickReply->body,
                     'is_global' => $quickReply->is_global,
+                    'is_personal' => $quickReply->isPersonal(),
                     'departments' => array_values($quickReply->departments
                         ->filter(fn (Department $department): bool => $reachableDepartmentIds === null || in_array($department->id, $reachableDepartmentIds, true))
                         ->map(fn (Department $department): array => ['id' => $department->id, 'name' => $department->name])

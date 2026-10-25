@@ -244,9 +244,19 @@ function leavePresenceChannel(presence: Presence): void {
     notifyPresence(presence);
 }
 
+/**
+ * Closing the socket ends every subscription on the server, so channels are
+ * not left one by one first: pusher-js defers each frame (setTimeout), and
+ * the "unsubscribe" frames would reach the already closed socket and throw
+ * "WebSocket is already in CLOSING or CLOSED state" (e.g. on logout).
+ */
 function disconnect(): void {
-    subscriptions.forEach(detach);
-    presences.forEach(leavePresenceChannel);
+    subscriptions.forEach((subscription) => subscription.attached.clear());
+    presences.forEach((presence) => {
+        presence.joined = false;
+        presence.members.clear();
+        notifyPresence(presence);
+    });
     echo?.disconnect();
     echo = null;
     client = null;

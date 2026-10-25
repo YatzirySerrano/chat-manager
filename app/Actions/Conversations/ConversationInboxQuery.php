@@ -6,9 +6,9 @@ use App\Actions\Contacts\ContactSearch;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConversationStatus;
 use App\Enums\MessageDirection;
-use App\Enums\Permission;
 use App\Models\Connection;
 use App\Models\Contact;
+use App\Models\ContactAlias;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
@@ -25,25 +25,39 @@ use Illuminate\Validation\ValidationException;
  *
  * The inbox depends on the actor's reach, never on role names:
  * - whoever attends conversations opens on the "general" inbox: in one
- *   query, the pending conversations they may accept, the open ones they
- *   attend and the ones on hold within their reach (always inside
- *   visibleTo). They also get "mine" (assigned to them) and, with
- *   departments or global scope, "all" authorized conversations;
+ *   query, the pending conversations they may accept and the open ones
+ *   they attend (always inside visibleTo). They also get "mine" (assigned
+ *   to them) and, with departments or global scope, "all" authorized
+ *   conversations;
  * - whoever does not attend only gets "all".
  * "queue" is kept as an alias of the general inbox with status=pending,
  * so old links keep working. A view or filter outside the actor's options
  * is ignored, so tampering with the query string never widens what they
  * see.
  *
- * The search finds the contact (ContactSearch: phone, email or name) or,
- * when asked, the content of the WhatsApp messages (FULLTEXT); both only
+ * The search finds the contact (ContactSearch: phone, email or name, or
+ * an alias the actor gave it, never another user's) or, when asked, the
+ * content of the WhatsApp messages (FULLTEXT); both only
  * narrow the conversations the actor may see, closed ones included only
- * with the history permission.
+ * with the history or supervise permission.
  *
  * The list is paged with a keyset cursor over its order (latest activity by
  * default, so accepting a row never moves it; status priority only when
  * asked), so loading more never repeats or skips a row and has no upper
  * bound.
+ *
+ * "On hold" is retired operationally: no chip, counter or filter offers it
+ * and the general inbox no longer lists it. Legacy rows still in that
+ * status stay readable in "mine" and "all" (they are not closed) until the
+ * retirement command moves them; an old link with status=on_hold falls back
+ * to the active conversations.
+ *
+ * Tags: `tags[]` (up to MAX_TAGS) narrows to conversations carrying ANY of
+ * them by default (tag_match=any, OR) or ALL of them (tag_match=all, AND).
+ * The legacy single `tag` keeps working and joins the same list. Both are
+ * EXISTS lookups on the conversation_tag pivot (its unique
+ * (conversation_id, tag_id) index), applied inside visibleTo, so a tag never
+ * reveals a conversation outside the actor's reach.
  *
  * Unread messages are personal (unreadMessages()): the customer messages
  * after the viewer's read marker. Without a marker, only the ones nobody
@@ -51,8 +65,8 @@ use Illuminate\Validation\ValidationException;
  * conversations never count, so whoever never opened a conversation does
  * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tag?: int|null, sort?: string, unread?: bool, channel?: string|null}
- * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int, on_hold: int}
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, channel?: string|null}
+ * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
 class ConversationInboxQuery
@@ -63,8 +77,8 @@ class ConversationInboxQuery
     public const NONE = 'none';
 
     /**
-     * Inbox views: the general inbox (pending ones the actor may accept,
-     * their open ones and the ones on hold within reach), every authorized
+     * Inbox views: the general inbox (pending ones the actor may accept and
+     * their open ones), every authorized
      * conversation, the actor's own ones, and the legacy "queue" (an alias
      * of the general inbox with status=pending).
      */
@@ -94,16 +108,37 @@ class ConversationInboxQuery
     public const SEARCH_MESSAGES = 'messages';
 
     /**
-     * Statuses in the order of the priority sort.
+     * How several tags combine: any of them (OR, default) or all of them (AND).
+     */
+    public const TAG_MATCH_ANY = 'any';
+
+    public const TAG_MATCH_ALL = 'all';
+
+    /** Tags one filter may combine at most. */
+    public const MAX_TAGS = 10;
+
+    /**
+     * Statuses in the order of the priority sort. "On hold" is retired: a
+     * legacy row still in it ranks as an open one (PRIORITY_RANK).
      *
      * @var list<string>
      */
-    private const PRIORITY = ['pending', 'open', 'on_hold', 'closed'];
+    private const PRIORITY = ['pending', 'open', 'closed'];
 
     /**
-     * Position of the status in PRIORITY (1 = pending).
+     * Position of the status in PRIORITY (1 = pending), legacy on_hold
+     * rows ranking as open ones.
      */
-    private const PRIORITY_RANK = "FIELD(conversations.status, 'pending', 'open', 'on_hold', 'closed')";
+    private const PRIORITY_RANK = "CASE conversations.status WHEN 'pending' THEN 1 WHEN 'closed' THEN 3 ELSE 2 END";
+
+    /**
+     * Status filter values the inbox offers. The legacy `on_hold` is still
+     * accepted, only so old links fall back to the active conversations
+     * (filters()) instead of failing.
+     *
+     * @var list<string>
+     */
+    private const STATUS_FILTERS = ['active', 'all', 'pending', 'open', 'closed', 'on_hold'];
 
     public function __construct(private ConversationAccess $access, private ContactSearch $contacts) {}
 
@@ -116,7 +151,7 @@ class ConversationInboxQuery
     {
         return [
             'view' => ['nullable', Rule::in([self::VIEW_GENERAL, self::VIEW_ALL, self::VIEW_MINE, self::VIEW_QUEUE])],
-            'status' => ['nullable', Rule::in(['active', 'all', ...array_column(ConversationStatus::cases(), 'value')])],
+            'status' => ['nullable', Rule::in(self::STATUS_FILTERS)],
             'department' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
             'agent' => ['nullable', 'regex:/^(none|\d{1,10})$/'],
             'connection' => ['nullable', 'integer'],
@@ -124,6 +159,9 @@ class ConversationInboxQuery
             'search' => ['nullable', 'string', 'max:100'],
             'search_in' => ['nullable', Rule::in([self::SEARCH_CONTACT, self::SEARCH_MESSAGES])],
             'tag' => ['nullable', 'integer', 'min:1'],
+            'tags' => ['nullable', 'array', 'max:'.self::MAX_TAGS],
+            'tags.*' => ['integer', 'min:1', 'distinct'],
+            'tag_match' => ['nullable', Rule::in([self::TAG_MATCH_ANY, self::TAG_MATCH_ALL])],
             'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
             'unread' => ['nullable', 'boolean'],
         ];
@@ -155,10 +193,13 @@ class ConversationInboxQuery
         $channel = $validated['channel'] ?? null;
 
         // "Mine" never holds pending ones (accepting assigns, queuing
-        // unassigns), and closed ones need the history permission: both fall
-        // back to the active conversations instead of an always empty list.
+        // unassigns), closed ones need the history or supervise permission
+        // (readsClosedConversations()) and "on hold"
+        // is retired: all of them fall back to the active conversations
+        // instead of an always empty (or legacy) list.
         if (($view === self::VIEW_MINE && $status === ConversationStatus::Pending->value)
-            || ($status === ConversationStatus::Closed->value && ! $actor->holdsPermission(Permission::ViewConversationHistory))) {
+            || $status === ConversationStatus::OnHold->value
+            || ($status === ConversationStatus::Closed->value && ! $this->access->readsClosedConversations($actor))) {
             $status = 'active';
         }
 
@@ -173,11 +214,38 @@ class ConversationInboxQuery
             'connection' => is_numeric($validated['connection'] ?? null) ? (int) $validated['connection'] : null,
             'search' => trim(is_string($search) ? $search : ''),
             'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
-            'tag' => is_numeric($validated['tag'] ?? null) ? (int) $validated['tag'] : null,
+            'tags' => $this->tagIds($validated),
+            'tag_match' => ($validated['tag_match'] ?? null) === self::TAG_MATCH_ALL ? self::TAG_MATCH_ALL : self::TAG_MATCH_ANY,
             'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_RECENT,
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
         ];
+    }
+
+    /**
+     * Tags asked for: `tags[]` plus the legacy single `tag`, without
+     * repetitions and capped at MAX_TAGS.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return list<int>
+     */
+    private function tagIds(array $validated): array
+    {
+        $requested = is_array($validated['tags'] ?? null) ? $validated['tags'] : [];
+
+        if (is_numeric($validated['tag'] ?? null)) {
+            $requested[] = $validated['tag'];
+        }
+
+        $ids = [];
+
+        foreach ($requested as $id) {
+            if (is_numeric($id) && (int) $id > 0) {
+                $ids[(int) $id] = true;
+            }
+        }
+
+        return array_slice(array_keys($ids), 0, self::MAX_TAGS);
     }
 
     /**
@@ -197,10 +265,12 @@ class ConversationInboxQuery
      * Counters of the inbox chips in one aggregate query over the visible
      * conversations with the common filters (never the chip itself), so
      * every number is exactly what its chip lists with the same filters:
-     * - general: the general inbox (pending ones the actor may accept, their
-     *   open ones and the ones on hold within reach);
-     * - mine: the active conversations assigned to the actor;
-     * - pending, attending and on_hold: the branches of the general inbox.
+     * - general: the general inbox (pending ones the actor may accept and
+     *   their open ones);
+     * - mine: the active conversations assigned to the actor (legacy rows
+     *   on hold included, as the "mine" list shows them);
+     * - pending and attending: the branches of the general inbox.
+     * There is no "on hold" counter: that status is retired.
      * Whoever does not attend conversations has no general inbox: their
      * chips count over every visible conversation ("all") instead. Closed
      * conversations are not counted: the history is large and its chip
@@ -217,16 +287,14 @@ class ConversationInboxQuery
         if (in_array(self::VIEW_GENERAL, $filters['views'], true)) {
             $pending = $this->pendingBranchSql($actor);
             $attending = ['conversations.status = ? AND conversations.assigned_user_id = ?', [ConversationStatus::Open->value, $actor->id]];
-            $onHold = ['conversations.status = ?', [ConversationStatus::OnHold->value]];
-            $general = ["({$pending[0]}) OR ({$attending[0]}) OR ({$onHold[0]})", [...$pending[1], ...$attending[1], ...$onHold[1]]];
+            $general = ["({$pending[0]}) OR ({$attending[0]})", [...$pending[1], ...$attending[1]]];
         } else {
             $pending = ['conversations.status = ?', [ConversationStatus::Pending->value]];
             $attending = ['conversations.status = ?', [ConversationStatus::Open->value]];
-            $onHold = ['conversations.status = ?', [ConversationStatus::OnHold->value]];
             $general = ['1 = 1', []];
         }
 
-        $columns = ['general' => $general, 'mine' => $mine, 'pending' => $pending, 'attending' => $attending, 'on_hold' => $onHold];
+        $columns = ['general' => $general, 'mine' => $mine, 'pending' => $pending, 'attending' => $attending];
         $sql = [];
         $bindings = [];
 
@@ -248,7 +316,6 @@ class ConversationInboxQuery
             'mine' => (int) ($row['mine'] ?? 0),
             'pending' => (int) ($row['pending'] ?? 0),
             'attending' => (int) ($row['attending'] ?? 0),
-            'on_hold' => (int) ($row['on_hold'] ?? 0),
         ];
     }
 
@@ -277,8 +344,8 @@ class ConversationInboxQuery
             // Uncorrelated: the connections of the channel are read once,
             // deleted ones included (their history keeps its channel).
             ->when($channel !== null, fn (Builder $query) => $query->whereIn('conversations.connection_id', Connection::query()->select('connections.id')->where('connections.channel', $channel)))
-            ->when(($filters['tag'] ?? null) !== null, fn (Builder $query) => $query->whereHas('tags', fn (Builder $tags) => $tags->whereKey($filters['tag'] ?? 0)))
-            ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $search, $filters['search_in'] ?? self::SEARCH_CONTACT))
+            ->when(($filters['tags'] ?? []) !== [], fn (Builder $query) => $this->constrainToTags($query, $filters['tags'] ?? [], $filters['tag_match'] ?? self::TAG_MATCH_ANY))
+            ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $actor, $search, $filters['search_in'] ?? self::SEARCH_CONTACT))
             ->when($filters['unread'] ?? false, fn (Builder $query) => $query
                 // Closed conversations never count as unread: filtering them on
                 // the outer row lets the status index skip them before the
@@ -357,7 +424,7 @@ class ConversationInboxQuery
         $at = $row->getRawOriginal('last_message_at');
 
         return [
-            'rank' => (int) array_search($row->status->value, self::PRIORITY, true) + 1,
+            'rank' => $row->status === ConversationStatus::OnHold ? 2 : (int) array_search($row->status->value, self::PRIORITY, true) + 1,
             'at' => is_string($at) ? $at : null,
             'id' => (int) $row->id,
         ];
@@ -472,21 +539,58 @@ class ConversationInboxQuery
     }
 
     /**
+     * Narrows the conversations to the ones carrying any (OR) or all (AND)
+     * of the tags. Each lookup is a correlated EXISTS on the pivot alone (no
+     * join with `tags`), backed by its unique (conversation_id, tag_id)
+     * index: "any" is one lookup with IN, "all" one lookup per tag (at most
+     * MAX_TAGS), so neither groups nor counts rows.
+     *
+     * @param  Builder<Conversation>  $query
+     * @param  list<int>  $tagIds
+     */
+    private function constrainToTags(Builder $query, array $tagIds, string $match): void
+    {
+        $tagged = fn (array $ids) => fn (QueryBuilder $pivot) => $pivot
+            ->selectRaw('1')
+            ->from('conversation_tag')
+            ->whereColumn('conversation_tag.conversation_id', 'conversations.id')
+            ->whereIn('conversation_tag.tag_id', $ids);
+
+        if ($match !== self::TAG_MATCH_ALL) {
+            $query->whereExists($tagged($tagIds));
+
+            return;
+        }
+
+        foreach ($tagIds as $tagId) {
+            $query->whereExists($tagged([$tagId]));
+        }
+    }
+
+    /**
      * Narrows the conversations to the search: the contact (ContactSearch),
      * or the content of their WhatsApp messages through the FULLTEXT index.
      * Both are uncorrelated subqueries, so the index is searched once and
      * the actor's reach (applied by the caller) still decides what is seen.
+     * The contact search also finds the contacts the actor gave an alias
+     * containing the text: only the actor's own aliases (their
+     * unique(user_id, contact_id) index), never another user's.
      * A message search without any searchable word finds nothing
      * (searchIgnored()).
      *
      * @param  Builder<Conversation>  $query
      */
-    private function constrainToSearch(Builder $query, string $search, string $searchIn): void
+    private function constrainToSearch(Builder $query, User $actor, string $search, string $searchIn): void
     {
         if ($searchIn !== self::SEARCH_MESSAGES) {
-            $query->whereIn('conversations.contact_id', Contact::query()
-                ->select('contacts.id')
-                ->tap(fn (Builder $contacts) => $this->contacts->constrain($contacts, $search)));
+            $query->where(fn (Builder $match) => $match
+                ->whereIn('conversations.contact_id', Contact::query()
+                    ->select('contacts.id')
+                    ->tap(fn (Builder $contacts) => $this->contacts->constrain($contacts, $search)))
+                ->orWhereIn('conversations.contact_id', ContactAlias::query()
+                    ->select('contact_aliases.contact_id')
+                    ->where('contact_aliases.user_id', $actor->id)
+                    ->where('contact_aliases.alias', 'like', '%'.addcslashes($search, '\\%_').'%')));
 
             return;
         }
@@ -510,8 +614,7 @@ class ConversationInboxQuery
      * The general inbox, inside visibleTo and in one query: the pending,
      * unassigned conversations the actor may accept (their acceptable
      * departments and, with global scope, the ones without department, as
-     * canAccept()), the open ones they attend and the ones on hold within
-     * reach. Its pending branch is not access to colleagues' work. The
+     * canAccept()) and the open ones they attend. Its pending branch is not access to colleagues' work. The
      * status IN filter on top lets the status index skip the closed
      * history; closed conversations (asked by the status) are the visible
      * closed ones, outside the predicate.
@@ -538,7 +641,7 @@ class ConversationInboxQuery
                 ->where(fn (Builder $general) => $this->generalPredicate($general, $actor))
                 ->orWhere('conversations.status', $closed)),
             default => $query
-                ->whereIn('conversations.status', [ConversationStatus::Pending->value, ConversationStatus::Open->value, ConversationStatus::OnHold->value])
+                ->whereIn('conversations.status', [ConversationStatus::Pending->value, ConversationStatus::Open->value])
                 ->where(fn (Builder $general) => $this->generalPredicate($general, $actor)),
         };
     }
@@ -556,8 +659,7 @@ class ConversationInboxQuery
             ->whereRaw("({$pending})", $bindings)
             ->orWhere(fn (Builder $attending) => $attending
                 ->where('conversations.status', ConversationStatus::Open->value)
-                ->where('conversations.assigned_user_id', $actor->id))
-            ->orWhere('conversations.status', ConversationStatus::OnHold->value);
+                ->where('conversations.assigned_user_id', $actor->id));
     }
 
     /**

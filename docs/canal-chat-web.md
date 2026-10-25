@@ -81,7 +81,10 @@ En **Conexiones › Nueva conexión** se elige el canal (WhatsApp Cloud API o Ch
    secreto de identificación se genera o rota con confirmación y se muestra **una sola vez** (§5).
 5. **Formulario previo:** nombre y/o correo, obligatorio o no, y aviso de privacidad (500).
 6. **Disponibilidad:** «Siempre en línea» o «Según el horario de atención» del departamento predeterminado
-   (`BusinessHours`). Fuera de línea el visitante puede escribir igual; su mensaje espera en la cola.
+   (`BusinessHours`). Además, el widget solo aparece en línea si el departamento predeterminado está activo y tiene
+   al menos un miembro activo que puede atenderlo (rol activo con ver y responder; sin departamento predeterminado,
+   alguien con alcance global). No depende de disponibilidad manual ni de presencia (`WebChatAvailability`). Fuera
+   de línea se muestra el texto de «fuera de línea» y el visitante puede escribir igual; su mensaje espera en la cola.
 7. **Días de inactividad de la sesión** (1–90).
 8. **Código para insertar** (copiar) y **vista previa real**: el mismo frame con `?preview=1`, que solo se honra si el
    Referer es la propia aplicación y nunca emite ticket ni crea sesiones.

@@ -57,6 +57,7 @@ enum AuditAction: string
     case ContactTagsChanged = 'contact.tags_changed';
     case ConversationTagsChanged = 'conversation.tags_changed';
     case MessageRetriedWithDuplicateRisk = 'conversation.message_retried_duplicate_risk';
+    case AttachmentLinkRevoked = 'conversation.attachment_link_revoked';
     case ContactIdentityLinked = 'contact.identity_linked';
     case ContactReviewOpened = 'contact.review_opened';
     case ContactReviewResolved = 'contact.review_resolved';
@@ -97,6 +98,14 @@ enum AuditAction: string
     case WebChatWidgetUpdated = 'web_chat.widget_updated';
     case WebChatKeyRotated = 'web_chat.key_rotated';
     case WebChatIdentitySecretRotated = 'web_chat.identity_secret_rotated';
+    case ContactSaved = 'contact.saved';
+    case SupervisionPersonalItemUpdated = 'supervision.personal_item_updated';
+    case SupervisionPersonalItemDeleted = 'supervision.personal_item_deleted';
+    case UserPersonalQuickRepliesGranted = 'user.personal_quick_replies_granted';
+    case UserPersonalQuickRepliesRevoked = 'user.personal_quick_replies_revoked';
+    case ConnectionMetaAuthorized = 'connection.meta_authorized';
+    case ConnectionMetaDisconnected = 'connection.meta_disconnected';
+    case ConversationOnHoldRetired = 'conversation.on_hold_retired';
 
     /**
      * Human readable description of the action.
@@ -151,6 +160,7 @@ enum AuditAction: string
             self::ContactTagsChanged => 'Etiquetas del contacto modificadas',
             self::ConversationTagsChanged => 'Etiquetas de la conversación modificadas',
             self::MessageRetriedWithDuplicateRisk => 'Reintento de un mensaje con entrega no confirmada (riesgo de duplicado)',
+            self::AttachmentLinkRevoked => 'Revocación del enlace de descarga de un archivo enviado',
             self::ContactIdentityLinked => 'Identidad de WhatsApp vinculada al contacto',
             self::ContactReviewOpened => 'Posible duplicado enviado a revisión',
             self::ContactReviewResolved => 'Revisión de posible duplicado resuelta',
@@ -191,6 +201,14 @@ enum AuditAction: string
             self::WebChatWidgetUpdated => 'Configuración del chat web actualizada',
             self::WebChatKeyRotated => 'Clave pública del chat web rotada',
             self::WebChatIdentitySecretRotated => 'Secreto de identificación del chat web rotado',
+            self::ContactSaved => 'Contacto guardado en el directorio',
+            self::SupervisionPersonalItemUpdated => 'Elemento personal de otro usuario modificado',
+            self::SupervisionPersonalItemDeleted => 'Elemento personal de otro usuario eliminado',
+            self::UserPersonalQuickRepliesGranted => 'Respuestas rápidas personales habilitadas para el usuario',
+            self::UserPersonalQuickRepliesRevoked => 'Respuestas rápidas personales retiradas al usuario',
+            self::ConnectionMetaAuthorized => 'Cuenta de Meta autorizada para la conexión',
+            self::ConnectionMetaDisconnected => 'Cuenta de Meta desconectada de la conexión',
+            self::ConversationOnHoldRetired => 'Conversación en espera migrada al retirar ese estado',
         };
     }
 
@@ -205,7 +223,8 @@ enum AuditAction: string
             self::QuickReplyDeleted,
             self::DepartmentDeleted, self::ConnectionDeleted, self::ContactDeleted, self::TagDeleted,
             self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
-            self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked => 'danger',
+            self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked,
+            self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
@@ -213,7 +232,8 @@ enum AuditAction: string
             self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten, self::MessageRetriedWithDuplicateRisk,
             self::ImportRollbackRequested, self::ImportRolledBack,
             self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated,
-            self::WebChatKeyRotated, self::WebChatIdentitySecretRotated => 'warning',
+            self::WebChatKeyRotated, self::WebChatIdentitySecretRotated,
+            self::SupervisionPersonalItemUpdated, self::UserPersonalQuickRepliesRevoked => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
@@ -221,7 +241,8 @@ enum AuditAction: string
             self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
             self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled,
-            self::ApiTokenIssued => 'success',
+            self::ApiTokenIssued, self::ContactSaved, self::UserPersonalQuickRepliesGranted,
+            self::ConnectionMetaAuthorized => 'success',
             default => 'neutral',
         };
     }

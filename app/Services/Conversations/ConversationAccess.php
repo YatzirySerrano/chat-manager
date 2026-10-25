@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Services\PlatformSettings;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 use WeakMap;
 
 /**
@@ -27,6 +29,17 @@ use WeakMap;
  *   allowed to accept (its active departments that do not distribute
  *   manually). Conversations of colleagues are never visible to it;
  * - closed conversations additionally require the history permission.
+ *
+ * Supervision (conversations.supervise) is read-only and stays within the
+ * data scope: with it, closed conversations are readable without the
+ * history permission and, for the departments scope, conversations that
+ * passed through one of the supervisor's departments (any event from or to
+ * them) stay visible after being transferred elsewhere. It never grants an
+ * operation: that widening belongs only to the read reach (canView(),
+ * restrictToVisible()); every mutating ability of ConversationPolicy uses the
+ * operational reach (canOperate()), which keeps the rules without
+ * supervision (own departments, history permission for closed ones).
+ * The assigned scope gains nothing from it (its reach is personal).
  */
 class ConversationAccess
 {
@@ -39,6 +52,15 @@ class ConversationAccess
      * @var WeakMap<User, list<int>>|null
      */
     private static ?WeakMap $rememberedAcceptable = null;
+
+    /**
+     * Whether a conversation passed through the supervisor's departments,
+     * remembered per conversation instance and user while it lives (every
+     * ability of a listed row asks it again).
+     *
+     * @var WeakMap<Conversation, array<int, bool>>|null
+     */
+    private static ?WeakMap $rememberedPassage = null;
 
     public function __construct(private PlatformSettings $settings) {}
 
@@ -71,13 +93,37 @@ class ConversationAccess
         }
     }
 
+    /**
+     * Read reach: whether the user may see the conversation (thread, timeline,
+     * attachments, inbox row), including the read-only supervision widening.
+     */
     public function canView(User $user, Conversation $conversation): bool
+    {
+        return $this->reaches($user, $conversation, supervising: true);
+    }
+
+    /**
+     * Operational reach: the conversations the user may act on (assign,
+     * transfer, close, reopen, notes, tags, release). Supervision never
+     * widens it: closed conversations require the history permission and,
+     * for the departments scope, only the user's departments count.
+     */
+    public function canOperate(User $user, Conversation $conversation): bool
+    {
+        return $this->reaches($user, $conversation, supervising: false);
+    }
+
+    private function reaches(User $user, Conversation $conversation, bool $supervising): bool
     {
         if (! $user->holdsPermission(Permission::ViewConversations)) {
             return false;
         }
 
-        if ($conversation->status === ConversationStatus::Closed && ! $user->holdsPermission(Permission::ViewConversationHistory)) {
+        $readsClosed = $supervising
+            ? $this->readsClosedConversations($user)
+            : $user->holdsPermission(Permission::ViewConversationHistory);
+
+        if ($conversation->status === ConversationStatus::Closed && ! $readsClosed) {
             return false;
         }
 
@@ -87,10 +133,118 @@ class ConversationAccess
 
         return match ($user->dataScope()) {
             DataScope::Global => true,
-            DataScope::Departments => $conversation->department_id !== null && $user->belongsToDepartment($conversation->department_id),
+            DataScope::Departments => ($conversation->department_id !== null && $user->belongsToDepartment($conversation->department_id))
+                || ($supervising && $user->holdsPermission(Permission::SuperviseConversations) && $this->passedThroughDepartmentsOf($user, $conversation)),
             default => $this->isAcceptableQueueItem($conversation)
                 && in_array($conversation->department_id, $this->acceptableDepartmentIds($user), true),
         };
+    }
+
+    /**
+     * Resolves, with one query, whether each listed conversation passed
+     * through the supervisor's departments, so the read abilities of a page
+     * of rows (canView()) never ask the database once per row. Only rows
+     * that the passage could make visible are looked up.
+     *
+     * @param  iterable<Conversation>  $conversations
+     */
+    public function rememberPassages(User $user, iterable $conversations): void
+    {
+        if ($user->dataScope() !== DataScope::Departments || ! $user->holdsPermission(Permission::SuperviseConversations)) {
+            return;
+        }
+
+        $departmentIds = $user->departmentIds();
+
+        if ($departmentIds === []) {
+            return;
+        }
+
+        self::$rememberedPassage ??= new WeakMap;
+        $pending = [];
+
+        foreach ($conversations as $conversation) {
+            $outside = $conversation->assigned_user_id !== $user->id
+                && ($conversation->department_id === null || ! in_array((int) $conversation->department_id, $departmentIds, true));
+
+            if ($outside && ! array_key_exists($user->id, self::$rememberedPassage[$conversation] ?? [])) {
+                $pending[$conversation->id][] = $conversation;
+            }
+        }
+
+        if ($pending === []) {
+            return;
+        }
+
+        $passed = array_flip(array_map('intval', DB::table('conversation_events')
+            ->whereIn('conversation_id', array_keys($pending))
+            ->where(fn (QueryBuilder $passage) => $passage
+                ->whereIn('from_department_id', $departmentIds)
+                ->orWhereIn('to_department_id', $departmentIds))
+            ->distinct()
+            ->pluck('conversation_id')
+            ->all()));
+
+        foreach ($pending as $id => $instances) {
+            foreach ($instances as $conversation) {
+                $remembered = self::$rememberedPassage[$conversation] ?? [];
+                $remembered[$user->id] = isset($passed[$id]);
+                self::$rememberedPassage[$conversation] = $remembered;
+            }
+        }
+    }
+
+    /**
+     * Ids of the conversations with an event from or to the departments, as
+     * an uncorrelated union of the two indexed lookups.
+     *
+     * @param  list<int>  $departmentIds
+     */
+    private function passageConversationIds(array $departmentIds): QueryBuilder
+    {
+        return DB::query()->fromSub(
+            DB::table('conversation_events')->select('conversation_id')->whereIn('from_department_id', $departmentIds)
+                ->union(DB::table('conversation_events')->select('conversation_id')->whereIn('to_department_id', $departmentIds)),
+            'passages',
+        )->select('passages.conversation_id');
+    }
+
+    /**
+     * Whether the user reads closed conversations (history): with the history
+     * permission, or supervising their reach.
+     */
+    public function readsClosedConversations(User $user): bool
+    {
+        return $user->holdsPermission(Permission::ViewConversationHistory)
+            || $user->holdsPermission(Permission::SuperviseConversations);
+    }
+
+    /**
+     * Whether any event of the conversation moved it from or to one of the
+     * user's departments (it was transferred out of them, or into them and
+     * out again).
+     */
+    private function passedThroughDepartmentsOf(User $user, Conversation $conversation): bool
+    {
+        $departmentIds = $user->departmentIds();
+
+        if ($departmentIds === []) {
+            return false;
+        }
+
+        self::$rememberedPassage ??= new WeakMap;
+        $remembered = self::$rememberedPassage[$conversation] ?? [];
+
+        if (! array_key_exists($user->id, $remembered)) {
+            $remembered[$user->id] = $conversation->events()
+                ->where(fn (Builder $passage) => $passage
+                    ->whereIn('from_department_id', $departmentIds)
+                    ->orWhereIn('to_department_id', $departmentIds))
+                ->exists();
+            self::$rememberedPassage[$conversation] = $remembered;
+        }
+
+        return $remembered[$user->id];
     }
 
     /**
@@ -106,15 +260,22 @@ class ConversationAccess
             return;
         }
 
-        if (! $user->holdsPermission(Permission::ViewConversationHistory)) {
+        if (! $this->readsClosedConversations($user)) {
             $query->where('conversations.status', '!=', ConversationStatus::Closed);
         }
 
+        $departmentIds = $user->departmentIds();
+        $supervises = $user->holdsPermission(Permission::SuperviseConversations) && $departmentIds !== [];
+
         match ($user->dataScope()) {
             DataScope::Global => null,
+            // The passage through the supervisor's departments is an
+            // uncorrelated semi-join (union of the from/to department index
+            // lookups on conversation_events), not a per-row EXISTS.
             DataScope::Departments => $query->where(fn (Builder $visible) => $visible
                 ->where('conversations.assigned_user_id', $user->id)
-                ->orWhereIn('conversations.department_id', $user->departmentIds())),
+                ->orWhereIn('conversations.department_id', $departmentIds)
+                ->when($supervises, fn (Builder $passed) => $passed->orWhereIn('conversations.id', $this->passageConversationIds($departmentIds)))),
             default => $query->where(fn (Builder $visible) => $visible
                 ->where('conversations.assigned_user_id', $user->id)
                 ->orWhere(fn (Builder $queue) => $queue
@@ -230,15 +391,6 @@ class ConversationAccess
             $department !== null && ! $this->canAttend($user, $department) => "{$user->name} no pertenece al departamento {$department->name}.",
             default => null,
         };
-    }
-
-    /**
-     * Asked before handing a conversation by hand to an agent declared
-     * unavailable (an exception only users who can assign may make).
-     */
-    public function unavailableConfirmation(User $agent): string
-    {
-        return "{$agent->name} está como No disponible. Confirma que quieres asignarle la conversación de todas formas; su disponibilidad no cambiará.";
     }
 
     /**

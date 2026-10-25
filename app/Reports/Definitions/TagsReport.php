@@ -26,7 +26,8 @@ use Illuminate\Validation\Rule;
 
 /**
  * Tag catalog with its usage, mirroring the tags screen (same filters,
- * same visibility of the counted contacts and conversations).
+ * same visibility of the counted contacts and conversations; only contacts
+ * saved into the directory are counted, see TagCatalogQuery).
  *
  * @extends ReportDefinition<Tag>
  */

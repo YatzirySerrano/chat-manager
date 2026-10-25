@@ -122,7 +122,8 @@ test('credentials rejected by Meta are recorded without leaking the token', func
     expect($connection->refresh())
         ->credentials_verified_at->toBeNull()
         ->credentials_error->toStartWith('El token de acceso es inválido o expiró.')
-        ->credentials_error->toContain('(código 190)')
+        ->credentials_error->not->toContain('Invalid OAuth')
+        ->credentials_error->not->toContain('código')
         ->and($connection->configurationHealth()->value)->toBe('credentials_invalid');
 
     expect(AuditLog::query()->where('action', AuditAction::ConnectionCredentialsFailed)->sole()->properties)

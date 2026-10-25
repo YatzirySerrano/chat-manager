@@ -29,6 +29,8 @@ function connectionsAndContactsMigrations(): array
         '2026_10_18_012704_create_quick_replies_table',
         '2026_10_18_012705_create_department_quick_reply_table',
         '2026_10_18_012706_add_operational_columns_to_departments_table',
+        // Its unique (channel, external_account_id) index must go before the channel column can be dropped.
+        '2026_10_24_185556_add_meta_account_columns_to_connections_table',
     ]));
 }
 

@@ -12,6 +12,7 @@ import {
 import { watchDebounced } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import EmptyState from '@/components/EmptyState.vue';
+import ModuleHelpButton from '@/components/help/ModuleHelpButton.vue';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
@@ -310,8 +311,8 @@ const emptyListCopy = computed(() => {
             <div class="grid gap-3 border-b p-3">
                 <div class="flex items-center justify-between gap-2">
                     <div class="min-w-0">
-                        <h1 class="text-base font-semibold">Chat interno</h1>
-                        <p class="text-xs text-muted-foreground">
+                        <h1 class="sr-only">Chat interno</h1>
+                        <p class="text-sm text-muted-foreground">
                             {{
                                 unreadTotal > 0
                                     ? `${unreadTotal} sin leer`
@@ -319,6 +320,11 @@ const emptyListCopy = computed(() => {
                             }}
                         </p>
                     </div>
+                    <ModuleHelpButton
+                        module="chat-interno"
+                        icon-only
+                        class="ml-auto"
+                    />
                     <DropdownMenu v-if="can.createGroup">
                         <DropdownMenuTrigger as-child>
                             <Button size="sm"> <Plus /> Nuevo </Button>

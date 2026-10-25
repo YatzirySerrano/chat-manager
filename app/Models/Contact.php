@@ -31,6 +31,8 @@ use Illuminate\Support\Carbon;
  * @property ContactStatus $status
  * @property Carbon|null $archived_at
  * @property ContactSource $source
+ * @property Carbon|null $saved_at When the contact entered the directory; null while it is provisional (only an unknown sender who wrote).
+ * @property int|null $saved_by_user_id
  * @property int|null $created_by_user_id
  * @property array<string, string>|null $custom_fields Controlled label => value map.
  * @property Carbon|null $first_interaction_at
@@ -67,6 +69,7 @@ class Contact extends Model
             'source' => ContactSource::class,
             'custom_fields' => 'array',
             'archived_at' => 'datetime',
+            'saved_at' => 'datetime',
             'first_interaction_at' => 'datetime',
             'last_interaction_at' => 'datetime',
             'blocked_at' => 'datetime',
@@ -141,6 +144,60 @@ class Contact extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * Who saved the contact into the directory (null for automatic saves,
+     * the backfill of pre-existing contacts or a deleted user).
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function savedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'saved_by_user_id');
+    }
+
+    /**
+     * Private aliases users gave this contact (each user only ever reads
+     * their own).
+     *
+     * @return HasMany<ContactAlias, $this>
+     */
+    public function aliases(): HasMany
+    {
+        return $this->hasMany(ContactAlias::class);
+    }
+
+    /**
+     * Whether the contact belongs to the directory (not provisional).
+     */
+    public function isSaved(): bool
+    {
+        return $this->saved_at !== null;
+    }
+
+    /**
+     * Contacts that belong to the directory. (It cannot be called saved():
+     * Model::saved() registers the "saved" model event.)
+     *
+     * @param  Builder<Contact>  $query
+     */
+    #[Scope]
+    protected function savedInDirectory(Builder $query): void
+    {
+        $query->whereNotNull($query->qualifyColumn('saved_at'));
+    }
+
+    /**
+     * Contacts registered automatically from an unknown sender and not saved
+     * into the directory yet.
+     *
+     * @param  Builder<Contact>  $query
+     */
+    #[Scope]
+    protected function provisional(Builder $query): void
+    {
+        $query->whereNull($query->qualifyColumn('saved_at'));
     }
 
     /**

@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * People the viewer may start a chat with or add to a group, for the
- * pickers. Only the minimum is exposed: name, departments, availability.
+ * pickers. Only the minimum is exposed: name and departments
+ * (online presence comes from the presence channels, client-side).
  */
 class TeamChatPeopleController extends Controller
 {
@@ -56,7 +57,6 @@ class TeamChatPeopleController extends Controller
             'data' => array_values($query->get()->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
-                'availability' => $user->availability->value,
                 'departments' => array_values($user->departments->map(fn (Department $department): array => [
                     'id' => $department->id,
                     'name' => $department->name,

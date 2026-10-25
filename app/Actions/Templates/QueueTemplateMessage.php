@@ -18,7 +18,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The responsible agent sends an approved WhatsApp template. Unlike free
+ * The responsible agent, holding the administrative templates.send
+ * permission (checked again under lock, ConversationPolicy::sendTemplate()),
+ * sends an approved WhatsApp template. Unlike free
  * text, a template may be sent while the customer service window is closed
  * (Meta's rule for starting or resuming a conversation). It is accepted
  * only when Meta reports it APPROVED for the conversation's own connection
@@ -37,7 +39,7 @@ class QueueTemplateMessage
     {
         return DB::transaction(function () use ($conversation, $actor, $template, $values, $clientReference): Message {
             $conversation = $this->lifecycle->lock($conversation);
-            $actor = $this->lifecycle->authorize($actor, 'reply', $conversation);
+            $actor = $this->lifecycle->authorize($actor, 'sendTemplate', $conversation);
 
             $existing = Message::query()->where('client_reference', $clientReference)->first();
 

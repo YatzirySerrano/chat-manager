@@ -1,25 +1,32 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import {
     ExternalLink,
     History,
     Mail,
     Megaphone,
     NotebookPen,
+    PenLine,
     Phone,
+    UserPlus,
     UserRound,
     X,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
+import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
+import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
+import AliasDialog from '@/components/personalization/AliasDialog.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
+import { save as saveContact } from '@/routes/conversations/contact';
 import { update as updateTags } from '@/routes/conversations/tags';
 import type {
     ConversationDetails,
@@ -55,6 +62,36 @@ const emit = defineEmits<{
     select: [conversationId: number];
 }>();
 
+/* "Guardar contacto": a provisional customer enters the directory. */
+const saveContactOpen = ref(false);
+const panel = ref<HTMLElement | null>(null);
+
+/**
+ * Once saved, the "Guardar contacto" button is gone: focus moves to the
+ * contact's link (or the panel) instead of falling back to the page body.
+ * While the contact is still unsaved the dialog returns to its trigger.
+ */
+function contactLinkElement(): HTMLElement | null {
+    if (props.details.contact.can_save) {
+        return null;
+    }
+
+    return (
+        panel.value?.querySelector<HTMLElement>('[data-contact-link]') ??
+        panel.value
+    );
+}
+
+/*
+ * The viewer's private alias (PERSONALIZATION): only changes how the
+ * contact is shown to them; the header, the list and this panel reload.
+ */
+const aliasOpen = ref(false);
+
+function onAliasSaved(): void {
+    router.reload({ only: ['conversation', 'details', 'conversations'] });
+}
+
 /**
  * Origin links come from the provider; only web links are rendered.
  */
@@ -65,7 +102,9 @@ function safeUrl(url: string | null): string | null {
 
 <template>
     <aside
-        class="flex h-full min-h-0 flex-col border-l bg-background"
+        ref="panel"
+        tabindex="-1"
+        class="flex h-full min-h-0 flex-col border-l bg-background outline-none"
         aria-label="Información del cliente y de la conversación"
     >
         <header
@@ -95,10 +134,30 @@ function safeUrl(url: string | null): string | null {
                     <div class="min-w-0">
                         <p
                             class="truncate font-semibold"
-                            :title="details.contact.name"
+                            :title="details.contact.display_name"
                         >
-                            {{ details.contact.name }}
+                            {{ details.contact.display_name }}
                         </p>
+                        <p
+                            v-if="details.contact.alias"
+                            class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                            data-alias-official-name
+                        >
+                            <span
+                                class="shrink-0 rounded-full border px-1.5 py-px font-medium"
+                                title="Solo tú ves este alias"
+                                >Alias personal</span
+                            >
+                            <span class="truncate" :title="details.contact.name"
+                                >Nombre oficial:
+                                {{ details.contact.name }}</span
+                            >
+                        </p>
+                        <UnsavedContactBadge
+                            v-if="!details.contact.is_saved"
+                            class="mt-1"
+                            label="Contacto no guardado"
+                        />
                         <p
                             v-if="isWebChat || differentProfileName"
                             class="truncate text-xs text-muted-foreground"
@@ -112,7 +171,7 @@ function safeUrl(url: string | null): string | null {
                                 ></template
                             >
                             <template v-else
-                                >En WhatsApp:
+                                >En {{ conversation.connection.channel_label }}:
                                 {{ details.contact.profile_name }}</template
                             >
                         </p>
@@ -158,7 +217,41 @@ function safeUrl(url: string | null): string | null {
                         </dd>
                     </div>
                 </dl>
+                <p
+                    v-if="!details.contact.is_saved"
+                    class="text-xs text-muted-foreground"
+                >
+                    Los datos técnicos de esta conversación (teléfono o
+                    identificador del canal) se conservan aunque no lo guardes.
+                </p>
                 <div class="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        class="pointer-coarse:h-10"
+                        :title="
+                            details.contact.alias
+                                ? 'Cambiar o quitar tu alias personal'
+                                : 'Ponerle un nombre que solo tú verás'
+                        "
+                        @click="aliasOpen = true"
+                    >
+                        <PenLine aria-hidden="true" />
+                        {{
+                            details.contact.alias
+                                ? 'Editar alias'
+                                : 'Poner alias'
+                        }}
+                    </Button>
+                    <Button
+                        v-if="details.contact.can_save"
+                        size="sm"
+                        class="pointer-coarse:h-10"
+                        @click="saveContactOpen = true"
+                    >
+                        <UserPlus aria-hidden="true" />
+                        Guardar contacto
+                    </Button>
                     <Button
                         v-if="contactUrl"
                         variant="outline"
@@ -166,9 +259,13 @@ function safeUrl(url: string | null): string | null {
                         class="pointer-coarse:h-10"
                         as-child
                     >
-                        <Link :href="contactUrl">
+                        <Link :href="contactUrl" data-contact-link>
                             <ExternalLink aria-hidden="true" />
-                            Ver contacto
+                            {{
+                                details.contact.is_saved
+                                    ? 'Ver en Contactos'
+                                    : 'Ver ficha del contacto'
+                            }}
                         </Link>
                     </Button>
                     <ExportMenu
@@ -232,12 +329,19 @@ function safeUrl(url: string | null): string | null {
                         {{ conversation.connection.name }}
                     </dd>
                     <dt class="text-xs text-muted-foreground">Canal</dt>
-                    <dd class="truncate">
-                        {{ conversation.connection.channel_label }}
+                    <dd class="flex min-w-0 items-center gap-1.5">
+                        <ChannelIcon
+                            :channel="conversation.connection.channel"
+                            class="size-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <span class="truncate">{{
+                            conversation.connection.channel_label
+                        }}</span>
                     </dd>
                     <template v-if="!windowApplies">
                         <dt class="text-xs text-muted-foreground">
-                            Ventana de 24 h
+                            Ventana de atención
                         </dt>
                         <dd class="text-muted-foreground">
                             {{ window.label || 'No aplica' }}
@@ -246,17 +350,6 @@ function safeUrl(url: string | null): string | null {
                     <dt class="text-xs text-muted-foreground">Inicio</dt>
                     <dd>{{ formatDateTime(conversation.created_at) }}</dd>
                 </dl>
-                <p
-                    v-if="
-                        conversation.status === 'on_hold' &&
-                        conversation.on_hold_reason
-                    "
-                    class="rounded-md bg-primary-soft/50 px-3 py-2 text-xs text-primary-soft-foreground"
-                >
-                    En espera desde
-                    {{ formatDateTime(conversation.on_hold_at) }}:
-                    {{ conversation.on_hold_reason }}
-                </p>
                 <CustomerWindowIndicator
                     v-if="conversation.status !== 'closed' && windowApplies"
                     :window="window"
@@ -387,5 +480,22 @@ function safeUrl(url: string | null): string | null {
                 </p>
             </section>
         </div>
+
+        <AliasDialog
+            v-model:open="aliasOpen"
+            :conversation-id="conversation.id"
+            :contact-name="details.contact.name"
+            :alias="details.contact.alias"
+            @saved="onAliasSaved"
+        />
+        <!-- Kept mounted after saving (the trigger disappears): the dialog
+             animates out and focus moves to the contact's link. -->
+        <SaveContactDialog
+            v-model:open="saveContactOpen"
+            :return-focus="contactLinkElement"
+            :contact="details.contact"
+            :action="saveContact(conversation.id)"
+            :can-add-note="details.contactNotes !== null"
+        />
     </aside>
 </template>

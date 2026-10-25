@@ -31,7 +31,14 @@ class QuickReplyResource extends JsonResource
             'is_active' => $this->is_active,
             'is_deleted' => $this->isDeleted(),
             'is_global' => $this->is_global,
-            'departments' => $this->whenLoaded('departments', fn () => $this->departments
+            'is_personal' => $this->isPersonal(),
+            'is_own' => $this->isPersonal() && $actor !== null && $this->owner_user_id === $actor->id,
+            // Only loaded for the supervision segment (other users' replies).
+            'owner' => $this->whenLoaded('owner', fn () => $this->owner === null ? null : [
+                'id' => $this->owner->id,
+                'name' => $this->owner->name,
+            ]),
+            'departments' => $this->isPersonal() ? [] : $this->whenLoaded('departments', fn () => $this->departments
                 // Departments the viewer does not belong to are not named.
                 ->filter(fn (Department $department): bool => $reachableDepartmentIds === null || in_array($department->id, $reachableDepartmentIds, true))
                 ->map(fn (Department $department): array => [

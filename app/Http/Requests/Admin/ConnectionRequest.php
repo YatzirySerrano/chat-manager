@@ -95,7 +95,7 @@ class ConnectionRequest extends FormRequest
         $metaId = ['nullable', 'string', 'regex:/^\d{5,64}$/'];
 
         $rules = [
-            'channel' => $connection instanceof Connection ? ['prohibited'] : ['required', Rule::enum(ConnectionChannel::class)],
+            'channel' => $connection instanceof Connection ? ['prohibited'] : ['required', Rule::enum(ConnectionChannel::class)->only(ConnectionChannel::formCreatable())],
             'name' => ['required', 'string', 'max:120'],
             'display_phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+?[0-9][0-9 ()\-]{5,31}$/'],
             // A deleted connection keeps its number reserved: that conflict

@@ -2,7 +2,6 @@
 
 namespace App\Services\TeamChat;
 
-use App\Enums\AgentAvailability;
 use App\Enums\TeamChat\TeamChatSystemEvent;
 use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
@@ -29,7 +28,10 @@ class TeamChatPresenter
     }
 
     /**
-     * @return array{id: int, name: string, deleted: bool, availability: string|null}
+     * Online presence is client-side (presence channels); the legacy manual
+     * availability is not exposed.
+     *
+     * @return array{id: int, name: string, deleted: bool}
      */
     public function person(User $user): array
     {
@@ -37,7 +39,6 @@ class TeamChatPresenter
             'id' => $user->id,
             'name' => $this->userName($user),
             'deleted' => ! $user->is_active,
-            'availability' => $user->is_active ? $user->availability->value : null,
         ];
     }
 
@@ -219,18 +220,5 @@ class TeamChatPresenter
     private function attachmentSummary(int $count): string
     {
         return $count === 1 ? 'Archivo adjunto' : "{$count} archivos adjuntos";
-    }
-
-    /**
-     * Availability values for the interface.
-     *
-     * @return list<array{value: string, label: string}>
-     */
-    public function availabilityOptions(): array
-    {
-        return array_map(fn (AgentAvailability $availability): array => [
-            'value' => $availability->value,
-            'label' => $availability->label(),
-        ], AgentAvailability::cases());
     }
 }

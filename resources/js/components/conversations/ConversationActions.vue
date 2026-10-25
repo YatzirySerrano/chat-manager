@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { router, useHttp, usePage } from '@inertiajs/vue3';
+import { router, useHttp } from '@inertiajs/vue3';
 import {
     ArrowRightLeft,
     EllipsisVertical,
     Hand,
-    Pause,
-    Play,
     RotateCcw,
     Undo2,
     UserPlus,
     XCircle,
 } from '@lucide/vue';
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import ConversationRouteDialog from '@/components/conversations/ConversationRouteDialog.vue';
@@ -22,34 +20,26 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { subscribe } from '@/lib/realtime';
-import type { RealtimeConfig } from '@/lib/realtime';
 import {
     accept,
     assign,
     close,
     destinations,
-    hold,
     release,
     reopen,
-    resume,
     transfer,
 } from '@/routes/conversations';
-import type {
-    ConversationSummary,
-    TransferOptions,
-    ViewerAvailability,
-} from '@/types';
+import type { ConversationSummary, TransferOptions } from '@/types';
 
 /**
  * Operations of the engine on the open conversation (accept, assign,
- * transfer, hold, resume, release, close, reopen), shown according to the
- * policy's answer for the viewer. Each one sends the conversation version,
+ * transfer, release, close, reopen), shown according to the policy's
+ * answer for the viewer. There is no manual availability: accepting only
+ * depends on what the server allows (can.accept). Each one sends the conversation version,
  * so a decision taken on stale data is rejected by the server.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
-    availability: ViewerAvailability;
     transferReasonRequired: boolean;
 }>();
 
@@ -57,7 +47,6 @@ const can = computed(() => props.conversation.can);
 const id = computed(() => props.conversation.id);
 const processing = ref(false);
 const errors = ref<Record<string, string | undefined>>({});
-const isUnavailable = computed(() => props.availability.value !== 'available');
 
 function showFirstError(bag: Record<string, string>): void {
     errors.value = bag;
@@ -90,7 +79,7 @@ function operate(
     );
 }
 
-type Operation = 'hold' | 'release' | 'close';
+type Operation = 'release' | 'close';
 
 const reasonDialog = ref<Operation | null>(null);
 const reasonDialogOpen = computed({
@@ -115,13 +104,6 @@ const reasonCopy = computed<
         { title: string; description: string; confirm: string; label: string }
     >
 >(() => ({
-    hold: {
-        title: 'Poner en espera',
-        description:
-            'La atención se pausa y conservas la conversación. Útil cuando esperas información del cliente o de otra área.',
-        confirm: 'Poner en espera',
-        label: 'Motivo',
-    },
     release: {
         title: 'Devolver a la cola',
         description:
@@ -150,7 +132,6 @@ function confirmReason(reason: string): void {
     }
 
     const urls: Record<Operation, string> = {
-        hold: hold.url(id.value),
         release: release.url(id.value),
         close: close.url(id.value),
     };
@@ -210,61 +191,10 @@ function openRouteDialog(mode: 'assign' | 'transfer'): void {
     void loadRouteOptions();
 }
 
-/*
- * While the dialog is open, an agent switching availability (signal on the
- * viewer's inbox channels) refreshes the destinations, so the availability
- * and load shown next to each person stay current.
- */
-const page = usePage();
-const inboxChannels = computed<string[]>(() => {
-    const config = page.props.realtime as RealtimeConfig | undefined;
-
-    return config?.enabled ? config.inbox_channels : [];
-});
-let stopAvailability: (() => void)[] = [];
-let availabilityTimer: ReturnType<typeof setTimeout> | null = null;
-
-function stopAvailabilitySignals(): void {
-    stopAvailability.forEach((stop) => stop());
-    stopAvailability = [];
-
-    if (availabilityTimer) {
-        clearTimeout(availabilityTimer);
-        availabilityTimer = null;
-    }
-}
-
-watch(
-    () => [routeDialog.value !== null, inboxChannels.value.join(',')] as const,
-    ([isOpen]) => {
-        stopAvailabilitySignals();
-
-        if (!isOpen) {
-            return;
-        }
-
-        stopAvailability = inboxChannels.value.map((channel) =>
-            subscribe(channel, 'availability.changed', () => {
-                if (availabilityTimer) {
-                    clearTimeout(availabilityTimer);
-                }
-
-                availabilityTimer = setTimeout(() => {
-                    availabilityTimer = null;
-                    void loadRouteOptions();
-                }, 300);
-            }),
-        );
-    },
-);
-
-onScopeDispose(stopAvailabilitySignals);
-
 function submitRoute(payload: {
     department_id: number | null;
     user_id: number | null;
     reason: string;
-    confirm_unavailable: boolean;
     confirm_over_capacity: boolean;
 }): void {
     if (routeDialog.value === 'assign') {
@@ -272,7 +202,6 @@ function submitRoute(payload: {
             assign.url(id.value),
             {
                 user_id: payload.user_id,
-                confirm_unavailable: payload.confirm_unavailable,
                 confirm_over_capacity: payload.confirm_over_capacity,
             },
             () => (routeDialog.value = null),
@@ -303,21 +232,8 @@ const primary = computed<Action[]>(() => {
             key: 'accept',
             label: 'Aceptar',
             icon: Hand,
-            disabled: isUnavailable.value,
-            hint: isUnavailable.value
-                ? 'Cambia tu disponibilidad a Disponible para aceptar conversaciones.'
-                : 'Hacerte responsable de esta conversación',
+            hint: 'Hacerte responsable de esta conversación',
             run: () => operate(accept.url(id.value)),
-        });
-    }
-
-    if (can.value.resume) {
-        actions.push({
-            key: 'resume',
-            label: 'Retomar',
-            icon: Play,
-            hint: 'Volver a atender la conversación en espera',
-            run: () => operate(resume.url(id.value)),
         });
     }
 
@@ -353,15 +269,6 @@ const secondary = computed<Action[]>(() => {
             label: 'Transferir',
             icon: ArrowRightLeft,
             run: () => openRouteDialog('transfer'),
-        });
-    }
-
-    if (can.value.hold) {
-        actions.push({
-            key: 'hold',
-            label: 'Poner en espera',
-            icon: Pause,
-            run: () => openReasonDialog('hold'),
         });
     }
 

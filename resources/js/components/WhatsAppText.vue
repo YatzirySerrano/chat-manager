@@ -8,13 +8,16 @@ import { parseWhatsAppText } from '@/lib/whatsappFormatting';
  * interpolation (never v-html), so the content cannot inject markup.
  * With `links`, web addresses (http/https only) become links that open in a
  * new tab without giving the destination access to this page.
+ * With `inheritColor` (personal chat colors), links and monospace follow the
+ * surrounding text color, the only one whose contrast is guaranteed.
  */
 const props = withDefaults(
     defineProps<{
         text: string;
         links?: boolean;
+        inheritColor?: boolean;
     }>(),
-    { links: false },
+    { links: false, inheritColor: false },
 );
 
 const URL_PATTERN = /(https?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]])/giu;
@@ -41,7 +44,12 @@ const segments = computed(() =>
         ><template v-for="(segment, index) in segments" :key="index"
             ><code
                 v-if="segment.mono"
-                class="rounded bg-black/5 px-1 font-mono text-[0.85em] dark:bg-white/10"
+                class="rounded px-1 font-mono text-[0.85em]"
+                :class="
+                    inheritColor
+                        ? 'outline outline-current/30'
+                        : 'bg-black/5 dark:bg-white/10'
+                "
                 >{{ segment.text }}</code
             ><span
                 v-else
@@ -58,7 +66,8 @@ const segments = computed(() =>
                         :href="part.href"
                         target="_blank"
                         rel="noopener noreferrer nofollow"
-                        class="break-all text-primary underline underline-offset-2"
+                        class="break-all underline underline-offset-2"
+                        :class="inheritColor ? 'font-medium' : 'text-primary'"
                         >{{ part.text }}</a
                     ><template v-else>{{ part.text }}</template></template
                 ></span

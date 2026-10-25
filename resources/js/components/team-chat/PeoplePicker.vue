@@ -168,11 +168,7 @@ function choose(contact: TeamContact): void {
                 "
                 @click="choose(contact)"
             >
-                <TeamAvatar
-                    :name="contact.name"
-                    :availability="contact.availability"
-                    size="sm"
-                />
+                <TeamAvatar :name="contact.name" size="sm" />
                 <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-medium">
                         {{ contact.name }}

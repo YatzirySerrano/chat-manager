@@ -3,6 +3,8 @@
 namespace App\Http\Resources;
 
 use App\Models\AuditLog;
+use App\Models\User;
+use App\Support\Audit\AuditPresenter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -12,12 +14,21 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class AuditLogResource extends JsonResource
 {
     /**
-     * Transform the resource into an array.
+     * The entry in plain Spanish (AuditPresenter). Raw properties and the
+     * browser only travel inside "technical", for viewers allowed to read
+     * them (AuditPresenter::canViewTechnical).
      *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
     {
+        $viewer = $request->user();
+        $presentation = app(AuditPresenter::class)->present(
+            $this->resource,
+            $viewer instanceof User ? $viewer : null,
+            $this->relationLoaded('auditable') ? $this->auditable : null,
+        );
+
         return [
             'id' => $this->id,
             'action' => [
@@ -29,14 +40,14 @@ class AuditLogResource extends JsonResource
                 'id' => $this->user_id,
                 'name' => $this->actor_name ?? 'Sistema',
             ],
-            'subject' => [
-                'type' => $this->auditable_type,
-                'id' => $this->auditable_id,
-                'label' => $this->auditable_label,
-            ],
-            'properties' => $this->properties ?? (object) [],
+            'subject' => $presentation['subject'],
+            'summary' => $presentation['summary'],
+            'changes' => $presentation['changes'],
+            'details' => $presentation['details'],
+            'result' => $presentation['result'],
+            'error' => $presentation['error'],
+            'technical' => $presentation['technical'],
             'ip_address' => $this->ip_address,
-            'user_agent' => $this->user_agent,
             'restricted' => $this->restricted,
             'created_at' => $this->created_at->toIso8601String(),
         ];

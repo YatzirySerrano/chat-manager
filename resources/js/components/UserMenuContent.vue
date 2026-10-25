@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { LogOut, Settings } from '@lucide/vue';
+import { Download, LogOut, Settings } from '@lucide/vue';
+import { toast } from 'vue-sonner';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -8,6 +9,7 @@ import {
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import UserInfo from '@/components/UserInfo.vue';
+import { usePwaInstall } from '@/lib/pwa/install';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
@@ -24,6 +26,22 @@ defineProps<Props>();
 const emit = defineEmits<{
     logout: [];
 }>();
+
+const { canPrompt, showIosInstructions, install } = usePwaInstall();
+
+async function installApp(): Promise<void> {
+    if (canPrompt.value) {
+        await install();
+
+        return;
+    }
+
+    toast('Instalar en este dispositivo', {
+        description:
+            'En Safari toca Compartir y luego «Agregar a inicio». La aplicación aparecerá en tu pantalla de inicio.',
+        duration: 12000,
+    });
+}
 </script>
 
 <template>
@@ -39,6 +57,14 @@ const emit = defineEmits<{
                 <Settings class="mr-2 h-4 w-4" />
                 Mi cuenta
             </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+            v-if="canPrompt || showIosInstructions"
+            class="cursor-pointer"
+            @select="installApp"
+        >
+            <Download class="mr-2 h-4 w-4" />
+            Instalar aplicación
         </DropdownMenuItem>
     </DropdownMenuGroup>
     <DropdownMenuSeparator />

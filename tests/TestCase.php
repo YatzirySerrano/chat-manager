@@ -6,6 +6,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Laravel\Fortify\Features;
 use PDO;
 use RuntimeException;
@@ -24,6 +25,17 @@ abstract class TestCase extends BaseTestCase
      * @var class-string
      */
     protected string $seeder = RolesAndPermissionsSeeder::class;
+
+    /**
+     * No test may reach a real provider (Meta, CDN, webhooks): every
+     * outbound request must match an Http::fake() of the test.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::preventStrayRequests();
+    }
 
     /**
      * Refuse to rebuild any database other than the MariaDB testing database,

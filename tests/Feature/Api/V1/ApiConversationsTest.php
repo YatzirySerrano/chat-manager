@@ -100,7 +100,7 @@ test('a conversation shows its attention data without contact details', function
         ->assertJsonPath('data.status_label', 'En atención')
         ->assertJsonPath('data.connection', ['id' => $this->connection->id, 'name' => $this->connection->name, 'channel' => 'whatsapp'])
         ->assertJsonPath('data.department', ['id' => $department->id, 'name' => 'Ventas'])
-        ->assertJsonPath('data.contact', ['id' => $contact->id, 'display_name' => 'Laura Pérez'])
+        ->assertJsonPath('data.contact', ['id' => $contact->id, 'display_name' => 'Laura Pérez', 'is_saved' => true])
         ->assertJsonPath('data.assigned_agent', ['id' => $agent->id, 'name' => 'Ana López']);
 
     expect(array_keys($response->json('data')))->toBe(['id', 'status', 'status_label', 'connection', 'department', 'contact', 'assigned_agent', 'last_message_at', 'created_at', 'updated_at', 'closed_at']);
@@ -156,6 +156,7 @@ test('invalid filters and cursors are validation errors', function (array $query
         ->assertJsonValidationErrors($field);
 })->with([
     'status' => [['status' => 'archived'], 'status'],
+    'retired on hold status' => [['status' => 'on_hold'], 'status'],
     'limit too high' => [['limit' => 101], 'limit'],
     'limit zero' => [['limit' => 0], 'limit'],
     'date' => [['updated_since' => 'ayer'], 'updated_since'],

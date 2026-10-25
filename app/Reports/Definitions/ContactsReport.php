@@ -29,7 +29,9 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * Contact directory mirroring the contacts screen: same filters, same data
- * scope (visibleTo) and the same record state rules.
+ * scope (visibleTo) and the same record state rules. Like the screen, it
+ * counts and exports only contacts saved into the directory unless the
+ * "Incluir no guardados" filter is on (see ContactListQuery).
  *
  * @phpstan-import-type ContactFilters from ContactListQuery
  *
@@ -110,6 +112,10 @@ class ContactsReport extends ReportDefinition
 
         $this->describeRecordState($descriptions, $filters['record']);
 
+        if ($filters['include_provisional']) {
+            $descriptions[] = 'Incluye contactos no guardados en el directorio';
+        }
+
         if ($filters['sort'] !== 'recent') {
             $descriptions[] = 'Orden: '.self::SORT_LABELS[$filters['sort']];
         }
@@ -162,7 +168,11 @@ class ContactsReport extends ReportDefinition
             'tags' => $record->tags->pluck('name')->implode(', ') ?: null,
             'first_interaction_at' => $record->first_interaction_at,
             'last_interaction_at' => $record->last_interaction_at,
-            'status' => $record->isDeleted() ? 'Eliminado' : 'Activo',
+            'status' => match (true) {
+                $record->isDeleted() => 'Eliminado',
+                ! $record->isSaved() => 'No guardado',
+                default => 'Activo',
+            },
             'created_at' => $record->created_at,
         ];
     }

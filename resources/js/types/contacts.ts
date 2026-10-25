@@ -4,7 +4,13 @@ import type { RecordStateValue } from './ui';
 
 export type ContactStatusValue = 'active' | 'archived';
 
-export type ContactSourceValue = 'manual' | 'whatsapp' | 'import' | 'web_chat';
+export type ContactSourceValue =
+    | 'manual'
+    | 'whatsapp'
+    | 'import'
+    | 'web_chat'
+    | 'messenger'
+    | 'instagram';
 
 export type ContactOriginTypeValue =
     | 'unknown'
@@ -56,6 +62,9 @@ export type Contact = {
     deleted_at: string | null;
     source: ContactSourceValue;
     source_label: string;
+    /** False for a provisional contact: someone who wrote in but nobody saved into the directory. */
+    is_saved: boolean;
+    saved_at: string | null;
     custom_fields: Record<string, string>;
     first_interaction_at: string | null;
     last_interaction_at: string | null;
@@ -65,7 +74,14 @@ export type Contact = {
     identities?: ContactIdentitySummary[];
     origin?: ContactOriginSummary | null;
     /** What the viewer may do with this contact (resolved by the server). */
-    can?: { view: boolean; update: boolean; delete: boolean; restore: boolean };
+    can?: {
+        view: boolean;
+        update: boolean;
+        delete: boolean;
+        restore: boolean;
+        /** Save this provisional contact into the directory. */
+        save: boolean;
+    };
 };
 
 /** A connection (number) through which the contact wrote to the company. */
@@ -87,6 +103,8 @@ export type ContactFilters = {
     source: ContactSourceValue | null;
     origin: ContactOriginTypeValue | null;
     sort: ContactSort;
+    /** "Incluir no guardados": also list provisional contacts. */
+    include_provisional: boolean;
 };
 
 export type ContactAttribution = {
@@ -144,6 +162,8 @@ export type DuplicateContact = {
     phone_e164: string | null;
     email: string | null;
     status: ContactStatusValue;
+    /** False when the match is a provisional contact that can be saved instead. */
+    is_saved: boolean;
     matches: ('phone' | 'email')[];
 };
 

@@ -58,7 +58,7 @@ class TeamChatController extends Controller
         $messages = null;
 
         if ($thread !== null) {
-            $thread->load(['activeParticipations' => fn ($participants) => $participants->orderBy('joined_at'), 'activeParticipations.user:id,name,is_active,availability']);
+            $thread->load(['activeParticipations' => fn ($participants) => $participants->orderBy('joined_at'), 'activeParticipations.user:id,name,is_active']);
             $canPost = Gate::inspect('post', $thread);
             $page = isset($validated['around'])
                 ? $this->history->around($thread, (int) $validated['around'])
@@ -95,7 +95,6 @@ class TeamChatController extends Controller
                 'maxMentions' => (int) config('team-chat.max_mentions'),
                 'reactions' => array_values(array_map('strval', (array) config('team-chat.reactions'))),
             ],
-            'availabilityOptions' => $this->presenter->availabilityOptions(),
         ]);
     }
 

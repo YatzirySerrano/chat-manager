@@ -117,4 +117,48 @@ class ConnectionFactory extends Factory
             'is_active' => true,
         ])->has(WebChatWidget::factory(), 'webChatWidget');
     }
+
+    /**
+     * An active Facebook Messenger connection authorized with Meta: a page
+     * id and its page token (never expires), no WhatsApp identifiers.
+     */
+    public function messenger(): static
+    {
+        return $this->metaAccount(ConnectionChannel::Messenger, ConnectionProvider::MetaMessenger, null);
+    }
+
+    /**
+     * An active Instagram connection authorized with Instagram Login: the
+     * professional account id and a long-lived token expiring in 60 days.
+     */
+    public function instagram(): static
+    {
+        return $this->metaAccount(ConnectionChannel::Instagram, ConnectionProvider::MetaInstagram, now()->addDays(60));
+    }
+
+    private function metaAccount(ConnectionChannel $channel, ConnectionProvider $provider, mixed $expiresAt): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'channel' => $channel,
+            'provider' => $provider,
+            'display_phone_number' => null,
+            'phone_number_id' => null,
+            'business_account_id' => null,
+            'app_secret' => null,
+            'webhook_verify_token' => null,
+            'is_active' => true,
+        ])->afterMaking(function (Connection $connection) use ($expiresAt): void {
+            $connection->forceFill([
+                'external_account_id' => (string) fake()->unique()->numerify('17841#########'),
+                'external_account_name' => fake()->company(),
+                'granted_scopes' => $connection->channel === ConnectionChannel::Instagram
+                    ? ['instagram_business_basic', 'instagram_business_manage_messages']
+                    : ['pages_show_list', 'pages_messaging', 'pages_manage_metadata', 'pages_read_engagement'],
+                'token_expires_at' => $expiresAt,
+                'authorized_at' => now()->subDays(2),
+                'credentials_verified_at' => now()->subDays(2),
+                'app_subscribed' => true,
+            ]);
+        });
+    }
 }

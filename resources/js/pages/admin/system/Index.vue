@@ -37,6 +37,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { formatDateTime, formatDuration, formatRelative } from '@/lib/format';
+import { splitTechnicalDetail } from '@/lib/metaErrors';
 import { toastFirstError } from '@/lib/toastErrors';
 import { verify } from '@/routes/connections';
 import { index as systemIndex } from '@/routes/admin/system';
@@ -227,7 +228,7 @@ function age(seconds: number | null): string {
             <p class="text-sm">{{ overallCopy }}</p>
         </SurfaceCard>
 
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
                 label="Trabajos pendientes"
                 :value="queuesAsync ? totalPending : null"
@@ -491,9 +492,33 @@ function age(seconds: number | null): string {
                         >
                             <template v-if="connection.last_error_at">
                                 {{ formatDateTime(connection.last_error_at) }}
-                                <span v-if="connection.last_error">
-                                    — {{ connection.last_error }}</span
-                                >
+                                <template v-if="connection.last_error">
+                                    —
+                                    {{
+                                        splitTechnicalDetail(
+                                            connection.last_error,
+                                        ).message
+                                    }}
+                                    <details
+                                        v-if="
+                                            splitTechnicalDetail(
+                                                connection.last_error,
+                                            ).technical
+                                        "
+                                        class="mt-1"
+                                    >
+                                        <summary
+                                            class="cursor-pointer select-none"
+                                        >
+                                            Detalles técnicos
+                                        </summary>
+                                        <span class="font-mono break-words">{{
+                                            splitTechnicalDetail(
+                                                connection.last_error,
+                                            ).technical
+                                        }}</span>
+                                    </details>
+                                </template>
                             </template>
                             <template v-else>Sin errores registrados</template>
                         </TableCell>

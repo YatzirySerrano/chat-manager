@@ -109,19 +109,18 @@ test('a new customer message opens a new window; repeated or late events do not 
         ->and(app(CustomerServiceWindow::class)->for($conversation)->status)->toBe(CustomerWindowStatus::Open);
 });
 
-test('notes, transfers, holds and reopening never extend the window', function () {
+test('notes, transfers, closing and reopening never extend the window', function () {
     $lastInbound = CarbonImmutable::now()->subHours(23);
     $conversation = attendedConversation($this->agent, $this->department, $lastInbound);
     $admin = User::factory()->administrator()->create();
     $colleague = User::factory()->agent()->available()->inDepartments($this->department)->create();
 
     $this->actingAs($this->agent)->post(route('conversations.notes.store', $conversation), ['body' => 'Nota']);
-    $this->actingAs($this->agent)->post(route('conversations.hold', $conversation), ['version' => 0]);
-    $this->actingAs($this->agent)->post(route('conversations.transfer', $conversation), ['user_id' => $colleague->id, 'version' => 1]);
-    $this->actingAs($colleague)->post(route('conversations.close', $conversation), ['version' => 2]);
-    $this->actingAs($admin)->post(route('conversations.reopen', $conversation), ['version' => 3]);
+    $this->actingAs($this->agent)->post(route('conversations.transfer', $conversation), ['user_id' => $colleague->id, 'version' => 0]);
+    $this->actingAs($colleague)->post(route('conversations.close', $conversation), ['version' => 1]);
+    $this->actingAs($admin)->post(route('conversations.reopen', $conversation), ['version' => 2]);
 
-    expect($conversation->refresh()->version)->toBe(4)
+    expect($conversation->refresh()->version)->toBe(3)
         ->and($conversation->last_inbound_at->toDateTimeString())->toBe($lastInbound->toDateTimeString());
 });
 
@@ -399,4 +398,70 @@ test('an agent replies to a web chat visitor long after 24 hours without reachin
         ->status->toBe(MessageStatus::Accepted)
         ->whatsapp_message_id->toStartWith('web.out.')
         ->and($whatsapp->sent)->toBe([]);
+});
+
+test('Messenger and Instagram conversations follow the same 24 hour window', function (string $channel) {
+    $connection = Connection::factory()->{$channel}()->create();
+    $open = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHours(20));
+    $expired = Conversation::factory()->inDepartment($this->department)->assignedTo(User::factory()->agent()->inDepartments($this->department)->create())->create(['last_inbound_at' => CarbonImmutable::now()->subHours(25)]);
+    $open->forceFill(['connection_id' => $connection->id])->save();
+    $expired->forceFill(['connection_id' => $connection->id])->save();
+
+    expect(app(CustomerServiceWindow::class)->for($open->fresh())->status)->toBe(CustomerWindowStatus::Open)
+        ->and(app(CustomerServiceWindow::class)->for($expired->fresh())->status)->toBe(CustomerWindowStatus::Expired)
+        ->and(app(CustomerServiceWindow::class)->for($expired->fresh())->allowsFreeFormMessages())->toBeFalse();
+})->with(['messenger', 'instagram']);
+
+test('an agent reply never renews the window: only a new customer message does', function () {
+    Queue::fake();
+    $lastInbound = CarbonImmutable::now()->subHours(23)->subMinutes(30);
+    $conversation = attendedConversation($this->agent, $this->department, $lastInbound);
+
+    $this->actingAs($this->agent)
+        ->postJson(route('conversations.messages.store', $conversation), ['body' => 'Le respondo', 'client_reference' => (string) Str::uuid()])
+        ->assertAccepted();
+
+    $this->travel(31)->minutes();
+
+    expect(app(CustomerServiceWindow::class)->for($conversation->refresh())->status)->toBe(CustomerWindowStatus::Expired);
+
+    $this->actingAs($this->agent)
+        ->postJson(route('conversations.messages.store', $conversation), ['body' => 'Sigo aquí', 'client_reference' => (string) Str::uuid()])
+        ->assertConflict();
+});
+
+test('an expired Messenger or Instagram conversation refuses replies through the reply endpoint', function (string $channel) {
+    Queue::fake();
+    $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHours(25));
+    $conversation->forceFill(['connection_id' => Connection::factory()->{$channel}()->create()->id])->save();
+
+    $this->actingAs($this->agent)
+        ->postJson(route('conversations.messages.store', $conversation), ['body' => 'Hola', 'client_reference' => (string) Str::uuid()])
+        ->assertConflict();
+
+    expect(Message::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+})->with(['messenger', 'instagram']);
+
+test('with the Human Agent tag Messenger and Instagram allow human replies for 7 days, WhatsApp keeps 24 hours', function () {
+    config(['services.meta.human_agent_tag' => true]);
+    $threeDaysAgo = CarbonImmutable::now()->subDays(3);
+    $window = app(CustomerServiceWindow::class);
+    $conversationOn = function (Connection $connection, CarbonImmutable $lastInbound): Conversation {
+        $conversation = attendedConversation($this->agent, $this->department, $lastInbound);
+        $conversation->forceFill(['connection_id' => $connection->id])->save();
+
+        return $conversation->fresh();
+    };
+
+    $messenger = $conversationOn(Connection::factory()->messenger()->create(), $threeDaysAgo);
+    $instagram = $conversationOn(Connection::factory()->instagram()->create(), CarbonImmutable::now()->subDays(8));
+    $whatsapp = $conversationOn(Connection::factory()->verified()->create(), $threeDaysAgo);
+
+    expect($window->for($messenger))
+        ->status->toBe(CustomerWindowStatus::Open)
+        ->and($window->for($messenger)->expiresAt?->toIso8601String())->toBe($threeDaysAgo->addDays(7)->toIso8601String())
+        ->and($window->for($instagram)->status)->toBe(CustomerWindowStatus::Expired)
+        ->and($window->for($instagram)->blockReason)->toContain('más de 7 días')
+        ->and($window->for($whatsapp)->status)->toBe(CustomerWindowStatus::Expired);
 });

@@ -367,6 +367,7 @@ const progress = computed(() => {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="importacion"
             title="Importar contactos"
             description="Registra o migra contactos desde un archivo de Excel (.xlsx) o .csv, por ejemplo una exportación de Whaticket. Revisa cada fila antes de confirmar; los datos existentes nunca se sobrescriben y cada lote puede revertirse si es seguro."
         >

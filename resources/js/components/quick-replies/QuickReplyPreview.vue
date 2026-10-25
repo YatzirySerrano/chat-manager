@@ -55,7 +55,7 @@ const tooLong = computed(
             </div>
             <p
                 v-if="caption"
-                class="mt-2 text-right text-[11px] text-muted-foreground"
+                class="mt-2 text-right text-xs text-muted-foreground"
             >
                 {{ caption }}
             </p>

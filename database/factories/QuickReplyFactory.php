@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Department;
 use App\Models\QuickReply;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -34,6 +35,18 @@ class QuickReplyFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
+        ]);
+    }
+
+    /**
+     * A personal reply of the given user: not global and without departments.
+     */
+    public function personal(User $owner): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_global' => false,
+            'owner_user_id' => $owner->id,
+            'created_by_user_id' => $owner->id,
         ]);
     }
 

@@ -8,6 +8,7 @@ use App\Models\Connection;
 use App\Models\ContactIdentity;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Storage;
 
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Storage;
  * connection's own token. Media is first uploaded to WhatsApp from the
  * private disk (POST /{phone-number-id}/media) and then sent by id; the
  * upload id is kept on the attachment so a retry never uploads it again.
+ * A file WhatsApp has no type for (ZIP, delivery method "link") is sent as
+ * a text with a signed expiring download link (AttachmentDownloadLink).
  * The message's client reference travels as biz_opaque_callback_data, so
  * Meta's status webhooks can be matched even if the answer to this call
  * never arrived. During a controlled pilot (WHATSAPP_PILOT_RECIPIENTS) only
@@ -178,6 +181,20 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
 
         if (! $attachment instanceof MessageAttachment || $attachment->status !== AttachmentStatus::Available) {
             throw new MetaGraphException('El archivo adjunto no está disponible para enviarlo.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+        }
+
+        // WhatsApp has no type for this file (ZIP): a text with a signed
+        // expiring download link instead of an upload.
+        if (AttachmentDownloadLink::attachmentOf($message) !== null) {
+            if (AttachmentDownloadLink::isRevoked($message)) {
+                throw new MetaGraphException('El enlace de descarga de este archivo fue revocado; no se volverá a enviar.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+            }
+
+            if (AttachmentDownloadLink::isExpired($message)) {
+                throw new MetaGraphException('El enlace de descarga del archivo ya venció; vuelve a adjuntarlo en un mensaje nuevo.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+            }
+
+            return ['type' => 'text', 'text' => ['body' => app(AttachmentDownloadLink::class)->text($message, $attachment), 'preview_url' => false]];
         }
 
         $mediaId = $attachment->whatsapp_media_id ?? $this->upload($attachment, $connection);

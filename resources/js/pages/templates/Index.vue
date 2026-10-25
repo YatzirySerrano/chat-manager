@@ -160,6 +160,7 @@ function sync(connection: TemplateConnectionOption): void {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="plantillas"
             title="Plantillas de WhatsApp"
             description="Plantillas aprobadas por Meta para iniciar o retomar conversaciones fuera de la ventana de 24 horas. Se crean y editan en WhatsApp Manager; aquí se sincronizan y consultan."
         >
@@ -171,7 +172,7 @@ function sync(connection: TemplateConnectionOption): void {
             </template>
         </PageHeader>
 
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
                 label="Plantillas"
                 :value="stats.total"

@@ -28,8 +28,12 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Registers the sender of an inbound message in the organization-wide
- * directory, without a web session or any human action:
+ * Registers the sender of an inbound message, without a web session or any
+ * human action. A sender nobody knew becomes a provisional contact (saved_at
+ * null): a technical record that keeps the identity, the conversations and
+ * replies working, but stays out of the commercial directory, its reports and
+ * tag counts until someone saves it (SaveContactToDirectory). Contacts that
+ * were already saved keep being saved.
  *
  * 1. The provider identity (channel + external id, unique in the database) is
  *    looked up; when known, its contact is reused.
@@ -150,6 +154,8 @@ class RegisterInboundContact
             'status' => ContactStatus::Active,
             'source' => $sender->channel->contactSource(),
             'created_by_user_id' => null,
+            'saved_at' => null,
+            'saved_by_user_id' => null,
             'first_interaction_at' => $sender->occurredAt,
             'last_interaction_at' => $sender->occurredAt,
         ])->save();
@@ -159,6 +165,7 @@ class RegisterInboundContact
         $this->audit->record(AuditAction::ContactCreated, $contact, [
             'source' => $sender->channel->contactSource()->value,
             'automatic' => true,
+            'provisional' => true,
             'connection_id' => $connection->id,
             'has_phone' => $phone !== null,
         ]);

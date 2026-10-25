@@ -6,12 +6,16 @@ import {
     Pencil,
     RotateCcw,
     Trash2,
+    UserPlus,
+    UserRoundSearch,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import ClassifyOriginDialog from '@/components/contacts/ClassifyOriginDialog.vue';
 import ContactFormDialog from '@/components/contacts/ContactFormDialog.vue';
 import ContactNotesCard from '@/components/contacts/ContactNotesCard.vue';
 import ContactOriginCard from '@/components/contacts/ContactOriginCard.vue';
+import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
+import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
@@ -31,6 +35,7 @@ import {
     destroy as destroyContact,
     index as contactsIndex,
     restore as restoreContact,
+    save as saveContact,
     show,
 } from '@/routes/contacts';
 import type {
@@ -76,6 +81,7 @@ defineOptions({
 
 const editOpen = ref(false);
 const classifyOpen = ref(false);
+const saveOpen = ref(false);
 
 const deletion = useRecordDeletion<Contact>({
     destroy: (contact) => destroyContact(contact.id),
@@ -110,7 +116,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
     <div
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
-        <PageHeader :title="contact.name">
+        <PageHeader help="contactos" show-title :title="contact.name">
             <template #eyebrow>
                 <div class="flex flex-wrap items-center gap-2">
                     <Avatar class="size-8 rounded-lg">
@@ -121,12 +127,17 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                         </AvatarFallback>
                     </Avatar>
                     <DeletedBadge v-if="contact.is_deleted" />
+                    <UnsavedContactBadge v-else-if="!contact.is_saved" />
                     <span class="text-xs text-muted-foreground">
                         {{ contact.source_label }}
                     </span>
                 </div>
             </template>
             <template #actions>
+                <Button v-if="contact.can?.save" @click="saveOpen = true">
+                    <UserPlus />
+                    Guardar contacto
+                </Button>
                 <Button
                     v-if="can.update"
                     variant="outline"
@@ -163,6 +174,26 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             No aparece en las listas, pero conserva todo su historial. Si vuelve
             a escribir, se sigue usando este mismo contacto.
         </DeletedRecordNotice>
+
+        <div
+            v-else-if="!contact.is_saved"
+            class="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
+            role="status"
+        >
+            <UserRoundSearch
+                class="mt-0.5 size-4 shrink-0 text-warning"
+                aria-hidden="true"
+            />
+            <div class="space-y-1">
+                <p class="font-medium">Contacto no guardado</p>
+                <p class="text-muted-foreground">
+                    Se registró automáticamente cuando escribió. Sus
+                    conversaciones y respuestas funcionan con normalidad, pero
+                    no aparece en el directorio de Contactos, en sus reportes ni
+                    en los conteos de etiquetas hasta que alguien lo guarde.
+                </p>
+            </div>
+        </div>
 
         <div class="grid items-start gap-6 lg:grid-cols-3">
             <div class="flex flex-col gap-6 lg:col-span-2">
@@ -398,6 +429,14 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             v-if="can.update"
             v-model:open="editOpen"
             :contact="contact"
+        />
+
+        <SaveContactDialog
+            v-if="contact.can?.save"
+            v-model:open="saveOpen"
+            :contact="contact"
+            :action="saveContact(contact.id)"
+            :can-add-note="can.manageNotes"
         />
 
         <ClassifyOriginDialog

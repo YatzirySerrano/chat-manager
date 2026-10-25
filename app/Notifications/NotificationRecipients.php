@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\Conversation;
@@ -24,9 +23,9 @@ class NotificationRecipients
     public function __construct(private ConversationAccess $access) {}
 
     /**
-     * Available users who could accept the pending conversation right now
-     * (accepting requires being available, so unavailable people are left
-     * alone: their availability keeps meaning "do not disturb with the queue").
+     * Active users who could accept the pending conversation right now
+     * (active account and role, accept permission, reaching its queue;
+     * ConversationAccess::canAccept()). There is no manual availability.
      *
      * @return Collection<int, User>
      */
@@ -35,7 +34,6 @@ class NotificationRecipients
         return User::query()
             ->active()
             ->withPermission(Permission::AcceptConversations)
-            ->where('availability', AgentAvailability::Available)
             ->when($exceptUserId !== null, fn (Builder $query) => $query->whereKeyNot($exceptUserId))
             ->where(fn (Builder $reach) => $reach
                 ->whereHas('roles', fn (Builder $roles) => $roles->where('scope', DataScope::Global->value))

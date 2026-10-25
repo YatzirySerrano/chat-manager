@@ -128,10 +128,7 @@ const subtitle = computed(() => {
         return 'Cuenta eliminada';
     }
 
-    const availability =
-        partner.availability === 'available' ? 'Disponible' : 'No disponible';
-
-    return partnerOnline.value ? `En línea · ${availability}` : availability;
+    return partnerOnline.value ? 'En línea' : 'Sin conexión';
 });
 const mentionable = computed<TeamMention[]>(() =>
     props.thread.type === 'group'
@@ -613,7 +610,6 @@ onBeforeUnmount(() => {
                 :name="thread.title"
                 :group="thread.type === 'group'"
                 :deleted="thread.partner?.deleted ?? false"
-                :availability="thread.partner?.availability ?? null"
                 :online="partnerOnline"
             />
             <div class="min-w-0 flex-1">
@@ -710,7 +706,7 @@ onBeforeUnmount(() => {
                         class="flex justify-center py-2"
                     >
                         <span
-                            class="rounded-full border bg-background px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+                            class="rounded-full border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                         >
                             {{ dayOf(message) }}
                         </span>

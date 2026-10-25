@@ -7,7 +7,8 @@
  *   1. the inbox opens on "Bandeja general" and mixes both channels (only
  *      what waits for Ana: pending ones of her department, hers, never
  *      Beto's);
- *   2. every chip's number is exactly what the chip lists;
+ *   2. every indicator's number ("Bandeja general", "Pendientes") is
+ *      exactly what it lists;
  *   3. the "Canal" filter appears (two channels) and, with "Conexión",
  *      narrows the rows;
  *   4. accepting from the list keeps the row in the general inbox, now
@@ -209,13 +210,10 @@ const run = async () => {
             const notes = [];
             let ok = true;
 
-            for (const key of [
-                'base',
-                'mine',
-                'pending',
-                'attending',
-                'on_hold',
-            ]) {
+            // Fase 5: the always visible indicators with a chip are the
+            // base view and "Pendientes" ("Mis conversaciones" moved to the
+            // "Filtros" panel and "En espera" was retired).
+            for (const key of ['base', 'pending']) {
                 await ana.locator(`[data-inbox-chip="${key}"]`).click();
                 await ana.waitForFunction(
                     (chip) =>
@@ -267,9 +265,11 @@ const run = async () => {
             await settled(ana);
             const whatsappOnly = await rowLabels(ana);
             notes.push(`WhatsApp connection rows=${whatsappOnly.length}`);
+            // The one of the open panel (the row of applied chips has its
+            // own "Limpiar filtros", covered by the panel).
             await ana
+                .getByRole('dialog')
                 .getByRole('button', { name: 'Limpiar filtros' })
-                .first()
                 .click();
             await settled(ana);
             await ana.keyboard.press('Escape');
@@ -295,8 +295,10 @@ const run = async () => {
             await settled(ana);
             const row = listRow(ana, 'Visitante Pendiente');
             const kept = (await row.count()) === 1;
+            // Phase 5: an agent's row has no status badge; the status is
+            // part of its accessible name ("<contact>, En atención, …").
             const text = kept
-                ? (await row.innerText()).replace(/\s+/g, ' ')
+                ? ((await row.getAttribute('aria-label')) ?? '')
                 : '';
             const general = await ana
                 .locator('[data-inbox-chip="base"]')
@@ -305,7 +307,9 @@ const run = async () => {
             return [
                 /Aceptaste/.test(toast) &&
                     kept &&
-                    /En atención/.test(text) &&
+                    text.startsWith('Visitante Pendiente, En atención') &&
+                    (await acceptButton(ana, 'Visitante Pendiente').count()) ===
+                        0 &&
                     general === 'true',
                 `toast "${toast}"; row kept=${kept} "${text.slice(0, 120)}"; general still selected=${general}`,
             ];

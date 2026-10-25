@@ -60,17 +60,17 @@ test('the scenario is small, goes through the real services and can be built aga
 
     $window = app(CustomerServiceWindow::class);
     $pending = Conversation::query()->findOrFail($first['conversations']['pending']);
-    $onHold = Conversation::query()->findOrFail($first['conversations']['on_hold']);
+    $attending = Conversation::query()->findOrFail($first['conversations']['attending']);
     $closed = Conversation::query()->findOrFail($first['conversations']['closed']);
 
     expect($pending->status)->toBe(ConversationStatus::Pending)
         ->and($pending->assigned_user_id)->toBeNull()
         ->and($window->for($pending)->status)->toBe(CustomerWindowStatus::Open)
         ->and($pending->contact->attributions()->first()?->origin_type)->toBe(ContactOriginType::MetaAd)
-        ->and($onHold->status)->toBe(ConversationStatus::OnHold)
-        ->and($onHold->notes()->count())->toBe(1)
-        ->and($onHold->contact->source->value)->toBe('manual')
-        ->and($onHold->contact->identities()->count())->toBe(1)
+        ->and($attending->status)->toBe(ConversationStatus::Open)
+        ->and($attending->notes()->count())->toBe(1)
+        ->and($attending->contact->source->value)->toBe('manual')
+        ->and($attending->contact->identities()->count())->toBe(1)
         ->and($closed->status)->toBe(ConversationStatus::Closed)
         ->and($closed->department?->slug)->toBe(ManualValidation::DEPARTMENTS['support'])
         ->and($window->for($closed)->status)->toBe(CustomerWindowStatus::Expired)

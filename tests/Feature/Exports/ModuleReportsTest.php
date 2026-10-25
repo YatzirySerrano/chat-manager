@@ -298,7 +298,7 @@ test('the users report never contains credentials', function () {
     $row = collect(range(7, 12))->first(fn (int $row): bool => $sheet->getCell("A{$row}")->getValue() === 'Usuaria Segura');
 
     expect($row)->not->toBeNull()
-        ->and($sheet->getCell("H{$row}")->getValue())->toBe('Sí');
+        ->and($sheet->getCell("G{$row}")->getValue())->toBe('Sí');
 
     foreach ([$user->password, $user->two_factor_secret, $user->two_factor_recovery_codes, 'remember-me-token-123'] as $secret) {
         expect($text)->not->toContain($secret)
@@ -391,4 +391,14 @@ test('the export menu flag follows the export permissions', function () {
         ->assertInertia(fn ($page) => $page->where('canExport', true));
     $this->actingAs(reportUser([Permission::ViewAuditLog, Permission::ExportAuditLog]))->get(route('admin.audit.index'))
         ->assertInertia(fn ($page) => $page->where('canExport', true));
+});
+
+test('the conversations report describes the tag filter and its match mode', function () {
+    $vip = Tag::factory()->create(['name' => 'VIP']);
+    $urgent = Tag::factory()->create(['name' => 'Urgente']);
+    $admin = User::factory()->administrator()->create();
+
+    expect(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id], 'tag_match' => 'all']))->toContain('Etiquetas (todas, Y): Urgente, VIP')
+        ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id]]))->toContain('Etiquetas (cualquiera, O): Urgente, VIP')
+        ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id]]))->toContain('Etiqueta: VIP');
 });

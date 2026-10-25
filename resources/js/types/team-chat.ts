@@ -17,14 +17,11 @@ export type TeamThreadFilter =
     | 'groups'
     | 'archived';
 
-export type TeamAvailability = 'available' | 'unavailable';
-
 /** A person as shown in the chat ("Usuario eliminado" when deleted). */
 export type TeamPerson = {
     id: number;
     name: string;
     deleted: boolean;
-    availability: TeamAvailability | null;
 };
 
 export type TeamMessagePreview = {
@@ -161,7 +158,6 @@ export type TeamChatFilters = {
 export type TeamContact = {
     id: number;
     name: string;
-    availability: TeamAvailability;
     departments: { id: number; name: string; color: AppColor }[];
     already_participant: boolean;
 };

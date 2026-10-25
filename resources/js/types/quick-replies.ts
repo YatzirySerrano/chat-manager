@@ -22,6 +22,12 @@ export type QuickReplySummary = {
     is_active: boolean;
     is_deleted: boolean;
     is_global: boolean;
+    /** Personal replies belong to one user and are never shared. */
+    is_personal: boolean;
+    /** Whether the personal reply belongs to the viewer. */
+    is_own: boolean;
+    /** Owner of another user's personal reply (supervision segment only). */
+    owner?: { id: number; name: string } | null;
     departments: DepartmentOption[];
     updated_at: string | null;
     can: {
@@ -31,11 +37,25 @@ export type QuickReplySummary = {
     };
 };
 
+export type QuickReplySegment = 'corporate' | 'mine' | 'others';
+
+export type QuickReplySort = 'shortcut' | 'title' | 'recent';
+
+export type QuickReplySegmentOption = {
+    value: QuickReplySegment;
+    label: string;
+    count: number;
+};
+
 export type QuickReplyFilters = {
+    segment: QuickReplySegment;
     search: string;
+    /** Department of the reply, or of its owner in the "others" segment. */
     department: number | null;
+    owner: number | null;
     record: RecordStateValue;
     availability: 'global' | 'departments' | null;
+    sort: QuickReplySort;
 };
 
 /**
@@ -48,6 +68,8 @@ export type AvailableQuickReply = {
     shortcut: string;
     body: string;
     is_global: boolean;
+    /** One of the user's own personal replies. */
+    is_personal: boolean;
     /** Departments of the reply that the user reaches (empty when global). */
     departments: { id: number; name: string }[];
     text: string;

@@ -87,7 +87,7 @@ function onOpenChange(value: boolean): void {
                                     v-if="center.unread.value.total > 0"
                                     :class="
                                         cn(
-                                            'absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums',
+                                            'absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-xs leading-none font-semibold tabular-nums',
                                             center.unread.value.urgent > 0
                                                 ? 'bg-destructive text-white'
                                                 : 'bg-primary text-primary-foreground',
@@ -253,7 +253,7 @@ function onOpenChange(value: boolean): void {
                                     {{ item.body }}
                                 </span>
                                 <span
-                                    class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground"
+                                    class="mt-1 flex items-center gap-2 text-xs text-muted-foreground"
                                 >
                                     <time
                                         :datetime="item.updated_at ?? undefined"

@@ -271,7 +271,7 @@ test('each listed contact exposes only the operations the viewer may perform', f
         ->get(route('contacts.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('contacts.data.0.id', $contact->id)
-            ->where('contacts.data.0.can', ['view' => true, 'update' => false, 'delete' => false, 'restore' => false])
+            ->where('contacts.data.0.can', ['view' => true, 'update' => false, 'delete' => false, 'restore' => false, 'save' => false])
         );
 
     $this->actingAs($viewer)
@@ -288,7 +288,7 @@ test('each listed contact exposes only the operations the viewer may perform', f
     $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('contacts.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->where('contacts.data.0.can', ['view' => true, 'update' => true, 'delete' => true, 'restore' => false])
+            ->where('contacts.data.0.can', ['view' => true, 'update' => true, 'delete' => true, 'restore' => false, 'save' => false])
         );
 });
 

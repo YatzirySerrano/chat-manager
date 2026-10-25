@@ -4,6 +4,7 @@ namespace App\Services\Messaging;
 
 use App\Enums\ConnectionChannel;
 use App\Models\Connection;
+use App\Services\Meta\MetaMessagingTransport;
 use App\Services\Meta\WhatsAppTransport;
 use App\Services\WebChat\WebChatTransport;
 
@@ -11,7 +12,8 @@ use App\Services\WebChat\WebChatTransport;
  * Resolves the outbound transport of a connection by its channel. The
  * WhatsApp transport is resolved from the container on every call (never
  * cached), so the binding of config('whatsapp.transport') and the doubles
- * tests register with app()->instance() always apply.
+ * tests register with app()->instance() always apply. Messenger and
+ * Instagram use the Meta Send API (MetaMessagingTransport).
  */
 class ChannelTransports
 {
@@ -20,6 +22,7 @@ class ChannelTransports
         return match ($connection->channel) {
             ConnectionChannel::Whatsapp => app(WhatsAppTransport::class),
             ConnectionChannel::WebChat => app(WebChatTransport::class),
+            ConnectionChannel::Messenger, ConnectionChannel::Instagram => app(MetaMessagingTransport::class, ['channel' => $connection->channel]),
         };
     }
 }

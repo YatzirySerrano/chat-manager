@@ -17,8 +17,8 @@ import {
     required,
 } from '@/lib/validation';
 import type { FieldRule, FieldRules } from '@/lib/validation';
-import { show, store, update } from '@/routes/contacts';
-import type { Contact, DuplicateCheck } from '@/types';
+import { save, show, store, update } from '@/routes/contacts';
+import type { Contact, DuplicateCheck, DuplicateContact } from '@/types';
 
 const MAX_CUSTOM_FIELDS = 10;
 
@@ -154,6 +154,38 @@ function removeCustomField(index: number): void {
     form.custom_fields.splice(index, 1);
 }
 
+/**
+ * The match is someone who wrote in and was registered automatically (a
+ * provisional contact): save that same contact into the directory with the
+ * typed name instead of creating a second one. The phone and the channel
+ * identity stay as they are.
+ */
+const canSaveDuplicate = (duplicate: DuplicateContact): boolean =>
+    !isEditing.value && !duplicate.is_saved && duplicate.status !== 'archived';
+
+function saveDuplicate(duplicate: DuplicateContact): void {
+    router.post(
+        save.url(duplicate.id),
+        {
+            name: form.name,
+            email: form.email.trim() !== '' ? form.email : duplicate.email,
+        },
+        {
+            preserveScroll: true,
+            onStart: () => (form.processing = true),
+            onFinish: () => (form.processing = false),
+            onSuccess: () => {
+                open.value = false;
+            },
+            onError: (errors) => {
+                form.setError(
+                    errors as Partial<Record<keyof typeof form.data, string>>,
+                );
+            },
+        },
+    );
+}
+
 function submit(confirmDuplicate = false): void {
     form.confirm_duplicate = confirmDuplicate;
 
@@ -220,6 +252,12 @@ function submit(confirmDuplicate = false): void {
                                     class="text-xs font-normal text-muted-foreground"
                                     >(eliminado)</span
                                 >
+                                <span
+                                    v-else-if="!duplicate.is_saved"
+                                    class="text-xs font-normal text-muted-foreground"
+                                    >(escribió, sin guardar en el
+                                    directorio)</span
+                                >
                             </p>
                             <p class="truncate text-xs text-muted-foreground">
                                 <span v-if="duplicate.matches.includes('phone')"
@@ -236,14 +274,25 @@ function submit(confirmDuplicate = false): void {
                                 >
                             </p>
                         </div>
-                        <Button variant="outline" size="sm" as-child>
-                            <a
-                                :href="show.url(duplicate.id)"
-                                target="_blank"
-                                rel="noopener"
-                                >Ver</a
+                        <div class="flex shrink-0 gap-2">
+                            <Button
+                                v-if="canSaveDuplicate(duplicate)"
+                                type="button"
+                                size="sm"
+                                :disabled="form.processing"
+                                @click="saveDuplicate(duplicate)"
                             >
-                        </Button>
+                                Guardar este contacto
+                            </Button>
+                            <Button variant="outline" size="sm" as-child>
+                                <a
+                                    :href="show.url(duplicate.id)"
+                                    target="_blank"
+                                    rel="noopener"
+                                    >Ver</a
+                                >
+                            </Button>
+                        </div>
                     </li>
                 </ul>
 

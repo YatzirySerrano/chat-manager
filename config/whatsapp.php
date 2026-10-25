@@ -89,6 +89,10 @@ return [
     | The real type is always detected from the content (finfo).
     */
     'media' => [
+        // WhatsApp has no ZIP type: archives attached in the composer are kept
+        // on the private disk and sent as a secure expiring download link
+        // (config/attachments.php). Off: archives are refused.
+        'link_fallback' => (bool) env('WHATSAPP_MEDIA_LINK_FALLBACK', true),
         'download_tries' => 4,
         'download_backoff' => [30, 120, 600],
         'types' => [
@@ -121,8 +125,9 @@ return [
                     'application/zip',
                     'application/vnd.ms-office',
                 ],
-                // Meta accepts up to 100 MB; this server keeps a lower cap.
-                'max_bytes' => (int) (env('WHATSAPP_DOCUMENT_MAX_BYTES') ?: 16 * 1024 * 1024),
+                // Meta's limit is 100 MB; PHP (upload_max_filesize/post_max_size)
+                // and the web server must accept that size too (docs/infraestructura-y-despliegue.md).
+                'max_bytes' => (int) (env('WHATSAPP_DOCUMENT_MAX_BYTES') ?: 100 * 1024 * 1024),
             ],
         ],
     ],

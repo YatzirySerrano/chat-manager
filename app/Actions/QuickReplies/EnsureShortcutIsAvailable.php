@@ -8,8 +8,12 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * A shortcut is unique within its scope: two replies conflict when they share
- * the shortcut and either of them is global or they share a department.
+ * A shortcut is unique within its scope: two corporate replies conflict when
+ * they share the shortcut and either of them is global or they share a
+ * department. Personal replies live in their owner's own namespace: they only
+ * conflict with the owner's other non-deleted personal replies (never with
+ * corporate replies, which the picker lists in a separate group, nor with
+ * other users' replies, which would reveal them).
  *
  * Must run inside the transaction that saves the reply: the replies with the
  * same shortcut are locked (and, through the shortcut index, the gap where a
@@ -28,6 +32,7 @@ class EnsureShortcutIsAvailable
     public function handle(User $actor, string $shortcut, bool $isGlobal, array $departmentIds, ?int $ignoreQuickReplyId = null): void
     {
         $sameShortcut = QuickReply::query()
+            ->corporate()
             ->where('shortcut', $shortcut)
             ->when($ignoreQuickReplyId !== null, fn ($query) => $query->whereKeyNot($ignoreQuickReplyId))
             ->orderBy('id')
@@ -64,6 +69,29 @@ class EnsureShortcutIsAvailable
             $names = $shared->map(fn (Department $department): string => $department->name)->join(', ', ' y ');
 
             throw $this->conflict($shortcut, "«{$existing->title}» en {$names}");
+        }
+    }
+
+    /**
+     * Must run inside the transaction that saves or restores the personal
+     * reply. The owner's replies with the same shortcut are locked so
+     * concurrent saves are serialized.
+     *
+     * @throws ValidationException
+     */
+    public function handlePersonal(User $owner, string $shortcut, ?int $ignoreQuickReplyId = null): void
+    {
+        $existing = QuickReply::query()
+            ->personal($owner)
+            ->where('shortcut', $shortcut)
+            ->when($ignoreQuickReplyId !== null, fn ($query) => $query->whereKeyNot($ignoreQuickReplyId))
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->first(fn (QuickReply $reply): bool => ! $reply->isDeleted());
+
+        if ($existing !== null) {
+            throw $this->conflict($shortcut, "«{$existing->title}», otra respuesta personal del mismo usuario");
         }
     }
 

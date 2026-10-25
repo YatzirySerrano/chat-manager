@@ -15,7 +15,7 @@ use App\Services\AuditLogger;
  * given, the per agent load limit of its conversations (null inherits the
  * platform-wide limit; an agent's own limit takes precedence over both).
  * Switching to automatic distribution, or raising or removing the limit,
- * offers the conversations already waiting to its available agents;
+ * offers the conversations already waiting to its eligible agents;
  * conversations already assigned are never moved, even when the limit goes
  * down.
  */

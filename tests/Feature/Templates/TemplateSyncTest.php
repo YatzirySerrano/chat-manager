@@ -96,7 +96,8 @@ test('a failed sync changes nothing and explains the Meta error', function () {
         ->assertInertiaFlash('toast.type', 'error');
 
     expect($template->refresh()->deleted_at)->toBeNull()
-        ->and($this->connection->refresh()->credentials_error)->toContain('(código 190)');
+        ->and($this->connection->refresh()->credentials_error)->toContain('token de acceso')
+        ->not->toContain('Invalid OAuth');
 });
 
 test('only template managers can synchronize', function () {

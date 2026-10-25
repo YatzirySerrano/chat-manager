@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { Braces, Globe, Users } from '@lucide/vue';
+import { Braces, Building2, Globe, Lock, Users } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
@@ -40,19 +40,41 @@ const props = defineProps<{
     sampleValues: Record<string, string>;
     bodyMaxLength: number;
     canManageGlobal: boolean;
+    /** May create corporate replies (global or by department). */
+    canCreateCorporate: boolean;
+    /** May create own personal replies. */
+    canCreatePersonal: boolean;
+    defaultType: 'corporate' | 'personal';
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
 
 const isEditing = computed(() => props.quickReply !== null);
 
+/** The type is only chosen when creating and both types are allowed. */
+const choosesType = computed(
+    () =>
+        !isEditing.value && props.canCreateCorporate && props.canCreatePersonal,
+);
+
+const isPersonal = computed(() => form.type === 'personal');
+
+/** Editing another user's personal reply (supervision). */
+const supervisedOwner = computed(() =>
+    props.quickReply?.is_personal && !props.quickReply.is_own
+        ? (props.quickReply.owner?.name ?? 'otro usuario')
+        : null,
+);
+
 const form = useForm<{
+    type: 'corporate' | 'personal';
     title: string;
     shortcut: string;
     body: string;
     is_global: boolean;
     department_ids: number[];
 }>({
+    type: 'corporate',
     title: '',
     shortcut: '',
     body: '',
@@ -68,7 +90,18 @@ watch(open, (isOpen) => {
     const ownDepartments =
         props.departments.length === 1 ? [props.departments[0].id] : [];
 
+    const type = props.quickReply
+        ? props.quickReply.is_personal
+            ? 'personal'
+            : 'corporate'
+        : !props.canCreateCorporate
+          ? 'personal'
+          : !props.canCreatePersonal
+            ? 'corporate'
+            : props.defaultType;
+
     validation.load({
+        type,
         title: props.quickReply?.title ?? '',
         shortcut: props.quickReply?.shortcut ?? '',
         body: props.quickReply?.body ?? '',
@@ -179,7 +212,7 @@ const validation = useFormValidation(form, {
         ],
         department_ids: [
             when(
-                (data) => !data.is_global,
+                (data) => data.type === 'corporate' && !data.is_global,
                 [required('Elige al menos un departamento.')],
             ),
         ],
@@ -196,10 +229,20 @@ function submit(): void {
         },
     };
 
-    form.transform((data) => ({
-        ...data,
-        department_ids: data.is_global ? [] : data.department_ids,
-    }));
+    form.transform(({ type, ...data }) =>
+        type === 'personal'
+            ? {
+                  type,
+                  title: data.title,
+                  shortcut: data.shortcut,
+                  body: data.body,
+              }
+            : {
+                  ...data,
+                  type,
+                  department_ids: data.is_global ? [] : data.department_ids,
+              },
+    );
 
     if (props.quickReply) {
         form.submit(update(props.quickReply.id), options);
@@ -214,9 +257,21 @@ function submit(): void {
         v-model:open="open"
         size="xl"
         :title="
-            isEditing ? 'Editar respuesta rápida' : 'Nueva respuesta rápida'
+            isEditing
+                ? isPersonal
+                    ? 'Editar respuesta personal'
+                    : 'Editar respuesta rápida'
+                : isPersonal
+                  ? 'Nueva respuesta personal'
+                  : 'Nueva respuesta rápida'
         "
-        description="Texto predefinido que el equipo inserta en el chat escribiendo «/» y el atajo. Siempre se puede revisar antes de enviar."
+        :description="
+            supervisedOwner
+                ? `Respuesta personal de ${supervisedOwner}. Solo esa persona la usa; el cambio queda registrado en la auditoría.`
+                : isPersonal
+                  ? 'Texto propio que solo tú verás e insertarás en el chat escribiendo «/» y el atajo.'
+                  : 'Texto predefinido que el equipo inserta en el chat escribiendo «/» y el atajo. Siempre se puede revisar antes de enviar.'
+        "
         :processing="form.processing"
         :validation="validation"
         :submit-label="isEditing ? 'Guardar cambios' : 'Crear respuesta'"
@@ -224,6 +279,70 @@ function submit(): void {
     >
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
             <div class="grid content-start gap-5">
+                <fieldset v-if="choosesType" class="grid gap-2">
+                    <legend class="mb-1 text-sm font-medium">Tipo</legend>
+                    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup">
+                        <button
+                            type="button"
+                            role="radio"
+                            :aria-checked="!isPersonal"
+                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            :class="
+                                !isPersonal &&
+                                'border-primary bg-primary-soft/60'
+                            "
+                            @click="form.type = 'corporate'"
+                        >
+                            <Building2
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span>
+                                <span class="block font-medium"
+                                    >Corporativa</span
+                                >
+                                <span class="text-xs text-muted-foreground"
+                                    >Para todos o para los departamentos que
+                                    elijas.</span
+                                >
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            :aria-checked="isPersonal"
+                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            :class="
+                                isPersonal &&
+                                'border-primary bg-primary-soft/60'
+                            "
+                            @click="form.type = 'personal'"
+                        >
+                            <Lock
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span>
+                                <span class="block font-medium">Personal</span>
+                                <span class="text-xs text-muted-foreground"
+                                    >Solo tú la verás y la usarás.</span
+                                >
+                            </span>
+                        </button>
+                    </div>
+                </fieldset>
+                <p
+                    v-else-if="isPersonal"
+                    class="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground"
+                >
+                    <Lock class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {{
+                        supervisedOwner
+                            ? `Respuesta personal de ${supervisedOwner}: no se comparte con nadie más.`
+                            : 'Respuesta personal: no se comparte con ningún departamento ni con otros usuarios.'
+                    }}
+                </p>
+
                 <FormField
                     id="quick-reply-title"
                     label="Título"
@@ -248,8 +367,9 @@ function submit(): void {
                             'Palabra que se escribe después de «/» en el chat para insertar esta respuesta.',
                         howTo: 'Usa minúsculas sin acentos, números, guion (-) o guion bajo (_). Debe empezar con letra o número. No escribas la «/».',
                         example: 'saludo',
-                        warning:
-                            'No puede repetirse con otra respuesta disponible para todos ni con otra que comparta algún departamento.',
+                        warning: isPersonal
+                            ? 'No puede repetirse con otra de tus respuestas personales. Puede coincidir con una corporativa: en el chat aparecerán en grupos separados.'
+                            : 'No puede repetirse con otra respuesta disponible para todos ni con otra que comparta algún departamento.',
                     }"
                 >
                     <div class="flex">
@@ -350,7 +470,7 @@ function submit(): void {
                     />
                 </div>
 
-                <fieldset class="grid gap-3">
+                <fieldset v-if="!isPersonal" class="grid gap-3">
                     <legend
                         class="mb-1 flex items-center gap-1.5 text-sm font-medium"
                     >

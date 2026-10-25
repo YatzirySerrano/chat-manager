@@ -1,6 +1,7 @@
 import { useHttp } from '@inertiajs/vue3';
 import type { Ref } from 'vue';
 import { computed, ref, shallowRef, watch } from 'vue';
+import { STATUS_RANK } from '@/components/conversations/messageFormat';
 import { timeline as timelineRoute } from '@/routes/conversations';
 import type {
     ConversationEvent,
@@ -54,21 +55,11 @@ function timeOf(at: string): number {
     return Number.isNaN(time) ? 0 : time;
 }
 
-/**
- * Order of the delivery states inside one second (the resolution of
- * updated_at) when the delivery attempt is unknown: replies only move
- * forward, and a failure, being terminal until an explicit retry, wins a tie.
+/*
+ * Inside one second (the resolution of updated_at) and without a delivery
+ * attempt, STATUS_RANK (shared with the inbox list, messageFormat.ts) orders
+ * the states.
  */
-const STATUS_RANK: Record<MessageStatusValue, number> = {
-    received: 0,
-    queued: 1,
-    sending: 2,
-    accepted: 3,
-    sent: 4,
-    delivered: 5,
-    read: 6,
-    failed: 7,
-};
 
 /**
  * Order of the delivery states inside one delivery attempt. Each claim of

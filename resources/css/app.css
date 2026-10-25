@@ -13,6 +13,32 @@
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
 
+    /*
+      Type scale for all-day reading: every step pairs its size with a
+      1.4–1.5 line-height, and larger steps tighten their tracking slightly.
+      Headings stay at 500/600; nothing in the scale asks for 700+.
+    */
+    --text-xs: 0.75rem;
+    --text-xs--line-height: 1.125rem;
+    --text-sm: 0.875rem;
+    --text-sm--line-height: 1.3125rem;
+    --text-base: 1rem;
+    --text-base--line-height: 1.5rem;
+    --text-lg: 1.125rem;
+    --text-lg--line-height: 1.625rem;
+    --text-lg--letter-spacing: -0.005em;
+    --text-xl: 1.25rem;
+    --text-xl--line-height: 1.75rem;
+    --text-xl--letter-spacing: -0.01em;
+    --text-2xl: 1.5rem;
+    --text-2xl--line-height: 2rem;
+    --text-2xl--letter-spacing: -0.015em;
+    --text-3xl: 1.875rem;
+    --text-3xl--line-height: 2.25rem;
+    --text-3xl--letter-spacing: -0.02em;
+
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
     --radius-xl: calc(var(--radius) + 4px);
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -49,9 +75,12 @@
 
     --shadow-card:
         0 1px 2px hsl(var(--shadow-color) / 0.04),
-        0 1px 3px hsl(var(--shadow-color) / 0.06);
+        0 1px 3px hsl(var(--shadow-color) / 0.05);
+    --shadow-popover:
+        0 2px 8px -2px hsl(var(--shadow-color) / 0.1),
+        0 8px 24px -8px hsl(var(--shadow-color) / 0.14);
     --shadow-elevated:
-        0 12px 32px -12px hsl(var(--shadow-color) / 0.18),
+        0 12px 30px -10px hsl(var(--shadow-color) / 0.16),
         0 4px 12px -4px hsl(var(--shadow-color) / 0.08);
 
     --color-border: var(--border);
@@ -75,12 +104,8 @@
 }
 
 /*
-  The default border color has changed to `currentColor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
+  Tailwind v4 defaults borders to currentColor; every border (including
+  pseudo-elements and file buttons) uses the neutral hairline token instead.
 */
 @layer base {
     *,
@@ -88,7 +113,7 @@
     ::before,
     ::backdrop,
     ::file-selector-button {
-        border-color: var(--color-gray-200, currentColor);
+        border-color: var(--border, currentColor);
     }
 }
 
@@ -126,7 +151,7 @@
     --chart-3: oklch(0.7 0.14 70);
     --chart-4: oklch(0.6 0.16 295);
     --chart-5: oklch(0.62 0.17 12);
-    --radius: 0.75rem;
+    --radius: 0.625rem;
     --sidebar-background: oklch(1 0 0);
     --sidebar: oklch(1 0 0);
     --sidebar-foreground: oklch(0.35 0.02 255);
@@ -180,10 +205,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.033 160);
     --primary-soft-foreground: oklch(0.43 0.13 160);
-    --ring: oklch(0.53 0.13 160 / 0.45);
+    --ring: oklch(0.53 0.13 160 / 0.6);
     --sidebar-primary: oklch(0.53 0.13 160);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.53 0.13 160 / 0.45);
+    --sidebar-ring: oklch(0.53 0.13 160 / 0.6);
 }
 
 [data-palette='teal'] {
@@ -191,10 +216,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.028 185);
     --primary-soft-foreground: oklch(0.42 0.11 185);
-    --ring: oklch(0.52 0.11 185 / 0.45);
+    --ring: oklch(0.52 0.11 185 / 0.6);
     --sidebar-primary: oklch(0.52 0.11 185);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.52 0.11 185 / 0.45);
+    --sidebar-ring: oklch(0.52 0.11 185 / 0.6);
 }
 
 [data-palette='sky'] {
@@ -202,10 +227,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.037 240);
     --primary-soft-foreground: oklch(0.43 0.15 240);
-    --ring: oklch(0.53 0.15 240 / 0.45);
+    --ring: oklch(0.53 0.15 240 / 0.6);
     --sidebar-primary: oklch(0.53 0.15 240);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.53 0.15 240 / 0.45);
+    --sidebar-ring: oklch(0.53 0.15 240 / 0.6);
 }
 
 [data-palette='indigo'] {
@@ -213,10 +238,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 275);
     --primary-soft-foreground: oklch(0.4 0.17 275);
-    --ring: oklch(0.5 0.17 275 / 0.45);
+    --ring: oklch(0.5 0.17 275 / 0.6);
     --sidebar-primary: oklch(0.5 0.17 275);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.5 0.17 275 / 0.45);
+    --sidebar-ring: oklch(0.5 0.17 275 / 0.6);
 }
 
 [data-palette='violet'] {
@@ -224,10 +249,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 295);
     --primary-soft-foreground: oklch(0.42 0.19 295);
-    --ring: oklch(0.52 0.19 295 / 0.45);
+    --ring: oklch(0.52 0.19 295 / 0.6);
     --sidebar-primary: oklch(0.52 0.19 295);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.52 0.19 295 / 0.45);
+    --sidebar-ring: oklch(0.52 0.19 295 / 0.6);
 }
 
 [data-palette='rose'] {
@@ -235,10 +260,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 12);
     --primary-soft-foreground: oklch(0.45 0.19 12);
-    --ring: oklch(0.55 0.19 12 / 0.45);
+    --ring: oklch(0.55 0.19 12 / 0.6);
     --sidebar-primary: oklch(0.55 0.19 12);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.55 0.19 12 / 0.45);
+    --sidebar-ring: oklch(0.55 0.19 12 / 0.6);
 }
 
 [data-palette='amber'] {
@@ -246,10 +271,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.035 55);
     --primary-soft-foreground: oklch(0.46 0.14 55);
-    --ring: oklch(0.56 0.14 55 / 0.45);
+    --ring: oklch(0.56 0.14 55 / 0.6);
     --sidebar-primary: oklch(0.56 0.14 55);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.56 0.14 55 / 0.45);
+    --sidebar-ring: oklch(0.56 0.14 55 / 0.6);
 }
 
 [data-palette='graphite'] {
@@ -257,10 +282,10 @@
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.005 255);
     --primary-soft-foreground: oklch(0.22 0.02 255);
-    --ring: oklch(0.32 0.02 255 / 0.45);
+    --ring: oklch(0.32 0.02 255 / 0.6);
     --sidebar-primary: oklch(0.32 0.02 255);
     --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.32 0.02 255 / 0.45);
+    --sidebar-ring: oklch(0.32 0.02 255 / 0.6);
 }
 
 .dark,
@@ -270,10 +295,10 @@
     --primary-foreground: oklch(0.18 0.03 160);
     --primary-soft: oklch(0.3 0.056 160);
     --primary-soft-foreground: oklch(0.86 0.14 160);
-    --ring: oklch(0.74 0.14 160 / 0.5);
+    --ring: oklch(0.74 0.14 160 / 0.65);
     --sidebar-primary: oklch(0.74 0.14 160);
     --sidebar-primary-foreground: oklch(0.18 0.03 160);
-    --sidebar-ring: oklch(0.74 0.14 160 / 0.5);
+    --sidebar-ring: oklch(0.74 0.14 160 / 0.65);
 }
 
 [data-palette='teal'].dark,
@@ -282,10 +307,10 @@
     --primary-foreground: oklch(0.18 0.03 185);
     --primary-soft: oklch(0.3 0.048 185);
     --primary-soft-foreground: oklch(0.87 0.12 185);
-    --ring: oklch(0.75 0.12 185 / 0.5);
+    --ring: oklch(0.75 0.12 185 / 0.65);
     --sidebar-primary: oklch(0.75 0.12 185);
     --sidebar-primary-foreground: oklch(0.18 0.03 185);
-    --sidebar-ring: oklch(0.75 0.12 185 / 0.5);
+    --sidebar-ring: oklch(0.75 0.12 185 / 0.65);
 }
 
 [data-palette='sky'].dark,
@@ -294,10 +319,10 @@
     --primary-foreground: oklch(0.18 0.03 240);
     --primary-soft: oklch(0.3 0.052 240);
     --primary-soft-foreground: oklch(0.86 0.13 240);
-    --ring: oklch(0.74 0.13 240 / 0.5);
+    --ring: oklch(0.74 0.13 240 / 0.65);
     --sidebar-primary: oklch(0.74 0.13 240);
     --sidebar-primary-foreground: oklch(0.18 0.03 240);
-    --sidebar-ring: oklch(0.74 0.13 240 / 0.5);
+    --sidebar-ring: oklch(0.74 0.13 240 / 0.65);
 }
 
 [data-palette='indigo'].dark,
@@ -306,10 +331,10 @@
     --primary-foreground: oklch(0.18 0.03 275);
     --primary-soft: oklch(0.3 0.056 275);
     --primary-soft-foreground: oklch(0.85 0.14 275);
-    --ring: oklch(0.73 0.14 275 / 0.5);
+    --ring: oklch(0.73 0.14 275 / 0.65);
     --sidebar-primary: oklch(0.73 0.14 275);
     --sidebar-primary-foreground: oklch(0.18 0.03 275);
-    --sidebar-ring: oklch(0.73 0.14 275 / 0.5);
+    --sidebar-ring: oklch(0.73 0.14 275 / 0.65);
 }
 
 [data-palette='violet'].dark,
@@ -318,10 +343,10 @@
     --primary-foreground: oklch(0.18 0.03 295);
     --primary-soft: oklch(0.3 0.06 295);
     --primary-soft-foreground: oklch(0.86 0.15 295);
-    --ring: oklch(0.74 0.15 295 / 0.5);
+    --ring: oklch(0.74 0.15 295 / 0.65);
     --sidebar-primary: oklch(0.74 0.15 295);
     --sidebar-primary-foreground: oklch(0.18 0.03 295);
-    --sidebar-ring: oklch(0.74 0.15 295 / 0.5);
+    --sidebar-ring: oklch(0.74 0.15 295 / 0.65);
 }
 
 [data-palette='rose'].dark,
@@ -330,10 +355,10 @@
     --primary-foreground: oklch(0.18 0.03 12);
     --primary-soft: oklch(0.3 0.06 12);
     --primary-soft-foreground: oklch(0.86 0.15 12);
-    --ring: oklch(0.74 0.15 12 / 0.5);
+    --ring: oklch(0.74 0.15 12 / 0.65);
     --sidebar-primary: oklch(0.74 0.15 12);
     --sidebar-primary-foreground: oklch(0.18 0.03 12);
-    --sidebar-ring: oklch(0.74 0.15 12 / 0.5);
+    --sidebar-ring: oklch(0.74 0.15 12 / 0.65);
 }
 
 [data-palette='amber'].dark,
@@ -342,10 +367,10 @@
     --primary-foreground: oklch(0.18 0.03 55);
     --primary-soft: oklch(0.3 0.056 55);
     --primary-soft-foreground: oklch(0.91 0.14 55);
-    --ring: oklch(0.79 0.14 55 / 0.5);
+    --ring: oklch(0.79 0.14 55 / 0.65);
     --sidebar-primary: oklch(0.79 0.14 55);
     --sidebar-primary-foreground: oklch(0.18 0.03 55);
-    --sidebar-ring: oklch(0.79 0.14 55 / 0.5);
+    --sidebar-ring: oklch(0.79 0.14 55 / 0.65);
 }
 
 [data-palette='graphite'].dark,
@@ -354,17 +379,107 @@
     --primary-foreground: oklch(0.18 0.03 255);
     --primary-soft: oklch(0.3 0.006 255);
     --primary-soft-foreground: oklch(0.95 0.015 255);
-    --ring: oklch(0.86 0.015 255 / 0.5);
+    --ring: oklch(0.86 0.015 255 / 0.65);
     --sidebar-primary: oklch(0.86 0.015 255);
     --sidebar-primary-foreground: oklch(0.18 0.03 255);
-    --sidebar-ring: oklch(0.86 0.015 255 / 0.5);
+    --sidebar-ring: oklch(0.86 0.015 255 / 0.65);
 }
 
 @layer base {
     * {
         @apply border-border outline-ring/50;
     }
+
+    :root {
+        /* Focus indicator for elements without their own ring utility. */
+        --focus-ring: color-mix(in oklch, var(--primary) 70%, transparent);
+    }
+
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background text-sm text-foreground;
+        font-feature-settings: 'cv11', 'ss01';
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+        text-wrap: balance;
+    }
+
+    /*
+      Components from the ui kit declare outline-none plus a focus ring;
+      utilities win over this layer, so this only reaches links and custom
+      interactive elements that would otherwise have no visible focus.
+    */
+    :where(
+        a,
+        button,
+        summary,
+        [role='button'],
+        [role='tab'],
+        [role='link'],
+        [tabindex]:not([tabindex='-1'])
+    ):focus-visible {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 2px;
+    }
+
+    /* Subtle, consistent colour transitions on interactive elements. */
+    :where(
+        a,
+        button,
+        summary,
+        [role='button'],
+        [role='menuitem'],
+        [role='option']
+    ) {
+        transition-property:
+            color, background-color, border-color, opacity, box-shadow,
+            text-decoration-color;
+        transition-duration: 150ms;
+        transition-timing-function: var(--ease-standard);
+    }
+
+    :where(button, [role='button']):disabled,
+    :where([aria-disabled='true']) {
+        cursor: not-allowed;
+    }
+}
+
+/*
+  Respect the operating system's reduced motion preference: entrance/exit
+  animations (tw-animate-css, sheets, dialogs, toasts) and transitions finish
+  instantly, skeletons stop pulsing and spinners turn slowly instead of
+  spinning, so loading is still visible without constant motion.
+*/
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        animation-delay: 0ms !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .animate-pulse,
+    [data-slot='skeleton'] {
+        animation: none !important;
+    }
+
+    .animate-spin {
+        animation-duration: 2.4s !important;
+        animation-iteration-count: infinite !important;
+    }
+
+    .animate-ping,
+    .animate-bounce {
+        animation: none !important;
     }
 }

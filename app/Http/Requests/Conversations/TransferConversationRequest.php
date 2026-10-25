@@ -15,7 +15,6 @@ class TransferConversationRequest extends ConversationOperationRequest
             ...parent::rules(),
             'department_id' => ['nullable', 'integer', 'required_without:user_id'],
             'user_id' => ['nullable', 'integer', 'required_without:department_id'],
-            'confirm_unavailable' => ['sometimes', 'boolean'],
             'confirm_over_capacity' => ['sometimes', 'boolean'],
         ];
     }
@@ -25,7 +24,7 @@ class TransferConversationRequest extends ConversationOperationRequest
      */
     public function attributes(): array
     {
-        return [...parent::attributes(), 'department_id' => 'departamento', 'user_id' => 'agente', 'confirm_unavailable' => 'confirmación', 'confirm_over_capacity' => 'confirmación'];
+        return [...parent::attributes(), 'department_id' => 'departamento', 'user_id' => 'agente', 'confirm_over_capacity' => 'confirmación'];
     }
 
     /**
@@ -37,15 +36,6 @@ class TransferConversationRequest extends ConversationOperationRequest
             'department_id.required_without' => 'Elige el departamento o el agente que recibirá la conversación.',
             'user_id.required_without' => 'Elige el departamento o el agente que recibirá la conversación.',
         ];
-    }
-
-    /**
-     * Whether the actor explicitly confirmed handing the conversation to an
-     * agent declared unavailable.
-     */
-    public function confirmsUnavailable(): bool
-    {
-        return $this->boolean('confirm_unavailable');
     }
 
     /**

@@ -3,7 +3,7 @@
 Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
 cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
 qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están en
-§27 y las del chat web y la API de integración (fase 4), en §28.
+§27, las del chat web y la API de integración (fase 4), en §28, y las de la fase 5, en §29.
 
 > **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
 > WhatsApp. Lo simulado lleva la etiqueta «Simulación».
@@ -356,6 +356,10 @@ cola (sin persona) siempre funciona y la deja Pendiente. Error: Valeria puede fo
 
 ## 15. Disponibilidad
 
+> **Retirado en la fase 5:** ya no existe la disponibilidad manual (ni el interruptor, ni `user.availability_changed`
+> nuevos, ni las confirmaciones de §13.3 y §14.2 por «No disponible»; el límite de carga sí se sigue confirmando).
+> La columna «Disponibilidad inicial» de §0.1 es histórica. Pruebas vigentes en §29.9.
+
 **15.1 Cambiar disponibilidad.** Cuenta: Óscar en dos pestañas. Acción: interruptor «Disponible / No disponible» en la
 bandeja. Resultado: la otra pestaña se actualiza en vivo; los diálogos de asignar y transferir abiertos por un
 administrador muestran el cambio. Estar No disponible no le quita lo que atiende; impide aceptar nuevas y recibir
@@ -607,3 +611,132 @@ sigue funcionando, se ve una conversación fuera de la allowlist o el reintento 
 **28.9 Toast con X.** Cuenta: Valeria. Acción: con una notificación nueva en pantalla, pulsar la X «Cerrar
 notificación». Resultado: el toast desaparece y la campana conserva su contador (cerrar no es leer). Error: la
 notificación queda leída.
+
+## 29. Fase 5
+
+**Antes de empezar.** Las 7 migraciones de la fase y la actualización de permisos **no se han ejecutado** en
+`chatmanager`. Para probar a mano hay que decidirlo: respaldo (§0.3), `php artisan migrate`,
+`php artisan app:sync-permissions --upgrade-default-roles` (vista previa) y `--apply`, `npm run build`
+([despliegue fase 5](infraestructura-y-despliegue.md#procedimiento-de-la-fase-5)). Crea dos agentes del mismo
+departamento (A y B) y un Supervisor de ese departamento (módulo 3). Abre cada cuenta en un perfil de navegador
+distinto. Si algo de esta sección contradice §13.3, §14.2 o §15, vale esta sección.
+
+**29.1 Bandeja: indicadores y Filtros.** Cuenta: agente A. Resultado: arriba solo «Bandeja general», «Pendientes» (con
+contador) y «No leídas» (con contador); todo lo demás está en el botón **Filtros** (muestra el número de filtros
+aplicados; en móvil abre una hoja inferior). Elegir Estado «En atención», un departamento y dos etiquetas: aparecen
+chips removibles bajo la búsqueda y «Limpiar filtros». Copiar la URL, abrirla en otra pestaña: mismos filtros. Quitar
+un chip: la lista y los contadores cambian. «Limpiar filtros» vuelve a la bandeja general. Error: filtros que no se
+reflejan en la URL o contadores distintos de lo listado.
+
+**29.2 Etiquetas O / Y.** Con dos etiquetas aplicadas a conversaciones distintas y una conversación con ambas: modo
+«Cualquiera (O)» lista las tres; «Todas (Y)» solo la que tiene ambas (`tag_match=all` en la URL). Error: el modo Y
+muestra conversaciones con una sola etiqueta, o aparecen conversaciones fuera del alcance.
+
+**29.3 Etiquetas desde la fila.** Menú ⋮ de una fila → «Administrar etiquetas»: el diálogo dice que se aplican a la
+conversación; añadir una y guardar. Resultado: la fila muestra la etiqueta sin abrir el chat; auditoría de etiquetas.
+Sin `tags.assign` la opción no aparece.
+
+**29.4 Tipografía y diseño compacto.** Revisar la lista a 1280 px y a 1920 px: nombre, vista previa y hora legibles
+sin cortes raros; filas compactas; nada se superpone. Error: texto diminuto, saltos de línea que rompen la fila.
+
+**29.5 Alias privado.** Cuenta: agente A. En una conversación, encabezado o panel de detalles → poner alias «Cliente
+VIP». Resultado: A ve «Cliente VIP» (con la marca «alias») en la lista, el encabezado y los detalles; el nombre oficial
+sigue visible en la descripción. Agente B (o el Superadministrador en otra sesión) ve el nombre oficial. El contacto,
+su teléfono y el destinatario de los envíos no cambian; exportaciones y notificaciones usan el nombre oficial.
+Consulta: el Administrador entra a «Administración › Elementos personales» y ve el alias de A con el nombre oficial;
+con `supervision.manage-personal` lo edita o elimina (auditoría `supervision.personal_item_updated/deleted`, sin el
+texto del alias). Un Supervisor sin esos permisos no ve la página.
+
+**29.6 Apariencia del chat.** Cuenta: agente A. Abrir «Apariencia del chat»: probar cada paleta y «Elige cada color»;
+la vista previa cambia al instante. Elegir un texto con poco contraste (p. ej. gris claro sobre blanco) y guardar:
+el servidor lo sustituye por casi negro o blanco y avisa. «Deshacer cambios» vuelve a lo guardado; «Restablecer
+predeterminados» vuelve a los colores de la plataforma. Alcance: «Solo esta conversación» frente a «Todas mis
+conversaciones» (la de conversación prevalece). Comprobar en modo claro y oscuro. Agente B abriendo la misma
+conversación ve los colores normales; el Administrador en Elementos personales ve una muestra, pero su propio chat
+no cambia. Error: los colores llegan a otro usuario o un texto ilegible se guarda tal cual.
+
+**29.7 Contactos provisionales.** Simulador: `php artisan chat-manager:simulate-inbound` con un número nuevo. Resultado:
+la conversación aparece en la bandeja normalmente; en Contactos el número **no** aparece. Activar «Incluir no
+guardados» (`include_provisional=1`): aparece con la insignia de no guardado. Desde el panel de detalles →
+«Guardar contacto» (con `contacts.create`), escribir el nombre y guardar: el botón desaparece y el contacto aparece
+en el directorio sin el filtro. Registro: `contact.saved`. Los contactos que ya existían antes de la migración siguen
+todos guardados. Error: un provisional cuenta en reportes/etiquetas de contactos por defecto, o guardar cambia el
+teléfono.
+
+**29.8 Sin «En espera».** Revisar bandeja (filtros, indicadores), acciones del chat, panel de detalles, panel principal
+y reportes: no hay «En espera», ni «Poner en espera» ni «Retomar». Un enlace viejo con `status=on_hold` muestra las
+activas. API v1: `GET /api/v1/conversations?status=on_hold` responde 422. Comando de retiro **solo sobre una copia o
+`chatmanager_testing`, nunca sobre `chatmanager`**: con `DB_DATABASE` apuntando a la copia,
+`php artisan conversations:retire-on-hold` lista cada conversación en espera con su destino («En atención» o
+«Pendiente (cola)») sin escribir; repetirlo da el mismo resultado. `--apply` solo con autorización.
+
+**29.9 Sin interruptor de disponibilidad.** No existe «Disponible / No disponible» en la bandeja ni en el menú. Agente
+A acepta una pendiente: funciona. En un departamento con distribución automática, una conversación nueva se asigna
+sola a un agente activo con capacidad. Desactivar la cuenta de B o quitarlo del departamento: deja de recibir.
+Chat web: con la conexión activa y el horario abierto, el widget dice disponible si hay al menos un miembro activo
+del departamento por defecto que pueda atender; quitando a todos los miembros, aparece como no disponible.
+Panel principal: «Agentes activos».
+
+**29.10 Supervisor tras transferir.** Cuenta: Supervisor de Ventas. Un agente transfiere una conversación de Ventas a
+Soporte. Resultado: el Supervisor sigue viéndola (y su historial, también cerrada) pero sin Responder, Aceptar,
+Transferir, Asignar, Cerrar ni Etiquetar; un intento por URL o petición manipulada responde 403/404. Error: el
+supervisor puede escribir o la conversación desaparece.
+
+**29.11 Insignias operativas por permiso.** Agente A: las filas no muestran departamento, responsable ni conexión.
+Supervisor (con `conversations.supervise` o `conversations.assign`) y Administrador: sí los ven.
+
+**29.12 Estado de entrega lista frente a chat.** Con `WHATSAPP_SIMULATE_STATUSES=true`, abrir la bandeja en dos
+pestañas; en una, abrir el chat y enviar. Resultado: la vista previa de la fila y la burbuja pasan por Enviado →
+Entregado → Leído al mismo tiempo en ambas pestañas, sin retroceder nunca. Error: la lista se queda en «Enviado».
+
+**29.13 Respuestas rápidas personales.** Administrador: Usuarios › Editar agente A → «Puede crear respuestas rápidas
+personales» (auditado `user.personal_quick_replies_granted`). Agente A: Respuestas rápidas → «Mis respuestas» → crear
+una. En el chat, «/» la muestra agrupada como propia. Agente B no la ve (ni por id manipulado: 404). Revocar el
+permiso: A sigue viéndola y usándola, pero ya no puede editarla, crear ni eliminar; nada se borra. Administrador con
+`supervision.view-personal`: pestaña «De otros usuarios» con filtros por usuario y departamento; con
+`manage-personal`, editar o eliminar (auditado, solo con el título).
+
+**29.14 Plantillas solo administrativas.** Agente y Supervisor: el botón de plantillas no aparece en el compositor y
+el envío por petición manual responde 403. Administrador (`templates.send`): puede enviarlas.
+
+**29.15 Ventana de 24 h.** En una conversación de WhatsApp con mensaje reciente del cliente, el indicador muestra
+«Quedan …; vence el …» y cuenta hacia atrás sin recargar. Fuera de la ventana (simula un último mensaje de hace más
+de 24 h o espera): el compositor bloquea el texto libre y explica por qué (el Administrador puede ofrecer plantilla).
+El cliente vuelve a escribir: la ventana se reabre en vivo. Chat web: «No aplica».
+
+**29.16 Adjuntos por canal.** WhatsApp: imagen JPEG/PNG ≤ 5 MB, audio/video ≤ 16 MB, documentos PDF/TXT/Office ≤ 100 MB
+(límite real según PHP/Nginx, ver [infraestructura §6](infraestructura-y-despliegue.md#6-https-y-nginx)); el
+compositor muestra tipo, tamaño, vista previa y progreso, y «Cancelar» detiene la subida. Un ZIP se anuncia «Se
+enviará como enlace de descarga seguro…» y la burbuja dice «Enviado como enlace de descarga seguro»; abrir el enlace
+descarga; «Revocar enlace» (con confirmación) lo invalida. Errores claros con un archivo de otro tipo, uno renombrado
+(`.exe` a `.pdf`: se detecta el tipo real) o uno demasiado grande. Doble clic en Enviar no duplica. Chat web: hasta
+25 MB, ZIP nativo.
+
+**29.17 Messenger e Instagram — pendiente de validación real.** Solo con una app real de Meta, sus permisos aprobados y
+HTTPS público: seguir la lista de [meta-messenger-instagram.md §9](meta-messenger-instagram.md#9-validación-con-una-app-real-pendiente).
+Sin esa app no hay nada que probar a mano: lo implementado se validó solo con simulaciones.
+
+**29.18 PWA.** Requiere HTTPS o `http://localhost`. Chrome/Edge: menú de usuario → «Instalar aplicación»; se abre en
+ventana propia con el icono. iOS (Safari): la opción muestra «Compartir → Agregar a inicio». Actualización: cambiar
+`VERSION` en `public/sw.js`, recargar: aparece «Hay una nueva versión disponible» → «Actualizar» recarga una vez.
+Sin conexión (DevTools → Offline) y navegar: página «Sin conexión» con «Reintentar»; al volver la red, recarga sola.
+En DevTools → Application → Cache Storage solo hay archivos estáticos (`/build/assets`, iconos, offline), ningún HTML
+ni JSON. Cerrar sesión: la caché queda vacía; otra persona inicia sesión en el mismo navegador y no ve nada del
+anterior. Detalle: [infraestructura §20](infraestructura-y-despliegue.md#20-aplicación-instalable-pwa).
+
+**29.19 Auditoría legible.** Conexiones → verificar credenciales; en Auditoría la entrada dice «Credenciales de la
+conexión verificadas» con el resultado en español, sujeto con enlace y quién/cuándo. La sección técnica (clave, datos
+crudos) solo aparece con `system.view` o `audit.export`.
+
+**29.20 Errores en lenguaje claro.** Enviar un formulario vacío (usuario, contacto): mensajes en español con el nombre
+del campo («correo electrónico»), nunca claves. Un error de Meta simulado muestra la explicación; el detalle técnico
+solo al administrador en «Detalles técnicos». Una URL inexistente muestra la página 404 en español.
+
+**29.21 Ayuda, tarjetas y títulos.** En Conversaciones, Contactos, Respuestas rápidas, Conexiones, Usuarios, Reportes
+y Auditoría pulsar «¿Cómo funciona?»: se abre el panel con objetivo, pasos, permisos y errores comunes. Panel principal
+y departamentos: tarjetas de cifras compactas. Ninguna página repite su título (encabezado del layout + título de
+página). Error: panel vacío, texto en inglés o título duplicado.
+
+**29.22 Responsive y modo oscuro.** A 375, 768, 1280 y 1920 px, en modo claro y oscuro: bandeja, chat, filtros,
+diálogos de alias, apariencia, guardar contacto y elementos personales sin desbordes horizontales ni textos
+ilegibles. Error: contenido cortado o contraste insuficiente.

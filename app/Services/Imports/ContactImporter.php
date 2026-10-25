@@ -5,6 +5,7 @@ namespace App\Services\Imports;
 use App\Actions\Contacts\AddContactNote;
 use App\Actions\Contacts\CreateContact;
 use App\Actions\Contacts\FindDuplicateContacts;
+use App\Actions\Contacts\SaveContactToDirectory;
 use App\Actions\Contacts\UpdateContact;
 use App\Actions\Tags\SyncContactTags;
 use App\Enums\AuditAction;
@@ -95,6 +96,7 @@ class ContactImporter
         private ContactImportReport $report,
         private MigrationSourceRegistry $sources,
         private ImportBatchTracker $tracker,
+        private SaveContactToDirectory $saveContact,
     ) {}
 
     /**
@@ -428,16 +430,23 @@ class ContactImporter
             }
 
             if ($decision !== self::DECISION_FILL_EMPTY) {
-                return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}).", $existing->id);
+                return $this->outcome($row, 'skipped', $existing->isSaved()
+                    ? "Ya existe como «{$existing->name}» (#{$existing->id})."
+                    : "Ya existe como «{$existing->name}» (#{$existing->id}), registrado por un mensaje y sin guardar en el directorio; elige completar campos vacíos para guardarlo.", $existing->id);
             }
 
             if ($existing->isDeleted()) {
                 return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}), pero está eliminado; restáuralo antes de completarlo.", $existing->id);
             }
 
+            // Completing a provisional match (an unknown sender registered by
+            // an inbound message) also saves it into the directory: the import
+            // declares these people as contacts. A later rollback of the batch
+            // reverts the completed fields but keeps it saved.
             $changed = DB::transaction(function () use ($transfer, $row, $existing, $data, $actor): bool {
                 $previous = [];
                 $applied = [];
+                $promoted = $this->saveContact->promote($existing, $actor, 'import');
 
                 foreach (['phone_e164', 'email'] as $field) {
                     if ($existing->getAttribute($field) === null && $data[$field] !== null) {
@@ -457,7 +466,7 @@ class ContactImporter
 
                 $added = $this->applyTagsAndNote($existing, $data, $actor);
 
-                if ($applied === [] && $added['tag_ids'] === [] && $added['note_id'] === null) {
+                if (! $promoted && $applied === [] && $added['tag_ids'] === [] && $added['note_id'] === null) {
                     return false;
                 }
 

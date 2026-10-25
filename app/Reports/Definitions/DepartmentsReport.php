@@ -170,7 +170,7 @@ class DepartmentsReport extends ReportDefinition
                 'Conversaciones abiertas por departamento',
                 array_values($byLoad->map(fn (Department $department): string => $department->name)->all()),
                 [new ChartSeries('Conversaciones abiertas', array_values($byLoad->map(fn (Department $department): int => (int) $department->getAttribute('open_conversations_count'))->all()))],
-                'Pendientes, en atención y en espera (top '.self::TOP_DEPARTMENTS.')',
+                'Pendientes y en atención (top '.self::TOP_DEPARTMENTS.')',
             ),
             new Chart(
                 ChartType::Donut,

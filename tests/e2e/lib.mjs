@@ -514,9 +514,6 @@ export async function alertDelta(page, action, { settleMs = 1_500 } = {}) {
 /* Inbox (three-panel page /conversations?c=ID).                       */
 /* ------------------------------------------------------------------ */
 
-export const AVAILABILITY_SWITCH =
-    'Disponible para aceptar y recibir conversaciones';
-
 /**
  * Horizontal overflow in px: the document's (page scrolls sideways) or, when
  * larger, the worst one inside the page (a panel that scrolls sideways or
@@ -993,30 +990,20 @@ export async function runOperation(page, label) {
 }
 
 /**
- * Switches the inbox view ("Pendientes", …) and waits until the server
- * answered the list of that view and the chip is still selected (the chip
- * turns pressed right away, before the list arrives).
+ * Inbox views offered in the "Vista" group of the "Filtros" panel (the
+ * indicators of the list only cover the base view, pending and unread).
  */
-export async function openInboxView(page, label) {
-    const chip = page
-        .getByRole('navigation', { name: 'Bandejas' })
-        .getByRole('button', { name: new RegExp(label) });
-    const pressed = () =>
-        page.waitForFunction(
-            (text) =>
-                document
-                    .querySelector(
-                        'nav[aria-label="Bandejas"] button[aria-pressed="true"]',
-                    )
-                    ?.textContent?.includes(text) ?? false,
-            label,
-        );
+const FILTER_PANEL_VIEWS = {
+    'Mis conversaciones': 'mine',
+    'Todas las visibles': 'all',
+    Todas: 'all',
+};
 
-    if ((await chip.getAttribute('aria-pressed')) === 'true') {
-        return;
-    }
-
-    const answered = page
+/**
+ * Waits for the partial reload the list asks after a filter change.
+ */
+function inboxListAnswered(page) {
+    return page
         .waitForResponse(
             (response) =>
                 new URL(response.url()).pathname === '/conversations' &&
@@ -1027,31 +1014,88 @@ export async function openInboxView(page, label) {
             { timeout: 15_000 },
         )
         .catch(() => null);
-    await chip.click();
-    await pressed();
+}
+
+/**
+ * Switches the inbox to a view and waits until the server answered its
+ * list. The operational indicators ("Bandeja general" / "Todas",
+ * "Pendientes", "No leídas") are always visible chips of the list; "Mis
+ * conversaciones" and "Todas las visibles" live in the "Vista" group of
+ * the "Filtros" panel (a popover, or a bottom sheet on phones).
+ */
+export async function openInboxView(page, label) {
+    const nav = page.getByRole('navigation', { name: 'Bandejas' });
+    const chip = nav.getByRole('button', { name: new RegExp(`^${label}`) });
+
+    if ((await chip.count()) > 0) {
+        const pressed = () =>
+            page.waitForFunction(
+                (text) =>
+                    [
+                        ...document.querySelectorAll(
+                            'nav[aria-label="Bandejas"] button[aria-pressed="true"]',
+                        ),
+                    ].some((button) => button.textContent?.includes(text)),
+                label,
+            );
+
+        if ((await chip.first().getAttribute('aria-pressed')) === 'true') {
+            return;
+        }
+
+        const answered = inboxListAnswered(page);
+        await chip.first().click();
+        await pressed();
+        await answered;
+        await pressed();
+
+        return;
+    }
+
+    const view = FILTER_PANEL_VIEWS[label];
+
+    if (view === undefined) {
+        throw new Error(`Unknown inbox view: ${label}`);
+    }
+
+    if (new URL(page.url()).searchParams.get('view') === view) {
+        return;
+    }
+
+    const radioLabel = label === 'Todas' ? 'Todas las visibles' : label;
+    await page.locator('[data-inbox-filters]').first().click();
+    const radio = page.getByRole('radio', { name: radioLabel, exact: true });
+    await radio.waitFor({ state: 'visible', timeout: 10_000 });
+    const answered = inboxListAnswered(page);
+    await radio.check();
     await answered;
-    await pressed();
+    await page.keyboard.press('Escape');
+    await page.waitForURL((url) => url.searchParams.get('view') === view, {
+        timeout: 10_000,
+    });
+}
+
+/**
+ * Applies a status of the "Estado" group of the "Filtros" panel ("En
+ * atención", "Cerradas", …) and waits for the list.
+ */
+export async function chooseInboxStatus(page, label) {
+    await page.locator('[data-inbox-filters]').first().click();
+    const radio = page.getByRole('radio', { name: label, exact: true });
+    await radio.waitFor({ state: 'visible', timeout: 10_000 });
+
+    if (!(await radio.isChecked())) {
+        const answered = inboxListAnswered(page);
+        await radio.check();
+        await answered;
+    }
+
+    await page.keyboard.press('Escape');
 }
 
 export async function openConversation(page, id, query = '') {
     await page.goto(`${BASE}/conversations?${query}${query ? '&' : ''}c=${id}`);
     await page.waitForLoadState('networkidle');
-}
-
-/**
- * Demo agents start as "No disponible": they switch to "Disponible" through
- * the availability switch of the list before taking conversations.
- */
-export async function becomeAvailable(page) {
-    const toggle = page.getByRole('switch', { name: AVAILABILITY_SWITCH });
-
-    if ((await toggle.getAttribute('aria-checked')) !== 'true') {
-        await toggle.click();
-        await toastText(page, /Ahora estás disponible/);
-        await page.waitForLoadState('networkidle');
-    }
-
-    return (await toggle.getAttribute('aria-checked')) === 'true';
 }
 
 /* ------------------------------------------------------------------ */

@@ -5,6 +5,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeDataFreshness } from '@/lib/dataFreshness';
 import { initializeFlashToast } from '@/lib/flashToast';
+import { initializePwa } from '@/lib/pwa/register';
 import { initializeRealtime } from '@/lib/realtime';
 import { initializeThemePalette } from '@/lib/theme';
 
@@ -50,3 +51,6 @@ initializeThemePalette();
 
 // Connect to the real-time server (Reverb) when the server enables it...
 initializeRealtime();
+
+// Service worker (offline page, updates, install) for signed-in pages...
+initializePwa();

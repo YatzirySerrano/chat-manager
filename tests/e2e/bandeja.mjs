@@ -57,6 +57,7 @@ import {
     measure,
     overflow,
     openInboxView,
+    chooseInboxStatus,
     openPage,
     openRealtimeSession,
     php,
@@ -123,8 +124,8 @@ const rowNames = (page) =>
 const unreadChip = (page) => page.locator('[data-inbox-unread]');
 const chipCount = async (page) =>
     Number(
-        ((await unreadChip(page).innerText()).match(/(\d+)\s*$/) ?? [])[1] ??
-            NaN,
+        // The visible counter (the chip also carries an sr-only sentence).
+        ((await unreadChip(page).innerText()).match(/(\d+)/) ?? [])[1] ?? NaN,
     );
 const bubble = (page, text) =>
     page.locator('[data-message-id]', { hasText: text });
@@ -319,9 +320,7 @@ const run = async () => {
                 (row) =>
                     /recibida en WhatsApp: E2E WhatsApp (Ventas|Sucursal)/.test(
                         row.label,
-                    ) &&
-                    /E2E WhatsApp (Ventas|Sucursal)/.test(row.text) &&
-                    row.all.includes('WhatsApp:'),
+                    ) && /E2E WhatsApp (Ventas|Sucursal)/.test(row.text),
             );
             // Phase 4: pending rows start with "Pendiente de aceptar: ".
             const norte = described.filter((row) =>
@@ -384,18 +383,17 @@ const run = async () => {
                 const unreadB = (await rowNames(ana)).sort();
                 notes.push(`unread+B=${unreadB.join('/')}`);
 
-                // Phase 4: "Mis conversaciones" has no status chips (they
-                // narrow the general inbox); its status is the "Estado"
-                // select of the "Filtros" popover.
-                await ana.getByRole('button', { name: /^Filtros/ }).click();
-                await ana.locator('#inbox-status').selectOption('on_hold');
-                await ana.waitForURL(/status=on_hold/);
-                await ana.keyboard.press('Escape');
+                // "Mis conversaciones" has no status chips (they narrow the
+                // general inbox); its status is the "Estado" group of the
+                // "Filtros" panel. "En espera" is retired (Fase 5): the
+                // status narrowed here is "En atención".
+                await chooseInboxStatus(ana, 'En atención');
+                await ana.waitForURL(/status=open/);
                 await settled(ana);
-                const unreadBHold = (await rowNames(ana)).sort();
-                const holdChip = await chipCount(ana);
+                const unreadBOpen = (await rowNames(ana)).sort();
+                const openChip = await chipCount(ana);
                 notes.push(
-                    `unread+B+on_hold=${unreadBHold.join('/')} chip=${holdChip}`,
+                    `unread+B+open=${unreadBOpen.join('/')} chip=${openChip}`,
                 );
 
                 await ana.reload();
@@ -408,9 +406,11 @@ const run = async () => {
                 );
 
                 await ana.getByRole('button', { name: /^Filtros/ }).click();
+                // The one of the panel (the row of applied chips has its own
+                // "Limpiar filtros", covered by the open panel).
                 await ana
+                    .getByRole('dialog')
                     .getByRole('button', { name: 'Limpiar filtros' })
-                    .first()
                     .click();
                 await settled(ana);
                 await ana.keyboard.press('Escape');
@@ -420,9 +420,7 @@ const run = async () => {
                 // Phase 4: the status of "Mis conversaciones" is a filter of
                 // the popover, so "Limpiar filtros" also brings it back to
                 // the active conversations.
-                await ana.waitForURL(
-                    (url) => !/status=on_hold/.test(url.search),
-                );
+                await ana.waitForURL((url) => !/status=open/.test(url.search));
                 await settled(ana);
                 const cleared = (await rowNames(ana)).sort();
                 const clearedUrl = new URL(ana.url()).search;
@@ -449,12 +447,22 @@ const run = async () => {
                         ]) &&
                         unreadChipCount === unread.length &&
                         same(unreadB, ['Cliente Golfo', 'Cliente Poniente']) &&
-                        same(unreadBHold, ['Cliente Golfo']) &&
-                        holdChip === 1 &&
-                        same(afterReload, ['Cliente Golfo']) &&
+                        same(unreadBOpen, [
+                            'Cliente Golfo',
+                            'Cliente Poniente',
+                        ]) &&
+                        openChip === 2 &&
+                        same(afterReload, [
+                            'Cliente Golfo',
+                            'Cliente Poniente',
+                        ]) &&
                         pressed === 'true' &&
                         unreadOffAfterClear &&
-                        same(cleared, all),
+                        // Phase 5: the view is one more filter of the panel,
+                        // so "Limpiar filtros" returns to the general inbox
+                        // (Ana's own conversations plus the pending ones).
+                        clearedUrl === '' &&
+                        all.every((name) => cleared.includes(name)),
                     `${notes.join('; ')}; connection options=${JSON.stringify(options)}`,
                 ];
             },

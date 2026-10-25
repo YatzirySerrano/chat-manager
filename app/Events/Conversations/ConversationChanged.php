@@ -19,7 +19,7 @@ class ConversationChanged implements ShouldDispatchAfterCommit
     use Dispatchable;
 
     /**
-     * @param  string  $reason  A ConversationEventType value, or "message" / "read" / "tags".
+     * @param  string  $reason  A ConversationEventType value, or "message" / "read" / "tags" / "contact" (the contact was saved into the directory).
      */
     public function __construct(
         public readonly int $conversationId,

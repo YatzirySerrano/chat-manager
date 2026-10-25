@@ -21,8 +21,6 @@
 |   php tests/e2e/estabilizacion-seed.php message <wa_id> <profile name> <text>
 */
 
-use App\Actions\Conversations\ChangeAgentAvailability;
-use App\Enums\AgentAvailability;
 use App\Enums\DefaultRole;
 use App\Models\Connection;
 use App\Models\Department;
@@ -101,10 +99,6 @@ $agents = User::query()
     ->whereIn('email', ['e2e-ana@example.test', 'e2e-beto@example.test', 'e2e-carla@example.test'])
     ->get()
     ->keyBy('email');
-
-foreach ($agents as $agent) {
-    app(ChangeAgentAvailability::class)->handle($agent, AgentAvailability::Available);
-}
 
 echo json_encode([
     'database' => $database,

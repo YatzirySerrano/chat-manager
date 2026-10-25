@@ -86,6 +86,12 @@ class QuickRepliesReport extends ReportDefinition
         $filters = $this->filters($context);
         $descriptions = [];
 
+        $descriptions[] = 'Tipo: '.match ($filters['segment']) {
+            QuickReplyListQuery::SEGMENT_MINE => 'Mis respuestas personales',
+            QuickReplyListQuery::SEGMENT_OTHERS => 'Respuestas personales de otros usuarios',
+            default => 'Corporativas',
+        };
+
         $this->describeSearch($descriptions, $context);
 
         if ($filters['department'] !== null) {
@@ -98,7 +104,7 @@ class QuickRepliesReport extends ReportDefinition
 
         $this->describeRecordState($descriptions, $filters['record']);
 
-        if (! $filters['manages']) {
+        if (! $filters['manages'] && $filters['segment'] === QuickReplyListQuery::SEGMENT_CORPORATE) {
             $descriptions[] = 'Solo las respuestas que puedes usar';
         }
 
@@ -137,7 +143,7 @@ class QuickRepliesReport extends ReportDefinition
         return [
             'title' => $record->title,
             'shortcut' => '/'.$record->shortcut,
-            'availability' => $record->is_global ? 'Todos los departamentos' : ($record->departments->pluck('name')->implode(', ') ?: 'Sin departamentos'),
+            'availability' => $record->isPersonal() ? 'Personal'.($record->owner_user_id !== $context->actor->id && $record->owner !== null ? " ({$record->owner->name})" : '') : ($record->is_global ? 'Todos los departamentos' : ($record->departments->pluck('name')->implode(', ') ?: 'Sin departamentos')),
             'status' => $record->isDeleted() ? 'Eliminada' : 'Activa',
             'body' => Str::limit(trim((string) preg_replace('/\s+/u', ' ', $record->body)), self::BODY_LENGTH),
             'created_by' => $record->creator?->name,

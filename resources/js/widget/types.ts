@@ -77,6 +77,7 @@ export type FrameConfig = {
     };
 };
 
+/** `on_hold` is retired; it may still arrive for old conversations. */
 export type ConversationState =
     | 'none'
     | 'pending'

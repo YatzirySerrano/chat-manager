@@ -42,7 +42,9 @@ class ContactController extends Controller
     /**
      * Contacts within the actor's data scope, searched, filtered and paginated
      * (the same query as the contacts report). Deleted (archived) contacts are
-     * only listed for people who can consult deleted records and ask for them.
+     * only listed for people who can consult deleted records and ask for them;
+     * provisional contacts (unknown senders not saved into the directory) only
+     * when "Incluir no guardados" is on.
      */
     public function index(Request $request, ContactListQuery $list, ReportExporter $exporter): Response
     {
@@ -58,6 +60,7 @@ class ContactController extends Controller
         $source = $filters['source'];
         $origin = $filters['origin'];
         $sort = $filters['sort'];
+        $includeProvisional = $filters['include_provisional'];
 
         $contacts = $list->handle($actor, $filters)
             ->with([
@@ -78,6 +81,7 @@ class ContactController extends Controller
                 'source' => $source,
                 'origin' => $origin,
                 'sort' => $sort,
+                'include_provisional' => $includeProvisional,
             ],
             // The tag catalog is only offered as a filter to users allowed to see it.
             'tags' => $actor->holdsPermission(Permission::ViewTags)

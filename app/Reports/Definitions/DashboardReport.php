@@ -131,7 +131,7 @@ class DashboardReport extends ReportDefinition
             ->when($this->filters($context)->departmentId !== null, fn (Builder $query) => $query->whereKey($this->filters($context)->departmentId))
             ->withCount([
                 'conversations as pending_count' => fn (Builder $query) => $this->visible($query, $actor)->where('status', ConversationStatus::Pending),
-                'conversations as attending_count' => fn (Builder $query) => $this->visible($query, $actor)->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold]),
+                'conversations as attending_count' => fn (Builder $query) => $this->visible($query, $actor)->whereIn('status', ConversationStatus::attending()),
                 'conversations as closed_today_count' => fn (Builder $query) => $this->visible($query, $actor)->where('status', ConversationStatus::Closed)->where('closed_at', '>=', $startOfToday),
             ])
             ->orderBy('name')
@@ -169,7 +169,7 @@ class DashboardReport extends ReportDefinition
         $average = $overview['average_first_response_seconds'];
 
         $metrics = [
-            new Metric('Activas', $conversations['active'], $conversations['active'] === null ? $unavailable : 'En atención o en espera'),
+            new Metric('Activas', $conversations['active'], $conversations['active'] === null ? $unavailable : 'En atención'),
             new Metric('Pendientes', $conversations['pending'], $conversations['pending'] === null ? $unavailable : 'Esperan ser aceptadas'),
             new Metric('Cerradas hoy', $conversations['closed_today'], $conversations['closed_today'] === null ? $unavailable : 'Desde el inicio del día'),
             new Metric(
@@ -181,8 +181,7 @@ class DashboardReport extends ReportDefinition
         ];
 
         if ($overview['departments'] !== null) {
-            $metrics[] = new Metric('Personas que atienden', $overview['agents']['registered'], 'Cuentas activas que pueden responder');
-            $metrics[] = new Metric('Agentes disponibles', $overview['agents']['available'], 'Declarados como disponibles ahora');
+            $metrics[] = new Metric('Agentes activos', $overview['agents']['active'], 'Cuentas y roles activos con permiso para atender conversaciones');
             $metrics[] = new Metric('Departamentos activos', $overview['departments']['active'], number_format($overview['departments']['total']).' en total');
         }
 
@@ -201,7 +200,9 @@ class DashboardReport extends ReportDefinition
             ->selectRaw('status, COUNT(*) AS total')
             ->groupBy('status')
             ->pluck('total', 'status');
-        $open = [ConversationStatus::Pending, ConversationStatus::Open, ConversationStatus::OnHold];
+        $open = [ConversationStatus::Pending, ConversationStatus::Open];
+        // Legacy on_hold rows (not migrated yet) are still in attention.
+        $byStatus[ConversationStatus::Open->value] = (int) ($byStatus[ConversationStatus::Open->value] ?? 0) + (int) ($byStatus[ConversationStatus::OnHold->value] ?? 0);
         $monthly = $this->monthlySeries(Conversation::query()->visibleTo($actor), $context);
 
         $charts = [

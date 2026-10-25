@@ -59,7 +59,6 @@ const unreadLabel = computed(() =>
             :name="thread.title"
             :group="thread.type === 'group'"
             :deleted="thread.partner?.deleted ?? false"
-            :availability="thread.partner?.availability ?? null"
             :online="partnerOnline"
         />
         <span class="min-w-0 flex-1">
@@ -77,7 +76,7 @@ const unreadLabel = computed(() =>
                 </span>
                 <time
                     v-if="thread.last_activity_at"
-                    class="shrink-0 text-[11px] text-muted-foreground"
+                    class="shrink-0 text-xs text-muted-foreground"
                     :datetime="thread.last_activity_at"
                     :title="formatDateTime(thread.last_activity_at)"
                 >
@@ -112,7 +111,7 @@ const unreadLabel = computed(() =>
                     v-if="thread.unread > 0"
                     :class="
                         cn(
-                            'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold',
+                            'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-semibold',
                             thread.muted
                                 ? 'bg-muted text-muted-foreground'
                                 : 'bg-primary text-primary-foreground',

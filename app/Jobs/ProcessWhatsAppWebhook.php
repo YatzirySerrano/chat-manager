@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Actions\Messaging\ProcessMetaMessagingPayload;
 use App\Actions\Messaging\ProcessWebhookPayload;
+use App\Enums\ConnectionChannel;
 use App\Enums\WebhookEventStatus;
 use App\Models\WebhookEvent;
 use App\Support\Queues;
@@ -42,7 +44,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
         return array_values(array_map('intval', (array) config('whatsapp.webhooks.backoff', [10, 30, 120, 600])));
     }
 
-    public function handle(ProcessWebhookPayload $process): void
+    public function handle(ProcessWebhookPayload $process, ProcessMetaMessagingPayload $messaging): void
     {
         $event = WebhookEvent::query()->with('channelConnection')->find($this->webhookEventId);
 
@@ -60,7 +62,11 @@ class ProcessWhatsAppWebhook implements ShouldQueue
         }
 
         try {
-            $summary = $process->handle($connection, $event->decodedPayload());
+            // Messenger and Instagram events are stored per account by the
+            // app-level webhook (webhooks/meta) and share this queue and log.
+            $summary = in_array($connection->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true)
+                ? $messaging->handle($connection, $event->decodedPayload())
+                : $process->handle($connection, $event->decodedPayload());
         } catch (Throwable $exception) {
             $event->forceFill(['error' => self::describe($exception)])->save();
 

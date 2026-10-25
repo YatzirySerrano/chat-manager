@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="color-scheme" content="light dark" />
+        <meta
+            name="theme-color"
+            content="#f5f7f9"
+            media="(prefers-color-scheme: light)"
+        />
+        <meta
+            name="theme-color"
+            content="#0a0e12"
+            media="(prefers-color-scheme: dark)"
+        />
+        <meta name="robots" content="noindex" />
+        <title>Sin conexión - Chat Manager</title>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <style>
+            :root {
+                --background: #f5f7f9;
+                --card: #ffffff;
+                --foreground: #12161c;
+                --muted: #5b6471;
+                --border: #e2e6eb;
+                --primary: #008251;
+                --primary-foreground: #ffffff;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #0a0e12;
+                    --card: #141a21;
+                    --foreground: #eef1f4;
+                    --muted: #9aa4b1;
+                    --border: #26303b;
+                    --primary: #47c58c;
+                    --primary-foreground: #0b1f16;
+                }
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            html,
+            body {
+                height: 100%;
+                margin: 0;
+            }
+
+            body {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: max(16px, env(safe-area-inset-top))
+                    max(16px, env(safe-area-inset-right))
+                    max(16px, env(safe-area-inset-bottom))
+                    max(16px, env(safe-area-inset-left));
+                background: var(--background);
+                color: var(--foreground);
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    'Segoe UI',
+                    Roboto,
+                    sans-serif;
+                line-height: 1.5;
+            }
+
+            main {
+                width: 100%;
+                max-width: 26rem;
+                padding: 2rem 1.5rem;
+                border: 1px solid var(--border);
+                border-radius: 1rem;
+                background: var(--card);
+                text-align: center;
+            }
+
+            img {
+                width: 56px;
+                height: 56px;
+                border-radius: 14px;
+            }
+
+            h1 {
+                margin: 1.25rem 0 0.5rem;
+                font-size: 1.25rem;
+            }
+
+            p {
+                margin: 0 0 1.5rem;
+                color: var(--muted);
+                font-size: 0.9375rem;
+            }
+
+            button {
+                min-height: 44px;
+                padding: 0.625rem 1.25rem;
+                border: 0;
+                border-radius: 0.625rem;
+                background: var(--primary);
+                color: var(--primary-foreground);
+                font: inherit;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+            button:focus-visible {
+                outline: 3px solid var(--primary);
+                outline-offset: 3px;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <img src="/icons/icon-192.png" alt="" width="56" height="56" />
+            <h1>No hay conexión a internet</h1>
+            <p>
+                Chat Manager necesita conexión para mostrar tus conversaciones.
+                Revisa tu red y vuelve a intentarlo.
+            </p>
+            <button type="button" id="retry">Reintentar</button>
+        </main>
+        <script src="/offline.js" defer></script>
+    </body>
+</html>

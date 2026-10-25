@@ -23,6 +23,7 @@ use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\Meta\ConnectionDiagnostics;
+use App\Services\Meta\MetaApp;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -89,6 +90,13 @@ class ConnectionController extends Controller
                 ))->count(),
             ],
             'channels' => ConnectionChannel::options(),
+            // Messenger and Instagram are created by authorizing with Meta: the
+            // selector explains what the server still needs when the app is not configured.
+            'metaChannels' => collect([ConnectionChannel::Messenger, ConnectionChannel::Instagram])
+                ->mapWithKeys(fn (ConnectionChannel $metaChannel): array => [$metaChannel->value => [
+                    'configured' => app(MetaApp::class)->isConfiguredFor($metaChannel),
+                    'missing' => app(MetaApp::class)->missingFor($metaChannel),
+                ]])->all(),
             'healthOptions' => ConnectionHealth::options(),
             'departments' => $this->departmentOptions(),
             'can' => [
@@ -103,12 +111,17 @@ class ConnectionController extends Controller
      * Form of a new connection for the channel chosen in the list
      * (?channel=whatsapp|web_chat; WhatsApp when none is given).
      */
-    public function create(Request $request): Response
+    public function create(Request $request): Response|RedirectResponse
     {
         Gate::authorize('create', Connection::class);
 
         $validated = $request->validate(['channel' => ['nullable', Rule::enum(ConnectionChannel::class)]]);
         $channel = is_string($validated['channel'] ?? null) ? ConnectionChannel::from($validated['channel']) : ConnectionChannel::Whatsapp;
+
+        // Messenger and Instagram have no form: they are authorized with Meta.
+        if (! $channel->isCreatedFromForm()) {
+            return to_route('connections.meta.show', $channel->value);
+        }
 
         return Inertia::render('connections/Form', [
             'connection' => null,
@@ -140,15 +153,16 @@ class ConnectionController extends Controller
 
         $actor = $request->user();
 
-        $connection->load(['webChatWidget', 'departments' => fn (BelongsToMany $query) => $query
+        $connection->load(['webChatWidget', 'authorizedBy:id,name', 'departments' => fn (BelongsToMany $query) => $query
             ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')
             ->orderBy('departments.name')]);
         $connection->loadCount('conversations');
 
         return Inertia::render('connections/Form', [
             'connection' => ConnectionResource::make($connection)->resolve($request),
-            // The Meta checklist (webhook, subscription, templates) only applies to WhatsApp.
-            'diagnostics' => fn () => $connection->isWebChat() ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
+            // The Meta checklist (webhook, subscription, templates) only applies to WhatsApp;
+            // Messenger and Instagram show their authorization instead (meta_account).
+            'diagnostics' => fn () => $connection->channel !== ConnectionChannel::Whatsapp ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
             ...$this->formOptions($connection->channel, $connection),
             'can' => [
                 'update' => $actor->can('update', $connection),

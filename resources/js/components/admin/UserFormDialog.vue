@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { Link, useForm, useHttp, usePage } from '@inertiajs/vue3';
-import { Building2, KeyRound, ShieldCheck, UserRound } from '@lucide/vue';
+import {
+    Building2,
+    KeyRound,
+    MessageSquareText,
+    ShieldCheck,
+    UserRound,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoleChangeImpactDialog from '@/components/admin/RoleChangeImpactDialog.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
@@ -21,6 +27,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useEmailAvailability } from '@/composables/useEmailAvailability';
 import { useFormValidation } from '@/composables/useFormValidation';
 import {
@@ -65,6 +72,8 @@ const form = useForm<{
     role_change_fingerprint: string | null;
     /** Own load limit; empty inherits the department and platform limits. */
     max_open_conversations: number | '';
+    /** Direct grant of quick-replies.personal (only sent when it can be changed). */
+    personal_quick_replies: boolean;
 }>({
     name: '',
     email: '',
@@ -74,9 +83,20 @@ const form = useForm<{
     password_confirmation: '',
     role_change_fingerprint: null,
     max_open_conversations: '',
+    personal_quick_replies: false,
 });
 
 const page = usePage();
+
+/** The role already grants personal quick replies: shown, not toggleable. */
+const personalGrantedByRole = computed(
+    () => props.user?.personal_quick_replies.granted_by_role ?? false,
+);
+const canTogglePersonal = computed(
+    () =>
+        (props.user?.personal_quick_replies.can_toggle ?? false) &&
+        !personalGrantedByRole.value,
+);
 
 /** The password is only validated (and sent) when it is being set. */
 const settingPassword = computed(
@@ -151,6 +171,8 @@ watch(open, (isOpen) => {
         password_confirmation: '',
         role_change_fingerprint: null,
         max_open_conversations: props.user?.max_open_conversations ?? '',
+        personal_quick_replies:
+            props.user?.personal_quick_replies.granted_directly ?? false,
     });
 });
 
@@ -205,8 +227,11 @@ function toggleDepartment(departmentId: number, checked: boolean): void {
 function send(fingerprint: string | null = null): void {
     form.role_change_fingerprint = fingerprint;
 
-    form.transform((data) => ({
+    form.transform(({ personal_quick_replies, ...data }) => ({
         ...data,
+        ...(isEditing.value && canTogglePersonal.value
+            ? { personal_quick_replies }
+            : {}),
         role_id: canChangeRole.value ? data.role_id : null,
         department_ids: allowsDepartments.value ? data.department_ids : [],
         max_open_conversations:
@@ -491,6 +516,61 @@ function submit(): void {
                         class="max-w-72"
                     />
                 </FormField>
+            </section>
+
+            <section
+                v-if="
+                    isEditing &&
+                    (canTogglePersonal ||
+                        personalGrantedByRole ||
+                        user?.personal_quick_replies.granted_directly)
+                "
+                class="space-y-3 border-t pt-5"
+            >
+                <h3 class="flex items-center gap-2 text-sm font-semibold">
+                    <MessageSquareText class="size-4 text-muted-foreground" />
+                    Respuestas rápidas personales
+                </h3>
+                <div class="flex items-start justify-between gap-4">
+                    <div class="grid gap-1">
+                        <Label for="user-personal-quick-replies"
+                            >Puede crear respuestas rápidas personales</Label
+                        >
+                        <p
+                            id="user-personal-quick-replies-hint"
+                            class="text-xs text-muted-foreground"
+                        >
+                            <template v-if="personalGrantedByRole">
+                                Concedido por su rol. Para retirarlo, cambia el
+                                rol o sus permisos en Roles.
+                            </template>
+                            <template v-else>
+                                Solo esta persona verá y usará sus respuestas
+                                personales. Si lo desactivas no se borran: podrá
+                                seguir usándolas, pero ya no crearlas ni
+                                editarlas.
+                            </template>
+                        </p>
+                    </div>
+                    <Switch
+                        id="user-personal-quick-replies"
+                        :model-value="
+                            personalGrantedByRole || form.personal_quick_replies
+                        "
+                        :disabled="!canTogglePersonal"
+                        aria-describedby="user-personal-quick-replies-hint"
+                        @update:model-value="
+                            (checked: boolean) =>
+                                (form.personal_quick_replies = checked)
+                        "
+                    />
+                </div>
+                <InputError
+                    :message="
+                        (form.errors as Record<string, string | undefined>)
+                            .personal_quick_replies
+                    "
+                />
             </section>
 
             <section class="space-y-4 border-t pt-5">

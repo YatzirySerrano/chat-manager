@@ -244,9 +244,36 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
   (política `manageWidget`). `deploy.sh` ejecuta `php artisan app:sync-permissions` (idempotente) en cada despliegue.
 - **Conversaciones** (`ConversationAccess`): un agente ordinario solo ve sus asignadas y los pendientes de colas de sus
   departamentos que puede aceptar; nunca las que ya atiende otro agente del mismo departamento. Supervisores ven su
-  departamento; alcance global ve todo. La regla se aplica en listados, contadores, búsquedas, detalle, línea de tiempo,
+  departamento; alcance global ve todo. `conversations.supervise` (solo lectura) amplía la vista dentro del alcance:
+  todas las conversaciones sin importar responsable ni estado (incluido el historial de cerradas) y, con alcance por
+  departamentos, también las que pasaron por sus departamentos aunque se transfirieran fuera. Nunca concede responder,
+  aceptar, transferir, asignar, cerrar, reabrir, anotar, devolver a la cola ni etiquetar: esas habilidades usan el
+  alcance operativo (`ConversationAccess::canOperate`), sin la ampliación de supervisión (pruebas con el rol Supervisor
+  predeterminado en `ConversationSupervisionTest`). Instalación de una sola organización: no hay tenants.
+- **Plantillas de WhatsApp:** enviarlas requiere `templates.send` (alcance global, «Enviar plantillas de WhatsApp
+  (administrativo)») además de poder responder, en la bandeja, el reintento y la entrega; Agente y Supervisor no lo
+  tienen por defecto. Sincronizar sigue siendo `templates.manage`. La regla se aplica en listados, contadores, búsquedas, detalle, línea de tiempo,
   mensajes, adjuntos, notas, etiquetas, canales en tiempo real, exportaciones, reportes y notificaciones.
 - **Chat interno:** solo participantes actuales; nadie más, tampoco el Superadministrador.
+- **Respuestas rápidas personales** (`quick_replies.owner_user_id`): solo su propietario las ve y las usa (listado,
+  selector «/», ids manipulados → 404); nunca se comparten por departamento ni aparecen a otros usuarios, tampoco a
+  quien tiene alcance global (`QuickReply::visibleTo`/`usableBy`). `quick-replies.personal` (por rol o directo por
+  usuario desde Usuarios › Editar, con `users.update` + poder asignar roles a ese usuario + tener el permiso; auditado
+  `user.personal_quick_replies_granted/revoked`) permite crear, editar y eliminar las propias; retirarlo no las borra:
+  siguen usables con `quick-replies.use` pero de solo lectura. Si el rol ya lo concede se muestra «Concedido por su
+  rol» y no se cambia por usuario. `supervision.view-personal` consulta las de usuarios de su alcance (global: todos;
+  departamentos: quienes comparten un departamento; asignado: nadie) con filtros por usuario y departamento del
+  propietario; `supervision.manage-personal` además edita o elimina las de usuarios cuya cuenta puede administrar
+  (`PrivilegeGuard::canManageUser`), auditado como `supervision.personal_item_updated/deleted` con `owner_user_id`,
+  `item_type`, `item_id` y `title`, nunca el texto. Atajos: una personal solo choca con otras personales activas del
+  mismo propietario (sin índice único en BD; se valida con bloqueo); al eliminarla su atajo queda libre y restaurarla
+  falla si el propietario ya lo reutilizó. Las de un Superadministrador quedan fuera del alcance de los supervisores
+  que no son raíz (listado «De otros usuarios», filtro de propietarios, exportación e ids manipulados → 404), igual que
+  el resto de elementos personales. La migración de permisos de la Fase 5 concede `quick-replies.personal` a quienes ya
+  tenían `quick-replies.manage` (además de los roles raíz): quien administra las respuestas corporativas conserva la
+  capacidad de tener las propias. Revertir la migración de `owner_user_id` desactiva antes las respuestas personales
+  (`is_active = false`) para que no pasen a leerse como corporativas; pierden su propietario, así que el `down()` es
+  destructivo para ellas y solo debe usarse con respaldo.
 - Cambios de permisos y membresías surten efecto en la siguiente petición de las sesiones abiertas (pruebas en
   `tests/Feature/Auth/PermissionRevocationTest.php` y `tests/Feature/Validation/SecurityProbeTest.php`).
 
@@ -282,8 +309,8 @@ una consulta de solo lectura):
 | Demo B · Agente (`demo-b-agente`, asignado)  | `tags.view`, `tags.assign`, `reports.view`, `team-chat.use`                                                                                                                                                                   | Los mismos 14 que el Agente                                                                                                                                                                                                                                                           |
 
 Ningún rol no raíz tiene `contacts.import` ni permisos globales fuera del alcance global. El Agente no recibe
-`conversations.assign`, `tags.manage` ni `contacts.import`: solo transfiere a la cola o a quien esté Disponible y con
-capacidad.
+`conversations.assign`, `tags.manage` ni `contacts.import`: solo transfiere a la cola o a quien sea elegible y tenga
+capacidad (desde la fase 5 no hay disponibilidad manual).
 
 **Decisión pendiente del usuario — `system.view` / `system.manage` para el Administrador.** Ambos son
 `Permission::isSensitive()`: dan acceso a Administración → Sistema (estado de colas, trabajos fallidos, salud, alertas)
@@ -291,6 +318,36 @@ y, con `system.manage`, a reintentar o descartar trabajos. Hoy solo los tiene el
 concederlos: `php artisan app:sync-permissions --upgrade-default-roles --include-sensitive` (vista previa) y después
 con `--apply`, o asignarlos a mano en Roles; ambos caminos quedan auditados (`role.permissions_changed`). Mientras no
 se decida, el Administrador no ve la página de Sistema ni recibe las alertas dirigidas a `system.view`.
+
+### 3.2 Permisos nuevos de la fase 5
+
+Los crea la migración `2026_10_24_185555_add_phase_five_permissions`, que también los concede a quien ya tenía el
+permiso de origen (roles y permisos directos de usuario) y a los roles raíz; su `down()` los elimina con sus concesiones.
+
+| Clave                         | Etiqueta en la interfaz                                                                     | Alcance exigido                                 | Roles por defecto (`DefaultRole`)             | Origen de la concesión en la migración |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------- | -------------------------------------- |
+| `conversations.supervise`     | Supervisar conversaciones de su alcance (solo lectura)                                      | Cualquiera (amplía la vista dentro del alcance) | Superadministrador, Administrador, Supervisor | `conversations.assign`                 |
+| `templates.send`              | Enviar plantillas de WhatsApp (administrativo)                                              | Global (`requiresGlobalScope`); sensible        | Superadministrador, Administrador             | `templates.manage`                     |
+| `quick-replies.personal`      | Crear y administrar sus respuestas rápidas personales                                       | Cualquiera; se concede por rol o por usuario    | Superadministrador, Administrador             | `quick-replies.manage`                 |
+| `supervision.view-personal`   | Consultar elementos personales de otros usuarios (alias, apariencia, respuestas personales) | Respeta el alcance del rol (ver §5.1)           | Superadministrador, Administrador             | `users.update`                         |
+| `supervision.manage-personal` | Editar o eliminar elementos personales de otros usuarios                                    | Respeta el alcance del rol; sensible            | Superadministrador, Administrador             | `users.update`                         |
+
+- **Lectura frente a operación.** `conversations.supervise` solo amplía lo que se **ve** (`ConversationAccess`
+  /`ConversationPolicy::view`): todas las conversaciones del alcance, cerradas incluidas, y con alcance por
+  departamentos las que pasaron por sus departamentos aunque se transfirieran fuera. Lo que **modifica** (responder,
+  aceptar, asignar, transferir, cerrar, reabrir, notas, etiquetas, devolver a la cola, plantillas) usa el alcance
+  operativo `canOperate`, sin esa ampliación. También decide las insignias operativas de la bandeja
+  ([bandejas](bandejas-y-asignacion.md#vista-general-chips-y-contadores)).
+- **Supervisión de elementos personales.** `view-personal` consulta y `manage-personal` además edita o elimina, siempre
+  dentro del alcance de datos (global: todos; departamentos: quienes comparten un departamento; asignado: nadie), y
+  nunca sobre elementos de un Superadministrador si quien actúa no es raíz. Para editar o eliminar también hace falta
+  poder administrar la cuenta del dueño (`PrivilegeGuard::canManageUser`). Detalle en §5.1 y en las respuestas
+  personales del §3.
+- **Actualización de roles existentes.** `app:sync-permissions --upgrade-default-roles` añade a Supervisor
+  `conversations.supervise` y al Administrador los no sensibles; `templates.send` y `supervision.manage-personal` son
+  sensibles y solo se añaden con `--include-sensitive` (o ya llegaron por la migración si el rol tenía
+  `templates.manage` / `users.update`). Revisa siempre la vista previa antes de `--apply`
+  ([despliegue fase 5](infraestructura-y-despliegue.md#procedimiento-de-la-fase-5)).
 
 ## 4. Auditoría
 
@@ -324,6 +381,34 @@ se decida, el Administrador no ve la página de Sistema ni recibe las alertas di
   plantillas y mensajes internos se marcan inactivos o eliminados; el historial se conserva y los registros eliminados
   solo los ve quien tiene `records.view-deleted`.
 - Los registros de aplicación no contienen cuerpos de mensajes, teléfonos completos ni secretos.
+
+### 5.1 Elementos personales (alias, apariencia del chat, respuestas personales)
+
+- **Alias privado** (`contact_aliases`, uno por usuario y contacto, máx. 80 caracteres): se pone o quita desde una
+  conversación visible para el usuario (`PUT/DELETE conversations/{conversation}/alias`); una conversación fuera de su
+  alcance responde 404. Nunca cambia `contacts.name`, el teléfono, las identidades ni el destinatario de los envíos, y
+  nunca fusiona contactos. Solo su dueño lo ve: `contact.display_name` (alias ?? nombre ?? nombre de perfil ?? teléfono)
+  y `contact.alias` se calculan para el usuario autenticado, con los alias de la página cargados en una sola consulta.
+  Notificaciones, reportes, exportaciones, la API v1 y la variable de nombre de las respuestas rápidas siguen usando el
+  nombre oficial (van a varias personas o a sistemas externos). La búsqueda de la bandeja no busca por alias.
+- **Apariencia del chat** (`chat_appearances`): colores propios para una conversación o para todas
+  (`PUT/DELETE conversations/{conversation}/appearance`); la fila de la conversación prevalece sobre la predeterminada y,
+  sin ninguna, se usa el tema de la plataforma. El servidor valida `#RRGGBB` y el contraste WCAG 2.1 AA (≥ 4.5:1) de
+  cada texto sobre su burbuja; si no se cumple, reemplaza el texto por casi negro o blanco y avisa. Se aplica con
+  variables CSS solo en el contenedor del chat del dueño: no cambia mensajes, otros usuarios, el widget del chat web ni
+  datos de Meta.
+- **Privado entre compañeros no significa privado frente al administrador autorizado.** En
+  «Administración › Elementos personales» (`/admin/personal-items`), `supervision.view-personal` permite consultar alias
+  (con el nombre oficial del contacto) y apariencias (muestra estática, nunca aplicada a quien consulta) y
+  `supervision.manage-personal` editarlos o eliminarlos. Ambos respetan el alcance del rol: global → cualquier usuario;
+  departamentos → usuarios que comparten al menos un departamento; asignado → nadie. Los elementos de un
+  Superadministrador quedan fuera del alcance de los demás. El nombre y el teléfono del contacto (y el contacto de la
+  conversación de una apariencia) solo se muestran si quien consulta puede ver ese contacto (`contacts.view` y su
+  alcance de contactos); si no, aparece «Contacto fuera de tu alcance». Las respuestas rápidas personales se supervisan en
+  «Respuestas rápidas › De otros usuarios».
+- Cada intervención administrativa se audita (`supervision.personal_item_updated` / `_deleted`) con quién actuó, el
+  dueño (sujeto de la entrada), `owner_user_id`, `item_type`, `item_id` y la fecha; nunca se guarda el texto del alias.
+  Los cambios que cada usuario hace en sus propios elementos no se auditan (solo afectan su vista).
 
 ## 6. Hallazgos corregidos
 

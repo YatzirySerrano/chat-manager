@@ -139,7 +139,11 @@ const statusItems = computed(() =>
     <div
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
-        <PageHeader title="Reportes operativos" :description="scopeDescription">
+        <PageHeader
+            help="reportes"
+            title="Reportes operativos"
+            :description="scopeDescription"
+        >
             <template v-if="canExport" #actions>
                 <ExportMenu
                     report="analytics"
@@ -177,7 +181,7 @@ const statusItems = computed(() =>
         <Deferred data="analytics">
             <template #fallback>
                 <div
-                    class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+                    class="grid grid-cols-2 gap-3 lg:grid-cols-4"
                     aria-busy="true"
                     aria-label="Cargando reportes"
                 >
@@ -205,7 +209,7 @@ const statusItems = computed(() =>
                     >
                         Atención del periodo
                     </h2>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <KpiCard
                             label="Recibidas"
                             :icon="Inbox"
@@ -247,7 +251,7 @@ const statusItems = computed(() =>
                             label="Pendientes ahora"
                             :icon="Clock3"
                             :value="count(analytics.current.pending)"
-                            :hint="`${analytics.current.open.toLocaleString('es-MX')} en atención · ${analytics.current.on_hold.toLocaleString('es-MX')} en espera`"
+                            :hint="`${analytics.current.open.toLocaleString('es-MX')} en atención`"
                         />
                     </div>
                 </section>
@@ -259,7 +263,7 @@ const statusItems = computed(() =>
                     >
                         Tiempos (tiempo calendario)
                     </h2>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
                         <KpiCard
                             label="Primera atención (prom.)"
                             :icon="Timer"
@@ -357,7 +361,7 @@ const statusItems = computed(() =>
                         atención es continua y coincide con el tiempo
                         calendario.
                     </p>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <KpiCard
                             label="Primera respuesta humana hábil (prom.)"
                             :icon="MessageCircleReply"
@@ -478,7 +482,7 @@ const statusItems = computed(() =>
                     >
                         Seguimiento y mensajes
                     </h2>
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <KpiCard
                             label="Reabiertas"
                             :icon="RotateCcw"
@@ -584,9 +588,9 @@ const statusItems = computed(() =>
                             : 'Desempeño y carga por agente'
                     "
                     :description="
-                        analytics.current.available_agents === null
+                        analytics.current.agents === null
                             ? 'Agente responsable actual (o último, si ya se cerró)'
-                            : `${analytics.current.available_agents} de ${analytics.current.agents} agentes disponibles ahora · agente responsable actual o último`
+                            : `${analytics.current.agents} ${analytics.current.agents === 1 ? 'agente activo' : 'agentes activos'} · agente responsable actual o último`
                     "
                 >
                     <BreakdownTable

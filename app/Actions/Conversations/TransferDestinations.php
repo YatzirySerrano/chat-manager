@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Collection;
  * with organization-wide scope; ConversationAccess::canAttend()).
  *
  * Choosing a colleague does not require seeing their conversations: each
- * person is described only by id, name, availability and whether they
+ * person is described only by id, name and whether they
  * already attend their maximum; never their email, role, load figures or
  * conversations. The engine validates everything again under lock when the
  * operation is sent (TransferConversation, AssignConversation).
@@ -30,7 +30,7 @@ class TransferDestinations
     public function __construct(private ConversationAccess $access) {}
 
     /**
-     * @return array{allows_exceptions: bool, departments: list<array{id: int, name: string, agents: list<array{id: int, name: string, availability: string, at_capacity: bool}>}>, unrouted_agents: list<array{id: int, name: string, availability: string, at_capacity: bool}>}
+     * @return array{allows_exceptions: bool, departments: list<array{id: int, name: string, agents: list<array{id: int, name: string, at_capacity: bool}>}>, unrouted_agents: list<array{id: int, name: string, at_capacity: bool}>}
      */
     public function for(Conversation $conversation, User $actor): array
     {
@@ -46,7 +46,7 @@ class TransferDestinations
         $candidates = $this->candidates($departments->modelKeys());
 
         return [
-            // Handing it to someone unavailable or at their limit is an
+            // Handing it to someone at their limit is an
             // exception only users who can assign may make (with confirmation).
             'allows_exceptions' => $actor->holdsPermission(Permission::AssignConversations),
             'departments' => array_values($departments->map(fn (Department $department): array => [
@@ -77,7 +77,7 @@ class TransferDestinations
                 ->orWhereHas('roles', fn (Builder $roles) => $roles->where('is_active', true)->where('scope', DataScope::Global)))
             ->with(['roles', 'departments'])
             ->withCount(['assignedConversations as attention_load' => fn (Builder $query) => $query
-                ->whereIn('status', [ConversationStatus::Open, ConversationStatus::OnHold])])
+                ->whereIn('status', ConversationStatus::attending())])
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -85,7 +85,7 @@ class TransferDestinations
 
     /**
      * @param  Collection<int, User>  $candidates
-     * @return list<array{id: int, name: string, availability: string, at_capacity: bool}>
+     * @return list<array{id: int, name: string, at_capacity: bool}>
      */
     private function describe(Collection $candidates, ?Department $department): array
     {
@@ -97,7 +97,6 @@ class TransferDestinations
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
-                    'availability' => $user->availability->value,
                     'at_capacity' => $limit !== null && (int) $user->getAttribute('attention_load') >= $limit,
                 ];
             })

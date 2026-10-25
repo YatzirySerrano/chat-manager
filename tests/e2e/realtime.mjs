@@ -26,7 +26,6 @@
  */
 import { join } from 'node:path';
 import {
-    AVAILABILITY_SWITCH,
     BASE,
     FALLBACK_MS,
     HERE,
@@ -53,7 +52,6 @@ import {
     step as runStep,
     stopChildren,
     stopReverb,
-    trackWebSocket,
     unavailableSelection,
     waitFor,
 } from './lib.mjs';
@@ -97,28 +95,6 @@ async function inbound(waId, name, text) {
 
 const openQueueView = (page) => openInboxView(page, 'Pendientes');
 const openMineView = (page) => openInboxView(page, 'Mis conversaciones');
-
-async function availabilityChecked(page) {
-    return (
-        (await page
-            .getByRole('switch', { name: AVAILABILITY_SWITCH })
-            .getAttribute('aria-checked')) === 'true'
-    );
-}
-
-/**
- * Turns the availability switch on and returns as soon as it is checked:
- * unlike becomeAvailable of lib.mjs it does not wait for the toast and the
- * network to settle, so the live measurement that follows starts right away.
- */
-async function switchToAvailable(page) {
-    if (!(await availabilityChecked(page))) {
-        await page.getByRole('switch', { name: AVAILABILITY_SWITCH }).click();
-        await waitFor(() => availabilityChecked(page), 8_000);
-    }
-
-    return availabilityChecked(page);
-}
 
 async function bellLabel(page) {
     return page
@@ -264,12 +240,18 @@ const main = async () => {
             ];
         });
 
-        // 2. Availability changes of an agent reach the administrator: the
-        // assign dialog lists the agent's declared availability.
+        // 2. Manual availability was removed (Fase 5): no switch in the
+        // list, and the assign dialog lists every active agent of the
+        // department by name (only "Al límite de carga" qualifies one).
         await row(admin, 'Cliente RT Uno').click();
         await admin.waitForURL(/[?&]c=\d+/);
 
-        await step('rt-availability-admin', async () => {
+        await step('rt-no-availability', async () => {
+            const switches = await Promise.all(
+                [ana, beto].map((page) =>
+                    page.getByRole('switch', { name: /Disponible/ }).count(),
+                ),
+            );
             await admin
                 .getByRole('button', {
                     name: 'Más acciones de la conversación',
@@ -282,47 +264,14 @@ const main = async () => {
                 hasText: 'E2E Ana',
             });
             await option.waitFor({ state: 'attached' });
-            const before = await option.innerText();
-            const since = Date.now();
-            await switchToAvailable(ana);
-            const measured = await measure(
-                'availability→admin dialog',
-                admin,
-                admin.locator('#route-agent option', {
-                    hasText: 'E2E Ana · Disponible',
-                }),
-                since,
-                'availability.changed',
-                { state: 'attached' },
-            );
-            const after = await option.innerText();
+            const label = await option.innerText();
             await admin.keyboard.press('Escape');
 
             return [
-                /No disponible/.test(before) && measured.live,
-                `before "${before}", after "${after}"; ${measured.note}`,
+                switches.every((count) => count === 0) &&
+                    !/Disponible/.test(label),
+                `switches=${switches.join('/')}; option "${label}"`,
             ];
-        });
-
-        await step('rt-availability-own-tabs', async () => {
-            // Beto's second tab follows the change made in the first one.
-            const second = await beto.context().newPage();
-            second.session = 'beto-tab2';
-            trackWebSocket(second);
-            await second.goto(`${BASE}/conversations`);
-            await liveIndicator(second).waitFor();
-            const since = Date.now();
-            const available = await switchToAvailable(beto);
-            const measured = await measure(
-                'availability→own other tab',
-                second,
-                second.locator('[role="switch"][aria-checked="true"]'),
-                since,
-                'availability.changed',
-            );
-            await second.close();
-
-            return [available && measured.live, measured.note];
         });
 
         // 3. Agent A accepts: the conversation leaves B's queue live and B's
@@ -372,8 +321,11 @@ const main = async () => {
             const toasts = await toast.count();
             // The composer of the agent who accepted is ready to reply.
             const replyMode = await ana
-                .getByRole('tab', { name: 'Responder al cliente' })
-                .getAttribute('aria-selected');
+                .getByRole('button', {
+                    name: 'Responder al cliente',
+                    exact: true,
+                })
+                .getAttribute('aria-pressed');
 
             return [
                 gone.live &&
@@ -498,7 +450,7 @@ const main = async () => {
         await step('rt-message-to-admin', async () => {
             await ana.getByRole('log', { name: /Cliente RT Uno/ }).waitFor();
             await ana
-                .locator('[role="tab"][aria-selected="true"]', {
+                .locator('button[aria-pressed="true"]', {
                     hasText: 'Responder al cliente',
                 })
                 .waitFor();
@@ -562,7 +514,9 @@ const main = async () => {
         });
 
         await step('rt-note-to-admin', async () => {
-            await ana.getByRole('tab', { name: 'Nota interna' }).click();
+            await ana
+                .getByRole('button', { name: 'Nota interna', exact: true })
+                .click();
             await ana.locator('#chat-composer').click();
             await ana.keyboard.type('Nota RT: cliente frecuente');
             const since = Date.now();
@@ -575,7 +529,10 @@ const main = async () => {
                 'note.saved',
             );
             await ana
-                .getByRole('tab', { name: 'Responder al cliente' })
+                .getByRole('button', {
+                    name: 'Responder al cliente',
+                    exact: true,
+                })
                 .click();
 
             return [measured.live, measured.note];

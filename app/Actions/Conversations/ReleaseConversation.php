@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Returns a conversation in attention (or on hold) to its department queue.
- * In automatic departments it is offered to another available agent, and
+ * In automatic departments it is offered to another eligible agent, and
  * the room it frees offers the previous responsible the other conversations
  * waiting in their automatic departments (never the one just released).
  * Locks follow the engine order: conversation, department, agent.

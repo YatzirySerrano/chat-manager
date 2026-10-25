@@ -2,7 +2,11 @@ import type { AppColor } from './admin';
 import type { RecordStateValue } from './ui';
 
 /** Channel a connection reaches customers through (ConnectionChannel on the server). */
-export type ConnectionChannel = 'whatsapp' | 'web_chat';
+export type ConnectionChannel =
+    | 'whatsapp'
+    | 'web_chat'
+    | 'messenger'
+    | 'instagram';
 
 export type WebChatPosition = 'right' | 'left';
 
@@ -116,6 +120,8 @@ export type Connection = {
     reopen_window_minutes: number | null;
     /** Widget settings of a web chat connection (absent or null for WhatsApp). */
     web_chat_widget?: WebChatWidgetSettings | null;
+    /** Account authorized with Meta (only Messenger and Instagram connections). */
+    meta_account?: MetaAccount;
     health: ConnectionHealthDescriptor;
     configuration_health: ConnectionHealthDescriptor;
     checks: {
@@ -207,4 +213,46 @@ export type ConnectionDiagnostics = {
         }[];
     };
     signals: { field: string; at: string | null; event: string | null }[];
+};
+
+/** State of the Meta authorization of a Messenger / Instagram connection. */
+export type MetaAccountState =
+    | 'authorized'
+    | 'expired'
+    | 'invalid'
+    | 'disconnected';
+
+export type MetaScope = { value: string; label: string };
+
+/** Facebook page or Instagram professional account of a connection. */
+export type MetaAccount = {
+    id: string | null;
+    name: string | null;
+    picture: string | null;
+    authorized: boolean;
+    state: MetaAccountState;
+    granted_scopes: MetaScope[];
+    authorized_at: string | null;
+    authorized_by?: string | null;
+    token_expires_at: string | null;
+    subscribed: boolean | null;
+    subscription_checked_at: string | null;
+    subscribed_fields: string[];
+};
+
+/** Whether the server has the Meta app configured for a channel. */
+export type MetaChannelAvailability = {
+    configured: boolean;
+    missing: string[];
+};
+
+/** An account Meta returned after authorizing, waiting to be chosen. */
+export type MetaAccountCandidate = {
+    id: string;
+    name: string;
+    username: string | null;
+    picture: string | null;
+    can_message: boolean;
+    scopes: MetaScope[];
+    existing: { id: number; name: string; is_deleted: boolean } | null;
 };

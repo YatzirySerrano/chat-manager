@@ -2,7 +2,6 @@
 
 use App\Actions\Conversations\AssignAutomatically;
 use App\Actions\Settings\UpdatePlatformSettings;
-use App\Enums\AgentAvailability;
 use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
@@ -147,7 +146,7 @@ test('closing a conversation offers the oldest waiting one to the agent who now 
         ->and($newest->refresh()->status)->toBe(ConversationStatus::Pending);
 });
 
-test('freed capacity is not distributed to an unavailable agent nor from a department that does not distribute automatically', function (Closure $arrange) {
+test('freed capacity is not distributed from a department that does not distribute automatically', function (Closure $arrange) {
     $this->agent->forceFill(['max_open_conversations' => 1])->save();
     $attended = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create();
     $waiting = Conversation::factory()->inDepartment($this->department)->create();
@@ -159,7 +158,6 @@ test('freed capacity is not distributed to an unavailable agent nor from a depar
 
     expect($waiting->refresh()->assigned_user_id)->toBeNull();
 })->with([
-    'unavailable' => [fn ($test) => $test->agent->forceFill(['availability' => AgentAvailability::Unavailable])->save()],
     'shared department' => [fn ($test) => $test->department->forceFill(['distribution_mode' => DistributionMode::Shared])->save()],
 ]);
 
@@ -170,7 +168,7 @@ test('handing a conversation to someone else frees room for its previous respons
     $waiting = Conversation::factory()->inDepartment($this->department)->create();
 
     $this->actingAs($this->admin)
-        ->post(route('conversations.assign', $attended), ['user_id' => $colleague->id, 'confirm_unavailable' => true, 'version' => 0])
+        ->post(route('conversations.assign', $attended), ['user_id' => $colleague->id, 'version' => 0])
         ->assertSessionHasNoErrors();
 
     expect($waiting->refresh()->assigned_user_id)->toBe($this->agent->id);

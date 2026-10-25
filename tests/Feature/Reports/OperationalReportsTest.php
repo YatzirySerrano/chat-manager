@@ -164,7 +164,7 @@ test('an assigned scope only sees its own metrics, without department or agent f
                 ->where('analytics.summary.received.value', 1)
                 ->where('analytics.current.pending', 0)
                 ->where('analytics.current.open', 1)
-                ->where('analytics.current.available_agents', null)
+                ->where('analytics.current.agents', null)
                 ->where('analytics.by_department', [])
                 ->has('analytics.by_agent', 1)
                 ->where('analytics.by_agent.0.id', $agent->id)));

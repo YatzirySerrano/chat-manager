@@ -8,8 +8,12 @@ namespace App\Services\Meta;
  */
 final readonly class SendResult
 {
+    /**
+     * @param  string|null  $warning  Spanish note for the agent when only part of the message reached the provider (e.g. the file of a Messenger reply went out but its text did not).
+     */
     public function __construct(
         public string $providerMessageId,
         public bool $simulated = false,
+        public ?string $warning = null,
     ) {}
 }

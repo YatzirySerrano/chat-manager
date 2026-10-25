@@ -3,8 +3,6 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     CircleAlert,
     Eye,
-    Globe,
-    MessageCircle,
     Pencil,
     Plug,
     PlugZap,
@@ -19,6 +17,7 @@ import {
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChannelPicker from '@/components/connections/ChannelPicker.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
@@ -71,6 +70,7 @@ import type {
     ConnectionOption,
     ConnectionStats,
     DepartmentOption,
+    MetaChannelAvailability,
     RecordAction,
     RecordStateOption,
 } from '@/types';
@@ -91,6 +91,7 @@ const props = defineProps<{
     departments: DepartmentOption[];
     can: { create: boolean; manage: boolean };
     canExport?: boolean;
+    metaChannels?: Record<'messenger' | 'instagram', MetaChannelAvailability>;
 }>();
 
 const ALL = 'all';
@@ -157,8 +158,6 @@ function clearFilters(): void {
 }
 
 const channelPickerOpen = ref(false);
-
-const channelIcons = { whatsapp: MessageCircle, web_chat: Globe } as const;
 
 const processingId = ref<number | null>(null);
 const pendingDeactivation = ref<Connection | null>(null);
@@ -260,6 +259,12 @@ function actionsFor(connection: Connection): RecordAction[] {
 }
 
 function phoneLabel(connection: Connection): string {
+    if (connection.meta_account) {
+        return connection.meta_account.authorized
+            ? (connection.meta_account.name ?? 'Cuenta autorizada')
+            : 'Desconectada de Meta';
+    }
+
     if (connection.channel.value === 'web_chat') {
         const origins = connection.web_chat_widget?.allowed_origins ?? [];
 
@@ -288,6 +293,7 @@ function phoneLabel(connection: Connection): string {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="conexiones"
             title="Conexiones"
             description="Números de WhatsApp Business conectados mediante la API oficial de Meta, chats para sitios web y su estado real."
         >
@@ -306,7 +312,7 @@ function phoneLabel(connection: Connection): string {
 
         <div
             v-if="stats.total > 0"
-            class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            class="grid grid-cols-2 gap-3 lg:grid-cols-4"
         >
             <StatCard
                 label="Conexiones"
@@ -518,8 +524,8 @@ function phoneLabel(connection: Connection): string {
                             <span
                                 class="inline-flex min-w-0 items-center gap-1"
                             >
-                                <component
-                                    :is="channelIcons[connection.channel.value]"
+                                <ChannelIcon
+                                    :channel="connection.channel.value"
                                     class="size-3.5 shrink-0"
                                     aria-hidden="true"
                                 />
@@ -618,8 +624,8 @@ function phoneLabel(connection: Connection): string {
                             <p
                                 class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
                             >
-                                <component
-                                    :is="channelIcons[connection.channel.value]"
+                                <ChannelIcon
+                                    :channel="connection.channel.value"
                                     class="size-3.5 shrink-0"
                                     aria-hidden="true"
                                 />
@@ -768,7 +774,10 @@ function phoneLabel(connection: Connection): string {
             @confirm="confirmDeactivation"
         />
 
-        <ChannelPicker v-model:open="channelPickerOpen" />
+        <ChannelPicker
+            v-model:open="channelPickerOpen"
+            :meta-channels="metaChannels"
+        />
 
         <ConfirmDialog
             v-model:open="deletion.open"

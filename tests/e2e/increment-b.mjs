@@ -19,7 +19,6 @@
 import {
     BASE,
     USERS,
-    becomeAvailable,
     chromium,
     exitWithSummary,
     inbound,
@@ -90,34 +89,42 @@ const run = async () => {
         // Selector update (increment C): the queue tab is now labelled
         // "Pendientes" and the agent filter lives in the "Filtros" popover.
         // Selector update (phase 4): the inbox opens on "Bandeja general"
-        // (pending, attended and on hold together); "Mis conversaciones" and
-        // "Pendientes" are chips of the same "Bandejas" nav, and "Pendientes"
-        // is the general inbox with status=pending (?view=queue is an alias).
-        const generalView = ana.getByRole('button', {
+        // and "Pendientes" is the general inbox with status=pending
+        // (?view=queue is an alias).
+        // Selector update (Fase 5): the always visible indicators are
+        // "Bandeja general", "Pendientes" and "No leídas"; "Mis
+        // conversaciones" is an option of "Vista" in the "Filtros" panel.
+        const indicators = ana.getByRole('navigation', { name: 'Bandejas' });
+        const generalView = indicators.getByRole('button', {
             name: /^Bandeja general/,
         });
-        const mineView = ana.getByRole('button', {
-            name: /^Mis conversaciones/,
+        const queueView = indicators.getByRole('button', {
+            name: /^Pendientes/,
         });
-        const queueView = ana.getByRole('button', { name: /^Pendientes/ });
+        const unreadView = indicators.getByRole('button', {
+            name: /^No leídas/,
+        });
         await ana.getByRole('button', { name: /^Filtros/ }).click();
         const agentFilter = await ana.locator('#inbox-agent').count();
         const departmentFilter = await ana.locator('#inbox-department').count();
+        const mineOption = await ana
+            .getByRole('radio', { name: 'Mis conversaciones', exact: true })
+            .count();
         await ana.keyboard.press('Escape');
         record(
             'agent-personal-inbox',
             'render',
             (await generalView.count()) === 1 &&
                 (await generalView.getAttribute('aria-pressed')) === 'true' &&
-                (await mineView.count()) === 1 &&
-                (await mineView.getAttribute('aria-pressed')) === 'false' &&
                 (await queueView.count()) === 1 &&
+                (await unreadView.count()) === 1 &&
+                mineOption === 1 &&
                 (await ana
                     .getByRole('switch', { name: 'Solo mis conversaciones' })
                     .count()) === 0 &&
                 departmentFilter === 1 &&
                 agentFilter === 0,
-            `"Bandeja general" by default + "Mis conversaciones" + "Pendientes", no "Solo mías" nor agent filter (agent=${agentFilter})`,
+            `"Bandeja general" by default + "Pendientes" + "No leídas", "Mis conversaciones" in Filtros, no "Solo mías" nor agent filter (agent=${agentFilter})`,
         );
         await queueView.click();
         await ana.waitForURL(/status=pending/);
@@ -149,42 +156,32 @@ const run = async () => {
         );
         await shot(ana, 'b01_queue_agent');
 
-        // 2b. While "No disponible" the agent sees the queue but cannot accept.
+        // 2b. Manual availability was removed (Fase 5): an active agent of
+        // the department can accept right away, with no switch or banner.
         // Flow update (increment C): Accept moved from the row to the chat
         // header; the row opens the chat in the same page.
-        const unavailableBanner =
-            (await ana.getByText('Estás como No disponible').count()) > 0;
         await row.click();
         await ana.waitForURL(new RegExp(`c=${firstId}`));
-        const blockedAccept = operations(ana).getByRole('button', {
+        const acceptButton = operations(ana).getByRole('button', {
             name: 'Aceptar',
             exact: true,
         });
-        await blockedAccept.waitFor();
+        await acceptButton.waitFor();
         record(
-            'unavailable-cannot-accept',
+            'no-availability-gate',
             'render',
-            unavailableBanner &&
-                (await blockedAccept.isDisabled()) &&
-                /Disponible/.test(
-                    (await blockedAccept.getAttribute('title')) ?? '',
-                ),
-            'banner shown, Accept disabled with explanation',
-        );
-        const anaAvailable = await becomeAvailable(ana);
-        record(
-            'switch-to-available',
-            'mouse',
-            anaAvailable &&
-                (await ana.getByText('Estás como No disponible').count()) === 0,
-            'availability switch; banner gone',
+            (await ana.getByText('Estás como No disponible').count()) === 0 &&
+                (await ana
+                    .getByRole('switch', { name: /Disponible/ })
+                    .count()) === 0 &&
+                !(await acceptButton.isDisabled()),
+            'no availability switch nor banner; Accept enabled',
         );
 
         // 3. Two agents accept at the same time: exactly one wins.
         const beto = await newPage(browser);
         await login(beto, USERS.beto);
         await beto.goto(`${BASE}/conversations`);
-        await becomeAvailable(beto);
         await Promise.all([
             openConversation(ana, firstId),
             openConversation(beto, firstId),
@@ -221,7 +218,9 @@ const run = async () => {
         // Flow update (increment C): notes are written in the composer's
         // "Nota interna" mode and shown inline, styled apart from messages.
         await waitToastsGone(winner);
-        await winner.getByRole('tab', { name: 'Nota interna' }).click();
+        await winner
+            .getByRole('button', { name: 'Nota interna', exact: true })
+            .click();
         await winner.locator('#chat-composer').click();
         await winner.keyboard.type('Pide factura a nombre de su empresa');
         await winner.getByRole('button', { name: 'Guardar nota' }).click();
@@ -246,38 +245,26 @@ const run = async () => {
             `note shown as internal note, message bubbles with it=${inBubble}`,
         );
 
-        // 5. Hold (Escape cancels first), then resume.
-        await runOperation(winner, 'Poner en espera');
-        await winner.getByRole('dialog').waitFor();
-        await winner.keyboard.press('Escape');
-        await winner.getByRole('dialog').waitFor({ state: 'detached' });
+        // 5. "En espera" is retired (Fase 5): the conversation stays "En
+        // atención" and no operation offers to put it on hold or resume it.
         const stillOpen = (await winner.getByText('En atención').count()) > 0;
-        await runOperation(winner, 'Poner en espera');
-        await winner.locator('#conversation-reason').click();
-        await winner.keyboard.type('Esperando comprobante de pago');
+        const directHold = await operations(winner)
+            .getByRole('button', { name: /Poner en espera|Retomar/ })
+            .count();
         await winner
-            .getByRole('dialog')
-            .getByRole('button', { name: 'Poner en espera' })
+            .getByRole('button', { name: 'Más acciones de la conversación' })
             .click();
-        await winner
-            .getByText(/Esperando comprobante de pago/)
-            .first()
-            .waitFor();
-        await operations(winner)
-            .getByRole('button', { name: 'Retomar' })
-            .waitFor();
-        const onHold = (await winner.getByText('En espera').count()) > 0;
-        await operations(winner)
-            .getByRole('button', { name: 'Retomar' })
-            .click();
-        await operations(winner)
-            .getByRole('button', { name: 'Retomar' })
-            .waitFor({ state: 'detached' });
+        await winner.getByRole('menu').waitFor();
+        const menuHold = await winner
+            .getByRole('menuitem', { name: /Poner en espera|Retomar/ })
+            .count();
+        await winner.keyboard.press('Escape');
+        await winner.getByRole('menu').waitFor({ state: 'detached' });
         record(
-            'hold-and-resume',
-            'mouse + keyboard + Esc',
-            stillOpen && onHold,
-            'Esc kept state; hold with reason; resumed',
+            'no-hold-operation',
+            'mouse + Esc',
+            stillOpen && directHold === 0 && menuHold === 0,
+            `open; hold/resume offered: direct=${directHold} menu=${menuHold}`,
         );
 
         // 6. Transfer to another department's queue with a reason.
@@ -326,7 +313,6 @@ const run = async () => {
         await login(carla, USERS.carla);
         await carla.goto(`${BASE}/conversations?status=pending`);
         await carla.waitForLoadState('networkidle');
-        await becomeAvailable(carla);
         await listRow(carla, 'Cliente E2E Anuncio').focus();
         await carla.keyboard.press('Enter');
         await carla.waitForURL(new RegExp(`c=${firstId}`));
@@ -435,15 +421,9 @@ const run = async () => {
         record(
             'close-reopen-history',
             'mouse',
-            [
-                'Aceptada',
-                'Puesta en espera',
-                'Atención retomada',
-                'Transferida',
-                'Cerrada',
-                'Reabierta',
-            ].every((label) => history.includes(label)) &&
-                (await admin.getByText(/Ventana abierta/).count()) > 0,
+            ['Aceptada', 'Transferida', 'Cerrada', 'Reabierta'].every((label) =>
+                history.includes(label),
+            ) && (await admin.getByText(/Ventana abierta/).count()) > 0,
             'timeline complete; window still open (not extended)',
         );
         await shot(admin, 'b04_admin_detail');
@@ -451,14 +431,15 @@ const run = async () => {
         // 10. Stale data: a second tab acting on the old version is told so.
         const staleTab = await admin.context().newPage();
         await openConversation(staleTab, firstId);
-        await runOperation(admin, 'Poner en espera');
+        // Fase 5: "Poner en espera" is retired; the admin's change that makes
+        // the other tab stale is returning it to the queue.
+        await runOperation(admin, 'Devolver a la cola');
         await admin
             .getByRole('dialog')
-            .getByRole('button', { name: 'Poner en espera' })
+            .getByRole('button', { name: 'Devolver a la cola' })
             .click();
-        await operations(admin)
-            .getByRole('button', { name: 'Retomar' })
-            .waitFor();
+        await admin.getByRole('dialog').waitFor({ state: 'detached' });
+        await admin.waitForLoadState('networkidle');
         await runOperation(staleTab, 'Devolver a la cola');
         await staleTab
             .getByRole('dialog')

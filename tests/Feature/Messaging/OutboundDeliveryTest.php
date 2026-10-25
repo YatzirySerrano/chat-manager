@@ -168,7 +168,8 @@ test('a rejected token marks the connection credentials invalid and announces th
         ->error_code->toBe('credentials_invalid')
         ->error_message->not->toContain(OUTBOUND_TOKEN)
         ->and($this->connection->refresh())
-        ->credentials_error->toContain('(código 190)')
+        ->credentials_error->toStartWith('El token de acceso')
+        ->credentials_error->not->toContain('Session has expired')
         ->credentials_error->not->toContain(OUTBOUND_TOKEN)
         ->credentials_verified_at->toBeNull();
 

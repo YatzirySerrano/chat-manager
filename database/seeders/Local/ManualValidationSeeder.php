@@ -7,10 +7,8 @@ use App\Actions\Contacts\AddContactNote;
 use App\Actions\Contacts\CreateContact;
 use App\Actions\Conversations\AcceptConversation;
 use App\Actions\Conversations\AddConversationNote;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\CloseConversation;
 use App\Actions\Conversations\ProcessInboundMessages;
-use App\Actions\Conversations\PutConversationOnHold;
 use App\Actions\Conversations\TransferConversation;
 use App\Actions\Departments\CreateDepartment;
 use App\Actions\QuickReplies\CreateQuickReply;
@@ -18,7 +16,6 @@ use App\Actions\Roles\SaveRole;
 use App\Actions\Tags\CreateTag;
 use App\Actions\Tags\SyncContactTags;
 use App\Actions\Users\CreateUser;
-use App\Enums\AgentAvailability;
 use App\Enums\ColorSwatch;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
@@ -97,14 +94,14 @@ class ManualValidationSeeder extends Seeder
         $sofia = $this->inbound('sofia', 'Necesito la factura de mi compra de la semana pasada.', minutesAgo: 26 * 60);
         $this->tagOnce($sofia->contact()->firstOrFail(), $tags['invoice'], $admin);
 
-        $this->prepareOnHold($marioConversation, $agents['valeria']);
+        $this->prepareAttending($marioConversation, $agents['valeria']);
         $this->prepareClosed($sofia, $agents['valeria'], $agents['oscar'], $support);
 
         return [
             'credentials' => $credentials,
             'conversations' => [
                 'pending' => $laura->id,
-                'on_hold' => $marioConversation->id,
+                'attending' => $marioConversation->id,
                 'closed' => $sofia->id,
             ],
         ];
@@ -333,16 +330,14 @@ class ManualValidationSeeder extends Seeder
     /**
      * Mario: accepted by the sales agent, with an internal note, waiting for a payment receipt.
      */
-    private function prepareOnHold(Conversation $conversation, User $agent): void
+    private function prepareAttending(Conversation $conversation, User $agent): void
     {
         if ($conversation->status !== ConversationStatus::Pending || $conversation->events()->count() > 1) {
             return;
         }
 
-        $this->makeAvailable($agent);
         $conversation = app(AcceptConversation::class)->handle($conversation, $agent);
         app(AddConversationNote::class)->handle($conversation, $agent, 'El cliente dice que pagó por transferencia; falta el comprobante (nota interna de prueba).');
-        app(PutConversationOnHold::class)->handle($conversation->refresh(), $agent, 'Esperando comprobante de pago');
     }
 
     /**
@@ -355,21 +350,10 @@ class ManualValidationSeeder extends Seeder
             return;
         }
 
-        $this->makeAvailable($salesAgent);
-        $this->makeAvailable($supportAgent);
         $conversation = app(AcceptConversation::class)->handle($conversation, $salesAgent);
         $conversation = app(TransferConversation::class)->handle($conversation->refresh(), $support, null, $salesAgent, 'Solicitud de factura: la atiende Soporte');
         $conversation = app(AcceptConversation::class)->handle($conversation->refresh(), $supportAgent);
         app(AddConversationNote::class)->handle($conversation, $supportAgent, 'Factura enviada por correo electrónico (nota interna de prueba).');
         app(CloseConversation::class)->handle($conversation->refresh(), $supportAgent, 'Factura entregada; caso resuelto');
-    }
-
-    /**
-     * Only available agents accept pending conversations; the demo agents
-     * switch to "Disponible" through the same action the switch uses.
-     */
-    private function makeAvailable(User $agent): void
-    {
-        app(ChangeAgentAvailability::class)->handle($agent->refresh(), AgentAvailability::Available);
     }
 }

@@ -21,13 +21,17 @@ use Throwable;
  * Downloads the media a customer sent (image, document, audio, video,
  * sticker) from WhatsApp to the private media disk:
  *
+ * Messenger and Instagram announce a pre-signed CDN URL instead of a media
+ * id: it is downloaded directly (step 2) without any token, with the same
+ * host allowlist and the channel's own inbound limits (MediaStorage).
+ *
  * 1. GET /{media-id} returns a short-lived URL (it expires in minutes, so a
  *    fresh one is requested on every attempt), its size and type;
  * 2. the file is downloaded with the token in the Authorization header,
  *    only from Meta's media hosts, into a temporary file that is always
  *    removed;
- * 3. its real type (finfo) and size are checked against config/whatsapp.php
- *    and it is stored under a random path.
+ * 3. its real type (finfo) and size are checked against the channel's
+ *    limits and it is stored under a random path.
  *
  * Temporary failures (Meta unreachable, throttled, 5xx) are retried with
  * backoff; a file Meta no longer serves, too large or of a forbidden type
@@ -59,7 +63,9 @@ class DownloadInboundMedia implements ShouldQueue
     {
         $attachment = MessageAttachment::query()->with('message.conversation.channelConnection')->find($this->attachmentId);
 
-        if ($attachment === null || $attachment->status !== AttachmentStatus::Pending || $attachment->whatsapp_media_id === null) {
+        $sourceUrl = $attachment === null ? null : self::sourceUrl($attachment);
+
+        if ($attachment === null || $attachment->status !== AttachmentStatus::Pending || ($attachment->whatsapp_media_id === null && $sourceUrl === null)) {
             return;
         }
 
@@ -72,7 +78,7 @@ class DownloadInboundMedia implements ShouldQueue
             return;
         }
 
-        if (str_starts_with($attachment->whatsapp_media_id, 'sim.')) {
+        if ($attachment->whatsapp_media_id !== null && str_starts_with($attachment->whatsapp_media_id, 'sim.')) {
             // SIMULACIÓN: a fictitious media id has no file in Meta.
             $this->markUnavailable($attachment, 'simulated_media');
 
@@ -87,16 +93,26 @@ class DownloadInboundMedia implements ShouldQueue
             throw new \RuntimeException('No temporary file could be created for the media download.');
         }
 
-        try {
-            $media = $graph->media($token, $attachment->whatsapp_media_id);
+        $channel = $connection->channel;
 
-            if ($media['file_size'] !== null) {
-                $storage->assertSize($kind, $media['file_size']);
+        try {
+            if ($sourceUrl !== null) {
+                // Messenger / Instagram: the pre-signed CDN URL came with the
+                // webhook (only Meta hosts are allowed); it needs no token, so
+                // none is sent to the CDN.
+                $graph->download(null, $sourceUrl, $temporary, $storage->rules($kind, $channel)['max_bytes']);
+            } else {
+                $media = $graph->media($token, (string) $attachment->whatsapp_media_id);
+
+                if ($media['file_size'] !== null) {
+                    $storage->assertSize($kind, $media['file_size'], $channel);
+                }
+
+                // The limit is enforced while streaming, even when Meta reports no size.
+                $graph->download($token, $media['url'], $temporary, $storage->rules($kind, $channel)['max_bytes']);
             }
 
-            // The limit is enforced while streaming, even when Meta reports no size.
-            $graph->download($token, $media['url'], $temporary, $storage->rules($kind)['max_bytes']);
-            $stored = $storage->store($temporary, $kind);
+            $stored = $storage->store($temporary, $kind, $channel);
         } catch (MediaRejected $exception) {
             $this->markUnavailable($attachment, $exception->reason);
 
@@ -104,6 +120,13 @@ class DownloadInboundMedia implements ShouldQueue
         } catch (MetaGraphException $exception) {
             if ($exception->isRetryable() || $exception->isAmbiguous()) {
                 $this->retryLater($attachment);
+
+                return;
+            }
+
+            // A CDN URL that stopped answering says nothing about the token.
+            if ($sourceUrl !== null) {
+                $this->markUnavailable($attachment, 'expired');
 
                 return;
             }
@@ -140,6 +163,21 @@ class DownloadInboundMedia implements ShouldQueue
 
             ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
         });
+    }
+
+    /**
+     * CDN URL of a Messenger or Instagram attachment (kept in the message
+     * content by ReceiveInboundMessage); null for WhatsApp media ids.
+     */
+    private static function sourceUrl(MessageAttachment $attachment): ?string
+    {
+        $content = $attachment->message->metadata['content'] ?? null;
+
+        if ($attachment->whatsapp_media_id !== null || ! is_array($content) || ($content['source'] ?? null) !== 'url') {
+            return null;
+        }
+
+        return is_string($content['url'] ?? null) && $content['url'] !== '' ? $content['url'] : null;
     }
 
     /**

@@ -29,6 +29,9 @@ Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->w
 Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
 Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
 
+// Messenger / Instagram (meta module): Instagram Login tokens last 60 days and are renewed before they expire.
+Schedule::command('meta:refresh-instagram-tokens')->dailyAt('03:50')->withoutOverlapping();
+
 // Web chat: visitor sessions expired or revoked more than webchat.prune_after_days ago.
 Schedule::command('webchat:prune-sessions')->dailyAt('04:20')->withoutOverlapping();
 

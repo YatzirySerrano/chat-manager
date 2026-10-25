@@ -17,6 +17,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import AutoMessagePreview from '@/components/connections/AutoMessagePreview.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagnosticsCard.vue';
+import MetaAccountCard from '@/components/connections/MetaAccountCard.vue';
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
@@ -126,6 +127,14 @@ type ConnectionForm = {
 const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
 const isWebChat = computed(() => props.channel.value === 'web_chat');
+/** Only WhatsApp has Meta identifiers and secrets typed in the form. */
+const isWhatsapp = computed(() => props.channel.value === 'whatsapp');
+/** Messenger and Instagram are authorized with Meta (OAuth), not typed. */
+const isMeta = computed(
+    () =>
+        props.channel.value === 'messenger' ||
+        props.channel.value === 'instagram',
+);
 const widget = computed(() => connection.value?.web_chat_widget ?? null);
 
 /** Unsaved appearance of the widget card, followed by the live preview. */
@@ -388,7 +397,7 @@ function submit(): void {
     form.transform((data) => {
         const payload: Record<string, unknown> = { ...data };
 
-        if (isWebChat.value) {
+        if (!isWhatsapp.value) {
             META_FIELDS.forEach((field) => delete payload[field]);
         }
 
@@ -493,6 +502,8 @@ const pageTitle = computed(() =>
             class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
         >
             <PageHeader
+                help="conexiones"
+                show-title
                 :title="pageTitle"
                 :description="
                     isEditing
@@ -526,6 +537,12 @@ const pageTitle = computed(() =>
                     El widget deja de funcionar en los sitios donde está
                     insertado. Sus conversaciones e historial se conservan. Al
                     restaurarla quedará inactiva hasta que la actives.
+                </template>
+                <template v-else-if="isMeta">
+                    No envía ni recibe mensajes y su cuenta de Meta queda
+                    reservada. Sus conversaciones e historial se conservan. Al
+                    restaurarla quedará inactiva; vuelve a autorizarla si Meta
+                    retiró el acceso.
                 </template>
                 <template v-else>
                     No envía ni recibe mensajes y su Phone number ID queda
@@ -582,7 +599,7 @@ const pageTitle = computed(() =>
                             />
                         </FormField>
                         <FormField
-                            v-if="!isWebChat"
+                            v-if="isWhatsapp"
                             id="connection-display-phone"
                             label="Número visible (opcional)"
                             :error="validation.error('display_phone_number')"
@@ -605,8 +622,14 @@ const pageTitle = computed(() =>
                         </FormField>
                     </SurfaceCard>
 
+                    <MetaAccountCard
+                        v-if="isMeta && connection && connection.meta_account"
+                        :connection="connection"
+                        :can-manage="can.update"
+                    />
+
                     <SurfaceCard
-                        v-if="!isWebChat"
+                        v-if="isWhatsapp"
                         title="Credenciales de Meta"
                         :description="`Datos de tu app y de tu cuenta de WhatsApp Business. Se consultan con la Graph API ${graphVersion ?? ''}.`"
                         body-class="grid gap-5 p-5"
@@ -1147,7 +1170,7 @@ const pageTitle = computed(() =>
                             </div>
 
                             <ConnectionChecklist
-                                v-if="!isWebChat"
+                                v-if="isWhatsapp"
                                 :checks="connection.checks"
                             />
 
@@ -1262,6 +1285,17 @@ const pageTitle = computed(() =>
                                     >
                                         Guarda al menos un dominio autorizado en
                                         el widget para poder activarla.
+                                    </p>
+                                    <p
+                                        v-if="
+                                            isMeta &&
+                                            !connection.is_active &&
+                                            !connection.has_required_credentials
+                                        "
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        Vuelve a autorizar la cuenta con Meta
+                                        para poder activarla.
                                     </p>
                                     <p
                                         v-if="

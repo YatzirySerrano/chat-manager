@@ -86,6 +86,7 @@ enum DefaultRole: string
                 Permission::ViewConversationHistory,
                 Permission::AcceptConversations,
                 Permission::AddConversationNotes,
+                Permission::SuperviseConversations,
                 Permission::ViewContacts,
                 Permission::ViewTags,
                 Permission::AssignTags,

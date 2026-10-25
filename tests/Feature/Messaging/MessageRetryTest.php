@@ -3,6 +3,7 @@
 use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\MessageStatus;
+use App\Enums\MessageType;
 use App\Http\Resources\ConversationMessageResource;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\AuditLog;
@@ -12,6 +13,7 @@ use App\Models\Message;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
+use Tests\Feature\Templates\TemplateFixtures;
 use Tests\Support\WhatsAppFixtures;
 
 /*
@@ -187,4 +189,27 @@ test('people who can see the conversation but not reply in it cannot retry', fun
 
     ($this->retry)($supervisor, $this->failed)->assertForbidden();
     Queue::assertNothingPushed();
+});
+
+test('a failed template is retried only by someone who holds templates.send', function () {
+    Queue::fake();
+    $template = TemplateFixtures::stored($this->conversation->channelConnection()->firstOrFail());
+    $failedTemplate = WhatsAppFixtures::outbound($this->conversation, [
+        'type' => MessageType::Template,
+        'status' => 'failed',
+        'error_code' => 'provider_unreachable',
+        'failed_at' => now()->subMinute(),
+        'sender_user_id' => $this->agent->id,
+        'metadata' => ['template' => ['id' => $template->id, 'name' => $template->name, 'language' => $template->language]],
+    ]);
+
+    ($this->retry)($this->agent, $failedTemplate)->assertForbidden();
+    expect($failedTemplate->refresh()->status)->toBe(MessageStatus::Failed);
+    Queue::assertNothingPushed();
+
+    $administrator = User::factory()->administrator()->inDepartments($this->department)->create();
+    $this->conversation->forceFill(['assigned_user_id' => $administrator->id])->save();
+
+    ($this->retry)($administrator, $failedTemplate)->assertAccepted();
+    expect($failedTemplate->refresh()->status)->toBe(MessageStatus::Queued);
 });

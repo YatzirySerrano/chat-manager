@@ -14,6 +14,10 @@ enum ContactSource: string
     case Import = 'import';
     /** Registered automatically from a web chat visitor message. */
     case WebChat = 'web_chat';
+    /** Registered automatically from a Facebook Messenger message. */
+    case Messenger = 'messenger';
+    /** Registered automatically from an Instagram direct message. */
+    case Instagram = 'instagram';
 
     public function label(): string
     {
@@ -22,6 +26,8 @@ enum ContactSource: string
             self::Whatsapp => 'Automático (WhatsApp)',
             self::Import => 'Importación',
             self::WebChat => 'Automático (Chat web)',
+            self::Messenger => 'Automático (Messenger)',
+            self::Instagram => 'Automático (Instagram)',
         };
     }
 

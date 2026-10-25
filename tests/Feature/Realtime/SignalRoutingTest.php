@@ -1,9 +1,7 @@
 <?php
 
 use App\Actions\Conversations\AcceptConversation;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\TransferConversation;
-use App\Enums\AgentAvailability;
 use App\Events\Broadcasts\RealtimeSignal;
 use App\Events\Conversations\ConversationChanged;
 use App\Events\Conversations\ConversationNoteSaved;
@@ -147,20 +145,6 @@ test('read markers only reach the reader', function () {
 
     expect(publishedSignals())->toHaveCount(1)
         ->and(channelsOf('inbox.changed'))->toBe(["users.{$agent->id}"]);
-});
-
-test('availability changes reach the agent and the team inboxes, not colleagues in personal queues', function () {
-    $department = Department::factory()->create();
-    $agent = User::factory()->agent()->inDepartments($department)->create();
-    Event::fake([RealtimeSignal::class]);
-
-    app(ChangeAgentAvailability::class)->handle($agent, AgentAvailability::Available);
-
-    expect(channelsOf('availability.changed'))->toEqualCanonicalizing([
-        "users.{$agent->id}",
-        'inbox.global',
-        "inbox.departments.{$department->id}",
-    ]);
 });
 
 test('nothing is queued or published when broadcasting is disabled', function () {

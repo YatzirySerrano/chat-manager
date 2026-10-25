@@ -228,6 +228,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="integraciones"
             title="Integraciones"
             description="Tokens de la API de integración (/api/v1) para que otros sistemas consulten conversaciones y envíen mensajes. Cada token tiene capacidades, conexiones permitidas y una fecha de vencimiento."
         >

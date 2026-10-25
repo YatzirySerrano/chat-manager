@@ -26,6 +26,7 @@ class RefreshMetricsOnActivity
         ConversationEventType::NoteEdited->value,
         'read',
         'tags',
+        'contact',
     ];
 
     public function handleConversationChanged(ConversationChanged $event): void

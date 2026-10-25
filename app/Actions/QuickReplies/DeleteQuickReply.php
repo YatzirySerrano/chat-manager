@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * Logically deletes a quick reply: nobody can insert it anymore and its
  * shortcut stays reserved (see EnsureShortcutIsAvailable), so restoring it
- * never creates a conflict.
+ * never creates a conflict. A personal reply deleted by someone other than its
+ * owner (supervision) is recorded as SupervisionPersonalItemDeleted, naming
+ * the owner and the title but never the text.
  */
 class DeleteQuickReply
 {
@@ -29,7 +31,16 @@ class DeleteQuickReply
 
             $locked->forceFill(['is_active' => false, 'updated_by_user_id' => $actor->id])->save();
 
-            $this->audit->record(AuditAction::QuickReplyDeleted, $locked, [], $actor);
+            if ($locked->isPersonal() && $locked->owner_user_id !== $actor->id) {
+                $this->audit->record(AuditAction::SupervisionPersonalItemDeleted, $locked, [
+                    'owner_user_id' => $locked->owner_user_id,
+                    'item_type' => 'quick_reply',
+                    'item_id' => $locked->id,
+                    'title' => $locked->title,
+                ], $actor);
+            } else {
+                $this->audit->record(AuditAction::QuickReplyDeleted, $locked, $locked->isPersonal() ? ['personal' => true] : [], $actor);
+            }
 
             return $locked;
         });

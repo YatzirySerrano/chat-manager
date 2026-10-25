@@ -20,7 +20,7 @@ use Throwable;
  * each other), re-checked under the lock, moved with the state matrix and
  * the version counter, and recorded as an "unassigned" event with the
  * department it was in. Once the caller's transaction commits, conversations
- * of automatic departments are offered to another available agent, each in
+ * of automatic departments are offered to another eligible agent, each in
  * its own transaction; manual and shared queues simply wait to be accepted.
  *
  * The agent's conversations are looked up with a locking read, so the

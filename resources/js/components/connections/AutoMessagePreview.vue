@@ -55,12 +55,12 @@ defineProps<{
                 class="flex flex-col items-end gap-1"
             >
                 <span
-                    class="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+                    class="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase"
                 >
                     {{ message.label }}
                     <span
                         v-if="!message.enabled"
-                        class="rounded-full bg-muted px-1.5 py-px text-[10px] normal-case"
+                        class="rounded-full bg-muted px-1.5 py-px text-xs normal-case"
                         >Desactivado</span
                     >
                 </span>
@@ -78,7 +78,7 @@ defineProps<{
                     <MessageCircleDashed class="size-3.5" aria-hidden="true" />
                     Sin texto
                 </div>
-                <span class="text-[11px] text-muted-foreground">{{
+                <span class="text-xs text-muted-foreground">{{
                     message.trigger
                 }}</span>
             </div>

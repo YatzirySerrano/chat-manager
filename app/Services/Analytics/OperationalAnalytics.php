@@ -2,7 +2,6 @@
 
 namespace App\Services\Analytics;
 
-use App\Enums\AgentAvailability;
 use App\Enums\ConversationStatus;
 use App\Enums\Permission;
 use App\Models\Connection;
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  * Period figures follow the cohort of conversations RECEIVED in the period:
  * "of the conversations received between these dates, how many were
  * attended, answered, resolved…, and how long it took". Snapshot figures
- * (pending now, load now, available agents now) ignore the period.
+ * (pending now, load now, active agents now) ignore the period.
  * A figure without enough data is null, never zero.
  *
  * @phpstan-type Comparable array{value: int|float|null, previous: int|float|null}
@@ -28,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type BreakdownRow array{id: int|null, name: string, received: int, attended: int, responded: int, resolved: int, first_attention_seconds: int|null, first_response_seconds: int|null, resolution_seconds: int|null, transfers: int, reopened: int, messages_in: int, messages_out: int, failed_out: int, out_of_hours: int, current_load: int|null}
  * @phpstan-type Sla array{target_seconds: int, met: int, samples: int, rate: float|null, previous_rate: float|null}
  * @phpstan-type Summary array{received: Comparable, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, first_response_business_seconds: Duration, resolution_business_seconds: Duration, first_response_sla: Sla|null, resolution_sla: Sla|null, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
- * @phpstan-type Snapshot array{pending: int, open: int, on_hold: int, available_agents: int|null, agents: int|null}
+ * @phpstan-type Snapshot array{pending: int, open: int, agents: int|null}
  * @phpstan-type TrendPoint array{key: string, label: string, received: int, resolved: int, previous_received: int}
  * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'month', points: list<TrendPoint>}, heatmap: array{max: int, cells: list<list<int>>}, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>}
  */
@@ -139,14 +138,12 @@ class OperationalAnalytics
         $this->dimensions($query, $filters, 'assigned_user_id');
 
         $counts = $query->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status');
-        [$available, $agents] = $this->agentAvailability($viewer, $filters);
 
         return [
             'pending' => (int) ($counts[ConversationStatus::Pending->value] ?? 0),
-            'open' => (int) ($counts[ConversationStatus::Open->value] ?? 0),
-            'on_hold' => (int) ($counts[ConversationStatus::OnHold->value] ?? 0),
-            'available_agents' => $available,
-            'agents' => $agents,
+            // Legacy on_hold rows (not migrated yet) are still in attention.
+            'open' => (int) ($counts[ConversationStatus::Open->value] ?? 0) + (int) ($counts[ConversationStatus::OnHold->value] ?? 0),
+            'agents' => $this->activeAgents($viewer, $filters),
         ];
     }
 
@@ -165,8 +162,9 @@ class OperationalAnalytics
         return array_map(fn (ConversationStatus $status): array => [
             'status' => $status->value,
             'label' => $status->label(),
-            'count' => (int) ($counts[$status->value] ?? 0),
-        ], ConversationStatus::cases());
+            'count' => (int) ($counts[$status->value] ?? 0)
+                + ($status === ConversationStatus::Open ? (int) ($counts[ConversationStatus::OnHold->value] ?? 0) : 0),
+        ], ConversationStatus::operational());
     }
 
     /**
@@ -422,13 +420,13 @@ class OperationalAnalytics
     }
 
     /**
-     * Conversations in attention (open or on hold) now, per agent or department.
+     * Conversations in attention now (including legacy on_hold rows), per agent or department.
      *
      * @return array<int, int> Id (0 for none) => count.
      */
     private function currentLoads(User $viewer, AnalyticsFilters $filters, string $column): array
     {
-        $query = DB::table('conversations')->whereIn('status', [ConversationStatus::Open->value, ConversationStatus::OnHold->value]);
+        $query = DB::table('conversations')->whereIn('status', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()));
         $this->scope->apply($query, $viewer, 'assigned_user_id', 'department_id');
         $this->dimensions($query, $filters, 'assigned_user_id');
 
@@ -444,15 +442,14 @@ class OperationalAnalytics
     }
 
     /**
-     * Agents declared available now and agents able to attend, within the
-     * reach; a personal reach does not see colleagues (null).
-     *
-     * @return array{0: int|null, 1: int|null}
+     * Active agents (active account and role able to reply) within the
+     * reach; a personal reach does not see colleagues (null). There is no
+     * manual availability any more.
      */
-    private function agentAvailability(User $viewer, AnalyticsFilters $filters): array
+    private function activeAgents(User $viewer, AnalyticsFilters $filters): ?int
     {
         if ($this->scope->isPersonal($viewer)) {
-            return [null, null];
+            return null;
         }
 
         $agents = User::query()
@@ -463,10 +460,9 @@ class OperationalAnalytics
             ->when($filters->agentId !== null, fn ($query) => $query->whereKey($filters->agentId))
             ->toBase()
             ->selectRaw('COUNT(*) AS total')
-            ->selectRaw('SUM(CASE WHEN availability = ? THEN 1 ELSE 0 END) AS available', [AgentAvailability::Available->value])
             ->first();
 
-        return [(int) ($agents->available ?? 0), (int) ($agents->total ?? 0)];
+        return (int) ($agents->total ?? 0);
     }
 
     /**

@@ -20,6 +20,11 @@ use DateTimeInterface;
  * This only answers whether a free-form message is allowed. It says nothing
  * about pricing, which follows the provider's current rules.
  *
+ * Messenger and Instagram follow the same 24 hour rule. When the Meta app
+ * has the Human Agent feature approved (services.meta.human_agent_tag),
+ * their window for human replies lasts HUMAN_AGENT_WINDOW_HOURS (7 days)
+ * and MetaMessagingTransport tags replies past 24 hours with HUMAN_AGENT.
+ *
  * Channels without that window (the web chat) are always NotApplicable and
  * allow free-form messages. The channel comes from the loaded connection
  * when it carries it, otherwise from one query per connection (the channel
@@ -28,6 +33,9 @@ use DateTimeInterface;
 class CustomerServiceWindow
 {
     public const WINDOW_HOURS = 24;
+
+    /** Window of human replies on Messenger/Instagram with the HUMAN_AGENT tag. */
+    public const HUMAN_AGENT_WINDOW_HOURS = 168;
 
     /** Remaining time below which the window is reported as about to expire. */
     public const WARNING_MINUTES = 60;
@@ -43,10 +51,26 @@ class CustomerServiceWindow
             return new CustomerWindowState(CustomerWindowStatus::NotApplicable, null, null, 0, null);
         }
 
-        return $this->at($conversation->last_inbound_at, $now);
+        return $this->at($conversation->last_inbound_at, $now, self::hoursFor($channel));
     }
 
-    public function at(?DateTimeInterface $lastInboundAt, ?DateTimeInterface $now = null): CustomerWindowState
+    /**
+     * Length of the window on the channel: 24 hours, or 7 days on Messenger
+     * and Instagram when the HUMAN_AGENT tag is enabled.
+     */
+    public static function hoursFor(?ConnectionChannel $channel): int
+    {
+        return in_array($channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true) && self::humanAgentTagEnabled()
+            ? self::HUMAN_AGENT_WINDOW_HOURS
+            : self::WINDOW_HOURS;
+    }
+
+    public static function humanAgentTagEnabled(): bool
+    {
+        return (bool) config('services.meta.human_agent_tag', false);
+    }
+
+    public function at(?DateTimeInterface $lastInboundAt, ?DateTimeInterface $now = null, int $hours = self::WINDOW_HOURS): CustomerWindowState
     {
         $now = CarbonImmutable::instance($now ?? now())->utc();
 
@@ -61,7 +85,7 @@ class CustomerServiceWindow
         }
 
         $lastInbound = CarbonImmutable::instance($lastInboundAt)->utc();
-        $expiresAt = $lastInbound->addHours(self::WINDOW_HOURS);
+        $expiresAt = $lastInbound->addHours($hours);
         $remaining = max(0, (int) $now->diffInSeconds($expiresAt, false));
 
         if ($remaining === 0) {
@@ -70,7 +94,7 @@ class CustomerServiceWindow
                 $lastInbound,
                 $expiresAt,
                 0,
-                'Pasaron más de 24 horas desde el último mensaje del cliente. Podrás responder cuando vuelva a escribir.',
+                ($hours === self::HUMAN_AGENT_WINDOW_HOURS ? 'Pasaron más de 7 días' : 'Pasaron más de '.$hours.' horas').' desde el último mensaje del cliente. Podrás responder cuando vuelva a escribir.',
             );
         }
 

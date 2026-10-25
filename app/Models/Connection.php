@@ -42,6 +42,13 @@ use Illuminate\Support\Str;
  * @property string|null $phone_number_id
  * @property string|null $business_account_id
  * @property string|null $verified_name
+ * @property string|null $external_account_id Facebook page id (Messenger) or Instagram professional account id; unique per channel.
+ * @property string|null $external_account_name
+ * @property string|null $external_account_picture Stored path or URL of the account picture.
+ * @property list<string>|null $granted_scopes Permissions Meta granted when the account was authorized.
+ * @property Carbon|null $token_expires_at Null when the token does not expire (page tokens from a long-lived user token).
+ * @property Carbon|null $authorized_at
+ * @property int|null $authorized_by_user_id
  * @property string|null $meta_app_id
  * @property string|null $access_token
  * @property string|null $app_secret
@@ -126,6 +133,9 @@ class Connection extends Model
             'access_token' => 'encrypted',
             'app_secret' => 'encrypted',
             'webhook_verify_token' => 'encrypted',
+            'granted_scopes' => 'array',
+            'token_expires_at' => 'datetime',
+            'authorized_at' => 'datetime',
             'is_active' => 'boolean',
             'welcome_enabled' => 'boolean',
             'away_enabled' => 'boolean',
@@ -143,6 +153,16 @@ class Connection extends Model
             'last_activity_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Who authorized the Meta account (Messenger / Instagram) of the connection.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function authorizedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'authorized_by_user_id');
     }
 
     /**
@@ -236,11 +256,25 @@ class Connection extends Model
     }
 
     /**
-     * Whether every identifier and the token needed to call the provider are saved.
+     * Whether every identifier and the token needed to call the provider are
+     * saved: the WhatsApp ids and token, or the authorized page / Instagram
+     * account and its token (Messenger, Instagram). Always false for the web chat.
      */
     public function hasRequiredCredentials(): bool
     {
-        return filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token);
+        return match ($this->channel) {
+            ConnectionChannel::Whatsapp => filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token),
+            ConnectionChannel::Messenger, ConnectionChannel::Instagram => filled($this->external_account_id) && filled($this->access_token),
+            ConnectionChannel::WebChat => false,
+        };
+    }
+
+    /**
+     * Whether the connection was authorized with Meta login (Messenger, Instagram).
+     */
+    public function usesMetaAuthorization(): bool
+    {
+        return in_array($this->channel, [ConnectionChannel::Messenger, ConnectionChannel::Instagram], true);
     }
 
     public function isWebChat(): bool
@@ -259,6 +293,7 @@ class Connection extends Model
         return match ($this->channel) {
             ConnectionChannel::Whatsapp => $this->hasRequiredCredentials(),
             ConnectionChannel::WebChat => ($widget = $this->loadMissing('webChatWidget')->webChatWidget) !== null && $widget->allowed_origins !== [],
+            ConnectionChannel::Messenger, ConnectionChannel::Instagram => $this->hasRequiredCredentials(),
         };
     }
 
@@ -293,6 +328,7 @@ class Connection extends Model
             ! $this->is_active => "La conexión de {$channel} «{$this->name}» está desactivada: no se pueden enviar mensajes hasta que un administrador la vuelva a activar.",
             $this->isWebChat() && ! $this->isConfigured() => "La conexión de {$channel} «{$this->name}» no tiene configurado su widget ni sus dominios autorizados: un administrador debe completarlos antes de enviar mensajes.",
             $this->isWebChat() => null,
+            $this->usesMetaAuthorization() && ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene una autorización vigente de Meta: un administrador debe volver a autorizarla desde Conexiones antes de enviar mensajes.",
             ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
             filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de {$channel} «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",
             default => null,

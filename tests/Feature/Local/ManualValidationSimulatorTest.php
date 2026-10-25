@@ -121,7 +121,7 @@ test('a customer writing again shortly after the closing reopens the conversatio
 });
 
 test('delivered and read statuses are recorded even out of order and duplicated', function () {
-    $conversation = Conversation::query()->findOrFail($this->scenario['conversations']['on_hold']);
+    $conversation = Conversation::query()->findOrFail($this->scenario['conversations']['attending']);
     $message = WhatsAppFixtures::outbound($conversation, ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.DEMO-B.out.1']);
 
     $result = $this->simulator->status($message->id, 'delivered', outOfOrder: true, duplicate: true);
@@ -133,7 +133,7 @@ test('delivered and read statuses are recorded even out of order and duplicated'
 });
 
 test('a failed status carries the chosen Meta error, including the expired window one', function () {
-    $conversation = Conversation::query()->findOrFail($this->scenario['conversations']['on_hold']);
+    $conversation = Conversation::query()->findOrFail($this->scenario['conversations']['attending']);
     $message = WhatsAppFixtures::outbound($conversation, ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.DEMO-B.out.2']);
     $real = WhatsAppFixtures::outbound(Conversation::factory()->create(), ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.real.out']);
 

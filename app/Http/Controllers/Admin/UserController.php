@@ -6,6 +6,7 @@ use App\Actions\Conversations\UpdateAgentCapacity;
 use App\Actions\Users\CreateUser;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\RestoreUser;
+use App\Actions\Users\UpdatePersonalQuickRepliesGrant;
 use App\Actions\Users\UpdateUser;
 use App\Actions\Users\UserListQuery;
 use App\Enums\RecordState;
@@ -50,6 +51,7 @@ class UserController extends Controller
         $users = $list->handle($actor, $filters)
             ->with([
                 'roles.permissions',
+                'permissions',
                 'departments' => fn (BelongsToMany $query) => $query
                     ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')
                     ->hidingDeletedFrom($actor)
@@ -98,12 +100,16 @@ class UserController extends Controller
         return back();
     }
 
-    public function update(UpdateUserRequest $request, User $user, UpdateUser $updateUser, UpdateAgentCapacity $updateCapacity): RedirectResponse
+    public function update(UpdateUserRequest $request, User $user, UpdateUser $updateUser, UpdateAgentCapacity $updateCapacity, UpdatePersonalQuickRepliesGrant $updatePersonalQuickReplies): RedirectResponse
     {
         $changed = $updateUser->handle($user, $request->payload(), $request->user());
 
         if ($request->updatesCapacity()) {
             $changed = $updateCapacity->handle($user, $request->capacity(), $request->user()) || $changed;
+        }
+
+        if ($request->updatesPersonalQuickReplies()) {
+            $changed = $updatePersonalQuickReplies->handle($user, $request->boolean('personal_quick_replies'), $request->user()) || $changed;
         }
 
         SaveToast::flash($changed, 'Cambios guardados.');

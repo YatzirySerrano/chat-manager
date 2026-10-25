@@ -374,7 +374,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                 <p
                     :class="
                         cn(
-                            'mt-0.5 flex items-center justify-end gap-1 text-[11px]',
+                            'mt-0.5 flex items-center justify-end gap-1 text-xs',
                             message.is_mine && !message.deleted
                                 ? 'text-primary-foreground/75'
                                 : 'text-muted-foreground',

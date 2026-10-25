@@ -12,6 +12,9 @@ import type { AvailableQuickReply } from '@/types';
  * the text typed after "/". It only inserts: the parent composer receives the
  * rendered text through `select` and the agent decides whether to send it.
  *
+ * The user's own personal replies come first under «Mis respuestas», then
+ * the corporate ones under «Corporativas» (headings only when both exist).
+ *
  * The parent keeps focus in its textarea and forwards key presses through the
  * exposed `handleKeydown` (ArrowUp/ArrowDown/Enter/Tab/Escape).
  */
@@ -72,7 +75,10 @@ async function load(): Promise<void> {
             return;
         }
 
-        replies.value = response.data;
+        replies.value = [
+            ...response.data.filter((reply) => reply.is_personal),
+            ...response.data.filter((reply) => !reply.is_personal),
+        ];
         activeIndex.value = 0;
         loaded.value = true;
     } catch {
@@ -89,6 +95,24 @@ watchDebounced(() => [props.query, props.contactId, props.departmentId], load, {
 });
 
 const activeReply = computed(() => replies.value[activeIndex.value] ?? null);
+
+/**
+ * Groups for display, keeping the index of each reply in the flat list the
+ * keyboard navigation uses.
+ */
+const groups = computed(() => {
+    const indexed = replies.value.map((reply, index) => ({ reply, index }));
+    const personal = indexed.filter(({ reply }) => reply.is_personal);
+    const corporate = indexed.filter(({ reply }) => !reply.is_personal);
+    const showHeadings = personal.length > 0 && corporate.length > 0;
+
+    return [
+        { key: 'personal', label: 'Mis respuestas', items: personal },
+        { key: 'corporate', label: 'Corporativas', items: corporate },
+    ]
+        .filter((group) => group.items.length > 0)
+        .map((group) => ({ ...group, showHeading: showHeadings }));
+});
 
 watch(activeIndex, async () => {
     await nextTick();
@@ -176,48 +200,65 @@ defineExpose({
             aria-label="Respuestas rápidas disponibles"
             class="max-h-64 overflow-y-auto p-1"
         >
-            <li
-                v-for="(reply, index) in replies"
-                :id="`${listId}-${reply.id}`"
-                :key="reply.id"
-                role="option"
-                :aria-selected="index === activeIndex"
-                class="cursor-pointer rounded-md px-2.5 py-2 text-sm"
-                :class="
-                    index === activeIndex ? 'bg-accent' : 'hover:bg-accent/60'
-                "
-                @mousedown.prevent="choose(reply)"
-                @mousemove="activeIndex = index"
-            >
-                <div class="flex items-center gap-2">
-                    <span
-                        class="shrink-0 font-mono text-xs font-medium whitespace-nowrap text-primary"
-                        >/{{ reply.shortcut }}</span
+            <template v-for="group in groups" :key="group.key">
+                <li
+                    v-if="group.showHeading"
+                    role="presentation"
+                    class="px-2.5 pt-2 pb-1 text-xs font-medium text-muted-foreground"
+                >
+                    {{ group.label }}
+                </li>
+                <li
+                    v-for="{ reply, index } in group.items"
+                    :id="`${listId}-${reply.id}`"
+                    :key="reply.id"
+                    role="option"
+                    :aria-selected="index === activeIndex"
+                    class="cursor-pointer rounded-md px-2.5 py-2 text-sm"
+                    :class="
+                        index === activeIndex
+                            ? 'bg-accent'
+                            : 'hover:bg-accent/60'
+                    "
+                    @mousedown.prevent="choose(reply)"
+                    @mousemove="activeIndex = index"
+                >
+                    <div class="flex items-center gap-2">
+                        <span
+                            class="shrink-0 font-mono text-xs font-medium whitespace-nowrap text-primary"
+                            >/{{ reply.shortcut }}</span
+                        >
+                        <span class="min-w-0 truncate font-medium">{{
+                            reply.title
+                        }}</span>
+                        <span
+                            class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                        >
+                            {{
+                                reply.is_personal
+                                    ? 'Personal'
+                                    : reply.is_global
+                                      ? 'Global'
+                                      : reply.departments
+                                            .map(
+                                                (department) => department.name,
+                                            )
+                                            .join(', ')
+                            }}
+                        </span>
+                        <TriangleAlert
+                            v-if="reply.missing.length > 0"
+                            class="ml-auto size-3.5 shrink-0 text-warning"
+                            aria-label="Faltan datos para algunas variables"
+                        />
+                    </div>
+                    <p
+                        class="mt-0.5 line-clamp-2 text-xs text-muted-foreground"
                     >
-                    <span class="min-w-0 truncate font-medium">{{
-                        reply.title
-                    }}</span>
-                    <span
-                        class="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                    >
-                        {{
-                            reply.is_global
-                                ? 'Global'
-                                : reply.departments
-                                      .map((department) => department.name)
-                                      .join(', ')
-                        }}
-                    </span>
-                    <TriangleAlert
-                        v-if="reply.missing.length > 0"
-                        class="ml-auto size-3.5 shrink-0 text-warning"
-                        aria-label="Faltan datos para algunas variables"
-                    />
-                </div>
-                <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                    {{ reply.text }}
-                </p>
-            </li>
+                        {{ reply.text }}
+                    </p>
+                </li>
+            </template>
         </ul>
 
         <p
@@ -238,7 +279,7 @@ defineExpose({
         </p>
 
         <p
-            class="border-t px-3 py-1.5 text-[11px] text-muted-foreground"
+            class="border-t px-3 py-1.5 text-xs text-muted-foreground"
             aria-hidden="true"
         >
             ↑ ↓ para moverte · Enter para insertar · Esc para cerrar

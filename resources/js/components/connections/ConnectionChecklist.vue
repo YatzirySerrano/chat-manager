@@ -2,6 +2,7 @@
 import { CircleCheck, CircleDashed, CircleX, Clock } from '@lucide/vue';
 import { computed } from 'vue';
 import { formatDateTime, formatRelative } from '@/lib/format';
+import { splitTechnicalDetail } from '@/lib/metaErrors';
 import type { Connection } from '@/types';
 
 /**
@@ -21,6 +22,8 @@ type Check = {
     label: string;
     state: CheckState;
     detail: string;
+    /** Meta's technical tail of an older error text (code, English detail). */
+    technical?: string | null;
     title?: string;
 };
 
@@ -48,6 +51,12 @@ const stateText: Record<CheckState, string> = {
 const items = computed<Check[]>(() => {
     const checks = props.checks;
     const credentials = checks.credentials;
+    const credentialsError = splitTechnicalDetail(
+        credentials.error ?? 'Meta rechazó las credenciales.',
+    );
+    const lastError = splitTechnicalDetail(
+        checks.last_error?.message ?? 'Sin detalle.',
+    );
 
     return [
         {
@@ -73,10 +82,14 @@ const items = computed<Check[]>(() => {
                 credentials.state === 'verified'
                     ? `Meta las aceptó ${formatRelative(credentials.verified_at)}.`
                     : credentials.state === 'invalid'
-                      ? (credentials.error ?? 'Meta rechazó las credenciales.')
+                      ? credentialsError.message
                       : credentials.state === 'unverified'
                         ? 'Aún no se han verificado con Meta.'
                         : 'Guarda las credenciales para poder verificarlas.',
+            technical:
+                credentials.state === 'invalid'
+                    ? credentialsError.technical
+                    : null,
             title: credentials.verified_at
                 ? formatDateTime(credentials.verified_at)
                 : undefined,
@@ -119,8 +132,9 @@ const items = computed<Check[]>(() => {
             label: 'Último error',
             state: checks.last_error ? 'error' : 'muted',
             detail: checks.last_error
-                ? `${formatRelative(checks.last_error.at)}: ${checks.last_error.message ?? 'Sin detalle.'}`
+                ? `${formatRelative(checks.last_error.at)}: ${lastError.message}`
                 : 'Sin errores registrados.',
+            technical: checks.last_error ? lastError.technical : null,
             title: checks.last_error
                 ? formatDateTime(checks.last_error.at)
                 : undefined,
@@ -162,6 +176,17 @@ const items = computed<Check[]>(() => {
                 >
                     {{ item.detail }}
                 </p>
+                <details
+                    v-if="!compact && item.technical"
+                    class="mt-1 text-xs text-muted-foreground"
+                >
+                    <summary class="cursor-pointer select-none">
+                        Detalles técnicos
+                    </summary>
+                    <p class="mt-1 font-mono break-words">
+                        {{ item.technical }}
+                    </p>
+                </details>
             </div>
         </li>
     </ul>

@@ -110,9 +110,9 @@ export type OperationalAnalytics = {
     summary: AnalyticsSummary;
     current: {
         pending: number;
+        /** In attention now (legacy on_hold rows included). */
         open: number;
-        on_hold: number;
-        available_agents: number | null;
+        /** Active agents (active account and role able to attend). */
         agents: number | null;
     };
     statuses: { status: string; label: string; count: number }[];

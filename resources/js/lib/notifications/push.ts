@@ -1,8 +1,10 @@
 /**
- * Web Push of this browser: registers public/sw.js (scope '/') and the push
- * subscription with the server's VAPID public key. Pushes carry no payload;
- * the service worker fetches the unread counter itself. Everything here
- * only runs after an explicit click on the preferences page.
+ * Web Push of this browser: the push subscription with the server's VAPID
+ * public key, on the public/sw.js registration (scope '/') that
+ * lib/pwa/register.ts also creates on every signed-in page (same URL and
+ * scope, so it is one registration). Pushes carry no payload; the service
+ * worker fetches the unread counter itself. Subscribing only runs after an
+ * explicit click on the preferences page; signing out unsubscribes.
  */
 
 export type PushDevice = {

@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\Conversations\AgentAvailabilityController;
 use App\Http\Controllers\Conversations\ConversationAssignmentController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
@@ -21,7 +20,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations', [ConversationController::class, 'index'])->name('conversations.index');
-    Route::put('conversations/availability', [AgentAvailabilityController::class, 'update'])->name('conversations.availability.update');
     Route::get('conversations/page', [ConversationController::class, 'page'])
         ->middleware('throttle:120,1')
         ->name('conversations.page');
@@ -33,8 +31,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations/{conversation}/destinations', [ConversationTransferController::class, 'destinations'])
         ->middleware('throttle:60,1')
         ->name('conversations.destinations');
-    Route::post('conversations/{conversation}/hold', [ConversationStatusController::class, 'hold'])->name('conversations.hold');
-    Route::post('conversations/{conversation}/resume', [ConversationStatusController::class, 'resume'])->name('conversations.resume');
     Route::post('conversations/{conversation}/close', [ConversationStatusController::class, 'close'])->name('conversations.close');
     Route::post('conversations/{conversation}/reopen', [ConversationStatusController::class, 'reopen'])->name('conversations.reopen');
     Route::post('conversations/{conversation}/notes', [ConversationNoteController::class, 'store'])->name('conversations.notes.store');

@@ -106,7 +106,9 @@ class UserFactory extends Factory
     }
 
     /**
-     * Declare the user available to receive automatic assignments.
+     * Deprecated: manual availability no longer decides anything (accepting,
+     * distribution and notifications ignore it). Kept so older tests and
+     * seeds keep working; it only fills the legacy columns.
      */
     public function available(): static
     {

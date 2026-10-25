@@ -21,6 +21,8 @@ beforeEach(function () {
 });
 
 test('a valid ticket starts a session whose token is only returned once', function () {
+    // Someone who can attend the connection's conversations: the widget shows online.
+    User::factory()->administrator()->create();
     $response = WebChatVisitor::start($this, $this->connection, [
         'profile' => ['name' => 'Ana', 'email' => 'ana@tienda.test'],
         'landing_url' => 'https://tienda.test/zapatos?utm_source=x',

@@ -180,6 +180,7 @@ function usersLabel(role: ManagedRole): string {
         class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="roles"
             title="Roles y permisos"
             description="Define qué puede hacer cada persona (permisos) y sobre qué datos (alcance). Los cambios se aplican de inmediato."
         >

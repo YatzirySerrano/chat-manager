@@ -29,12 +29,9 @@
 */
 
 use App\Actions\Conversations\AcceptConversation;
-use App\Actions\Conversations\ChangeAgentAvailability;
 use App\Actions\Conversations\CloseConversation;
 use App\Actions\Conversations\MarkConversationRead;
 use App\Actions\Conversations\ProcessInboundMessages;
-use App\Actions\Conversations\PutConversationOnHold;
-use App\Enums\AgentAvailability;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
@@ -145,10 +142,6 @@ $users = User::query()
 $ana = $users['e2e-ana@example.test'];
 $beto = $users['e2e-beto@example.test'];
 
-foreach ([$ana, $beto] as $agent) {
-    app(ChangeAgentAvailability::class)->handle($agent, AgentAvailability::Available);
-}
-
 $clock = now()->subMinutes(30)->getTimestamp();
 
 /** A customer message processed by the real inbound action. */
@@ -182,7 +175,6 @@ $conversations['laguna@a'] = app(AcceptConversation::class)->handle($conversatio
 
 $conversations['golfo@b'] = $customerWrites('b', '5215511130007', 'Cliente Golfo', 'Espero su respuesta');
 $conversations['golfo@b'] = app(AcceptConversation::class)->handle($conversations['golfo@b'], $ana);
-$conversations['golfo@b'] = app(PutConversationOnHold::class)->handle($conversations['golfo@b'], $ana, 'Esperando datos del cliente');
 
 $conversations['istmo@a'] = $customerWrites('a', '5215511130008', 'Cliente Istmo', 'Ya quedó, gracias');
 $conversations['istmo@a'] = app(AcceptConversation::class)->handle($conversations['istmo@a'], $ana);

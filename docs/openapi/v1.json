@@ -72,9 +72,10 @@
                     {
                         "name": "status",
                         "in": "query",
+                        "description": "El estado retirado on_hold no se admite como filtro (422 validation_failed).",
                         "schema": {
                             "type": "string",
-                            "enum": ["pending", "open", "on_hold", "closed"]
+                            "enum": ["pending", "open", "closed"]
                         }
                     },
                     {
@@ -1122,6 +1123,7 @@
                     },
                     "status": {
                         "type": "string",
+                        "description": "on_hold es un estado retirado: solo aparece en conversaciones antiguas aún no migradas con conversations:retire-on-hold.",
                         "enum": ["pending", "open", "on_hold", "closed"]
                     },
                     "status_label": {
@@ -1160,6 +1162,10 @@
                             },
                             "display_name": {
                                 "type": ["string", "null"]
+                            },
+                            "is_saved": {
+                                "type": "boolean",
+                                "description": "False while the customer is a provisional contact (wrote in, but nobody saved it into the contacts directory)."
                             }
                         }
                     },

@@ -158,7 +158,7 @@ class ContactRequest extends FormRequest
     /**
      * Plain single-line text: no control characters or markup, collapsed spaces.
      */
-    private static function clean(string $value): string
+    public static function clean(string $value): string
     {
         $value = preg_replace('/[\p{Cc}\p{Cf}]+/u', ' ', strip_tags($value)) ?? '';
 

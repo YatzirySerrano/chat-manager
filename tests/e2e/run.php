@@ -9,7 +9,9 @@
 | realtime.mjs, estabilizacion.mjs, bandeja.mjs, and since phase 4
 | chat-movil.mjs (chat on phones, light and dark), bandeja-general.mjs
 | (general inbox, WhatsApp + web chat, toasts) and widget.mjs (the web chat
-| widget on cross-site host pages; needs E2E_HOST_PORT). The command line
+| widget on cross-site host pages; needs E2E_HOST_PORT), and since phase 5
+| fase5.mjs (personal items, filter menu, delivery statuses, supervision,
+| attachments, responsive matrix and PWA). The command line
 | of each one is in its header and in docs/pruebas.md §6.
 |
 | It never creates databases: it uses chatmanager_testing (.env.testing),

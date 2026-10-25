@@ -40,6 +40,7 @@ test('creating a contact with a phone already in use asks for confirmation and l
             'phone_e164' => '+525512345678',
             'email' => null,
             'status' => 'active',
+            'is_saved' => true,
             'matches' => ['phone'],
         ]],
     ])->and(Contact::query()->count())->toBe(1);

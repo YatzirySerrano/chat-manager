@@ -247,7 +247,7 @@ Total: 98/98 pasos, 0 errores de consola, 0 errores de página y 0 respuestas 5x
 ```bash
 E2E_REVERB=1 E2E_PORT=8070 E2E_REVERB_PORT=8131 WHATSAPP_TRANSPORT=simulated \
   TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php chat-movil.mjs
-E2E_REVERB=1 E2E_PORT=8080 E2E_REVERB_PORT=8141 WHATSAPP_TRANSPORT=simulated \
+E2E_REVERB=1 E2E_PORT=8085 E2E_REVERB_PORT=8141 WHATSAPP_TRANSPORT=simulated \
   TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php bandeja-general.mjs
 E2E_REVERB=1 E2E_PORT=8090 E2E_REVERB_PORT=8151 E2E_HOST_PORT=8092 \
   WHATSAPP_TRANSPORT=simulated TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php widget.mjs
@@ -266,6 +266,20 @@ E2E_REVERB=1 E2E_PORT=8090 E2E_REVERB_PORT=8151 E2E_HOST_PORT=8092 \
   ([rendimiento-y-carga.md](rendimiento-y-carga.md)). Medido solo con 40 visitantes y 5 agentes sobre 1 000
   conversaciones.
 - No se ejecutaron al cerrar la fase la suite Pest completa ni todos los E2E en serie: quedan para quien integra.
+
+### 6.3 Escenario de la fase 5
+
+| Escenario   | Contenido                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fase5.mjs` | Sesiones reales separadas (Administrador global, Supervisora de Ventas, Ana y Beto de Ventas): alias personal de Ana (lo ve Ana en lista y cabecera; Beto y el Administrador ven el nombre oficial; el Administrador lo consulta en «Elementos personales»), apariencia del chat de Ana sin efecto en Beto, menú «Filtros» con dos etiquetas O/Y, chips y «Limpiar filtros», «Administrar etiquetas» desde el menú de la fila, estados de entrega por webhooks firmados (enviado → entregado → leído) en el chat y en la vista previa de dos pestañas sin recargar, supervisión de solo lectura tras transferir a Soporte (sin acciones operativas ni compositor), 404 por URL a otro departamento, «Guardar contacto» de un contacto provisional, respuesta rápida personal que Beto no ve, sin botón de plantilla para el agente, ZIP como enlace y `.exe` renombrado a `.pdf` rechazado, matriz 320–1440 px claro/oscuro (bandeja, conversación, Filtros, apariencia, ayuda, Usuarios, Conexiones con 4 canales, detalle de Auditoría) sin desborde horizontal, y PWA (manifiesto, service worker, página sin conexión, el cierre de sesión vacía la caché y responde `Clear-Site-Data`). Semilla `fase5-seed.php` (`prepare` / `status`) |
+
+```bash
+E2E_REVERB=1 E2E_PORT=8100 E2E_REVERB_PORT=8161 WHATSAPP_TRANSPORT=simulated \
+  WHATSAPP_SIMULATE_STATUSES=0 QUEUE_CONNECTION=sync TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php fase5.mjs
+```
+
+- `WHATSAPP_SIMULATE_STATUSES=0`: los estados de entrega solo llegan por los webhooks firmados del escenario.
+- Capturas de cada estado de la matriz en `E2E_SCREENSHOTS` (`{ancho}-{esquema}-{estado}.png`).
 
 ## 7. Carga y resistencia
 

@@ -22,6 +22,8 @@ const props = withDefaults(
         hint?: string;
         icon?: LucideIcon;
         unavailableLabel?: string;
+        /** `compact` (default) for metric rows; `default` for a roomier card. */
+        size?: 'compact' | 'default';
     }>(),
     {
         current: null,
@@ -31,6 +33,7 @@ const props = withDefaults(
         hint: undefined,
         icon: undefined,
         unavailableLabel: 'Sin datos suficientes',
+        size: 'compact',
     },
 );
 
@@ -83,8 +86,25 @@ const previousText = computed(
 </script>
 
 <template>
-    <div class="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-card">
-        <div class="flex items-start justify-between gap-2">
+    <div
+        :class="[
+            'flex min-w-0 flex-col rounded-xl border bg-card shadow-card',
+            size === 'compact' ? 'gap-1 px-3.5 py-3' : 'gap-2 p-4',
+        ]"
+    >
+        <div
+            v-if="size === 'compact'"
+            class="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+        >
+            <component
+                :is="icon"
+                v-if="icon"
+                class="size-3.5 shrink-0"
+                aria-hidden="true"
+            />
+            <span class="line-clamp-2 text-xs font-medium">{{ label }}</span>
+        </div>
+        <div v-else class="flex items-start justify-between gap-2">
             <span class="text-sm text-muted-foreground">{{ label }}</span>
             <component
                 :is="icon"
@@ -95,7 +115,10 @@ const previousText = computed(
         </div>
         <p
             v-if="value !== null"
-            class="text-2xl font-semibold tracking-tight tabular-nums"
+            :class="[
+                'font-semibold tracking-tight tabular-nums',
+                size === 'compact' ? 'text-xl' : 'text-2xl',
+            ]"
         >
             {{ value }}
         </p>
@@ -104,7 +127,7 @@ const previousText = computed(
         </p>
         <p
             v-if="change"
-            class="flex items-center gap-1 text-xs tabular-nums"
+            class="flex flex-wrap items-center gap-x-1 text-xs tabular-nums"
             :class="tone"
         >
             <ArrowUpRight
@@ -141,6 +164,15 @@ const previousText = computed(
         >
             Antes: {{ previousText }}
         </p>
-        <p v-if="hint" class="text-xs text-muted-foreground">{{ hint }}</p>
+        <p
+            v-if="hint"
+            :class="[
+                'text-xs text-muted-foreground',
+                size === 'compact' && 'line-clamp-2',
+            ]"
+            :title="hint"
+        >
+            {{ hint }}
+        </p>
     </div>
 </template>

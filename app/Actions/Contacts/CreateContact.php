@@ -18,6 +18,8 @@ class CreateContact
      * Register a contact by hand (or through the contacts importer, which
      * passes ContactSource::Import). Duplicates must be resolved by the caller
      * beforehand (see FindDuplicateContacts); they are never merged here.
+     * A contact registered by a person is saved into the directory at once
+     * (only automatic registrations of unknown senders are provisional).
      *
      * @param  array{name: string, phone_e164: string|null, email: string|null, custom_fields: array<string, string>|null}  $data
      */
@@ -29,6 +31,8 @@ class CreateContact
                 'status' => ContactStatus::Active,
                 'source' => $source,
                 'created_by_user_id' => $actor->id,
+                'saved_at' => now(),
+                'saved_by_user_id' => $actor->id,
             ])->save();
 
             $this->audit->record(AuditAction::ContactCreated, $contact, array_filter([

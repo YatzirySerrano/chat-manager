@@ -16,6 +16,7 @@ import {
     ShieldCheck,
     SlidersHorizontal,
     Tags,
+    UserCog,
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
@@ -24,6 +25,7 @@ import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as personalItemsIndex } from '@/routes/admin/personal-items';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { edit as platformSettings } from '@/routes/admin/settings';
 import { index as systemIndex } from '@/routes/admin/system';
@@ -117,7 +119,14 @@ export function useNavigation() {
             });
         }
 
-        if (canAny('quick-replies.use', 'quick-replies.manage')) {
+        if (
+            canAny(
+                'quick-replies.use',
+                'quick-replies.manage',
+                'quick-replies.personal',
+                'supervision.view-personal',
+            )
+        ) {
             attention.push({
                 title: 'Respuestas rápidas',
                 description: 'Textos para insertar con «/»',
@@ -208,6 +217,15 @@ export function useNavigation() {
                 description: 'Historial de operaciones',
                 href: auditIndex(),
                 icon: ScrollText,
+            });
+        }
+
+        if (can('supervision.view-personal')) {
+            admin.push({
+                title: 'Elementos personales',
+                description: 'Supervisión de alias y apariencia de usuarios',
+                href: personalItemsIndex(),
+                icon: UserCog,
             });
         }
 

@@ -140,6 +140,7 @@ const integrationConnected = computed(
             class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 p-4 md:p-6 lg:p-8"
         >
             <PageHeader
+                help="configuracion"
                 title="Configuración"
                 description="Parámetros generales de la plataforma. Los cambios quedan registrados en la auditoría."
             />

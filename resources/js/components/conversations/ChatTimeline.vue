@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
 import { ArrowDown, MessagesSquare } from '@lucide/vue';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
@@ -12,8 +12,17 @@ import type { TimelineItem } from '@/components/conversations/useConversationTim
 import EmptyState from '@/components/EmptyState.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import {
+    CUSTOM_BUBBLE_CLASSES,
+    CUSTOM_CHAT_COLORS,
+} from '@/lib/chatAppearance';
 import { retry as retryRoute } from '@/routes/conversations/messages';
-import type { ConversationMessage, ConversationSummary } from '@/types';
+import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
+import type {
+    ConversationMessage,
+    ConversationSummary,
+    MessageAttachment,
+} from '@/types';
 
 /**
  * The scrolling history of the chat. It opens at the newest message, loads
@@ -36,6 +45,12 @@ const emit = defineEmits<{
     refresh: [ids: { messages?: number[]; notes?: number[] }];
     quote: [message: ConversationMessage];
 }>();
+
+/* The viewer's own chat colors, set as CSS variables by ConversationChat. */
+const customColors = inject(
+    CUSTOM_CHAT_COLORS,
+    computed(() => false),
+);
 
 const scroller = ref<HTMLElement | null>(null);
 const atBottom = ref(true);
@@ -198,8 +213,8 @@ watch(
         if (inbound.length > 0) {
             announce(
                 inbound.length === 1
-                    ? `Nuevo mensaje de ${props.conversation.contact.name}`
-                    : `${inbound.length} mensajes nuevos de ${props.conversation.contact.name}`,
+                    ? `Nuevo mensaje de ${props.conversation.contact.display_name}`
+                    : `${inbound.length} mensajes nuevos de ${props.conversation.contact.display_name}`,
             );
         }
 
@@ -357,6 +372,92 @@ async function retry(message: ConversationMessage): Promise<void> {
     }
 }
 
+/* Revocation of a customer's secure download link (link-delivered files). */
+const revokeHttp = useHttp<Record<string, never>, unknown>({});
+const revokingAttachmentId = ref<number | null>(null);
+const pendingRevocation = ref<{
+    message: ConversationMessage;
+    attachment: MessageAttachment;
+} | null>(null);
+const revocationOpen = computed({
+    get: () => pendingRevocation.value !== null,
+    set: (open: boolean) => {
+        if (!open && revokingAttachmentId.value === null) {
+            pendingRevocation.value = null;
+        }
+    },
+});
+
+function requestRevokeLink(
+    message: ConversationMessage,
+    attachment: MessageAttachment,
+): void {
+    pendingRevocation.value = { message, attachment };
+}
+
+async function confirmRevokeLink(): Promise<void> {
+    const pending = pendingRevocation.value;
+
+    if (!pending || revokingAttachmentId.value !== null) {
+        return;
+    }
+
+    revokingAttachmentId.value = pending.attachment.id;
+    let rejected = false;
+
+    try {
+        await revokeHttp.post(
+            revokeLinkRoute.url({
+                conversation: props.conversation.id,
+                message: pending.message.id,
+                attachment: pending.attachment.id,
+            }),
+            {
+                onError: (errors) => {
+                    rejected = true;
+                    toast.error(
+                        Object.values(errors)[0] ??
+                            'No se pudo revocar el enlace.',
+                    );
+                },
+            },
+        );
+
+        if (rejected) {
+            return;
+        }
+
+        toast.success(
+            'Enlace revocado: el cliente ya no podrá descargar el archivo.',
+        );
+        emit('refresh', { messages: [pending.message.id] });
+    } catch (failure) {
+        const response =
+            typeof failure === 'object' &&
+            failure !== null &&
+            'response' in failure
+                ? (failure as { response: { status: number; data: string } })
+                      .response
+                : null;
+        let detail: string | undefined;
+
+        try {
+            detail = response
+                ? (JSON.parse(response.data) as { message?: string }).message
+                : undefined;
+        } catch {
+            detail = undefined;
+        }
+
+        toast.error(
+            detail ?? 'No se pudo revocar el enlace. Inténtalo de nuevo.',
+        );
+    } finally {
+        revokingAttachmentId.value = null;
+        pendingRevocation.value = null;
+    }
+}
+
 defineExpose({ scrollToBottom });
 </script>
 
@@ -364,11 +465,14 @@ defineExpose({ scrollToBottom });
     <div class="relative min-h-0 flex-1">
         <div
             ref="scroller"
-            class="h-full overflow-y-auto overscroll-contain bg-muted/30 px-3 pt-4 sm:px-6"
-            :class="showJumpButton ? 'pb-16' : 'pb-4'"
+            class="h-full overflow-y-auto overscroll-contain px-3 pt-4 sm:px-6"
+            :class="[
+                showJumpButton ? 'pb-16' : 'pb-4',
+                customColors ? CUSTOM_BUBBLE_CLASSES.chat : 'bg-muted/30',
+            ]"
             tabindex="0"
             role="log"
-            :aria-label="`Historial de la conversación con ${conversation.contact.name}`"
+            :aria-label="`Historial de la conversación con ${conversation.contact.display_name}`"
             aria-live="off"
             @scroll.passive="onScroll"
         >
@@ -423,7 +527,8 @@ defineExpose({ scrollToBottom });
                     <MessageBubble
                         v-else-if="row.item.kind === 'message'"
                         :message="row.item.message"
-                        :contact-name="conversation.contact.name"
+                        :contact-name="conversation.contact.display_name"
+                        :channel-label="conversation.connection.channel_label"
                         :can-retry="
                             conversation.can.reply &&
                             conversation.connection.can_send &&
@@ -434,7 +539,9 @@ defineExpose({ scrollToBottom });
                         :can-quote="conversation.can.reply"
                         @retry="requestRetry"
                         @quote="(message) => emit('quote', message)"
+                        :revoking-attachment-id="revokingAttachmentId"
                         @jump="jumpTo"
+                        @revoke-link="requestRevokeLink"
                     />
                     <TimelineNote
                         v-else-if="row.item.kind === 'note'"
@@ -470,10 +577,20 @@ defineExpose({ scrollToBottom });
         <ConfirmDialog
             v-model:open="duplicateRiskOpen"
             title="¿Reintentar el envío?"
-            description="No se sabe si WhatsApp llegó a recibir este mensaje. Si lo reintentas, el cliente podría recibirlo dos veces."
+            :description="`No se sabe si ${conversation.connection.channel_label} llegó a recibir este mensaje. Si lo reintentas, el cliente podría recibirlo dos veces.`"
             confirm-label="Reintentar de todas formas"
             destructive
             @confirm="confirmRiskyRetry"
+        />
+
+        <ConfirmDialog
+            v-model:open="revocationOpen"
+            title="¿Revocar el enlace de descarga?"
+            description="El cliente ya no podrá descargar el archivo con este enlace."
+            confirm-label="Revocar enlace"
+            destructive
+            :processing="revokingAttachmentId !== null"
+            @confirm="confirmRevokeLink"
         />
 
         <p class="sr-only" aria-live="polite" aria-atomic="true">

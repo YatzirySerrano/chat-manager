@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\WebChatWidget;
+use App\Services\Meta\MetaApp;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -69,6 +70,7 @@ class ConnectionResource extends JsonResource
                 $this->isWebChat() && $this->relationLoaded('webChatWidget') && $this->webChatWidget !== null,
                 fn (): array => $this->widgetSettings(),
             ),
+            'meta_account' => $this->when($this->usesMetaAuthorization(), fn (): array => $this->metaAccount()),
             'health' => $this->describe($health),
             'configuration_health' => $this->describe($configurationHealth),
             'checks' => [
@@ -108,6 +110,37 @@ class ConnectionResource extends JsonResource
                 'delete' => $request->user()?->can('delete', $this->resource) ?? false,
                 'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
+        ];
+    }
+
+    /**
+     * Account authorized with Meta (Messenger page or Instagram professional
+     * account): never the token, only whether it is saved and until when.
+     *
+     * @return array<string, mixed>
+     */
+    private function metaAccount(): array
+    {
+        $expiresAt = $this->token_expires_at;
+
+        return [
+            'id' => $this->external_account_id,
+            'name' => $this->external_account_name,
+            'picture' => is_string($this->external_account_picture) && str_starts_with($this->external_account_picture, 'https://') ? $this->external_account_picture : null,
+            'authorized' => filled($this->access_token),
+            'state' => match (true) {
+                blank($this->access_token) => 'disconnected',
+                $expiresAt !== null && $expiresAt->isPast() => 'expired',
+                filled($this->credentials_error) => 'invalid',
+                default => 'authorized',
+            },
+            'granted_scopes' => array_map(fn (string $scope): array => ['value' => $scope, 'label' => MetaApp::scopeLabel($scope)], array_values(array_filter($this->granted_scopes ?? [], 'is_string'))),
+            'authorized_at' => $this->authorized_at?->toIso8601String(),
+            'authorized_by' => $this->whenLoaded('authorizedBy', fn (): ?string => $this->authorizedBy?->name),
+            'token_expires_at' => $expiresAt?->toIso8601String(),
+            'subscribed' => $this->app_subscribed,
+            'subscription_checked_at' => $this->subscription_checked_at?->toIso8601String(),
+            'subscribed_fields' => MetaApp::SUBSCRIBED_FIELDS[$this->channel->value] ?? [],
         ];
     }
 

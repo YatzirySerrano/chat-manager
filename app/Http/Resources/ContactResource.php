@@ -32,6 +32,9 @@ class ContactResource extends JsonResource
             'deleted_at' => $this->archived_at?->toIso8601String(),
             'source' => $this->source->value,
             'source_label' => $this->source->label(),
+            // Provisional contacts (unknown senders registered automatically) are not in the directory yet.
+            'is_saved' => $this->isSaved(),
+            'saved_at' => $this->saved_at?->toIso8601String(),
             'custom_fields' => $this->custom_fields ?? (object) [],
             'first_interaction_at' => $this->first_interaction_at?->toIso8601String(),
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),
@@ -67,6 +70,7 @@ class ContactResource extends JsonResource
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
                 'delete' => $request->user()?->can('delete', $this->resource) ?? false,
                 'restore' => $request->user()?->can('restore', $this->resource) ?? false,
+                'save' => ! $this->isSaved() && ($request->user()?->can('saveToDirectory', $this->resource) ?? false),
             ],
         ];
     }

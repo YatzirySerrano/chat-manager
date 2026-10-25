@@ -31,6 +31,8 @@ defineProps<{
         class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="plantillas"
+            show-title
             :title="template.name"
             :description="`${template.language} · ${template.connection?.name ?? ''}`"
         />

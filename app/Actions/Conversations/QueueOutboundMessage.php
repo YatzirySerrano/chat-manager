@@ -2,6 +2,7 @@
 
 namespace App\Actions\Conversations;
 
+use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\ConversationStatus;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
@@ -16,7 +17,9 @@ use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
-use App\Services\Conversations\OutboundAttachmentRules;
+use App\Support\Attachments\AttachmentDownloadLink;
+use App\Support\Attachments\AttachmentKind;
+use App\Support\Attachments\ChannelAttachmentPolicy;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
@@ -39,7 +42,10 @@ use Throwable;
  *
  * Files go to the private media disk (`filesystems.media_disk`) under
  * `media/{yyyy}/{mm}/{uuid}`, never to a public URL; their real content type
- * is detected from the bytes.
+ * is detected from the bytes and checked against the policy of the
+ * conversation's channel (ChannelAttachmentPolicy). A file the channel has
+ * no native type for (ZIP on WhatsApp) is delivered as a signed expiring
+ * download link (AttachmentDownloadLink), whose expiry is fixed here.
  *
  * `first_response_at` is set when the first human reply is queued (not when
  * the provider accepts it); analytics compute delivery based metrics apart.
@@ -55,7 +61,7 @@ class QueueOutboundMessage
     public function __construct(
         private ConversationLifecycle $lifecycle,
         private CustomerServiceWindow $window,
-        private OutboundAttachmentRules $attachments,
+        private ChannelAttachmentPolicy $attachments,
     ) {}
 
     public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null): Message
@@ -85,10 +91,10 @@ class QueueOutboundMessage
                 }
 
                 $type = MessageType::Text;
-                $file = ['mime' => '', 'name' => '', 'size' => 0, 'sha256' => ''];
+                $file = ['mime' => '', 'name' => '', 'size' => 0, 'sha256' => '', 'delivery' => AttachmentDeliveryMethod::Native];
 
                 if ($attachment !== null) {
-                    [$type, $file] = $this->inspect($attachment, $body);
+                    [$type, $file] = $this->inspect($attachment, $body, $conversation);
                 } elseif ($body === null) {
                     throw ValidationException::withMessages(['body' => 'Escribe un mensaje o adjunta un archivo.']);
                 }
@@ -102,6 +108,9 @@ class QueueOutboundMessage
                     'body' => $body,
                     'sender_user_id' => $actor->id,
                     'reply_to_message_id' => $this->replyTarget($conversation, $replyToMessageId),
+                    'metadata' => $file['delivery'] === AttachmentDeliveryMethod::Link
+                        ? [AttachmentDownloadLink::METADATA_KEY => ['expires_at' => AttachmentDownloadLink::newExpiry()->toIso8601String()]]
+                        : null,
                 ]);
 
                 try {
@@ -121,6 +130,7 @@ class QueueOutboundMessage
                         'file_name' => $file['name'],
                         'size_bytes' => $file['size'],
                         'sha256' => $file['sha256'],
+                        'delivery_method' => $file['delivery'],
                     ]);
                     $record->forceFill(['message_id' => $message->id])->save();
                 }
@@ -270,23 +280,33 @@ class QueueOutboundMessage
     }
 
     /**
-     * Validates the real content of the file and the caption it may carry.
+     * Validates the real content of the file against the policy of the
+     * conversation's channel, and the caption it may carry.
      *
-     * @return array{0: MessageType, 1: array{mime: string, name: string, size: int, sha256: string}}
+     * @return array{0: MessageType, 1: array{mime: string, name: string, size: int, sha256: string, delivery: AttachmentDeliveryMethod}}
      */
-    private function inspect(UploadedFile $attachment, ?string $caption): array
+    private function inspect(UploadedFile $attachment, ?string $caption, Conversation $conversation): array
     {
-        $refusal = $this->attachments->refusal($attachment);
+        $channel = $conversation->channelConnection?->channel;
+
+        if ($channel === null) {
+            throw new ConversationConflict('La conversación no tiene una conexión disponible para enviar mensajes.');
+        }
+
+        $rules = $this->attachments->forChannel($channel);
+        $mime = $this->attachments->detectMime($attachment);
+        $refusal = $rules->refusal($attachment, $mime);
 
         if ($refusal !== null) {
             throw ValidationException::withMessages(['attachment' => $refusal]);
         }
 
-        $mime = $this->attachments->detectMime($attachment);
-        $type = $this->attachments->typeFor($mime) ?? MessageType::Document;
+        /** @var AttachmentKind $kind */
+        $kind = $rules->kindFor($mime);
+        $type = $kind->type;
 
-        if ($caption !== null && $type === MessageType::Audio) {
-            throw ValidationException::withMessages(['body' => 'WhatsApp no permite texto junto a un audio: envía el texto en otro mensaje.']);
+        if ($caption !== null && ! $kind->allowsCaption) {
+            throw ValidationException::withMessages(['body' => sprintf('%s no permite texto junto a %s: envía el texto en otro mensaje.', $channel->label(), $type === MessageType::Audio ? 'un audio' : 'un archivo')]);
         }
 
         if ($caption !== null && mb_strlen($caption) > self::CAPTION_MAX_LENGTH) {
@@ -297,9 +317,10 @@ class QueueOutboundMessage
 
         return [$type, [
             'mime' => $mime,
-            'name' => $this->safeName($attachment->getClientOriginalName(), $type),
+            'name' => $this->safeName($attachment->getClientOriginalName(), $type, $attachment->getClientOriginalExtension() === '' ? $kind->canonicalExtension($mime) : null),
             'size' => (int) $attachment->getSize(),
             'sha256' => $path === false ? '' : (string) hash_file('sha256', $path),
+            'delivery' => $kind->delivery,
         ]];
     }
 
@@ -320,14 +341,16 @@ class QueueOutboundMessage
 
     /**
      * The name shown to the team and sent to the customer for documents:
-     * no directories, control characters or reserved symbols.
+     * no directories, control characters or reserved symbols; a name without
+     * extension gets the one of its real content.
      */
-    private function safeName(string $original, MessageType $type): string
+    private function safeName(string $original, MessageType $type, ?string $extension = null): string
     {
         $name = preg_replace('/[\x00-\x1F\x7F\/\\\\:*?"<>|]+/u', '', basename($original)) ?? '';
         $name = trim(Str::limit($name, 180, ''));
+        $name = $name !== '' && $name !== '.' && $name !== '..' ? $name : $type->value;
 
-        return $name !== '' && $name !== '.' && $name !== '..' ? $name : $type->value;
+        return $extension !== null ? rtrim($name, '.').'.'.$extension : $name;
     }
 
     /**

@@ -16,7 +16,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class ContactFactory extends Factory
 {
     /**
-     * Define the model's default state: a contact added by hand.
+     * Define the model's default state: a contact added by hand, saved in
+     * the directory.
      *
      * @return array<string, mixed>
      */
@@ -28,7 +29,20 @@ class ContactFactory extends Factory
             'email' => null,
             'status' => ContactStatus::Active,
             'source' => ContactSource::Manual,
+            'saved_at' => now(),
         ];
+    }
+
+    /**
+     * A contact registered automatically from an unknown sender and not
+     * saved into the directory yet.
+     */
+    public function provisional(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'saved_at' => null,
+            'saved_by_user_id' => null,
+        ]);
     }
 
     /**

@@ -5,14 +5,17 @@ import {
     CircleQuestionMark,
     FlaskConical,
     LayoutTemplate,
+    Link2,
+    Link2Off,
     MapPin,
     MousePointerClick,
     Plug,
     Reply,
     RotateCw,
+    TriangleAlert,
     UserRound,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
@@ -24,9 +27,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import WhatsAppText from '@/components/WhatsAppText.vue';
-import { formatDateTime } from '@/lib/format';
+import {
+    CUSTOM_BUBBLE_CLASSES,
+    CUSTOM_CHAT_COLORS,
+} from '@/lib/chatAppearance';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
-import type { ConversationMessage } from '@/types';
+import type { ConversationMessage, MessageAttachment } from '@/types';
 
 /**
  * One customer message or reply. Inbound messages sit on the left and
@@ -43,17 +50,51 @@ const props = withDefaults(
         /** The viewer may answer quoting this message. */
         canQuote?: boolean;
         contactName: string;
+        /** Name of the conversation's channel (copy such as "… no confirmó la entrega"). */
+        channelLabel?: string;
+        /** Attachment whose download link is being revoked. */
+        revokingAttachmentId?: number | null;
     }>(),
-    { canRetry: false, retrying: false, canQuote: false },
+    {
+        canRetry: false,
+        retrying: false,
+        revokingAttachmentId: null,
+        canQuote: false,
+        channelLabel: 'el canal',
+    },
 );
 
 const emit = defineEmits<{
     retry: [message: ConversationMessage];
     quote: [message: ConversationMessage];
     jump: [messageId: number];
+    revokeLink: [message: ConversationMessage, attachment: MessageAttachment];
 }>();
 
 const outbound = computed(() => props.message.direction === 'outbound');
+/* The viewer's own chat colors (CSS variables of the chat), when set. */
+const customColors = inject(
+    CUSTOM_CHAT_COLORS,
+    computed(() => false),
+);
+/**
+ * With personal colors only the chosen text color is guaranteed (≥4.5:1)
+ * against the bubble, so secondary text, links, badges and boxes inside it
+ * use that color at full strength (currentColor): theme tones, opacity and
+ * translucent fills are left for the theme's own bubbles.
+ */
+function themed(themeClasses: string, customClasses = ''): string {
+    return customColors.value ? customClasses : themeClasses;
+}
+
+const secondaryText = computed(() => themed('text-muted-foreground'));
+const linkText = computed(() => themed('text-primary', 'font-medium'));
+const softBox = computed(() =>
+    themed(
+        'bg-background/60 text-muted-foreground',
+        'border border-current/30',
+    ),
+);
 const failed = computed(() => props.message.status === 'failed');
 /* Meta may have received it: a warning, not a definitive failure. */
 const unknownDelivery = computed(
@@ -147,7 +188,23 @@ const author = computed(() => {
     return props.message.sender?.name ?? 'Equipo';
 });
 
+/** The customer's download link can still be revoked (outbound link deliveries). */
+function canRevokeLink(attachment: MessageAttachment): boolean {
+    return Boolean(attachment.link_revoke_url) && !attachment.link_revoked_at;
+}
+
 const time = computed(() => props.message.sent_at ?? props.message.created_at);
+
+/** A file the channel cannot carry (ZIP on WhatsApp) went as a secure download link. */
+function linkLabel(expiresAt: string | null | undefined): string {
+    if (!expiresAt) {
+        return 'Enviado como enlace de descarga seguro';
+    }
+
+    return new Date(expiresAt).getTime() < Date.now()
+        ? `Enlace de descarga · venció el ${formatDate(expiresAt)}`
+        : `Enlace de descarga · vence el ${formatDate(expiresAt)}`;
+}
 </script>
 
 <template>
@@ -159,8 +216,18 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[0.9375rem]/snug wrap-anywhere shadow-xs sm:max-w-[70%] md:text-sm"
             :class="[
                 outbound
-                    ? 'rounded-br-md bg-primary-soft text-primary-soft-foreground'
-                    : 'rounded-bl-md border bg-card text-card-foreground',
+                    ? [
+                          'rounded-br-md',
+                          customColors
+                              ? CUSTOM_BUBBLE_CLASSES.sent
+                              : 'bg-primary-soft text-primary-soft-foreground',
+                      ]
+                    : [
+                          'rounded-bl-md border',
+                          customColors
+                              ? CUSTOM_BUBBLE_CLASSES.received
+                              : 'bg-card text-card-foreground',
+                      ],
                 failed &&
                     (unknownDelivery
                         ? 'ring-1 ring-warning/60'
@@ -170,7 +237,8 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
             data-layout-box="bubble"
         >
             <p
-                class="mb-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                class="mb-0.5 flex flex-wrap items-center gap-1.5 text-xs font-medium"
+                :class="secondaryText"
             >
                 <Bot
                     v-if="message.automatic"
@@ -187,8 +255,14 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 }}</span>
                 <span
                     v-if="message.simulated"
-                    class="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-px text-xs font-semibold text-warning"
-                    title="Enviado por el transporte simulado de desarrollo: no llegó a WhatsApp."
+                    class="inline-flex items-center gap-1 rounded px-1.5 py-px text-xs font-semibold"
+                    :class="
+                        themed(
+                            'bg-warning/15 text-warning',
+                            'border border-current/40',
+                        )
+                    "
+                    :title="`Enviado por el transporte simulado de desarrollo: no llegó a ${channelLabel}.`"
                 >
                     <FlaskConical class="size-3.5" aria-hidden="true" />
                     Simulación
@@ -199,11 +273,20 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 v-if="message.reply_to"
                 type="button"
                 data-layout-box="quote"
-                class="mb-1.5 block w-full rounded-md border-l-2 border-primary/60 bg-background/50 px-2 py-1 text-left text-sm text-muted-foreground hover:bg-background/80 md:text-xs"
+                class="mb-1.5 block w-full rounded-md border-l-2 px-2 py-1 text-left text-sm md:text-xs"
+                :class="
+                    themed(
+                        'border-primary/60 bg-background/50 text-muted-foreground hover:bg-background/80',
+                        'border border-current/30 border-l-current hover:underline',
+                    )
+                "
                 :aria-label="`Ir al mensaje citado`"
                 @click="emit('jump', message.reply_to.id)"
             >
-                <span class="block font-medium text-foreground/80">
+                <span
+                    class="block font-medium"
+                    :class="themed('text-foreground/80')"
+                >
                     {{
                         message.reply_to.direction === 'inbound'
                             ? contactName
@@ -217,7 +300,8 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
 
             <p
                 v-if="message.template"
-                class="mb-1 flex w-fit max-w-full items-start gap-1 rounded bg-background/60 px-1.5 py-0.5 text-xs text-muted-foreground"
+                class="mb-1 flex w-fit max-w-full items-start gap-1 rounded px-1.5 py-0.5 text-xs"
+                :class="softBox"
             >
                 <LayoutTemplate
                     class="mt-px size-3.5 shrink-0"
@@ -236,20 +320,81 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 v-if="message.attachments.length > 0"
                 class="mb-1 grid grid-cols-1 gap-1.5"
             >
-                <MessageAttachmentPreview
+                <template
                     v-for="attachment in message.attachments"
                     :key="attachment.id"
-                    :attachment="attachment"
-                />
+                >
+                    <MessageAttachmentPreview
+                        :attachment="attachment"
+                        :channel-label="channelLabel"
+                    />
+                    <div
+                        v-if="attachment.delivery_method === 'link'"
+                        class="flex flex-wrap items-center gap-1.5"
+                    >
+                        <p
+                            v-if="attachment.link_revoked_at"
+                            class="flex w-fit max-w-full items-start gap-1 rounded px-1.5 py-0.5 text-xs"
+                            :class="softBox"
+                            title="El cliente ya no puede descargar el archivo con este enlace."
+                        >
+                            <Link2Off
+                                class="mt-px size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span class="min-w-0 wrap-anywhere"
+                                >Enlace revocado el
+                                {{
+                                    formatDateTime(attachment.link_revoked_at)
+                                }}</span
+                            >
+                        </p>
+                        <p
+                            v-else
+                            class="flex w-fit max-w-full items-start gap-1 rounded px-1.5 py-0.5 text-xs"
+                            :class="softBox"
+                            title="El cliente recibió un enlace seguro para descargar el archivo, porque el canal no admite este tipo de archivo."
+                        >
+                            <Link2
+                                class="mt-px size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span class="min-w-0 wrap-anywhere">{{
+                                linkLabel(attachment.link_expires_at)
+                            }}</span>
+                        </p>
+                        <button
+                            v-if="canRevokeLink(attachment)"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:min-h-10"
+                            :class="linkText"
+                            :disabled="revokingAttachmentId !== null"
+                            :aria-busy="revokingAttachmentId === attachment.id"
+                            @click="emit('revokeLink', message, attachment)"
+                        >
+                            <Spinner
+                                v-if="revokingAttachmentId === attachment.id"
+                                class="size-3.5"
+                            />
+                            <Link2Off
+                                v-else
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Revocar enlace
+                        </button>
+                    </div>
+                </template>
             </div>
             <p
                 v-else-if="isMedia"
-                class="mb-1 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground"
+                class="mb-1 rounded-lg border border-dashed px-3 py-2 text-xs"
+                :class="secondaryText"
             >
                 {{ typeLabel(message.type) }}:
                 {{
                     message.direction === 'inbound'
-                        ? 'el archivo todavía no se ha descargado de WhatsApp.'
+                        ? `el archivo todavía no se ha descargado de ${channelLabel}.`
                         : 'archivo no disponible.'
                 }}
             </p>
@@ -267,7 +412,8 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     :href="location.url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-xs text-primary underline underline-offset-2"
+                    class="text-xs underline underline-offset-2"
+                    :class="linkText"
                     >Ver en el mapa ({{ location.coordinates }})</a
                 >
             </div>
@@ -276,7 +422,10 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 <li
                     v-for="(shared, index) in sharedContacts"
                     :key="index"
-                    class="flex items-start gap-2 rounded-lg bg-background/60 px-2 py-1.5"
+                    class="flex items-start gap-2 rounded-lg px-2 py-1.5"
+                    :class="
+                        themed('bg-background/60', 'border border-current/30')
+                    "
                 >
                     <UserRound
                         class="mt-0.5 size-4 shrink-0"
@@ -289,7 +438,8 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                         <span
                             v-for="phone in shared.phones"
                             :key="phone"
-                            class="block text-xs text-muted-foreground"
+                            class="block text-xs"
+                            :class="secondaryText"
                             >{{
                                 phone.startsWith('+')
                                     ? formatPhone(phone)
@@ -311,7 +461,8 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     }}</span>
                     <span
                         v-if="interactive.description"
-                        class="block text-xs text-muted-foreground"
+                        class="block text-xs"
+                        :class="secondaryText"
                         >{{ interactive.description }}</span
                     >
                 </span>
@@ -321,12 +472,13 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 <span class="text-2xl leading-none" aria-hidden="true">{{
                     reaction.emoji ?? '—'
                 }}</span>
-                <span class="text-xs text-muted-foreground">
+                <span class="text-xs" :class="secondaryText">
                     {{ reaction.emoji ? 'Reaccionó' : 'Quitó su reacción' }}
                     <button
                         v-if="reaction.target"
                         type="button"
-                        class="text-primary underline underline-offset-2"
+                        class="underline underline-offset-2"
+                        :class="linkText"
                         @click="emit('jump', reaction.target)"
                     >
                         a un mensaje
@@ -339,6 +491,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 v-if="text"
                 :text="text"
                 links
+                :inherit-color="customColors"
                 class="wrap-anywhere whitespace-pre-line"
             />
             <p
@@ -349,17 +502,34 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     !reaction &&
                     sharedContacts.length === 0
                 "
-                class="text-muted-foreground italic"
+                class="italic"
+                :class="secondaryText"
             >
                 {{
                     message.type === 'unsupported'
-                        ? 'WhatsApp no permite mostrar este tipo de mensaje aquí.'
+                        ? `${channelLabel} no permite mostrar este tipo de mensaje aquí.`
                         : `${typeLabel(message.type)} sin texto`
                 }}
             </p>
 
+            <p
+                v-if="outbound && message.delivery_warning"
+                class="mt-1 flex items-start gap-1 text-xs"
+                :class="themed('text-warning')"
+                role="note"
+            >
+                <TriangleAlert
+                    class="mt-px size-3.5 shrink-0"
+                    aria-hidden="true"
+                />
+                <span class="min-w-0 wrap-anywhere">{{
+                    message.delivery_warning
+                }}</span>
+            </p>
+
             <div
-                class="mt-1 flex items-center justify-end gap-1.5 text-xs text-muted-foreground tabular-nums"
+                class="mt-1 flex items-center justify-end gap-1.5 text-xs tabular-nums"
+                :class="secondaryText"
             >
                 <time
                     :datetime="time ?? undefined"
@@ -372,6 +542,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     :status="message.status"
                     :error-code="message.error_code"
                     show-progress-label
+                    :inherit-color="customColors"
                 />
             </div>
 
@@ -379,9 +550,11 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                 v-if="failed"
                 class="mt-1.5 flex flex-wrap items-center gap-2 border-t pt-1.5 text-xs"
                 :class="
-                    unknownDelivery
-                        ? 'border-warning/30 text-warning'
-                        : 'border-destructive/20 text-destructive'
+                    customColors
+                        ? 'border-current/30'
+                        : unknownDelivery
+                          ? 'border-warning/30 text-warning'
+                          : 'border-destructive/20 text-destructive'
                 "
                 role="status"
             >
@@ -402,7 +575,7 @@ const time = computed(() => props.message.sent_at ?? props.message.created_at);
                     {{
                         message.error_message ??
                         (unknownDelivery
-                            ? 'WhatsApp no confirmó la entrega; el cliente pudo haberlo recibido.'
+                            ? `${channelLabel} no confirmó la entrega; el cliente pudo haberlo recibido.`
                             : 'El mensaje no se pudo enviar.')
                     }}
                 </span>

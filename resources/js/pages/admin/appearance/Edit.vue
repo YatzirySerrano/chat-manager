@@ -61,6 +61,7 @@ function save(): void {
         class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
     >
         <PageHeader
+            help="configuracion"
             title="Personalización"
             description="Elige el color principal de la plataforma. Se aplica a todos los módulos y usuarios, en modo claro y oscuro."
         />
@@ -119,7 +120,7 @@ function save(): void {
                         <Badge
                             v-if="option.is_default"
                             variant="secondary"
-                            class="w-fit text-[10px] font-normal"
+                            class="w-fit text-xs font-normal"
                         >
                             Predeterminada
                         </Badge>

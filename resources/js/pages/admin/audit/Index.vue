@@ -252,7 +252,13 @@ function openDetail(entry: AuditLogEntry): void {
                         <TableCell
                             class="hidden max-w-72 truncate md:table-cell"
                         >
-                            {{ entry.subject.label ?? 'Plataforma' }}
+                            <template v-if="entry.subject.type_label">
+                                <span class="text-muted-foreground"
+                                    >{{ entry.subject.type_label }} ·
+                                </span>
+                                {{ entry.subject.label }}
+                            </template>
+                            <template v-else>Plataforma</template>
                         </TableCell>
                         <TableCell>{{ entry.actor.name }}</TableCell>
                     </TableRow>

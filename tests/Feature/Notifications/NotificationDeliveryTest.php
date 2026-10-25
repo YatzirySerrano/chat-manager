@@ -52,8 +52,9 @@ beforeEach(function () {
     $this->agent = User::factory()->agent()->available()->inDepartments($this->department)->create();
 });
 
-test('a new pending conversation notifies only available users who can accept it', function () {
-    $unavailable = User::factory()->agent()->inDepartments($this->department)->create();
+test('a new pending conversation notifies the active users who can accept it, whatever their legacy availability', function () {
+    $legacyUnavailable = User::factory()->agent()->inDepartments($this->department)->create(['availability' => 'unavailable']);
+    $deleted = User::factory()->agent()->inDepartments($this->department)->create(['is_active' => false]);
     $otherDepartment = User::factory()->agent()->available()->inDepartments(Department::factory()->create())->create();
     $withoutAccept = conversationUser([Permission::ViewConversations, Permission::ReplyConversations], departments: [$this->department]);
     $withoutAccept->forceFill(['availability' => 'available'])->save();
@@ -69,7 +70,8 @@ test('a new pending conversation notifies only available users who can accept it
             'conversation_ids' => [$receipt->conversation->id],
         ])
         ->and(json_encode($notification->data))->not->toContain('5544332211')
-        ->and(notificationsOf($unavailable))->toBeEmpty()
+        ->and(notificationsOf($legacyUnavailable, NotificationKind::ConversationPending))->toHaveCount(1)
+        ->and(notificationsOf($deleted))->toBeEmpty()
         ->and(notificationsOf($otherDepartment))->toBeEmpty()
         ->and(notificationsOf($withoutAccept))->toBeEmpty();
 });

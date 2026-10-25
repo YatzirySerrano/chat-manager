@@ -1,8 +1,13 @@
 import type { AppColor } from './admin';
 import type { ConnectionChannel } from './connections';
 import type { ContactAttribution } from './contacts';
+import type { ViewerChatAppearance } from './personalization';
 import type { TagOption } from './tags';
 
+/**
+ * `on_hold` is a retired state: it only arrives for old conversations not
+ * migrated yet (conversations:retire-on-hold); nothing offers it.
+ */
 export type ConversationStatusValue = 'pending' | 'open' | 'on_hold' | 'closed';
 
 export type ConversationStatusFilter =
@@ -17,14 +22,16 @@ export type ConversationAbilities = {
     assign: boolean;
     transfer: boolean;
     release: boolean;
-    hold: boolean;
-    resume: boolean;
     close: boolean;
     reopen: boolean;
     addNote: boolean;
     reply: boolean;
     viewHistory: boolean;
     tag: boolean;
+    /** Read-only supervision of the viewer's reach; never grants operations. */
+    supervise: boolean;
+    /** May send WhatsApp templates (reply + administrative templates.send). */
+    send_templates: boolean;
 };
 
 export type ConversationSummary = {
@@ -38,6 +45,12 @@ export type ConversationSummary = {
         name: string;
         profile_name: string | null;
         phone_e164: string | null;
+        /** The viewer's own private alias (never another user's). */
+        alias: string | null;
+        /** Name shown to the viewer: alias, else name, profile name or phone. */
+        display_name: string;
+        /** False while the customer is a provisional contact (not in the directory). */
+        is_saved: boolean;
     };
     connection: ConversationConnection;
     department: {
@@ -50,8 +63,6 @@ export type ConversationSummary = {
     last_message_at: string | null;
     last_inbound_at: string | null;
     assigned_at: string | null;
-    on_hold_at: string | null;
-    on_hold_reason: string | null;
     closed_at: string | null;
     reopen_count: number;
     created_at: string | null;
@@ -62,6 +73,8 @@ export type ConversationSummary = {
     /** The customer wrote last and nobody answered yet. */
     awaiting_reply: boolean;
     can: ConversationAbilities;
+    /** The viewer's own chat colors (open conversation only). */
+    appearance?: ViewerChatAppearance;
 };
 
 /** Connection a conversation arrived through. */
@@ -92,6 +105,8 @@ export type ConversationMessagePreview = {
     /** Error code of a failed message (e.g. delivery_unknown), null otherwise. */
     error_code: string | null;
     sent_at: string | null;
+    /** Version of the delivery state (messages.updated_at). */
+    updated_at?: string | null;
 };
 
 export type ConversationSort = 'priority' | 'recent' | 'oldest';
@@ -127,7 +142,18 @@ export type InboxCounts = {
     mine: number;
     pending: number;
     attending: number;
-    on_hold: number;
+};
+
+/** How several tags of the filter combine: any of them (OR) or all (AND). */
+export type InboxTagMatch = 'any' | 'all';
+
+/** What the inbox list shows the viewer. */
+export type InboxViewer = {
+    /**
+     * Supervises or distributes conversations (or has global reach): the
+     * rows show department, responsible agent and connection.
+     */
+    can_supervise: boolean;
 };
 
 export type ConversationInbox = {
@@ -135,14 +161,6 @@ export type ConversationInbox = {
     personal: boolean;
     /** Views the viewer may open; the first one is the default. */
     views: InboxView[];
-};
-
-export type AgentAvailabilityValue = 'available' | 'unavailable';
-
-export type ViewerAvailability = {
-    value: AgentAvailabilityValue;
-    label: string;
-    options: { value: string; label: string }[];
 };
 
 export type ConversationFilters = {
@@ -157,7 +175,9 @@ export type ConversationFilters = {
     search_in: ConversationSearchScope;
     /** The message search has no word it can look for (short words, stopwords). */
     search_ignored: boolean;
-    tag: number | null;
+    /** Conversation tags of the filter (at most 10). */
+    tags: number[];
+    tag_match: InboxTagMatch;
     sort: ConversationSort;
     /** Only conversations with messages unread for the viewer. */
     unread: boolean;
@@ -204,6 +224,14 @@ export type MessageAttachment = {
     status: string | null;
     url: string;
     download_url: string;
+    /** 'link': the customer received a secure download link instead of the file. */
+    delivery_method?: 'native' | 'link';
+    /** Until when the customer's download link works (link delivery only). */
+    link_expires_at?: string | null;
+    /** When the download link was revoked (it no longer works). */
+    link_revoked_at?: string | null;
+    /** POST endpoint that revokes the customer's download link (outbound link deliveries). */
+    link_revoke_url?: string | null;
 };
 
 export type MessageContent =
@@ -226,6 +254,8 @@ export type ConversationMessage = {
     sender?: { id: number; name: string } | null;
     error_code: string | null;
     error_message: string | null;
+    /** Partial delivery note (e.g. the file went out but its text did not). */
+    delivery_warning?: string | null;
     automatic: boolean;
     /** Sent through the integration API (no human author). */
     integration?: { name: string } | null;
@@ -298,10 +328,17 @@ export type ConversationDetails = {
         name: string;
         profile_name: string | null;
         phone_e164: string | null;
+        /** The viewer's own private alias (never another user's). */
+        alias: string | null;
+        display_name: string;
         email: string | null;
         first_interaction_at: string | null;
         last_interaction_at: string | null;
         tags: TagOption[];
+        /** False while the customer is a provisional contact (not in the directory). */
+        is_saved: boolean;
+        /** The viewer may save this provisional contact into the directory. */
+        can_save: boolean;
     };
     origin: ContactAttribution[];
     history: {
@@ -330,16 +367,35 @@ export type ConversationDetails = {
     canExportDossier: boolean;
 };
 
+/** One kind of file a channel accepts from the composer (ChannelAttachmentPolicy). */
+export type AttachmentKindRule = {
+    key: 'image' | 'document' | 'audio' | 'video' | 'archive';
+    type: 'image' | 'document' | 'audio' | 'video';
+    label: string;
+    mimes: string[];
+    extensions: string[];
+    max_bytes: number;
+    /** Whether text may travel with the file. */
+    caption: boolean;
+    /** 'link': sent as a secure expiring download link. */
+    delivery: 'native' | 'link';
+};
+
+export type ChannelAttachmentRules = {
+    channel: string;
+    channel_label: string;
+    max_bytes: number;
+    /** Days a secure download link keeps working. */
+    link_ttl_days: number;
+    kinds: AttachmentKindRule[];
+};
+
 export type ComposerSettings = {
     body_max: number;
     caption_max: number;
     note_max: number;
-    attachments: {
-        type: 'image' | 'document' | 'audio' | 'video';
-        label: string;
-        mimes: string[];
-        max_bytes: number;
-    }[];
+    /** Attachment policy per channel (whatsapp, web_chat, messenger, instagram). */
+    attachments: Record<string, ChannelAttachmentRules>;
 };
 
 /** State of the customer service window; 'not_applicable' for channels without one (web chat). */
@@ -368,7 +424,6 @@ export type CustomerWindow = {
 export type TransferAgentOption = {
     id: number;
     name: string;
-    availability: AgentAvailabilityValue;
     /** Already attends their maximum of conversations for that department. */
     at_capacity: boolean;
 };

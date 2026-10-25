@@ -9,6 +9,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -39,11 +40,12 @@ class MetaGraphClient
     ];
 
     /**
-     * Hosts Meta serves media downloads from. The token is only ever sent to them.
+     * Hosts Meta serves media downloads from (WhatsApp media, Messenger and
+     * Instagram attachment CDNs). The token is only ever sent to them.
      *
      * @var list<string>
      */
-    public const MEDIA_HOSTS = ['fbsbx.com', 'facebook.com', 'fbcdn.net', 'whatsapp.net'];
+    public const MEDIA_HOSTS = ['fbsbx.com', 'facebook.com', 'fbcdn.net', 'whatsapp.net', 'cdninstagram.com'];
 
     /**
      * Read the profile of a WhatsApp business phone number.
@@ -148,8 +150,9 @@ class MetaGraphClient
 
     /**
      * Download a media URL returned by media() into a local file, with the
-     * token in the Authorization header. Only Meta's media hosts are allowed,
-     * so the token can never be sent elsewhere.
+     * token in the Authorization header (null for the pre-signed CDN URLs of
+     * Messenger and Instagram, which need none). Only Meta's media hosts are
+     * allowed, so the token can never be sent elsewhere.
      *
      * With a size limit, the bytes are counted while they stream to disk: the
      * transfer is aborted as soon as the file exceeds it (whatever Meta
@@ -159,8 +162,10 @@ class MetaGraphClient
      * @throws MetaGraphException
      * @throws MediaRejected When the file exceeds $maxBytes.
      */
-    public function download(string $accessToken, string $url, string $destination, ?int $maxBytes = null): void
+    public function download(?string $accessToken, string $url, string $destination, ?int $maxBytes = null): void
     {
+        $accessToken = (string) $accessToken;
+
         if (! self::isMediaUrl($url)) {
             throw new MetaGraphException('La dirección de descarga no pertenece a Meta; se descartó por seguridad.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
         }
@@ -283,7 +288,7 @@ class MetaGraphClient
     private function request(string $accessToken, bool $absolute = false): PendingRequest
     {
         $timeout = max(1, (int) config('services.meta.timeout'));
-        $request = Http::withToken($accessToken)
+        $request = ($accessToken === '' ? Http::withHeaders([]) : Http::withToken($accessToken))
             ->acceptJson()
             ->connectTimeout(min(5, $timeout))
             ->timeout($absolute ? max(30, $timeout) : $timeout);
@@ -326,7 +331,7 @@ class MetaGraphClient
 
         if ($response->status() === 429 || MetaErrorCatalog::isThrottling($code)) {
             return new MetaGraphException(
-                $this->compose("Meta limitó {$operation} por exceso de solicitudes. Se reintentará más tarde.", $code, $detail),
+                $this->compose(MetaErrorCatalog::messageFor($code) ?? "Meta limitó {$operation} por exceso de solicitudes. Se reintentará más tarde.", $code, $detail, $response->status(), $operation),
                 rejected: false,
                 metaCode: $code,
                 status: $response->status(),
@@ -340,7 +345,7 @@ class MetaGraphClient
             $explicit = $error !== [];
 
             return new MetaGraphException(
-                $this->compose("Meta no pudo atender {$operation} en este momento (límite de solicitudes o falla temporal). Inténtalo más tarde.", $code, $detail),
+                $this->compose("Meta no pudo atender {$operation} en este momento (límite de solicitudes o falla temporal). Inténtalo más tarde.", $code, $detail, $response->status(), $operation),
                 rejected: false,
                 metaCode: $code,
                 status: $response->status(),
@@ -351,27 +356,30 @@ class MetaGraphClient
         [$kind, $hint] = match (true) {
             in_array($code, [0, 190], true) || ($code === null && $response->status() === 401) => [MetaGraphException::TOKEN_INVALID, 'El token de acceso es inválido o expiró. Genera un nuevo token de usuario del sistema.'],
             in_array($code, [3, 10, 200, 131005], true) || ($code !== null && $code >= 200 && $code < 300) || ($code === null && $response->status() === 403) => [MetaGraphException::PERMISSION, 'El token no tiene los permisos necesarios (whatsapp_business_management y whatsapp_business_messaging) sobre este número.'],
-            MetaErrorCatalog::isMessageError($code) => [MetaGraphException::MESSAGE_REJECTED, MetaErrorCatalog::messageFor($code) ?? 'WhatsApp rechazó el mensaje.'],
+            MetaErrorCatalog::isMessageError($code) => [MetaGraphException::MESSAGE_REJECTED, MetaErrorCatalog::explain($code, 'WhatsApp rechazó el mensaje.')],
             $code === 100 || $code === 803 || $response->status() === 404 => [MetaGraphException::INVALID_REQUEST, $operation === 'la verificación' ? 'El Phone number ID no existe o el token no tiene acceso a él.' : 'Meta rechazó la solicitud: un identificador no existe o un dato no es válido.'],
             default => [MetaGraphException::REJECTED, $operation === 'la verificación' ? 'Meta rechazó las credenciales.' : 'Meta rechazó la solicitud.'],
         };
 
-        return new MetaGraphException($this->compose($hint, $code, $detail), rejected: true, metaCode: $code, status: $response->status(), kind: $kind);
+        return new MetaGraphException($this->compose($hint, $code, $detail, $response->status(), $operation), rejected: true, metaCode: $code, status: $response->status(), kind: $kind);
     }
 
-    private function compose(string $hint, ?int $code, string $detail): string
+    /**
+     * The message users read is the Spanish explanation only. Meta's code
+     * stays on the exception (metaCode, stored as error_code meta_N by the
+     * delivery job and in the audit entry) and Meta's raw English detail,
+     * already sanitized, goes to the application log for support staff.
+     */
+    private function compose(string $hint, ?int $code, string $detail, int $status, string $operation): string
     {
-        $message = $hint;
+        Log::warning('Meta Graph API request failed', [
+            'operation' => $operation,
+            'meta_code' => $code,
+            'http_status' => $status,
+            'detail' => $detail === '' ? null : $detail,
+        ]);
 
-        if ($code !== null) {
-            $message .= " (código {$code})";
-        }
-
-        if ($detail !== '') {
-            $message .= ' Detalle de Meta: '.$detail;
-        }
-
-        return Str::limit($message, 480);
+        return Str::limit($hint, 480);
     }
 
     /**

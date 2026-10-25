@@ -119,8 +119,9 @@ Los textos de `message` están en español y pueden cambiar: programa contra `co
 
 ## 5. Recursos
 
-**Conversation:** `id`, `status` (`pending`, `open`, `on_hold`, `closed`), `status_label`, `connection {id, name,
-channel}`, `department {id, name} | null`, `contact {id, display_name}`, `assigned_agent {id, name} | null`,
+**Conversation:** `id`, `status` (`pending`, `open`, `closed`; `on_hold` solo en conversaciones antiguas aún no migradas: el estado «En espera» se retiró), `status_label`, `connection {id, name,
+channel}`, `department {id, name} | null`, `contact {id, display_name, is_saved}` (`is_saved` es `false` mientras el cliente es un contacto provisional: alguien
+que escribió pero nadie ha guardado en el directorio de Contactos), `assigned_agent {id, name} | null`,
 `last_message_at`, `created_at`, `updated_at`, `closed_at`. Nunca el teléfono, el correo ni las notas del contacto.
 
 **Message:** `id`, `conversation_id`, `direction` (`inbound`, `outbound`), `type`, `body`, `status`, `status_label`
@@ -137,7 +138,7 @@ si sus conexiones están operativas. Nunca devuelve identificadores del proveedo
 Lista: `{data: [...], meta: {next_cursor, prev_cursor, limit}}`. `limit` 1–100 (por defecto 25).
 
 - **Conversaciones:** orden `updated_at` descendente, `id` descendente, con cursor opaco (`?cursor=` con
-  `meta.next_cursor` o `meta.prev_cursor`). Filtros: `status`, `connection_id`, `department_id`, `updated_since`
+  `meta.next_cursor` o `meta.prev_cursor`). Filtros: `status` (`pending`, `open` o `closed`; `on_hold` responde 422 `validation_failed`), `connection_id`, `department_id`, `updated_since`
   (ISO 8601, incluye ese instante). Para sincronizar, guarda el `updated_at` mayor que viste y pide
   `updated_since` con él. El recorrido no es una foto fija: una conversación que se actualiza mientras paginas salta
   por delante del cursor y no aparece en esa pasada, pero sí en la siguiente con `updated_since`.
@@ -163,6 +164,9 @@ Lista: `{data: [...], meta: {next_cursor, prev_cursor, limit}}`. `limit` 1–100
 - 409 `conversation_closed` si está cerrada; `connection_unavailable` si la conexión no puede enviar;
   `customer_window_closed` si la ventana de 24 h de WhatsApp está cerrada (en el chat web no aplica).
 - Reintenta ante errores de red, 429 y 5xx **con la misma llave**; nunca generes una llave nueva para un reintento.
+- Solo texto libre: la API **no envía plantillas de WhatsApp** (no existe ruta para ello). Las plantillas son un envío
+  administrativo que exige el permiso `templates.send` en la aplicación; fuera de la ventana de 24 h la API responde
+  `customer_window_closed` y la conversación debe retomarse con una plantilla desde la bandeja.
 
 ## 8. Límites
 

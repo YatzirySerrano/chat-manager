@@ -111,6 +111,11 @@ log "Installing PHP dependencies (no dev)"
 composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 
 log "Building frontend assets"
+# The Wayfinder Vite plugin generates resources/js/{routes,actions} from the
+# registered routes; a route cache left by an older release would hide the
+# new ones and fail the build with UNLOADABLE_DEPENDENCY. `optimize` caches
+# them again after migrating.
+"$PHP" artisan route:clear
 # Browsershot uses the system Chromium (EXPORTS_CHROME_PATH); puppeteer must
 # stay in node_modules at runtime, but its bundled browser is not downloaded.
 export PUPPETEER_SKIP_DOWNLOAD=true

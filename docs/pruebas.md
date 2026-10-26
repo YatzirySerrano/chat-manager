@@ -125,6 +125,29 @@ TEST_DB_LOCK_WAIT=3600 php artisan test --compact tests/Feature/Conversations/Su
   tests/Feature/QuickReplies tests/Feature/Performance tests/Feature/Security
 ```
 
+### 2.4 Pruebas añadidas en la fase 5.2
+
+| Área                       | Archivos                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Errores 403/404/409        | `tests/Feature/Conversations/ConversationConflictTest.php` (códigos y textos exactos por operación, responsable que perdió la conversación frente a quien nunca la tuvo, versión vieja), cambios en `ConversationLifecycleTest.php` y `ConcurrencyTest.php`                                                                                                                                                                         |
+| Historial importado        | `tests/Feature/Conversations/ImportedConversationAccessTest.php` (403 de solo consulta, 404 del archivado en rutas operativas), `CustomerServiceWindowTest.php` (sin ventana), `InboxListRowsTest.php`, `ConversationInboxTest.php`, `DashboardConsistencyTest.php`                                                                                                                                                                 |
+| Importador de historial    | `tests/Feature/HistoryImport/*`: acceso y permisos, flujo completo, clasificación y reglas, exclusiones (bandeja, búsqueda, métricas, API, exportaciones), ejecución e idempotencia, seguridad (ZIP, fórmulas, contenido fuera de logs), formatos (`WhaticketFormatsTest`, con `tests/fixtures/whaticket`) y archivo histórico                                                                                                      |
+| Almacenamiento de adjuntos | `tests/Feature/Storage/MediaStorageTest.php` (disco listo o no, `MEDIA_DISK_REQUIRED`, escritura verificada, descargas con el disco caído, `attachments:recover-stale`), `StorageConsumersTest.php` (importación de contactos en disco remoto, avatar del widget tras cambiar de disco, alerta operativa por cuota, 503 en el enlace seguro, en la descarga de Meta para Messenger y en el chat web) con el doble `FailingDisk.php` |
+| Adjuntos no disponibles    | `tests/Feature/Conversations/AttachmentAvailabilityTest.php`                                                                                                                                                                                                                                                                                                                                                                        |
+| Exportaciones              | `tests/Feature/Exports/ExportDeliveryTest.php` (descarga desde la notificación, archivos recientes por reporte, `/exports` conservado), `ModuleReportsTest.php`                                                                                                                                                                                                                                                                     |
+| Grupos de WhatsApp         | `tests/Feature/Webhooks/WhatsAppGroupPayloadTest.php`                                                                                                                                                                                                                                                                                                                                                                               |
+| Limitador de canales       | `tests/Feature/Realtime/ChannelAuthorizationThrottleTest.php` (lecturas del contador, paso sin contar con aviso y contador diario, otros fallos cerrados)                                                                                                                                                                                                                                                                           |
+| Autorización de rutas      | `tests/Feature/Security/RouteAuthorizationSweepTest.php` (rutas `admin.history-import.*` y `admin.history.*`)                                                                                                                                                                                                                                                                                                                       |
+
+```bash
+TEST_DB_LOCK_WAIT=3600 php artisan test --compact tests/Feature/HistoryImport tests/Feature/Storage \
+  tests/Feature/Conversations/ConversationConflictTest.php tests/Feature/Conversations/ImportedConversationAccessTest.php \
+  tests/Feature/Conversations/AttachmentAvailabilityTest.php tests/Feature/Exports/ExportDeliveryTest.php \
+  tests/Feature/Webhooks/WhatsAppGroupPayloadTest.php tests/Feature/Realtime/ChannelAuthorizationThrottleTest.php
+```
+
+Estas pruebas usan solo `chatmanager_testing` y archivos sintéticos; nunca la base principal ni exportaciones reales.
+
 ## 3. Análisis estático, formato y frontend
 
 ```bash
@@ -338,6 +361,35 @@ env $B E2E_PORT=8092 php tests/e2e/run.php graficas.mjs
   `logout` 11/11, `fechas-chat` 17/17, `filtros` 44/44, `quick-replies` 6/6, `roles` 20/20, `tours` 32/32, `diseno`
   24/24 (9 anchos × claro/oscuro + 200 %), `graficas` 39/39, `realtime` 19/19 (×4), `bandeja` 33/33, `fase5` 35/35.
   Capturas en `E2E_SCREENSHOTS`.
+
+### 6.5 Escenarios de la fase 5.2
+
+| Escenario          | Contenido                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toast-oscuro.mjs` | Menú lateral sin «Exportaciones»; el _toast_ «Preparando PDF…» con su descripción a 390 y 1280 px en claro y oscuro (sigue el tema; título y descripción ≥ 4,5:1, icono y botón de cerrar ≥ 3:1, también con el puntero; dentro de la pantalla); anillo de foco del botón de cerrar; Excel grande preparado en cola con «Descargar» en la notificación; «Archivos preparados recientemente» en el menú; `/exports` sigue abriendo. Semilla `toast-oscuro-seed.php`                                                                                                                                                                                                                      |
+| `adjuntos.mjs`     | Menú del clip con mouse y teclado (Fotos e imágenes, Videos, Documentos, Audio; Escape y clic fuera; foco al clip); `accept` por categoría; vista previa de imagen, video y documento; rechazos por tamaño, tipo y categoría equivocada; ZIP en WhatsApp solo con «Enviar como enlace privado temporal»; ZIP nativo en el chat web; duplicado; progreso real con un segundo envío ignorado; conversación cerrada mientras tanto (409); «Archivo histórico no disponible» y «Archivo no disponible»; 320–1280 px claro y oscuro. Semilla `adjuntos-seed.php`                                                                                                                             |
+| `historial.mjs`    | Importador con archivos sintéticos: agente sin permiso (403 en importador e historial); crear lote; subir reporte de chats, mensajes, contactos, ZIP y `Chat.txt` con «Formato no verificado»; archivo de tipo equivocado rechazado; conexiones a «Conexión histórica sin envío»; inventario y filtros iguales al servidor; selección, regla con vista previa, participantes de la empresa, acción sobre un filtro y cambio manual; resumen igual al servidor; 409 `summary_changed`; confirmación, progreso y resultado; reporte CSV; historial archivado buscable y de solo lectura sin palomitas; importada en «Cerradas»; 320/768/1280 claro y oscuro. Semilla `historial-seed.php` |
+
+```bash
+env E2E_REVERB=1 E2E_PORT=8110 E2E_REVERB_PORT=8171 WHATSAPP_TRANSPORT=simulated QUEUE_CONNECTION=sync \
+  EXPORTS_XLSX_SYNC_ROWS=0 TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php toast-oscuro.mjs
+env E2E_REVERB=1 E2E_PORT=8130 E2E_REVERB_PORT=8191 WHATSAPP_TRANSPORT=simulated QUEUE_CONNECTION=sync \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php adjuntos.mjs
+env E2E_REVERB=1 E2E_PORT=8140 E2E_REVERB_PORT=8197 WHATSAPP_TRANSPORT=simulated QUEUE_CONNECTION=sync \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php historial.mjs
+```
+
+- `realtime.mjs` se amplió con dos carreras deterministas del chat interno (señal durante una carga y respuesta de
+  lectura vieja; [chat-interno §Correcciones](chat-interno.md#correcciones-de-la-fase-52)). **No usa
+  `QUEUE_CONNECTION=sync`**: necesita la cola asíncrona con su worker (§6.4). Se ejecuta como en §6.
+- `EXPORTS_XLSX_SYNC_ROWS=0` obliga a `toast-oscuro.mjs` a preparar el Excel en cola.
+- Resultados (2026-10-25, en serie con el candado): `toast-oscuro` 12/12, `adjuntos` 27/27, `historial` 36/36 (incluye «Quitar archivo») y
+  `realtime` 21/21 en cinco corridas seguidas. Capturas en `E2E_SCREENSHOTS`.
+- Cierre de la fase 5.2 (2026-10-26): Pest completo 2750/2750 (18 159 aserciones, 32,5 min, en serie); ronda E2E
+  final con los 22 escenarios en verde (`fase5` 35/35 dos veces tras actualizar la aserción del ZIP como enlace
+  privado elegido); batería de carga A (`profile,webhooks:3000`) y D (`webhooks:600`, `reconnect`, `transfers:200`,
+  `export:30`) sin mensajes perdidos ni duplicados y sin jobs fallidos. Los 429 del limitador de webhooks son
+  esperados; el escenario `export` los cuenta como «perdidos» si dura más de ~40 s a 30/s.
 
 ## 7. Carga y resistencia
 

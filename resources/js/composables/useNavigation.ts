@@ -1,9 +1,10 @@
 import {
+    Archive,
     Building2,
     ChartNoAxesCombined,
     ContactRound,
-    Download,
     FileText,
+    History,
     KeyRound,
     LayoutGrid,
     MessageCircle,
@@ -25,6 +26,8 @@ import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as historyIndex } from '@/routes/admin/history';
+import { index as historyImportIndex } from '@/routes/admin/history-import';
 import { index as personalItemsIndex } from '@/routes/admin/personal-items';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { edit as platformSettings } from '@/routes/admin/settings';
@@ -34,7 +37,6 @@ import { index as connectionsIndex } from '@/routes/connections';
 import { index as contactsIndex } from '@/routes/contacts';
 import { index as conversationsIndex } from '@/routes/conversations';
 import { index as departmentsIndex } from '@/routes/departments';
-import { index as exportsIndex } from '@/routes/exports';
 import { index as integrationTokensIndex } from '@/routes/integrations/tokens';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
 import { index as reportsIndex } from '@/routes/reports';
@@ -81,14 +83,9 @@ export function useNavigation() {
             });
         }
 
-        if (canAny('reports.export', 'audit.export')) {
-            result[0].items.push({
-                title: 'Exportaciones',
-                description: 'Archivos de Excel y PDF generados',
-                href: exportsIndex(),
-                icon: Download,
-            });
-        }
+        // Exported files are not a module of their own: small ones download
+        // from the module, large ones from their notification or from the
+        // recent files of the module's «Exportar» menu.
 
         const attention: NavSection['items'] = [];
 
@@ -217,6 +214,24 @@ export function useNavigation() {
                 description: 'Historial de operaciones',
                 href: auditIndex(),
                 icon: ScrollText,
+            });
+        }
+
+        if (can('history-import.view')) {
+            admin.push({
+                title: 'Importar de Whaticket',
+                description: 'Traer conversaciones anteriores de Whaticket',
+                href: historyImportIndex(),
+                icon: History,
+            });
+        }
+
+        if (can('history-import.archive-view')) {
+            admin.push({
+                title: 'Historial importado',
+                description: 'Consultar conversaciones importadas',
+                href: historyIndex(),
+                icon: Archive,
             });
         }
 

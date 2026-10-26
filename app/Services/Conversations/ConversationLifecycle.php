@@ -2,14 +2,18 @@
 
 namespace App\Services\Conversations;
 
+use App\Enums\ConversationConflict as ConversationConflictReason;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
 use App\Events\Conversations\ConversationChanged;
 use App\Exceptions\ConversationConflict;
+use App\Exceptions\ConversationStateConflict;
 use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\Department;
 use App\Models\User;
+use App\Policies\ConversationPolicy;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -20,7 +24,8 @@ use Illuminate\Support\Facades\Gate;
  * - lock() serializes operations on the same conversation (row lock) and
  *   detects decisions taken on stale data through the version counter;
  * - authorize() re-evaluates the actor's permissions with fresh data once
- *   the lock is held, so a permission revoked meanwhile is honored;
+ *   the lock is held, so a permission revoked meanwhile is honored, and
+ *   tells a real refusal (403) from a state that changed meanwhile (409);
  * - apply() only performs transitions of the state matrix;
  * - record() appends the operational event.
  *
@@ -52,12 +57,42 @@ use Illuminate\Support\Facades\Gate;
  */
 class ConversationLifecycle
 {
+    /** A real authorization failure on a conversation the actor can see (403). */
+    public const FORBIDDEN_MESSAGE = 'No tienes autorización para realizar esta acción.';
+
+    /** The permanent refusal of any operation on imported history (403). */
+    public const IMPORTED_MESSAGE = 'Esta conversación es un historial importado y es de solo consulta.';
+
+    public function __construct(private ConversationStateGuard $state) {}
+
+    /**
+     * The 403 for an operation the actor may not perform on a conversation
+     * they can see, explaining when it is imported (read-only) history.
+     */
+    public static function forbidden(Conversation $conversation): AuthorizationException
+    {
+        return new AuthorizationException($conversation->isImported() ? self::IMPORTED_MESSAGE : self::FORBIDDEN_MESSAGE);
+    }
+
+    /**
+     * Permission and reach only (ConversationPolicy::permits()), whatever the
+     * state: for checks outside the engine's lock.
+     *
+     * @throws AuthorizationException
+     */
+    public function ensurePermitted(User $actor, string $ability, Conversation $conversation): void
+    {
+        if (! $this->policy()->permits($actor, $ability, $conversation)) {
+            throw self::forbidden($conversation);
+        }
+    }
+
     public function lock(Conversation $conversation, ?int $expectedVersion = null): Conversation
     {
         $locked = Conversation::query()->lockForUpdate()->findOrFail($conversation->id);
 
         if ($expectedVersion !== null && $locked->version !== $expectedVersion) {
-            throw ConversationConflict::stale();
+            throw ConversationStateConflict::because(ConversationConflictReason::StateChanged);
         }
 
         return $locked;
@@ -81,15 +116,44 @@ class ConversationLifecycle
     }
 
     /**
-     * Fresh copy of the actor, authorized for the ability on the locked conversation.
+     * Fresh copy of the actor, authorized for the ability on the locked
+     * conversation, in this order:
+     *
+     * 1. the conversation is still visible to them (the request already
+     *    proved it before the lock, so losing it now means it moved
+     *    meanwhile: a conflict, never details of where it went);
+     * 2. permission and reach of the operation (ConversationPolicy::permits()):
+     *    refused, a real authorization failure, 403;
+     * 3. the version the user decided on, when sent: stale, a 409 explaining
+     *    what changed;
+     * 4. the state admits the operation (ConversationStateGuard::ensure()):
+     *    409, or 403 when the conversation simply was never the actor's.
+     *
+     * Accepting has its own visibility rule (queues the actor may take from),
+     * checked before by the controller, so step 1 does not apply to it.
+     *
+     * @throws AuthorizationException
+     * @throws ConversationStateConflict
      */
-    public function authorize(User $actor, string $ability, Conversation $conversation): User
+    public function authorize(User $actor, string $ability, Conversation $conversation, ?int $expectedVersion = null): User
     {
         $fresh = $this->freshUser($actor->id, lock: false);
+        $gate = Gate::forUser($fresh);
 
-        Gate::forUser($fresh)->authorize($ability, $conversation);
+        if ($ability !== 'accept' && $gate->denies('view', $conversation)) {
+            throw ConversationStateConflict::because(ConversationConflictReason::StateChanged);
+        }
+
+        $this->ensurePermitted($fresh, $ability, $conversation);
+
+        $this->state->ensure($fresh, $ability, $conversation, staleVersion: $expectedVersion !== null && $conversation->version !== $expectedVersion);
 
         return $fresh;
+    }
+
+    private function policy(): ConversationPolicy
+    {
+        return app(ConversationPolicy::class);
     }
 
     /**

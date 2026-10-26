@@ -339,8 +339,10 @@ test('only the responsible agent replies, and only while attending', function ()
     $send($supervisor)->assertForbidden();
     $send(User::factory()->administrator()->create())->assertForbidden();
 
+    // The responsible agent, while the attention is paused: the state, not
+    // a permission, refuses it (409).
     $conversation->forceFill(['status' => 'on_hold'])->save();
-    $send($this->agent)->assertForbidden();
+    $send($this->agent)->assertStatus(409)->assertJsonPath('code', 'state_changed');
 
     $conversation->forceFill(['status' => 'open'])->save();
     $send($this->agent)->assertAccepted()->assertJsonPath('data.status', 'queued');

@@ -4,6 +4,7 @@ namespace App\Services\Operations;
 
 use App\Enums\WebhookEventStatus;
 use App\Models\WebhookEvent;
+use App\Services\Storage\MediaDisk;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Database\ConnectionResolverInterface;
@@ -22,6 +23,10 @@ use Throwable;
  */
 class SystemHealth
 {
+    public const MEDIA_USAGE_KEY = 'operations:media-usage-bytes';
+
+    private const MEDIA_USAGE_SECONDS = 600;
+
     public function __construct(
         private ConnectionResolverInterface $database,
         private Cache $cache,
@@ -78,6 +83,12 @@ class SystemHealth
         }
     }
 
+    /**
+     * Local writable directories (a failure stops the service), then the
+     * media disk: not ready, or its recorded usage at or above the quota's
+     * warning percent, is a warning (only attachments are affected). The
+     * usage is SUM(size_bytes) of the metadata, cached a few minutes.
+     */
     public function storage(): HealthCheck
     {
         $notWritable = array_values(array_filter(
@@ -89,7 +100,46 @@ class SystemHealth
             return HealthCheck::fail('storage', 'Almacenamiento', 'La plataforma no puede guardar archivos. Pide al equipo técnico que revise los permisos de las carpetas. Detalle técnico: '.implode(', ', array_map(fn (string $path): string => str_replace(base_path().'/', '', $path), $notWritable)).'.');
         }
 
-        return HealthCheck::ok('storage', 'Almacenamiento', 'La plataforma puede guardar archivos.');
+        $media = app(MediaDisk::class);
+        $details = ['media_disk' => $media->name(), 'media_external' => $media->isExternal()];
+        $problem = $media->problem();
+
+        if ($problem !== null) {
+            return HealthCheck::warning('storage', 'Almacenamiento', 'No se pueden guardar archivos adjuntos nuevos: '.MediaDisk::explain($problem).'. Los mensajes de texto siguen funcionando. Pide al equipo técnico que lo revise.', [...$details, 'media_problem' => $problem]);
+        }
+
+        try {
+            $used = $this->cache->remember(self::MEDIA_USAGE_KEY, self::MEDIA_USAGE_SECONDS, fn (): int => $media->usageBytes());
+        } catch (Throwable) {
+            $used = null;
+        }
+
+        if (! is_int($used)) {
+            return HealthCheck::ok('storage', 'Almacenamiento', 'La plataforma puede guardar archivos.', $details);
+        }
+
+        $usage = $media->usage($used);
+        $details = [...$details, 'media_used_bytes' => $usage['used_bytes'], 'media_quota_bytes' => $usage['quota_bytes'], 'media_used_percent' => $usage['percent']];
+        $amount = self::gigabytes($usage['used_bytes']).' GB';
+
+        if ($usage['level'] === 'exceeded' || $usage['level'] === 'warning') {
+            return HealthCheck::warning('storage', 'Almacenamiento', sprintf(
+                'Los archivos adjuntos ocupan %s, el %d%% del espacio contratado (%s GB)%s. Amplía el espacio o revisa la retención antes de que se llene.',
+                $amount,
+                (int) $usage['percent'],
+                self::gigabytes($usage['quota_bytes']),
+                $usage['level'] === 'exceeded' ? ': ya se alcanzó el límite' : '',
+            ), $details);
+        }
+
+        $where = $media->isExternal() ? 'en el almacenamiento externo' : 'en el disco del servidor';
+
+        return HealthCheck::ok('storage', 'Almacenamiento', "La plataforma puede guardar archivos. Los adjuntos ocupan {$amount} {$where}".($usage['percent'] !== null ? " ({$usage['percent']}% del espacio contratado)." : '.'), $details);
+    }
+
+    private static function gigabytes(int $bytes): string
+    {
+        return rtrim(rtrim(number_format($bytes / 1073741824, 2), '0'), '.');
     }
 
     /**

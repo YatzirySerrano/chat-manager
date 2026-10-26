@@ -236,6 +236,11 @@ _deadlock_ (500), dejando canales sin suscribir.
 - **Cliente** (`resources/js/lib/realtime/`): como máximo 3 autorizaciones simultáneas; ante 429, 5xx o falta de red
   reintenta hasta 3 veces con espera creciente y aleatoria (0,5 s, 1,5 s y 4 s ±25 %) o el `Retry-After` del servidor
   (máximo 10 s). Un 403 se respeta como rechazo.
+- **Fase 5.2:** también las **lecturas** del contador (`tooManyAttempts`, `attempts`, `availableIn`) se reintentan, y
+  la petición que pasa tras agotar los reintentos lo hace **sin contarse**, con un aviso propio en el log (sin usuario
+  ni clave, solo una huella corta) y un contador diario (`ConcurrencySafeRateLimiter::uncountedToday()`). Solo se
+  absorben _deadlocks_ y esperas de bloqueo; cualquier otro fallo del almacén falla cerrado (500)
+  ([ADR-QA-7](decisiones.md#adr-qa-7--límite-de-canales-que-deja-pasar-sin-contar-solo-ante-interbloqueos)).
 - Con Redis disponible se recomienda `CACHE_LIMITER=redis` en todo entorno
   ([infraestructura §Fase 5.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)).
 - Prueba: `tests/Feature/Realtime/ChannelAuthorizationThrottleTest.php`.

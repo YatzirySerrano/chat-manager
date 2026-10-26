@@ -343,6 +343,10 @@ class ConversationInboxQuery
 
         return Conversation::query()
             ->visibleTo($actor)
+            // History archived as read-only (Whaticket import) never reaches
+            // the inbox, its counters, the search or the conversations
+            // export; it is only shown by the archived-history screen.
+            ->notHistoryOnly()
             ->when($department === self::NONE, fn (Builder $query) => $query->whereNull('conversations.department_id'))
             ->when(ctype_digit((string) $department), fn (Builder $query) => $query->where('conversations.department_id', (int) $department))
             ->when($agent === self::NONE, fn (Builder $query) => $query->whereNull('conversations.assigned_user_id'))

@@ -19,7 +19,7 @@ class DataTransferPolicy
     public function __construct(private ReportRegistry $registry, private ReportExporter $exporter) {}
 
     /**
-     * The "Exportaciones" page: anybody who may export something (module
+     * The "Archivos preparados" page: anybody who may export something (module
      * reports with reports.export, the audit log with audit.export).
      */
     public function viewAny(User $actor): bool

@@ -24,6 +24,7 @@ use App\Models\ContactReviewCase;
 use App\Models\Conversation;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Conversations\ContactConversationHistory;
 use App\Services\Exports\ReportExporter;
 use App\Services\ResolveContactOrigin;
 use App\Support\ProtectedAccounts;
@@ -342,9 +343,9 @@ class ContactController extends Controller
      */
     private function conversations(Contact $contact, User $actor): array
     {
-        return array_values(Conversation::query()
-            ->visibleTo($actor)
-            ->where('contact_id', $contact->id)
+        $history = app(ContactConversationHistory::class);
+
+        return array_values($history->query($actor, $contact->id)
             ->with([
                 'channelConnection:id,name,display_phone_number',
                 'department:id,name,color,is_active',
@@ -376,6 +377,7 @@ class ContactController extends Controller
                 'created_at' => $conversation->created_at?->toIso8601String(),
                 'last_message_at' => $conversation->last_message_at?->toIso8601String(),
                 'closed_at' => $conversation->closed_at?->toIso8601String(),
+                ...$history->describe($conversation, $actor),
             ])
             ->all());
     }

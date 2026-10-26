@@ -402,3 +402,71 @@ test('the conversations report describes the tag filter and its match mode', fun
         ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id]]))->toContain('Con al menos una de estas etiquetas: Urgente, VIP')
         ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id]]))->toContain('Etiqueta: VIP');
 });
+
+/**
+ * Every value of the data sheet of a workbook (header and filters included).
+ */
+function reportSheetValues(string $key, User $actor, array $input = []): string
+{
+    $path = renderReport($key, $actor, ExportFormat::Xlsx, $input);
+    $definition = app(ReportRegistry::class)->find($key);
+    $values = collect(reportWorkbook($path)->getSheetByName(mb_substr($definition->title(), 0, 31))->toArray())->flatten()->filter()->implode("\n");
+    @unlink($path);
+
+    return $values;
+}
+
+test('the Excel and the PDF of a module hold the same authorized rows for its filters', function (Closure $arrange) {
+    /** @var array{key: string, actor: User, input: array<string, mixed>, included: list<string>, excluded: list<string>} $case */
+    $case = $arrange();
+
+    $workbook = reportSheetValues($case['key'], $case['actor'], $case['input']);
+    $html = reportHtml($case['key'], $case['actor'], $case['input']);
+
+    foreach ($case['included'] as $value) {
+        expect($workbook)->toContain($value)
+            ->and($html)->toContain(e($value));
+    }
+
+    foreach ($case['excluded'] as $value) {
+        expect($workbook)->not->toContain($value)
+            ->and($html)->not->toContain(e($value));
+    }
+})->with([
+    'conversations of an agent' => [function (): array {
+        $agent = reportUser([Permission::ViewConversations, Permission::ExportReports], DataScope::Assigned);
+        Conversation::factory()->assignedTo($agent)->for(Contact::factory()->state(['name' => 'Cliente propio']))->create();
+        Conversation::factory()->assignedTo(User::factory()->agent()->create())->for(Contact::factory()->state(['name' => 'Cliente ajeno']))->create();
+
+        return ['key' => 'conversations', 'actor' => $agent, 'input' => [], 'included' => ['Cliente propio'], 'excluded' => ['Cliente ajeno']];
+    }],
+    'contacts by tag' => [function (): array {
+        $tag = Tag::factory()->create(['name' => 'VIP']);
+        Contact::factory()->create(['name' => 'Cliente VIP'])->tags()->attach($tag);
+        Contact::factory()->create(['name' => 'Cliente común']);
+
+        return ['key' => 'contacts', 'actor' => reportUser([Permission::ViewContacts, Permission::ExportReports]), 'input' => ['tags' => [$tag->id]], 'included' => ['Cliente VIP'], 'excluded' => ['Cliente común']];
+    }],
+    'quick replies of the current view' => [function (): array {
+        $actor = reportUser([Permission::ManageQuickReplies, Permission::ExportReports]);
+        QuickReply::factory()->create(['shortcut' => 'saludo-corporativo', 'title' => 'Saludo corporativo']);
+        QuickReply::factory()->personal($actor)->create(['shortcut' => 'mi-saludo', 'title' => 'Mi saludo']);
+        QuickReply::factory()->personal(User::factory()->agent()->create())->create(['shortcut' => 'saludo-ajeno', 'title' => 'Saludo ajeno']);
+
+        return ['key' => 'quick-replies', 'actor' => $actor, 'input' => ['segment' => 'mine'], 'included' => ['mi-saludo'], 'excluded' => ['saludo-corporativo', 'saludo-ajeno']];
+    }],
+    'users by search' => [function (): array {
+        User::factory()->agent()->create(['name' => 'Ana Ventas']);
+        User::factory()->agent()->create(['name' => 'Carla Soporte']);
+
+        return ['key' => 'users', 'actor' => User::factory()->administrator()->create(), 'input' => ['search' => 'Ventas'], 'included' => ['Ana Ventas'], 'excluded' => ['Carla Soporte']];
+    }],
+    'audit by action without restricted entries' => [function (): array {
+        $admin = User::factory()->administrator()->create();
+        AuditLog::query()->create(['user_id' => $admin->id, 'actor_name' => 'Admin', 'action' => AuditAction::TagCreated, 'auditable_label' => 'Etiqueta creada', 'restricted' => false, 'created_at' => now()]);
+        AuditLog::query()->create(['user_id' => $admin->id, 'actor_name' => 'Admin', 'action' => AuditAction::TagDeleted, 'auditable_label' => 'Etiqueta borrada', 'restricted' => false, 'created_at' => now()]);
+        AuditLog::query()->create(['user_id' => null, 'actor_name' => 'Raíz', 'action' => AuditAction::TagCreated, 'auditable_label' => 'Secreto raíz', 'restricted' => true, 'created_at' => now()]);
+
+        return ['key' => 'audit', 'actor' => $admin, 'input' => ['action' => AuditAction::TagCreated->value], 'included' => ['Etiqueta creada'], 'excluded' => ['Etiqueta borrada', 'Secreto raíz']];
+    }],
+]);

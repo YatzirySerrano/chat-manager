@@ -13,6 +13,7 @@ use App\Http\Middleware\ThrottleChannelAuthorization;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\WebChat\AuthenticateVisitorSession;
 use App\Models\Conversation;
+use App\Services\Conversations\ConversationLifecycle;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
@@ -156,15 +157,22 @@ return Application::configure(basePath: dirname(__DIR__))
             return (new ConversationConflict('Otra operación modificó esta conversación al mismo tiempo. Revisa su estado actual e inténtalo de nuevo.'))->render($request);
         });
 
-        // Permissions can be revoked while a page is open. Instead of an error
+        // A real authorization failure (403) on something the user can see:
+        // permissions can be revoked while a page is open. Instead of an error
         // screen, Inertia visits return to a page the user can still see, with
         // fresh props so the interface stops offering the revoked operations.
+        // A state that changed meanwhile is not a 403 but a 409
+        // (ConversationStateConflict), and something out of reach is a 404.
+        // JSON clients receive {message} with the same text.
         $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
             if (! $request->header('X-Inertia') || $request->user() === null) {
                 return null;
             }
 
-            Inertia::flash('toast', ['type' => 'error', 'message' => 'No tienes permiso para realizar esta acción. Actualizamos tu vista con tus permisos vigentes.']);
+            // Imported (read-only) history explains itself; any other 403 gets the plain text.
+            $message = $e->getMessage() === ConversationLifecycle::IMPORTED_MESSAGE ? ConversationLifecycle::IMPORTED_MESSAGE : ConversationLifecycle::FORBIDDEN_MESSAGE;
+
+            Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
 
             if ($request->isMethod('GET')) {
                 return $request->routeIs('dashboard') ? null : redirect()->route('dashboard');

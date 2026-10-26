@@ -240,6 +240,35 @@ No hay infraestructura paralela: se usa el motor de `app/Reports`.
   documento), en Excel o PDF, con las mismas columnas: Atajo, Título, Contenido (texto completo), Tipo, Propietario,
   Departamento, Estado y Fecha de creación, más un resumen por tipo. Prueba `QuickRepliesExportTest`.
 
+### Flujo de descarga (fase 5.2)
+
+Exportar ya no es un módulo propio: **«Exportaciones» salió del menú lateral**. El archivo se pide y se recoge desde el
+módulo donde se generó.
+
+1. **Archivo pequeño** (hasta `EXPORTS_XLSX_SYNC_ROWS`, 2000 filas en Excel; `EXPORTS_PDF_SYNC_ROWS`, 500 en PDF): se
+   genera durante la petición y se descarga en el acto.
+2. **Archivo grande:** se prepara en la cola `exports`. El aviso dice «Preparando Excel…» / «Preparando PDF…» sin
+   mandar a otra pantalla. Al terminar llega la notificación «Tu exportación está lista» con la acción **«Descargar»**,
+   que descarga el archivo directamente (`GET exports/transfers/{id}/download`; desde una visita Inertia la respuesta
+   es una navegación completa del navegador, porque un archivo no puede ser una página). Si falló: «No se pudo generar
+   tu exportación. Inténtalo de nuevo desde el módulo o reduce los filtros.»; si venció: «El archivo ya expiró. Vuelve a
+   exportarlo desde el módulo.», sin enlace.
+3. **Archivos preparados recientemente:** el menú «Exportar» de cada módulo lista los últimos 5 archivos de ese
+   reporte que siguen preparándose o se pueden descargar (`GET exports/recent?report=<clave>`, `exports.recent`; solo
+   del dueño, con el permiso de descarga vigente) y enlaza «Ver todos tus archivos preparados».
+4. **«Archivos preparados»** (`/exports`, antes «Exportaciones») sigue existiendo para los enlaces antiguos y para ver
+   todos los archivos propios; solo se llega desde los menús «Exportar».
+
+La descarga vuelve a comprobar dueño, permiso y vencimiento; un archivo de otra persona responde 404 y uno sin permiso o
+vencido explica el motivo con un aviso en la página actual. Las notificaciones de este tipo se llaman ahora «Archivos
+preparados» en las preferencias. Prueba: `tests/Feature/Exports/ExportDeliveryTest.php`; navegador:
+`tests/e2e/toast-oscuro.mjs`. Decisión: [ADR-UX-3](decisiones.md#adr-ux-3--exportaciones-sin-módulo-propio-archivos-preparados-desde-cada-módulo).
+
+**Avisos legibles en modo oscuro.** Los _toasts_ (`components/ui/sonner/Sonner.vue`) siguen el tema que la aplicación
+muestra de verdad (la clase `.dark` de `<html>`, también con «Sistema» y cambios en otra pestaña) y toman los colores de
+los _tokens_ del diseño en lugar de los grises fijos de `vue-sonner`, ilegibles sobre el fondo oscuro: título ≥ 15:1,
+descripción ≥ 5,5:1 e iconos ≥ 4,5:1 en claro y oscuro; el botón de cerrar muestra un anillo de foco.
+
 ### 6.1 Catálogo, límites y ciclo de vida
 
 - **Reportes registrados** en `config/exports.php` (una clave fuera del catálogo responde 404): `dashboard`,

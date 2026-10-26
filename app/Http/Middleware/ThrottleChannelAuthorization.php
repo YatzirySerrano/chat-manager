@@ -8,8 +8,10 @@ use Illuminate\Contracts\Cache\Factory as CacheFactory;
 /**
  * "throttle:attempts,minutes" (per route) for the real-time channel
  * authorization (POST /broadcasting/auth), counted by a limiter that
- * retries the database cache store's deadlocks and finally lets the request
- * through instead of answering 500 (ConcurrencySafeRateLimiter).
+ * retries the database cache store's deadlocks (on hits and on reads of
+ * the counter) and finally lets the request through uncounted, logged and
+ * counted, instead of answering 500 (ConcurrencySafeRateLimiter). Any other
+ * failure of the store still fails closed.
  *
  * The real-time client authorizes every channel of a user in parallel when
  * it connects or resubscribes (a departments supervisor holds two channels
@@ -17,7 +19,7 @@ use Illuminate\Contracts\Cache\Factory as CacheFactory;
  * open is harmless here: the endpoint requires a signed in, verified, active
  * user and every channel is authorized again by its own rule; the limit only
  * stops reconnection storms. Sign in and other limits keep the strict
- * limiter.
+ * limiter (only this middleware, on the broadcasting route, uses it).
  *
  * Only "attempts,minutes" parameters: named limiters (RateLimiter::for) are
  * registered on the application's limiter, not on this one.

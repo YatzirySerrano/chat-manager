@@ -65,7 +65,11 @@ export type PermissionName =
     | 'team-chat.use'
     | 'team-chat.create-groups'
     | 'team-chat.manage-groups'
-    | 'team-chat.cross-department';
+    | 'team-chat.cross-department'
+    | 'history-import.view'
+    | 'history-import.classify'
+    | 'history-import.execute'
+    | 'history-import.archive-view';
 
 export function usePermissions() {
     const page = usePage();

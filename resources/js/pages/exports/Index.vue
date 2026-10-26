@@ -32,7 +32,7 @@ import type { DataTransfer, DataTransferStatus, Paginated } from '@/types';
 
 defineOptions({
     layout: {
-        breadcrumbs: [{ title: 'Exportaciones', href: exportsIndex() }],
+        breadcrumbs: [{ title: 'Archivos preparados', href: exportsIndex() }],
     },
 });
 
@@ -116,13 +116,13 @@ function detail(transfer: DataTransfer): string {
 </script>
 
 <template>
-    <Head title="Exportaciones" />
+    <Head title="Archivos preparados" />
 
     <div class="page-shell">
         <PageHeader
             help="reportes"
-            title="Exportaciones"
-            :description="`Archivos de Excel y PDF que solicitaste. Solo tú puedes descargarlos y se eliminan ${retentionHours} horas después de generarse.`"
+            title="Archivos preparados"
+            :description="`Archivos de Excel y PDF que pediste preparar. Solo tú puedes descargarlos y se eliminan ${retentionHours} horas después de generarse. También los encuentras en el menú «Exportar» de cada módulo y en tus notificaciones.`"
         >
             <template #actions>
                 <span
@@ -313,10 +313,10 @@ function detail(transfer: DataTransfer): string {
         <EmptyState
             v-else
             :icon="FolderDown"
-            title="Aún no tienes exportaciones"
+            title="Aún no tienes archivos preparados"
             description="Usa el botón «Exportar» de cada módulo. Los archivos grandes se preparan en segundo plano y aparecen aquí."
         />
 
-        <DataPagination :meta="transfers.meta" noun="exportaciones" />
+        <DataPagination :meta="transfers.meta" noun="archivos" />
     </div>
 </template>

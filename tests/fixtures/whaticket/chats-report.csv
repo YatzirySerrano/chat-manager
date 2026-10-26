@@ -1,0 +1,5 @@
+contactName,contactNumber,user,userId,department,departmentId,connection,connectionId,createdAt,firstSentMessageAt,resolvedAt,leftChatbotAt,assignedAt,isNewContact,startedByContact,conversationId,chatId,chatLink,tags,conversationTags,csat
+Cliente Ficticio Uno,5215500000001,Agente Ficticio A,11,Ventas,3,Linea Prueba,7,2026-03-01 10:00:00,2026-03-01 10:02:00,2026-03-01 12:00:00,,2026-03-01 10:01:00,true,true,1001,9001,https://example.invalid/chat/9001,VIP,Seguimiento,
+Cliente Ficticio Dos,525500000002,Agente Ficticio B,12,Soporte,4,Linea Prueba,7,2026-03-02 09:00:00,2026-03-02 09:05:00,2026-03-02 11:00:00,,2026-03-02 09:01:00,false,true,1002,9002,https://example.invalid/chat/9002,,,
+Cliente Ficticio Tres,525500000003,Agente Ficticio A,11,Ventas,3,Linea Prueba,7,2026-01-15 08:00:00,,2026-01-15 08:30:00,,,false,true,1003,9003,https://example.invalid/chat/9003,,,
+"=HYPERLINK(""http://example.invalid"",""clic"")",525500000004,Agente Ficticio B,12,Soporte,4,Linea Antigua,8,2026-02-10 16:00:00,2026-02-10 16:10:00,,,,true,true,1004,9004,https://example.invalid/chat/9004,Reclamo,,

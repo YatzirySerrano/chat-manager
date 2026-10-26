@@ -144,7 +144,10 @@ class DataTransfer extends Model
     #[Scope]
     protected function expired(Builder $query): void
     {
-        $query->where('status', '!=', DataTransferStatus::Expired)
+        // History import batches are classified over days: they keep their
+        // own retention (PruneHistoryImports, config history-import.retention_days).
+        $query->where('type', '!=', DataTransferType::HistoryImport)
+            ->where('status', '!=', DataTransferStatus::Expired)
             ->where(fn (Builder $expired) => $expired
                 ->where(fn (Builder $completed) => $completed
                     ->where('status', DataTransferStatus::Completed)

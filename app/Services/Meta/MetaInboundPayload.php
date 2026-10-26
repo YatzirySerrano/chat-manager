@@ -23,7 +23,9 @@ use InvalidArgumentException;
  * signature belongs to the webhook endpoint. Items that cannot be
  * interpreted are skipped and logged without personal data; message types
  * this application does not render are kept as "unsupported" with their
- * provider content, never dropped.
+ * provider content, never dropped. WhatsApp Groups API content (group_*
+ * fields, group messages and statuses) is not supported and is skipped
+ * (WhatsAppGroupPayload), so it never becomes a 1:1 conversation.
  */
 class MetaInboundPayload
 {
@@ -74,6 +76,10 @@ class MetaInboundPayload
             }
 
             foreach (self::list($value['statuses'] ?? null) as $status) {
+                if (WhatsAppGroupPayload::isGroupStatus($status)) {
+                    continue;
+                }
+
                 $id = $status['id'] ?? null;
                 $state = $status['status'] ?? null;
                 $timestamp = $status['timestamp'] ?? null;
@@ -127,6 +133,11 @@ class MetaInboundPayload
                 $name = $change['field'] ?? null;
 
                 if (! is_string($name) || ! is_array($change['value'] ?? null) || ($field !== null && $name !== $field)) {
+                    continue;
+                }
+
+                // Groups API fields are not supported (WhatsAppGroupPayload).
+                if (WhatsAppGroupPayload::isGroupField($name)) {
                     continue;
                 }
 
@@ -185,6 +196,13 @@ class MetaInboundPayload
 
         foreach (self::list($value['messages'] ?? null) as $message) {
             $messageId = is_string($message['id'] ?? null) ? $message['id'] : null;
+
+            // A group message is never a 1:1 message from its sender.
+            if (WhatsAppGroupPayload::isGroupMessage($message)) {
+                Log::notice('Meta webhook group message ignored: groups are not supported.', ['message_id' => $messageId, 'phone_number_id' => $phoneNumberId]);
+
+                continue;
+            }
 
             if (($message['type'] ?? null) === 'system') {
                 Log::info('Meta webhook system notice ignored.', ['message_id' => $messageId, 'phone_number_id' => $phoneNumberId]);

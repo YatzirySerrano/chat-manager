@@ -189,6 +189,10 @@ beforeEach(function () {
         // Personal items of a colleague (supervision endpoints).
         'alias' => ContactAlias::factory()->create(['user_id' => $colleague->id, 'contact_id' => $contact->id])->id,
         'appearance' => ChatAppearance::factory()->create(['user_id' => $colleague->id])->id,
+        // Whaticket history importer: file, inventory row and rule of a batch ({transfer} is an export, so 404).
+        'file' => 1,
+        'row' => 1,
+        'rule' => 1,
     ];
 
     $this->teamParameters = [...$this->parameters, 'message' => $teamMessage->id, 'attachment' => $teamAttachment->id];

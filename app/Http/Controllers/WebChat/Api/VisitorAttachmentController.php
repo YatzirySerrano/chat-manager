@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\WebChat\Api;
 
+use App\Concerns\ServesStoredAttachments;
 use App\Enums\AttachmentStatus;
 use App\Enums\MessageDirection;
 use App\Http\Controllers\Controller;
@@ -24,6 +25,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class VisitorAttachmentController extends Controller
 {
+    use ServesStoredAttachments;
+
     /** @var list<string> */
     private const INLINE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -43,7 +46,7 @@ class VisitorAttachmentController extends Controller
 
         $disk = Storage::disk($file->disk);
 
-        abort_unless($disk->exists($file->path), 404);
+        abort_unless($this->storedFileExists($disk, $file), 404);
 
         $mime = strtolower($file->mime_type);
         $inline = in_array($mime, self::INLINE, true);
@@ -61,10 +64,8 @@ class VisitorAttachmentController extends Controller
             'Referrer-Policy' => 'no-referrer',
         ];
 
-        if (config("filesystems.disks.{$file->disk}.driver") === 'local') {
-            return response()->file($disk->path($file->path), $headers);
-        }
-
-        return $disk->response($file->path, $name, $headers, $inline ? 'inline' : 'attachment');
+        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
+            ? response()->file($disk->path($file->path), $headers)
+            : $disk->response($file->path, $name, $headers, $inline ? 'inline' : 'attachment'));
     }
 }

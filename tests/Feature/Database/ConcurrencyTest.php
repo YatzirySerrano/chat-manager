@@ -247,7 +247,7 @@ test('two agents accepting the same conversation at once: only one gets it, the 
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $accept($beto)))->toThrow(ConversationConflict::class, 'Otra persona ya aceptó esta conversación.')
+    expect(fn () => throughConnection('second', $accept($beto)))->toThrow(ConversationConflict::class, 'Otro agente ya está atendiendo esta conversación.')
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
         ->assigned_user_id->toBe($ana->id)
         ->version->toBe(1)
@@ -280,7 +280,7 @@ test('two simultaneous transfers: the second one, decided on stale data, is reje
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $transfer($billing)))->toThrow(ConversationConflict::class, 'La conversación cambió mientras la consultabas')
+    expect(fn () => throughConnection('second', $transfer($billing)))->toThrow(ConversationConflict::class, 'Esta conversación cambió de estado')
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)->department_id))->toBe($support->id);
 });
 
@@ -307,7 +307,7 @@ test('closing and reopening at once never leave an inconsistent state', function
     $first->commit();
 
     expect(fn () => throughConnection('second', fn () => app(ReopenConversation::class)->handle($fresh(), $actor(), 0)))
-        ->toThrow(ConversationConflict::class, 'La conversación cambió mientras la consultabas');
+        ->toThrow(ConversationConflict::class, 'Esta conversación cambió de estado');
 
     $reopened = throughConnection('second', fn () => app(ReopenConversation::class)->handle($fresh(), $actor(), 1));
 
@@ -555,7 +555,7 @@ test('automatic and manual assignment at the same time leave a single responsibl
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $assignByHand))->toThrow(ConversationConflict::class, 'La conversación cambió mientras la consultabas')
+    expect(fn () => throughConnection('second', $assignByHand))->toThrow(ConversationConflict::class, 'Otro agente ya está atendiendo esta conversación.')
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
         ->assigned_user_id->toBe($ana->id)
         ->version->toBe(1)
@@ -735,7 +735,7 @@ test('a transfer and an accept of the same conversation at once leave a single r
 
     $first->commit();
 
-    expect(fn () => throughConnection('second', $accept))->toThrow(ConversationConflict::class, 'Otra persona ya aceptó esta conversación.')
+    expect(fn () => throughConnection('second', $accept))->toThrow(ConversationConflict::class, 'Otro agente ya está atendiendo esta conversación.')
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($conversation->id)))
         ->assigned_user_id->toBe($ana->id)
         ->version->toBe(1);

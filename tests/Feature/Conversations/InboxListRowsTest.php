@@ -147,7 +147,7 @@ test('the second agent accepting from the list gets the conflict, never the conv
         ->from(route('conversations.index', ['view' => 'queue']))
         ->post(route('conversations.accept', $queued))
         ->assertRedirect(route('conversations.index'))
-        ->assertSessionHasErrors(['conversation' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.']);
 
     $this->actingAs($this->agent)
         ->postJson(route('conversations.accept', $queued))

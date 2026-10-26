@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Enums\AttachmentDeliveryMethod;
+use App\Enums\AttachmentStatus;
 use App\Enums\MessageDirection;
 use App\Enums\MessageType;
 use App\Models\Message;
@@ -23,7 +24,9 @@ use Illuminate\Support\Str;
  * without a new attempt) and then delivery_attempts, version the delivery state:
  * the chat keeps the newest one when responses arrive out of order.
  * Messages sent through the integration API carry the token name in
- * "integration" (never its id or the text fingerprint).
+ * "integration" (never its id or the text fingerprint). Messages brought
+ * from another system carry "imported" (source and the sender's name as
+ * that system recorded it); they have no delivery state to show.
  *
  * @mixin Message
  */
@@ -54,6 +57,7 @@ class ConversationMessageResource extends JsonResource
             'delivery_warning' => is_string($metadata['delivery_warning'] ?? null) ? $metadata['delivery_warning'] : null,
             'automatic' => ($metadata['automatic'] ?? false) === true,
             'integration' => $this->integration($metadata),
+            'imported' => $this->imported($metadata),
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
             'template' => $this->template($metadata),
             'content' => $this->content($metadata),
@@ -89,6 +93,7 @@ class ConversationMessageResource extends JsonResource
             'attachment' => $attachment->id,
         ]);
         $status = $attachment->getAttribute('status');
+        $status = $status instanceof AttachmentStatus ? $status->value : $status;
         $delivery = $attachment->getAttribute('delivery_method');
         $delivery = $delivery instanceof AttachmentDeliveryMethod ? $delivery : AttachmentDeliveryMethod::Native;
 
@@ -99,6 +104,8 @@ class ConversationMessageResource extends JsonResource
             'size_bytes' => $attachment->size_bytes,
             'available' => $attachment->path !== null && $attachment->path !== '' && (! is_string($status) || $status === 'available'),
             'status' => is_string($status) ? $status : null,
+            // Why it is unavailable (historical_missing, storage_unavailable, download_failed...).
+            'error_code' => $attachment->getAttribute('error_code'),
             'url' => $url,
             'download_url' => $url.'?download=1',
             // "link": the customer received a secure download link that works until link_expires_at.
@@ -193,5 +200,24 @@ class ConversationMessageResource extends JsonResource
     private function text(mixed $value): ?string
     {
         return is_string($value) && trim($value) !== '' ? Str::limit(trim($value), 500) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array{source: string, sender_name: string|null, from_me: bool}|null
+     */
+    private function imported(array $metadata): ?array
+    {
+        $import = $metadata['import'] ?? null;
+
+        if (! is_array($import)) {
+            return null;
+        }
+
+        return [
+            'source' => is_string($import['source'] ?? null) ? $import['source'] : 'whaticket',
+            'sender_name' => is_string($import['sender_name'] ?? null) && $import['sender_name'] !== '' ? $import['sender_name'] : null,
+            'from_me' => ($import['from_me'] ?? false) === true,
+        ];
     }
 }

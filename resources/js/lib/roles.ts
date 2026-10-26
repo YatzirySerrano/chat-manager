@@ -5,6 +5,7 @@ import {
     ChartNoAxesCombined,
     ContactRound,
     FileText,
+    History,
     KeyRound,
     LayoutGrid,
     MessageCircle,
@@ -120,6 +121,7 @@ const groupIcons: Record<string, LucideIcon> = {
     'user-cog': UserCog,
     'scroll-text': ScrollText,
     'server-cog': ServerCog,
+    history: History,
 };
 
 /** Icon of a permission module, from the name the catalog sends. */

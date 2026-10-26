@@ -54,7 +54,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     openSettings: [];
-    unreadChanged: [total: number];
+    /** `requestedAt`: performance.now() when the read was sent. */
+    unreadChanged: [total: number, requestedAt: number];
 }>();
 
 const FALLBACK_INTERVAL_MS = 15_000;
@@ -65,6 +66,8 @@ const hasMoreBefore = ref(props.page.has_more_before);
 const hasMoreAfter = ref(props.page.has_more_after);
 const loadingOlder = ref(false);
 const loadingNewer = ref(false);
+/** A signal arrived while loadNewer was running: load again afterwards. */
+let newerRequested = false;
 const scroller = ref<HTMLElement | null>(null);
 const composer = ref<InstanceType<typeof MessageComposer> | null>(null);
 const atBottom = ref(true);
@@ -307,11 +310,17 @@ async function loadOlder(): Promise<void> {
 /**
  * Fetch what arrived after the newest message shown (after a signal, a
  * reconnection, or periodically while real-time is not available).
+ *
+ * A request already running may have been answered before the message
+ * that caused a new signal was stored, so calls made meanwhile are
+ * coalesced into one more load once it finishes (never dropped).
  */
 async function loadNewer(): Promise<void> {
     const last = messages.value[messages.value.length - 1];
 
     if (loadingNewer.value) {
+        newerRequested = true;
+
         return;
     }
 
@@ -357,6 +366,11 @@ async function loadNewer(): Promise<void> {
         // A failed refresh is retried on the next signal or interval.
     } finally {
         loadingNewer.value = false;
+
+        if (newerRequested) {
+            newerRequested = false;
+            void loadNewer();
+        }
     }
 }
 
@@ -391,12 +405,13 @@ async function markLatestRead(): Promise<void> {
 
     lastReadSent = latest.id;
     readHttp.message_id = latest.id;
+    const requestedAt = performance.now();
 
     try {
         const response = await readHttp.post(markRead.url(props.thread.id), {
             onHttpException: () => false,
         });
-        emit('unreadChanged', response.unread_total);
+        emit('unreadChanged', response.unread_total, requestedAt);
     } catch {
         lastReadSent = 0;
     }

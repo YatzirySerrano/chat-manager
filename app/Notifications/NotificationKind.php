@@ -32,7 +32,7 @@ enum NotificationKind: string
             self::ConversationMessage => 'Mensajes nuevos en mis conversaciones',
             self::TeamChatMention => 'Menciones en el chat interno',
             self::TeamChatMessage => 'Mensajes del chat interno',
-            self::ExportFinished => 'Exportaciones terminadas',
+            self::ExportFinished => 'Archivos preparados',
             self::ImportFinished => 'Importaciones terminadas',
             self::ConnectionProblem => 'Problemas en conexiones de WhatsApp',
             self::AccessChanged => 'Cambios en mi rol, permisos o departamentos',

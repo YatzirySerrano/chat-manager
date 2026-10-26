@@ -45,6 +45,18 @@ class CustomerServiceWindow
 
     public function for(Conversation $conversation, ?DateTimeInterface $now = null): CustomerWindowState
     {
+        // Imported history (Whaticket) never opens a window: its customer
+        // messages are past and were not received by this platform.
+        if ($conversation->isImported()) {
+            return new CustomerWindowState(
+                CustomerWindowStatus::None,
+                null,
+                null,
+                0,
+                'Esta conversación es historial importado de Whaticket. Para escribirle al cliente, espera a que vuelva a escribir o usa una plantilla aprobada.',
+            );
+        }
+
         $channel = $this->channelOf($conversation);
 
         if ($channel !== null && ! $channel->usesCustomerServiceWindow()) {

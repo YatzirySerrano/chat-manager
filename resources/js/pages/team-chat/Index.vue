@@ -217,7 +217,66 @@ function openResult(result: TeamSearchResult): void {
     );
 }
 
-function onUnreadChanged(total: number): void {
+/** Props that carry the unread totals (also brought by full visits). */
+const UNREAD_PROPS = ['unreadTotal', 'teamChatUnread'];
+/** performance.now() when the latest visit bringing the totals started. */
+let unreadVisitStartedAt = Number.NEGATIVE_INFINITY;
+/** Visits bringing the totals still running, with when each started. */
+const unreadVisitsInFlight = new Map<object, number>();
+/** requestedAt of the latest read whose totals were shown. */
+let readAppliedAt = Number.NEGATIVE_INFINITY;
+
+const stopUnreadVisitWatch = router.on('start', (event) => {
+    const visit = event.detail.visit;
+    const only = visit.only;
+
+    if (only.length === 0 || only.some((prop) => UNREAD_PROPS.includes(prop))) {
+        unreadVisitStartedAt = performance.now();
+        unreadVisitsInFlight.set(visit, unreadVisitStartedAt);
+    }
+});
+
+/*
+ * A visit that started before a read was sent carries totals computed
+ * before it: when it lands after the read was shown it puts the old (higher)
+ * count back, so a live reload brings the current one.
+ */
+const stopUnreadVisitFinish = router.on('finish', (event) => {
+    const startedAt = unreadVisitsInFlight.get(event.detail.visit);
+
+    if (startedAt === undefined) {
+        return;
+    }
+
+    unreadVisitsInFlight.delete(event.detail.visit);
+
+    if (startedAt < readAppliedAt) {
+        liveReload.schedule();
+    }
+});
+
+onBeforeUnmount(() => {
+    stopUnreadVisitWatch();
+    stopUnreadVisitFinish();
+});
+
+/**
+ * The open chat was marked as read: show the totals of that answer at once,
+ * unless a visit bringing the totals started after the read was sent. Its
+ * answer can be newer (another chat got a message meanwhile) and an older
+ * read answer must never overwrite it, so a live reload settles the values.
+ * Visits that started before the read and are still running are settled
+ * when they finish (see above).
+ */
+function onUnreadChanged(total: number, requestedAt: number): void {
+    if (unreadVisitStartedAt > requestedAt) {
+        liveReload.schedule();
+
+        return;
+    }
+
+    readAppliedAt = Math.max(readAppliedAt, requestedAt);
+
     router.replaceProp('teamChatUnread', total);
     router.replaceProp('unreadTotal', total);
 
@@ -248,7 +307,7 @@ watch(
 // and guide.
 onBeforeUnmount(useGuidedTour().registerPageModule('chat-interno'));
 
-useLiveReload({
+const liveReload = useLiveReload({
     channels: () => {
         const user = userChannelName();
 

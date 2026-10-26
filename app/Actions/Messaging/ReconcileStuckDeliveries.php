@@ -61,6 +61,12 @@ class ReconcileStuckDeliveries
 
             $conversation = Conversation::query()->with('channelConnection')->findOrFail($message->conversation_id);
 
+            // Imported history is never sent nor re-queued (it never has
+            // "sending" rows; this keeps it that way whatever happens).
+            if ($conversation->isImported()) {
+                return false;
+            }
+
             if ($conversation->channelConnection?->isWebChat() ?? false) {
                 return $this->reconcileWebChat($message, $conversation);
             }

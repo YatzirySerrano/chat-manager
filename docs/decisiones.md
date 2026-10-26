@@ -123,6 +123,19 @@ dentro de cada prefijo.
 - [ADR-UX-2 — Recorridos guiados propios como ayuda principal](#adr-ux-2--recorridos-guiados-propios-como-ayuda-principal)
 - [ADR-REP-5 — Gráficas SVG propias, sin librería de gráficas](#adr-rep-5--gráficas-svg-propias-sin-librería-de-gráficas)
 
+**Fase 5.2: multimedia, almacenamiento, errores 409 e historial de Whaticket** ([migracion-whaticket.md](migracion-whaticket.md), [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md)):
+
+- [ADR-MIG-4 — Historial importado en las tablas existentes con `origin` y `history_only_at`](#adr-mig-4--historial-importado-en-las-tablas-existentes-con-origin-y-history_only_at)
+- [ADR-MIG-5 — Conexión histórica sin envío para el historial importado](#adr-mig-5--conexión-histórica-sin-envío-para-el-historial-importado)
+- [ADR-MIG-6 — Tres destinos, confirmación con huella del resumen e idempotencia global](#adr-mig-6--tres-destinos-confirmación-con-huella-del-resumen-e-idempotencia-global)
+- [ADR-MIG-7 — Archivos históricos fuera de la transacción, pausa por almacenamiento y reintentos acotados](#adr-mig-7--archivos-históricos-fuera-de-la-transacción-pausa-por-almacenamiento-y-reintentos-acotados)
+- [ADR-INBOX-13 — Permiso y estado separados: 403 para permisos, 409 para estado](#adr-inbox-13--permiso-y-estado-separados-403-para-permisos-409-para-estado)
+- [ADR-META-10 — El contenido de grupos de WhatsApp se confirma y se descarta](#adr-meta-10--el-contenido-de-grupos-de-whatsapp-se-confirma-y-se-descarta)
+- [ADR-OPS-8 — Disco de adjuntos explícito, sin respaldo silencioso](#adr-ops-8--disco-de-adjuntos-explícito-sin-respaldo-silencioso)
+- [ADR-SEC-12 — Adjuntos transmitidos por la aplicación, no con URLs prefirmadas](#adr-sec-12--adjuntos-transmitidos-por-la-aplicación-no-con-urls-prefirmadas)
+- [ADR-QA-7 — Límite de canales que deja pasar sin contar solo ante interbloqueos](#adr-qa-7--límite-de-canales-que-deja-pasar-sin-contar-solo-ante-interbloqueos)
+- [ADR-UX-3 — Exportaciones sin módulo propio: archivos preparados desde cada módulo](#adr-ux-3--exportaciones-sin-módulo-propio-archivos-preparados-desde-cada-módulo)
+
 **Documentación** ([README.md](README.md)):
 
 - [ADR-DOC-1 — Un documento por área y documentos transversales](#adr-doc-1--un-documento-por-área-y-documentos-transversales)
@@ -762,3 +775,107 @@ instalar ApexCharts, Chart.js o similares: no se cambian dependencias sin aproba
 (pocas categorías y puntos por gráfica) y así comparten _tokens_, accesibilidad (tabla alternativa, teclado) y
 colores con la exportación (`ReportPalette`). Reglas de datos: promedios sin muestras en `null` (la línea se corta),
 8 filas + «Otros» en agentes y departamentos, exportación desde el mismo cálculo que la pantalla.
+
+## ADR-MIG-4 — Historial importado en las tablas existentes con `origin` y `history_only_at`
+
+Enmienda [ADR-MIG-3](#adr-mig-3--adaptadores-de-origen-heurísticos-sin-formato-oficial-de-whaticket), que no
+importaba conversaciones. Se descartó un almacén paralelo de «historial» (tablas propias de conversaciones y mensajes
+importados): duplicaría el visor, la búsqueda, los adjuntos, las exportaciones y la autorización. Lo importado se
+escribe en `conversations`, `messages` y `message_attachments` con `conversations.origin` (`live` por defecto, de modo
+que toda fila existente queda en vivo; `whaticket` para lo importado), `history_only_at` (archivado: solo historial) e
+`imported_by_transfer_id` (el lote, **sin clave foránea**: añadirla a una tabla existente usaría `ALGORITHM=COPY` y
+reconstruiría `conversations` bloqueando la recepción; basta un índice y la validación en código). `Conversation::isImported()` / `isHistoryOnly()` y los _scopes_ `live()`,
+`notHistoryOnly()` e `imported()` aplican las exclusiones en un solo lugar: bandeja, búsqueda, exportaciones, métricas,
+panel, API v1, reconciliación, ventana de 24 h y recepción de mensajes. Consecuencias: toda consulta nueva sobre
+conversaciones debe decidir si incluye lo importado; la migración es aditiva e instantánea en MariaDB; staging e
+inventario viven en tablas `history_import_*` que se purgan. Ver [migracion-whaticket.md](migracion-whaticket.md#destinos).
+
+## ADR-MIG-5 — Conexión histórica sin envío para el historial importado
+
+`conversations.connection_id` es obligatorio y las conexiones de Whaticket no existen aquí. En lugar de hacer la
+columna nula (cambio de esquema con efectos en todo el motor) o de colgar lo importado de una conexión operativa,
+cada origen de conexión que el administrador mapea a «Conexión histórica sin envío» crea, una vez por lote y solo si
+hace falta, una conexión de WhatsApp **sin credenciales, inactiva y eliminada lógicamente** («Whaticket (histórico) ·
+…»). Las reglas existentes de conexiones eliminadas ya garantizan que no envía, no recibe, no la alcanza el webhook ni
+la API y que su historial sigue legible. Consecuencia: aparecen conexiones eliminadas con ese nombre en las vistas que
+listan eliminadas; mapear a una conexión real sigue siendo posible.
+
+## ADR-MIG-6 — Tres destinos, confirmación con huella del resumen e idempotencia global
+
+Cada conversación detectada recibe un destino explícito (Importar, Archivar, No importar) decidido por el
+administrador; las recomendaciones nunca deciden solas. La confirmación exige la huella SHA-256 del resumen revisado
+(resumen, mapeos, último cambio y número de filas): si algo cambió, 409 `summary_changed` en vez de ejecutar algo
+distinto de lo revisado. La ejecución va en cola, una transacción por conversación, reanudable. `import_source_keys`
+(única por sistema, instalación, tipo e id de origen, escrita en la misma transacción) hace idempotente reanudar y
+volver a importar la misma exportación en otro lote. No hay reversión por lote: lo importado es historial de solo
+lectura y la reversión real es el respaldo previo.
+
+## ADR-INBOX-13 — Permiso y estado separados: 403 para permisos, 409 para estado
+
+Antes, una política que mezclaba permiso y estado devolvía 403 «No tienes permiso» a quien solo perdió una carrera
+(otro agente aceptó primero, la conversación se cerró). Cada operación se decide ahora en dos mitades:
+`ConversationPolicy::permits()` (permiso y alcance, sin estado: 403) y `ConversationStateGuard` (estado actual,
+evaluado bajo bloqueo: 409 con `code` `state_changed`, `assigned_to_other` o `closed` y un texto fijo). Ser
+responsable es estado: a quien la conversación le fue quitada se le explica qué pasó (409); a quien nunca la atendió, 403. Las habilidades de la política combinan ambas mitades para que la interfaz solo ofrezca lo posible. Mantiene
+[ADR-SEC-4](#adr-sec-4--404-para-lo-que-está-fuera-de-alcance-403-para-lo-visible-no-permitido) para el 404. El
+historial importado es un 403 propio («…historial importado y es de solo consulta.»). Perder la visibilidad durante la
+petición es un 409 `state_changed` (nunca detalles de adónde fue) y los conflictos que no son de estado usan el código
+genérico `conflict`.
+
+## ADR-META-10 — El contenido de grupos de WhatsApp se confirma y se descarta
+
+La Groups API (OBA, máximo 8 participantes, invitación por plantilla, sin coexistencia) no está implementada. Si un
+webhook trae contenido de grupos y se procesara como 1:1, el remitente se volvería un contacto con una conversación
+privada y un agente podría responder en privado algo dicho en un grupo. Se descarta antes de guardar
+(`WhatsAppGroupPayload`: campos `group_*`, `group_id` en mensajes, `recipient_type: group` en estados, y por defensa
+las combinaciones no documentadas), se responde 200 para que Meta no reintente y se registra solo con conteos y una
+referencia HMAC del grupo con la clave de la aplicación. Adoptar la Groups API en el futuro exigirá un modelo propio de conversación de grupo, no relajar esta guarda.
+
+## ADR-OPS-8 — Disco de adjuntos explícito, sin respaldo silencioso
+
+`MediaDisk` decide si se pueden guardar archivos con solo leer la configuración y nunca escribe en el disco del
+servidor cuando el disco externo configurado no está listo: rechaza con `StorageUnavailable` (503) y los textos siguen
+funcionando. Un respaldo silencioso al disco local dejaría archivos repartidos sin que nadie lo sepa, rompería la
+cuota y los respaldos, y con `MEDIA_DISK_REQUIRED` violaría la regla de no usar el VPS como almacén principal. Cada
+escritura se verifica; cada fila recuerda su disco, así que cambiar de disco no migra ni rompe archivos antiguos (el
+disco `local` no se elimina). La prueba real de escritura solo la hace `app:preflight`.
+
+## ADR-SEC-12 — Adjuntos transmitidos por la aplicación, no con URLs prefirmadas
+
+Con S3 se podría redirigir cada descarga a una URL prefirmada (`temporaryUrl`) y ahorrar ancho de banda al servidor.
+Se descartó: una URL prefirmada se puede reenviar y sigue sirviendo hasta vencer aunque se cierre la sesión o se pierda
+el acceso, saltándose la revalidación de cada descarga
+([ADR-SEC-11](#adr-sec-11--cierre-de-sesión-sin-clear-site-data)), y expone el _endpoint_ y el bucket. Todo archivo
+se transmite por la ruta autorizada con los mismos encabezados (`nosniff`, CSP `sandbox`, `private, no-cache`) sea
+cual sea el disco; un fallo del almacenamiento al servir es un 503 explicado. Coste aceptado: el tráfico de descarga
+pasa por PHP-FPM; si crece, la mejora es un proxy interno autorizado, no URLs públicas.
+
+## ADR-QA-7 — Límite de canales que deja pasar sin contar solo ante interbloqueos
+
+Amplía [ADR-QA-4](#adr-qa-4--reintentos-acotados-ante-_deadlocks_-en-operaciones-idempotentes). Con el almacén
+`database`, las autorizaciones paralelas de un cliente que conecta chocan en la misma fila del contador (1213) también
+al **leer** el contador. Responder 429 o 500 dejaría canales mudos y haría reintentar al cliente, alimentando la
+tormenta. Decisión, solo para `broadcasting/auth`: un _deadlock_ o espera de bloqueo, en el conteo o en la lectura, se
+reintenta 3 veces y luego la petición pasa **sin contarse**, con un aviso propio y un contador diario para que un
+problema persistente se vea; cualquier otro fallo del almacén falla cerrado. Es aceptable porque sesión, cuenta activa
+y la regla de cada canal se comprueban aparte; el inicio de sesión y los demás límites conservan el limitador
+estricto. La solución de fondo es `CACHE_LIMITER=redis`.
+
+## ADR-UX-3 — Exportaciones sin módulo propio: archivos preparados desde cada módulo
+
+La entrada «Exportaciones» del menú obligaba a salir del módulo para recoger un archivo generado. Se retira del menú: los archivos pequeños se descargan en el acto, los grandes desde la notificación
+(«Descargar» descarga directamente) o desde «Archivos preparados recientemente» del menú «Exportar» del propio módulo.
+La página `/exports` se conserva como «Archivos preparados» para enlaces antiguos y para ver todo, sin quitar ningún
+servicio de exportación.
+
+## ADR-MIG-7 — Archivos históricos fuera de la transacción, pausa por almacenamiento y reintentos acotados
+
+Copiar dentro de la transacción de la conversación los archivos de una conversación con miles de fotos alargaba los
+bloqueos y, ante el límite de tiempo del trabajo, obligaba a repetirlo todo. Los archivos se copian al disco de
+adjuntos **antes** de la transacción, uno a uno, anotando el resultado en cada mensaje de preparación, así que una
+corrida interrumpida sigue en el siguiente archivo sin subir nada dos veces; después, una transacción corta crea la
+conversación. Cada archivo se busca solo en su propio ZIP, o en uno único del lote: un nombre repetido se marca
+`historical_ambiguous` en vez de adivinarse. Si el disco de adjuntos falla, el lote se **pausa**
+(`HistoryImportPaused`) en lugar de llenar el historial de archivos faltantes, y no se puede confirmar mientras el disco
+no esté listo (bloqueo `storage_unavailable`). Una conversación que falla se reintenta como máximo 3 veces
+(«Reintentar fallidas», resultado `completed_with_errors`), conservando sus datos de preparación hasta entonces.

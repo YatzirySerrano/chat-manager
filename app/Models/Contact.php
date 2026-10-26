@@ -243,12 +243,13 @@ class Contact extends Model
             DataScope::Global => null,
             DataScope::Departments => $query->where(fn (Builder $visible) => $visible
                 ->where('created_by_user_id', $user->id)
-                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->where(fn (Builder $reachable) => $reachable
+                // History archived as read-only (Whaticket import) never widens the reach.
+                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where(fn (Builder $reachable) => $reachable
                     ->where('assigned_user_id', $user->id)
                     ->orWhereIn('department_id', $user->departmentIds())))),
             default => $query->where(fn (Builder $visible) => $visible
                 ->where('created_by_user_id', $user->id)
-                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->where('assigned_user_id', $user->id))),
+                ->orWhereHas('conversations', fn (Builder $conversations) => $conversations->whereNull('history_only_at')->where('assigned_user_id', $user->id))),
         };
     }
 }

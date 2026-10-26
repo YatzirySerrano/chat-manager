@@ -46,12 +46,14 @@ const reserveHelpSpace = computed(
  * possible with a screen reader or on some touch screens. Closing a toast
  * only hides it; a notification is marked read only when it is opened.
  * The button looks 24 px wide, and its ::after extends the touch target.
+ * Its colors, hover and focus ring come from the Toaster wrapper
+ * (components/ui/sonner), like the rest of the toast.
  */
 const toastOptions = {
     closeButtonAriaLabel: 'Cerrar notificación',
     classes: {
         closeButton:
-            "size-6! border-border! bg-popover! text-popover-foreground! hover:bg-accent! focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-2.5 after:content-[''] pointer-coarse:size-8!",
+            "size-6! after:absolute after:-inset-2.5 after:content-[''] pointer-coarse:size-8!",
     },
 };
 </script>

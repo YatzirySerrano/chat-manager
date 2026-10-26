@@ -26,22 +26,24 @@ Documentos relacionados: [tiempo-real.md](tiempo-real.md) (Reverb en detalle), [
 
 ### Tareas programadas (`routes/console.php`)
 
-| Tarea                                       | Frecuencia   | Módulo                                       |
-| ------------------------------------------- | ------------ | -------------------------------------------- |
-| `ops:heartbeat`                             | cada minuto  | operación: latido del programador            |
-| `ops:check-alerts`                          | cada 5 min   | operación: alertas críticas                  |
-| `conversations:close-inactive`              | cada hora    | conversaciones                               |
-| `exports:prune`                             | cada hora    | exportaciones                                |
-| `whatsapp:maintenance reconcile-deliveries` | cada 5 min   | WhatsApp: entregas atascadas                 |
-| `whatsapp:maintenance recover-webhooks`     | cada 10 min  | WhatsApp: reencola webhooks atascados        |
-| `whatsapp:maintenance prune-webhooks`       | diaria 03:10 | WhatsApp: retención del registro de webhooks |
-| `whatsapp:maintenance sync-templates`       | cada 6 h     | WhatsApp: plantillas                         |
-| `analytics:rebuild --days=2`                | diaria 03:30 | reportes                                     |
-| `notifications:prune`                       | diaria 04:10 | notificaciones                               |
-| `webchat:prune-sessions`                    | diaria 04:20 | chat web: sesiones vencidas o revocadas      |
-| `queue:prune-failed --hours=2160`           | diaria 04:30 | operación: fallidos de más de 90 días        |
-| `queue:prune-batches --hours=168`           | diaria 04:40 | operación                                    |
-| `meta:refresh-instagram-tokens`             | diaria 03:50 | Instagram: renueva tokens antes de vencer    |
+| Tarea                                       | Frecuencia   | Módulo                                                     |
+| ------------------------------------------- | ------------ | ---------------------------------------------------------- |
+| `ops:heartbeat`                             | cada minuto  | operación: latido del programador                          |
+| `ops:check-alerts`                          | cada 5 min   | operación: alertas críticas                                |
+| `conversations:close-inactive`              | cada hora    | conversaciones                                             |
+| `exports:prune`                             | cada hora    | exportaciones                                              |
+| `whatsapp:maintenance reconcile-deliveries` | cada 5 min   | WhatsApp: entregas atascadas                               |
+| `whatsapp:maintenance recover-webhooks`     | cada 10 min  | WhatsApp: reencola webhooks atascados                      |
+| `whatsapp:maintenance prune-webhooks`       | diaria 03:10 | WhatsApp: retención del registro de webhooks               |
+| `whatsapp:maintenance sync-templates`       | cada 6 h     | WhatsApp: plantillas                                       |
+| `analytics:rebuild --days=2`                | diaria 03:30 | reportes                                                   |
+| `notifications:prune`                       | diaria 04:10 | notificaciones                                             |
+| `webchat:prune-sessions`                    | diaria 04:20 | chat web: sesiones vencidas o revocadas                    |
+| `queue:prune-failed --hours=2160`           | diaria 04:30 | operación: fallidos de más de 90 días                      |
+| `queue:prune-batches --hours=168`           | diaria 04:40 | operación                                                  |
+| `meta:refresh-instagram-tokens`             | diaria 03:50 | Instagram: renueva tokens antes de vencer                  |
+| `attachments:recover-stale`                 | cada 15 min  | adjuntos: reintenta o vence descargas atascadas (fase 5.2) |
+| `history-import:prune`                      | diaria 04:50 | importador de historial: retención de lotes (fase 5.2)     |
 
 `php artisan schedule:list` las muestra; el preflight verifica que todos los comandos programados existan.
 
@@ -97,6 +99,99 @@ Permisos mínimos: el código pertenece al usuario de despliegue (`deploy`) y so
 importaciones) nunca está bajo `public/`; los archivos se sirven solo por rutas autorizadas. No ejecutes
 `storage:link` hacia `storage/app` ni hacia `private`: el enlace público solo puede apuntar a `storage/app/public`.
 
+### Almacenamiento de adjuntos (fase 5.2)
+
+Los archivos de las conversaciones (de clientes, de agentes, el avatar del chat web y los archivos históricos
+importados) viven en el disco privado `filesystems.media_disk` (`MEDIA_DISK`). La base solo guarda metadatos (disco,
+ruta, tipo, tamaño, SHA-256); **nunca binarios en MariaDB**. Cada fila recuerda **su propio disco**: cambiar
+`MEDIA_DISK` solo afecta a los archivos nuevos y los anteriores siguen leyéndose del disco donde se guardaron, por eso
+el disco `local` **nunca se elimina** aunque se pase a S3.
+
+| `MEDIA_DISK`          | Dónde quedan los archivos                                   | Requisitos                                                                                                                  |
+| --------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `local` (por defecto) | `shared/storage/app/private/media/…` en el propio servidor  | Disco suficiente, respaldo de `storage/app` ([recuperacion §3](recuperacion-y-respaldos.md#3-respaldo-de-archivos))         |
+| `s3`                  | Bucket privado de AWS S3 o de un servicio compatible con S3 | Paquete `league/flysystem-aws-s3-v3` (instalado en la fase 5.2 con aprobación del usuario) y las variables `AWS_*` de abajo |
+
+**Comportamiento explícito, sin respaldos silenciosos** (`App\Services\Storage\MediaDisk`):
+
+- Un disco externo incompleto (falta el adaptador, `AWS_BUCKET` o `AWS_DEFAULT_REGION`, o solo una de las dos claves)
+  o público **no está listo**: los archivos se rechazan con `StorageUnavailable` (503, `storage_unavailable`, texto en
+  español), **nunca se escriben en el disco del servidor en su lugar**. Ambas claves vacías se aceptan (rol de
+  instancia).
+- `MEDIA_DISK_REQUIRED=true` exige un disco externo: con `MEDIA_DISK=local` tampoco se aceptan archivos, para que el VPS
+  no sea nunca el almacén principal.
+- Cada escritura se verifica (resultado, existencia y tamaño) antes de registrar el archivo como disponible; si falla,
+  se borra lo escrito.
+- Leer un archivo cuando el almacenamiento no responde da **503** con una explicación (nunca un 500 que parezca un
+  archivo dañado); un archivo que no existe sigue siendo 404.
+- Los archivos se **transmiten a través de la aplicación** por las rutas autorizadas, también desde S3; no se usan
+  URLs prefirmadas ([ADR-SEC-12](decisiones.md#adr-sec-12--adjuntos-transmitidos-por-la-aplicación-no-con-urls-prefirmadas)).
+- Los registros y la página de Sistema solo nombran el disco y un código corto del problema, nunca credenciales,
+  _endpoints_ ni nombres de bucket.
+- La comprobación de «listo» solo lee configuración (sin red); la prueba de escritura y borrado se hace en
+  `app:preflight` (`storage.media`).
+- **Cuota:** `ATTACHMENT_STORAGE_QUOTA_BYTES` (0 = sin cuota) y `ATTACHMENT_STORAGE_WARNING_PERCENT` (80). La página de
+  Sistema avisa al llegar al porcentaje y al superar la cuota, y `ops:check-alerts` envía una alerta operativa (log y
+  correo, §14) cuando no se pueden guardar adjuntos o el uso llega al porcentaje; el uso es la suma de `size_bytes` de los adjuntos
+  disponibles y de los archivos del chat interno en ese disco (en caché 10 min), nunca un listado del bucket. La cuota
+  solo avisa: no bloquea subidas.
+
+**Variables del disco `s3`** (`config/filesystems.php`): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_DEFAULT_REGION`, `AWS_BUCKET`, `AWS_ENDPOINT` (servicios compatibles), `AWS_USE_PATH_STYLE_ENDPOINT` (`true` en la
+mayoría de compatibles, p. ej. MinIO), `AWS_URL` (no se usa para servir) y `AWS_SERVER_SIDE_ENCRYPTION` (p. ej.
+`AES256`, si el proveedor lo admite). Los objetos se escriben con visibilidad `private`. Los valores van en
+`shared/.env`, nunca en el repositorio.
+
+**Hecho comprobado** ([Laravel 13, Filesystem](https://laravel.com/docs/13.x/filesystem), consultado el 2026-10-25):
+el driver S3 requiere `league/flysystem-aws-s3-v3 "^3.0"`; los servicios compatibles con S3 se configuran con
+`AWS_ENDPOINT` y `AWS_USE_PATH_STYLE_ENDPOINT`.
+
+**Requisitos de producción para S3** (decisión de arquitectura):
+
+1. Bucket **privado** dedicado (sin acceso público ni listado anónimo), con bloqueo de acceso público si el proveedor
+   lo tiene.
+2. **Clave dedicada** para la aplicación con permisos mínimos sobre ese bucket (leer, escribir, borrar y consultar
+   metadatos de objetos), sin permisos de administración de la cuenta.
+3. **Cifrado del lado del servidor** (`AWS_SERVER_SIDE_ENCRYPTION`) o cifrado por defecto del bucket.
+4. **HTTPS** hacia el _endpoint_.
+5. **Ciclo de vida** del bucket solo para versiones antiguas o cargas incompletas: nunca expirar objetos vigentes (la
+   aplicación decide qué se conserva).
+6. Conservar el disco `local` y su respaldo mientras existan filas antiguas guardadas en él.
+7. `php artisan app:preflight` sin bloqueantes en `storage.media` antes de activar el cambio (prueba de escritura y
+   borrado real).
+8. Respaldar el bucket aparte (versionado o réplica): `chat-manager-backup-storage` solo copia el disco local
+   ([recuperacion §3](recuperacion-y-respaldos.md#3-respaldo-de-archivos)).
+
+#### Synology: opciones y advertencias
+
+**Hechos comprobados** (consultados el 2026-10-25):
+
+- [Synology C2 Object Storage](https://c2.synology.com/en-global/object-storage/overview) es un servicio **en la nube**
+  compatible con S3 (se usa con AWS CLI/SDK y un `--endpoint-url`, p. ej. `https://us-001.s3.synologyc2.net`), con
+  versionado y Object Lock. Precio publicado en la página: 7.99 USD/TB/mes.
+- DSM no incluye un servidor S3 nativo: no se encontró ninguna página oficial de Synology que lo ofrezca.
+- [VPN Server](https://www.synology.com/en-us/dsm/7.4/software_spec/vpn_server) de DSM 7.4 ofrece OpenVPN, L2TP/IPSec y
+  PPTP; no incluye WireGuard.
+- [Tailscale para Synology](https://tailscale.com/kb/1131/synology) tiene paquete oficial en el Package Center (DSM 6 y
+  7); en DSM 7, para que otras apps salgan por Tailscale se necesita un script de arranque (v1.22.2 o superior).
+
+**No confirmado:** la lista vigente de operaciones S3 que admite C2 (el artículo de la base de conocimiento no se pudo
+leer completo; que crear o borrar buckets por API «no se admite» viene de un fragmento de búsqueda) y una guía oficial
+de Synology para MinIO, así como la licencia y el estado actual de MinIO.
+
+**Recomendaciones (inferencia, no hecho):**
+
+| Opción                                 | Cómo                                                                                                                                                                                                                                         |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Synology C2 Object Storage**         | `MEDIA_DISK=s3`, `AWS_ENDPOINT` de la región de C2, `AWS_USE_PATH_STYLE_ENDPOINT` según indique C2, bucket creado desde el portal de C2, clave dedicada. Validar con `app:preflight` antes de usarlo                                         |
+| **MinIO en Container Manager del NAS** | Solo publicado en la interfaz de la VPN o de Tailscale (nunca en Internet), con HTTPS, `AWS_USE_PATH_STYLE_ENDPOINT=true`, un usuario y una política dedicados por bucket, sin buckets públicos. Es comunitario, no una solución de Synology |
+| Acceso del VPS al NAS                  | Por **Tailscale** (paquete oficial) o la **OpenVPN** de VPN Server; evitar PPTP                                                                                                                                                              |
+| **Nunca**                              | Exponer SMB, AFP o el DSM a Internet, ni montar una carpeta compartida del NAS por SMB como disco de adjuntos a través de Internet                                                                                                           |
+
+Con el NAS como almacén, una caída de la VPN deja los adjuntos sin leer ni escribir (503 controlado; los textos
+siguen funcionando, y los medios entrantes se recuperan con `attachments:recover-stale` mientras Meta los conserve, 7
+días): conviene vigilar la página de Sistema.
+
 ## 4. Base de datos (MariaDB)
 
 ```sql
@@ -126,43 +221,52 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON chatmanager.* TO 'chatma
 
 Base: `.env.example` (todas las claves comentadas). Valores clave:
 
-| Variable                                                                                          | Producción                                           | Notas                                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `APP_ENV` / `APP_DEBUG`                                                                           | `production` / `false`                               | Con debug, cualquier visitante ve trazas y variables                                                                                                                                                                                             |
-| `APP_KEY`                                                                                         | `php artisan key:generate --show`                    | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida                                                                                                                                                           |
-| `APP_URL`                                                                                         | `https://chat.empresa.com`                           | HTTPS obligatorio (Meta y cookies seguras)                                                                                                                                                                                                       |
-| `TRUSTED_PROXIES`                                                                                 | `127.0.0.1`                                          | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real. **Obligatorio con un chat web activo**: los límites por IP de visitantes y la lista de IPs de los tokens usarían la IP del proxy (Preflight: bloqueante en producción) |
-| `SESSION_SECURE_COOKIE`                                                                           | `true` (por defecto si `APP_URL` es https)           | HttpOnly y SameSite=lax por defecto                                                                                                                                                                                                              |
-| `SESSION_DRIVER` / `CACHE_STORE`                                                                  | `database` (o `redis`)                               | Nunca `array`/`cookie`                                                                                                                                                                                                                           |
-| `QUEUE_CONNECTION`                                                                                | `database` (o `redis`)                               | Nunca `sync` en producción                                                                                                                                                                                                                       |
-| `DB_QUEUE_RETRY_AFTER`                                                                            | `900`                                                | Mayor que el `--timeout` más largo (exportaciones 660)                                                                                                                                                                                           |
-| `EXPORTS_QUEUE`                                                                                   | `exports`                                            | Worker propio con timeout largo                                                                                                                                                                                                                  |
-| `QUEUE_NAME_*`                                                                                    | sin cambios                                          | Solo si varias apps comparten el backend de colas                                                                                                                                                                                                |
-| `BROADCAST_CONNECTION`                                                                            | `reverb`                                             | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)                                                                                                                                                                     |
-| `WHATSAPP_TRANSPORT`                                                                              | `meta`                                               | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)                                                                                                                                                                      |
-| `META_GRAPH_VERSION`                                                                              | `v26.0` (o la vigente)                               | Credenciales por conexión en la interfaz, no en `.env`                                                                                                                                                                                           |
-| `MAIL_*`                                                                                          | SMTP real                                            | Restablecimiento de contraseña y alertas                                                                                                                                                                                                         |
-| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                                                    | buzón de guardia / `true`                            | Destinatarios de alertas operativas                                                                                                                                                                                                              |
-| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH`                                | rutas absolutas                                      | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                                                                                                                                                                             |
-| `LOG_STACK` / `LOG_LEVEL`                                                                         | `daily` / `warning`                                  | `debug` llena el disco                                                                                                                                                                                                                           |
-| `SECURITY_CSP_ENABLED`                                                                            | vacío (= activo en producción)                       | Ver §8                                                                                                                                                                                                                                           |
-| `QUEUE_NAME_REALTIME` / `REALTIME_QUEUE`                                                          | sin cambios (`realtime`)                             | Cola dedicada de señales de tiempo real (§9); `REALTIME_QUEUE` tiene prioridad                                                                                                                                                                   |
-| `WHATSAPP_PILOT_RECIPIENTS`                                                                       | vacío, o números del piloto                          | Con `meta`, solo envía a esos números ([mensajeria §8](mensajeria-whatsapp.md#8-transportes))                                                                                                                                                    |
-| `WHATSAPP_WEBHOOK_MAX_AGE_DAYS`                                                                   | `7` (opcional)                                       | Antigüedad máxima de errores y señales del webhook que se aplican                                                                                                                                                                                |
-| `INERTIA_ENCRYPT_HISTORY`                                                                         | `true`                                               | Historial del navegador cifrado (requiere HTTPS o localhost)                                                                                                                                                                                     |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`                                        | `php artisan webpush:vapid`                          | Web Push; la privada es secreta; cambiarlas invalida las suscripciones                                                                                                                                                                           |
-| `WEBPUSH_TTL` / `_THROTTLE_SECONDS` / `_TIMEOUT` / `_RETENTION_DAYS` / `_ALLOWED_HOSTS`           | `3600` / `60` / `5` / `120` / por defecto            | Opcionales ([notificaciones §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada))                                                                                                                                    |
-| `EXPORTS_XLSX_MAX_CELLS`                                                                          | `800000`                                             | Tope de celdas del XLSX en memoria (≈ 650 MB)                                                                                                                                                                                                    |
-| `OPS_PREFLIGHT_MIN_FREE_DISK_MB` / `OPS_BACKUP_DIR` / `OPS_BACKUP_MAX_AGE_HOURS`                  | `2048` / `/var/backups/chat-manager/database` / `26` | Comprobaciones de disco y respaldos del preflight (§15)                                                                                                                                                                                          |
-| `WEBCHAT_*` (límites y `WEBCHAT_SESSION_ABSOLUTE_DAYS`)                                           | por defecto                                          | Opcionales ([api-v1.md §8](api-v1.md#8-límites)); `WEBCHAT_DEMO_ENABLED` vacío (la demo solo existe en `local`)                                                                                                                                  |
-| `INTEGRATIONS_READS_PER_MINUTE` / `INTEGRATIONS_WRITES_PER_MINUTE`                                | `600` / `60`                                         | Límites por token de la API de integración                                                                                                                                                                                                       |
-| `SESSION_SAME_SITE`                                                                               | `lax` (no cambiar)                                   | `none` rompería la separación entre la sesión de agentes y el widget incrustado ([seguridad](seguridad-y-auditoria.md#chat-web-y-api-v1))                                                                                                        |
-| `META_APP_ID` / `META_APP_SECRET` / `META_LOGIN_CONFIG_ID`                                        | datos de la app de Meta                              | Messenger e Instagram (fase 5): autorización y webhook de la app; el secreto no va al repositorio ([meta-messenger-instagram.md](meta-messenger-instagram.md))                                                                                   |
-| `META_INSTAGRAM_APP_ID` / `META_INSTAGRAM_APP_SECRET` / `META_WEBHOOK_VERIFY_TOKEN`               | datos de la app / valor aleatorio propio             | Instagram Login y verificación `GET /webhooks/meta`                                                                                                                                                                                              |
-| `META_INSTAGRAM_GRAPH_BASE_URL` / `META_HUMAN_AGENT_TAG`                                          | por defecto / `false`                                | `true` solo con la función «agente humano» aprobada por Meta (ventana de 7 días)                                                                                                                                                                 |
-| `WHATSAPP_MEDIA_LINK_FALLBACK`, `MESSENGER_MEDIA_LINK_FALLBACK`, `INSTAGRAM_MEDIA_LINK_FALLBACK`  | `true`                                               | ZIP como enlace de descarga seguro en canales sin ZIP nativo (`config/attachments.php`, `config/whatsapp.php`); los dos últimos no están en `.env.example`                                                                                       |
-| `ATTACHMENT_LINK_TTL_DAYS` / `ATTACHMENT_LINK_MAX_BYTES` / `ATTACHMENT_LINK_DOWNLOADS_PER_MINUTE` | `7` / 100 MB / `30`                                  | Vencimiento, tamaño y límite de descargas por minuto y dirección del enlace                                                                                                                                                                      |
-| `WEBCHAT_ATTACHMENT_MAX_BYTES`                                                                    | 25 MB                                                | Adjuntos del chat web (§6 punto 5 para los límites de PHP y Nginx)                                                                                                                                                                               |
+| Variable                                                                                          | Producción                                           | Notas                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ENV` / `APP_DEBUG`                                                                           | `production` / `false`                               | Con debug, cualquier visitante ve trazas y variables                                                                                                                                                                                                        |
+| `APP_KEY`                                                                                         | `php artisan key:generate --show`                    | Cifra sesiones y credenciales de conexiones: respáldala aparte; cambiarla las invalida                                                                                                                                                                      |
+| `APP_URL`                                                                                         | `https://chat.empresa.com`                           | HTTPS obligatorio (Meta y cookies seguras)                                                                                                                                                                                                                  |
+| `TRUSTED_PROXIES`                                                                                 | `127.0.0.1`                                          | Nginx en el mismo host; sin esto Laravel no reconoce HTTPS ni la IP real. **Obligatorio con un chat web activo**: los límites por IP de visitantes y la lista de IPs de los tokens usarían la IP del proxy (Preflight: bloqueante en producción)            |
+| `SESSION_SECURE_COOKIE`                                                                           | `true` (por defecto si `APP_URL` es https)           | HttpOnly y SameSite=lax por defecto                                                                                                                                                                                                                         |
+| `SESSION_DRIVER` / `CACHE_STORE`                                                                  | `database` (o `redis`)                               | Nunca `array`/`cookie`                                                                                                                                                                                                                                      |
+| `QUEUE_CONNECTION`                                                                                | `database` (o `redis`)                               | Nunca `sync` en producción                                                                                                                                                                                                                                  |
+| `DB_QUEUE_RETRY_AFTER`                                                                            | `900`                                                | Mayor que el `--timeout` más largo (exportaciones 660)                                                                                                                                                                                                      |
+| `EXPORTS_QUEUE`                                                                                   | `exports`                                            | Worker propio con timeout largo                                                                                                                                                                                                                             |
+| `QUEUE_NAME_*`                                                                                    | sin cambios                                          | Solo si varias apps comparten el backend de colas                                                                                                                                                                                                           |
+| `BROADCAST_CONNECTION`                                                                            | `reverb`                                             | Ver tiempo-real.md (`REVERB_*`, `REVERB_CLIENT_*`, `REVERB_ALLOWED_ORIGINS`)                                                                                                                                                                                |
+| `WHATSAPP_TRANSPORT`                                                                              | `meta`                                               | `simulated` es solo para desarrollo (el preflight lo rechaza en producción)                                                                                                                                                                                 |
+| `META_GRAPH_VERSION`                                                                              | `v26.0` (o la vigente)                               | Credenciales por conexión en la interfaz, no en `.env`                                                                                                                                                                                                      |
+| `MAIL_*`                                                                                          | SMTP real                                            | Restablecimiento de contraseña y alertas                                                                                                                                                                                                                    |
+| `OPS_ALERT_EMAILS` / `OPS_ALERT_NOTIFY_ADMINS`                                                    | buzón de guardia / `true`                            | Destinatarios de alertas operativas                                                                                                                                                                                                                         |
+| `EXPORTS_NODE_BINARY`, `EXPORTS_NPM_BINARY`, `EXPORTS_CHROME_PATH`                                | rutas absolutas                                      | `/usr/bin/node`, `/usr/bin/npm`, `/usr/bin/chromium`                                                                                                                                                                                                        |
+| `LOG_STACK` / `LOG_LEVEL`                                                                         | `daily` / `warning`                                  | `debug` llena el disco                                                                                                                                                                                                                                      |
+| `SECURITY_CSP_ENABLED`                                                                            | vacío (= activo en producción)                       | Ver §8                                                                                                                                                                                                                                                      |
+| `QUEUE_NAME_REALTIME` / `REALTIME_QUEUE`                                                          | sin cambios (`realtime`)                             | Cola dedicada de señales de tiempo real (§9); `REALTIME_QUEUE` tiene prioridad                                                                                                                                                                              |
+| `WHATSAPP_PILOT_RECIPIENTS`                                                                       | vacío, o números del piloto                          | Con `meta`, solo envía a esos números ([mensajeria §8](mensajeria-whatsapp.md#8-transportes))                                                                                                                                                               |
+| `WHATSAPP_WEBHOOK_MAX_AGE_DAYS`                                                                   | `7` (opcional)                                       | Antigüedad máxima de errores y señales del webhook que se aplican                                                                                                                                                                                           |
+| `INERTIA_ENCRYPT_HISTORY`                                                                         | `true`                                               | Historial del navegador cifrado (requiere HTTPS o localhost)                                                                                                                                                                                                |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`                                        | `php artisan webpush:vapid`                          | Web Push; la privada es secreta; cambiarlas invalida las suscripciones                                                                                                                                                                                      |
+| `WEBPUSH_TTL` / `_THROTTLE_SECONDS` / `_TIMEOUT` / `_RETENTION_DAYS` / `_ALLOWED_HOSTS`           | `3600` / `60` / `5` / `120` / por defecto            | Opcionales ([notificaciones §1.8](notificaciones-y-horarios.md#18-web-push-avisos-con-la-plataforma-cerrada))                                                                                                                                               |
+| `EXPORTS_XLSX_MAX_CELLS`                                                                          | `800000`                                             | Tope de celdas del XLSX en memoria (≈ 650 MB)                                                                                                                                                                                                               |
+| `OPS_PREFLIGHT_MIN_FREE_DISK_MB` / `OPS_BACKUP_DIR` / `OPS_BACKUP_MAX_AGE_HOURS`                  | `2048` / `/var/backups/chat-manager/database` / `26` | Comprobaciones de disco y respaldos del preflight (§15)                                                                                                                                                                                                     |
+| `WEBCHAT_*` (límites y `WEBCHAT_SESSION_ABSOLUTE_DAYS`)                                           | por defecto                                          | Opcionales ([api-v1.md §8](api-v1.md#8-límites)); `WEBCHAT_DEMO_ENABLED` vacío (la demo solo existe en `local`)                                                                                                                                             |
+| `INTEGRATIONS_READS_PER_MINUTE` / `INTEGRATIONS_WRITES_PER_MINUTE`                                | `600` / `60`                                         | Límites por token de la API de integración                                                                                                                                                                                                                  |
+| `SESSION_SAME_SITE`                                                                               | `lax` (no cambiar)                                   | `none` rompería la separación entre la sesión de agentes y el widget incrustado ([seguridad](seguridad-y-auditoria.md#chat-web-y-api-v1))                                                                                                                   |
+| `META_APP_ID` / `META_APP_SECRET` / `META_LOGIN_CONFIG_ID`                                        | datos de la app de Meta                              | Messenger e Instagram (fase 5): autorización y webhook de la app; el secreto no va al repositorio ([meta-messenger-instagram.md](meta-messenger-instagram.md))                                                                                              |
+| `META_INSTAGRAM_APP_ID` / `META_INSTAGRAM_APP_SECRET` / `META_WEBHOOK_VERIFY_TOKEN`               | datos de la app / valor aleatorio propio             | Instagram Login y verificación `GET /webhooks/meta`                                                                                                                                                                                                         |
+| `META_INSTAGRAM_GRAPH_BASE_URL` / `META_HUMAN_AGENT_TAG`                                          | por defecto / `false`                                | `true` solo con la función «agente humano» aprobada por Meta (ventana de 7 días)                                                                                                                                                                            |
+| `WHATSAPP_MEDIA_LINK_FALLBACK`, `MESSENGER_MEDIA_LINK_FALLBACK`, `INSTAGRAM_MEDIA_LINK_FALLBACK`  | `true`                                               | ZIP como enlace de descarga seguro en canales sin ZIP nativo (`config/attachments.php`, `config/whatsapp.php`); los dos últimos no están en `.env.example`                                                                                                  |
+| `ATTACHMENT_LINK_TTL_DAYS` / `ATTACHMENT_LINK_MAX_BYTES` / `ATTACHMENT_LINK_DOWNLOADS_PER_MINUTE` | `7` / 100 MB / `30`                                  | Vencimiento, tamaño y límite de descargas por minuto y dirección del enlace                                                                                                                                                                                 |
+| `WEBCHAT_ATTACHMENT_MAX_BYTES`                                                                    | 25 MB                                                | Adjuntos del chat web (§6 punto 5 para los límites de PHP y Nginx)                                                                                                                                                                                          |
+| `MEDIA_DISK`                                                                                      | `local` o `s3`                                       | Disco privado de adjuntos ([§3 Almacenamiento de adjuntos](#almacenamiento-de-adjuntos-fase-52)); cambiarlo solo afecta a archivos nuevos                                                                                                                   |
+| `MEDIA_DISK_REQUIRED`                                                                             | `false` (o `true` con S3)                            | `true` rechaza archivos mientras el disco no sea externo y esté listo; nunca escribe en el servidor en su lugar                                                                                                                                             |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` / `AWS_BUCKET`               | clave dedicada / región / bucket privado             | Solo con `MEDIA_DISK=s3`; ambas claves o ninguna (rol de instancia); secretos fuera del repositorio                                                                                                                                                         |
+| `AWS_ENDPOINT` / `AWS_USE_PATH_STYLE_ENDPOINT`                                                    | vacío en AWS / `endpoint` y `true` en compatibles    | Servicios compatibles con S3 (C2, MinIO)                                                                                                                                                                                                                    |
+| `AWS_SERVER_SIDE_ENCRYPTION`                                                                      | `AES256` (si el proveedor lo admite)                 | Cifrado del lado del servidor de cada objeto                                                                                                                                                                                                                |
+| `ATTACHMENT_STORAGE_QUOTA_BYTES` / `ATTACHMENT_STORAGE_WARNING_PERCENT`                           | `0` (sin cuota) / `80`                               | Aviso en Sistema al acercarse a la cuota (no bloquea)                                                                                                                                                                                                       |
+| `ATTACHMENT_PENDING_STALE_MINUTES`                                                                | `60` (mínimo 5)                                      | Minutos sin actividad tras los que `attachments:recover-stale` reencola una descarga pendiente                                                                                                                                                              |
+| `CACHE_LIMITER`                                                                                   | `redis` si hay Redis                                 | Almacén de los limitadores de frecuencia (vacío = `CACHE_STORE`); ver §9 «Opción Redis»                                                                                                                                                                     |
+| `HISTORY_IMPORT_*`                                                                                | por defecto                                          | Límites del importador de historial (`config/history-import.php`): `MAX_KILOBYTES` 512000, `MAX_ROWS` 460000, `MAX_RECORD_BYTES` 1 MB, `MAX_MEDIA_BYTES` 100 MB, `MAX_ATTEMPTS` 3, `RETENTION_DAYS` 30, `EXECUTE_CHUNK_SIZE` 50, `JOB_SECONDS` 240, `ZIP_*` |
 
 Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el gestor de secretos de la empresa.
 `.env.example` no contiene valores reales.
@@ -326,6 +430,16 @@ necesitan cambios (usan `QUEUE_CONNECTION`); añade `redis-server.service` a `Wa
 extensión `php8.4-redis` (el preflight falla si falta). Al cambiar de driver, deja vaciar la cola `database` antes de
 detener sus workers.
 
+**Fase 5.2: recomendación y opciones.** No se instaló Redis en ningún entorno durante esta fase. Recomendación (decisión
+de arquitectura): en producción, **al menos `CACHE_LIMITER=redis`** (también está comentado en `.env.example`): el
+almacén `database` sufre _deadlocks_ en ráfagas sobre una misma clave de límite (chat web, autorización de canales). La
+autorización de canales los tolera dejando pasar la petición sin contarla
+([tiempo-real §Autorización en ráfaga](tiempo-real.md#autorización-de-canales-en-ráfaga-fase-51)); los demás límites no.
+Escalones posibles, de menos a más cambio: (1) solo `CACHE_LIMITER=redis`; (2) además `CACHE_STORE=redis`; (3) además
+`QUEUE_CONNECTION=redis` (vaciar antes la cola `database`); (4) `SESSION_DRIVER=redis` y `REVERB_SCALING_ENABLED=true`
+con varios servidores. Cada escalón exige `php8.4-redis`, Redis con contraseña escuchando solo en `127.0.0.1` (o red
+privada) y `app:preflight` sin bloqueantes en `redis`.
+
 ## 10. Reverb
 
 Ver [tiempo-real.md §Producción](tiempo-real.md): `REVERB_HOST=127.0.0.1`, `REVERB_PORT=8080`, `REVERB_SCHEME=http`
@@ -435,7 +549,7 @@ Niveles: **CORRECTO**, **ADVERTENCIA** (merece revisión, no detiene el desplieg
 1: `deploy.sh` se detiene sin tocar la versión activa) y **NO APLICA** (la verificación no corresponde a la
 configuración, p. ej. Redis sin usar). En `--json` el campo `status` vale `ok`, `warning`, `fail` o `skipped`.
 
-Es de solo lectura (no escribe en la base, la caché ni el disco). Verifica: versión y extensiones de PHP (incluidas
+Es de solo lectura (no escribe en la base, la caché ni el disco; única excepción desde la fase 5.2: la prueba de un disco de adjuntos externo, `storage.media`). Verifica: versión y extensiones de PHP (incluidas
 pcntl/OPcache/redis según la configuración), `APP_ENV`, `APP_DEBUG`, `APP_KEY`, `APP_URL` https, caché de configuración,
 dependencias de desarrollo, cookies de sesión, proxies de confianza, conexión y versión de MariaDB, migraciones
 pendientes, almacenamiento escribible y privado (`public/hot`, `public/storage`, discos de adjuntos/exportaciones,
@@ -447,17 +561,18 @@ advertencias.
 
 Además:
 
-| Clave             | Qué comprueba                                                                                                                                                                                                                                                                                | Nivel                                                                                           |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `redis`           | `PING` real a cada conexión de Redis que usen la cola, la caché, la sesión o el escalado de Reverb                                                                                                                                                                                           | Bloqueante en producción si no responde; advertencia fuera; no aplica si no se usa Redis        |
-| `queues`          | Acumulación y espera del trabajo más antiguo por cola (indicio de workers detenidos)                                                                                                                                                                                                         | Como máximo advertencia (en la primera instalación aún no hay workers); no aplica con `sync`    |
-| `webhooks`        | Entregas de Meta sin procesar más allá de `OPS_WEBHOOK_GRACE_SECONDS` y con error en 24 h                                                                                                                                                                                                    | Como máximo advertencia                                                                         |
-| `failed_jobs`     | Trabajos fallidos en las últimas 24 h                                                                                                                                                                                                                                                        | Como máximo advertencia                                                                         |
-| `meta`            | Con `WHATSAPP_TRANSPORT=meta`, cuántas conexiones activas tienen credenciales verificadas con Meta: con cero **no** se presenta como integrado                                                                                                                                               | Advertencia sin conexiones verificadas; `simulated` sigue siendo bloqueante en producción       |
-| `demo`            | Usuarios activos `@demo-b.chatmanager.test` y conexiones no eliminadas con los Phone number ID ficticios `990000000000100` (Ventas) y `990000000000101` (Soporte), según `ManualValidation::LINES` (escenario de validación manual local, p. ej. al restaurar una copia local en producción) | Bloqueante en producción; advertencia fuera                                                     |
-| `webpush`         | Con claves VAPID: que formen un par P-256 y que `APP_URL` use HTTPS                                                                                                                                                                                                                          | No aplica sin claves; advertencia si fallan                                                     |
-| `storage.disk`    | Espacio libre del disco de `storage/` frente a `OPS_PREFLIGHT_MIN_FREE_DISK_MB` (2048)                                                                                                                                                                                                       | Advertencia                                                                                     |
-| `storage.backups` | Antigüedad del `*.sql.gz` más reciente en `OPS_BACKUP_DIR` frente a `OPS_BACKUP_MAX_AGE_HOURS` (26 h); solo lee fechas                                                                                                                                                                       | Advertencia; en producción sin `OPS_BACKUP_DIR` también advierte; fuera de producción no aplica |
+| Clave             | Qué comprueba                                                                                                                                                                                                                                                                                       | Nivel                                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `redis`           | `PING` real a cada conexión de Redis que usen la cola, la caché, la sesión o el escalado de Reverb                                                                                                                                                                                                  | Bloqueante en producción si no responde; advertencia fuera; no aplica si no se usa Redis        |
+| `queues`          | Acumulación y espera del trabajo más antiguo por cola (indicio de workers detenidos)                                                                                                                                                                                                                | Como máximo advertencia (en la primera instalación aún no hay workers); no aplica con `sync`    |
+| `webhooks`        | Entregas de Meta sin procesar más allá de `OPS_WEBHOOK_GRACE_SECONDS` y con error en 24 h                                                                                                                                                                                                           | Como máximo advertencia                                                                         |
+| `failed_jobs`     | Trabajos fallidos en las últimas 24 h                                                                                                                                                                                                                                                               | Como máximo advertencia                                                                         |
+| `meta`            | Con `WHATSAPP_TRANSPORT=meta`, cuántas conexiones activas tienen credenciales verificadas con Meta: con cero **no** se presenta como integrado                                                                                                                                                      | Advertencia sin conexiones verificadas; `simulated` sigue siendo bloqueante en producción       |
+| `demo`            | Usuarios activos `@demo-b.chatmanager.test` y conexiones no eliminadas con los Phone number ID ficticios `990000000000100` (Ventas) y `990000000000101` (Soporte), según `ManualValidation::LINES` (escenario de validación manual local, p. ej. al restaurar una copia local en producción)        | Bloqueante en producción; advertencia fuera                                                     |
+| `webpush`         | Con claves VAPID: que formen un par P-256 y que `APP_URL` use HTTPS                                                                                                                                                                                                                                 | No aplica sin claves; advertencia si fallan                                                     |
+| `storage.disk`    | Espacio libre del disco de `storage/` frente a `OPS_PREFLIGHT_MIN_FREE_DISK_MB` (2048)                                                                                                                                                                                                              | Advertencia                                                                                     |
+| `storage.media`   | Fase 5.2. Disco de adjuntos (`MEDIA_DISK`): con disco externo, configuración completa y una **prueba real de escritura, lectura y borrado** de un archivo `health/preflight-*.txt` (la única escritura del preflight); con `local`, correcto salvo que `MEDIA_DISK_REQUIRED` exija un disco externo | Bloqueante en producción si no está listo o la prueba falla; advertencia fuera                  |
+| `storage.backups` | Antigüedad del `*.sql.gz` más reciente en `OPS_BACKUP_DIR` frente a `OPS_BACKUP_MAX_AGE_HOURS` (26 h); solo lee fechas                                                                                                                                                                              | Advertencia; en producción sin `OPS_BACKUP_DIR` también advierte; fuera de producción no aplica |
 
 El latido del programador (`scheduler.heartbeat`) ya estaba incluido. El preflight no puede ver los procesos de
 Supervisor: los workers detenidos se detectan por la cola acumulada. Para `storage.backups`, el usuario que ejecuta el
@@ -633,6 +748,52 @@ quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
 7. **Después:** comprobar que un administrador ve las conversaciones de sus agentes por omisión, que el cierre de
    sesión termina sin recargar y que Administración > Sistema no muestra fallidos nuevos
    ([guía §30](guia-pruebas-manuales.md#30-fase-51)).
+
+### Procedimiento de la fase 5.2
+
+> **Nada de esto se ejecutó sobre la base principal `chatmanager`.** Las siete migraciones del importador de historial
+> se probaron solo en `chatmanager_testing`. Aplicarlas, sincronizar permisos o cambiar el almacenamiento requiere la
+> **autorización del responsable**, en una ventana de mantenimiento.
+
+1. **Respaldo** de base y archivos verificado ([recuperacion-y-respaldos.md](recuperacion-y-respaldos.md));
+   `deploy.sh` también respalda antes de migrar.
+2. **Dependencias:** `composer install --no-dev` (lo ejecuta `deploy.sh`) instala `league/flysystem-aws-s3-v3 ^3.0` (añadido en esta fase con
+   la aprobación del usuario; es necesario solo para `MEDIA_DISK=s3`, pero viene siempre).
+3. **`.env`** (todas opcionales; vacío = valor por defecto, §5): almacenamiento (`MEDIA_DISK`, `MEDIA_DISK_REQUIRED`,
+   `ATTACHMENT_STORAGE_QUOTA_BYTES`, `ATTACHMENT_STORAGE_WARNING_PERCENT`, `ATTACHMENT_PENDING_STALE_MINUTES`, y las
+   `AWS_*` si se usa S3, con `AWS_SERVER_SIDE_ENCRYPTION`), `CACHE_LIMITER=redis` si hay Redis, e
+   `HISTORY_IMPORT_*` solo si hay que cambiar los límites del importador. Para pasar a S3, ver
+   [Almacenamiento de adjuntos](#almacenamiento-de-adjuntos-fase-52) y no borrar el disco `local`.
+4. **`php artisan migrate --force`** aplica 7 migraciones aditivas y reversibles (en producción la reversión es el
+   respaldo, §17):
+
+    | Migración                                                     | Propósito                                                                                                                                                                                                                                   | Reversión (`down()`)                                                       |
+    | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+    | `2026_10_25_210000_add_history_origin_to_conversations_table` | `conversations.origin` (`live` por defecto), `history_only_at`, `imported_by_transfer_id` e índices; **sin clave foránea** (una FK en una tabla existente usaría `ALGORITHM=COPY` y reconstruiría `conversations`, bloqueando la recepción) | Quita índices y columnas: lo importado se leería como conversación en vivo |
+    | `2026_10_25_210001_create_import_source_keys_table`           | Idempotencia global por registro de origen                                                                                                                                                                                                  | Borra la tabla (se pierde la protección contra duplicados)                 |
+    | `2026_10_25_210002_create_history_import_files_table`         | Archivos de cada lote (metadatos; el archivo vive en el disco privado de importaciones)                                                                                                                                                     | Borra la tabla                                                             |
+    | `2026_10_25_210003_create_history_import_rules_table`         | Reglas de clasificación                                                                                                                                                                                                                     | Borra la tabla                                                             |
+    | `2026_10_25_210004_create_history_import_conversations_table` | Inventario por conversación detectada, sin contenido                                                                                                                                                                                        | Borra la tabla                                                             |
+    | `2026_10_25_210005_create_history_import_messages_table`      | Mensajes de preparación (se purgan al terminar el lote)                                                                                                                                                                                     | Borra la tabla                                                             |
+    | `2026_10_25_210006_add_history_import_permissions`            | Crea `history-import.view`, `.classify`, `.execute` y `.archive-view`; los concede a los roles raíz y `archive-view` también al rol Administrador por defecto                                                                               | Elimina los permisos con sus concesiones                                   |
+
+    En MariaDB la primera es instantánea (columnas con valor por defecto o nulas, índices en línea, **sin copia de la
+    tabla**); ninguna reescribe datos existentes.
+
+5. **Permisos:** `php artisan app:sync-permissions` (lo ejecuta `deploy.sh`; idempotente, no toca roles). La
+   migración ya concede `history-import.archive-view` al rol Administrador por defecto; los otros tres permisos son
+   exclusivos de root. Revisar en Roles que nadie más lo tenga sin decisión expresa.
+6. **Workers y programador:** `php artisan queue:restart` (lo hace `deploy.sh`). Comprobar con
+   `php artisan schedule:list` que aparecen `attachments:recover-stale` (cada 15 min) y `history-import:prune` (diaria
+   04:50). El importador usa la cola `exports`.
+7. **Preflight:** `php artisan app:preflight` sin bloqueantes, en especial `storage.media` (con un disco externo hace
+   una prueba real de escritura y borrado).
+8. **Índice recomendado (pendiente de aprobación, NO creado):** `(status, updated_at)` en `message_attachments`
+   abarataría las consultas de `attachments:recover-stale` con muchos adjuntos. Requiere una migración nueva y la
+   aprobación del usuario; no forma parte de esta fase.
+9. **Assets:** `npm ci && npm run build` (lo hace `deploy.sh`).
+10. **Después:** recorrer la [guía §31](guia-pruebas-manuales.md#31-fase-52) en un entorno que no sea de producción y,
+    en producción, confirmar que Administración > Sistema no muestra advertencias de almacenamiento.
 
 ### Webhooks durante la ventana de mantenimiento
 

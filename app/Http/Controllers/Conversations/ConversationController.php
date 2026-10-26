@@ -19,6 +19,7 @@ use App\Models\Department;
 use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Conversations\ContactConversationHistory;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
@@ -456,9 +457,8 @@ class ConversationController extends Controller
         $contact->loadMissing(['tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
         $canTag = $actor->can('tag', $conversation);
 
-        $history = Conversation::query()
-            ->visibleTo($actor)
-            ->where('contact_id', $contact->id)
+        $contactHistory = app(ContactConversationHistory::class);
+        $history = $contactHistory->query($actor, $contact->id)
             ->whereKeyNot($conversation->id)
             ->with(['department:id,name,color,is_active', 'assignee:id,name'])
             ->latest('id')
@@ -496,6 +496,7 @@ class ConversationController extends Controller
                 'assignee' => app(ProtectedAccounts::class)->nameFor($previous->assignee, $actor),
                 'created_at' => $previous->created_at?->toIso8601String(),
                 'closed_at' => $previous->closed_at?->toIso8601String(),
+                ...$contactHistory->describe($previous, $actor),
             ])->all()),
             'contactNotes' => $actor->can('manageNotes', $contact)
                 ? array_values($contact->notes()->with('author:id,name')->latest('id')->limit(3)->get()->map(fn (ContactNote $note): array => [

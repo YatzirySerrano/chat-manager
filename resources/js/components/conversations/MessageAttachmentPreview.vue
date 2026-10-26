@@ -81,6 +81,55 @@ const kind = computed(() => {
 });
 
 const name = computed(() => props.attachment.file_name ?? 'Archivo adjunto');
+
+/**
+ * Why the file cannot be shown. Without a stored copy there is no link at
+ * all: a history import whose file never arrived, or the file storage not
+ * answering, say so instead of pointing to a file that is not there.
+ */
+const unavailable = computed<{ title: string; detail: string | null }>(() => {
+    const { status, error_code: code } = props.attachment;
+
+    if (status === 'unavailable' && code === 'historical_missing') {
+        return {
+            title: 'Archivo histórico no disponible',
+            detail: `${name.value}: el historial importado no incluía este archivo.`,
+        };
+    }
+
+    if (status === 'unavailable' && code === 'historical_ambiguous') {
+        return {
+            title: 'Archivo histórico no disponible',
+            detail: `${name.value}: había varios archivos con este nombre en los ZIP del historial y no se pudo saber cuál era.`,
+        };
+    }
+
+    if (status === 'unavailable' && code === 'zip_entry_invalid') {
+        return {
+            title: 'Archivo histórico no disponible',
+            detail: `${name.value}: el archivo estaba dañado dentro del ZIP del historial.`,
+        };
+    }
+
+    if (code === 'storage_unavailable') {
+        return {
+            title: 'Archivo no disponible',
+            detail: 'El almacenamiento de archivos no respondió. Inténtalo más tarde o avisa a un administrador.',
+        };
+    }
+
+    if (status === 'unavailable') {
+        return {
+            title: 'Archivo no disponible',
+            detail: `No se pudo descargar el archivo desde ${props.channelLabel}.`,
+        };
+    }
+
+    return {
+        title: 'Archivo en camino',
+        detail: `El archivo todavía se está descargando desde ${props.channelLabel}.`,
+    };
+});
 const size = computed(() => formatFileSize(props.attachment.size_bytes));
 const opensInline = computed(
     () => props.attachment.mime_type === 'application/pdf',
@@ -91,15 +140,19 @@ const opensInline = computed(
     <div class="max-w-full min-w-0" data-layout-box="attachment">
         <div
             v-if="!attachment.available"
-            class="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs"
+            class="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs"
             :class="mutedText"
+            :data-attachment-unavailable="
+                attachment.error_code ?? attachment.status ?? 'pending'
+            "
         >
             <FileWarning class="size-4 shrink-0" aria-hidden="true" />
-            {{
-                attachment.status === 'unavailable'
-                    ? `No se pudo descargar el archivo desde ${channelLabel}.`
-                    : `El archivo todavía se está descargando desde ${channelLabel}.`
-            }}
+            <span class="min-w-0">
+                <span class="block font-medium">{{ unavailable.title }}</span>
+                <span v-if="unavailable.detail" class="block">{{
+                    unavailable.detail
+                }}</span>
+            </span>
         </div>
 
         <template v-else-if="kind === 'image'">

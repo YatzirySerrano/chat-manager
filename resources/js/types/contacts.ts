@@ -154,7 +154,7 @@ export type ContactConversation = {
     created_at: string | null;
     last_message_at: string | null;
     closed_at: string | null;
-};
+} & ConversationOriginInfo;
 
 export type DuplicateContact = {
     id: number;
@@ -204,4 +204,16 @@ export type ContactReviewCase = {
     created_at: string | null;
     contact: ContactReviewSummary;
     candidates: ContactReviewSummary[];
+};
+
+/**
+ * Where a conversation comes from. History archived as read-only
+ * (history_only) is only listed to whoever consults the imported history,
+ * and then history_url opens it in «Historial de Whaticket».
+ */
+export type ConversationOriginInfo = {
+    origin: 'live' | 'whaticket';
+    origin_label: string;
+    history_only: boolean;
+    history_url: string | null;
 };

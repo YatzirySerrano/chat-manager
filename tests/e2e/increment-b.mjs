@@ -37,7 +37,7 @@ import {
 } from './lib.mjs';
 
 const ACCEPT_OUTCOME =
-    /Aceptaste la conversación|Otra persona ya aceptó esta conversación/;
+    /Aceptaste la conversación|Otro agente ya está atendiendo esta conversación/;
 
 const newPage = (browser, options = {}) =>
     openPage(browser, { context: options, ignoreConsole: /status of 404/ });
@@ -203,7 +203,7 @@ const run = async () => {
             /Aceptaste la conversación/.test(text),
         ).length;
         const losers = [anaToast, betoToast].filter((text) =>
-            /Otra persona ya aceptó esta conversación/.test(text),
+            /Otro agente ya está atendiendo esta conversación/.test(text),
         ).length;
         record(
             'simultaneous-accept',
@@ -453,12 +453,14 @@ const run = async () => {
             .click();
         const staleToast = await toastText(
             staleTab,
-            /cambió mientras la consultabas|No tienes permiso/,
+            /cambió de estado|Otro agente ya está atendiendo|No tienes autorización/,
         );
         record(
             'stale-decision-rejected',
             'two tabs',
-            /cambió mientras la consultabas|No tienes permiso/.test(staleToast),
+            /cambió de estado|Otro agente ya está atendiendo|No tienes autorización/.test(
+                staleToast,
+            ),
             staleToast,
         );
 

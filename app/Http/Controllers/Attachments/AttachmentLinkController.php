@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Attachments;
 
+use App\Concerns\ServesStoredAttachments;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
 use App\Enums\MessageDirection;
@@ -30,6 +31,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class AttachmentLinkController extends Controller
 {
+    use ServesStoredAttachments;
+
     public function __invoke(Request $request, string $attachment): Response
     {
         $file = MessageAttachment::query()
@@ -46,7 +49,7 @@ class AttachmentLinkController extends Controller
 
         $disk = Storage::disk($file->disk);
 
-        abort_unless($disk->exists($file->path), 404);
+        abort_unless($this->storedFileExists($disk, $file), 404);
 
         Log::info('Descarga de un archivo enviado como enlace seguro.', [
             'attachment_id' => $file->id,
@@ -70,10 +73,8 @@ class AttachmentLinkController extends Controller
             'X-Robots-Tag' => 'noindex, nofollow',
         ];
 
-        if (config("filesystems.disks.{$file->disk}.driver") === 'local') {
-            return response()->file($disk->path($file->path), $headers);
-        }
-
-        return $disk->response($file->path, $name, $headers, 'attachment');
+        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
+            ? response()->file($disk->path($file->path), $headers)
+            : $disk->response($file->path, $name, $headers, 'attachment'));
     }
 }

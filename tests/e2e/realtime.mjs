@@ -34,6 +34,7 @@ import {
     chromium,
     downIndicator,
     frameSince,
+    holdFirstResponse,
     inboundAsync,
     liveIndicator,
     login as signIn,
@@ -84,6 +85,37 @@ async function newSession(browser, name) {
     return page;
 }
 
+const teamChatLog = (page) =>
+    page.locator('section[aria-label^="Chat: "] [role="log"]');
+const teamChatBadge = (page, count) =>
+    page.locator(`[data-sidebar="menu-badge"][aria-label="${count} sin leer"]`);
+const teamChatPath = (request) =>
+    new URL(request.url()).pathname.startsWith('/team-chat');
+
+/** Sends an internal chat message with the real keyboard. */
+async function sendTeamMessage(page, text) {
+    await page.getByPlaceholder('Escribe un mensaje interno…').click();
+    await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+}
+
+/** Waits until no `team-chat.changed` frame reached the page for `quietMs`. */
+const teamChatSettled = (page, since, quietMs = 1_500) =>
+    waitFor(
+        () => {
+            const last = page.frames$
+                .filter(
+                    (frame) =>
+                        frame.t >= since && frame.event === 'team-chat.changed',
+                )
+                .at(-1);
+
+            return last !== undefined && Date.now() - last.t >= quietMs;
+        },
+        15_000,
+        100,
+    );
+
 const row = (page, name) =>
     page.locator('[data-inbox-item]', { hasText: name });
 const bubble = (page, text) =>
@@ -115,7 +147,8 @@ function bellCount(label) {
 
 const main = async () => {
     requireRealtimeEnvironment();
-    startWorker();
+    // Kept to report whether it still runs (it stops after --max-time).
+    const worker = startWorker();
 
     const prepared = JSON.parse(php(REALTIME_SEED, 'prepare'));
     const departments = prepared.departments;
@@ -447,7 +480,7 @@ const main = async () => {
             const outcome = async (page) => {
                 const toast = page.locator('[data-sonner-toast]', {
                     hasText:
-                        /Aceptaste la conversación|Otra persona ya aceptó esta conversación/,
+                        /Aceptaste la conversación|Otro agente ya está atendiendo esta conversación/,
                 });
                 await toast
                     .first()
@@ -462,7 +495,7 @@ const main = async () => {
 
                 return /Aceptaste/.test(text)
                     ? 'won'
-                    : /Otra persona/.test(text)
+                    : /Otro agente ya está atendiendo/.test(text)
                       ? 'refused'
                       : `none(${visible})`;
             };
@@ -765,6 +798,16 @@ const main = async () => {
             await ana.getByPlaceholder('Escribe un mensaje interno…').click();
             await ana.keyboard.type('Hola Beto, ¿me apoyas con un cliente?');
             const since = Date.now();
+            // Diagnosis of a miss: which of B's requests brought the badge.
+            const betoRequests = [];
+            const logRequest = (request) => {
+                if (teamChatPath(request)) {
+                    betoRequests.push(
+                        `${Date.now() - since}ms ${request.method()} ${new URL(request.url()).pathname} ${request.headers()['x-inertia-partial-data'] ?? ''}`.trim(),
+                    );
+                }
+            };
+            beto.on('request', logRequest);
             await ana.keyboard.press('Enter');
             const badge = await measure(
                 'team chat→B unread badge',
@@ -773,14 +816,16 @@ const main = async () => {
                 since,
                 'team-chat.changed',
             );
+            beto.off('request', logRequest);
             const preview = await beto
                 .locator('nav[aria-label="Lista de chats"]')
                 .getByText('¿me apoyas con un cliente?')
                 .count();
+            const ok = quiet && badgeBefore === 0 && badge.live && preview > 0;
 
             return [
-                quiet && badgeBefore === 0 && badge.live && preview > 0,
-                `thread listed for B on creation (B quiet before writing: ${quiet}); ${badge.note}; preview in B's list: ${preview > 0}`,
+                ok,
+                `thread listed for B on creation (B quiet before writing: ${quiet}); ${badge.note}; preview in B's list: ${preview > 0}${ok ? '' : `; worker running: ${worker.exitCode === null}; B requests: ${betoRequests.join(' | ') || 'none'}`}`,
             ];
         });
 
@@ -791,7 +836,7 @@ const main = async () => {
                 .getByText('E2E Ana')
                 .first()
                 .click();
-            await beto
+            await teamChatLog(beto)
                 .getByText('Hola Beto, ¿me apoyas con un cliente?')
                 .waitFor();
             const measured = await measure(
@@ -808,7 +853,7 @@ const main = async () => {
             const open = await measure(
                 'team chat→B open thread',
                 beto,
-                beto.getByText('Gracias', { exact: true }),
+                teamChatLog(beto).getByText('Gracias', { exact: true }),
                 since2,
                 'message.created',
             );
@@ -817,6 +862,151 @@ const main = async () => {
                 measured.live && open.live,
                 `${measured.note}; ${open.note}`,
             ];
+        });
+
+        // 6b. A message stored while B's open chat is still loading the
+        // previous one is shown as well. Deterministic race: B's request for
+        // the first message is answered by the server before the second one
+        // exists and reaches B only after the second message's signal (a
+        // signal received during a load used to be dropped: the message
+        // stayed hidden until another signal arrived).
+        await step('rt-team-chat-signal-during-load', async () => {
+            const threadId = /team-chat\/threads\/(\d+)/.exec(beto.url())?.[1];
+            const hold = await holdFirstResponse(
+                beto,
+                (request) =>
+                    request.method() === 'GET' &&
+                    new URL(request.url()).pathname ===
+                        `/team-chat/threads/${threadId}/messages` &&
+                    new URL(request.url()).searchParams.has('after'),
+            );
+
+            try {
+                await sendTeamMessage(ana, 'Primero: reviso el pedido');
+                await hold.answered;
+                const since = Date.now();
+                await sendTeamMessage(ana, 'Segundo: ya quedó resuelto');
+                const signalDuringLoad = await waitFor(
+                    () =>
+                        frameSince(beto, 'message.created', since) !==
+                        undefined,
+                    LIVE_BUDGET_MS,
+                    50,
+                );
+                hold.release();
+                const second = await measure(
+                    'team chat→B message signalled during a load',
+                    beto,
+                    teamChatLog(beto).getByText('Segundo: ya quedó resuelto', {
+                        exact: true,
+                    }),
+                    since,
+                    'message.created',
+                );
+                const first = await teamChatLog(beto)
+                    .getByText('Primero: reviso el pedido', { exact: true })
+                    .count();
+
+                return [
+                    threadId !== undefined &&
+                        signalDuringLoad &&
+                        second.live &&
+                        first === 1,
+                    `signal received while the first load was held: ${signalDuringLoad}; ${second.note}; first message shown: ${first === 1}`,
+                ];
+            } finally {
+                hold.release();
+                await hold.dispose();
+            }
+        });
+
+        // 6c. An older answer never overwrites a newer unread total: B's
+        // "read" answer for the open chat (computed before another chat got
+        // a message) arrives after the reload that already counts that
+        // message; the badge and the header keep "1 sin leer".
+        await step('rt-team-chat-unread-order', async () => {
+            await admin.goto(`${BASE}/team-chat`);
+            await liveIndicator(admin).waitFor();
+            const creationSince = Date.now();
+            const quickStart = admin.getByRole('button', {
+                name: 'Nuevo chat',
+                exact: true,
+            });
+
+            if (await quickStart.count()) {
+                await quickStart.first().click();
+            } else {
+                await admin
+                    .getByRole('button', { name: 'Nuevo', exact: true })
+                    .first()
+                    .click();
+                await admin
+                    .getByRole('menuitem', { name: 'Chat privado' })
+                    .click();
+            }
+
+            await admin.getByPlaceholder('Buscar por nombre').fill('Beto');
+            await admin.getByRole('option', { name: /E2E Beto/ }).click();
+            await admin.waitForURL(/team-chat\/threads\/\d+/);
+            const settled = await teamChatSettled(beto, creationSince);
+            const badgeBefore = await teamChatBadge(beto, 1).count();
+            const threadId = /team-chat\/threads\/(\d+)/.exec(beto.url())?.[1];
+            const hold = await holdFirstResponse(
+                beto,
+                (request) =>
+                    request.method() === 'POST' &&
+                    new URL(request.url()).pathname ===
+                        `/team-chat/threads/${threadId}/read`,
+            );
+
+            try {
+                const readSince = Date.now();
+                await sendTeamMessage(ana, 'Te leo enseguida');
+                await hold.answered;
+                // B's own reloads for Ana's message and for the read (both
+                // signalled on its personal channel) settle first, so the
+                // badge below can only come from the other chat's signal.
+                const readSettled = await teamChatSettled(beto, readSince);
+                const since = Date.now();
+                await sendTeamMessage(admin, 'Beto, ¿tienes un minuto?');
+                const badge = await measure(
+                    'team chat (other chat)→B sidebar badge',
+                    beto,
+                    teamChatBadge(beto, 1),
+                    since,
+                    'team-chat.changed',
+                );
+                const readAnswered = beto.waitForEvent('requestfinished', {
+                    predicate: (request) =>
+                        request.method() === 'POST' &&
+                        new URL(request.url()).pathname ===
+                            `/team-chat/threads/${threadId}/read`,
+                    timeout: LIVE_BUDGET_MS,
+                });
+                hold.release();
+                await readAnswered;
+                // Anything that would undo the newer total happens right
+                // after the old answer; give a reload time to settle.
+                await beto.waitForTimeout(1_500);
+                const badgeAfter = await teamChatBadge(beto, 1).count();
+                const header = await beto
+                    .getByLabel('Chats internos')
+                    .getByText('1 sin leer', { exact: true })
+                    .count();
+
+                return [
+                    settled &&
+                        readSettled &&
+                        badgeBefore === 0 &&
+                        badge.live &&
+                        badgeAfter === 1 &&
+                        header === 1,
+                    `B settled before the other chat's message: ${settled && readSettled}; ${badge.note}; after the older read answer: sidebar badge "1 sin leer" ${badgeAfter === 1}, header "1 sin leer" ${header === 1}`,
+                ];
+            } finally {
+                hold.release();
+                await hold.dispose();
+            }
         });
 
         // 7. Access revocation: removing B from the department removes access

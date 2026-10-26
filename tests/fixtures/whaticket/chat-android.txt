@@ -1,0 +1,7 @@
+01/04/26, 09:00 - Los mensajes y las llamadas están cifrados de extremo a extremo. Nadie fuera de este chat puede leerlos.
+01/04/26, 09:01 - Cliente Ficticio Cinco: Hola, buenos días (texto ficticio)
+01/04/26, 09:02 - Empresa Ficticia: Buenos días, ¿en qué le ayudamos?
+Tenemos horario de 9 a 18.
+01/04/26, 09:03 - Cliente Ficticio Cinco: IMG-20260401-WA0001.jpg (archivo adjunto)
+01/04/26, 09:04 - Cliente Ficticio Cinco: <Multimedia omitido>
+13/04/26, 21:15 - Empresa Ficticia: Gracias por escribir

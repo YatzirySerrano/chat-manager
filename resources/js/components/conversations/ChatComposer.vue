@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { router, useHttp, usePage } from '@inertiajs/vue3';
 import {
-    FileArchive,
-    FileText,
     LayoutTemplate,
-    Link2,
     Lock,
-    Paperclip,
     Send,
     StickyNote,
     TriangleAlert,
     X,
 } from '@lucide/vue';
-import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import AttachmentDraft from '@/components/conversations/AttachmentDraft.vue';
+import AttachmentMenu from '@/components/conversations/AttachmentMenu.vue';
 import EmojiPicker from '@/components/conversations/EmojiPicker.vue';
 import {
     newClientReference,
@@ -24,12 +22,23 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { usePermissions } from '@/composables/usePermissions';
 import { useLiveCustomerWindow } from '@/composables/useLiveCustomerWindow';
-import { formatDuration, formatFileSize } from '@/lib/format';
+import {
+    conversationActionErrorMessage,
+    conversationActionFailure,
+    isConversationConflict,
+} from '@/lib/conversations/actionErrors';
+import {
+    evaluateAttachment,
+    fileFingerprint,
+    rememberSentFile,
+    wasFileSent,
+} from '@/lib/conversations/attachments';
+import type { AttachmentCategory } from '@/lib/conversations/attachments';
+import { formatDuration } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { store as storeMessage } from '@/routes/conversations/messages';
 import { store as storeNote } from '@/routes/conversations/notes';
 import type {
-    AttachmentKindRule,
     AvailableQuickReply,
     ComposerSettings,
     ConversationMessage,
@@ -58,11 +67,13 @@ import type {
  * disabled while a request runs.
  *
  * Attachments follow the policy of the conversation's channel sent by the
- * server (ChannelAttachmentPolicy): type, extension and size are checked
- * here before uploading and again by the server. Files the channel cannot
- * carry natively (ZIP on WhatsApp) are clearly announced as a secure
- * download link. The upload shows its progress and can be cancelled while
- * it runs.
+ * server (ChannelAttachmentPolicy): the clip opens a menu of the kinds the
+ * channel can send (AttachmentMenu) and the chosen file is checked here
+ * against that kind before uploading, and again by the server. A file is
+ * never sent as another kind to get around a limit; files the channel only
+ * carries as a secure download link (ZIP on WhatsApp) need the agent's
+ * explicit choice. The upload shows its progress and can be cancelled
+ * while it runs (AttachmentDraft).
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -109,14 +120,15 @@ const draftKey = (id: number, draftMode: Mode): string => `${id}:${draftMode}`;
 
 const text = ref('');
 const attachment = ref<File | null>(null);
-const attachmentPreview = ref<string | null>(null);
-const attachmentError = ref<string | null>(null);
+/* The menu entry the file was chosen from (null: set without the menu). */
+const attachmentCategory = ref<AttachmentCategory | null>(null);
+/* The agent chose to send a file the channel only carries as a link. */
+const linkConfirmed = ref(false);
+const attachmentNotice = ref<string | null>(null);
 const error = ref<string | null>(null);
 const sending = ref(false);
 /* Set when the agent cancels an upload in progress. */
 let uploadCancelled = false;
-/* Declared before the immediate watcher below, which clears the file input. */
-const fileInput = ref<HTMLInputElement | null>(null);
 let clientReference = newClientReference();
 
 watch(
@@ -219,8 +231,8 @@ const replyBlock = computed<string | null>(() => {
             liveWindow.value.block_reason ??
             (windowApplies.value
                 ? conversation.can.send_templates
-                    ? 'La ventana de atención está cerrada: solo puedes enviar una plantilla aprobada.'
-                    : 'La ventana de atención está cerrada. Podrás responder cuando el cliente vuelva a escribir; las plantillas solo las envía un administrador.'
+                    ? 'La ventana de atención de 24 horas está cerrada: solo puedes enviar una plantilla aprobada.'
+                    : 'La ventana de atención de 24 horas está cerrada. Podrás responder cuando el cliente vuelva a escribir; las plantillas solo las envía un administrador.'
                 : 'No se pueden enviar mensajes por esta conexión en este momento.')
         );
     }
@@ -284,7 +296,10 @@ const canSubmit = computed(
         !sending.value &&
         !tooLong.value &&
         (mode.value === 'note' ||
-            (attachmentError.value === null && captionBlock.value === null)) &&
+            (attachmentError.value === null &&
+                captionBlock.value === null &&
+                (attachmentEvaluation.value?.delivery !== 'link' ||
+                    linkConfirmed.value))) &&
         (trimmed.value !== '' ||
             (mode.value === 'reply' && attachment.value !== null)),
 );
@@ -295,161 +310,60 @@ const channelRules = computed(
         props.settings.attachments[props.conversation.connection.channel] ??
         null,
 );
-const kinds = computed<AttachmentKindRule[]>(
-    () => channelRules.value?.kinds ?? [],
+
+const attachmentEvaluation = computed(() =>
+    attachment.value
+        ? evaluateAttachment(
+              attachment.value,
+              channelRules.value,
+              attachmentCategory.value,
+              channelLabel.value,
+          )
+        : null,
 );
-
-const accept = computed(() =>
-    [
-        ...kinds.value.flatMap((rule) => rule.mimes),
-        ...kinds.value.flatMap((rule) =>
-            rule.extensions.map((extension) => `.${extension}`),
-        ),
-    ].join(','),
+const attachmentError = computed(
+    () => attachmentEvaluation.value?.error ?? null,
 );
-
-/** Names browsers give to types the server accepts under another name. */
-const BROWSER_ALIASES: Record<string, string> = {
-    'audio/x-m4a': 'audio/mp4',
-    'audio/m4a': 'audio/mp4',
-    'audio/mp3': 'audio/mpeg',
-    'audio/x-aac': 'audio/aac',
-    'audio/x-wav': 'audio/wav',
-    'audio/wave': 'audio/wav',
-    'audio/opus': 'audio/ogg',
-    'video/3gp': 'video/3gpp',
-    'video/avi': 'video/x-msvideo',
-    'image/jpg': 'image/jpeg',
-    'application/x-zip-compressed': 'application/zip',
-    'application/x-zip': 'application/zip',
-};
-
-function extensionOf(file: File): string {
-    const dot = file.name.lastIndexOf('.');
-
-    return dot > 0 ? file.name.slice(dot + 1).toLowerCase() : '';
-}
-
-/**
- * The kind of the file for this channel: by the browser's type, or by its
- * extension when the browser could not tell (the server reads the bytes).
- */
-function ruleFor(file: File): AttachmentKindRule | undefined {
-    const type = BROWSER_ALIASES[file.type] ?? file.type;
-    const extension = extensionOf(file);
-
-    if (type !== '' && type !== 'application/octet-stream') {
-        const byType = kinds.value.filter((candidate) =>
-            candidate.mimes.includes(type),
-        );
-
-        return (
-            byType.find((candidate) =>
-                candidate.extensions.includes(extension),
-            ) ?? byType[0]
-        );
-    }
-
-    return kinds.value.find((candidate) =>
-        candidate.extensions.includes(extension),
-    );
-}
-
-/** "imágenes (JPG, PNG), documentos (PDF, DOCX) o audios (MP3)". */
-const acceptedSummary = computed(() => {
-    const parts = kinds.value.map(
-        (rule) =>
-            `${rule.label} (${rule.extensions.map((extension) => extension.toUpperCase()).join(', ')})${rule.delivery === 'link' ? ' como enlace de descarga' : ''}`,
-    );
-    const last = parts.pop();
-
-    return parts.length > 0 ? `${parts.join(', ')} o ${last}` : (last ?? '');
-});
-
-const attachmentRule = computed(() =>
-    attachment.value ? ruleFor(attachment.value) : undefined,
-);
-const linkDelivery = computed(() => attachmentRule.value?.delivery === 'link');
 
 function clearAttachment(): void {
-    if (attachmentPreview.value) {
-        URL.revokeObjectURL(attachmentPreview.value);
-    }
-
     attachment.value = null;
-    attachmentPreview.value = null;
-    attachmentError.value = null;
-
-    if (fileInput.value) {
-        fileInput.value.value = '';
-    }
+    attachmentCategory.value = null;
+    linkConfirmed.value = false;
+    attachmentNotice.value = null;
 }
 
-/* The composer is remounted per conversation: free the preview's object URL. */
-onScopeDispose(() => {
-    if (attachmentPreview.value) {
-        URL.revokeObjectURL(attachmentPreview.value);
-    }
-});
+function chooseFile(file: File, category: AttachmentCategory | null): void {
+    if (
+        attachment.value &&
+        fileFingerprint(attachment.value) === fileFingerprint(file) &&
+        (category === null || category === attachmentCategory.value)
+    ) {
+        attachmentNotice.value =
+            'Este archivo ya está adjunto: no se agregó otra vez.';
 
-function chooseFile(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
-
-    clearAttachment();
-
-    if (!file) {
         return;
     }
 
-    const rule = ruleFor(file);
-    const extension = extensionOf(file);
-
+    clearAttachment();
     attachment.value = file;
-
-    if (!rule) {
-        attachmentError.value = kinds.value.length
-            ? `Este tipo de archivo no se puede enviar por ${channelLabel.value}. Puedes adjuntar ${acceptedSummary.value}.`
-            : `Por ${channelLabel.value} no se pueden enviar archivos desde aquí.`;
-    } else if (extension !== '' && !rule.extensions.includes(extension)) {
-        attachmentError.value = `La extensión «.${extension}» no corresponde al tipo de archivo. Revisa que sea el archivo correcto.`;
-    } else if (file.size > rule.max_bytes) {
-        attachmentError.value = `El archivo pesa ${formatFileSize(file.size)}; el máximo para ${rule.label} por ${channelLabel.value} es ${formatFileSize(rule.max_bytes)}.`;
-    } else if (rule.type === 'image') {
-        attachmentPreview.value = URL.createObjectURL(file);
-    }
-
+    attachmentCategory.value = category;
+    attachmentNotice.value = wasFileSent(props.conversation.id, file)
+        ? 'Ya enviaste este mismo archivo en esta conversación. Revisa que no sea un duplicado antes de enviarlo.'
+        : null;
     clientReference = newClientReference();
 }
 
-const attachmentKindLabel = computed(() => {
-    const rule = attachmentRule.value;
-
-    if (rule?.key === 'archive') {
-        return 'Archivo ZIP';
-    }
-
-    return typeLabel(rule?.type ?? 'document');
-});
-
 /* Text cannot travel with some files (audio on WhatsApp, any file on Messenger and Instagram). */
-const captionBlock = computed<string | null>(() =>
-    mode.value === 'reply' &&
-    attachment.value &&
-    attachmentRule.value &&
-    !attachmentRule.value.caption &&
-    trimmed.value !== ''
-        ? `${channelLabel.value} no permite texto junto a ${attachmentRule.value.type === 'audio' ? 'un audio' : 'un archivo'}: envía el texto en otro mensaje.`
-        : null,
-);
+const captionBlock = computed<string | null>(() => {
+    const rule = attachmentEvaluation.value?.rule;
 
-const linkNotice = computed(() => {
-    if (!linkDelivery.value) {
-        return null;
-    }
-
-    const days = channelRules.value?.link_ttl_days ?? 7;
-
-    return `Se enviará como enlace de descarga seguro porque ${channelLabel.value} no admite archivos ZIP. El enlace vence en ${days} ${days === 1 ? 'día' : 'días'}.`;
+    return mode.value === 'reply' &&
+        attachment.value &&
+        rule &&
+        !rule.caption &&
+        trimmed.value !== ''
+        ? `${channelLabel.value} no permite texto junto a ${rule.type === 'audio' ? 'un audio' : 'un archivo'}: envía el texto en otro mensaje.`
+        : null;
 });
 
 /* The customer service window, always in sight while replying. */
@@ -611,44 +525,40 @@ function cancelUpload(): void {
 }
 
 function responseMessage(failure: unknown): string {
-    if (
-        typeof failure === 'object' &&
-        failure !== null &&
-        'response' in failure
-    ) {
-        const response = (
-            failure as { response: { status: number; data: string } }
-        ).response;
+    const refused = conversationActionFailure(failure);
 
-        try {
-            const parsed = JSON.parse(response.data) as { message?: string };
-
-            if (
-                (response.status === 409 || response.status === 413) &&
-                parsed.message
-            ) {
-                return parsed.message;
-            }
-        } catch {
-            // Not JSON: fall through to the generic explanation.
-        }
-
-        if (response.status === 404) {
-            return 'Ya no tienes acceso a esta conversación (pudo transferirse o asignarse a otra persona). Actualiza la bandeja.';
-        }
-
-        if (response.status === 429) {
-            return 'Estás enviando demasiado rápido. Espera unos segundos e inténtalo de nuevo.';
-        }
-
-        if (response.status === 413) {
-            return 'El archivo pesa demasiado. Envía uno más pequeño o pide a un administrador que permita archivos más grandes.';
-        }
-
-        return 'No se pudo enviar el mensaje; el cliente no lo recibió. Inténtalo de nuevo y, si se repite, avisa a un administrador.';
+    if (!refused) {
+        return 'No hay conexión con el servidor. Revisa tu red e inténtalo de nuevo: el mensaje no se duplicará.';
     }
 
-    return 'No hay conexión con el servidor. Revisa tu red e inténtalo de nuevo: el mensaje no se duplicará.';
+    const { status, body } = refused;
+
+    if (status === 403 || isConversationConflict(status)) {
+        return conversationActionErrorMessage(status, body);
+    }
+
+    // 503: files cannot be stored right now (the server explains why).
+    if (status === 503 && body?.message) {
+        return body.message;
+    }
+
+    if (status === 404) {
+        return 'Ya no tienes acceso a esta conversación (pudo transferirse o asignarse a otra persona). Actualiza la bandeja.';
+    }
+
+    if (status === 429) {
+        return 'Estás enviando demasiado rápido. Espera unos segundos e inténtalo de nuevo.';
+    }
+
+    // 413: the file is too big (the server's text names the limit).
+    if (status === 413) {
+        return (
+            body?.message ??
+            'El archivo pesa demasiado. Envía uno más pequeño o pide a un administrador que permita archivos más grandes.'
+        );
+    }
+
+    return 'No se pudo enviar el mensaje; el cliente no lo recibió. Inténtalo de nuevo y, si se repite, avisa a un administrador.';
 }
 
 async function submit(): Promise<void> {
@@ -711,6 +621,10 @@ async function submit(): Promise<void> {
         }
 
         if (response) {
+            if (attachment.value) {
+                rememberSentFile(props.conversation.id, attachment.value);
+            }
+
             emit('sent', response.data);
 
             if (mode.value === submittedMode) {
@@ -728,19 +642,14 @@ async function submit(): Promise<void> {
             uploadCancelled = false;
             clientReference = newClientReference();
             error.value =
-                'Se canceló el envío del archivo. Puedes adjuntarlo de nuevo cuando quieras.';
+                'Se canceló el envío. El archivo sigue adjunto: puedes volver a enviarlo o quitarlo.';
 
             return;
         }
 
         error.value = responseMessage(failure);
 
-        const status =
-            typeof failure === 'object' &&
-            failure !== null &&
-            'response' in failure
-                ? (failure as { response: { status: number } }).response.status
-                : null;
+        const status = conversationActionFailure(failure)?.status ?? null;
 
         // A conflict or refusal stored nothing; a network error might have.
         if (status !== null && status >= 400 && status < 500) {
@@ -888,7 +797,17 @@ defineExpose({ focus });
             role="status"
         >
             <Lock class="size-4 shrink-0" aria-hidden="true" />
-            <p class="min-w-0 flex-1">{{ disabledReason }}</p>
+            <div class="min-w-0 flex-1">
+                <!-- A refused send (the state changed meanwhile) stays explained. -->
+                <p
+                    v-if="error"
+                    class="mb-1 text-xs text-destructive"
+                    role="alert"
+                >
+                    {{ error }}
+                </p>
+                <p>{{ disabledReason }}</p>
+            </div>
             <Button
                 v-if="mode === 'reply' && canUseTemplates"
                 size="sm"
@@ -935,110 +854,23 @@ defineExpose({ focus });
                 </button>
             </div>
 
-            <div
-                v-if="attachment && mode === 'reply'"
-                data-layout-box="attachment"
-                class="grid grid-cols-1 gap-2 rounded-lg border px-3 py-2"
-                :class="attachmentError && 'border-destructive/60'"
-                role="group"
-                aria-label="Archivo adjunto"
-            >
-                <div class="flex items-center gap-3">
-                    <img
-                        v-if="attachmentPreview"
-                        :src="attachmentPreview"
-                        :alt="`Vista previa de ${attachment.name}`"
-                        class="size-12 shrink-0 rounded object-cover"
-                    />
-                    <FileArchive
-                        v-else-if="attachmentRule?.key === 'archive'"
-                        class="size-8 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <FileText
-                        v-else
-                        class="size-8 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <div class="min-w-0 flex-1 text-xs">
-                        <p
-                            class="truncate font-medium"
-                            :title="attachment.name"
-                        >
-                            {{ attachment.name }}
-                        </p>
-                        <p class="text-muted-foreground">
-                            {{ attachmentKindLabel }} ·
-                            {{ formatFileSize(attachment.size) }}
-                            <template v-if="uploadProgress !== null">
-                                ·
-                                {{
-                                    uploadProgress < 100
-                                        ? `subiendo ${uploadProgress} %`
-                                        : 'procesando…'
-                                }}</template
-                            >
-                        </p>
-                    </div>
-                    <Button
-                        v-if="canCancelUpload"
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        class="shrink-0 pointer-coarse:h-10"
-                        @click="cancelUpload"
-                    >
-                        Cancelar envío
-                    </Button>
-                    <button
-                        v-else
-                        type="button"
-                        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:size-10"
-                        :aria-label="`Quitar el archivo adjunto ${attachment.name}`"
-                        title="Quitar el archivo adjunto"
-                        :disabled="sending"
-                        @click="clearAttachment"
-                    >
-                        <X class="size-4" aria-hidden="true" />
-                    </button>
-                </div>
-                <div
-                    v-if="uploadProgress !== null"
-                    class="h-1.5 overflow-hidden rounded-full bg-muted"
-                    role="progressbar"
-                    aria-label="Progreso de la subida del archivo"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    :aria-valuenow="uploadProgress"
-                >
-                    <div
-                        class="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
-                        :style="{ width: `${uploadProgress}%` }"
-                    />
-                </div>
-                <p
-                    v-if="attachmentError"
-                    class="text-xs text-destructive"
-                    role="alert"
-                >
-                    {{ attachmentError }}
-                </p>
-                <p
-                    v-else-if="captionBlock"
-                    class="text-xs text-destructive"
-                    role="alert"
-                >
-                    {{ captionBlock }}
-                </p>
-                <p
-                    v-else-if="linkNotice"
-                    class="flex items-start gap-1.5 text-xs text-muted-foreground"
-                    role="status"
-                >
-                    <Link2 class="mt-px size-3.5 shrink-0" aria-hidden="true" />
-                    {{ linkNotice }}
-                </p>
-            </div>
+            <AttachmentDraft
+                v-if="attachment && attachmentEvaluation && mode === 'reply'"
+                :file="attachment"
+                :evaluation="attachmentEvaluation"
+                :channel-label="channelLabel"
+                :link-ttl-days="channelRules?.link_ttl_days ?? 7"
+                :link-confirmed="linkConfirmed"
+                :progress="uploadProgress"
+                :sending="sending"
+                :can-cancel="canCancelUpload"
+                :problem="captionBlock"
+                :notice="attachmentNotice"
+                @remove="clearAttachment"
+                @cancel="cancelUpload"
+                @confirm-link="linkConfirmed = true"
+                @undo-link="linkConfirmed = false"
+            />
 
             <div class="relative">
                 <label for="chat-composer" class="sr-only">{{
@@ -1097,33 +929,13 @@ defineExpose({ focus });
             </div>
 
             <div class="flex flex-wrap items-center gap-1">
-                <template v-if="mode === 'reply'">
-                    <input
-                        ref="fileInput"
-                        type="file"
-                        class="sr-only"
-                        :accept="accept"
-                        tabindex="-1"
-                        aria-hidden="true"
-                        @change="chooseFile"
-                    />
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        class="text-muted-foreground pointer-coarse:size-10"
-                        :disabled="sending"
-                        :title="
-                            acceptedSummary
-                                ? `Adjuntar archivo: ${acceptedSummary}`
-                                : 'Adjuntar archivo'
-                        "
-                        aria-label="Adjuntar archivo"
-                        @click="fileInput?.click()"
-                    >
-                        <Paperclip aria-hidden="true" />
-                    </Button>
-                </template>
+                <AttachmentMenu
+                    v-if="mode === 'reply'"
+                    :rules="channelRules"
+                    :channel-label="channelLabel"
+                    :busy="sending"
+                    @choose="chooseFile"
+                />
                 <EmojiPicker
                     :disabled="sending"
                     @select="(emoji) => insertAtCaret(emoji)"

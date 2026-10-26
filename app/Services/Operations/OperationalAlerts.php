@@ -57,7 +57,28 @@ class OperationalAlerts
             }
         }
 
+        $storage = $this->health->storage();
+
+        if ($storage->status === HealthStatus::Fail || ($storage->status === HealthStatus::Warning && $this->storageNeedsAttention($storage))) {
+            $alerts[] = ['key' => $storage->key, 'title' => $storage->label, 'message' => $storage->summary];
+        }
+
         return $alerts;
+    }
+
+    /**
+     * Attachments cannot be stored, or their usage reached the warning
+     * percent of the contracted space (attachments.storage.warning_percent).
+     */
+    private function storageNeedsAttention(HealthCheck $storage): bool
+    {
+        if (is_string($storage->details['media_problem'] ?? null)) {
+            return true;
+        }
+
+        $percent = $storage->details['media_used_percent'] ?? null;
+
+        return is_numeric($percent) && (float) $percent >= (int) config('attachments.storage.warning_percent', 80);
     }
 
     /**

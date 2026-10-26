@@ -33,8 +33,8 @@ class ReopenConversation
     {
         try {
             return DB::transaction(function () use ($conversation, $actor, $expectedVersion): Conversation {
-                $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
-                $actor = $this->lifecycle->authorize($actor, 'reopen', $conversation);
+                $conversation = $this->lifecycle->lock($conversation);
+                $actor = $this->lifecycle->authorize($actor, 'reopen', $conversation, $expectedVersion);
 
                 return $this->reopen($conversation, $actor, 'manual');
             });

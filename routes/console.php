@@ -17,6 +17,9 @@ Schedule::command('conversations:close-inactive')->hourly()->withoutOverlapping(
 
 Schedule::command('exports:prune')->hourly()->withoutOverlapping();
 
+// Whaticket history importer: files and staging rows of batches past history-import.retention_days.
+Schedule::command('history-import:prune')->dailyAt('04:50')->withoutOverlapping();
+
 // Reconciles the report metrics of recent conversations (covers refreshes lost by a worker outage).
 Schedule::command('analytics:rebuild --days=2')->dailyAt('03:30')->withoutOverlapping();
 
@@ -28,6 +31,9 @@ Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes
 Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping();
 Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
 Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
+
+// Customer media whose download never finished: retried while Meta keeps it, then marked unavailable (bounded).
+Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOverlapping();
 
 // Messenger / Instagram (meta module): Instagram Login tokens last 60 days and are renewed before they expire.
 Schedule::command('meta:refresh-instagram-tokens')->dailyAt('03:50')->withoutOverlapping();

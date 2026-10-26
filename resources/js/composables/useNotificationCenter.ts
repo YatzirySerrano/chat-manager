@@ -332,7 +332,13 @@ export function useNotificationCenter() {
                     id: toastId,
                     description: item.body ?? undefined,
                     action: item.url
-                        ? { label: 'Abrir', onClick: () => open(item) }
+                        ? {
+                              label:
+                                  item.kind === 'export.finished'
+                                      ? 'Descargar'
+                                      : 'Abrir',
+                              onClick: () => open(item),
+                          }
                         : undefined,
                     // Closing (the X, a swipe, the timer) only hides the
                     // toast; the notification stays unread in the bell.

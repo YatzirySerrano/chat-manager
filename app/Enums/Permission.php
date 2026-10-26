@@ -91,6 +91,11 @@ enum Permission: string
     case ViewSystem = 'system.view';
     case ManageSystem = 'system.manage';
 
+    case ViewHistoryImports = 'history-import.view';
+    case ClassifyHistoryImports = 'history-import.classify';
+    case ExecuteHistoryImports = 'history-import.execute';
+    case ViewArchivedHistory = 'history-import.archive-view';
+
     public function group(): PermissionGroup
     {
         return PermissionGroup::from(explode('.', $this->value)[0]);
@@ -161,6 +166,10 @@ enum Permission: string
             self::ExportAuditLog => 'Exportar registros de auditoría',
             self::ViewSystem => 'Ver el estado técnico de la plataforma',
             self::ManageSystem => 'Reintentar o descartar tareas con error',
+            self::ViewHistoryImports => 'Ver las importaciones de historial de Whaticket',
+            self::ClassifyHistoryImports => 'Clasificar las conversaciones de una importación de historial',
+            self::ExecuteHistoryImports => 'Ejecutar importaciones de historial de Whaticket',
+            self::ViewArchivedHistory => 'Consultar el historial archivado de Whaticket',
         };
     }
 
@@ -234,6 +243,10 @@ enum Permission: string
             self::ExportAuditLog => 'Descargar el historial de cambios en Excel o PDF.',
             self::ViewSystem => 'Consultar el estado técnico de la plataforma y las tareas automáticas con error.',
             self::ManageSystem => 'Reintentar o descartar tareas automáticas que terminaron con error.',
+            self::ViewHistoryImports => 'Ver los archivos subidos de Whaticket, el inventario de conversaciones detectadas y el resultado de cada importación.',
+            self::ClassifyHistoryImports => 'Subir archivos de Whaticket y decidir qué conversaciones se importan, se archivan o no se importan.',
+            self::ExecuteHistoryImports => 'Confirmar y ejecutar una importación de historial. Crea conversaciones cerradas y contactos provisionales.',
+            self::ViewArchivedHistory => 'Consultar en modo de solo lectura las conversaciones de Whaticket archivadas como historial, con sus archivos.',
         };
     }
 
@@ -280,6 +293,10 @@ enum Permission: string
             self::ManageIntegrations,
             self::ViewSystem,
             self::ManageSystem,
+            self::ViewHistoryImports,
+            self::ClassifyHistoryImports,
+            self::ExecuteHistoryImports,
+            self::ViewArchivedHistory,
         ], true);
     }
 
@@ -310,6 +327,10 @@ enum Permission: string
             self::ImportContacts,
             self::ViewSystem,
             self::ManageSystem,
+            self::ViewHistoryImports,
+            self::ClassifyHistoryImports,
+            self::ExecuteHistoryImports,
+            self::ViewArchivedHistory,
         ], true);
     }
 
@@ -322,13 +343,24 @@ enum Permission: string
      *   organization in one operation (and can merge or overwrite customers
      *   that other departments attend), so it stays with the platform owner.
      *
+     * - history-import.view / classify / execute: the Whaticket history
+     *   importer reads and writes conversations and contacts of the whole
+     *   organization in one operation, like the contacts importer.
+     *   (history-import.archive-view, consulting what was archived, is not
+     *   reserved: the Administrador may hold it.)
+     *
      * No other existing permission is reserved: the Administrador manages
      * everything else below the root authority, and the privilege guard
      * already keeps the root role and root users out of their reach.
      */
     public function isReservedToRoot(): bool
     {
-        return $this === self::ImportContacts;
+        return in_array($this, [
+            self::ImportContacts,
+            self::ViewHistoryImports,
+            self::ClassifyHistoryImports,
+            self::ExecuteHistoryImports,
+        ], true);
     }
 
     /**

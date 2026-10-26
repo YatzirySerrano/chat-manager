@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ApiAbility;
+use App\Enums\ConversationOrigin;
 use Database\Factories\ApiTokenFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -157,6 +158,11 @@ class ApiToken extends Model
      */
     public function reaches(Conversation $conversation): bool
     {
+        // Imported history (Whaticket) is never reachable by integrations.
+        if ($conversation->isImported()) {
+            return false;
+        }
+
         if (! in_array($conversation->connection_id, array_map('intval', $this->connection_ids), true)) {
             return false;
         }
@@ -176,6 +182,9 @@ class ApiToken extends Model
      */
     public function scopeConversations(Builder $query): Builder
     {
+        // Imported history (Whaticket) is never exposed to integrations.
+        $query->where($query->qualifyColumn('origin'), ConversationOrigin::Live->value);
+
         $query->whereIn($query->qualifyColumn('connection_id'), Connection::query()
             ->select('id')
             ->whereKey(array_map('intval', $this->connection_ids))

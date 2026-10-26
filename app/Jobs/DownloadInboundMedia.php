@@ -4,12 +4,14 @@ namespace App\Jobs;
 
 use App\Enums\AttachmentStatus;
 use App\Events\Conversations\ConversationChanged;
+use App\Exceptions\StorageUnavailable;
 use App\Models\MessageAttachment;
 use App\Services\Meta\ConnectionMonitor;
 use App\Services\Meta\MediaRejected;
 use App\Services\Meta\MediaStorage;
 use App\Services\Meta\MetaGraphClient;
 use App\Services\Meta\MetaGraphException;
+use App\Services\Storage\MediaDisk;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -36,6 +38,13 @@ use Throwable;
  * Temporary failures (Meta unreachable, throttled, 5xx) are retried with
  * backoff; a file Meta no longer serves, too large or of a forbidden type
  * marks the attachment "unavailable" with the reason, never retried.
+ *
+ * A media disk that is not ready or refuses the write (StorageUnavailable)
+ * is retried within the same attempts; then the attachment is marked
+ * unavailable with "storage_unavailable" (attachments:recover-stale may
+ * try again while Meta still keeps the file). The temporary file is
+ * removed only after the store finished, and a stored copy the row no
+ * longer needs (another attempt won) is deleted.
  */
 class DownloadInboundMedia implements ShouldQueue
 {
@@ -59,7 +68,7 @@ class DownloadInboundMedia implements ShouldQueue
         return array_values(array_map('intval', (array) config('whatsapp.media.download_backoff', [30, 120, 600])));
     }
 
-    public function handle(MetaGraphClient $graph, MediaStorage $storage, ConnectionMonitor $monitor): void
+    public function handle(MetaGraphClient $graph, MediaStorage $storage, ConnectionMonitor $monitor, MediaDisk $mediaDisk): void
     {
         $attachment = MessageAttachment::query()->with('message.conversation.channelConnection')->find($this->attachmentId);
 
@@ -86,6 +95,14 @@ class DownloadInboundMedia implements ShouldQueue
         }
 
         MessageAttachment::query()->whereKey($attachment->id)->increment('download_attempts');
+
+        // Nothing to download into while the media disk cannot keep it.
+        if (! $mediaDisk->ready()) {
+            $this->retryLater($attachment, StorageUnavailable::CODE);
+
+            return;
+        }
+
         $kind = $attachment->message->type->value;
         $temporary = tempnam(sys_get_temp_dir(), 'wa-media-');
 
@@ -115,6 +132,11 @@ class DownloadInboundMedia implements ShouldQueue
             $stored = $storage->store($temporary, $kind, $channel);
         } catch (MediaRejected $exception) {
             $this->markUnavailable($attachment, $exception->reason);
+
+            return;
+        } catch (StorageUnavailable $exception) {
+            $exception->report();
+            $this->retryLater($attachment, StorageUnavailable::CODE);
 
             return;
         } catch (MetaGraphException $exception) {
@@ -147,22 +169,35 @@ class DownloadInboundMedia implements ShouldQueue
             }
         }
 
-        DB::transaction(function () use ($attachment, $stored): void {
-            $current = MessageAttachment::query()->lockForUpdate()->find($attachment->id);
+        try {
+            $recorded = DB::transaction(function () use ($attachment, $stored): bool {
+                $current = MessageAttachment::query()->lockForUpdate()->find($attachment->id);
 
-            if ($current === null || $current->status !== AttachmentStatus::Pending) {
-                return;
-            }
+                if ($current === null || $current->status !== AttachmentStatus::Pending) {
+                    return false;
+                }
 
-            $current->forceFill([
-                ...$stored,
-                'status' => AttachmentStatus::Available,
-                'error_code' => null,
-                'downloaded_at' => now(),
-            ])->save();
+                $current->forceFill([
+                    ...$stored,
+                    'status' => AttachmentStatus::Available,
+                    'error_code' => null,
+                    'downloaded_at' => now(),
+                ])->save();
 
-            ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
-        });
+                ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
+
+                return true;
+            });
+        } catch (Throwable $exception) {
+            $mediaDisk->discard($stored['disk'], $stored['path']);
+
+            throw $exception;
+        }
+
+        if (! $recorded) {
+            // Another attempt already settled the row: this copy is unreferenced.
+            $mediaDisk->discard($stored['disk'], $stored['path']);
+        }
     }
 
     /**
@@ -183,10 +218,10 @@ class DownloadInboundMedia implements ShouldQueue
     /**
      * A temporary failure: try again with backoff while attempts remain.
      */
-    private function retryLater(MessageAttachment $attachment): void
+    private function retryLater(MessageAttachment $attachment, string $reason = 'download_failed'): void
     {
         if ($this->attempts() >= $this->tries) {
-            $this->markUnavailable($attachment, 'download_failed');
+            $this->markUnavailable($attachment, $reason);
 
             return;
         }
@@ -204,7 +239,7 @@ class DownloadInboundMedia implements ShouldQueue
 
         if ($attachment !== null) {
             Log::warning('WhatsApp media could not be downloaded after every attempt.', ['attachment_id' => $attachment->id]);
-            $this->markUnavailable($attachment, 'download_failed');
+            $this->markUnavailable($attachment, $exception instanceof StorageUnavailable ? StorageUnavailable::CODE : 'download_failed');
         }
     }
 

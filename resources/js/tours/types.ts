@@ -83,4 +83,5 @@ export type TourFileKey =
     | 'personalizacion'
     | 'chat-interno'
     | 'sistema'
-    | 'integraciones';
+    | 'integraciones'
+    | 'history-import';

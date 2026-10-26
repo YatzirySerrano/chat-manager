@@ -18,6 +18,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
+import { conversationConflictFromErrors } from '@/lib/conversations/actionErrors';
 import { maxLength, required, when } from '@/lib/validation';
 import type {
     ConversationSummary,
@@ -62,6 +63,17 @@ const emit = defineEmits<{
 }>();
 
 const NO_AGENT = '';
+
+/**
+ * A refusal of the operation that is not about one field. A state conflict
+ * (the conversation changed meanwhile) is not shown here: the parent closes
+ * the dialog and explains it over the fresh state (actionErrors.ts).
+ */
+const generalError = computed(() =>
+    conversationConflictFromErrors(props.errors)
+        ? undefined
+        : props.errors.conversation,
+);
 
 const departmentId = ref<string>('');
 const userId = ref<string>(NO_AGENT);
@@ -399,7 +411,7 @@ function agentLabel(agent: TransferAgentOption): string {
                     </FormField>
                 </template>
 
-                <InputError :message="errors.conversation" />
+                <InputError :message="generalError" />
 
                 <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                     <Button

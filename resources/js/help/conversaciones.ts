@@ -120,9 +120,10 @@ const help: ModuleHelp = {
                 'Cada canal tiene límites por tipo de archivo (por ejemplo, en WhatsApp: imágenes 5 MB, audio y video 16 MB, documentos 100 MB; en Instagram solo PDF). El ícono de adjuntar muestra lo que admite el canal de la conversación. Reduce el tamaño o envíalo en un formato admitido, y revisa que la extensión del nombre corresponda al archivo.',
         },
         {
-            problem: '«Se enviará como enlace de descarga seguro…»',
+            problem:
+                '«WhatsApp no admite… como archivo adjunto. Puedes enviarlo como enlace privado solo si lo eliges…»',
             solution:
-                'WhatsApp no admite archivos ZIP: el cliente recibe un mensaje con un enlace seguro para descargarlo, que vence a los pocos días (la burbuja muestra la fecha). Si venció, adjunta el archivo de nuevo.',
+                'WhatsApp no admite archivos ZIP como adjunto. Si pulsas «Usar enlace privado» y luego «Enviar», el cliente recibe un mensaje con un enlace privado para descargarlo, que vence a los pocos días (la burbuja muestra la fecha). Puedes deshacerlo con «No usar enlace». Si el enlace venció, adjunta el archivo de nuevo.',
         },
         {
             problem:

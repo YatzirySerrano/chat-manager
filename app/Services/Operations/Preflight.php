@@ -6,6 +6,7 @@ use App\Enums\ConnectionChannel;
 use App\Models\Connection;
 use App\Models\User;
 use App\Notifications\Push\Vapid;
+use App\Services\Storage\MediaDisk;
 use App\Support\ManualValidation;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -20,7 +21,9 @@ use Throwable;
 /**
  * Production preflight: verifies the dependencies and the configuration a
  * deployment needs, WITHOUT modifying anything (no writes to the database,
- * the cache or the disk; only reads, version queries and file checks).
+ * the cache or the disk; only reads, version queries and file checks). The
+ * one exception is an external media disk: a tiny probe file is written
+ * and deleted right away to prove the bucket accepts files.
  *
  * Every check reads configuration through config() so the result matches
  * what the application will actually use (also with config:cache). Levels:
@@ -59,7 +62,7 @@ class Preflight
             'app' => fn (): array => [$this->environment(), $this->debug(), $this->appKey(), $this->appUrl(), $this->configCache(), $this->devDependencies()],
             'http' => fn (): array => [$this->sessionCookies(), $this->trustedProxies()],
             'database' => fn (): array => [$this->databaseServer(), $this->migrations()],
-            'storage' => fn (): array => [$this->health->storage(), $this->privateStorage(), $this->diskSpace(), $this->backups()],
+            'storage' => fn (): array => [$this->health->storage(), $this->privateStorage(), $this->mediaStorage(), $this->diskSpace(), $this->backups()],
             'runtime' => fn (): array => [
                 $this->cacheStore(), $this->redis(), $this->queueConfiguration(), $this->scheduledCommands(), $this->schedulerHeartbeat(),
                 ...array_map($this->atMostWarning(...), [$this->health->queueBacklog(), $this->health->webhookBacklog(), $this->health->failedJobsCheck()]),
@@ -395,6 +398,34 @@ class Preflight
         }
 
         return HealthCheck::ok('storage.private', 'Archivos privados', 'Adjuntos, exportaciones e importaciones en discos privados fuera de public/.');
+    }
+
+    /**
+     * Where conversation media is kept: an external disk must be complete
+     * and accept a write-and-delete probe; the server's own disk is fine
+     * unless MEDIA_DISK_REQUIRED asks for external storage.
+     */
+    public function mediaStorage(): HealthCheck
+    {
+        $media = app(MediaDisk::class);
+        $details = ['disk' => $media->name(), 'external' => $media->isExternal(), 'required' => $media->isRequired()];
+        $problem = $media->problem();
+
+        if ($problem !== null) {
+            return $this->productionFailure('storage.media', 'Almacenamiento de adjuntos', 'No se podrán guardar archivos adjuntos: '.MediaDisk::explain($problem).'.', [...$details, 'problem' => $problem]);
+        }
+
+        if (! $media->isExternal()) {
+            return HealthCheck::ok('storage.media', 'Almacenamiento de adjuntos', 'Los adjuntos se guardan en el disco del servidor (MEDIA_DISK='.$media->name().'). Para guardarlos fuera del servidor configura un disco S3 privado.', $details);
+        }
+
+        $probe = $media->probe();
+
+        if ($probe !== null) {
+            return $this->productionFailure('storage.media', 'Almacenamiento de adjuntos', 'El almacenamiento externo de adjuntos no respondió a la prueba: '.MediaDisk::explain($probe).'. Revisa el endpoint, el bucket y los permisos de escritura y borrado.', [...$details, 'problem' => $probe]);
+        }
+
+        return HealthCheck::ok('storage.media', 'Almacenamiento de adjuntos', 'Los adjuntos se guardan en el almacenamiento externo privado (MEDIA_DISK='.$media->name().'); la prueba de escritura y borrado funcionó.', $details);
     }
 
     public function diskSpace(): HealthCheck

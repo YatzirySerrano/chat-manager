@@ -16,9 +16,13 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
-    | Private disk of customer media (WhatsApp attachments). Files are stored
-    | under media/{yyyy}/{mm}/{uuid} and only served through authorized routes;
-    | an S3-compatible private disk may be configured here.
+    | Private disk of conversation media (customer files, agent attachments,
+    | web chat avatar). Files are stored under media/{yyyy}/{mm}/{uuid} and only
+    | served through authorized routes (streamed by the application, never a
+    | public URL). MEDIA_DISK=s3 keeps them in a private S3-compatible bucket
+    | (the "s3" disk below); each attachment row remembers its own disk, so
+    | files saved earlier on "local" keep working after the switch. See
+    | config/attachments.php "storage" (MEDIA_DISK_REQUIRED, quota).
     */
     'media_disk' => env('MEDIA_DISK', 'local'),
 
@@ -65,6 +69,10 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            // Private objects only; optional server-side encryption (e.g. AES256)
+            // when the provider supports it.
+            'visibility' => 'private',
+            'options' => array_filter(['ServerSideEncryption' => env('AWS_SERVER_SIDE_ENCRYPTION')]),
             'throw' => false,
             'report' => false,
         ],

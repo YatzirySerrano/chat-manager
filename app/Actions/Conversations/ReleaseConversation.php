@@ -26,8 +26,8 @@ class ReleaseConversation
     public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null): Conversation
     {
         return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion): Conversation {
-            $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
-            $actor = $this->lifecycle->authorize($actor, 'release', $conversation);
+            $conversation = $this->lifecycle->lock($conversation);
+            $actor = $this->lifecycle->authorize($actor, 'release', $conversation, $expectedVersion);
             $previous = $conversation->assigned_user_id;
             // Exclusive before the event's foreign key takes a shared lock on it:
             // distributing the queue below must not upgrade that lock.

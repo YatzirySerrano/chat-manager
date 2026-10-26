@@ -16,19 +16,21 @@ use RuntimeException;
  * response: 409 for JSON clients, or back to the page with the explanation
  * as an error, never as a server error.
  *
+ * A state that changed meanwhile (closed, taken by another agent, stale
+ * version) is the more specific ConversationStateConflict, which carries a
+ * code for the interface.
+ *
  * Being expected, it is never reported as an application error: it is
  * logged at info level with the operation's context, for auditing races.
  */
 class ConversationConflict extends RuntimeException
 {
+    /** JSON code of a conflict that is not a change of state. */
+    public const CODE = 'conflict';
+
     public static function alreadyTaken(): self
     {
         return new self('Otra persona ya aceptó esta conversación.');
-    }
-
-    public static function stale(): self
-    {
-        return new self('La conversación cambió mientras la consultabas. Revisa su estado actual e inténtalo de nuevo.');
     }
 
     public static function transition(string $from, string $to): self
@@ -59,7 +61,11 @@ class ConversationConflict extends RuntimeException
     public function render(Request $request): JsonResponse|RedirectResponse
     {
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-            return response()->json(['message' => $this->getMessage()], 409);
+            // A generic conflict (limit reached, another active conversation,
+            // concurrent change…): its own explanation, under the "conflict"
+            // code (the /api/v1 convention). State conflicts carry their own
+            // codes (ConversationStateConflict).
+            return response()->json(['code' => self::CODE, 'message' => $this->getMessage()], 409);
         }
 
         return $this->destination($request)->withErrors(['conversation' => $this->getMessage()]);
@@ -71,7 +77,7 @@ class ConversationConflict extends RuntimeException
      * that page would now answer "not found" and hide the explanation, so
      * the user returns to the queue, with the filters they had, instead.
      */
-    private function destination(Request $request): RedirectResponse
+    protected function destination(Request $request): RedirectResponse
     {
         $bound = $request->route('conversation');
         $conversation = $bound instanceof Conversation ? Conversation::query()->find($bound->getKey()) : null;

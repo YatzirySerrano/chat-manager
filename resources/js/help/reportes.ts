@@ -8,13 +8,13 @@ const help: ModuleHelp = {
         'Elegir el periodo («Hoy», «Últimos 7 días», «Últimos 30 días», «Este mes», «Rango personalizado»…).',
         'Filtrar por departamento, agente y conexión entre los que puedes ver.',
         'Revisar los tiempos contando todas las horas (tiempo real) o solo el horario de atención.',
-        'Exportar el reporte a Excel (.xlsx) o PDF y descargarlo desde Exportaciones.',
+        'Exportar el reporte a Excel (.xlsx) o PDF con los filtros aplicados.',
     ],
     workflow: [
         'Elige el periodo; con «Rango personalizado» indica «Desde» y «Hasta» (máximo 366 días) y pulsa «Aplicar rango».',
         'Ajusta departamento, agente o conexión si quieres acotar.',
         'Lee la fila «Atención del periodo» y después los tiempos y las tablas por agente, departamento y conexión.',
-        'Usa «Exportar reporte»: los archivos pequeños se descargan al momento; los grandes se generan en segundo plano y aparecen en Exportaciones.',
+        'Usa «Exportar reporte»: los archivos pequeños se descargan al momento; los grandes se preparan en segundo plano, te avisamos con una notificación y los descargas desde ella o desde «Archivos preparados recientemente» en el mismo menú.',
     ],
     fields: [
         {
@@ -43,16 +43,16 @@ const help: ModuleHelp = {
                 'Porcentaje de conversaciones dentro del objetivo de primera respuesta y de resolución definidos en Configuración.',
         },
         {
-            name: 'Exportaciones',
+            name: 'Archivos preparados',
             description:
-                'Archivos que solicitaste. Solo tú puedes descargarlos y se eliminan 24 horas después de generarse.',
+                'Archivos grandes que pediste preparar. Solo tú puedes descargarlos y se eliminan 24 horas después de generarse.',
         },
     ],
     states: [
         {
             name: 'En espera / Generando',
             description:
-                'El archivo se está preparando; la página se actualiza sola.',
+                'El archivo se está preparando; te avisaremos con una notificación cuando esté listo.',
         },
         {
             name: 'Listo',

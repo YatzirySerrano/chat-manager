@@ -36,8 +36,8 @@ class AssignConversation
     public function handle(Conversation $conversation, User $agent, User $actor, ?int $expectedVersion = null, bool $confirmOverCapacity = false): Conversation
     {
         return DB::transaction(function () use ($conversation, $agent, $actor, $expectedVersion, $confirmOverCapacity): Conversation {
-            $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
-            $actor = $this->lifecycle->authorize($actor, 'assign', $conversation);
+            $conversation = $this->lifecycle->lock($conversation);
+            $actor = $this->lifecycle->authorize($actor, 'assign', $conversation, $expectedVersion);
 
             if ($conversation->status === ConversationStatus::Open && $conversation->assigned_user_id === $agent->id) {
                 throw new ConversationConflict("La conversación ya está asignada a {$agent->name}.");

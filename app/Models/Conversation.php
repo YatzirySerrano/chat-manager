@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConversationOrigin;
 use App\Enums\ConversationStatus;
 use App\Services\Conversations\ConversationAccess;
 use Database\Factories\ConversationFactory;
@@ -35,6 +36,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $reopened_at
  * @property int $reopen_count
  * @property int $version Incremented by every operational change, so a decision taken on stale data is detected.
+ * @property ConversationOrigin $origin live, or imported from another system (history, never operational).
+ * @property Carbon|null $history_only_at Set when an imported conversation was archived as read-only history.
+ * @property int|null $imported_by_transfer_id The history import batch that created it.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -53,6 +57,7 @@ class Conversation extends Model
         'status' => 'pending',
         'version' => 0,
         'reopen_count' => 0,
+        'origin' => 'live',
     ];
 
     /**
@@ -75,7 +80,35 @@ class Conversation extends Model
             'reopened_at' => 'datetime',
             'reopen_count' => 'integer',
             'version' => 'integer',
+            'origin' => ConversationOrigin::class,
+            'history_only_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Imported from another system (Whaticket): history, never reopened,
+     * never attached to new messages and outside metrics and the window.
+     */
+    public function isImported(): bool
+    {
+        return $this->origin !== ConversationOrigin::Live;
+    }
+
+    /**
+     * Archived as read-only history: also outside the inbox, search,
+     * exports and the integration API.
+     */
+    public function isHistoryOnly(): bool
+    {
+        return $this->history_only_at !== null;
+    }
+
+    /**
+     * @return BelongsTo<DataTransfer, $this>
+     */
+    public function importBatch(): BelongsTo
+    {
+        return $this->belongsTo(DataTransfer::class, 'imported_by_transfer_id');
     }
 
     /**
@@ -196,6 +229,40 @@ class Conversation extends Model
     protected function visibleTo(Builder $query, User $user): void
     {
         app(ConversationAccess::class)->restrictToVisible($query, $user);
+    }
+
+    /**
+     * Conversations attended on the platform (not imported history).
+     *
+     * @param  Builder<Conversation>  $query
+     */
+    #[Scope]
+    protected function live(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('origin'), ConversationOrigin::Live->value);
+    }
+
+    /**
+     * Everything but the history archived as read-only (live conversations
+     * and imported ones kept as operational history).
+     *
+     * @param  Builder<Conversation>  $query
+     */
+    #[Scope]
+    protected function notHistoryOnly(Builder $query): void
+    {
+        $query->whereNull($query->qualifyColumn('history_only_at'));
+    }
+
+    /**
+     * Conversations imported from another system.
+     *
+     * @param  Builder<Conversation>  $query
+     */
+    #[Scope]
+    protected function imported(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('origin'), '!=', ConversationOrigin::Live->value);
     }
 
     /**

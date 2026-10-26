@@ -223,7 +223,7 @@ test('the shared inbox: routed, waiting unassigned, offered to the department, f
     $this->actingAs($this->colleague)
         ->from(route('conversations.index'))
         ->post(route('conversations.accept', $conversation))
-        ->assertSessionHasErrors(['conversation' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.']);
 
     $followUp = receiveWhatsapp($connection, '5215599990000', '¿Siguen ahí?');
 

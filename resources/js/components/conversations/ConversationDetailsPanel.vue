@@ -411,10 +411,20 @@ function safeUrl(url: string | null): string | null {
                 </h3>
                 <ul v-if="details.history.length > 0" class="grid gap-1">
                     <li v-for="previous in details.history" :key="previous.id">
-                        <button
-                            type="button"
+                        <!-- History archived as read-only opens in «Historial de Whaticket». -->
+                        <component
+                            :is="previous.history_only ? Link : 'button'"
+                            v-bind="
+                                previous.history_only && previous.history_url
+                                    ? { href: previous.history_url }
+                                    : { type: 'button' }
+                            "
                             class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent pointer-coarse:min-h-11"
-                            @click="emit('select', previous.id)"
+                            @click="
+                                previous.history_only
+                                    ? undefined
+                                    : emit('select', previous.id)
+                            "
                         >
                             <span class="min-w-0">
                                 <span class="block truncate text-sm">
@@ -428,13 +438,16 @@ function safeUrl(url: string | null): string | null {
                                     class="block truncate text-xs text-muted-foreground"
                                 >
                                     {{ previous.assignee ?? 'Sin agente' }}
+                                    <template v-if="previous.origin !== 'live'">
+                                        · {{ previous.origin_label }}</template
+                                    >
                                 </span>
                             </span>
                             <ConversationStatusBadge
                                 :status="previous.status"
                                 :label="previous.status_label"
                             />
-                        </button>
+                        </component>
                     </li>
                 </ul>
                 <p v-else class="text-sm text-muted-foreground">

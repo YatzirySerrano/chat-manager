@@ -329,6 +329,8 @@ class DashboardMetrics
         /** @var object{active: int|string|null, pending: int|string|null, closed_today: int|string|null} $counts */
         $counts = Conversation::query()
             ->visibleTo($user)
+            // Imported history is not current activity.
+            ->live()
             ->when($filters->departmentId !== null, fn (Builder $query) => $query->where('conversations.department_id', $filters->departmentId))
             ->when($filters->agentId !== null, fn (Builder $query) => $query->where('conversations.assigned_user_id', $filters->agentId))
             ->when($filters->connectionId !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters->connectionId))

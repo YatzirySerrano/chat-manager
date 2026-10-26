@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Webhooks;
 
+use App\Concerns\ServesStoredAttachments;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
 use App\Enums\ConnectionChannel;
@@ -25,6 +26,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class MetaMediaController extends Controller
 {
+    use ServesStoredAttachments;
+
     public function __invoke(string $attachment): Response
     {
         $file = MessageAttachment::query()
@@ -41,7 +44,7 @@ class MetaMediaController extends Controller
 
         $disk = Storage::disk($file->disk);
 
-        abort_unless($disk->exists((string) $file->path), 404);
+        abort_unless($this->storedFileExists($disk, $file), 404);
 
         // Meta names the customer's file after this header (the URL path
         // carries only the id), so it always has a name with its extension.
@@ -59,10 +62,8 @@ class MetaMediaController extends Controller
             'X-Robots-Tag' => 'noindex, nofollow',
         ];
 
-        if (config("filesystems.disks.{$file->disk}.driver") === 'local') {
-            return response()->file($disk->path((string) $file->path), $headers);
-        }
-
-        return $disk->response((string) $file->path, $name, $headers, 'attachment');
+        return $this->storedFileResponse($file, fn (): Response => config("filesystems.disks.{$file->disk}.driver") === 'local'
+            ? response()->file($disk->path((string) $file->path), $headers)
+            : $disk->response((string) $file->path, $name, $headers, 'attachment'));
     }
 }

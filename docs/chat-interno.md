@@ -198,6 +198,19 @@ y descripción), `participants_added`, `participant_removed`, `participant_role_
 leer y silenciar no se auditan (son actividad privada, no administración). Las acciones del Superadministrador quedan
 restringidas como en el resto del sistema.
 
+## Correcciones de la fase 5.2
+
+- **Señal durante una carga:** si llegaba un mensaje mientras el chat abierto aún cargaba el anterior, la señal se
+  descartaba y el mensaje no aparecía hasta otra señal. Ahora una señal recibida durante una carga en curso se agrupa
+  en una recarga más al terminar (`pages/team-chat/Index.vue`, `components/team-chat/ChatWindow.vue`).
+- **Respuesta vieja de lectura:** la respuesta de «marcar como leído» del chat abierto podía llegar después de una
+  recarga más reciente y devolver el contador de no leídos a un valor anterior. Ahora una respuesta de lectura solo se
+  aplica si ninguna visita que trae los totales empezó después; si no, una recarga en vivo fija los valores.
+- Escenario: `tests/e2e/realtime.mjs` (pasos 6b y 6c), 21/21 en cinco corridas seguidas.
+- **Causa raíz del fallo original de la fase 5.1 no determinada:** las dos carreras anteriores se reprodujeron de forma
+  determinista y se corrigieron, pero no está probado que fueran la causa del fallo intermitente observado en la fase
+  5.1. Si reaparece, conservar el registro del escenario y las capturas.
+
 ## Limitaciones y pendientes
 
 - **Presencia parcial para quien llega a todos**: una persona con alcance global o `team-chat.cross-department` ve en

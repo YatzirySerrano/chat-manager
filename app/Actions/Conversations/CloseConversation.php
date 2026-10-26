@@ -27,8 +27,8 @@ class CloseConversation
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
         return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion): Conversation {
-            $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
-            $actor = $this->lifecycle->authorize($actor, 'close', $conversation);
+            $conversation = $this->lifecycle->lock($conversation);
+            $actor = $this->lifecycle->authorize($actor, 'close', $conversation, $expectedVersion);
 
             $this->lifecycle->apply($conversation, ConversationStatus::Closed, [
                 'closed_at' => now(),

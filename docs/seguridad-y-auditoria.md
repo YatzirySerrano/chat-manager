@@ -125,25 +125,35 @@ private`. La privacidad no depende de ese encabezado: páginas y respuestas Iner
 
 ### Límites de frecuencia
 
-| Superficie                                                                     | Límite                                            |
-| ------------------------------------------------------------------------------ | ------------------------------------------------- |
-| Inicio de sesión / 2FA                                                         | 5/min por correo+IP / por sesión                  |
-| Cambio de contraseña                                                           | 6/min                                             |
-| Recuperación de contraseña (`forgot-password`, `reset-password`)               | 5/min por IP y ruta, más 1 enlace/60 s por cuenta |
-| Webhook WhatsApp                                                               | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL  |
-| Envío de mensajes / plantillas / reintentos                                    | 60/min, 30/min, 30/min                            |
-| Lectura de línea de tiempo y marcadores de lectura                             | 120/min                                           |
-| Exportaciones, importaciones, reversión de importación                         | 10/min                                            |
-| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta) | 10/min (hallazgo H-6)                             |
-| `broadcasting/auth`                                                            | 180/min                                           |
-| API de integración `/api/v1` (lecturas / envíos)                               | 600/min / 60/min por token                        |
-| Chat web: frame, sesiones, mensajes, lecturas, `broadcasting/auth` del widget  | ver [api-v1.md §8](api-v1.md#8-límites)           |
-| Sondeo `/health/ready`                                                         | 60/min por IP y veredicto en caché 10 s           |
+| Superficie                                                                                   | Límite                                            |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Inicio de sesión / 2FA                                                                       | 5/min por correo+IP / por sesión                  |
+| Cambio de contraseña                                                                         | 6/min                                             |
+| Recuperación de contraseña (`forgot-password`, `reset-password`)                             | 5/min por IP y ruta, más 1 enlace/60 s por cuenta |
+| Webhook WhatsApp                                                                             | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL  |
+| Envío de mensajes / plantillas / reintentos                                                  | 60/min, 30/min, 30/min                            |
+| Lectura de línea de tiempo y marcadores de lectura                                           | 120/min                                           |
+| Exportaciones, importaciones, reversión de importación                                       | 10/min                                            |
+| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta)               | 10/min (hallazgo H-6)                             |
+| `broadcasting/auth`                                                                          | 180/min                                           |
+| Importador de historial: crear lote, confirmar, reanudar / subir archivos / acciones masivas | 10/min / 30/min / 60/min                          |
+| API de integración `/api/v1` (lecturas / envíos)                                             | 600/min / 60/min por token                        |
+| Chat web: frame, sesiones, mensajes, lecturas, `broadcasting/auth` del widget                | ver [api-v1.md §8](api-v1.md#8-límites)           |
+| Sondeo `/health/ready`                                                                       | 60/min por IP y veredicto en caché 10 s           |
 
 Cada `throttle:N,M` cuenta por usuario (o IP) **y ruta** (`App\Http\Middleware\ThrottleRequestsPerRoute`, registrado como
 alias `throttle`): el sondeo de la campana o las autorizaciones de canales ya no agotan el límite de exportaciones o
 importaciones. Los limitadores con nombre (`login`, `two-factor`, `password-reset`, `whatsapp-webhooks`) conservan sus
 propias claves.
+
+**Limitador de la autorización de canales (fase 5.2).** `broadcasting/auth` usa `ConcurrencySafeRateLimiter`: un
+_deadlock_ o una espera de bloqueo del almacén `database`, en el conteo o en la lectura del contador, se reintenta 3
+veces y, si persiste, la petición **pasa sin contarse** (registro `Límite de autorización de canales no contado por
+interbloqueo; la solicitud continúa.` sin usuario ni clave, solo una huella corta, y un contador diario). Cualquier
+otro fallo del almacén (inaccesible, tabla inexistente) **falla cerrado** (500). Es aceptable solo ahí porque la sesión,
+la cuenta activa y la regla de cada canal se comprueban aparte; el inicio de sesión y los demás límites conservan el
+limitador estricto ([ADR-QA-7](decisiones.md#adr-qa-7--límite-de-canales-que-deja-pasar-sin-contar-solo-ante-interbloqueos)).
+Recomendado: `CACHE_LIMITER=redis`.
 
 ### Chat web y API v1
 
@@ -206,6 +216,11 @@ Detalle en [canal-chat-web.md](canal-chat-web.md), [widget-integracion.md](widge
       ventana de reintentos de Meta) no se aplican de nuevo a la salud de la conexión.
       Las actualizaciones de calidad de plantillas no tienen marca propia y se aplican tal como llegan.
 - Los rechazos no explican el motivo y los registros solo llevan el id de la conexión.
+- **Grupos (fase 5.2):** el contenido de la Groups API (campos `group_*`, mensajes con `group_id`, estados con
+  `recipient_type: group`) se quita antes de guardar, se confirma con 200 y se registra sin datos personales (solo
+  conteos y una referencia HMAC-SHA256 corta del grupo, con la clave de la aplicación, que no se puede revertir con un
+  diccionario de identificadores); nunca crea conversaciones ni contactos
+  ([mensajeria §12](mensajeria-whatsapp.md#12-grupos-de-whatsapp-fase-52)).
 
 ### Archivos y multimedia
 
@@ -222,6 +237,16 @@ Detalle en [canal-chat-web.md](canal-chat-web.md), [widget-integracion.md](widge
   guardarlos, pero los revalida con el servidor, que vuelve a autorizar, antes de mostrarlos (304 si no cambiaron). Así
   ningún adjunto se sirve desde caché tras cerrar sesión o perder el acceso. Los tipos no previsualizables se sirven como `application/octet-stream` adjunto.
 - La descarga de multimedia entrante solo acepta hosts de Meta.
+- **Fase 5.2, disco externo:** con `MEDIA_DISK=s3` el bucket es privado (objetos `private`, cifrado opcional
+  `AWS_SERVER_SIDE_ENCRYPTION`) y los archivos se transmiten por la aplicación tras autorizar cada descarga; no hay
+  URLs prefirmadas que se puedan reenviar. Un disco incompleto o público se rechaza (nunca se escribe en el servidor a
+  escondidas); los registros solo nombran el disco y un código, nunca credenciales, _endpoints_ ni buckets
+  ([infraestructura §Almacenamiento](infraestructura-y-despliegue.md#almacenamiento-de-adjuntos-fase-52)).
+- **Importador de historial:** ZIP revisados entrada por entrada antes de leer nada (sin `extractTo()`; rechaza rutas
+  con `..` o absolutas, enlaces simbólicos, cifrados y bombas zip), archivos en el disco privado de importaciones y
+  borrados al terminar o vencer el lote, contenido de mensajes nunca en logs ni auditoría, reporte CSV con fórmulas
+  neutralizadas y archivos históricos validados por contenido como cualquier adjunto
+  ([migracion-whaticket.md](migracion-whaticket.md#archivos-aceptados)).
 
 ### Secretos
 
@@ -414,6 +439,47 @@ Las cuentas con el rol raíz (Superadministrador) son invisibles para cualquiera
 - Pruebas: `tests/Feature/Admin/ProtectedAccountVisibilityTest.php` y
   `tests/Feature/Security/ProtectedAccountOperationalVisibilityTest.php`.
 
+### 3.5 Permisos de la fase 5.2
+
+Los crea la migración `2026_10_25_210006_add_history_import_permissions`, que los concede a los roles raíz y, además,
+concede `history-import.archive-view` al **rol Administrador por defecto** (`administrator`, no raíz), también en
+instalaciones existentes, igual que en una instalación nueva (`DefaultRole`). Nadie más lo recibe hasta que un
+administrador lo decida en el editor de roles
+([ADR-SEC-7](decisiones.md#adr-sec-7--los-permisos-sensibles-no-se-conceden-de-forma-automática)). Su `down()` los
+elimina con sus concesiones. **No aplicada en `chatmanager`** (pendiente de autorización).
+
+| Clave                         | Etiqueta en la interfaz                                       | Reservado a raíz | Alcance | Definición por defecto (`DefaultRole`)        |
+| ----------------------------- | ------------------------------------------------------------- | ---------------- | ------- | --------------------------------------------- |
+| `history-import.view`         | Ver las importaciones de historial de Whaticket               | sí               | global  | Superadministrador                            |
+| `history-import.classify`     | Clasificar las conversaciones de una importación de historial | sí               | global  | Superadministrador                            |
+| `history-import.execute`      | Ejecutar importaciones de historial de Whaticket              | sí               | global  | Superadministrador                            |
+| `history-import.archive-view` | Consultar el historial archivado de Whaticket                 | no               | global  | Superadministrador y Administrador (sensible) |
+
+- Todos son **sensibles**. Para el Administrador no hace falta `--upgrade-default-roles`: la migración ya le concede
+  `archive-view` (corrige lo indicado en una versión anterior de este documento).
+- El importador escribe conversaciones y contactos de toda la organización en una operación, como el importador de
+  contactos: por eso es exclusivo de root.
+- Errores: sin permiso, 403; lote, fila, regla, archivo o conversación que no se puede ver o no es importada, 404;
+  visible pero sin la acción, 403; conflicto de estado del lote, 409 (`batch_locked`, `summary_changed`,
+  `not_resumable`, `batch_busy`).
+- **Privacidad:** al vencer un lote, en cualquier estado, se borran archivos, mensajes de preparación y todos los datos
+  identificables del inventario y de los archivos; la auditoría solo guarda la huella SHA-256 de los nombres de
+  archivo. En el historial, las cuentas protegidas se muestran como «Administración del sistema» a quien no puede
+  verlas y no aparecen en el filtro de agentes. `Contact::visibleTo` no amplía el alcance por historial archivado: tener
+  una conversación archivada no hace visible un contacto en Contactos. Los conteos de conversaciones por conexión
+  excluyen lo importado.
+- **Historial importado:** nunca operable (403 «Esta conversación es un historial importado y es de solo consulta.»);
+  lo archivado (`history_only_at`) no existe para las rutas operativas (404), ni para la búsqueda, las exportaciones o
+  la API v1, que tampoco expone las importadas.
+- Pruebas: `tests/Feature/HistoryImport/HistoryImportAccessTest.php`, `HistoryArchiveTest.php`,
+  `HistoryImportSafetyTest.php`, `tests/Feature/Conversations/ImportedConversationAccessTest.php` y
+  `tests/Feature/Security/RouteAuthorizationSweepTest.php`.
+
+**Errores de operaciones sobre conversaciones (fase 5.2).** Se mantiene [ADR-SEC-4](decisiones.md#adr-sec-4--404-para-lo-que-está-fuera-de-alcance-403-para-lo-visible-no-permitido)
+(404 fuera de alcance, 403 visible sin permiso) y se añade el **409** para lo permitido cuyo estado cambió
+(`state_changed`, `assigned_to_other`, `closed`): perder una carrera ya no se presenta como «prohibido». Detalle en
+[bandejas §Errores](bandejas-y-asignacion.md#errores-de-las-acciones-403-404-y-409-fase-52).
+
 ## 4. Auditoría
 
 - `App\Services\AuditLogger` escribe en `audit_logs` (solo inserción; no hay ruta para editar ni borrar entradas). Guarda
@@ -425,7 +491,8 @@ Las cuentas con el rol raíz (Superadministrador) son invisibles para cualquiera
   trabajos fallidos y, desde esta auditoría, eventos de seguridad de cuenta (`auth.*`). Desde la fase 4 también
   `api_token.issued`, `api_token.revoked`, `web_chat.widget_updated`, `web_chat.key_rotated` y
   `web_chat.identity_secret_rotated`; como el saneador elimina toda clave que contenga `token` o `secret`, esas
-  entradas usan `public_id`, `name` y `reason`.
+  entradas usan `public_id`, `name` y `reason`. Desde la fase 5.2, el importador de historial (`history_import.created`, `file_added`,
+  `classified`, `rule_applied`, `requested`, `completed`, `failed`, `discarded`), restringido y sin contenido de mensajes.
 - **Visibilidad restringida:** ver la bitácora requiere `audit.view`; las entradas `restricted` (acciones del rol raíz o
   sobre él, y todo el importador) solo las ve el rol raíz. Exportarla requiere `audit.export`.
 - Los valores de `App\Enums\AuditAction` son permanentes: quitar un caso rompe la lectura de las filas que lo llevan. En

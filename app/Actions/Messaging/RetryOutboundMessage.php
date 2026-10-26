@@ -17,8 +17,8 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -60,6 +60,11 @@ class RetryOutboundMessage
                 throw new ConversationConflict('El mensaje no pertenece a esta conversación.');
             }
 
+            // A message brought from another system was never sent from here.
+            if (is_array($message->metadata['import'] ?? null)) {
+                throw new AuthorizationException(ConversationLifecycle::IMPORTED_MESSAGE);
+            }
+
             if ($message->status !== MessageStatus::Failed) {
                 throw new ConversationConflict('Solo se pueden reintentar mensajes fallidos.');
             }
@@ -79,7 +84,8 @@ class RetryOutboundMessage
             }
 
             if ($message->type === MessageType::Template) {
-                Gate::forUser($actor)->authorize('sendTemplate', $conversation);
+                // The reply state was already checked: only the permission is left.
+                $this->lifecycle->ensurePermitted($actor, 'sendTemplate', $conversation);
 
                 $templateId = $message->metadata['template']['id'] ?? null;
                 $template = is_int($templateId) ? MessageTemplate::query()->find($templateId) : null;

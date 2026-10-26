@@ -253,6 +253,7 @@ class ReceiveInboundMessage
         $unclosed = Conversation::query()
             ->where('connection_id', $connection->id)
             ->where('contact_id', $contact->id)
+            ->live()
             ->notClosed()
             ->lockForUpdate()
             ->first();
@@ -261,9 +262,12 @@ class ReceiveInboundMessage
             return [$unclosed, InboundMessageOutcome::Appended];
         }
 
+        // Imported history is never reopened nor receives a late message:
+        // the customer's next message always starts (or continues) a live one.
         $lastClosed = Conversation::query()
             ->where('connection_id', $connection->id)
             ->where('contact_id', $contact->id)
+            ->live()
             ->where('status', ConversationStatus::Closed)
             ->orderByDesc('closed_at')
             ->orderByDesc('id')

@@ -3,8 +3,8 @@
 namespace App\Services\Meta;
 
 use App\Enums\ConnectionChannel;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use App\Exceptions\StorageUnavailable;
+use App\Services\Storage\MediaDisk;
 
 /**
  * Validates a customer media file and stores it on the private media disk
@@ -14,9 +14,15 @@ use Illuminate\Support\Str;
  * the channel's own limits for Messenger and Instagram (self::META_INBOUND):
  * images up to 8 MB (GIF and WebP included, so stickers and "Like" thumbs
  * are kept), audio, video and files up to 25 MB.
+ *
+ * The write goes through MediaDisk: it is verified (result, existence and
+ * size) and an unready or failing disk raises StorageUnavailable instead of
+ * returning a path that does not exist.
  */
 class MediaStorage
 {
+    public function __construct(private MediaDisk $disk) {}
+
     /**
      * Detected types that are aliases of an accepted one.
      *
@@ -80,6 +86,7 @@ class MediaStorage
      * @return array{disk: string, path: string, mime_type: string, size_bytes: int, sha256: string}
      *
      * @throws MediaRejected
+     * @throws StorageUnavailable The media disk is not ready or the write could not be verified; nothing was kept.
      */
     public function store(string $localPath, string $kind, ?ConnectionChannel $channel = null): array
     {
@@ -93,25 +100,11 @@ class MediaStorage
         $mime = $this->detect($localPath);
         $this->assertType($kind, $mime, $channel);
 
-        $disk = (string) config('filesystems.media_disk', 'local');
-        $path = 'media/'.now()->format('Y').'/'.now()->format('m').'/'.Str::uuid();
-        $stream = fopen($localPath, 'rb');
-
-        if ($stream === false) {
-            throw new MediaRejected('unreadable', 'No fue posible leer el archivo recibido.');
-        }
-
-        try {
-            Storage::disk($disk)->writeStream($path, $stream, ['visibility' => 'private']);
-        } finally {
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-        }
+        $stored = $this->disk->putFile($localPath, 'media/'.now()->format('Y').'/'.now()->format('m'));
 
         return [
-            'disk' => $disk,
-            'path' => $path,
+            'disk' => $stored['disk'],
+            'path' => $stored['path'],
             'mime_type' => $mime,
             'size_bytes' => $size,
             'sha256' => (string) hash_file('sha256', $localPath),

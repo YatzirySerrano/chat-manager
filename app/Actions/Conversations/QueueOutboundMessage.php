@@ -9,6 +9,7 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Exceptions\ConversationConflict;
+use App\Exceptions\StorageUnavailable;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\ApiToken;
 use App\Models\Conversation;
@@ -17,6 +18,7 @@ use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Storage\MediaDisk;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentKind;
 use App\Support\Attachments\ChannelAttachmentPolicy;
@@ -24,7 +26,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Ramsey\Uuid\Uuid;
@@ -46,6 +47,10 @@ use Throwable;
  * conversation's channel (ChannelAttachmentPolicy). A file the channel has
  * no native type for (ZIP on WhatsApp) is delivered as a signed expiring
  * download link (AttachmentDownloadLink), whose expiry is fixed here.
+ * The copy is written and verified (MediaDisk) before the conversation is
+ * locked and deleted again when the message is not recorded (refusal,
+ * rollback or a repeated reference); an unready disk refuses the reply with
+ * StorageUnavailable (503) and stores nothing.
  *
  * `first_response_at` is set when the first human reply is queued (not when
  * the provider accepts it); analytics compute delivery based metrics apart.
@@ -62,15 +67,44 @@ class QueueOutboundMessage
         private ConversationLifecycle $lifecycle,
         private CustomerServiceWindow $window,
         private ChannelAttachmentPolicy $attachments,
+        private MediaDisk $mediaDisk,
     ) {}
 
     public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null): Message
     {
         $body = $body === null || trim($body) === '' ? null : $body;
+        $inspected = null;
+        $refusal = null;
         $stored = null;
+        $duplicate = false;
+
+        // Nothing is read or stored for someone who may not reply here (a
+        // read-only viewer): the permission is checked before touching the
+        // file; the full authorization runs again under the lock.
+        if ($attachment !== null) {
+            $this->lifecycle->ensurePermitted($actor, 'reply', $conversation);
+        }
+
+        // A repeated submission answers the stored message: its file is
+        // neither inspected nor stored again.
+        if ($attachment !== null && ! Message::query()->where('client_reference', $clientReference)->exists()) {
+            try {
+                $inspected = $this->inspect($attachment, $body, $conversation);
+            } catch (ValidationException|ConversationConflict $exception) {
+                // Reported inside the lock, after the reference and sending checks.
+                $refusal = $exception;
+            }
+        }
+
+        // The persistent copy is written (and verified) before the
+        // conversation is locked, so a slow external disk never holds the
+        // lock; it is removed again if the message is not recorded.
+        if ($inspected !== null && $attachment !== null) {
+            $stored = $this->store($attachment);
+        }
 
         try {
-            return DB::transaction(function () use ($conversation, $actor, $body, $clientReference, $attachment, $replyToMessageId, &$stored): Message {
+            $message = DB::transaction(function () use ($conversation, $actor, $body, $clientReference, $attachment, $replyToMessageId, $inspected, $refusal, $stored, &$duplicate): Message {
                 $conversation = $this->lifecycle->lock($conversation);
                 $actor = $this->lifecycle->authorize($actor, 'reply', $conversation);
 
@@ -81,22 +115,35 @@ class QueueOutboundMessage
                         throw new ConversationConflict('La referencia del mensaje ya se usó en otra conversación.');
                     }
 
+                    $duplicate = true;
+
                     return $existing;
                 }
 
-                $refusal = $this->sendingRefusal($conversation);
+                $sendingRefusal = $this->sendingRefusal($conversation);
+
+                if ($sendingRefusal !== null) {
+                    throw new ConversationConflict($sendingRefusal['message']);
+                }
 
                 if ($refusal !== null) {
-                    throw new ConversationConflict($refusal['message']);
+                    throw $refusal;
                 }
 
                 $type = MessageType::Text;
                 $file = ['mime' => '', 'name' => '', 'size' => 0, 'sha256' => '', 'delivery' => AttachmentDeliveryMethod::Native];
 
                 if ($attachment !== null) {
-                    [$type, $file] = $this->inspect($attachment, $body, $conversation);
+                    // Inspected before the lock, unless the reference existed then.
+                    [$type, $file] = $inspected ?? $this->inspect($attachment, $body, $conversation);
                 } elseif ($body === null) {
                     throw ValidationException::withMessages(['body' => 'Escribe un mensaje o adjunta un archivo.']);
+                }
+
+                if ($attachment !== null && $stored === null) {
+                    // The reference existed before the lock but not anymore:
+                    // a rare race; the sender simply tries again.
+                    throw new StorageUnavailable('not_stored', $this->mediaDisk->name(), 'No se pudo guardar el archivo adjunto. Inténtalo de nuevo.');
                 }
 
                 $message = new Message([
@@ -120,9 +167,7 @@ class QueueOutboundMessage
                     throw new ConversationConflict('La referencia del mensaje ya se usó en otra conversación.');
                 }
 
-                if ($attachment !== null) {
-                    $stored = $this->store($attachment);
-
+                if ($stored !== null) {
                     $record = new MessageAttachment([
                         'disk' => $stored['disk'],
                         'path' => $stored['path'],
@@ -149,11 +194,18 @@ class QueueOutboundMessage
         } catch (Throwable $exception) {
             // Nothing references a file whose message was rolled back.
             if ($stored !== null) {
-                Storage::disk($stored['disk'])->delete($stored['path']);
+                $this->mediaDisk->discard($stored['disk'], $stored['path']);
             }
 
             throw $exception;
         }
+
+        if ($duplicate && $stored !== null) {
+            // The same reference was recorded meanwhile with its own copy.
+            $this->mediaDisk->discard($stored['disk'], $stored['path']);
+        }
+
+        return $message;
     }
 
     /**
@@ -325,18 +377,21 @@ class QueueOutboundMessage
     }
 
     /**
+     * The verified persistent copy on the media disk (media/{yyyy}/{mm}/{uuid}).
+     *
      * @return array{disk: string, path: string}
+     *
+     * @throws StorageUnavailable
      */
     private function store(UploadedFile $attachment): array
     {
-        $disk = (string) config('filesystems.media_disk', 'local');
-        $path = $attachment->storeAs('media/'.now()->format('Y/m'), (string) Str::uuid(), ['disk' => $disk]);
+        $path = $attachment->getRealPath();
 
         if ($path === false) {
-            throw new ConversationConflict('No se pudo guardar el archivo adjunto. Inténtalo de nuevo.');
+            throw new StorageUnavailable('read_failed', $this->mediaDisk->name(), 'No se pudo leer el archivo adjunto. Adjúntalo de nuevo.');
         }
 
-        return ['disk' => $disk, 'path' => $path];
+        return $this->mediaDisk->putFile($path, 'media/'.now()->format('Y/m'));
     }
 
     /**

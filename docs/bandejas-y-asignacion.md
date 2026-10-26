@@ -260,6 +260,57 @@ Reglas del motor (`app/Actions/Conversations`):
 - **Cuando se libera capacidad** la cola se vuelve a ofrecer: al cerrar (a mano o por inactividad), al asignar, transferir o liberar una conversación (para el responsable anterior; al liberar, la conversación liberada no vuelve a esa persona en esa misma pasada), al subir o quitar el límite de la plataforma y al fijar, subir o quitar el límite propio del agente o del departamento (fijar uno donde se heredaba puede subir el límite efectivo). Se hace después de confirmar la operación, solo para departamentos activos y automáticos y agentes elegibles, de forma acotada: como máximo 100 conversaciones por departamento, cada una en su propia transacción corta, y se detiene en la primera que nadie puede tomar. Un fallo se reporta y deja la cola esperando la siguiente ocasión; nunca deshace la operación que liberó el hueco.
 - Bajar un límite nunca quita conversaciones ya asignadas; los cambios se aplican en caliente a las siguientes decisiones.
 
+### Errores de las acciones: 403, 404 y 409 (fase 5.2)
+
+Cada operación (aceptar, asignar, transferir, devolver a la cola, cerrar, reabrir, etiquetar, notas, responder,
+enviar plantilla) se decide en dos mitades: **permiso y alcance** (`ConversationPolicy::permits()`, sin mirar el
+estado) y **estado actual** (`App\Services\Conversations\ConversationStateGuard`, evaluado otra vez bajo bloqueo por
+el motor). El orden es fijo:
+
+| Caso                                                                                                                   | Respuesta | Texto (`message`)                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| La conversación no es visible (fuera de alcance, inexistente o historial archivado en una ruta operativa)              | **404**   | Sin detalles; la interfaz dice «Esta conversación ya no está disponible para ti. Actualiza la información para continuar.» |
+| Visible, pero sin el permiso o el alcance operativo                                                                    | **403**   | «No tienes autorización para realizar esta acción.»                                                                        |
+| Visible y es historial **importado** de Whaticket (cualquier operación)                                                | **403**   | «Esta conversación es un historial importado y es de solo consulta.»                                                       |
+| Con permiso, pero el estado cambió: `code = state_changed`                                                             | **409**   | «Esta conversación cambió de estado. Actualiza la información para continuar.»                                             |
+| Con permiso, pero otro agente la atiende ahora: `code = assigned_to_other`                                             | **409**   | «Otro agente ya está atendiendo esta conversación.»                                                                        |
+| Con permiso, pero se cerró: `code = closed`                                                                            | **409**   | «Esta conversación está cerrada. Revisa las opciones disponibles.»                                                         |
+| La conversación dejó de ser visible **durante** la petición (se transfirió o reasignó entre la vista y el bloqueo)     | **409**   | `state_changed`, sin detalles de adónde fue                                                                                |
+| Otro conflicto que no es de estado (límite alcanzado, otra conversación activa, cambio concurrente): `code = conflict` | **409**   | Su propia explicación (`App\Exceptions\ConversationConflict`, convención de `/api/v1`)                                     |
+
+- **Ser responsable es estado:** a un agente que actúa sobre una conversación que **fue suya** (se la asignaron a
+  otro, la transfirieron o la devolvieron mientras la tenía abierta) se le responde 409 con lo que pasó, no 403. A
+  quien nunca la atendió (no hay ningún evento que se la quitara) y no la administra, 403.
+- Una decisión tomada sobre una versión vieja de la conversación (`version`) responde 409 con la explicación más
+  específica posible.
+- Orden dentro del motor (`ConversationLifecycle::authorize()`, bajo bloqueo): (1) sigue siendo visible (si no, 409
+  `state_changed`; aceptar tiene su propia regla de visibilidad); (2) permiso y alcance (403); (3) versión (409);
+  (4) estado (409, o 403 si nunca fue suya).
+- **Responsable de su propia conversación:** responder, cerrar y devolver a Pendientes solo exigen ser el responsable
+  (más el permiso), como antes de la fase 5.2; los demás necesitan el alcance operativo. Si sigue abierta y a su
+  cargo lo decide la guarda de estado.
+- JSON: `{code, message}` (`App\Exceptions\ConversationStateConflict`, códigos de `App\Enums\ConversationConflict`).
+  Inertia: el mensaje en `errors.conversation` y el código en `errors.conversation_conflict`; un 403 en una visita
+  Inertia muestra el texto en un aviso y recarga la vista con los permisos vigentes.
+- Interfaz: `resources/js/lib/conversations/actionErrors.ts` (`conversationActionErrorMessage(status, body)`,
+  `isConversationConflict(status)`) lo usan `ConversationActions`, la aceptación, los diálogos de motivo y de destino
+  y el compositor. Ante un 409 se muestra el mensaje y se recarga la conversación para que aparezca su estado real.
+- Pruebas: `tests/Feature/Conversations/ConversationConflictTest.php`, `ImportedConversationAccessTest.php`.
+  Decisión: [ADR-INBOX-13](decisiones.md#adr-inbox-13--permiso-y-estado-separados-403-para-permisos-409-para-estado).
+
+### Conversaciones importadas de Whaticket (fase 5.2)
+
+- Destino «Importar»: conversación cerrada visible en el filtro «Cerradas», la búsqueda, las exportaciones y la ficha
+  del contacto (con la etiqueta de origen). Sus mensajes muestran «Importado de Whaticket» y el remitente original,
+  sin palomitas ni «Enviado». No tiene compositor ni acciones (403 con el texto de historial importado), no entra en
+  métricas, no abre la ventana de 24 h y nunca recibe mensajes nuevos: el siguiente mensaje del cliente abre o
+  continúa una conversación en vivo.
+- Destino «Archivar» (`history_only_at`): fuera de la bandeja, la búsqueda, las exportaciones, los contadores y la API;
+  cualquier ruta operativa responde 404. Se consulta en Administración → «Historial importado» con
+  `history-import.archive-view`; la ficha del contacto y el panel de detalles de una conversación en vivo del mismo
+  contacto enlazan a ese historial («Ver en el historial importado») solo para quien tiene el permiso.
+- Detalle completo: [migracion-whaticket.md §Destinos](migracion-whaticket.md#destinos).
+
 ## 5. Ausencias y cambios de acceso
 
 - **No hay disponibilidad manual** (fase 5): se retiraron el interruptor «Disponible / No disponible», su ruta y su señal. Aceptar, asignar, transferir, la distribución automática y los avisos de cola dependen solo de cuenta activa, rol activo, permiso, pertenencia al departamento, departamento activo y límite de carga (más el horario donde ya aplicaba). Las columnas `users.availability*` se conservan sin uso operativo. Panel y reportes muestran «Agentes activos».
@@ -283,12 +334,35 @@ Reglas del motor (`app/Actions/Conversations`):
 
 ## 7. Archivos adjuntos
 
-- Tipos y límites por tipo (alineados con Meta): imágenes JPEG/PNG 5 MB; documentos PDF, texto y Office 16 MB; audio AAC/MP4/MPEG/AMR/OGG 16 MB; video MP4/3GPP 16 MB. Se leen de `config('whatsapp.media.types')` (módulo de mensajería; el tope de documentos se ajusta con `WHATSAPP_DOCUMENT_MAX_BYTES`); si falta, se usan estos valores.
+- **Tipos y límites por canal:** la matriz vigente está en
+  [mensajeria-whatsapp.md §4.2](mensajeria-whatsapp.md#42-saliente) (`ChannelAttachmentPolicy`). En WhatsApp: imágenes
+  JPEG/PNG 5 MB; audio AAC, AMR, MP3, M4A y OGG (solo Opus mono) 16 MB, sin texto; video MP4/3GPP 16 MB; documentos
+  PDF, TXT y Office 100 MB (`WHATSAPP_DOCUMENT_MAX_BYTES`); ZIP solo como enlace privado.
+- **Menú del clip (fase 5.2).** El clip abre un menú con las categorías que el canal admite, en el orden de WhatsApp:
+  **Fotos e imágenes, Videos, Documentos y Audio**. Cada una abre el selector de archivos con su propio filtro
+  (`accept`) y su máximo; se cierra con un clic fuera o con Escape, se recorre con flechas y el foco vuelve al clip.
+  Un archivo elegido en otra categoría (una foto en «Videos») se rechaza con un texto propio de la categoría, nunca se
+  envía como otro tipo.
+- **Vista previa** antes de enviar: miniatura (imagen), primer fotograma (video) o icono, con nombre, tamaño, tipo y
+  «Se envía como archivo»; se puede quitar. Durante la subida se ve el progreso real y un segundo envío se ignora.
+- **Duplicados:** elegir otra vez el mismo archivo no lo agrega de nuevo; si ese mismo archivo ya se envió en la
+  conversación, se avisa («Ya enviaste este mismo archivo en esta conversación. Revisa que no sea un duplicado antes de
+  enviarlo.»).
+- **ZIP:** en WhatsApp, Messenger e Instagram solo se envía con la acción explícita **«Enviar como enlace privado
+  temporal»** (texto con un enlace firmado que vence; ver [mensajeria §4.2](mensajeria-whatsapp.md#42-saliente)); el
+  chat web lo lleva como archivo.
+- **Errores claros:** demasiado grande, tipo no admitido, categoría equivocada, almacenamiento no disponible (503; el
+  clip se desactiva con «Por ahora no se pueden adjuntar archivos…» y el texto sigue funcionando) y conversación que
+  cambió mientras tanto (409, §4 «Errores de las acciones»).
+- **Adjuntos no disponibles:** «Archivo no disponible» (expirado, rechazado o fallido) y «Archivo histórico no
+  disponible» (importado sin archivo en el ZIP), sin enlace de descarga.
 - El tipo real se detecta con `finfo` a partir del contenido; el nombre y el tipo que declara el navegador no cuentan. Un ejecutable o una página HTML renombrados se rechazan.
-- El audio no admite texto (regla de WhatsApp); el texto de un archivo admite hasta 1024 caracteres.
-- Se guardan en el disco privado `filesystems.media_disk` (por defecto `local`, es decir `storage/app/private`) en `media/{aaaa}/{mm}/{uuid}`, sin extensión ni nombre original en la ruta. El nombre visible se limpia de rutas y caracteres reservados. Se guarda el SHA-256.
+- El audio de WhatsApp no admite texto; el texto de un archivo admite hasta 1024 caracteres.
+- Se guardan en el disco privado `filesystems.media_disk` (`MEDIA_DISK`: `local`, es decir `storage/app/private`, o un
+  bucket S3 privado; [infraestructura §Almacenamiento de adjuntos](infraestructura-y-despliegue.md#almacenamiento-de-adjuntos-fase-52))
+  en `media/{aaaa}/{mm}/{uuid}`, sin extensión ni nombre original en la ruta. El nombre visible se limpia de rutas y caracteres reservados. Se guarda el SHA-256. Cada escritura se verifica antes de registrar el archivo.
 - Si el envío se rechaza después de guardar el archivo, el archivo se borra. Un reintento con la misma `client_reference` no guarda otro archivo.
-- Se sirven con `X-Content-Type-Options: nosniff`, `Content-Disposition` (en línea solo para tipos seguros; el resto se descarga como `application/octet-stream`), `Cache-Control: private` y una CSP con `sandbox` (salvo PDF, para que el visor del navegador funcione).
+- Se sirven **siempre a través de la aplicación** (también desde S3: se transmiten por la ruta autorizada, nunca con una URL prefirmada) con `X-Content-Type-Options: nosniff`, `Content-Disposition` (en línea solo para tipos seguros; el resto se descarga como `application/octet-stream`), `Cache-Control: private` y una CSP con `sandbox` (salvo PDF, para que el visor del navegador funcione).
 - Si el archivo falta en disco, la respuesta es 404 y la interfaz muestra «ya no está disponible».
 
 ## 8. Permisos relacionados

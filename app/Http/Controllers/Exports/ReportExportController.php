@@ -41,8 +41,7 @@ class ReportExportController extends Controller
         if ($result instanceof DataTransfer) {
             Inertia::flash('toast', [
                 'type' => 'info',
-                'message' => "Estamos generando tu archivo de {$definition->title()}. Te avisaremos en Exportaciones cuando esté listo.",
-                'action' => ['label' => 'Ver exportaciones', 'href' => route('exports.index')],
+                'message' => "Estamos preparando el archivo de {$definition->title()}. Te avisaremos cuando esté listo; podrás descargarlo desde la notificación.",
             ]);
 
             return back();

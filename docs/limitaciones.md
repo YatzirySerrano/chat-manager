@@ -1,6 +1,6 @@
 # Limitaciones y dependencias externas
 
-Estado real de Chat Manager tras la fase de estabilización (2026-10-22): qué está probado, qué es simulado, qué
+Estado real de Chat Manager tras la fase de estabilización (2026-10-22), actualizado en la fase 5.2 (2026-10-25): qué está probado, qué es simulado, qué
 depende de una validación externa, qué se resolvió del informe anterior y qué sigue abierto. Cada módulo conserva el
 detalle técnico en su documento; el registro completo de la fase (problema por problema, archivos y funciones
 intervenidas) está en [estabilizacion-final.md](estabilizacion-final.md).
@@ -34,6 +34,7 @@ automatizada.
 | Monitor externo de `/health/ready`                      | Detectar una caída total                                                                            | La aplicación no puede avisar de su propia caída                                                   |
 | Destino de copia externa (rsync/rclone)                 | Respaldos fuera del servidor                                                                        | Perder el servidor implica perder los respaldos                                                    |
 | Redis (opcional)                                        | Escalar colas, caché y varias instancias de Reverb                                                  | Todo corre en `database`                                                                           |
+| Almacenamiento S3 o compatible (opcional, fase 5.2)     | Adjuntos fuera del servidor (AWS S3, Synology C2, MinIO por VPN)                                    | Los adjuntos quedan en el disco del servidor; con `MEDIA_DISK_REQUIRED` no se aceptan archivos     |
 | Sitio del cliente que inserta el widget                 | Chat web: fragmento, orígenes permitidos, CSP compatible y, si identifica, firma HMAC en su backend | El widget no monta en orígenes no listados ni con una CSP del sitio que bloquee `frame-src`        |
 
 ## 2. Implementado y probado
@@ -104,7 +105,11 @@ Nunca se ha intercambiado un mensaje auténtico con Meta ([mensajeria-whatsapp.m
   producción que distinguen «no llegó a Meta» de «ambiguo»;
 - estados reales de entrega y lectura; los IDs de multimedia subida caducan a los 30 días;
 - el piloto controlado (`WHATSAPP_PILOT_RECIPIENTS`) y el procedimiento de activación paso a paso
-  ([§9](mensajeria-whatsapp.md#9-activación-real-paso-a-paso)) están escritos pero no ejecutados.
+  ([§9](mensajeria-whatsapp.md#9-activación-real-paso-a-paso)) están escritos pero no ejecutados;
+- fase 5.2: la nueva subida de un ID de medio vencido o rechazado (131053/100) y la guarda que descarta el contenido de
+  grupos ([mensajeria §12](mensajeria-whatsapp.md#12-grupos-de-whatsapp-fase-52)); el cobro de mensajes de servicio
+  desde el 1-oct-2026 (cupo de 1,000 entregados al mes por número) no se refleja en la aplicación, que no calcula
+  costos ([mensajeria §6.1](mensajeria-whatsapp.md#61-costos)).
 
 ### 4.1.1 Facebook Messenger e Instagram
 
@@ -125,7 +130,18 @@ reales requieren claves VAPID y una prueba manual (HTTPS o `localhost`;
 
 - El adaptador `whaticket-contacts` es heurístico y está marcado **pendiente de validación** hasta revisar una
   exportación auténtica ([migracion-whaticket.md](migracion-whaticket.md#validar-el-adaptador-con-una-exportación-real)).
-- La importación de conversaciones y mensajes históricos requiere muestras reales anonimizadas.
+- El **importador de historial** (fase 5.2) está implementado y probado con archivos sintéticos, pero sus formatos
+  **no están verificados** con exportaciones auténticas: las columnas del CSV de mensajes y las líneas de `Chat.txt`
+  no están documentadas por Whaticket ni por WhatsApp y se infirieron. Requiere muestras reales anonimizadas en un
+  entorno que no sea de producción antes de la primera migración
+  ([requisitos previos](migracion-whaticket.md#requisitos-previos-para-la-primera-migración)). Sus 7 migraciones
+  **no están aplicadas** en `chatmanager`.
+
+### 4.3.1 Almacenamiento externo
+
+El disco S3 (`MEDIA_DISK=s3`) se probó con dobles de disco (`FailingDisk`, discos falsos) en Pest; **no se ha probado
+contra un bucket real** (AWS, Synology C2 ni MinIO). La lista vigente de operaciones S3 que admite C2 no se pudo
+confirmar. Validarlo con `app:preflight` y la [guía §31.8](guia-pruebas-manuales.md#31-fase-52).
 
 ### 4.4 Servidor real
 
@@ -169,14 +185,14 @@ Resumen de las limitaciones del informe anterior que ya no aplican (detalle, arc
 
 | Área           | Pendiente                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mensajería     | Crear o editar plantillas desde la app; cálculo de costos; comparar el `sha256` de Meta; plantillas OTP, Flow, catálogo, carrusel y ofertas; encabezados multimedia sin URL pública; **alerta proactiva** por umbral de `delivery_unknown` (hoy solo conteo en la ficha de la conexión); guarda de orden para las actualizaciones de **calidad** de plantillas (no hay marca de tiempo propia)                                                                                                                                                             |
+| Mensajería     | Groups API de WhatsApp (hoy su contenido se descarta; requiere OBA, máximo 8 participantes e invitación por plantilla); crear o editar plantillas desde la app; cálculo de costos; comparar el `sha256` de Meta; plantillas OTP, Flow, catálogo, carrusel y ofertas; encabezados multimedia sin URL pública; **alerta proactiva** por umbral de `delivery_unknown` (hoy solo conteo en la ficha de la conexión); guarda de orden para las actualizaciones de **calidad** de plantillas (no hay marca de tiempo propia)                                     |
 | Bandeja        | Búsqueda por subcadena dentro de una palabra o por sufijo de teléfono; fragmento coincidente en la búsqueda de mensajes; búsqueda en notas; índice para la prioridad con `status=all` (columna `status_rank`); el expediente exportado incluye como máximo 500 eventos y 500 notas                                                                                                                                                                                                                                                                         |
 | Asignación     | Reglas de enrutamiento por contenido, menús o bots; reabrir no mira la capacidad del responsable anterior; el reintento de `delivery_unknown` sigue reservado al responsable con la conversación abierta (decisión de producto)                                                                                                                                                                                                                                                                                                                            |
 | Chat interno   | Búsqueda con índice de texto completo (sigue `LIKE`, 20 resultados con aviso); más de 500 chats en la lista; exportación (decisión de privacidad) y retención automática; vista previa en línea de audio y video                                                                                                                                                                                                                                                                                                                                           |
 | Notificaciones | Alertas operativas en el centro de notificaciones (hoy log y correo); Web Push en iOS/iPadOS (PWA disponible desde la fase 5, sin probar en un dispositivo real); título del push con el nombre configurable de la plataforma                                                                                                                                                                                                                                                                                                                              |
 | Reportes       | Objetivos de servicio por departamento; turnos que crucen medianoche, varios tramos por día y festivos por departamento; calificar contra el SLA conversaciones aún sin respuesta o sin cierre; historial de quién tuvo cada conversación; atribución de mensajes por su fecha; XLSX en _streaming_                                                                                                                                                                                                                                                        |
 | Operación      | Panel de métricas históricas (Horizon/Pulse no instalados); replicación o respaldos incrementales para RPO < 24 h; ver los procesos de Supervisor desde el preflight (se detectan por la acumulación de las colas)                                                                                                                                                                                                                                                                                                                                         |
-| Migración      | Importador de tickets y mensajes de Whaticket; revertir desde un lote anterior un contacto modificado por uno posterior                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Migración      | Validar el importador de historial con exportaciones auténticas; reversión por lote del historial importado (hoy: restaurar el respaldo); descargar multimedia por URL (solo se toma de los ZIP); revertir desde un lote anterior un contacto modificado por uno posterior                                                                                                                                                                                                                                                                                 |
 | Chat web       | **Adjuntos que sube el visitante** (requieren cuotas antiabuso y antivirus; hoy solo el agente envía archivos); CAPTCHA o desafío anti-bot (hoy: trampa, límites y contacto solo con el primer mensaje); acción visible para que el visitante termine el chat (la API `DELETE /session` existe); `locale` del widget (solo español); botón con estilos si la CSP del sitio no permite `'unsafe-inline'` en `style-src`; página de llegada, referrer y UTM en Detalles o Atribución (solo `landing_url` en la sesión); segunda app de Reverb para el widget |
 | API v1         | Webhooks salientes hacia la integración (hoy se sondea con `updated_since` y `after`); envío de plantillas o adjuntos por la API; restringir el envío por la API a conversaciones sin asignar o en atención (pregunta abierta: hoy se permite en cualquier conversación no cerrada de la allowlist, sin cambiar la asignación)                                                                                                                                                                                                                             |
 | Datos          | Fecha y autor de eliminación en las entidades con `is_active` (decisión: la auditoría es la fuente; [ADR-SEC-8](decisiones.md#adr-sec-8--eliminación-lógica-heterogénea-con-la-auditoría-como-fuente))                                                                                                                                                                                                                                                                                                                                                     |
@@ -268,3 +284,10 @@ y [rendimiento-y-carga.md](rendimiento-y-carga.md).
    `integrations.*`), y decidir con legal el texto del aviso de privacidad y la retención de sesiones y contactos web.
    Revisar la cuota de Reverb antes de un volumen alto de visitantes. Los expedientes exportados usan ya las etiquetas
    nuevas de estado (Enviando, Fallido, Entrega no confirmada): avisar a quien compare con exportaciones anteriores.
+10. **Fase 5.2:** con autorización y respaldo previo, aplicar las 7 migraciones del importador, `app:sync-permissions`
+    (la migración concede `history-import.archive-view` al Administrador por defecto) y reiniciar workers
+    ([procedimiento](infraestructura-y-despliegue.md#procedimiento-de-la-fase-52)). Decidir el almacenamiento de
+    adjuntos (local o S3 privado con clave dedicada, cifrado, HTTPS y respaldo propio del bucket) y pasar
+    `app:preflight` sin bloqueantes en `storage.media`. Configurar `CACHE_LIMITER=redis` si hay Redis. Registrar el
+    método de pago en Meta (los mensajes de servicio por encima del cupo no se entregan sin él) y validar los formatos
+    de Whaticket con muestras reales antes de importar historial.

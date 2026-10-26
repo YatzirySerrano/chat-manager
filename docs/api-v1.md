@@ -125,6 +125,10 @@ que escribió pero nadie ha guardado en el directorio de Contactos), `assigned_a
 `{id: null, name: "Administración del sistema"}`: trata `id` como nullable),
 `last_message_at`, `created_at`, `updated_at`, `closed_at`. Nunca el teléfono, el correo ni las notas del contacto.
 
+Desde la fase 5.2 las conversaciones **importadas de Whaticket** (importadas o archivadas) nunca aparecen en la API:
+no se listan, no se incluyen en `updated_since` y pedirlas por id responde 404, igual que una conversación fuera de la
+allowlist. El esquema no cambia ([openapi/v1.json](openapi/v1.json) sigue vigente).
+
 **Message:** `id`, `conversation_id`, `direction` (`inbound`, `outbound`), `type`, `body`, `status`, `status_label`
 («Recibido», «Enviando», «Enviado», «Entregado», «Leído», «Fallido» o «Entrega no confirmada»), `author` (`contact`,
 `agent`, `system`, `integration`), `error_code`, `attachments [{id, file_name, mime_type, size_bytes}]`, `created_at`.

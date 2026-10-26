@@ -773,15 +773,35 @@ const run = async () => {
                         Buffer.alloc(18),
                     ]),
                 });
-                const linkNotice = ana
-                    .locator(CHAT)
-                    .locator('[role="status"]', {
-                        hasText: 'Se enviará como enlace de descarga seguro',
-                    });
-                const zipNotice = await linkNotice
+                // Fase 5.2: WhatsApp takes a ZIP only as a private link the
+                // agent opts into («Usar enlace privado»), then confirmed.
+                const linkOffer = ana.locator(CHAT).locator('[role="status"]', {
+                    hasText:
+                        'Puedes enviarlo como enlace privado solo si lo eliges',
+                });
+                const offered = await linkOffer
                     .waitFor({ timeout: 5_000 })
                     .then(() => true)
                     .catch(() => false);
+                const sendBlockedBeforeChoice = !(await ana
+                    .getByRole('button', { name: 'Enviar', exact: true })
+                    .isEnabled());
+                if (offered) {
+                    await linkOffer
+                        .getByRole('button', { name: 'Usar enlace privado' })
+                        .click();
+                }
+                const zipNotice =
+                    offered &&
+                    sendBlockedBeforeChoice &&
+                    (await ana
+                        .locator(CHAT)
+                        .locator('[role="status"]', {
+                            hasText: 'Se enviará como enlace privado',
+                        })
+                        .waitFor({ timeout: 5_000 })
+                        .then(() => true)
+                        .catch(() => false));
                 await ana
                     .getByRole('button', { name: /^Quitar el archivo adjunto/ })
                     .click();

@@ -214,7 +214,7 @@ test('four agents accepting the same conversation at once: exactly one wins, the
     $stored = committed(fn () => Conversation::query()->findOrFail($conversation->id));
 
     expect($winners)->toHaveCount(1)
-        ->and(collect(failures($results))->pluck('message')->unique()->all())->toBe(['Otra persona ya aceptó esta conversación.'])
+        ->and(collect(failures($results))->pluck('message')->unique()->all())->toBe(['Otro agente ya está atendiendo esta conversación.'])
         ->and($stored->assigned_user_id)->toBe($winners[0]['value'])
         ->and($stored->status)->toBe(ConversationStatus::Open)
         ->and($stored->version)->toBe(1)
@@ -947,7 +947,7 @@ test('two agents accepting through the web at once: one is redirected to the con
     $loser = collect($results)->firstWhere('value.status', 409)['value'];
     $winner = $agents[collect($results)->search(fn (array $result): bool => $result['value']['status'] === 302)];
 
-    expect($loser['json']['message'])->toBe('Otra persona ya aceptó esta conversación.')
+    expect($loser['json']['message'])->toBe('Otro agente ya está atendiendo esta conversación.')
         ->and(committed(fn () => Conversation::query()->findOrFail($conversation->id)->assigned_user_id))->toBe($winner->id)
         ->and(committed(fn () => ConversationEvent::query()->where('type', ConversationEventType::Accepted)->count()))->toBe(1);
 });

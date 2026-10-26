@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use League\Flysystem\Local\LocalFilesystemAdapter;
 use RuntimeException;
 use Throwable;
 
@@ -565,7 +566,36 @@ class ContactImporter
             throw ValidationException::withMessages(['file' => 'El archivo de la importación ya no está disponible. Súbelo de nuevo.']);
         }
 
-        return $this->reader->read($disk->path($path), (string) ($transfer->options['source_extension'] ?? ''));
+        $extension = (string) ($transfer->options['source_extension'] ?? '');
+
+        if ($disk->getAdapter() instanceof LocalFilesystemAdapter) {
+            return $this->reader->read($disk->path($path), $extension);
+        }
+
+        // A remote disk (S3…) has no local path: the file is streamed to a
+        // temporary copy, always removed afterwards.
+        $temporary = tempnam(sys_get_temp_dir(), 'cm-import-');
+
+        if ($temporary === false) {
+            throw new RuntimeException('No se pudo preparar una copia temporal del archivo de la importación.');
+        }
+
+        try {
+            $source = $disk->readStream($path);
+            $target = fopen($temporary, 'wb');
+
+            if (! is_resource($source) || $target === false) {
+                throw ValidationException::withMessages(['file' => 'El archivo de la importación ya no está disponible. Súbelo de nuevo.']);
+            }
+
+            stream_copy_to_stream($source, $target);
+            fclose($source);
+            fclose($target);
+
+            return $this->reader->read($temporary, $extension);
+        } finally {
+            @unlink($temporary);
+        }
     }
 
     private function deleteSource(DataTransfer $transfer): void

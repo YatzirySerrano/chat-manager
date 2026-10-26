@@ -7,6 +7,7 @@ use App\Enums\ConnectionChannel;
 use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Services\Meta\ConnectionMonitor;
+use App\Services\Meta\WhatsAppGroupPayload;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -20,7 +21,10 @@ use Illuminate\Support\Facades\Log;
  *   the connection's verify token (constant-time comparison).
  * - POST authenticates the body with X-Hub-Signature-256 (HMAC-SHA256 of
  *   the raw body with the connection's app secret), stores it and answers
- *   200 immediately; processing runs on the webhooks queue.
+ *   200 immediately; processing runs on the webhooks queue. WhatsApp Groups
+ *   API content (group_* fields, group messages and statuses) is removed
+ *   first and only logged without personal data (WhatsAppGroupPayload);
+ *   a body with nothing else is acknowledged without being stored.
  *
  * Refusals never explain why, so the endpoint cannot be probed.
  */
@@ -76,7 +80,23 @@ class WhatsAppWebhookController extends Controller
             return $this->plain('', 400);
         }
 
-        $store->handle($connection, $body, $payload);
+        // Groups API content is never handled as 1:1 customer service: it is
+        // acknowledged (so Meta does not retry it) and only counted in the log.
+        ['payload' => $direct, 'ignored' => $ignored] = WhatsAppGroupPayload::strip($payload);
+
+        if (! WhatsAppGroupPayload::nothingIgnored($ignored)) {
+            WhatsAppGroupPayload::log($connection->id, $ignored);
+
+            if (($direct['entry'] ?? []) === []) {
+                return $this->plain('', 200);
+            }
+
+            // The rest is stored without the group content; the same delivery
+            // encodes identically, so it is still stored once.
+            $body = (string) json_encode($direct, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        $store->handle($connection, $body, $direct);
 
         return $this->plain('', 200);
     }

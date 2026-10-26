@@ -8,22 +8,27 @@ use App\Exceptions\ConversationConflict;
 use App\Http\Requests\Conversations\TransferConversationRequest;
 use App\Models\Conversation;
 use App\Models\Department;
+use App\Policies\ConversationPolicy;
+use App\Services\Conversations\ConversationStateGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 
 class ConversationTransferController extends ConversationOperationController
 {
     /**
      * Who may receive this conversation (JSON for the assign and transfer
-     * dialogs). Authorized by the assign or transfer policy of this very
-     * conversation; anyone else gets the usual "not found" or "forbidden".
+     * dialogs). Authorized by the assign or transfer permission on this very
+     * conversation (anyone else gets the usual "not found" or "forbidden");
+     * a conversation closed or taken meanwhile answers the 409 conflict
+     * (the dialog sends the version it was opened on).
      */
-    public function destinations(Request $request, Conversation $conversation, TransferDestinations $destinations): JsonResponse
+    public function destinations(Request $request, Conversation $conversation, TransferDestinations $destinations, ConversationStateGuard $state): JsonResponse
     {
         $this->ensureVisible($conversation);
-        abort_unless(Gate::any(['assign', 'transfer'], $conversation), 403);
+        $ability = app(ConversationPolicy::class)->permits($request->user(), 'assign', $conversation) ? 'assign' : 'transfer';
+        $this->ensurePermitted($request->user(), $ability, $conversation);
+        $state->ensure($request->user(), $ability, $conversation, staleVersion: $request->filled('version') && $request->integer('version') !== $conversation->version);
 
         return response()->json($destinations->for($conversation, $request->user()));
     }
@@ -31,7 +36,7 @@ class ConversationTransferController extends ConversationOperationController
     public function store(TransferConversationRequest $request, Conversation $conversation, TransferConversation $transfer): RedirectResponse
     {
         $this->ensureVisible($conversation);
-        Gate::authorize('transfer', $conversation);
+        $this->ensurePermitted($request->user(), 'transfer', $conversation);
 
         $department = $request->filled('department_id')
             ? (Department::query()->find($request->integer('department_id')) ?? throw new ConversationConflict('El departamento elegido no existe.'))

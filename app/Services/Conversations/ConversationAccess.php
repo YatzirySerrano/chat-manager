@@ -135,7 +135,9 @@ class ConversationAccess
 
     private function reaches(User $user, Conversation $conversation, bool $supervising): bool
     {
-        if (! $user->holdsPermission(Permission::ViewConversations)) {
+        // History archived as read-only is consulted only from the history
+        // archive (admin.history.*, its own policy), never operationally.
+        if (! $user->holdsPermission(Permission::ViewConversations) || $conversation->isHistoryOnly()) {
             return false;
         }
 
@@ -341,6 +343,8 @@ class ConversationAccess
 
             return;
         }
+
+        $query->whereNull('conversations.history_only_at');
 
         if (! $this->readsClosedConversations($user)) {
             $query->where('conversations.status', '!=', ConversationStatus::Closed);

@@ -73,6 +73,8 @@ class RebuildConversationMetrics
     {
         return Conversation::query()
             ->select('id')
+            // Imported history never gets metrics (ConversationMetricsCalculator skips it too).
+            ->live()
             ->when($conversationIds !== [], fn (Builder $query) => $query->whereKey($conversationIds))
             ->when($since !== null, fn (Builder $query) => $query->where(fn (Builder $changed) => $changed
                 ->where('updated_at', '>=', $since)

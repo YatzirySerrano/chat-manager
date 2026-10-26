@@ -32,6 +32,7 @@ const loaders = {
     'chat-interno': () => import('./chat-interno'),
     integraciones: () => import('./integraciones'),
     sistema: () => import('./sistema'),
+    historial: () => import('./historial'),
 } satisfies Record<string, () => Promise<{ default: ModuleHelp }>>;
 
 export type ModuleHelpKey = keyof typeof loaders;

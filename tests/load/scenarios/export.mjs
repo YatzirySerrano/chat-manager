@@ -224,8 +224,15 @@ const exportRequests = [];
 for (const report of reports) {
     // A form post with the CSRF token, like the "Exportar" menu of the
     // pages; the whole history (status=all) so the file is large and queued.
+    // Since phase 5 the contacts report lists only saved contacts unless
+    // «Incluir no guardados» is on; the synthetic contacts are mostly
+    // provisional, so without it the file stays under the synchronous limit.
     const filters = new URLSearchParams(
-        report === 'conversations' ? { status: 'all', view: 'all' } : {},
+        report === 'conversations'
+            ? { status: 'all', view: 'all' }
+            : report === 'contacts'
+              ? { include_provisional: '1' }
+              : {},
     );
     const response = await recorder.measure(`export.request.${report}`, () =>
         admin.request('POST', `/exports/${report}/xlsx`, {

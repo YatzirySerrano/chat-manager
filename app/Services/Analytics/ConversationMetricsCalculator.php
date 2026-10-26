@@ -57,7 +57,8 @@ class ConversationMetricsCalculator
     {
         $conversation = Conversation::query()->find($conversationId);
 
-        if ($conversation === null || $conversation->created_at === null) {
+        // Imported history (Whaticket) is outside every metric: any row is removed.
+        if ($conversation === null || $conversation->created_at === null || $conversation->isImported()) {
             ConversationMetric::query()->where('conversation_id', $conversationId)->delete();
 
             return null;

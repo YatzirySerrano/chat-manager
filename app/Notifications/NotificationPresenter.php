@@ -355,12 +355,23 @@ class NotificationPresenter
             ];
         }
 
-        $title = $failed ? 'No se pudo generar tu exportación' : 'Tu exportación está lista';
-        $body = $failed
-            ? 'Inténtalo de nuevo o reduce los filtros.'
-            : ($transfer->isDownloadable() ? 'Descárgala desde Exportaciones antes de que expire.' : 'El archivo ya expiró.');
+        // A ready file is downloaded straight from the notification (the
+        // download route checks owner, permission and expiration again); a
+        // failed or expired one has nothing to open and says what to do.
+        if ($failed) {
+            return ['No se pudo generar tu exportación', 'Inténtalo de nuevo desde el módulo o reduce los filtros.', null, true];
+        }
 
-        return [$title, $body, $this->routeOrNull('exports.index'), true];
+        if (! $transfer->isDownloadable()) {
+            return ['Tu exportación está lista', 'El archivo ya expiró. Vuelve a exportarlo desde el módulo.', null, true];
+        }
+
+        return [
+            'Tu exportación está lista',
+            'Descárgala desde esta notificación antes de que expire.',
+            $this->routeOrNull('exports.transfers.download', ['transfer' => $transfer->id]),
+            true,
+        ];
     }
 
     /**

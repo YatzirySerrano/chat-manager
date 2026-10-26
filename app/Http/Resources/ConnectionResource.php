@@ -12,7 +12,6 @@ use App\Services\Meta\MetaApp;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Connection as seen by the interface. Secrets are never included: only
@@ -201,13 +200,13 @@ class ConnectionResource extends JsonResource
             return null;
         }
 
-        $disk = Storage::disk(UpdateWidgetSettings::disk());
+        // From whichever disk holds it (it stays readable after MEDIA_DISK changes).
+        $bytes = UpdateWidgetSettings::avatarBytes($widget->avatar_path);
 
-        if (! $disk->exists($widget->avatar_path)) {
+        if ($bytes === null) {
             return null;
         }
 
-        $bytes = (string) $disk->get($widget->avatar_path);
         $type = WebChatWidgetRequest::imageTypeOf(substr($bytes, 0, 16));
 
         return $type === null ? null : 'data:'.$type.';base64,'.base64_encode($bytes);

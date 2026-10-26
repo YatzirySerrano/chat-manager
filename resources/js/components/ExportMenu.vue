@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 import { Download, FileSpreadsheet, FileText } from '@lucide/vue';
 import { computed } from 'vue';
 import { toast } from 'vue-sonner';
+import RecentExportsSection from '@/components/exports/RecentExportsSection.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -23,7 +24,8 @@ import type { ExportFilters, ExportFormat } from '@/types';
 /**
  * "Exportar" menu of a module list. The file is generated from the same
  * filters as the screen; the server validates them and decides whether to
- * download it now or prepare it in the background (Exportaciones page).
+ * download it now or prepare it in the background (the person is notified
+ * when it is ready; the menu also lists their recently prepared files).
  * Generating a file has effects (audit, background job), so it is a POST
  * with the CSRF token, sent as a native form so the browser downloads it.
  */
@@ -111,7 +113,7 @@ function exportAs(format: ExportFormat, label: string): void {
 
     toast.info(`Preparando ${label}…`, {
         description:
-            'La descarga iniciará en unos segundos. Si el archivo es grande, lo encontrarás en Exportaciones.',
+            'Si es pequeño, la descarga empezará en unos segundos. Si es grande, te avisaremos cuando esté listo; podrás descargarlo desde la notificación.',
     });
 
     // A regular form submission: the browser downloads the file, or the
@@ -167,6 +169,7 @@ function exportAs(format: ExportFormat, label: string): void {
                     </span>
                 </span>
             </DropdownMenuItem>
+            <RecentExportsSection :report="report" />
         </DropdownMenuContent>
     </DropdownMenu>
 </template>

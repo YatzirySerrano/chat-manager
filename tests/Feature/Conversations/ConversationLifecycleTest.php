@@ -66,12 +66,12 @@ test('accepting a conversation someone already took is a controlled conflict', f
         ->from(route('conversations.index'))
         ->post(route('conversations.accept', $queued))
         ->assertRedirect(route('conversations.index'))
-        ->assertSessionHasErrors(['conversation' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.']);
 
     $this->actingAs($this->agent)
         ->postJson(route('conversations.accept', $queued))
         ->assertStatus(409)
-        ->assertExactJson(['message' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertExactJson(['code' => 'assigned_to_other', 'message' => 'Otro agente ya está atendiendo esta conversación.']);
 
     expect($queued->refresh()->assigned_user_id)->toBe($this->colleague->id)
         ->and($queued->events()->count())->toBe(1);
@@ -85,7 +85,7 @@ test('losing the race from the conversation page returns the agent to the queue 
         ->from(route('conversations.show', $queued))
         ->post(route('conversations.accept', $queued))
         ->assertRedirect(route('conversations.index'))
-        ->assertSessionHasErrors(['conversation' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.']);
 
     $this->actingAs($this->agent)
         ->get(route('conversations.show', $queued))
@@ -145,12 +145,12 @@ test('a supervisor who can see the queue gets the explanation when the conversat
         ->from(route('conversations.show', $conversation))
         ->post(route('conversations.accept', $conversation))
         ->assertRedirect(route('conversations.show', $conversation))
-        ->assertSessionHasErrors(['conversation' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.']);
 
     $this->actingAs($supervisor)
         ->postJson(route('conversations.accept', $conversation))
         ->assertStatus(409)
-        ->assertExactJson(['message' => 'Otra persona ya aceptó esta conversación.']);
+        ->assertExactJson(['code' => 'assigned_to_other', 'message' => 'Otro agente ya está atendiendo esta conversación.']);
 });
 
 test('the attention limit stops self service; a supervisor assigns past it only after confirming', function () {
@@ -218,7 +218,7 @@ test('a decision taken on stale data is rejected', function () {
     $this->actingAs($this->admin)
         ->from(route('conversations.show', $conversation))
         ->post(route('conversations.assign', $conversation), ['user_id' => $this->colleague->id, 'version' => 0])
-        ->assertSessionHasErrors(['conversation' => 'La conversación cambió mientras la consultabas. Revisa su estado actual e inténtalo de nuevo.']);
+        ->assertSessionHasErrors(['conversation' => 'Otro agente ya está atendiendo esta conversación.', 'conversation_conflict' => 'assigned_to_other']);
 
     expect($conversation->refresh()->assigned_user_id)->toBe($this->agent->id);
 });
@@ -373,18 +373,25 @@ test('release, close and reopen follow the state matrix and are recorded', funct
         ->and($conversation->events()->where('type', ConversationEventType::Closed)->sole()->note)->toBe('Resuelto');
 });
 
-test('transitions outside the matrix are rejected', function (string $state, string $route) {
+test('transitions outside the matrix are rejected', function (string $state, string $route, string $code) {
     $conversation = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create(['status' => $state]);
 
+    // Allowed to the administrator, refused by the state: a conflict (409), not a 403.
     $this->actingAs($this->admin)
         ->from(route('conversations.show', $conversation))
         ->post(route($route, $conversation), ['version' => 0])
-        ->assertForbidden();
+        ->assertRedirect(route('conversations.show', $conversation))
+        ->assertSessionHasErrors(['conversation_conflict' => $code]);
+
+    $this->actingAs($this->admin)
+        ->postJson(route($route, $conversation), ['version' => 0])
+        ->assertStatus(409)
+        ->assertJsonPath('code', $code);
 
     expect($conversation->refresh()->status->value)->toBe($state);
 })->with([
-    'reopen an open conversation' => ['open', 'conversations.reopen'],
-    'close a closed conversation' => ['closed', 'conversations.close'],
+    'reopen an open conversation' => ['open', 'conversations.reopen', 'state_changed'],
+    'close a closed conversation' => ['closed', 'conversations.close', 'closed'],
 ]);
 
 test('the state matrix only allows the documented transitions', function () {

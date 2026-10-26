@@ -11,12 +11,18 @@ use App\Models\MessageAttachment;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 /**
  * Real WhatsApp Cloud API transport: POST /{phone-number-id}/messages with the
  * connection's own token. Media is first uploaded to WhatsApp from the
  * private disk (POST /{phone-number-id}/media) and then sent by id; the
  * upload id is kept on the attachment so a retry never uploads it again.
+ * Meta keeps uploaded media 30 days: an id older than that, or one Meta
+ * answers as unknown or unusable (codes 100 and 131053), is uploaded once
+ * more from the persistent copy and the same message is sent again (never
+ * as another type). A storage read error is temporary (retried with the
+ * delivery backoff); a file that no longer exists is a permanent refusal.
  * A file WhatsApp has no type for (ZIP, delivery method "link") is sent as
  * a text with a signed expiring download link (AttachmentDownloadLink).
  * The message's client reference travels as biz_opaque_callback_data, so
@@ -26,6 +32,12 @@ use Illuminate\Support\Facades\Storage;
  */
 class MetaCloudWhatsAppTransport implements WhatsAppTransport
 {
+    /** Days an uploaded media id is reused (Meta keeps uploads for 30). */
+    private const MEDIA_ID_DAYS = 29;
+
+    /** Meta codes of a media id it no longer has or cannot use. */
+    private const STALE_MEDIA_CODES = [100, 131053];
+
     public function __construct(private MetaGraphClient $graph) {}
 
     public function name(): string
@@ -65,7 +77,19 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
             $payload['context'] = ['message_id' => $replyTo];
         }
 
-        $response = $this->graph->post((string) $connection->access_token, rawurlencode((string) $connection->phone_number_id).'/messages', $payload, 'el envío del mensaje');
+        try {
+            $response = $this->graph->post((string) $connection->access_token, rawurlencode((string) $connection->phone_number_id).'/messages', $payload, 'el envío del mensaje');
+        } catch (MetaGraphException $exception) {
+            if (! self::reusedUpload($message) || ! $exception->rejected || ! in_array($exception->metaCode, self::STALE_MEDIA_CODES, true)) {
+                throw $exception;
+            }
+
+            // Meta refused the stored upload id: upload the file once more
+            // and send the very same message (Meta processed nothing).
+            $message->attachments->first()?->forceFill(['whatsapp_media_id' => null])->save();
+            $payload = [...$payload, ...$this->content($message, $connection)];
+            $response = $this->graph->post((string) $connection->access_token, rawurlencode((string) $connection->phone_number_id).'/messages', $payload, 'el envío del mensaje');
+        }
         $id = $response['messages'][0]['id'] ?? null;
 
         if (! is_string($id) || $id === '') {
@@ -197,7 +221,20 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
             return ['type' => 'text', 'text' => ['body' => app(AttachmentDownloadLink::class)->text($message, $attachment), 'preview_url' => false]];
         }
 
-        $mediaId = $attachment->whatsapp_media_id ?? $this->upload($attachment, $connection);
+        $mediaId = $attachment->whatsapp_media_id;
+
+        // The row has no upload timestamp of its own (no migration for it):
+        // updated_at stands in for it. An outbound attachment is written only
+        // when it is created and when its upload id is saved below (or
+        // cleared for a re-upload); nothing else updates outbound rows
+        // (status changes, link revocation and recovery touch inbound rows or
+        // the message), so updated_at is the moment of the last upload.
+        if ($mediaId !== null && $attachment->updated_at !== null && $attachment->updated_at->lessThan(now()->subDays(self::MEDIA_ID_DAYS))) {
+            // Expired on Meta's side: never sent, uploaded again below.
+            $mediaId = null;
+        }
+
+        $mediaId ??= $this->upload($attachment, $connection);
         $type = $message->type->value;
         $media = ['id' => $mediaId];
         $caption = trim((string) $message->body);
@@ -215,16 +252,29 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
 
     private function upload(MessageAttachment $attachment, Connection $connection): string
     {
-        $disk = Storage::disk($attachment->disk);
-
-        if ($attachment->path === null || ! $disk->exists($attachment->path)) {
+        if ($attachment->path === null || $attachment->path === '') {
             throw new MetaGraphException('El archivo adjunto ya no existe en el almacenamiento.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
         }
 
-        $stream = $disk->readStream($attachment->path);
+        try {
+            $disk = Storage::disk($attachment->disk);
+            $exists = $disk->exists($attachment->path);
+        } catch (Throwable) {
+            throw self::storageUnreadable();
+        }
+
+        if (! $exists) {
+            throw new MetaGraphException('El archivo adjunto ya no existe en el almacenamiento.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+        }
+
+        try {
+            $stream = $disk->readStream($attachment->path);
+        } catch (Throwable) {
+            throw self::storageUnreadable();
+        }
 
         if ($stream === null) {
-            throw new MetaGraphException('No fue posible leer el archivo adjunto.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+            throw self::storageUnreadable();
         }
 
         try {
@@ -238,5 +288,28 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
         $attachment->forceFill(['whatsapp_media_id' => $mediaId])->save();
 
         return $mediaId;
+    }
+
+    /**
+     * Whether the payload just sent used a media id uploaded by an earlier
+     * attempt (one uploaded during this send was saved on the attachment).
+     */
+    private static function reusedUpload(Message $message): bool
+    {
+        $attachment = $message->attachments->first();
+
+        return in_array($message->type, [MessageType::Image, MessageType::Video, MessageType::Audio, MessageType::Document, MessageType::Sticker], true)
+            && $attachment instanceof MessageAttachment
+            && $attachment->whatsapp_media_id !== null
+            && ! $attachment->wasChanged('whatsapp_media_id');
+    }
+
+    /**
+     * The storage did not answer (network, external disk down): Meta was
+     * never called, so the delivery job retries it with its backoff.
+     */
+    private static function storageUnreadable(): MetaGraphException
+    {
+        return new MetaGraphException('No fue posible leer el archivo adjunto en el almacenamiento de archivos; se reintentará en unos minutos.', rejected: false, kind: MetaGraphException::TRANSIENT);
     }
 }

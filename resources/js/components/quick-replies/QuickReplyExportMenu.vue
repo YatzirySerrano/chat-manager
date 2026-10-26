@@ -2,6 +2,7 @@
 import { usePage } from '@inertiajs/vue3';
 import { Download, FileSpreadsheet, FileText } from '@lucide/vue';
 import { toast } from 'vue-sonner';
+import RecentExportsSection from '@/components/exports/RecentExportsSection.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -84,7 +85,7 @@ function exportAs(
 
     toast.info(`Preparando ${label}…`, {
         description:
-            'La descarga iniciará en unos segundos. Si el archivo es grande, lo encontrarás en Exportaciones.',
+            'Si es pequeño, la descarga empezará en unos segundos. Si es grande, te avisaremos cuando esté listo; podrás descargarlo desde la notificación.',
     });
 
     document.body.appendChild(form);
@@ -150,6 +151,7 @@ function exportAs(
                     {{ format.label }}
                 </DropdownMenuItem>
             </DropdownMenuGroup>
+            <RecentExportsSection report="quick-replies" />
         </DropdownMenuContent>
     </DropdownMenu>
 </template>

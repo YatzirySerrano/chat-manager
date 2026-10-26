@@ -1,6 +1,10 @@
 import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+    conversationConflictFromErrors,
+    withoutConflictCode,
+} from '@/lib/conversations/actionErrors';
 import { accept as acceptRoute } from '@/routes/conversations';
 
 /**
@@ -9,8 +13,10 @@ import { accept as acceptRoute } from '@/routes/conversations';
  * runs at a time, so a double click never sends two requests.
  *
  * The server answers with the conversation open (the list, counters and
- * chat come in the same visit) or, when a colleague was faster, with the
- * list without that row and the explanation in `errors.conversation`.
+ * chat come in the same visit) or, when a colleague was faster or it was
+ * closed, with the fresh list and the conflict (409: `errors.conversation`
+ * and its code, actionErrors.ts); without the permission, with the 403
+ * explanation as a toast.
  * Accepted from the general inbox, the row stays in its place with its
  * new status; from "Pendientes", the server opens the general inbox, so
  * the row never vanishes. The list is never patched or merged here: it is
@@ -39,8 +45,9 @@ export function useConversationAccept() {
                 onSuccess: () => options.onSuccess?.(),
                 onError: (errors) => {
                     toast.error(
-                        errors.conversation ??
-                            Object.values(errors)[0] ??
+                        conversationConflictFromErrors(errors)?.message ??
+                            errors.conversation ??
+                            Object.values(withoutConflictCode(errors))[0] ??
                             'No se pudo aceptar la conversación. Inténtalo de nuevo.',
                     );
                 },

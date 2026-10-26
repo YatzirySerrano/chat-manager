@@ -168,7 +168,7 @@ test('the dashboard computes the activity buckets once for the overview and the 
 test('a global administrator never shares cached figures with the root account', function () {
     $root = User::factory()->superAdministrator()->create();
     // Same permissions on both sides: only the root authority tells them apart.
-    $root->roles->first()->revokePermissionTo(Permission::ImportContacts->value);
+    $root->roles->first()->revokePermissionTo(Permission::reservedToRootValues());
     $root->refresh();
     $twin = User::factory()
         ->withRole(Role::factory()->scope(DataScope::Global)->withPermissions(array_map(

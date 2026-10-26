@@ -23,6 +23,7 @@ enum PermissionGroup: string
     case Supervision = 'supervision';
     case Audit = 'audit';
     case System = 'system';
+    case HistoryImport = 'history-import';
 
     public function label(): string
     {
@@ -46,6 +47,7 @@ enum PermissionGroup: string
             self::Supervision => 'Alias, colores y respuestas personales del equipo',
             self::Audit => 'Auditoría',
             self::System => 'Sistema y operación',
+            self::HistoryImport => 'Historial de Whaticket',
         };
     }
 
@@ -74,6 +76,7 @@ enum PermissionGroup: string
             self::Supervision => 'Alias, colores de chat y respuestas personales de otras personas.',
             self::Audit => 'Historial de los cambios importantes y de quién los hizo.',
             self::System => 'Estado técnico de la plataforma y tareas automáticas.',
+            self::HistoryImport => 'Importación y consulta del historial de conversaciones traído de Whaticket.',
         };
     }
 
@@ -102,6 +105,7 @@ enum PermissionGroup: string
             self::Supervision => 'user-cog',
             self::Audit => 'scroll-text',
             self::System => 'server-cog',
+            self::HistoryImport => 'history',
         };
     }
 }

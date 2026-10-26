@@ -212,6 +212,22 @@ los intentos → `download_failed`. Un adjunto no disponible se muestra como tal
 mensaje. Las descargas para agentes se sirven solo por la ruta autorizada de la bandeja (ver
 [bandejas-y-asignacion.md](bandejas-y-asignacion.md)).
 
+**Almacenamiento no disponible (fase 5.2).** Si el disco de adjuntos (`MEDIA_DISK`) no está listo o rechaza la
+escritura (`StorageUnavailable`), el trabajo reintenta dentro de sus mismos intentos y después marca el adjunto
+`unavailable / storage_unavailable`; nunca lo guarda en otro disco a escondidas. Cada escritura se verifica (resultado,
+existencia y tamaño) antes de marcarlo disponible, el temporal se borra solo después de guardar y una copia que ya no
+hace falta (otro intento ganó) se elimina. Ver
+[infraestructura §Almacenamiento de adjuntos](infraestructura-y-despliegue.md#almacenamiento-de-adjuntos-fase-52).
+
+**Recuperación de descargas atascadas** (`attachments:recover-stale`, cada 15 min, acotado a 200 filas por paso e
+idempotente; nunca borra nada):
+
+1. `pending` creados hace más de 7 días (`attachments.storage.inbound_available_days`; los ID de medios de los
+   webhooks vencen a los 7 días, §4.3) → `unavailable / expired`;
+2. `pending` que ya usaron los 12 intentos (`max_download_attempts`) → `unavailable / download_failed`;
+3. otros `pending` sin actividad en `ATTACHMENT_PENDING_STALE_MINUTES` (60) → se vuelven a encolar;
+4. con el disco listo otra vez, los `storage_unavailable` dentro de esos límites → se vuelven a encolar.
+
 ### 4.2 Saliente
 
 La bandeja guarda el archivo validado en el disco privado (`QueueOutboundMessage`, `storeAs` en streaming y SHA-256
@@ -219,6 +235,24 @@ con `hash_file`, sin cargar el archivo en memoria). Al enviarlo, el transporte l
 (`POST /{phone-number-id}/media`, multipart en streaming) y envía el mensaje por ID; el ID de Meta queda en
 `whatsapp_media_id`, de modo que un reintento no lo vuelve a subir. Los documentos llevan su nombre; imagen, video y
 documento admiten pie de foto.
+
+Desde la fase 5.2 (`MetaCloudWhatsAppTransport`):
+
+- **Un ID de medio vencido o rechazado se sube una sola vez más.** Meta conserva lo subido 30 días (§4.3); un
+  `whatsapp_media_id` de más de 29 días no se usa y el archivo se vuelve a subir desde la copia persistente. Si Meta
+  rechaza un ID reutilizado con el código **131053** («Unable to upload the media used in the message») o **100**, se
+  borra el ID, se sube de nuevo y se envía **el mismo mensaje** (nunca como otro tipo). No hay más reintentos de ese
+  tipo.
+- **Error de lectura del almacenamiento** (red, disco externo caído): Meta no llegó a llamarse; es temporal y la
+  entrega reintenta con su espera habitual. Un archivo que ya no existe es un rechazo definitivo («El archivo adjunto ya
+  no existe en el almacenamiento.»).
+- **Permiso antes del archivo:** `QueueOutboundMessage` comprueba que quien envía puede responder la conversación
+  (`ensurePermitted(…, 'reply')`) **antes** de inspeccionar o guardar el adjunto: a un lector sin permiso no se le lee
+  ni se le guarda nada. La copia persistente se escribe y verifica antes de bloquear la conversación, y se borra si el
+  mensaje no se registra (rechazo, reversión o referencia repetida); la autorización completa se repite bajo bloqueo.
+- **Disco no listo al adjuntar:** `QueueOutboundMessage` rechaza el archivo con **503** (`storage_unavailable`, «No fue
+  posible guardar el archivo porque el almacenamiento de archivos no está disponible…») y nada se guarda; el
+  compositor desactiva el clip y explica que los mensajes de texto siguen funcionando.
 
 **Política por canal** (`App\Support\Attachments\ChannelAttachmentPolicy`, enviada al compositor como
 `composer.attachments.{canal}` para validar antes de subir; el servidor vuelve a validar). El tipo real se lee de los
@@ -247,8 +281,8 @@ exige firma válida (`signed`), limita por dirección (`ATTACHMENT_LINK_DOWNLOAD
 su id y lo sirve desde su ruta guardada (nada de la URL llega al disco), solo si es un adjunto saliente entregado como
 enlace y disponible; siempre como descarga (`Content-Disposition: attachment`, `nosniff`, sandbox, `no-store`) y
 registra cada descarga en el log (ids y hash de la IP). Firma alterada o vencida → 403 con un texto en español. El
-compositor lo anuncia («Se enviará como enlace de descarga seguro porque WhatsApp no admite archivos ZIP») y la
-burbuja lo muestra («Enlace de descarga · vence el …»). Los transportes de Messenger/Instagram construyen el
+compositor ofrece «Usar enlace privado» («WhatsApp no admite archivos ZIP como archivo adjunto…»; «Enviar» queda
+desactivado hasta elegirlo y «No usar enlace» lo deshace) y la burbuja lo muestra («Enlace de descarga · vence el …»). Los transportes de Messenger/Instagram construyen el
 texto con `AttachmentDownloadLink::text()` (en Instagram, forma compacta de ≤ 1000 bytes).
 
 **Revocar un enlace.** Quien envió el archivo o quien puede responder la conversación puede desactivarlo antes de que
@@ -258,10 +292,45 @@ venza: `POST conversations/{c}/messages/{m}/attachments/{a}/revoke-link` (`conve
 desactivado…») y ningún transporte vuelve a enviar ese enlace (un reintento falla con «fue revocado»). Revocar dos veces
 no cambia nada. El recurso del mensaje expone `link_revoked_at` y `link_revoke_url` por adjunto.
 
+**Menú de adjuntos (fase 5.2).** `describeAll()` añade a cada canal sus `categories` en el orden del menú (Fotos e
+imágenes, Videos, Documentos, Audio; el ZIP es un documento), con el `accept` del selector, el máximo y la entrega
+(`native`, `link` o `mixed`), y `storage.ready` / `storage.message` para desactivar el clip si el disco no está listo.
+Comportamiento en el compositor: [bandejas §7](bandejas-y-asignacion.md#7-archivos-adjuntos).
+
 **Límites del servidor.** Un archivo mayor que `upload_max_filesize` de PHP no llega a Laravel: el compositor muestra
 «El servidor no pudo recibir el archivo (su límite de subida es …)». Una petición mayor que `post_max_size` responde
 413 con una explicación en español. Ver [infraestructura-y-despliegue.md §6](infraestructura-y-despliegue.md#6-https-y-nginx)
 para los valores necesarios.
+
+### 4.3 Límites y vigencia de los medios en Meta
+
+**Hecho comprobado** ([referencia de medios](https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media),
+ejemplos con v26.0, consultada el 2026-10-25; la página no muestra fecha de actualización):
+
+| Tipo      | MIME admitidos                                                                                              | Máximo                       |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Audio     | `audio/aac`, `audio/amr`, `audio/mpeg`, `audio/mp4` (.m4a), `audio/ogg` (solo códec Opus y mono)            | 16 MB                        |
+| Documento | `text/plain`, PDF, Word, Excel y PowerPoint (`.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`); **no ZIP** | 100 MB                       |
+| Imagen    | `image/jpeg`, `image/png` (8 bits, RGB o RGBA)                                                              | 5 MB                         |
+| Sticker   | `image/webp` (solo en mensajes de sticker)                                                                  | 500 KB animado / 100 KB fijo |
+| Video     | `video/3gpp`, `video/mp4` (H.264 + AAC, una pista de audio o ninguna)                                       | 16 MB                        |
+
+- Los archivos subidos «persisten 30 días»; «los ID de medios que devuelve la API vencen a los 30 días» y «los ID de
+  medios de los webhooks vencen a los 7 días».
+- La URL que devuelve `GET /MEDIA_ID` vence a los **5 minutos**; después hay que pedirla de nuevo. La descarga exige
+  `Authorization: Bearer`; ante un 404 se pide una URL nueva.
+- Un MIME que no coincide con el contenido produce el error 131053. Enviar por `link` está marcado «(not recommended)»
+  y Meta guarda en caché el recurso enlazado 10 minutos
+  ([envío de mensajes](https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages)).
+- En video, H.264 «High» con B-frames no funciona en Android; Meta recomienda Main o Baseline y `moov` antes de
+  `mdat`.
+
+**Decisión de arquitectura:** Chat Manager descarga cada medio entrante en cuanto llega (cola `media`) a su propio
+disco, de modo que la caducidad de Meta no borra el historial, y nunca envía por `link`: sube el archivo y lo envía
+por ID (los ZIP van como texto con un enlace firmado propio, §4.2).
+
+**No confirmado:** si los 30 días también rigen para medios recibidos del lado de Meta (solo está documentado el
+vencimiento de 7 días del ID del webhook) y si enviar una nota de voz exige `voice: true`.
 
 ## 5. Mensajes salientes y estados
 
@@ -328,6 +397,20 @@ Cada cambio emite `MessageStatusChanged(id, conversación, estado, anterior)`.
 
 Los mensajes de error se sanean: nunca contienen el token (`[token]`), ni cadenas `EA…`, ni `access_token=`.
 
+**Códigos de Meta relevantes (hecho comprobado,** [códigos de error](https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes),
+consultado el 2026-10-25; la tabla no indica el estado HTTP**):**
+
+| Código | Significado según Meta                                                                        | Qué hace Chat Manager                                                                                |
+| ------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 131047 | Pasaron más de 24 h desde la última respuesta del destinatario                                | Se evita antes de enviar (ventana); si llega, `meta_131047`: usar plantilla                          |
+| 131052 | No se pudo descargar el medio que envió el usuario                                            | Adjunto entrante no disponible                                                                       |
+| 131053 | No se pudo subir el medio del mensaje (p. ej. tipo no admitido o MIME distinto del contenido) | Si era un ID reutilizado: una nueva subida y el mismo mensaje (§4.2); si no, fallido con explicación |
+| 131051 | Tipo de mensaje no admitido                                                                   | Fallido con explicación                                                                              |
+| 131026 | Mensaje no entregable (p. ej. el número no tiene WhatsApp)                                    | Fallido con explicación                                                                              |
+| 131056 | Demasiados mensajes al mismo número en poco tiempo                                            | Limitación: reintento con espera                                                                     |
+| 131049 | No entregado «para mantener un ecosistema saludable» (esperar 24 h)                           | Fallido con explicación                                                                              |
+| 131000 | Error desconocido; reintentar                                                                 | Falla temporal: reintento                                                                            |
+
 ### 5.4 Mensajes atascados y reconciliación
 
 `php artisan whatsapp:maintenance reconcile-deliveries` (cada 5 minutos) marca como `failed / delivery_unknown` los
@@ -366,9 +449,48 @@ de reintentos automáticos.
   el dato, sin depender del reloj del equipo) y pasa a «Ventana vencida» al vencer, sin recargar.
 - Pendiente (agente META): limitar a `now()` las marcas de tiempo futuras de Meta en `MetaInboundPayload`; un reloj
   adelantado del proveedor extendería la ventana.
+- Las conversaciones **importadas de Whaticket** nunca abren ventana: su compositor no existe y la explicación dice
+  que, para escribirle al cliente, hay que esperar a que vuelva a escribir (lo que abre una conversación en vivo) o
+  usar una plantilla aprobada ([migracion-whaticket.md](migracion-whaticket.md#destinos)).
 - La categoría de la plantilla (Marketing, Utilidad, Autenticación) y los bloques `pricing`/`conversation` de Meta se
   guardan como datos informativos. La aplicación **no calcula ni muestra costos**: las tarifas vigentes deben
   consultarse en Meta.
+
+**Ventana: hecho comprobado** ([envío de mensajes](https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages),
+consultado el 2026-10-25): la ventana se abre cuando el usuario escribe **o llama**, cada mensaje o llamada nueva la
+reinicia a 24 h; con la ventana cerrada solo se pueden enviar plantillas aprobadas (error 131047 si no). La respuesta
+de la API no confirma la entrega: eso llega por webhook, y un `failed` puede tardar en llegar. Estados documentados:
+`sent`, `delivered`, `read`, `failed` y `played` (primera reproducción de una nota de voz)
+([estados](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/reference/messages/status)).
+
+### 6.1 Costos
+
+**Hechos comprobados** ([precios de WhatsApp](https://developers.facebook.com/docs/whatsapp/pricing), página que
+«refleja las actualizaciones de precios vigentes desde el 1 de octubre de 2026», consultada el 2026-10-25):
+
+- **Desde el 1 de julio de 2025 Meta cobra por mensaje**, no por conversación. Hay cinco categorías: Marketing,
+  Utility y Authentication (plantillas) y Service y Meta Business Agent (sin plantilla).
+- **Los mensajes entrantes son gratis:** «Meta no cobra los mensajes de los usuarios a las empresas».
+- **Desde el 1 de octubre de 2026 se cobran los mensajes de servicio** (eran gratis desde el 1-nov-2024), con un
+  **cupo gratuito de 1,000 mensajes de servicio entregados al mes por número de empresa**, sin acumulación; se cobra
+  a partir del 1,001. Sin método de pago registrado, Meta entrega los del cupo y **deja de entregar** los siguientes.
+- **Las plantillas de Utility dentro de la ventana ya no son gratis** desde el 1 de octubre de 2026 (su
+  `pricing.type` pasó de `free_customer_service` a `regular`).
+- Excepciones documentadas: gobierno y ONG elegibles (servicio gratis por encima del cupo hasta el 31-dic-2027,
+  `pricing.subtype = paid_exempt`) y el punto de entrada gratuito de anuncios Click-to-WhatsApp (hasta 7 días). Meta
+  solo cambia precios el día 1 de cada trimestre.
+- **No se consultaron las tarifas por país** (por ejemplo México): este documento no da cifras. Consultarlas en el
+  _rate card_ oficial de Meta.
+
+**Consecuencias para Chat Manager** (inferencia a partir de los hechos anteriores):
+
+- Cada respuesta de un agente por WhatsApp es un mensaje de servicio que consume el cupo de 1,000 del número y, por
+  encima, tiene costo. Los mensajes automáticos (saludo, fuera de horario) también cuentan.
+- El **chat interno** y el **chat web** no pasan por Meta: solo tienen el costo de la infraestructura propia (servidor,
+  almacenamiento, Reverb).
+- Importar historial de Whaticket no envía nada a Meta y no tiene costo de mensajería.
+- Messenger e Instagram tienen sus propias reglas (no consultadas en esta fase).
+- La aplicación sigue sin calcular costos; `pricing` del webhook se guarda en `metadata.provider` como evidencia.
 
 ## 7. Plantillas
 
@@ -516,6 +638,9 @@ conversación transferida y cerrada (Sofía).
   garantizado); se guarda el SHA-256 propio.
 - La creación de plantillas desde la app no está implementada (se crean en WhatsApp Manager).
 - Precios y conversaciones facturables: no se calculan.
+- Fase 5.2: la nueva subida de un ID de medio vencido o rechazado (131053/100) y la guarda de contenido de grupos se
+  probaron solo con cuerpos y respuestas construidos a partir de la documentación; Meta real no ha enviado nunca un
+  error 131053 ni un webhook de grupo a esta instalación.
 
 ## 11. Pruebas
 
@@ -535,3 +660,58 @@ En la estabilización se añadieron: bloqueo por conexión al encolar, reintenta
 restaurada (`ConnectionDeletionTest`), señal `connection_changed` (`tests/Feature/Realtime/ConnectionChangeSignalTest.php`),
 orden y antigüedad de las actualizaciones de plantillas (`TemplateSyncTest`) y las ramas del simulador
 (`tests/Feature/Local/ManualValidationSimulatorTest.php`).
+
+En la fase 5.2: `tests/Feature/Storage/*` (disco listo o no, escritura verificada, recuperación de descargas
+atascadas, consumidores del disco), `tests/Feature/Conversations/AttachmentAvailabilityTest.php` (archivo no
+disponible e histórico faltante) y `tests/Feature/Webhooks/WhatsAppGroupPayloadTest.php` (contenido de grupos).
+
+## 12. Grupos de WhatsApp (fase 5.2)
+
+### Hechos comprobados
+
+Fuentes: [Groups API](https://developers.facebook.com/documentation/business-messaging/whatsapp/groups/) y
+[primeros pasos](https://developers.facebook.com/documentation/business-messaging/whatsapp/groups/get-started/),
+consultadas el 2026-10-25 (sin fecha de actualización visible):
+
+- «La Groups API está abierta a todas las empresas con **Official Business Account (OBA)**» y exige un número en Cloud
+  API. **No** está disponible para números de la app WhatsApp Business ni para números en _Multi-solution
+  Conversations_ (es decir, **sin coexistencia**).
+- Máximo **8 participantes** por grupo, 10,000 grupos por número y una sola empresa de Cloud API por grupo.
+- Se entra **solo por invitación**: se crea el grupo, llega el webhook `group_lifecycle_update` con `invite_link` y se
+  envía una **plantilla aprobada de invitación** («Group invite link»).
+- Admite texto, medios y plantillas de texto o medios. No admite llamadas, mensajes temporales, «ver una vez»,
+  autenticación, comercio ni mensajes interactivos; tampoco editar o borrar mensajes ni ocultar participantes.
+- Webhooks propios: `group_lifecycle_update`, `group_participants_update`, `group_settings_update`,
+  `group_status_update`; los mensajes de grupo llevan `group_id` y los estados `recipient_type: group`.
+- Precio por mensaje; el `pricing.type` gratuito de grupo es `free_group_customer_service`
+  ([precios](https://developers.facebook.com/docs/whatsapp/pricing)).
+
+**No confirmado:** migrar grupos existentes de WhatsApp o de la app Business, o recuperar su historial (las páginas no
+lo mencionan; como se entra solo por invitación y la app Business está excluida, **se infiere** que no es posible);
+tarifas concretas de los mensajes de grupo y si cuentan contra el cupo de 1,000; requisitos de nivel de mensajería;
+agregar participantes directamente (solo lo afirma una fuente no oficial).
+
+### Matriz de factibilidad
+
+| Necesidad                                       | ¿Se puede?                                                                                            | Qué hace Chat Manager hoy                                                                                                                                                     |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversación en grupo **entre empleados**       | Sí, sin Meta                                                                                          | [Chat interno](chat-interno.md): grupos, menciones, adjuntos; solo costo de infraestructura                                                                                   |
+| **Grupos históricos** de Whaticket o `Chat.txt` | Sí, como historial de solo lectura                                                                    | El importador los detecta (`@g.us`, varios participantes) y solo permite **archivarlos** o no importarlos ([migracion-whaticket.md](migracion-whaticket.md#grupos))           |
+| **Groups API real** con clientes                | Solo con OBA, número en Cloud API sin coexistencia, máximo 8 participantes e invitación por plantilla | **No implementado.** El webhook reconoce el contenido de grupos, responde 200 para que Meta no reintente y lo descarta (abajo); nunca crea conversaciones ni contactos con él |
+| Pasar un grupo existente de la app a la API     | No documentado (inferencia: no)                                                                       | —                                                                                                                                                                             |
+
+### Guarda del webhook (`App\Services\Meta\WhatsAppGroupPayload`)
+
+**Decisión de arquitectura** ([ADR-META-10](decisiones.md#adr-meta-10--el-contenido-de-grupos-de-whatsapp-se-confirma-y-se-descarta)):
+la aplicación no admite grupos; un mensaje de grupo convertido en conversación 1:1 con su remitente mezclaría contextos
+y podría llevar a responder en privado algo dicho en un grupo. Antes de guardar el webhook,
+`WhatsAppWebhookController` quita del cuerpo (`object = whatsapp_business_account`):
+
+- los cambios cuyo campo empieza por `group_` (los cuatro documentados y, por defensa, cualquier otro `group_*`);
+- los mensajes con `group_id` (y, por defensa, con `recipient_type: group`);
+- los estados con `recipient_type: group` (y, por defensa, con `group_id`).
+
+Si no queda nada, responde 200 sin guardar; si queda contenido 1:1, guarda solo eso (la misma entrega se codifica
+igual, así que sigue guardándose una vez). El log registra los campos, los conteos y una referencia corta de cada `group_id` (HMAC-SHA256 con la clave de la
+aplicación, para que no se pueda revertir probando identificadores),
+nunca números, nombres ni contenido.

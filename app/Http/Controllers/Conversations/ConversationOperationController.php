@@ -8,6 +8,8 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Services\Conversations\ConversationLifecycle;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -24,6 +26,18 @@ abstract class ConversationOperationController extends Controller
     protected function ensureVisible(Conversation $conversation): void
     {
         abort_unless(Gate::allows('view', $conversation), 404);
+    }
+
+    /**
+     * Before the engine runs (and outside its lock), only permission and
+     * reach are checked: a refusal is a real 403. Whether the state admits
+     * the operation is decided by the engine under lock (409).
+     *
+     * @throws AuthorizationException
+     */
+    protected function ensurePermitted(User $actor, string $ability, Conversation $conversation): void
+    {
+        app(ConversationLifecycle::class)->ensurePermitted($actor, $ability, $conversation);
     }
 
     /**

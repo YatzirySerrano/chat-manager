@@ -5,6 +5,7 @@ namespace App\Support\Attachments;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\ConnectionChannel;
 use App\Enums\MessageType;
+use App\Services\Storage\MediaDisk;
 use Illuminate\Http\UploadedFile;
 
 /**
@@ -30,6 +31,9 @@ use Illuminate\Http\UploadedFile;
 class ChannelAttachmentPolicy
 {
     private const MB = 1024 * 1024;
+
+    /** Attachment menu categories, in menu order (as in WhatsApp). */
+    private const CATEGORIES = ['image', 'video', 'document', 'audio'];
 
     /**
      * Extensions a file of each real content type may carry (first = canonical).
@@ -148,19 +152,80 @@ class ChannelAttachmentPolicy
     }
 
     /**
-     * The composer limits of every channel, keyed by channel.
+     * The composer limits of every channel, keyed by channel, for the
+     * attachment menu: each kind carries its menu `category` (image, video,
+     * audio or document; ZIP archives are documents sent as a link), the
+     * channel lists its `categories` (accept hint, size limit and how they
+     * are delivered) and `storage` says whether files can be stored now.
      *
-     * @return array<string, array{channel: string, channel_label: string, max_bytes: int, link_ttl_days: int, kinds: list<array<string, mixed>>}>
+     * @return array<string, array{channel: string, channel_label: string, max_bytes: int, link_ttl_days: int, kinds: list<array<string, mixed>>, categories: list<array{key: string, kinds: list<string>, mimes: list<string>, extensions: list<string>, accept: string, max_bytes: int, delivery: string}>, storage: array{ready: bool, message: string|null}}>
      */
     public function describeAll(): array
     {
+        $mediaDisk = app(MediaDisk::class);
+        $storage = $mediaDisk->ready()
+            ? ['ready' => true, 'message' => null]
+            : ['ready' => false, 'message' => 'Por ahora no se pueden adjuntar archivos: el almacenamiento de archivos no está disponible. Puedes enviar mensajes de texto; avisa a un administrador.'];
         $described = [];
 
         foreach (ConnectionChannel::cases() as $channel) {
-            $described[$channel->value] = $this->forChannel($channel)->describe();
+            $rules = $this->forChannel($channel);
+            $description = $rules->describe();
+            $description['kinds'] = array_map(
+                fn (array $kind): array => [...$kind, 'category' => self::categoryOf($kind['type'])],
+                $description['kinds'],
+            );
+            $description['categories'] = $this->categories($rules);
+            $description['storage'] = $storage;
+            $described[$channel->value] = $description;
         }
 
         return $described;
+    }
+
+    /**
+     * Menu category of a message type (a ZIP archive is a document).
+     */
+    public static function categoryOf(string $type): string
+    {
+        return in_array($type, self::CATEGORIES, true) ? $type : 'document';
+    }
+
+    /**
+     * The categories the channel can send, in menu order: kind keys, real
+     * types, extensions, the file chooser's `accept` hint, the largest size
+     * and the delivery ("native", "link", or "mixed" when part of the
+     * category travels as a download link, e.g. ZIP among documents).
+     *
+     * @return list<array{key: string, kinds: list<string>, mimes: list<string>, extensions: list<string>, accept: string, max_bytes: int, delivery: string}>
+     */
+    private function categories(ChannelAttachmentRules $rules): array
+    {
+        $categories = [];
+
+        foreach (self::CATEGORIES as $category) {
+            $kinds = array_values(array_filter($rules->kinds, fn (AttachmentKind $kind): bool => self::categoryOf($kind->type->value) === $category));
+
+            if ($kinds === []) {
+                continue;
+            }
+
+            $mimes = array_values(array_unique(array_merge(...array_map(fn (AttachmentKind $kind): array => $kind->mimes(), $kinds))));
+            $extensions = array_values(array_unique(array_merge(...array_map(fn (AttachmentKind $kind): array => $kind->allExtensions(), $kinds))));
+            $deliveries = array_values(array_unique(array_map(fn (AttachmentKind $kind): string => $kind->delivery->value, $kinds)));
+
+            $categories[] = [
+                'key' => $category,
+                'kinds' => array_map(fn (AttachmentKind $kind): string => $kind->key, $kinds),
+                'mimes' => $mimes,
+                'extensions' => $extensions,
+                'accept' => implode(',', [...$mimes, ...array_map(fn (string $extension): string => '.'.$extension, $extensions)]),
+                'max_bytes' => max(array_map(fn (AttachmentKind $kind): int => $kind->maxBytes, $kinds)),
+                'delivery' => count($deliveries) === 1 ? $deliveries[0] : 'mixed',
+            ];
+        }
+
+        return $categories;
     }
 
     /**

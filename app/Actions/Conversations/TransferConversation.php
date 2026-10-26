@@ -61,8 +61,8 @@ class TransferConversation
         }
 
         return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmOverCapacity): Conversation {
-            $conversation = $this->lifecycle->lock($conversation, $expectedVersion);
-            $actor = $this->lifecycle->authorize($actor, 'transfer', $conversation);
+            $conversation = $this->lifecycle->lock($conversation);
+            $actor = $this->lifecycle->authorize($actor, 'transfer', $conversation, $expectedVersion);
 
             // Both departments are referenced by the event, so both are locked
             // before the receiving agent, in id order; the destination

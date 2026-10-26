@@ -138,8 +138,8 @@ export const tourIndex: TourIndexEntry[] = [
         id: 'reportes.exportaciones',
         file: 'reportes',
         module: 'reportes',
-        title: 'Tus exportaciones',
-        summary: 'Dónde quedan tus archivos y cómo descargarlos.',
+        title: 'Tus archivos preparados',
+        summary: 'Dónde quedan los archivos grandes y cómo descargarlos.',
         version: 1,
         routes: ['exports/Index'],
     },
@@ -198,6 +198,33 @@ export const tourIndex: TourIndexEntry[] = [
         routes: ['admin/integrations/Index'],
     },
     {
+        id: 'historial.importar',
+        file: 'history-import',
+        module: 'historial',
+        title: 'Importar historial de Whaticket',
+        summary: 'Formato, lotes y cómo empezar una importación.',
+        version: 1,
+        routes: ['admin/history-import/Index'],
+    },
+    {
+        id: 'historial.lote',
+        file: 'history-import',
+        module: 'historial',
+        title: 'Revisa y clasifica un lote',
+        summary: 'Archivos, destino de cada conversación y reglas.',
+        version: 1,
+        routes: ['admin/history-import/Show'],
+    },
+    {
+        id: 'historial.consulta',
+        file: 'history-import',
+        module: 'historial',
+        title: 'Consulta el historial importado',
+        summary: 'Buscar y leer conversaciones de Whaticket.',
+        version: 1,
+        routes: ['admin/history/Index'],
+    },
+    {
         id: 'app.inicio',
         file: 'app',
         module: null,
@@ -227,6 +254,7 @@ const loaders = {
     'chat-interno': () => import('./chat-interno'),
     sistema: () => import('./sistema'),
     integraciones: () => import('./integraciones'),
+    'history-import': () => import('./history-import'),
 } satisfies Record<TourFileKey, () => Promise<{ default: TourSteps }>>;
 
 const cache = new Map<TourFileKey, TourSteps>();

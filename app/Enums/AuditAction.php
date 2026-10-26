@@ -106,6 +106,14 @@ enum AuditAction: string
     case ConnectionMetaAuthorized = 'connection.meta_authorized';
     case ConnectionMetaDisconnected = 'connection.meta_disconnected';
     case ConversationOnHoldRetired = 'conversation.on_hold_retired';
+    case HistoryImportCreated = 'history_import.created';
+    case HistoryImportFileAdded = 'history_import.file_added';
+    case HistoryImportClassified = 'history_import.classified';
+    case HistoryImportRuleApplied = 'history_import.rule_applied';
+    case HistoryImportRequested = 'history_import.requested';
+    case HistoryImportCompleted = 'history_import.completed';
+    case HistoryImportFailed = 'history_import.failed';
+    case HistoryImportDiscarded = 'history_import.discarded';
 
     /**
      * Human readable description of the action.
@@ -209,6 +217,14 @@ enum AuditAction: string
             self::ConnectionMetaAuthorized => 'Cuenta de Meta autorizada para la conexión',
             self::ConnectionMetaDisconnected => 'Cuenta de Meta desconectada de la conexión',
             self::ConversationOnHoldRetired => 'Conversación «En espera» pasada a «Pendiente»',
+            self::HistoryImportCreated => 'Importación de historial iniciada',
+            self::HistoryImportFileAdded => 'Archivo agregado a una importación de historial',
+            self::HistoryImportClassified => 'Conversaciones de una importación de historial clasificadas',
+            self::HistoryImportRuleApplied => 'Regla aplicada a una importación de historial',
+            self::HistoryImportRequested => 'Importación de historial confirmada',
+            self::HistoryImportCompleted => 'Importación de historial terminada',
+            self::HistoryImportFailed => 'Importación de historial fallida',
+            self::HistoryImportDiscarded => 'Importación de historial cancelada',
         };
     }
 
@@ -224,7 +240,8 @@ enum AuditAction: string
             self::DepartmentDeleted, self::ConnectionDeleted, self::ContactDeleted, self::TagDeleted,
             self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
             self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked,
-            self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked => 'danger',
+            self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
+            self::HistoryImportFailed => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
@@ -233,7 +250,8 @@ enum AuditAction: string
             self::ImportRollbackRequested, self::ImportRolledBack,
             self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated,
             self::WebChatKeyRotated, self::WebChatIdentitySecretRotated,
-            self::SupervisionPersonalItemUpdated, self::UserPersonalQuickRepliesRevoked => 'warning',
+            self::SupervisionPersonalItemUpdated, self::UserPersonalQuickRepliesRevoked,
+            self::HistoryImportRequested, self::HistoryImportDiscarded => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
@@ -242,20 +260,24 @@ enum AuditAction: string
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
             self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled,
             self::ApiTokenIssued, self::ContactSaved, self::UserPersonalQuickRepliesGranted,
-            self::ConnectionMetaAuthorized => 'success',
+            self::ConnectionMetaAuthorized, self::HistoryImportCompleted => 'success',
             default => 'neutral',
         };
     }
 
     /**
      * Entries only the root authority may read whoever performed them: the
-     * contacts importer is reserved to the Superadministrador.
+     * contacts importer and the history importer are reserved to the
+     * Superadministrador.
      */
     public function isAlwaysRestricted(): bool
     {
         return in_array($this, [
             self::ImportRequested, self::ImportCompleted, self::ImportFailed,
             self::ImportRollbackRequested, self::ImportRolledBack, self::ImportRollbackFailed,
+            self::HistoryImportCreated, self::HistoryImportFileAdded, self::HistoryImportClassified,
+            self::HistoryImportRuleApplied, self::HistoryImportRequested, self::HistoryImportCompleted,
+            self::HistoryImportFailed, self::HistoryImportDiscarded,
         ], true);
     }
 

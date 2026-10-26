@@ -10,13 +10,14 @@ root»). La infraestructura general está en [infraestructura-y-despliegue.md](i
 
 ## 1. Qué se respalda
 
-| Elemento                    | Dónde vive                                                                                        | Cómo                                                                 | Frecuencia sugerida                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Base de datos `chatmanager` | MariaDB                                                                                           | `chat-manager-backup-database` (`mariadb-dump --single-transaction`) | Diario + antes de cada despliegue (automático en `deploy.sh`) |
-| Archivos privados           | `shared/storage/app` (adjuntos de WhatsApp en `media/`, archivos del chat interno, importaciones) | `chat-manager-backup-storage` (tar.gz)                               | Diario                                                        |
-| Copia fuera del servidor    | `/var/backups/chat-manager` completo                                                              | `chat-manager-backup-offsite` (rsync o rclone)                       | Diario, después de los anteriores                             |
-| `.env` y `APP_KEY`          | `shared/.env`                                                                                     | Gestor de secretos de la empresa (manual)                            | En cada cambio                                                |
-| Configuración del servidor  | `/etc/nginx`, `/etc/supervisor/conf.d`, `/etc/php/8.4/fpm/pool.d`, certificados                   | Plantillas en `deploy/` + copia de `/etc`                            | En cada cambio                                                |
+| Elemento                                          | Dónde vive                                                                                        | Cómo                                                                                       | Frecuencia sugerida                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Base de datos `chatmanager`                       | MariaDB                                                                                           | `chat-manager-backup-database` (`mariadb-dump --single-transaction`)                       | Diario + antes de cada despliegue (automático en `deploy.sh`) |
+| Archivos privados                                 | `shared/storage/app` (adjuntos de WhatsApp en `media/`, archivos del chat interno, importaciones) | `chat-manager-backup-storage` (tar.gz)                                                     | Diario                                                        |
+| Bucket de adjuntos (fase 5.2, si `MEDIA_DISK=s3`) | Bucket S3 privado o compatible (AWS, Synology C2, MinIO)                                          | Versionado y/o réplica del propio proveedor; `chat-manager-backup-storage` **no** lo copia | Continuo (versionado) o diario                                |
+| Copia fuera del servidor                          | `/var/backups/chat-manager` completo                                                              | `chat-manager-backup-offsite` (rsync o rclone)                                             | Diario, después de los anteriores                             |
+| `.env` y `APP_KEY`                                | `shared/.env`                                                                                     | Gestor de secretos de la empresa (manual)                                                  | En cada cambio                                                |
+| Configuración del servidor                        | `/etc/nginx`, `/etc/supervisor/conf.d`, `/etc/php/8.4/fpm/pool.d`, certificados                   | Plantillas en `deploy/` + copia de `/etc`                                                  | En cada cambio                                                |
 
 **`APP_KEY` es crítica**: las credenciales de las conexiones de WhatsApp (token de acceso, secreto de la app, verify
 token) se guardan cifradas con ella. Una base restaurada sin la misma `APP_KEY` conserva los datos pero obliga a volver
@@ -25,6 +26,11 @@ a capturar las credenciales de cada conexión, y todas las sesiones se cierran.
 **Claves VAPID** (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`): respáldalas con el `.env`. La tabla `push_subscriptions`
 viaja en el respaldo de la base, pero si al restaurar se generan claves nuevas todas las suscripciones dejan de valer y
 cada usuario debe volver a pulsar «Activar en este navegador».
+
+**Adjuntos en S3 (fase 5.2).** Cada adjunto recuerda su disco: con `MEDIA_DISK=s3` los archivos nuevos están en el
+bucket y los anteriores siguen en `storage/app/private/media` del servidor. Para restaurar hay que recuperar **los
+dos** del mismo momento que la base. El respaldo del disco local sigue siendo necesario mientras existan filas
+antiguas en él.
 
 No se respaldan: exportaciones generadas (caducan en `EXPORTS_RETENTION_HOURS` y se pueden regenerar), cachés de
 `storage/framework` ni logs (tienen su propia rotación).
@@ -203,3 +209,21 @@ gunzip -c storage/app/backups/chatmanager-pre-migraciones-estabilizacion-2026102
 
 Tras restaurar ese volcado el código actual espera las 6 migraciones: vuelve a ejecutar `php artisan migrate`,
 `php artisan app:sync-permissions` y `php artisan analytics:rebuild`.
+
+## 10. Retención y limpieza de archivos (fase 5.2)
+
+Qué se borra solo y qué no (tareas de `routes/console.php`; [infraestructura §1](infraestructura-y-despliegue.md#tareas-programadas-routesconsolephp)):
+
+| Qué                                        | Regla                                                                                                                                                                                               | Tarea                                     |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Adjuntos de conversaciones                 | **Nunca se borran automáticamente.** Una descarga que no terminó pasa a «no disponible» (vencida a los 7 días o sin más intentos), sin borrar nada                                                  | `attachments:recover-stale` (cada 15 min) |
+| Archivos de un envío rechazado o duplicado | Se borran en el acto (nadie los referencia)                                                                                                                                                         | —                                         |
+| Exportaciones generadas                    | Caducan a las `EXPORTS_RETENTION_HOURS` (24)                                                                                                                                                        | `exports:prune` (cada hora)               |
+| Lotes del importador de historial          | Archivos subidos y mensajes de preparación: al terminar, fallar o vencer el lote; un lote sin confirmar o sin terminar vence a los `HISTORY_IMPORT_RETENTION_DAYS` (30). Lo importado nunca se toca | `history-import:prune` (diaria 04:50)     |
+| Registro de webhooks                       | 30 días (90 los fallidos)                                                                                                                                                                           | `whatsapp:maintenance prune-webhooks`     |
+| Archivos de prueba del preflight           | Se borran en la misma comprobación (`health/preflight-*.txt`)                                                                                                                                       | `app:preflight`                           |
+
+**Decisión de arquitectura:** no hay retención automática de adjuntos ni de conversaciones; borrar historial es una
+decisión legal y de negocio que la aplicación no toma sola. Con S3, las reglas de ciclo de vida del bucket solo deben
+eliminar versiones antiguas o cargas incompletas, nunca objetos vigentes: un objeto que desaparece por una regla del
+bucket se ve en la conversación como «no disponible».

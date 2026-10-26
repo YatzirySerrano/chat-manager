@@ -544,12 +544,12 @@ const run = async () => {
                 acceptButton(beto, 'Cliente Sur').click(),
             ]);
             const [anaToast, betoToast] = await Promise.all([
-                toastText(ana, /Aceptaste|Otra persona/),
-                toastText(beto, /Aceptaste|Otra persona/),
+                toastText(ana, /Aceptaste|Otro agente ya está atendiendo/),
+                toastText(beto, /Aceptaste|Otro agente ya está atendiendo/),
             ]);
             const won = (text) => /Aceptaste la conversación/.test(text);
             const lost = (text) =>
-                /Otra persona ya aceptó esta conversación/.test(text);
+                /Otro agente ya está atendiendo esta conversación/.test(text);
 
             if (won(anaToast) && lost(betoToast)) {
                 [winner, loser] = [ana, beto];

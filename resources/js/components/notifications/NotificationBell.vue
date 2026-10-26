@@ -5,6 +5,7 @@ import {
     Bell,
     BellRing,
     CheckCheck,
+    Download,
     Lock,
     RotateCcw,
     Settings2,
@@ -42,6 +43,14 @@ const label = computed(() =>
         ? 'Notificaciones, sin pendientes'
         : `Notificaciones, ${center.unread.value.total} sin leer`,
 );
+
+/**
+ * A ready export: opening it downloads the file (the server turns the
+ * visit into a full browser download, or explains that it expired).
+ */
+function isDownload(item: AppNotification): boolean {
+    return item.kind === 'export.finished' && item.url !== null;
+}
 
 function select(item: AppNotification): void {
     if (item.url) {
@@ -261,6 +270,16 @@ function onOpenChange(value: boolean): void {
                                     >
                                         {{ formatRelative(item.updated_at) }}
                                     </time>
+                                    <span
+                                        v-if="isDownload(item)"
+                                        class="inline-flex items-center gap-1 font-medium text-primary-soft-foreground"
+                                    >
+                                        <Download
+                                            class="size-3.5"
+                                            aria-hidden="true"
+                                        />
+                                        Descargar
+                                    </span>
                                     <span
                                         v-if="item.level === 'urgent'"
                                         class="rounded-full border border-destructive/30 px-1.5 text-destructive"

@@ -95,7 +95,27 @@ const softBox = computed(() =>
         'border border-current/30',
     ),
 );
-const failed = computed(() => props.message.status === 'failed');
+/*
+ * Brought from another system (Whaticket): it has no delivery state here,
+ * so it shows neither ticks nor a retry, only where it came from.
+ */
+const imported = computed(() => props.message.imported ?? null);
+const importedLabel = computed(() => {
+    const origin = imported.value;
+
+    if (!origin) {
+        return null;
+    }
+
+    const source = origin.source === 'whaticket' ? 'Whaticket' : origin.source;
+
+    return origin.sender_name
+        ? `Importado de ${source} · ${origin.sender_name}`
+        : `Importado de ${source}`;
+});
+const failed = computed(
+    () => !imported.value && props.message.status === 'failed',
+);
 /* Meta may have received it: a warning, not a definitive failure. */
 const unknownDelivery = computed(
     () => failed.value && props.message.error_code === DELIVERY_UNKNOWN,
@@ -537,8 +557,15 @@ function linkLabel(expiresAt: string | null | undefined): string {
                 >
                     {{ formatTime(time) }}
                 </time>
+                <span
+                    v-if="importedLabel"
+                    class="min-w-0 truncate italic"
+                    :title="importedLabel"
+                    data-imported
+                    >{{ importedLabel }}</span
+                >
                 <MessageStatusIndicator
-                    v-if="outbound"
+                    v-else-if="outbound"
                     :status="message.status"
                     :error-code="message.error_code"
                     show-progress-label

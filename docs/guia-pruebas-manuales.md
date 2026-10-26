@@ -3,7 +3,7 @@
 Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
 cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
 qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están en
-§27, las del chat web y la API de integración (fase 4), en §28, las de la fase 5, en §29, y las de la fase 5.1, en §30.
+§27, las del chat web y la API de integración (fase 4), en §28, las de la fase 5, en §29, las de la fase 5.1, en §30, y las de la fase 5.2, en §31.
 
 > **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
 > WhatsApp. Lo simulado lleva la etiqueta «No enviado (modo de prueba)».
@@ -446,8 +446,8 @@ a las últimas filas. Registro: `export.requested` y `export.generated`. Error: 
 datos» en la tabla.
 
 **19.2 Exportación en cola.** Acción: Conversaciones → Exportar con muchos filtros abiertos (o `EXPORTS_XLSX_SYNC_ROWS=0`
-y `config:clear`). Resultado: vuelve a la página con «Estamos generando…»; al terminar, notificación y descarga en
-Exportaciones. La descarga vuelve a comprobar el permiso del reporte. Error: el archivo de otra persona se descarga
+y `config:clear`). Resultado: el aviso «Preparando Excel…»; al terminar, la notificación «Descargar» descarga el archivo y el menú
+Exportar lo lista en «Archivos preparados recientemente» (desde la fase 5.2 ya no hay módulo «Exportaciones»; §31.2). La descarga vuelve a comprobar el permiso del reporte. Error: el archivo de otra persona se descarga
 (debe dar 404).
 
 **19.3 Búsqueda en mensajes en el export.** Acción: en la bandeja, «Buscar en: Contenido de los mensajes» = «cotización»
@@ -707,8 +707,8 @@ El cliente vuelve a escribir: la ventana se reabre en vivo. Chat web: «No aplic
 
 **29.16 Adjuntos por canal.** WhatsApp: imagen JPEG/PNG ≤ 5 MB, audio/video ≤ 16 MB, documentos PDF/TXT/Office ≤ 100 MB
 (límite real según PHP/Nginx, ver [infraestructura §6](infraestructura-y-despliegue.md#6-https-y-nginx)); el
-compositor muestra tipo, tamaño, vista previa y progreso, y «Cancelar» detiene la subida. Un ZIP se anuncia «Se
-enviará como enlace de descarga seguro…» y la burbuja dice «Enviado como enlace de descarga seguro»; abrir el enlace
+compositor muestra tipo, tamaño, vista previa y progreso, y «Cancelar» detiene la subida. Un ZIP ofrece «Usar enlace
+privado» (sin elegirlo, «Enviar» queda desactivado) y la burbuja dice «Enviado como enlace de descarga seguro»; abrir el enlace
 descarga; «Revocar enlace» (con confirmación) lo invalida. Errores claros con un archivo de otro tipo, uno renombrado
 (`.exe` a `.pdf`: se detecta el tipo real) o uno demasiado grande. Doble clic en Enviar no duplica. Chat web: hasta
 25 MB, ZIP nativo.
@@ -848,3 +848,158 @@ antes de guardar, se explica a cuántas personas afecta. Error: aparecen claves 
 jerga técnica como texto principal.
 
 Automatizado: [pruebas.md §2.3 y §6.4](pruebas.md#64-escenarios-de-la-fase-51).
+
+## 31. Fase 5.2
+
+**Antes de empezar (desde cero).**
+
+1. **Entorno que no sea de producción.** El importador escribe conversaciones y contactos: pruébalo solo en una copia.
+   Lo recomendable es restaurar un respaldo en una base aparte (por ejemplo `chatmanager_prueba52`, con un usuario con
+   privilegios solo sobre ella), apuntar `DB_DATABASE` a esa base en tu `.env` local y ejecutar
+   `php artisan config:clear`. **No apliques las migraciones en `chatmanager` sin la autorización del responsable.**
+2. **Respaldo** de esa base (§0.3 punto 1, cambiando el nombre de la base).
+3. **Migraciones y permisos** (en la copia): `php artisan migrate` (7 migraciones `2026_10_25_21000*`,
+   [infraestructura §16 fase 5.2](infraestructura-y-despliegue.md#procedimiento-de-la-fase-52)), luego
+   `php artisan app:sync-permissions`. La migración concede `history-import.archive-view` al rol Administrador por
+   defecto: compruébalo en Roles.
+4. `npm run build` (o `composer run dev`), `php artisan queue:restart` y los procesos de §0.3 punto 3 (la cola
+   `exports` debe estar en marcha: lee y ejecuta el importador).
+5. `.env` con `WHATSAPP_TRANSPORT=simulated` y la conexión demo preparada (§0.3 punto 4). Cuentas: Superadministrador,
+   Administrador y dos agentes del mismo departamento (A y B), cada uno en un perfil de navegador distinto.
+6. Archivos de prueba: los sintéticos de `tests/fixtures/whaticket/` (`chats-report.csv`, `messages.csv`,
+   `contacts.csv`, `chat-android.txt`, `chat-ios.txt`, `chat-group.txt`). Para los archivos multimedia, crea un ZIP
+   llamado `Whaticket-medias.zip` que contenga una imagen JPG o PNG pequeña cualquiera renombrada `IMG-0001.jpg` (no
+   incluyas `AUD-0002.opus`: debe quedar como faltante). **Nunca uses exportaciones reales con datos de clientes.**
+
+**31.1 Avisos legibles en modo oscuro.** Cuenta: cualquiera con `reports.export`. Perfil → Apariencia → «Oscuro».
+Reportes → Exportar → PDF. Resultado: el aviso «Preparando PDF…» tiene fondo oscuro, título claro y descripción
+legible; el icono y la «X» se distinguen; con Tab hasta la «X» se ve un anillo de foco. Repetir con «Claro» y con
+«Sistema» cambiando el tema del sistema operativo con la página abierta: el aviso sigue al tema sin recargar. A 390 px
+el aviso cabe en la pantalla. Error: texto gris sobre fondo oscuro o aviso claro en modo oscuro.
+
+**31.2 Exportaciones desde cada módulo.** Cuenta: Superadministrador.
+
+1. El menú lateral **no** tiene «Exportaciones». Error: aparece.
+2. Reportes → Exportar → Excel con pocos datos: se descarga en el acto.
+3. Archivo grande: en `.env`, `EXPORTS_XLSX_SYNC_ROWS=0`, `php artisan config:clear` y reinicia los procesos.
+   Conversaciones → Exportar → Excel. Resultado: aviso «Preparando Excel…» sin mandar a otra pantalla; al terminar, la
+   campana muestra «Tu exportación está lista · Descárgala desde esta notificación antes de que expire.» y
+   **«Descargar»** descarga el archivo directamente.
+4. Abre otra vez Exportar en ese módulo: aparece «Archivos preparados recientemente» con «Descargar Excel» y el enlace
+   «Ver todos tus archivos preparados», que abre `/exports` con el título «Archivos preparados».
+5. Con otra cuenta, abre la URL de descarga del archivo del paso 3: 404. Error: se descarga.
+6. Restaura `EXPORTS_XLSX_SYNC_ROWS` (vacío) y `config:clear`.
+
+**31.3 Adjuntos por categoría (WhatsApp).** Cuenta: agente A, responsable de una conversación de WhatsApp abierta
+(simula un mensaje con §0.4 y acéptalo).
+
+1. Clic en el clip: menú con **Fotos e imágenes, Videos, Documentos y Audio**. Con el teclado: Enter abre, flechas
+   recorren, Escape cierra y el foco vuelve al clip; un clic fuera también cierra.
+2. **Fotos e imágenes:** elige un JPG o PNG de menos de 5 MB. Resultado: miniatura, nombre, tamaño, «Imagen» y «Se
+   envía como archivo»; se puede quitar con la «X». Envía con un texto: llega la imagen con su pie.
+3. **Videos:** un MP4 de menos de 16 MB: primer fotograma como vista previa. **Documentos:** un PDF y un DOCX: icono y
+   nombre. **Audio:** un MP3 o M4A: se envía **sin** texto (WhatsApp no lo admite).
+4. Rechazos con texto claro, sin enviar nada: una imagen de más de 5 MB; un WebP en «Fotos e imágenes»; una foto
+   elegida en «Videos» (nunca se envía como video); un `.exe` renombrado `.pdf`.
+5. **Duplicado:** elegir dos veces el mismo archivo no lo agrega dos veces; volver a elegir uno ya enviado avisa «Ya
+   enviaste este mismo archivo en esta conversación…».
+6. **Progreso:** con un archivo grande y la red limitada (DevTools → Network → Slow 3G), se ve el progreso; pulsar
+   enviar otra vez no crea un segundo mensaje.
+7. Chat web (§28): en una conversación del chat web el menú admite más tipos (WebP, GIF, CSV, WAV, WebM, MOV) y ZIP como
+   archivo normal.
+
+Error: un archivo no admitido se envía, o una categoría acepta otro tipo.
+
+**31.4 ZIP como enlace privado temporal.** Misma conversación de WhatsApp. Documentos → un `.zip`. Resultado: la tarjeta
+dice que necesita enviarse como enlace y ofrece **«Usar enlace privado»**; sin pulsarla no se envía (se puede deshacer con «No usar enlace»).
+Al pulsarla, el cliente recibe un texto con nombre, tamaño y enlace, y la burbuja muestra «Enlace de descarga · vence el
+…». Abrir el enlace en una ventana privada descarga el ZIP; «Revocar enlace» en la burbuja (con confirmación) hace que el
+enlace responda 410 con una explicación. Error: el ZIP se envía como documento de WhatsApp.
+
+**31.5 Mensajes 403 y 409 con dos sesiones.** Agentes A y B del mismo departamento, cada uno en su navegador.
+
+1. **Otro agente ya la atiende:** simula un mensaje nuevo; A y B abren la misma conversación pendiente. A pulsa
+   «Aceptar». Después B pulsa «Aceptar» (sin recargar). Resultado en B: «Otro agente ya está atendiendo esta
+   conversación.» y la conversación se actualiza sola. Error: «No tienes permiso».
+2. **Cambió de estado:** A abre su conversación en dos pestañas. En la pestaña 1, «Devolver a Pendientes». En la pestaña 2
+   (sin recargar), «Cerrar». Resultado: «Esta conversación cambió de estado. Actualiza la información para continuar.»
+3. **Cerrada:** A acepta otra conversación y la tiene abierta en dos pestañas; en la 1 la cierra; en la 2 intenta
+   transferirla o responder. Resultado: «Esta conversación está cerrada. Revisa las opciones disponibles.»
+4. **Sin autorización (403):** con A en una conversación propia abierta, el Administrador quita «Cerrar
+   conversaciones» del rol real de A. Si el botón sigue visible un instante, al pulsarlo: «No tienes autorización para
+   realizar esta acción.» y la vista se actualiza con los permisos vigentes. Vuelve a conceder el permiso.
+5. **Fuera de alcance:** B abre por URL una conversación de otro departamento: 404, sin detalles.
+
+**31.6 Importador de punta a punta** (solo en la copia, §31 «Antes de empezar»). Cuenta: Superadministrador.
+
+1. Administración → **«Importar de Whaticket»**: se ve la nota «Formato no verificado con una exportación
+   auténtica de Whaticket…». Con el agente A, abrir `/admin/history-import` y `/admin/history` da 403.
+2. «Nueva importación»: nombre «Prueba 5.2», zona horaria `America/Mexico_City`.
+3. Subir: `chats-report.csv` como «Reporte de chats (Excel o CSV)», `messages.csv` como «Mensajes (CSV)»,
+   `contacts.csv` como «Contactos (CSV)», `Whaticket-medias.zip` y los tres `.txt` como «Archivos y Chat.txt (ZIP)».
+   Probar también subir el ZIP como «Mensajes (CSV)»: «Para «Mensajes (CSV)» solo se aceptan archivos .csv.». Cada
+   archivo pasa a «Leído» con la insignia «Sin verificar»; en `messages.csv` se ve una fila rechazada (la de
+   fecha inválida) con su número de línea y sin contenido, y las columnas desconocidas, si hay.
+4. **Corregir columnas** de un archivo: cambiar un campo y guardar vuelve a leerlo.
+   **Quitar archivo** en `contacts.csv`: desaparece del lote y el inventario se reconstruye; vuelve a subirlo. Si algún
+   archivo queda «Falló», «Reintentar» lo vuelve a leer.
+5. **Mapeo:** cada conexión de origen («Linea Prueba», «Linea Antigua»…) a «Conexión histórica sin envío» (o a una
+   conexión existente); departamentos, agentes y etiquetas opcionales.
+6. **Inventario:** los totales coinciden con los filtros; el grupo (`@g.us`) y `chat-group.txt` solo admiten Archivar o
+   No importar; las conversaciones vacías solo No importar. En un `Chat.txt` abrir el detalle y marcar «Empresa
+   Ficticia» como «es la empresa».
+7. **Clasificar:** seleccionar varias y «Aplicar destino» → Importar (las que no admiten el destino se cuentan aparte);
+   crear la regla «No importar las conversaciones sin mensajes» y comprobar la vista previa («Coinciden N…») antes de
+   aplicarla; filtrar «Sin decidir» y «Aplicar a las N del filtro» → Archivar; cambiar una a mano.
+8. **Resumen:** totales por destino, contactos, mensajes, archivos recuperables (1) y faltantes, duplicados y grupos.
+   Con el resumen abierto, cambia un destino en otra pestaña y vuelve a confirmar: aviso de que el resumen cambió y hay
+   que revisarlo de nuevo (409). Marca «Revisé el resumen» y confirma.
+9. **Progreso y resultado:** «Importación terminada» con importadas, archivadas, excluidas, mensajes, archivos
+   disponibles y faltantes y contactos creados. Descargar el **reporte CSV**: una fila por conversación, sin texto de
+   mensajes; los valores que empiezan por `=` aparecen neutralizados.
+   Si alguna conversación falló, el resultado dice que terminó con errores y ofrece **«Reintentar fallidas»** (como
+   máximo 3 intentos por conversación). Con `MEDIA_DISK` en un disco no listo (§31.8 paso 2) el resumen muestra el
+   bloqueo de almacenamiento y no deja confirmar.
+10. **Idempotencia:** crear un segundo lote con los mismos archivos: el inventario marca las conversaciones como «Ya se
+    importó en una importación anterior» y la ejecución no crea duplicados.
+11. Auditoría (Superadministrador): `history_import.created`, `file_added`, `classified`, `rule_applied`, `requested`
+    y `completed`, sin contenido de mensajes.
+
+Error: se crea algo antes de confirmar, se envía algo a WhatsApp (ningún mensaje «No enviado (modo de prueba)» nuevo
+debe aparecer), o aparecen duplicados.
+
+**31.7 Conversaciones importadas y archivadas.** Tras 31.6.
+
+1. **Importada** (destino Importar): en la bandeja, Filtros → Estado «Cerradas», aparece;
+   sus mensajes dicen «Importado de Whaticket» con el remitente original, **sin palomitas** ni «Enviado»; la imagen se
+   ve y el audio dice «Archivo histórico no disponible». No hay compositor ni botones de reabrir, asignar o etiquetar.
+   Un POST directo (por ejemplo, reabrir) responde 403 «Esta conversación es un historial importado y es de solo
+   consulta.». No aparece en los reportes ni en el panel.
+2. **Archivada** (destino Archivar): no aparece en la bandeja ni en la búsqueda; abrirla por su URL de la bandeja da
+   404 para todos. En Administración → **«Historial importado»** se encuentra por nombre o número, se abre con el
+   aviso de solo lectura, sin compositor, y sus archivos se abren desde ahí. En la ficha del contacto, la conversación lleva la etiqueta de
+   origen y el enlace «Ver en el historial importado»; en el panel de detalles de una conversación en vivo del mismo
+   contacto, las anteriores importadas muestran su origen y las archivadas enlazan al historial.
+3. **Mensaje nuevo del cliente:** simula con §0.4 un mensaje desde el número de un contacto importado. Resultado: se
+   crea (o continúa) una conversación **en vivo** pendiente; la importada sigue cerrada e intacta.
+4. API v1 (si tienes un token de §28): la conversación importada no aparece en el listado y pedirla por id da 404.
+
+**31.8 Almacenamiento y preflight.**
+
+1. `php artisan app:preflight`: la fila «Almacenamiento de adjuntos» (`storage.media`) dice que los adjuntos se guardan
+   en el disco del servidor (`MEDIA_DISK=local`).
+2. **Disco externo incompleto** (solo en local): `MEDIA_DISK=s3` sin variables `AWS_*`, `config:clear`. Resultado: el
+   preflight lo marca como problema («el disco de archivos no está completo…», sin mostrar credenciales); en el chat,
+   el clip dice «Por ahora no se pueden adjuntar archivos…» y los mensajes de texto se siguen enviando; Administración →
+   Sistema muestra la advertencia de almacenamiento. Ningún archivo se guarda en `storage/app/private` mientras tanto.
+3. `MEDIA_DISK_REQUIRED=true` con `MEDIA_DISK=local`: mismo comportamiento («…exige un almacenamiento externo…»).
+4. Opcional, con un bucket de pruebas (por ejemplo MinIO local o un bucket de C2 de pruebas, nunca el de producción):
+   variables `AWS_*` completas; el preflight hace la prueba de escritura y borrado y dice que funcionó; un adjunto nuevo
+   queda en el bucket y se descarga desde la aplicación (la URL es la de Chat Manager, nunca la del bucket); los
+   adjuntos anteriores siguen abriéndose desde el disco local.
+5. Vuelve a `MEDIA_DISK=local`, quita `MEDIA_DISK_REQUIRED` y `config:clear`.
+
+**Al terminar:** vuelve a apuntar `DB_DATABASE` a tu base habitual, `config:clear`, y borra la base de prueba si ya no
+la necesitas.
+
+Automatizado: [pruebas.md §2.4 y §6.5](pruebas.md#65-escenarios-de-la-fase-52).

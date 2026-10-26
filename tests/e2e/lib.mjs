@@ -1239,6 +1239,45 @@ export async function measure(
     };
 }
 
+/**
+ * Holds the answer of the page's first request matching `match` (a
+ * predicate on the Playwright request): the request reaches the server at
+ * once, its response is kept until `release()`. Forces a client-side race
+ * deterministically: the server answered before a later change was stored,
+ * and the browser receives that (older) answer only after the change's
+ * signal. `answered` resolves when the server has answered.
+ */
+export async function holdFirstResponse(page, match) {
+    let release;
+    const released = new Promise((resolve) => (release = resolve));
+    let markAnswered;
+    const answered = new Promise((resolve) => (markAnswered = resolve));
+    let held = false;
+    const handler = async (route) => {
+        if (held || !match(route.request())) {
+            await route.fallback();
+
+            return;
+        }
+
+        held = true;
+        const response = await route.fetch();
+        markAnswered(Date.now());
+        await released;
+        await route.fulfill({ response }).catch(() => {
+            // The page aborted the request meanwhile.
+        });
+    };
+    const anyUrl = () => true;
+    await page.route(anyUrl, handler);
+
+    return {
+        answered,
+        release: () => release(),
+        dispose: () => page.unroute(anyUrl, handler),
+    };
+}
+
 /* ------------------------------------------------------------------ */
 /* Processes started by a scenario (always stopped at the end).        */
 /* ------------------------------------------------------------------ */

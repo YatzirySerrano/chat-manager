@@ -1,6 +1,6 @@
 import type { AppColor } from './admin';
 import type { ConnectionChannel } from './connections';
-import type { ContactAttribution } from './contacts';
+import type { ContactAttribution, ConversationOriginInfo } from './contacts';
 import type { ViewerChatAppearance } from './personalization';
 import type { TagOption } from './tags';
 
@@ -229,6 +229,8 @@ export type MessageAttachment = {
     /** False while the file has not been downloaded from the provider. */
     available: boolean;
     status: string | null;
+    /** Why the file is unavailable ('historical_missing', 'storage_unavailable', 'download_failed', ...). */
+    error_code?: string | null;
     url: string;
     download_url: string;
     /** 'link': the customer received a secure download link instead of the file. */
@@ -266,6 +268,12 @@ export type ConversationMessage = {
     automatic: boolean;
     /** Sent through the integration API (no human author). */
     integration?: { name: string } | null;
+    /** Brought from another system (Whaticket): no delivery state to show. */
+    imported?: {
+        source: string;
+        sender_name: string | null;
+        from_me: boolean;
+    } | null;
     /** Sent by the explicitly labelled simulated transport (development). */
     simulated: boolean;
     template: { name: string; language: string | null } | null;
@@ -348,7 +356,7 @@ export type ConversationDetails = {
         can_save: boolean;
     };
     origin: ContactAttribution[];
-    history: {
+    history: ({
         id: number;
         status: ConversationStatusValue;
         status_label: string;
@@ -361,7 +369,7 @@ export type ConversationDetails = {
         assignee: string | null;
         created_at: string | null;
         closed_at: string | null;
-    }[];
+    } & ConversationOriginInfo)[];
     contactNotes:
         | {
               id: number;
@@ -386,6 +394,8 @@ export type AttachmentKindRule = {
     caption: boolean;
     /** 'link': sent as a secure expiring download link. */
     delivery: 'native' | 'link';
+    /** Entry of the composer's attachment menu; defaults to `type`. */
+    category?: 'image' | 'video' | 'document' | 'audio';
 };
 
 export type ChannelAttachmentRules = {
@@ -395,6 +405,19 @@ export type ChannelAttachmentRules = {
     /** Days a secure download link keeps working. */
     link_ttl_days: number;
     kinds: AttachmentKindRule[];
+    /** The attachment menu entries, in order, with the chooser's `accept` hint. */
+    categories?: {
+        key: 'image' | 'video' | 'document' | 'audio';
+        kinds: string[];
+        mimes: string[];
+        extensions: string[];
+        accept: string;
+        max_bytes: number;
+        /** 'mixed': part of the category travels as a download link (ZIP among documents). */
+        delivery: 'native' | 'link' | 'mixed';
+    }[];
+    /** Whether files can be stored right now (MediaDisk); the message explains why not. */
+    storage?: { ready: boolean; message: string | null };
 };
 
 export type ComposerSettings = {

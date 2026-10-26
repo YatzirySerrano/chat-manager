@@ -1,0 +1,15 @@
+id,ticketId,contactNumber,contactName,fromMe,body,mediaType,mediaUrl,createdAt,user,connection
+m-1001-3,1001,5215500000001,Cliente Ficticio Uno,true,"Claro, le envío la foto del producto",image,https://example.invalid/public/IMG-0001.jpg,2026-03-01 10:05:00,Agente Ficticio A,Linea Prueba
+m-1001-1,1001,5215500000001,Cliente Ficticio Uno,false,"Hola, quiero información (mensaje ficticio)",chat,,2026-03-01 10:00:30,,Linea Prueba
+m-1001-2,1001,5215500000001,Cliente Ficticio Uno,true,"Hola, con gusto.
+¿Qué producto le interesa?",chat,,2026-03-01 10:02:00,Agente Ficticio A,Linea Prueba
+m-1001-4,1001,5215500000001,Cliente Ficticio Uno,false,,audio,AUD-0002.opus,2026-03-01 10:07:00,,Linea Prueba
+m-1001-5,1001,5215500000001,Cliente Ficticio Uno,false,<b>Gracias</b> <script>alert(1)</script>,chat,,2026-03-01 10:09:00,,Linea Prueba
+m-1002-1,1002,525500000002,Cliente Ficticio Dos,false,Buen día (mensaje ficticio),chat,,2026-03-02 09:00:10,,Linea Prueba
+m-1002-2,1002,525500000002,Cliente Ficticio Dos,true,"Buen día, ¿en qué le ayudo?",chat,,2026-03-02 09:05:00,Agente Ficticio B,Linea Prueba
+m-1002-3,1002,525500000002,Cliente Ficticio Dos,false,"Ya quedó, gracias",chat,,2026-03-02 09:20:00,,Linea Prueba
+m-1004-1,1004,525500000004,,false,Tengo un reclamo ficticio,chat,,2026-02-10 16:00:05,,Linea Antigua
+m-1004-2,1004,525500000004,,true,Lo revisamos,chat,,2026-02-10 16:10:00,Agente Ficticio B,Linea Antigua
+m-1005-1,1005,120363000000000001@g.us,Grupo Ficticio,false,Mensaje de grupo ficticio,chat,,2026-02-20 10:00:00,,Linea Prueba
+m-1005-2,1005,120363000000000001@g.us,Grupo Ficticio,true,Respuesta al grupo,chat,,2026-02-20 10:01:00,Agente Ficticio A,Linea Prueba
+m-bad-1,1002,525500000002,Cliente Ficticio Dos,false,Sin fecha,chat,,no-es-fecha,,Linea Prueba

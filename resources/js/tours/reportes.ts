@@ -51,7 +51,7 @@ export default {
             id: 'archivos',
             target: 'exports.list',
             title: 'Tus archivos',
-            body: 'Aquí aparecen los Excel y PDF que generaste. Se eliminan al vencer.',
+            body: 'Aquí aparecen los Excel y PDF que pediste preparar. También los encuentras en el menú «Exportar» del módulo y en tus notificaciones. Se eliminan al vencer.',
         },
         {
             id: 'descargar',

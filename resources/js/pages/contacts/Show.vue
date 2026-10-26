@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import {
     Fingerprint,
     MessagesSquare,
@@ -223,6 +223,17 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                         class="truncate text-xs text-muted-foreground"
                                         >vía
                                         {{ conversation.connection.name }}</span
+                                    >
+                                    <span
+                                        v-if="conversation.origin !== 'live'"
+                                        class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+                                        >{{ conversation.origin_label }}</span
+                                    >
+                                    <Link
+                                        v-if="conversation.history_url"
+                                        :href="conversation.history_url"
+                                        class="relative inline-flex items-center rounded-sm text-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                                        >Ver en el historial importado</Link
                                     >
                                 </div>
                                 <p class="text-xs text-muted-foreground">

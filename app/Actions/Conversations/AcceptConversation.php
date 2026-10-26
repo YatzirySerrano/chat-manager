@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * An agent takes a pending conversation from a queue they can accept from.
@@ -36,15 +37,18 @@ class AcceptConversation
                 return $conversation;
             }
 
-            if ($conversation->status !== ConversationStatus::Pending || $conversation->assigned_user_id !== null) {
-                throw $conversation->status === ConversationStatus::Closed
-                    ? new ConversationConflict('La conversación ya fue cerrada.')
-                    : ConversationConflict::alreadyTaken();
-            }
+            // Permission first (403), then the state (409: closed or taken by
+            // another agent). The user is read without locks here, so the
+            // lock order below is kept.
+            $this->lifecycle->authorize($actor, 'accept', $conversation);
 
             $department = $this->lifecycle->lockDepartment($conversation->department_id);
             $actor = $this->lifecycle->freshUser($actor->id);
-            $this->lifecycle->authorize($actor, 'accept', $conversation);
+
+            // Again with the user row locked: a permission revoked meanwhile is honored.
+            if (! Gate::forUser($actor)->allows('accept', $conversation)) {
+                throw ConversationLifecycle::forbidden($conversation);
+            }
 
             $limit = $this->access->reachedLimit($actor, $department, lockingRead: true);
 

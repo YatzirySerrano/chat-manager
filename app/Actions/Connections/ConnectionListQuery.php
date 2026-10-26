@@ -4,6 +4,7 @@ namespace App\Actions\Connections;
 
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
+use App\Enums\ConversationOrigin;
 use App\Enums\RecordState;
 use App\Models\Connection;
 use App\Models\User;
@@ -76,7 +77,8 @@ class ConnectionListQuery
         return Connection::query()
             ->visibleTo($actor)
             ->inRecordState($filters['record'])
-            ->withCount('conversations')
+            // Operational figure: imported Whaticket history is not counted.
+            ->withCount(['conversations' => fn (Builder $conversations) => $conversations->where('conversations.origin', ConversationOrigin::Live->value)])
             ->with('webChatWidget')
             ->with(['departments' => fn (BelongsToMany $query) => $query
                 ->select('departments.id', 'departments.name', 'departments.color', 'departments.is_active')

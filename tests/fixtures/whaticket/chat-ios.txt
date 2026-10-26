@@ -1,0 +1,4 @@
+[4/1/26, 2:05:33 PM] Empresa Ficticia: ‎Los mensajes están cifrados de extremo a extremo.
+[4/1/26, 2:06:00 PM] +52 55 0000 0006: Hola (texto ficticio iOS)
+[4/1/26, 2:07:10 PM] Empresa Ficticia: Hola, ¿cómo le ayudo?
+[4/14/26, 9:30:00 AM] +52 55 0000 0006: <adjunto: 00000003-PHOTO-2026-04-14-09-30-00.jpg>

@@ -21,6 +21,12 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+    conversationActionErrorMessage,
+    conversationActionFailure,
+    conversationConflictFromErrors,
+    withoutConflictCode,
+} from '@/lib/conversations/actionErrors';
+import {
     accept,
     assign,
     close,
@@ -36,7 +42,9 @@ import type { ConversationSummary, TransferOptions } from '@/types';
  * transfer, release, close, reopen), shown according to the policy's
  * answer for the viewer. There is no manual availability: accepting only
  * depends on what the server allows (can.accept). Each one sends the conversation version,
- * so a decision taken on stale data is rejected by the server.
+ * so a decision taken on stale data is rejected by the server. A refusal
+ * because the conversation changed meanwhile (409, actionErrors.ts) closes
+ * the dialog and shows the explanation over the fresh state.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -48,9 +56,29 @@ const id = computed(() => props.conversation.id);
 const processing = ref(false);
 const errors = ref<Record<string, string | undefined>>({});
 
+/**
+ * The conversation changed meanwhile (409): the answer already brought its
+ * current state, so the dialogs (built on the old one) close and only the
+ * explanation remains.
+ */
+function closeDialogsForConflict(message: string): void {
+    errors.value = {};
+    reasonDialog.value = null;
+    routeDialog.value = null;
+    toast.error(message);
+}
+
 function showFirstError(bag: Record<string, string>): void {
-    errors.value = bag;
-    const message = Object.values(bag)[0];
+    const conflict = conversationConflictFromErrors(bag);
+
+    if (conflict) {
+        closeDialogsForConflict(conflict.message);
+
+        return;
+    }
+
+    errors.value = withoutConflictCode(bag);
+    const message = Object.values(errors.value)[0];
 
     if (message) {
         toast.error(message);
@@ -165,18 +193,35 @@ async function loadRouteOptions(): Promise<void> {
 
     try {
         const result = await destinationsRequest.get(
-            destinations.url(id.value),
+            destinations.url(id.value, {
+                query: { version: props.conversation.version },
+            }),
         );
 
         if (request === latestDestinations) {
             transferOptions.value = result;
         }
-    } catch {
-        if (request === latestDestinations && routeDialog.value !== null) {
-            toast.error(
-                'No se pudieron cargar los destinos. Cierra el diálogo e inténtalo de nuevo.',
-            );
+    } catch (failure) {
+        if (request !== latestDestinations || routeDialog.value === null) {
+            return;
         }
+
+        const refused = conversationActionFailure(failure);
+
+        // Refused (403), out of reach (404) or changed meanwhile (409): say
+        // why and show the conversation as it is now.
+        if (refused && [403, 404, 409].includes(refused.status)) {
+            closeDialogsForConflict(
+                conversationActionErrorMessage(refused.status, refused.body),
+            );
+            router.reload();
+
+            return;
+        }
+
+        toast.error(
+            'No se pudieron cargar los destinos. Cierra el diálogo e inténtalo de nuevo.',
+        );
     } finally {
         if (request === latestDestinations) {
             loadingOptions.value = false;

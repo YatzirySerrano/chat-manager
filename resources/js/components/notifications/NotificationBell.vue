@@ -89,7 +89,7 @@ function onOpenChange(value: boolean): void {
                                         cn(
                                             'absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-xs leading-none font-semibold tabular-nums',
                                             center.unread.value.urgent > 0
-                                                ? 'bg-destructive text-white'
+                                                ? 'bg-destructive text-destructive-foreground'
                                                 : 'bg-primary text-primary-foreground',
                                         )
                                     "

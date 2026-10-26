@@ -16,11 +16,15 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import TourLauncherList from '@/components/tour/TourLauncherList.vue';
 import { loadModuleHelp } from '@/help';
 import type { ModuleHelp, ModuleHelpKey } from '@/help';
 
 /**
- * "¿Cómo funciona este módulo?" panel.
+ * Full guide of a module: the detailed, secondary help (the guided tours of
+ * the screen are the primary one and are listed at its top, for whoever
+ * opens the guide first; their steps are short new sentences, the guide
+ * keeps the detail).
  *
  * A right-side sheet on desktop and a bottom sheet on phones. The content of
  * the module is loaded the first time the panel opens. Each section is a
@@ -154,7 +158,7 @@ const initiallyOpen = new Set(['acciones', 'flujo']);
         >
             <SheetHeader class="border-b px-5 pt-5 pr-12 pb-4">
                 <p class="text-xs font-medium text-muted-foreground">
-                    ¿Cómo funciona este módulo?
+                    Guía completa del módulo
                 </p>
                 <SheetTitle class="text-lg font-semibold">
                     {{ help?.title ?? 'Ayuda del módulo' }}
@@ -173,6 +177,16 @@ const initiallyOpen = new Set(['acciones', 'flujo']);
             <div
                 class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
             >
+                <section
+                    class="flex flex-col gap-2 border-b pt-1 pb-3"
+                    aria-labelledby="module-help-tours"
+                >
+                    <h3 id="module-help-tours" class="text-sm font-semibold">
+                        Recorridos de esta pantalla
+                    </h3>
+                    <TourLauncherList @launch="open = false" />
+                </section>
+
                 <div
                     v-if="failed"
                     class="flex flex-col items-start gap-3 py-6 text-sm"

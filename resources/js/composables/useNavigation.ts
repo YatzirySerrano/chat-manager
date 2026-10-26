@@ -1,8 +1,8 @@
 import {
     Building2,
-    ChartColumnBig,
-    Contact,
-    FileDown,
+    ChartNoAxesCombined,
+    ContactRound,
+    Download,
     FileText,
     KeyRound,
     LayoutGrid,
@@ -13,8 +13,8 @@ import {
     PlugZap,
     ScrollText,
     ServerCog,
+    Settings,
     ShieldCheck,
-    SlidersHorizontal,
     Tags,
     UserCog,
     Users,
@@ -77,7 +77,7 @@ export function useNavigation() {
                 title: 'Reportes',
                 description: 'Indicadores, tiempos y tendencias',
                 href: reportsIndex(),
-                icon: ChartColumnBig,
+                icon: ChartNoAxesCombined,
             });
         }
 
@@ -86,7 +86,7 @@ export function useNavigation() {
                 title: 'Exportaciones',
                 description: 'Archivos de Excel y PDF generados',
                 href: exportsIndex(),
-                icon: FileDown,
+                icon: Download,
             });
         }
 
@@ -95,7 +95,7 @@ export function useNavigation() {
         if (can('conversations.view')) {
             attention.push({
                 title: 'Conversaciones',
-                description: 'Cola, atención y seguimiento',
+                description: 'Pendientes, atención y seguimiento',
                 href: conversationsIndex(),
                 icon: MessagesSquare,
             });
@@ -104,16 +104,16 @@ export function useNavigation() {
         if (can('contacts.view')) {
             attention.push({
                 title: 'Contactos',
-                description: 'Personas, origen e historial',
+                description: 'Personas, procedencia e historial',
                 href: contactsIndex(),
-                icon: Contact,
+                icon: ContactRound,
             });
         }
 
         if (canAny('tags.view', 'tags.manage')) {
             attention.push({
                 title: 'Etiquetas',
-                description: 'Clasificación de contactos',
+                description: 'Clasifica contactos y conversaciones',
                 href: tagsIndex(),
                 icon: Tags,
             });
@@ -178,7 +178,7 @@ export function useNavigation() {
         if (canAny('connections.view', 'connections.manage')) {
             admin.push({
                 title: 'Conexiones',
-                description: 'Números de WhatsApp y su estado',
+                description: 'Canales de atención y su estado',
                 href: connectionsIndex(),
                 icon: PlugZap,
             });
@@ -196,7 +196,7 @@ export function useNavigation() {
         if (canAny('integrations.view', 'integrations.manage')) {
             admin.push({
                 title: 'Integraciones',
-                description: 'Tokens de la API para otros sistemas',
+                description: 'Claves de acceso para otros sistemas',
                 href: integrationTokensIndex(),
                 icon: KeyRound,
             });
@@ -205,7 +205,7 @@ export function useNavigation() {
         if (can('roles.view')) {
             admin.push({
                 title: 'Roles y permisos',
-                description: 'Autorizaciones y alcance',
+                description: 'Qué puede hacer y ver cada persona',
                 href: rolesIndex(),
                 icon: ShieldCheck,
             });
@@ -223,7 +223,8 @@ export function useNavigation() {
         if (can('supervision.view-personal')) {
             admin.push({
                 title: 'Elementos personales',
-                description: 'Supervisión de alias y apariencia de usuarios',
+                description:
+                    'Alias, colores y respuestas personales del equipo',
                 href: personalItemsIndex(),
                 icon: UserCog,
             });
@@ -232,7 +233,7 @@ export function useNavigation() {
         if (can('system.view')) {
             admin.push({
                 title: 'Sistema',
-                description: 'Colas, fallos y salud técnica',
+                description: 'Estado técnico y tareas con error',
                 href: systemIndex(),
                 icon: ServerCog,
             });
@@ -243,7 +244,7 @@ export function useNavigation() {
                 title: 'Configuración',
                 description: 'Horarios y parámetros',
                 href: platformSettings(),
-                icon: SlidersHorizontal,
+                icon: Settings,
             });
         }
 

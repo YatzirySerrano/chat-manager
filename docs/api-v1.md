@@ -121,7 +121,8 @@ Los textos de `message` están en español y pueden cambiar: programa contra `co
 
 **Conversation:** `id`, `status` (`pending`, `open`, `closed`; `on_hold` solo en conversaciones antiguas aún no migradas: el estado «En espera» se retiró), `status_label`, `connection {id, name,
 channel}`, `department {id, name} | null`, `contact {id, display_name, is_saved}` (`is_saved` es `false` mientras el cliente es un contacto provisional: alguien
-que escribió pero nadie ha guardado en el directorio de Contactos), `assigned_agent {id, name} | null`,
+que escribió pero nadie ha guardado en el directorio de Contactos), `assigned_agent {id, name} | null` (desde la fase 5.1, una cuenta protegida del sistema llega como
+`{id: null, name: "Administración del sistema"}`: trata `id` como nullable),
 `last_message_at`, `created_at`, `updated_at`, `closed_at`. Nunca el teléfono, el correo ni las notas del contacto.
 
 **Message:** `id`, `conversation_id`, `direction` (`inbound`, `outbound`), `type`, `body`, `status`, `status_label`

@@ -8,7 +8,11 @@ defineProps<{
 
 <template>
     <div v-show="message" aria-live="polite">
-        <p :id="id" class="text-sm text-red-600 dark:text-red-500">
+        <p
+            v-if="message"
+            :id="id"
+            class="animate-in text-sm text-destructive duration-(--duration-fast) fade-in-0"
+        >
             {{ message }}
         </p>
     </div>

@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Conversations;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
@@ -47,6 +49,9 @@ class MessageAttachmentController extends ConversationOperationController
         $inline = in_array($mime, self::INLINE, true) && ! $request->boolean('download');
         $name = $attachment->file_name ?? 'archivo';
 
+        $lastModified = Date::createFromTimestamp($disk->lastModified($attachment->path));
+        $etag = sha1(implode('|', [$attachment->getKey(), $attachment->path, $lastModified->getTimestamp(), $mime, $inline ? 'inline' : 'attachment']));
+
         $headers = [
             'Content-Type' => $inline ? $mime : 'application/octet-stream',
             'Content-Disposition' => HeaderUtils::makeDisposition(
@@ -55,7 +60,6 @@ class MessageAttachmentController extends ConversationOperationController
                 Str::ascii($name) !== '' ? str_replace(['%', '/', '\\'], '', Str::ascii($name)) : 'archivo',
             ),
             'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'private, max-age=300',
             'Referrer-Policy' => 'no-referrer',
         ];
 
@@ -63,10 +67,29 @@ class MessageAttachmentController extends ConversationOperationController
             $headers['Content-Security-Policy'] = "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox";
         }
 
-        if (config("filesystems.disks.{$attachment->disk}.driver") === 'local') {
-            return response()->file($disk->path($attachment->path), $headers);
+        $notModified = $this->revalidated(new Response, $etag, $lastModified);
+
+        if ($notModified->isNotModified($request)) {
+            return $notModified;
         }
 
-        return $disk->response($attachment->path, $name, $headers, $inline ? 'inline' : 'attachment');
+        $response = config("filesystems.disks.{$attachment->disk}.driver") === 'local'
+            ? response()->file($disk->path($attachment->path), $headers)
+            : $disk->response($attachment->path, $name, $headers, $inline ? 'inline' : 'attachment');
+
+        return $this->revalidated($response, $etag, $lastModified);
+    }
+
+    /**
+     * Private, always revalidated caching. Set after the response is built
+     * because a file response marks itself public on construction.
+     */
+    private function revalidated(Response $response, string $etag, CarbonInterface $lastModified): Response
+    {
+        $response->headers->set('Cache-Control', 'private, no-cache');
+        $response->setEtag($etag);
+        $response->setLastModified($lastModified);
+
+        return $response;
     }
 }

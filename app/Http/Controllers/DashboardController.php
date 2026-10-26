@@ -24,11 +24,12 @@ class DashboardController extends Controller
 
     /**
      * Show the operational overview. Metrics are deferred so the page renders
-     * immediately and the figures load right after.
+     * immediately and the figures load right after; the charts are a second
+     * deferred group ("charts") so they never delay the headline figures.
      *
      * The page is every user's landing page after signing in, so it always
      * renders; without dashboard.view no metric is computed nor sent, not even
-     * through a partial reload asking for "overview". Invalid filters are
+     * through a partial reload asking for "overview" or "charts". Invalid filters are
      * ignored (the defaults apply) instead of breaking the landing page.
      */
     public function __invoke(Request $request, DashboardMetrics $metrics, AnalyticsScope $scope, ReportExporter $exporter): Response
@@ -41,6 +42,7 @@ class DashboardController extends Controller
             return Inertia::render('Dashboard', [
                 'canViewMetrics' => false,
                 'overview' => null,
+                'charts' => null,
                 'canExport' => $exporter->allowsReport('dashboard', $user),
             ]);
         }
@@ -54,6 +56,8 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard', [
             'canViewMetrics' => true,
             'overview' => Inertia::defer(fn () => $metrics->overviewFor($user, $filters)),
+            // Own group: the charts never delay the headline figures.
+            'charts' => Inertia::defer(fn () => $metrics->chartsFor($user, $filters), 'charts'),
             'filters' => $filters->toQuery(),
             'period' => $filters->period->toArray(),
             'periods' => self::PERIODS,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Actions\Roles\DeleteRole;
 use App\Actions\Roles\RestoreRole;
 use App\Actions\Roles\RoleCatalogQuery;
+use App\Actions\Roles\RoleGrantOverlap;
 use App\Actions\Roles\SaveRole;
 use App\Enums\DataScope;
 use App\Enums\Permission;
@@ -16,7 +17,6 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\PrivilegeGuard;
-use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -28,7 +28,7 @@ class RoleController extends Controller
     /**
      * The roles catalog (the same query as the roles report).
      */
-    public function index(Request $request, PrivilegeGuard $guard, RoleCatalogQuery $catalog, ReportExporter $exporter): Response
+    public function index(Request $request, PrivilegeGuard $guard, RoleCatalogQuery $catalog, ReportExporter $exporter, RoleGrantOverlap $overlap): Response
     {
         Gate::authorize('viewAny', Role::class);
 
@@ -39,12 +39,18 @@ class RoleController extends Controller
         $record = $filters['record'];
 
         $roles = $catalog->handle($actor, $filters)->get();
+        $retained = $overlap->retainedElsewhere(array_values(array_map('intval', $roles->modelKeys())));
+        $roles->each(fn (Role $role) => $role->setAttribute('retained_elsewhere', $retained[$role->id] ?? []));
+        $isRoot = $actor->hasRootAuthority();
 
         return Inertia::render('admin/roles/Index', [
             'roles' => RoleResource::collection($roles)->resolve($request),
             'filters' => ['record' => $record->value],
             'recordStates' => RecordState::optionsFor($actor),
-            'catalog' => Permission::catalog(),
+            // Permissions reserved to the root role are only listed for the
+            // root authority: nobody else can hold them, nor should learn
+            // about the account that does.
+            'catalog' => $isRoot ? Permission::catalog() : $this->catalogWithoutReserved(),
             'scopes' => array_map(fn (array $scope): array => [
                 ...$scope,
                 'grantable' => $guard->canGrantScope($actor, DataScope::from($scope['value'])),
@@ -57,7 +63,7 @@ class RoleController extends Controller
                     : array_intersect($actor->effectivePermissions(), array_column(Permission::available(), 'value')),
                 Permission::reservedToRootValues(),
             )),
-            'rootCapabilities' => array_column(Permission::rootCapabilities(), 'value'),
+            'rootCapabilities' => $isRoot ? array_column(Permission::rootCapabilities(), 'value') : [],
             'can' => [
                 'create' => $actor->can('create', Role::class),
             ],
@@ -67,21 +73,23 @@ class RoleController extends Controller
 
     public function store(RoleRequest $request, SaveRole $saveRole): RedirectResponse
     {
-        $role = $saveRole->handle(null, $request->payload(), $request->user());
+        $result = $saveRole->save(null, $request->payload(), $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Rol {$role->label} creado."]);
-        Inertia::flash('highlight', ['id' => $role->id]);
+        Inertia::flash('toast', $result->toast());
+        Inertia::flash('highlight', ['id' => $result->role->id]);
 
         return back();
     }
 
     public function update(RoleRequest $request, Role $role, SaveRole $saveRole): RedirectResponse
     {
-        $changed = $saveRole->update($role, $request->payload(), $request->user());
+        $result = $saveRole->save($role, $request->payload(), $request->user());
 
-        SaveToast::flash($changed, "Rol {$role->label} actualizado.");
+        // Says whom the change reaches: nobody yet, N active users, and those
+        // who keep a revoked permission through another role or a direct grant.
+        Inertia::flash('toast', $result->toast());
 
-        if ($changed) {
+        if ($result->changed) {
             Inertia::flash('highlight', ['id' => $role->id]);
         }
 
@@ -111,5 +119,26 @@ class RoleController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => "Rol {$role->label} restaurado."]);
 
         return back();
+    }
+
+    /**
+     * The permission catalog without the permissions reserved to the root
+     * role (and without groups left empty).
+     *
+     * @return list<array{value: string, label: string, description: string, icon: string, permissions: list<array<string, mixed>>}>
+     */
+    private function catalogWithoutReserved(): array
+    {
+        $groups = [];
+
+        foreach (Permission::catalog() as $group) {
+            $permissions = array_values(array_filter($group['permissions'], fn (array $permission): bool => ! $permission['reserved']));
+
+            if ($permissions !== []) {
+                $groups[] = [...$group, 'permissions' => $permissions];
+            }
+        }
+
+        return $groups;
     }
 }

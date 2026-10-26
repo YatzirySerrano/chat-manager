@@ -171,20 +171,34 @@ RefreshMetricsOnActivity (listener) ◄── ConversationChanged / MessageRecor
   `PlatformSettings`.
 - **Panel.** Las cifras en vivo salen de `conversations` con la misma visibilidad que la bandeja
   (`Conversation::visibleTo`) e índices por estado; las del periodo, de `conversation_metrics`. "Primera respuesta
-  (prom.)" ahora es la **primera respuesta humana aceptada por WhatsApp** (antes usaba
+  (promedio)" ahora es la **primera respuesta humana aceptada por WhatsApp** (antes usaba
   `conversations.first_response_at`, que se marca al encolar). Mientras ningún número tenga tráfico confirmado, los
   indicadores de conversaciones se muestran como no disponibles (esa comprobación se cachea 60 s).
 
 ## 5. Interfaz
 
+- **Gráficas (fase 5.1):** SVG propias, sin dependencias nuevas, en `resources/js/components/charts/` (`ChartCard`,
+  `LineChart`, `BarChart`, `ChartLegend`, `ChartTooltip`, `ChartDataTable` y las compuestas `ChannelChart`,
+  `StatusChart`, `FirstResponseChart`, `TeamBarsChart`), con colores y formatos de `composables/useChartTheme.ts` (lee
+  los _tokens_ `--chart-*` de `app.css` y se recalcula al cambiar tema o paleta). Cada tarjeta tiene esqueleto, estado
+  vacío, leyenda con dos o más series, tooltip con ratón, teclado (←/→) y toque, y «Ver como tabla» (tabla accesible).
+  Un tiempo promedio sin conversaciones medidas es `null`: la línea se corta y nunca se dibuja un 0 falso. Las
+  categorías usan colores fijos (con contraste ≥ 3:1 en claro y oscuro) y el canal siempre el mismo color.
+  `TrendChart.vue` y `DistributionBars.vue` se retiraron.
 - `resources/js/pages/reports/Index.vue`: filtros (`components/reports/AnalyticsFilterBar.vue`, compartido con el
-  panel), tarjetas con comparación (`KpiCard.vue`: flecha y tono según el sentido de mejora de cada métrica),
-  tendencia SVG sin dependencias (`TrendChart.vue`: periodo actual en el color de la plataforma, anterior punteado,
-  tooltip con ratón y teclado), estados (`DistributionBars.vue`), mapa de calor por hora (`HourHeatmap.vue`, escala de
-  un solo tono, valor exacto en tooltip y texto accesible) y tablas (`BreakdownTable.vue`). Las cifras son _deferred
-  props_ con esqueletos; al cambiar filtros solo se recargan `filters`, `period`, `invalidFilters` y `analytics`.
-- `resources/js/pages/Dashboard.vue`: filtros de periodo, departamento, agente y conexión; tarjetas en vivo; primera
-  respuesta humana con comparación; recibidas con _sparkline_ (`Sparkline.vue`); enlace a Reportes con `reports.view`.
+  panel), tarjetas con comparación (`KpiCard.vue`: flecha y texto según el sentido de mejora de cada métrica),
+  gráficas de tendencia (periodo actual y anterior discontinuo), estado, tiempo de primera respuesta (`activity`) y por
+  canal (`by_channel`), mapa de calor por hora (`HourHeatmap.vue`, escala de un solo tono, valor exacto en tooltip y
+  texto accesible) y desgloses con barras encima de las tablas (`BreakdownTable.vue`). Las cifras son _deferred props_
+  con esqueletos; al cambiar filtros solo se recargan `filters`, `period`, `invalidFilters` y `analytics`.
+- `resources/js/pages/Dashboard.vue`: filtros de periodo, departamento, agente y conexión; cuatro indicadores
+  («Pendientes», «En atención», «Finalizadas hoy», «Primera respuesta (promedio)» con comparación); y un segundo grupo
+  diferido `charts` (`DashboardMetrics::chartsFor()`, nunca retrasa los indicadores) con hasta seis gráficas:
+  actividad (recibidas y atendidas por hora si el periodo dura un día o menos, si no por día o mes), por canal (solo
+  canales con datos), estado de lo recibido, tiempo de primera respuesta y, si el servidor lo permite, atención por
+  agente y por departamento (las 8 primeras filas y «Otros» con el resto, sin perder volumen; `null` sin permiso). El
+  alcance lo decide el servidor: un agente con alcance asignado no recibe agentes ni departamentos. Enlace a Reportes
+  con `reports.view`.
 - Navegación: entrada "Reportes" en General cuando el usuario tiene `reports.view`.
 
 ## 6. Exportaciones (motor existente)
@@ -215,8 +229,16 @@ No hay infraestructura paralela: se usa el motor de `app/Reports`.
       (`compute()`), dentro de la instantánea REPEATABLE READ de la exportación: filas, totales y tarjetas leen los
       mismos datos y nunca aparece una fila "Sin datos". El orden de la tabla es el de la pantalla (más recibidas
       primero; empate por ID). La pantalla puede mostrar cifras hasta 120 s más antiguas que el archivo.
-- **`DashboardReport`** (clave `dashboard`) acepta los mismos filtros que el panel y agrega "Recibidas en el periodo" y
-  "Agentes disponibles".
+- **`DashboardReport`** (clave `dashboard`) acepta los mismos filtros que el panel. Desde la fase 5.1 exporta las mismas
+  gráficas y cifras que muestra la pantalla, desde el mismo `chartsFor()` (una hoja de datos por gráfica), con los
+  mismos nombres («En atención», «Pendientes», «Finalizadas hoy», «Primera respuesta (promedio)»). Antes exportaba
+  «Conversaciones nuevas por mes · últimos 12 meses», que no coincidía con el periodo filtrado.
+  `AnalyticsReport` añade la actividad y el desglose por canal (prueba `DashboardConsistencyTest`).
+- **`QuickRepliesReport`** (clave `quick-replies`, fase 5.1): el menú «Exportar» de Respuestas rápidas ofrece
+  «Reporte general» (todas las que la persona puede consultar: corporativas, las suyas y, si las supervisa, las de
+  otros usuarios, sin importar la pestaña abierta) y «Solo la vista actual» (la pestaña y sus filtros, descritos en el
+  documento), en Excel o PDF, con las mismas columnas: Atajo, Título, Contenido (texto completo), Tipo, Propietario,
+  Departamento, Estado y Fecha de creación, más un resumen por tipo. Prueba `QuickRepliesExportTest`.
 
 ### 6.1 Catálogo, límites y ciclo de vida
 
@@ -280,6 +302,10 @@ No hay infraestructura paralela: se usa el motor de `app/Reports`.
 - `tests/Feature/Exports/ReportExportTest.php`: además, grupo indivisible de totales en el HTML del PDF y límite de
   filas XLSX por celdas.
 - `tests/Feature/Admin/PlatformSettingsTest.php`: validación y borrado de los objetivos de servicio.
+- Fase 5.1: `tests/Feature/Analytics/AnalyticsActivityTest.php` y `AnalyticsChannelTest.php` (Σ de puntos = KPI,
+  zona horaria y horario de verano, buckets sin muestras en `null`, canales sin datos fuera y conexiones eliminadas en
+  su canal), `tests/Feature/Dashboard/DashboardChartsTest.php` (alcance y permisos: sin `dashboard.view` no se calcula
+  `charts`, ni con recarga parcial) y `DashboardConsistencyTest.php` (exportación = pantalla).
 - `tests/Feature/DashboardTest.php`: se actualizó una aserción ("agentes disponibles" es ahora un conteo real, 0, en
   lugar de `null`) y se agregaron pruebas de disponibilidad, filtros y primera respuesta humana.
 

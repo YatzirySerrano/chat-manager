@@ -116,7 +116,7 @@ class QuickReplyRequest extends FormRequest
 
                 if ($this->boolean('is_global')) {
                     if ($actor->dataScope() !== DataScope::Global) {
-                        $validator->errors()->add('is_global', 'Solo los usuarios con alcance global pueden crear respuestas disponibles para todos los departamentos. Elige tus departamentos.');
+                        $validator->errors()->add('is_global', 'Solo quienes ven toda la organización pueden crear respuestas para todos los departamentos. Elige tus departamentos.');
                     }
 
                     return;

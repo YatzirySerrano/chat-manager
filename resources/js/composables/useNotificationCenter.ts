@@ -27,6 +27,65 @@ import type {
 /** Refresh period while real-time signals are not available. */
 const FALLBACK_INTERVAL_MS = 60_000;
 
+/** What the page does for one new notification. */
+export type NotificationAlertPlan = {
+    /** About the conversation on screen: marked read, never alerted. */
+    markRead: boolean;
+    sound: boolean;
+    /** A system notification (the tab is hidden). */
+    browser: boolean;
+    toast: boolean;
+};
+
+/**
+ * How the page alerts one new notification. The only input is a
+ * notification the server already addressed to the viewer by its
+ * notification rules (a conversation assigned or transferred to them, a
+ * pending one they may accept, a customer message in one they attend...),
+ * never the inbox signals: seeing a conversation (supervision) gives no
+ * right to an alert about it, so a supervisor watching every conversation
+ * hears nothing per message of other agents' conversations. One sound at
+ * most per batch (`soundPlayed`).
+ */
+export function notificationAlertPlan(
+    item: Pick<AppNotification, 'conversation_id' | 'toast'>,
+    context: {
+        viewedConversationId: number | null;
+        attended: boolean;
+        hidden: boolean;
+        preference: NotificationPreference | undefined;
+        soundPlayed: boolean;
+    },
+): NotificationAlertPlan {
+    const none = {
+        markRead: false,
+        sound: false,
+        browser: false,
+        toast: false,
+    };
+
+    if (
+        item.conversation_id !== null &&
+        item.conversation_id === context.viewedConversationId &&
+        context.attended
+    ) {
+        return { ...none, markRead: true };
+    }
+
+    if (!context.preference) {
+        return none;
+    }
+
+    const browser = context.preference.browser && context.hidden;
+
+    return {
+        markRead: false,
+        sound: context.preference.sound && !context.soundPlayed,
+        browser,
+        toast: !browser && item.toast,
+    };
+}
+
 /**
  * State and actions of the notification bell. The list is always fetched
  * from the server (texts are rendered there after checking access); a
@@ -64,8 +123,16 @@ export function useNotificationCenter() {
      * occurrence within the same second only changes the counter.
      */
     const seen = new Map<string, string>();
-    /** Notifications whose toast may still be on screen in this tab. */
-    const toasted = new Set<string>();
+    /**
+     * Toast id of every notification whose toast is on screen in this tab.
+     * A closed toast is forgotten as soon as it starts closing (onAutoClose,
+     * onDismiss): vue-sonner keeps the id while the toast plays its exit
+     * animation, and reusing it then would update a toast that is about to
+     * disappear, losing the alert. A new occurrence after that gets a new
+     * toast under a new id.
+     */
+    const toasted = new Map<string, string>();
+    let toastSequence = 0;
     let requestCounter = 0;
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -181,14 +248,14 @@ export function useNotificationCenter() {
                         .map((item) => item.id),
                 );
 
-                for (const id of toasted) {
+                for (const [id, toastId] of toasted) {
                     const isGone = query.unread === 1 && !listed.has(id);
                     const isRead = response.data.some(
                         (item) => item.id === id && item.read_at !== null,
                     );
 
                     if (isGone || isRead) {
-                        toast.dismiss(`notification-${id}`);
+                        toast.dismiss(toastId);
                         toasted.delete(id);
                     }
                 }
@@ -229,41 +296,48 @@ export function useNotificationCenter() {
         let played = false;
 
         for (const item of fresh) {
-            if (
-                item.conversation_id !== null &&
-                item.conversation_id === viewedConversationId.value &&
-                pageIsAttended()
-            ) {
+            const plan = notificationAlertPlan(item, {
+                viewedConversationId: viewedConversationId.value,
+                attended: pageIsAttended(),
+                hidden: document.visibilityState === 'hidden',
+                preference: preferences.value[item.kind],
+                soundPlayed: played,
+            });
+
+            if (plan.markRead && item.conversation_id !== null) {
                 void markConversationRead(item.conversation_id);
                 continue;
             }
 
-            const preference = preferences.value[item.kind];
-
-            if (!preference) {
-                continue;
-            }
-
-            if (preference.sound && !played) {
+            if (plan.sound) {
                 playNotificationSound(item.level === 'urgent');
                 played = true;
             }
 
-            if (preference.browser && document.visibilityState === 'hidden') {
+            if (plan.browser) {
                 void showUnlessPushed(item);
-            } else if (item.toast) {
+            } else if (plan.toast) {
                 // One toast per notification: a new occurrence of an
                 // aggregated one replaces its toast instead of stacking.
-                toasted.add(item.id);
+                const toastId =
+                    toasted.get(item.id) ??
+                    `notification-${item.id}-${++toastSequence}`;
+                const forget = () => {
+                    if (toasted.get(item.id) === toastId) {
+                        toasted.delete(item.id);
+                    }
+                };
+                toasted.set(item.id, toastId);
                 toast.info(item.title, {
-                    id: `notification-${item.id}`,
+                    id: toastId,
                     description: item.body ?? undefined,
                     action: item.url
                         ? { label: 'Abrir', onClick: () => open(item) }
                         : undefined,
-                    // Closing (the X, a swipe) only hides the toast; the
-                    // notification stays unread in the bell.
-                    onDismiss: () => toasted.delete(item.id),
+                    // Closing (the X, a swipe, the timer) only hides the
+                    // toast; the notification stays unread in the bell.
+                    onDismiss: forget,
+                    onAutoClose: forget,
                 });
             }
         }

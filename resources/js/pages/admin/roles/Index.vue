@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
-import { Eye, Globe2, Pencil, Plus, ShieldCheck, Users } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
+import { Eye, Pencil, Plus, ShieldCheck, ShieldEllipsis } from '@lucide/vue';
+import { computed, nextTick, ref } from 'vue';
 import RoleFormDialog from '@/components/admin/RoleFormDialog.vue';
+import RolePermissionsSheet from '@/components/admin/RolePermissionsSheet.vue';
+import RoleSummaryCard from '@/components/admin/RoleSummaryCard.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
-import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
 import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,13 @@ import { useRecordHighlight } from '@/composables/useRecordHighlight';
 import { useRecordStateFilter } from '@/composables/useRecordStateFilter';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
+import {
+    areaCountLabel,
+    scopeIcon,
+    summarizeRole,
+    usersCountLabel,
+} from '@/lib/roles';
+import type { RolePermissionSummary } from '@/lib/roles';
 import {
     destroy as destroyRole,
     index as rolesIndex,
@@ -66,44 +74,26 @@ const { highlightedId } = useRecordHighlight(() =>
     props.roles.map((role) => role.id),
 );
 
-const availableByGroup = computed(() =>
-    props.catalog
-        .map((group) => ({
-            ...group,
-            available: group.permissions.filter(
-                (permission) => permission.available,
-            ),
-        }))
-        .filter((group) => group.available.length > 0),
+const summaries = computed(
+    () =>
+        new Map<number, RolePermissionSummary>(
+            props.roles.map((role) => [
+                role.id,
+                summarizeRole(role, props.catalog),
+            ]),
+        ),
 );
 
-const availableTotal = computed(() =>
-    availableByGroup.value.reduce(
-        (total, group) => total + group.available.length,
-        0,
-    ),
+function summaryOf(role: ManagedRole): RolePermissionSummary {
+    return summaries.value.get(role.id) ?? summarizeRole(role, props.catalog);
+}
+
+const availableTotal = computed(
+    () =>
+        props.catalog
+            .flatMap((group) => group.permissions)
+            .filter((permission) => permission.available).length,
 );
-
-function groupSummary(
-    role: ManagedRole,
-): { label: string; count: number; total: number }[] {
-    return availableByGroup.value
-        .map((group) => ({
-            label: group.label,
-            count: group.available.filter((permission) =>
-                role.permissions.includes(permission.value),
-            ).length,
-            total: group.available.length,
-        }))
-        .filter((group) => group.count > 0);
-}
-
-function availableCount(role: ManagedRole): number {
-    return availableByGroup.value
-        .flatMap((group) => group.available)
-        .filter((permission) => role.permissions.includes(permission.value))
-        .length;
-}
 
 const formOpen = ref(false);
 const formReadonly = ref(false);
@@ -119,6 +109,20 @@ function openRole(role: ManagedRole, readonly: boolean): void {
     editingRole.value = role;
     formReadonly.value = readonly || !role.can.update;
     formOpen.value = true;
+}
+
+const sheetOpen = ref(false);
+const viewedRole = ref<ManagedRole | null>(null);
+
+function viewPermissions(role: ManagedRole): void {
+    viewedRole.value = role;
+    sheetOpen.value = true;
+}
+
+/** «Editar rol» from the detail: the sheet closes before the editor opens. */
+function editFromSheet(role: ManagedRole): void {
+    sheetOpen.value = false;
+    void nextTick(() => openRole(role, false));
 }
 
 const { record, apply: applyRecordState } = useRecordStateFilter(
@@ -154,9 +158,9 @@ function actionsFor(role: ManagedRole): RecordAction[] {
     return recordActions(
         {
             key: 'view',
-            label: 'Ver permisos',
+            label: 'Consultar',
             icon: Eye,
-            onSelect: () => openRole(role, true),
+            onSelect: () => viewPermissions(role),
         },
         role.can.update && {
             key: 'edit',
@@ -169,20 +173,24 @@ function actionsFor(role: ManagedRole): RecordAction[] {
 }
 
 function usersLabel(role: ManagedRole): string {
-    return `${role.users_count} ${role.users_count === 1 ? 'usuario' : 'usuarios'}`;
+    return usersCountLabel(role.users_count);
+}
+
+function roleDescription(role: ManagedRole): string {
+    return role.is_root
+        ? 'Superadministrador: control total de la plataforma; no se puede eliminar.'
+        : role.description || 'Sin descripción.';
 }
 </script>
 
 <template>
     <Head title="Roles y permisos" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="roles"
             title="Roles y permisos"
-            description="Define qué puede hacer cada persona (permisos) y sobre qué datos (alcance). Los cambios se aplican de inmediato."
+            description="Define qué puede hacer cada persona (permisos) y qué información puede ver (alcance): toda la organización, sus departamentos o solo lo asignado. Los cambios se aplican de inmediato."
         >
             <template v-if="can.create || canExport" #actions>
                 <ExportMenu
@@ -190,7 +198,11 @@ function usersLabel(role: ManagedRole): string {
                     report="roles"
                     :filters="filters"
                 />
-                <Button v-if="can.create" @click="openCreate">
+                <Button
+                    v-if="can.create"
+                    data-tour="roles.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nuevo rol
                 </Button>
@@ -206,7 +218,7 @@ function usersLabel(role: ManagedRole): string {
                     {{ roles.length === 1 ? 'rol' : 'roles' }} ·
                     {{ availableTotal }} permisos disponibles
                 </p>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2" data-tour="roles.toolbar">
                     <RecordStateFilter
                         v-model="record"
                         :options="recordStates"
@@ -221,7 +233,7 @@ function usersLabel(role: ManagedRole): string {
                 class="m-4 border-none"
                 :icon="ShieldCheck"
                 title="Ningún rol en este estado"
-                description="Prueba con otro estado del registro."
+                description="Cambia el filtro (Activos, Eliminados o Todos)."
             />
 
             <Table v-else-if="viewMode === 'table'">
@@ -245,9 +257,10 @@ function usersLabel(role: ManagedRole): string {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="role in roles"
+                        v-for="(role, position) in roles"
                         :key="role.id"
-                        class="transition-colors duration-700"
+                        :data-tour="position === 0 ? 'roles.card' : undefined"
+                        class="transition-colors duration-(--duration-panel)"
                         :class="[
                             role.is_deleted && 'text-muted-foreground',
                             highlightedId === role.id && 'bg-primary-soft/70',
@@ -256,16 +269,16 @@ function usersLabel(role: ManagedRole): string {
                         <TableCell class="w-full max-w-0 py-3 pl-5">
                             <div class="flex min-w-0 items-center gap-3">
                                 <span
-                                    class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                                    :class="
-                                        role.is_root
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-primary-soft text-primary-soft-foreground'
-                                    "
+                                    class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                                    aria-hidden="true"
                                 >
-                                    <ShieldCheck
+                                    <component
+                                        :is="
+                                            role.is_root
+                                                ? ShieldEllipsis
+                                                : ShieldCheck
+                                        "
                                         class="size-4"
-                                        aria-hidden="true"
                                     />
                                 </span>
                                 <div class="min-w-0">
@@ -285,24 +298,54 @@ function usersLabel(role: ManagedRole): string {
                                     <p
                                         class="truncate text-xs text-muted-foreground"
                                     >
-                                        {{
-                                            role.is_root
-                                                ? 'Superadministrador: autoridad raíz de la plataforma'
-                                                : role.description ||
-                                                  'Sin descripción.'
-                                        }}
+                                        {{ roleDescription(role) }}
+                                    </p>
+                                    <p
+                                        class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs text-muted-foreground lg:hidden"
+                                    >
+                                        <span
+                                            class="inline-flex items-center gap-1"
+                                        >
+                                            <component
+                                                :is="scopeIcon(role.scope)"
+                                                class="size-3.5"
+                                                aria-hidden="true"
+                                            />
+                                            {{ role.scope_label }}
+                                        </span>
+                                        <span class="tabular-nums"
+                                            >{{ summaryOf(role).enabled }}
+                                            habilitados ·
+                                            {{ summaryOf(role).areas }}
+                                            {{
+                                                summaryOf(role).areas === 1
+                                                    ? 'área'
+                                                    : 'áreas'
+                                            }}</span
+                                        >
                                     </p>
                                 </div>
                             </div>
                         </TableCell>
                         <TableCell class="hidden text-sm lg:table-cell">
-                            {{ role.scope_label }}
+                            <span
+                                class="inline-flex items-center gap-1.5 whitespace-nowrap"
+                            >
+                                <component
+                                    :is="scopeIcon(role.scope)"
+                                    class="size-4 text-muted-foreground"
+                                    aria-hidden="true"
+                                />
+                                {{ role.scope_label }}
+                            </span>
                         </TableCell>
                         <TableCell
-                            class="hidden text-sm tabular-nums lg:table-cell"
+                            class="hidden text-sm whitespace-nowrap tabular-nums lg:table-cell"
+                            :title="areaCountLabel(summaryOf(role).areas)"
                         >
-                            {{ availableCount(role) }} de
-                            {{ availableTotal }}
+                            {{ summaryOf(role).enabled }} habilitados ·
+                            {{ summaryOf(role).areas }}
+                            {{ summaryOf(role).areas === 1 ? 'área' : 'áreas' }}
                         </TableCell>
                         <TableCell class="hidden xl:table-cell">
                             <Link
@@ -331,112 +374,20 @@ function usersLabel(role: ManagedRole): string {
             </Table>
 
             <RecordGrid v-else>
-                <li v-for="role in roles" :key="role.id">
-                    <RecordCard
-                        :muted="role.is_deleted"
+                <li
+                    v-for="(role, position) in roles"
+                    :key="role.id"
+                    :data-tour="position === 0 ? 'roles.card' : undefined"
+                >
+                    <RoleSummaryCard
+                        :role="role"
+                        :summary="summaryOf(role)"
+                        :actions="deletion.actionsFor(role)"
                         :highlighted="highlightedId === role.id"
-                    >
-                        <template #leading>
-                            <span
-                                class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                                :class="
-                                    role.is_root
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-primary-soft text-primary-soft-foreground'
-                                "
-                            >
-                                <ShieldCheck
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </span>
-                        </template>
-                        <template #title>
-                            <span class="block truncate">{{ role.label }}</span>
-                        </template>
-                        <template #subtitle>
-                            <span class="inline-flex items-center gap-1">
-                                <Globe2 class="size-3" aria-hidden="true" />
-                                {{ role.scope_label }}
-                            </span>
-                        </template>
-                        <template #badges>
-                            <DeletedBadge v-if="role.is_deleted" />
-                            <Badge
-                                v-if="role.is_root"
-                                variant="secondary"
-                                class="font-normal"
-                                >Superadministrador</Badge
-                            >
-                            <Badge
-                                v-if="role.is_current_user_role"
-                                variant="outline"
-                                class="font-normal"
-                                >Tu rol</Badge
-                            >
-                        </template>
-                        <p class="line-clamp-2 text-muted-foreground">
-                            {{ role.description || 'Sin descripción.' }}
-                        </p>
-                        <div class="space-y-1.5">
-                            <div
-                                class="flex items-center justify-between text-xs"
-                            >
-                                <span class="font-medium"
-                                    >Permisos disponibles</span
-                                >
-                                <span class="text-muted-foreground tabular-nums"
-                                    >{{ availableCount(role) }} de
-                                    {{ availableTotal }}</span
-                                >
-                            </div>
-                            <div
-                                class="h-1.5 overflow-hidden rounded-full bg-muted"
-                                aria-hidden="true"
-                            >
-                                <div
-                                    class="h-full rounded-full bg-primary transition-all"
-                                    :style="{
-                                        width: `${availableTotal ? (availableCount(role) / availableTotal) * 100 : 0}%`,
-                                    }"
-                                />
-                            </div>
-                            <ul class="flex flex-wrap gap-1 pt-0.5">
-                                <li
-                                    v-for="group in groupSummary(role)"
-                                    :key="group.label"
-                                    class="rounded-md bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground"
-                                >
-                                    {{ group.label }} · {{ group.count }}/{{
-                                        group.total
-                                    }}
-                                </li>
-                                <li
-                                    v-if="groupSummary(role).length === 0"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    Sin permisos disponibles asignados.
-                                </li>
-                            </ul>
-                        </div>
-                        <template #meta>
-                            <Link
-                                :href="usersIndex({ query: { role: role.id } })"
-                                class="inline-flex items-center gap-1 hover:text-foreground hover:underline"
-                                :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
-                            >
-                                <Users class="size-3.5" aria-hidden="true" />
-                                {{ usersLabel(role) }}
-                            </Link>
-                        </template>
-                        <template #actions>
-                            <RecordActions
-                                :actions="actionsFor(role)"
-                                :record="`el rol ${role.label}`"
-                                :busy="deletion.processingId === role.id"
-                            />
-                        </template>
-                    </RecordCard>
+                        :busy="deletion.processingId === role.id"
+                        @view-permissions="viewPermissions(role)"
+                        @edit="openRole(role, false)"
+                    />
                 </li>
             </RecordGrid>
         </SurfaceCard>
@@ -445,7 +396,16 @@ function usersLabel(role: ManagedRole): string {
             v-else
             :icon="ShieldCheck"
             title="Aún no hay roles"
-            description="Ejecuta php artisan app:sync-permissions para crear los roles iniciales."
+            description="Aún no se han creado los roles básicos. Pide al equipo técnico que los cree; después podrás crearlos y editarlos aquí."
+        />
+
+        <RolePermissionsSheet
+            v-model:open="sheetOpen"
+            :role="viewedRole"
+            :catalog="catalog"
+            :scopes="scopes"
+            :can-edit="viewedRole?.can.update ?? false"
+            @edit="editFromSheet"
         />
 
         <RoleFormDialog

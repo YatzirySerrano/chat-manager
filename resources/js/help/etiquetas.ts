@@ -46,7 +46,7 @@ const help: ModuleHelp = {
     ],
     permissions: [
         '«Ver etiquetas» muestra el catálogo.',
-        '«Administrar etiquetas (crear, editar, eliminar y restaurar)» requiere alcance global; restaurar también requiere «Consultar registros eliminados».',
+        '«Administrar etiquetas (crear, editar, eliminar y restaurar)» requiere un rol que vea toda la organización; restaurar también requiere «Consultar registros eliminados».',
         '«Asignar etiquetas a contactos y conversaciones» permite aplicarlas. En conversaciones, solo el responsable o quien puede asignar conversaciones.',
     ],
     commonErrors: [

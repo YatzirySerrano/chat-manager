@@ -11,6 +11,8 @@ final readonly class Chart
     /**
      * @param  list<string>  $labels  Categories (bar, donut) or points in time (line).
      * @param  list<ChartSeries>  $series  Donut charts use only the first series.
+     * @param  list<string>  $colors  Optional color per label (hex) for a donut or a one-series bar
+     *                                chart whose categories are entities with a fixed color on screen.
      */
     public function __construct(
         public ChartType $type,
@@ -18,7 +20,16 @@ final readonly class Chart
         public array $labels,
         public array $series,
         public ?string $subtitle = null,
+        public array $colors = [],
     ) {}
+
+    /**
+     * The fixed color of a category, if the chart gives one.
+     */
+    public function colorOf(int $index): ?string
+    {
+        return $this->colors[$index] ?? null;
+    }
 
     /**
      * Whether there is anything worth drawing.

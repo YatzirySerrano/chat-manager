@@ -5,6 +5,7 @@ namespace App\Actions\Audit;
 use App\Enums\AuditAction;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
@@ -61,7 +62,10 @@ class AuditLogQuery
         return AuditLog::query()
             ->visibleTo($viewer)
             ->when($filters['action'], fn (Builder $query, string $action) => $query->where('action', $action))
-            ->when($filters['actor'], fn (Builder $query, int $actor) => $query->where('user_id', $actor))
+            // A protected account (root role) is never a valid actor filter for
+            // anyone else: its id matches nothing, as an unknown id would.
+            ->when($filters['actor'], fn (Builder $query, int $actor) => $query->where('user_id', $actor)
+                ->when(app(ProtectedAccounts::class)->hides($actor, $viewer), fn (Builder $hidden) => $hidden->whereRaw('1 = 0')))
             ->when($filters['from'], fn (Builder $query, string $from) => $query->where('created_at', '>=', Carbon::parse($from)->startOfDay()))
             ->when($filters['to'], fn (Builder $query, string $to) => $query->where('created_at', '<=', Carbon::parse($to)->endOfDay()))
             ->orderByDesc('created_at')

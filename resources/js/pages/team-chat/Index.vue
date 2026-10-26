@@ -10,9 +10,8 @@ import {
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import EmptyState from '@/components/EmptyState.vue';
-import ModuleHelpButton from '@/components/help/ModuleHelpButton.vue';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
@@ -27,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { userChannelName } from '@/composables/useUserChannel';
 import { formatRelative } from '@/lib/format';
@@ -244,6 +244,10 @@ watch(
     },
 );
 
+// No PageHeader here: the global help button offers this module's tour
+// and guide.
+onBeforeUnmount(useGuidedTour().registerPageModule('chat-interno'));
+
 useLiveReload({
     channels: () => {
         const user = userChannelName();
@@ -298,7 +302,9 @@ const emptyListCopy = computed(() => {
         "
     />
 
-    <div class="flex h-[calc(100dvh-3.5rem)] min-h-0 sm:h-[calc(100dvh-4rem)]">
+    <div
+        class="flex h-[calc(100dvh-3.5rem)] min-h-0 sm:h-[calc(100dvh-4rem)] [@media(max-height:32rem)]:h-[calc(100dvh-3rem)]!"
+    >
         <aside
             :class="
                 cn(
@@ -320,14 +326,11 @@ const emptyListCopy = computed(() => {
                             }}
                         </p>
                     </div>
-                    <ModuleHelpButton
-                        module="chat-interno"
-                        icon-only
-                        class="ml-auto"
-                    />
                     <DropdownMenu v-if="can.createGroup">
                         <DropdownMenuTrigger as-child>
-                            <Button size="sm"> <Plus /> Nuevo </Button>
+                            <Button size="sm" data-tour="team-chat.new">
+                                <Plus /> Nuevo
+                            </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuItem @select="newDirectOpen = true">
@@ -338,12 +341,21 @@ const emptyListCopy = computed(() => {
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button v-else size="sm" @click="newDirectOpen = true">
+                    <Button
+                        v-else
+                        size="sm"
+                        data-tour="team-chat.new"
+                        @click="newDirectOpen = true"
+                    >
                         <Plus /> Nuevo chat
                     </Button>
                 </div>
 
-                <div class="relative" role="search">
+                <div
+                    class="relative"
+                    role="search"
+                    data-tour="team-chat.search"
+                >
                     <Search
                         class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
@@ -420,6 +432,7 @@ const emptyListCopy = computed(() => {
                 <nav
                     v-else
                     aria-label="Lista de chats"
+                    data-tour="team-chat.threads"
                     class="grid grid-cols-1 gap-0.5"
                 >
                     <ThreadListItem
@@ -458,7 +471,7 @@ const emptyListCopy = computed(() => {
                     aria-label="Resultados en mensajes"
                 >
                     <h2
-                        class="px-3 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        class="px-3 pb-1 text-xs font-semibold text-muted-foreground"
                     >
                         En mensajes
                     </h2>

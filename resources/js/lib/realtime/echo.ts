@@ -26,6 +26,10 @@ import type {
 
 const AUTH_ENDPOINT = '/broadcasting/auth';
 
+type ChannelAuthorization = NonNullable<
+    Parameters<ChannelAuthorizationCallback>[1]
+>;
+
 type Subscription = {
     name: string;
     handlers: Map<string, Set<RealtimeHandler>>;
@@ -64,15 +68,77 @@ function xsrfToken(): string | null {
     return match ? decodeURIComponent(match[1]) : null;
 }
 
+/** Pause before each new attempt of a channel authorization (ms). */
+const AUTH_RETRY_DELAYS_MS = [500, 1500, 4000];
+
+/** Longest pause honoured from a Retry-After header (ms). */
+const AUTH_RETRY_AFTER_MAX_MS = 10_000;
+
+/** Authorization requests in flight at once; the rest wait their turn. */
+const AUTH_CONCURRENCY = 3;
+
+let authInFlight = 0;
+const authQueue: Array<() => void> = [];
+
 /**
- * Authorizes a private channel with the session cookie. A refusal (403)
- * marks the subscription as denied: the channel stays silent and the page
- * keeps its periodic refresh, which re-checks permissions on the server.
+ * Runs the task when fewer than AUTH_CONCURRENCY authorizations are in
+ * flight. Connecting (or an access change) authorizes every channel at once;
+ * spreading them avoids bursts on the same rate limit row of the server.
  */
-function authorize(
-    params: { socketId: string; channelName: string },
-    callback: ChannelAuthorizationCallback,
-): void {
+function withAuthSlot<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const run = (): void => {
+            authInFlight++;
+            task()
+                .then(resolve, reject)
+                .finally(() => {
+                    authInFlight--;
+                    authQueue.shift()?.();
+                });
+        };
+
+        if (authInFlight < AUTH_CONCURRENCY) {
+            run();
+        } else {
+            authQueue.push(run);
+        }
+    });
+}
+
+function isRetryableStatus(status: number): boolean {
+    return status === 429 || status >= 500;
+}
+
+/** Pause before the attempt after `attempt` (0 based), with ±25 % jitter. */
+function retryDelay(attempt: number, response: Response | null): number {
+    const retryAfter = Number(response?.headers.get('Retry-After'));
+
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(retryAfter * 1000, AUTH_RETRY_AFTER_MAX_MS);
+    }
+
+    return AUTH_RETRY_DELAYS_MS[attempt] * (0.75 + Math.random() * 0.5);
+}
+
+function channelKey(channelName: string): string {
+    return channelName.replace(/^(private|presence)-/, '');
+}
+
+/**
+ * Whether an answer for this socket and channel is still useful: the socket
+ * was not replaced (pusher-js authorizes every channel again on a new one)
+ * and some component still listens to the channel.
+ */
+function isStillWanted(socketId: string, channelName: string): boolean {
+    const key = channelKey(channelName);
+
+    return (
+        client?.connection.socket_id === socketId &&
+        (subscriptions.has(key) || presences.has(key))
+    );
+}
+
+function authRequest(socketId: string, channelName: string): Promise<Response> {
     const headers: Record<string, string> = {
         Accept: 'application/json',
         'Content-Type': 'application/json',
@@ -84,47 +150,100 @@ function authorize(
         headers['X-XSRF-TOKEN'] = token;
     }
 
-    fetch(AUTH_ENDPOINT, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({
-            socket_id: params.socketId,
-            channel_name: params.channelName,
+    return withAuthSlot(() =>
+        fetch(AUTH_ENDPOINT, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({
+                socket_id: socketId,
+                channel_name: channelName,
+            }),
         }),
-    })
-        .then(async (response) => {
-            if (!response.ok) {
-                const name = params.channelName.replace(
-                    /^(private|presence)-/,
-                    '',
-                );
-                const subscription = subscriptions.get(name);
+    );
+}
 
-                if (subscription && response.status === 403) {
-                    subscription.denied = true;
-                }
+/**
+ * Authorizes a private channel with the session cookie. A refusal (403)
+ * marks the subscription as denied: the channel stays silent and the page
+ * keeps its periodic refresh, which re-checks permissions on the server.
+ *
+ * A temporary failure (429, 5xx or no connection) is tried again a few
+ * times with a growing, jittered pause (or the server's Retry-After), so a
+ * passing server error does not leave the channel silent for the whole
+ * session. Retries stop when the socket changes or nobody listens anymore.
+ */
+function authorize(
+    params: { socketId: string; channelName: string },
+    callback: ChannelAuthorizationCallback,
+): void {
+    const { socketId, channelName } = params;
 
-                callback(
-                    new Error(
-                        `Channel authorization failed (${response.status})`,
-                    ),
-                    null,
-                );
+    const attempt = async (retry: number): Promise<void> => {
+        let response: Response | null = null;
+        let failure = new Error('Channel authorization failed');
+        let authorization: ChannelAuthorization | null = null;
 
-                return;
+        try {
+            response = await authRequest(socketId, channelName);
+
+            if (response.ok) {
+                authorization = await response.json();
             }
-
-            callback(null, await response.json());
-        })
-        .catch((error: unknown) => {
-            callback(
+        } catch (error: unknown) {
+            response = null;
+            failure =
                 error instanceof Error
                     ? error
-                    : new Error('Channel authorization failed'),
-                null,
+                    : new Error('Channel authorization failed');
+        }
+
+        if (authorization) {
+            callback(null, authorization);
+
+            return;
+        }
+
+        if (response) {
+            if (response.status === 403) {
+                const subscription = subscriptions.get(channelKey(channelName));
+
+                if (subscription) {
+                    subscription.denied = true;
+                }
+            }
+
+            failure = new Error(
+                `Channel authorization failed (${response.status})`,
             );
-        });
+        }
+
+        const retryable =
+            response === null || isRetryableStatus(response.status);
+
+        if (
+            retryable &&
+            retry < AUTH_RETRY_DELAYS_MS.length &&
+            isStillWanted(socketId, channelName)
+        ) {
+            setTimeout(
+                () => {
+                    if (isStillWanted(socketId, channelName)) {
+                        void attempt(retry + 1);
+                    } else {
+                        callback(failure, null);
+                    }
+                },
+                retryDelay(retry, response),
+            );
+
+            return;
+        }
+
+        callback(failure, null);
+    };
+
+    void attempt(0);
 }
 
 function mapState(pusherState: string): RealtimeState {

@@ -27,11 +27,11 @@ class SystemFailedJobController extends Controller
 
         try {
             $failedJobs->retry($uuid, $actor);
-            Inertia::flash('toast', ['type' => 'success', 'message' => 'El trabajo volvió a la cola; un worker lo procesará en breve.']);
+            Inertia::flash('toast', ['type' => 'success', 'message' => 'La tarea se volvió a programar y se ejecutará en unos momentos.']);
         } catch (FailedJobActionRefused $refused) {
             Inertia::flash('toast', ['type' => 'error', 'message' => $refused->getMessage()]);
         } catch (LockTimeoutException) {
-            Inertia::flash('toast', ['type' => 'warning', 'message' => 'Otra persona está reintentando este trabajo. Actualiza la página en unos segundos.']);
+            Inertia::flash('toast', ['type' => 'warning', 'message' => 'Otra persona está reintentando esta tarea. Actualiza la página en unos segundos.']);
         }
 
         return back();
@@ -46,7 +46,7 @@ class SystemFailedJobController extends Controller
 
         try {
             $failedJobs->forget($uuid, $actor);
-            Inertia::flash('toast', ['type' => 'success', 'message' => 'Trabajo fallido descartado.']);
+            Inertia::flash('toast', ['type' => 'success', 'message' => 'Tarea con error descartada; no se volverá a ejecutar.']);
         } catch (FailedJobActionRefused $refused) {
             Inertia::flash('toast', ['type' => 'error', 'message' => $refused->getMessage()]);
         }

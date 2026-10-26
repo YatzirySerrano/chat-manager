@@ -101,20 +101,20 @@ const checks = computed<
                     : 'error',
             detail:
                 webhook.app_secret_saved && webhook.verify_token_saved
-                    ? 'Guardados (cifrados). Se usan para validar la firma y el registro del webhook.'
-                    : 'Sin el secreto de la app no se pueden autenticar los eventos de Meta; sin el token de verificación Meta no puede registrar el webhook.',
+                    ? 'Guardados (cifrados). Sirven para confirmar que los avisos vienen de Meta y para que Meta pueda conectarse.'
+                    : 'Faltan datos: sin el secreto de la app no podemos confirmar que los mensajes vienen de Meta, y sin el token de verificación Meta no puede conectarse.',
         },
         {
             key: 'verified',
-            label: 'Webhook verificado por Meta',
+            label: 'Aviso de mensajes nuevos (webhook) confirmado por Meta',
             state: webhook.verified_at ? 'ok' : 'pending',
             detail: webhook.verified_at
                 ? `Meta verificó la URL ${formatRelative(webhook.verified_at)}.`
-                : 'Registra la URL y el token de verificación en la configuración de WhatsApp de tu app en Meta.',
+                : 'Pega la URL de abajo y el token de verificación en la configuración de WhatsApp de tu app en Meta.',
         },
         {
             key: 'subscription',
-            label: 'App suscrita a la cuenta de WhatsApp Business',
+            label: 'Recepción de mensajes activada en la cuenta de WhatsApp Business',
             state:
                 subscription.state === 'subscribed'
                     ? 'ok'
@@ -124,15 +124,15 @@ const checks = computed<
             detail:
                 subscription.state === 'unknown'
                     ? 'Aún no se ha consultado en Meta.'
-                    : `${subscription.state === 'subscribed' ? 'Suscrita' : 'No suscrita'} según la consulta ${formatRelative(subscription.checked_at)}.${subscription.meta_app_id_saved ? '' : ' Guarda el Meta App ID para comprobar que sea tu app.'}`,
+                    : `${subscription.state === 'subscribed' ? 'Activada' : 'No activada'} según la consulta ${formatRelative(subscription.checked_at)}.${subscription.meta_app_id_saved ? '' : ' Guarda el Meta App ID para comprobar que sea tu app.'}`,
         },
         {
             key: 'deliveries',
-            label: 'Eventos recibidos',
+            label: 'Avisos recibidos de Meta',
             state: webhook.last_received_at ? 'ok' : 'pending',
             detail: webhook.last_received_at
-                ? `Último evento autenticado ${formatRelative(webhook.last_received_at)}. Últimas 24 h: ${webhook.events_24h.processed} procesados, ${webhook.events_24h.pending} en espera, ${webhook.events_24h.failed} con error.`
-                : 'Todavía no llega ningún evento firmado por Meta.',
+                ? `Último aviso confirmado ${formatRelative(webhook.last_received_at)}. Últimas 24 h: ${webhook.events_24h.processed} procesados, ${webhook.events_24h.pending} en espera, ${webhook.events_24h.failed} con error.`
+                : 'Todavía no llega ningún aviso de Meta (mensajes nuevos o estados de envío).',
         },
     ];
 });
@@ -141,12 +141,12 @@ const checks = computed<
 <template>
     <SurfaceCard
         title="Integración con WhatsApp Cloud API"
-        description="Pasos de activación con evidencia real de Meta."
+        description="Pasos para activar la conexión, confirmados con Meta."
         body-class="grid grid-cols-1 gap-4 p-5 text-sm"
     >
         <div
             v-if="diagnostics.transport.mode !== 'meta'"
-            class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+            class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
         >
             <FlaskConical
                 v-if="diagnostics.transport.mode === 'simulated'"
@@ -161,8 +161,8 @@ const checks = computed<
             <p>
                 <strong>{{
                     diagnostics.transport.mode === 'simulated'
-                        ? 'Simulación'
-                        : 'Envío deshabilitado'
+                        ? 'Modo de prueba'
+                        : 'Envío apagado'
                 }}</strong>
                 · {{ diagnostics.transport.label }}
             </p>
@@ -170,7 +170,7 @@ const checks = computed<
 
         <p
             v-if="diagnostics.transport.pilot_recipients > 0"
-            class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+            class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
         >
             <FlaskConical
                 class="mt-0.5 size-4 shrink-0 text-warning"
@@ -238,7 +238,7 @@ const checks = computed<
 
         <div
             v-if="diagnostics.webhook.last_failure"
-            class="rounded-lg bg-destructive/5 p-3 text-xs"
+            class="rounded-lg bg-destructive-soft p-3 text-xs"
         >
             <p class="font-medium text-destructive">
                 Último evento con error ·
@@ -251,7 +251,7 @@ const checks = computed<
 
         <p
             v-if="diagnostics.outbound.unconfirmed > 0"
-            class="rounded-lg bg-warning/10 p-3 text-xs"
+            class="rounded-lg bg-warning-soft p-3 text-xs"
         >
             {{ diagnostics.outbound.unconfirmed }} mensaje(s) enviados sin
             confirmación de Meta. Si no llega la confirmación se marcarán como
@@ -260,7 +260,7 @@ const checks = computed<
 
         <div
             v-if="diagnostics.outbound.unknown > 0"
-            class="grid gap-1.5 rounded-lg bg-warning/10 p-3 text-xs"
+            class="grid gap-1.5 rounded-lg bg-warning-soft p-3 text-xs"
             role="status"
         >
             <p>
@@ -342,13 +342,13 @@ const checks = computed<
             >
                 <Spinner v-if="busy === 'sync'" />
                 <RefreshCw v-else />
-                Sincronizar plantillas
+                Actualizar plantillas desde Meta
             </Button>
         </div>
         <p class="text-xs text-muted-foreground">
             Plantillas aprobadas: {{ diagnostics.templates.approved }}
             <template v-if="diagnostics.templates.last_synced_at">
-                · sincronizadas
+                · actualizadas desde Meta
                 {{
                     formatRelative(diagnostics.templates.last_synced_at)
                 }}</template

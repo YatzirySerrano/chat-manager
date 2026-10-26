@@ -7,11 +7,13 @@ import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { useFormValidation } from '@/composables/useFormValidation';
+import { formatTimeZone } from '@/lib/format';
 import { integerBetween, maxLength, required } from '@/lib/validation';
 import type { FieldRules } from '@/lib/validation';
 import { edit, update } from '@/routes/admin/settings';
@@ -137,7 +139,7 @@ const integrationConnected = computed(
     <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
         <fieldset
             :disabled="!can.update"
-            class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 p-4 md:p-6 lg:p-8"
+            class="page-shell [--page-max:72rem] [--section-gap:2rem]"
         >
             <PageHeader
                 help="configuracion"
@@ -145,20 +147,18 @@ const integrationConnected = computed(
                 description="Parámetros generales de la plataforma. Los cambios quedan registrados en la auditoría."
             />
 
-            <p
-                v-if="!can.update"
-                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
-            >
-                <Lock class="size-4" />
+            <StatusNote v-if="!can.update" tone="info" :icon="Lock">
                 Puedes consultar la configuración, pero no modificarla.
-            </p>
+            </StatusNote>
 
             <section
                 class="grid gap-6 lg:grid-cols-[16rem_1fr]"
                 aria-labelledby="general-heading"
             >
-                <div>
-                    <h2 id="general-heading" class="font-semibold">General</h2>
+                <div data-tour="settings.general">
+                    <h2 id="general-heading" class="text-base font-semibold">
+                        General
+                    </h2>
                     <p class="text-sm text-muted-foreground">
                         Nombre visible y zona horaria usada para mostrar fechas
                         y calcular indicadores diarios.
@@ -206,7 +206,7 @@ const integrationConnected = computed(
                                 :key="zone"
                                 :value="zone"
                             >
-                                {{ zone.replaceAll('_', ' ') }}
+                                {{ formatTimeZone(zone) }}
                             </option>
                         </select>
                     </FormField>
@@ -217,8 +217,8 @@ const integrationConnected = computed(
                 class="grid gap-6 lg:grid-cols-[16rem_1fr]"
                 aria-labelledby="hours-heading"
             >
-                <div>
-                    <h2 id="hours-heading" class="font-medium">
+                <div data-tour="settings.hours">
+                    <h2 id="hours-heading" class="text-base font-semibold">
                         Horario de atención
                     </h2>
                     <p class="text-sm text-muted-foreground">
@@ -316,7 +316,7 @@ const integrationConnected = computed(
                 aria-labelledby="holidays-heading"
             >
                 <div>
-                    <h2 id="holidays-heading" class="font-medium">
+                    <h2 id="holidays-heading" class="text-base font-semibold">
                         Días no laborables
                     </h2>
                     <p class="text-sm text-muted-foreground">
@@ -334,8 +334,8 @@ const integrationConnected = computed(
                 class="grid gap-6 lg:grid-cols-[16rem_1fr]"
                 aria-labelledby="operations-heading"
             >
-                <div>
-                    <h2 id="operations-heading" class="font-medium">
+                <div data-tour="settings.operations">
+                    <h2 id="operations-heading" class="text-base font-semibold">
                         Operación
                     </h2>
                     <p class="text-sm text-muted-foreground">
@@ -353,8 +353,8 @@ const integrationConnected = computed(
                         hint="Recibe las conversaciones nuevas sin departamento."
                         :help="{
                             description:
-                                'Cola a la que entra una conversación nueva cuando su conexión no tiene un departamento predeterminado propio.',
-                            howTo: 'Elige un departamento activo autorizado para las conexiones. Si no eliges ninguno, las conversaciones quedan «Sin departamento» y solo las ven quienes tienen alcance sobre toda la organización.',
+                                'Departamento que recibe las conversaciones nuevas cuando su conexión no tiene uno propio.',
+                            howTo: 'Elige un departamento activo autorizado para las conexiones. Si no eliges ninguno, las conversaciones quedan «Sin departamento» y solo las verán quienes ven toda la organización.',
                             warning:
                                 'Nunca se adivina el departamento a partir del contenido de los mensajes.',
                         }"
@@ -505,14 +505,15 @@ const integrationConnected = computed(
                 class="grid gap-6 lg:grid-cols-[16rem_1fr]"
                 aria-labelledby="sla-heading"
             >
-                <div>
-                    <h2 id="sla-heading" class="font-medium">
+                <div data-tour="settings.sla">
+                    <h2 id="sla-heading" class="text-base font-semibold">
                         Objetivos de servicio
                     </h2>
                     <p class="text-sm text-muted-foreground">
                         Opcionales. Con un objetivo, Reportes muestra el
-                        porcentaje de conversaciones que lo cumplieron en tiempo
-                        hábil; sin objetivo, solo se muestran los tiempos.
+                        porcentaje de conversaciones que lo cumplieron (contando
+                        solo el horario de atención); sin objetivo, solo se
+                        muestran los tiempos.
                     </p>
                 </div>
                 <div
@@ -524,10 +525,10 @@ const integrationConnected = computed(
                         hint="Déjalo vacío para no medir cumplimiento."
                         :help="{
                             description:
-                                'Tiempo hábil máximo desde que llega la conversación hasta la primera respuesta de una persona aceptada por WhatsApp.',
+                                'Tiempo máximo, en horario de atención, desde que llega la conversación hasta que una persona del equipo responde y WhatsApp acepta el mensaje.',
                             example: '15',
                             warning:
-                                'El tiempo hábil solo cuenta las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
+                                'Solo cuentan las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
                         }"
                         :error="validation.error('sla.first_response_minutes')"
                     >
@@ -557,10 +558,10 @@ const integrationConnected = computed(
                         hint="Déjalo vacío para no medir cumplimiento."
                         :help="{
                             description:
-                                'Tiempo hábil máximo desde que llega la conversación hasta su primer cierre.',
+                                'Tiempo máximo, en horario de atención, desde que llega la conversación hasta que se cierra por primera vez.',
                             example: '480',
                             warning:
-                                'El tiempo hábil solo cuenta las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
+                                'Solo cuentan las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
                         }"
                         :error="validation.error('sla.resolution_minutes')"
                     >
@@ -592,7 +593,7 @@ const integrationConnected = computed(
                 aria-labelledby="meta-heading"
             >
                 <div>
-                    <h2 id="meta-heading" class="font-medium">
+                    <h2 id="meta-heading" class="text-base font-semibold">
                         Integración con Meta
                     </h2>
                     <p class="text-sm text-muted-foreground">
@@ -607,7 +608,7 @@ const integrationConnected = computed(
                             class="flex size-9 shrink-0 items-center justify-center rounded-md"
                             :class="
                                 integrationConnected
-                                    ? 'bg-success/10 text-success'
+                                    ? 'bg-success-soft text-success-soft-foreground'
                                     : 'bg-muted text-muted-foreground'
                             "
                         >
@@ -650,10 +651,13 @@ const integrationConnected = computed(
 
         <div
             v-if="can.update"
+            data-dock-bottom
+            data-tour="settings.save"
             class="sticky bottom-0 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
         >
             <span
                 class="text-sm text-muted-foreground max-sm:sr-only"
+                :class="validation.hasChanges && 'font-medium text-warning'"
                 aria-live="polite"
                 >{{
                     validation.hasChanges

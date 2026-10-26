@@ -42,5 +42,5 @@ test('each scope listens to the inbox channels its inbox shows', function () {
         ->assertInertia(fn (Assert $page) => $page->where('realtime.inbox_channels', ['inbox.global']));
 
     $this->actingAs(User::factory()->supervisor()->inDepartments($department)->create())->get(route('dashboard'))
-        ->assertInertia(fn (Assert $page) => $page->where('realtime.inbox_channels', ["inbox.departments.{$department->id}"]));
+        ->assertInertia(fn (Assert $page) => $page->where('realtime.inbox_channels', ["inbox.departments.{$department->id}", "inbox.supervision.{$department->id}"]));
 });

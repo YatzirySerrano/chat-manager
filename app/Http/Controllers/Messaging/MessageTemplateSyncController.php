@@ -30,7 +30,7 @@ class MessageTemplateSyncController extends Controller
         $key = "templates-sync:{$request->user()->id}:{$connection->id}";
 
         if (RateLimiter::tooManyAttempts($key, self::ATTEMPTS_PER_MINUTE)) {
-            Inertia::flash('toast', ['type' => 'warning', 'message' => 'Demasiadas sincronizaciones seguidas. Espera '.RateLimiter::availableIn($key).' segundos.']);
+            Inertia::flash('toast', ['type' => 'warning', 'message' => 'Ya se actualizaron las plantillas varias veces seguidas. Espera '.RateLimiter::availableIn($key).' segundos.']);
 
             return back();
         }
@@ -49,7 +49,7 @@ class MessageTemplateSyncController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => "Plantillas sincronizadas con Meta: {$result['total']} en total, {$result['created']} nuevas, {$result['updated']} actualizadas y {$result['removed']} retiradas.",
+            'message' => "Plantillas actualizadas desde Meta: {$result['total']} en total, {$result['created']} nuevas, {$result['updated']} actualizadas y {$result['removed']} retiradas.",
         ]);
 
         return back();

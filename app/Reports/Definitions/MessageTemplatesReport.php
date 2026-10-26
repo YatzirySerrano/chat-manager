@@ -50,7 +50,7 @@ class MessageTemplatesReport extends ReportDefinition
 
     public function subtitle(): ?string
     {
-        return 'Plantillas sincronizadas desde Meta y su estado de revisión';
+        return 'Plantillas traídas de Meta y su estado de revisión';
     }
 
     public function fileName(): string
@@ -118,7 +118,7 @@ class MessageTemplatesReport extends ReportDefinition
             new Column('preview', 'Contenido', width: 40),
             new Column('rejected_reason', 'Motivo de rechazo', width: 16),
             new Column('status_updated_at', 'Cambio de estado', ColumnType::DateTime, width: 15),
-            new Column('last_synced_at', 'Última sincronización', ColumnType::DateTime, width: 15),
+            new Column('last_synced_at', 'Actualizada desde Meta', ColumnType::DateTime, width: 15),
         ];
     }
 
@@ -133,7 +133,12 @@ class MessageTemplatesReport extends ReportDefinition
             'connection' => $record->channelConnection->name,
             'category' => $record->categoryEnum()?->label() ?? $record->category,
             'status' => $record->isDeleted() ? 'Ya no existe en Meta' : $record->status->label(),
-            'quality' => $record->quality_score,
+            'quality' => match (strtoupper((string) $record->quality_score)) {
+                'GREEN', 'HIGH' => 'Alta',
+                'YELLOW', 'MEDIUM' => 'Media',
+                'RED', 'LOW' => 'Baja',
+                default => 'Sin calificación',
+            },
             'preview' => Str::limit($record->structure()->preview(), 500),
             'rejected_reason' => $record->rejected_reason,
             'status_updated_at' => $record->status_updated_at,

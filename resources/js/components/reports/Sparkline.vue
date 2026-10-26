@@ -37,7 +37,7 @@ const points = computed(() => {
         <polyline
             :points="points"
             fill="none"
-            class="stroke-primary"
+            :style="{ stroke: 'var(--chart-primary)' }"
             stroke-width="2"
             stroke-linejoin="round"
             stroke-linecap="round"

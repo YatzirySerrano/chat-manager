@@ -56,6 +56,7 @@ class DepartmentListQuery
             ->inRecordState($filters['record'])
             ->withCount($this->counts($actor))
             ->with(['leaders' => fn (BelongsToMany $query) => $query
+                ->withoutProtectedFor($actor)
                 ->select('users.id', 'users.name')
                 ->orderBy('users.name')])
             ->orderByDesc('is_active')
@@ -72,10 +73,21 @@ class DepartmentListQuery
     public function counts(User $actor): array
     {
         return [
-            'members' => fn (Builder $members) => $this->hideDeleted($members, $actor),
-            'leaders' => fn (Builder $leaders) => $this->hideDeleted($leaders, $actor),
+            'members' => fn (Builder $members) => $this->hidePeople($members, $actor),
+            'leaders' => fn (Builder $leaders) => $this->hidePeople($leaders, $actor),
             'connections' => fn (Builder $connections) => $this->hideDeleted($connections, $actor),
         ];
+    }
+
+    /**
+     * Deleted people for whoever cannot consult deleted records, and
+     * protected accounts (root role) for anyone but the root authority.
+     *
+     * @param  Builder<User>  $query
+     */
+    private function hidePeople(Builder $query, User $actor): void
+    {
+        $this->hideDeleted($query->withoutProtectedFor($actor), $actor);
     }
 
     /**

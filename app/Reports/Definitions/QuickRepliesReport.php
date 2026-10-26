@@ -3,6 +3,7 @@
 namespace App\Reports\Definitions;
 
 use App\Actions\QuickReplies\QuickReplyListQuery;
+use App\Enums\DataScope;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\User;
@@ -24,9 +25,14 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 /**
- * Quick replies mirroring the quick replies screen: managers export every
- * reply within their scope, users that can only use replies export the
- * ones they can insert.
+ * Quick replies mirroring the quick replies screen. Without a segment (or
+ * with "all") it is the general report: every reply the person may consult,
+ * that is, corporate replies (managers: all within their scope; others: the
+ * ones they can insert), their own personal replies and, only with the
+ * supervision.view-personal permission, the personal replies of other users
+ * of their scope. With the segment of a tab it keeps that tab and its
+ * filters, and the document says so. Excel and PDF use the same query.
+ * Departments outside the person's scope are never named.
  *
  * @phpstan-import-type QuickReplyFilters from QuickReplyListQuery
  *
@@ -87,6 +93,7 @@ class QuickRepliesReport extends ReportDefinition
         $descriptions = [];
 
         $descriptions[] = 'Tipo: '.match ($filters['segment']) {
+            QuickReplyListQuery::SEGMENT_ALL => $this->generalScopeLabel($context->actor),
             QuickReplyListQuery::SEGMENT_MINE => 'Mis respuestas personales',
             QuickReplyListQuery::SEGMENT_OTHERS => 'Respuestas personales de otros usuarios',
             default => 'Corporativas',
@@ -113,7 +120,7 @@ class QuickRepliesReport extends ReportDefinition
 
     public function query(ReportContext $context): Builder
     {
-        return $this->baseQuery($context)->with(['creator:id,name', 'updater:id,name']);
+        return $this->baseQuery($context)->with(['owner:id,name']);
     }
 
     public function count(ReportContext $context): int
@@ -124,46 +131,63 @@ class QuickRepliesReport extends ReportDefinition
     public function columns(): array
     {
         return [
-            new Column('title', 'Título', width: 20),
-            new Column('shortcut', 'Atajo', width: 13),
-            new Column('availability', 'Disponible en', width: 22),
-            new Column('status', 'Estado', width: 10),
-            new Column('body', 'Texto', width: 50),
-            new Column('created_by', 'Creada por', width: 16),
-            new Column('updated_by', 'Actualizada por', width: 16),
-            new Column('updated_at', 'Última actualización', ColumnType::DateTime, width: 16),
+            new Column('shortcut', 'Atajo', width: 14),
+            new Column('title', 'Título', width: 18),
+            new Column('body', 'Contenido', width: 46),
+            new Column('type', 'Tipo', width: 11, unbreakable: 22),
+            new Column('owner', 'Propietario', width: 16),
+            new Column('department', 'Departamento', width: 18),
+            new Column('status', 'Estado', width: 9, unbreakable: 18),
+            new Column('created_at', 'Fecha de creación', ColumnType::DateTime, width: 15),
         ];
     }
 
     /**
+     * Every exported reply is one the person may consult (the query decides
+     * it), so its content is included.
+     *
      * @param  QuickReply  $record
      */
     public function map(Model $record, ReportContext $context): array
     {
         return [
-            'title' => $record->title,
             'shortcut' => '/'.$record->shortcut,
-            'availability' => $record->isPersonal() ? 'Personal'.($record->owner_user_id !== $context->actor->id && $record->owner !== null ? " ({$record->owner->name})" : '') : ($record->is_global ? 'Todos los departamentos' : ($record->departments->pluck('name')->implode(', ') ?: 'Sin departamentos')),
-            'status' => $record->isDeleted() ? 'Eliminada' : 'Activa',
+            'title' => $record->title,
             'body' => Str::limit(trim((string) preg_replace('/\s+/u', ' ', $record->body)), self::BODY_LENGTH),
-            'created_by' => $record->creator?->name,
-            'updated_by' => $record->updater?->name,
-            'updated_at' => $record->updated_at,
+            'type' => $record->isPersonal() ? 'Personal' : 'Corporativa',
+            'owner' => $record->isPersonal() ? $record->owner?->name : null,
+            'department' => $this->departmentLabel($record, $context->actor),
+            'status' => $record->isDeleted() ? 'Eliminada' : 'Activa',
+            'created_at' => $record->created_at,
         ];
     }
 
     public function metrics(ReportContext $context): array
     {
+        $actor = $context->actor;
+        $segment = $this->filters($context)['segment'];
         $total = $this->count($context);
-        $global = $this->aggregate($context)->where('is_global', true)->count();
-        $active = $this->aggregate($context)->where('is_active', true)->count();
-        $metrics = [
-            new Metric('Respuestas', $total, 'Con los filtros aplicados'),
-            new Metric('Globales', $global, $this->shareOf($global, $total)),
-            new Metric('Por departamento', $total - $global, $this->shareOf($total - $global, $total)),
-        ];
+        $metrics = [new Metric('Respuestas', $total, 'Con los filtros aplicados')];
 
-        if ($context->actor->canViewDeletedRecords() && $this->filters($context)['manages']) {
+        if (in_array($segment, [QuickReplyListQuery::SEGMENT_ALL, QuickReplyListQuery::SEGMENT_CORPORATE], true)) {
+            $global = $this->aggregate($context)->corporate()->where('is_global', true)->count();
+            $byDepartment = $this->aggregate($context)->corporate()->where('is_global', false)->count();
+            $metrics[] = new Metric('Corporativas globales', $global, $this->shareOf($global, $total));
+            $metrics[] = new Metric('Corporativas por departamento', $byDepartment, $this->shareOf($byDepartment, $total));
+        }
+
+        if ($segment === QuickReplyListQuery::SEGMENT_ALL) {
+            $mine = $this->aggregate($context)->personal($actor)->count();
+            $metrics[] = new Metric('Mis respuestas', $mine, $this->shareOf($mine, $total));
+
+            if (Gate::forUser($actor)->allows('superviseAny', QuickReply::class)) {
+                $others = $this->aggregate($context)->personal()->where('owner_user_id', '!=', $actor->id)->count();
+                $metrics[] = new Metric('De otros usuarios', $others, $this->shareOf($others, $total));
+            }
+        }
+
+        if ($actor->canViewDeletedRecords() && $this->filters($context)['manages']) {
+            $active = $this->aggregate($context)->where('is_active', true)->count();
             $metrics[] = new Metric('Eliminadas', $total - $active, 'Ya no se ofrecen al responder');
         }
 
@@ -172,12 +196,17 @@ class QuickRepliesReport extends ReportDefinition
 
     public function charts(ReportContext $context): array
     {
-        $total = $this->count($context);
-        $global = $this->aggregate($context)->where('is_global', true)->count();
+        $actor = $context->actor;
+        $global = $this->aggregate($context)->corporate()->where('is_global', true)->count();
+        $byDepartmentTotal = $this->aggregate($context)->corporate()->where('is_global', false)->count();
+        $mine = $this->aggregate($context)->personal($actor)->count();
+        $others = $this->aggregate($context)->personal()->where('owner_user_id', '!=', $actor->id)->count();
+        $reachable = $actor->dataScope() === DataScope::Global ? null : $actor->departmentIds();
         $byDepartment = DB::table('department_quick_reply')
             ->join('departments', 'departments.id', '=', 'department_quick_reply.department_id')
             ->whereIn('department_quick_reply.quick_reply_id', $this->aggregate($context)->select('quick_replies.id'))
-            ->when(! $context->actor->canViewDeletedRecords(), fn ($query) => $query->where('departments.is_active', true))
+            ->when(! $actor->canViewDeletedRecords(), fn ($query) => $query->where('departments.is_active', true))
+            ->when($reachable !== null, fn ($query) => $query->whereIn('departments.id', $reachable))
             ->selectRaw('departments.name AS label, COUNT(DISTINCT department_quick_reply.quick_reply_id) AS total')
             ->groupBy('departments.id', 'departments.name')
             ->orderByDesc('total')
@@ -185,20 +214,27 @@ class QuickRepliesReport extends ReportDefinition
             ->limit(self::TOP_DEPARTMENTS)
             ->pluck('total', 'label');
 
+        $types = array_filter([
+            'Corporativas globales' => $global,
+            'Corporativas por departamento' => $byDepartmentTotal,
+            'Mis respuestas' => $mine,
+            'De otros usuarios' => $others,
+        ], fn (int $count): bool => $count > 0);
+
         return [
             new Chart(
                 ChartType::Bar,
-                'Respuestas por departamento',
+                'Respuestas corporativas por departamento',
                 array_values(array_map('strval', $byDepartment->keys()->all())),
                 [new ChartSeries('Respuestas', array_values(array_map('intval', $byDepartment->values()->all())))],
                 'Respuestas compartidas con cada departamento (top '.self::TOP_DEPARTMENTS.')',
             ),
             new Chart(
                 ChartType::Donut,
-                'Disponibilidad',
-                ['Globales', 'Por departamento'],
-                [new ChartSeries('Respuestas', [$global, $total - $global])],
-                'Respuestas para todos o solo para algunos departamentos',
+                'Tipo de respuesta',
+                array_keys($types),
+                [new ChartSeries('Respuestas', array_values($types))],
+                'Corporativas y personales incluidas en el reporte',
             ),
         ];
     }
@@ -206,6 +242,48 @@ class QuickRepliesReport extends ReportDefinition
     public function pdfOptions(): PdfOptions
     {
         return new PdfOptions(tableTitle: 'Catálogo de respuestas rápidas');
+    }
+
+    /**
+     * "Todos los departamentos" for global corporate replies, the names of
+     * the reply's departments (corporate) or of the owner's departments
+     * (personal), only those within the actor's scope.
+     */
+    private function departmentLabel(QuickReply $record, User $actor): ?string
+    {
+        if (! $record->isPersonal() && $record->is_global) {
+            return 'Todos los departamentos';
+        }
+
+        $reachable = $actor->dataScope() === DataScope::Global ? null : $actor->departmentIds();
+        $departments = $record->isPersonal()
+            ? ($record->owner?->relationLoaded('departments') ? $record->owner->departments : collect())
+            : $record->departments;
+
+        $names = $departments
+            ->filter(fn (Department $department): bool => $reachable === null || in_array($department->id, $reachable, true))
+            ->pluck('name')
+            ->implode(', ');
+
+        if ($names !== '') {
+            return $names;
+        }
+
+        return $record->isPersonal() ? null : 'Sin departamentos';
+    }
+
+    /**
+     * What the general report includes for this person.
+     */
+    private function generalScopeLabel(User $actor): string
+    {
+        $parts = array_map(fn (string $segment): string => match ($segment) {
+            QuickReplyListQuery::SEGMENT_MINE => 'mis respuestas',
+            QuickReplyListQuery::SEGMENT_OTHERS => 'respuestas de otros usuarios',
+            default => 'corporativas',
+        }, $this->list->segmentsFor($actor));
+
+        return 'Todas las respuestas a las que tienes acceso ('.implode(', ', $parts).')';
     }
 
     /**
@@ -231,6 +309,6 @@ class QuickRepliesReport extends ReportDefinition
      */
     private function filters(ReportContext $context): array
     {
-        return $this->list->filters($context->actor, $context->filters);
+        return $this->list->reportFilters($context->actor, $context->filters);
     }
 }

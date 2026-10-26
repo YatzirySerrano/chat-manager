@@ -46,6 +46,7 @@ const emit = defineEmits<{
                 <Button
                     :variant="destructive ? 'destructive' : 'default'"
                     :disabled="processing"
+                    :aria-busy="processing || undefined"
                     @click="emit('confirm')"
                 >
                     <Spinner v-if="processing" />

@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\Audit\AuditPresenter;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -37,8 +38,8 @@ class AuditLogResource extends JsonResource
                 'tone' => $this->action->tone(),
             ],
             'actor' => [
-                'id' => $this->user_id,
-                'name' => $this->actor_name ?? 'Sistema',
+                'id' => app(ProtectedAccounts::class)->hides($this->user_id, $viewer instanceof User ? $viewer : null) ? null : $this->user_id,
+                'name' => app(AuditPresenter::class)->actorName($this->resource, $viewer instanceof User ? $viewer : null),
             ],
             'subject' => $presentation['subject'],
             'summary' => $presentation['summary'],

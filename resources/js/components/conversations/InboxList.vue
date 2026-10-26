@@ -1,36 +1,17 @@
 <script setup lang="ts">
-import {
-    Hourglass,
-    Inbox,
-    MailWarning,
-    Search,
-    SlidersHorizontal,
-    X,
-} from '@lucide/vue';
+import { Hourglass, Inbox, MailWarning, Search, X } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
+import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
 import { MAX_FILTER_TAGS } from '@/components/conversations/inboxFilters';
 import type { InboxFilterState } from '@/components/conversations/inboxFilters';
 import InboxListItem from '@/components/conversations/InboxListItem.vue';
 import InboxTagsDialog from '@/components/conversations/InboxTagsDialog.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
-import ModuleHelpButton from '@/components/help/ModuleHelpButton.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-    Sheet,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-} from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { formatPhone } from '@/lib/phone';
@@ -55,7 +36,8 @@ import type {
  * their counter, highlighted while there is any) and the unread ones.
  * Everything else (view, status, department, responsible agent, channel,
  * connection, tags with OR/AND, order and search scope) lives in one
- * compact "Filtros" menu (a bottom sheet on phones) whose applied values
+ * "Filtros" panel (InboxFilterSurface: a popover, or a bottom sheet on
+ * phones) that edits a draft applied with «Aplicar»; the applied values
  * show as removable chips under the search box. The URL stays the source of
  * truth (query()), the list is loaded with one keyset cursor, and filters
  * only ever narrow what the server already authorized.
@@ -124,6 +106,13 @@ function fromFilters(filters: ConversationFilters): InboxFilterState {
 }
 
 const state = reactive<InboxFilterState>(fromFilters(props.filters));
+
+/** What the "Filtros" panel edits; it reaches the list only on «Aplicar». */
+const draft = reactive<InboxFilterState>(fromFilters(props.filters));
+
+function copyOf(source: InboxFilterState): InboxFilterState {
+    return { ...source, tags: [...source.tags] };
+}
 const search = ref(props.filters.search);
 
 /* Follow the server when it normalizes or changes the filters. */
@@ -134,11 +123,12 @@ watch(
 
 const defaultView = computed(() => props.inbox.views[0]);
 /*
- * The view the indicators narrow by status: the general inbox for whoever
- * attends conversations, every authorized conversation otherwise.
+ * The view the indicators narrow by status: the default one. Supervisors
+ * (and whoever does not attend) open on every authorized conversation;
+ * other people who attend conversations on their general inbox.
  */
 const baseView = computed<InboxView>(() =>
-    props.inbox.views.includes('general') ? 'general' : 'all',
+    defaultView.value === 'general' ? 'general' : 'all',
 );
 const isGeneral = computed(() => baseView.value === 'general');
 const channels = computed(() => props.filterOptions.channels);
@@ -147,12 +137,55 @@ const showAgents = computed(
     () => props.viewer.can_supervise && !props.inbox.personal,
 );
 
-const viewLabels: Record<InboxView, string> = {
-    general: 'Bandeja general',
+/*
+ * "all" is named after the viewer's effective reach, never a vague
+ * "visible": the whole organization, their departments, or only their own.
+ */
+const allLabel = computed(() =>
+    props.inbox.scope === 'global'
+        ? 'Todas las conversaciones'
+        : props.inbox.scope === 'departments'
+          ? 'Conversaciones de mis departamentos'
+          : 'Mis conversaciones',
+);
+
+const viewLabels = computed<Record<InboxView, string>>(() => ({
+    general: isGeneral.value ? 'Bandeja general' : 'Por atender',
     mine: 'Mis conversaciones',
-    all: 'Todas las visibles',
-    queue: 'Bandeja general',
-};
+    all: allLabel.value,
+    queue: isGeneral.value ? 'Bandeja general' : 'Por atender',
+}));
+
+/* What the default chip holds, in the viewer's reach. */
+const baseTitle = computed(() => {
+    if (isGeneral.value) {
+        return 'Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.';
+    }
+
+    if (props.inbox.scope === 'global') {
+        return 'Las conversaciones activas de toda la organización, sin importar quién las atienda, su departamento o su conexión.';
+    }
+
+    if (props.inbox.scope === 'departments') {
+        return props.inbox.supervises
+            ? 'Las conversaciones activas de tus departamentos y las que pasaron por ellos, sin importar quién las atienda.'
+            : 'Las conversaciones activas de tus departamentos, sin importar quién las atienda.';
+    }
+
+    return 'Las conversaciones activas que tienes asignadas.';
+});
+
+const pendingTitle = computed(() => {
+    if (isGeneral.value) {
+        return 'Conversaciones que esperan a que alguien de tu departamento las acepte. No incluye las que atienden tus compañeros.';
+    }
+
+    return props.inbox.scope === 'global'
+        ? 'Conversaciones de toda la organización que esperan a que alguien las acepte.'
+        : props.inbox.scope === 'departments'
+          ? 'Conversaciones de tus departamentos que esperan a que alguien las acepte.'
+          : 'Conversaciones que esperan a que alguien las acepte.';
+});
 
 const statusLabels: Record<string, string> = {
     active: 'Todas las activas',
@@ -168,7 +201,7 @@ const statusOptions = computed<
 >(() => {
     const values: ConversationStatusFilter[] = ['active'];
 
-    if (state.view !== 'mine') {
+    if (draft.view !== 'mine') {
         values.push('pending');
     }
 
@@ -196,9 +229,9 @@ const searchScopes: { value: ConversationSearchScope; label: string }[] = [
 const generalActive = computed(
     () => state.view === baseView.value && state.status === 'active',
 );
-const pendingActive = computed(
-    () => state.view === baseView.value && state.status === 'pending',
-);
+const isPendingIndicator = (filters: InboxFilterState): boolean =>
+    filters.view === baseView.value && filters.status === 'pending';
+const pendingActive = computed(() => isPendingIndicator(state));
 const pendingCount = computed(() => props.counts.pending);
 
 const plural = (count: number, one: string, many: string): string =>
@@ -253,111 +286,118 @@ const searchTooShort = computed(
 type AppliedChip = { key: string; label: string; clear: () => void };
 
 /*
- * Applied filters as removable chips. The indicators already tell the
- * general inbox, "Pendientes" and "No leídas", so they get no chip.
+ * Filters as removable chips (of the applied state, or of the draft to
+ * count them). The indicators already tell the general inbox, "Pendientes"
+ * and "No leídas", so they get no chip.
  */
-const appliedChips = computed<AppliedChip[]>(() => {
+function chipsOf(filters: InboxFilterState): AppliedChip[] {
     const chips: AppliedChip[] = [];
 
-    if (state.view !== baseView.value) {
+    if (filters.view !== baseView.value) {
         chips.push({
             key: 'view',
-            label: `Vista: ${viewLabels[state.view]}`,
-            clear: () => (state.view = baseView.value),
+            label: `Vista: ${viewLabels.value[filters.view]}`,
+            clear: () => (filters.view = baseView.value),
         });
     }
 
-    if (state.status !== 'active' && !pendingActive.value) {
+    if (filters.status !== 'active' && !isPendingIndicator(filters)) {
         chips.push({
             key: 'status',
-            label: `Estado: ${statusLabels[state.status] ?? state.status}`,
-            clear: () => (state.status = 'active'),
+            label: `Estado: ${statusLabels[filters.status] ?? filters.status}`,
+            clear: () => (filters.status = 'active'),
         });
     }
 
-    if (state.department !== ALL) {
+    if (filters.department !== ALL) {
         const department = props.departments.find(
-            (option) => String(option.id) === state.department,
+            (option) => String(option.id) === filters.department,
         );
 
         chips.push({
             key: 'department',
-            label: `Departamento: ${state.department === 'none' ? 'Sin departamento' : (department?.name ?? 'No disponible')}`,
-            clear: () => (state.department = ALL),
+            label: `Departamento: ${filters.department === 'none' ? 'Sin departamento' : (department?.name ?? 'No disponible')}`,
+            clear: () => (filters.department = ALL),
         });
     }
 
-    if (state.agent !== ALL && !props.inbox.personal) {
+    if (filters.agent !== ALL && !props.inbox.personal) {
         const agent = props.agents.find(
-            (option) => String(option.id) === state.agent,
+            (option) => String(option.id) === filters.agent,
         );
 
         chips.push({
             key: 'agent',
-            label: `Responsable: ${state.agent === 'none' ? 'Sin agente' : (agent?.name ?? 'No disponible')}`,
-            clear: () => (state.agent = ALL),
+            label: `Responsable: ${filters.agent === 'none' ? 'Sin agente' : (agent?.name ?? 'No disponible')}`,
+            clear: () => (filters.agent = ALL),
         });
     }
 
-    if (state.channel !== ALL) {
+    if (filters.channel !== ALL) {
         chips.push({
             key: 'channel',
-            label: `Canal: ${channels.value.find((option) => option.value === state.channel)?.label ?? state.channel}`,
-            clear: () => (state.channel = ALL),
+            label: `Canal: ${channels.value.find((option) => option.value === filters.channel)?.label ?? filters.channel}`,
+            clear: () => (filters.channel = ALL),
         });
     }
 
-    if (state.connection !== ALL) {
+    if (filters.connection !== ALL) {
         const connection = props.connections.find(
-            (option) => String(option.id) === state.connection,
+            (option) => String(option.id) === filters.connection,
         );
 
         chips.push({
             key: 'connection',
             label: `Conexión: ${connection ? `${connection.name}${connection.display_phone_number ? ` · ${formatPhone(connection.display_phone_number)}` : ''}` : 'No disponible'}`,
-            clear: () => (state.connection = ALL),
+            clear: () => (filters.connection = ALL),
         });
     }
 
-    for (const id of state.tags) {
+    for (const id of filters.tags) {
         chips.push({
             key: `tag-${id}`,
             label: `Etiqueta: ${props.tags.find((tag) => tag.id === id)?.name ?? 'No disponible'}`,
-            clear: () => (state.tags = state.tags.filter((tag) => tag !== id)),
+            clear: () =>
+                (filters.tags = filters.tags.filter((tag) => tag !== id)),
         });
     }
 
-    // "Cualquiera (O)" is the default; only the AND mode is a chip.
-    if (state.tags.length > 1 && state.tagMatch === 'all') {
+    // "At least one tag" is the default; only the AND mode is a chip.
+    if (filters.tags.length > 1 && filters.tagMatch === 'all') {
         chips.push({
             key: 'tag-match',
-            label: 'Con todas las etiquetas (Y)',
-            clear: () => (state.tagMatch = 'any'),
+            label: 'Tiene todas las etiquetas elegidas',
+            clear: () => (filters.tagMatch = 'any'),
         });
     }
 
-    if (state.sort !== 'recent') {
+    if (filters.sort !== 'recent') {
         chips.push({
             key: 'sort',
-            label: `Orden: ${sortOptions.find((option) => option.value === state.sort)?.label ?? state.sort}`,
-            clear: () => (state.sort = 'recent'),
+            label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
+            clear: () => (filters.sort = 'recent'),
         });
     }
 
-    if (state.searchIn !== 'contact') {
+    if (filters.searchIn !== 'contact') {
         chips.push({
             key: 'search-in',
             label: 'Buscar en: mensajes',
-            clear: () => (state.searchIn = 'contact'),
+            clear: () => (filters.searchIn = 'contact'),
         });
     }
 
     return chips;
-});
+}
 
-const activeFilterCount = computed(
-    () => appliedChips.value.filter((chip) => chip.key !== 'tag-match').length,
-);
+const appliedChips = computed<AppliedChip[]>(() => chipsOf(state));
+
+/* The tag combination mode refines the tags: it is not one more filter. */
+const countOf = (chips: AppliedChip[]): number =>
+    chips.filter((chip) => chip.key !== 'tag-match').length;
+
+const activeFilterCount = computed(() => countOf(appliedChips.value));
+const draftFilterCount = computed(() => countOf(chipsOf(draft)));
 
 /**
  * A search, a filter chip or "No leídas" narrows the list: an empty result
@@ -437,6 +477,21 @@ function apply(): void {
     emit('filter', query());
 }
 
+/*
+ * The applied filters are announced politely, in their own region (never
+ * mixed with the pending conversations announcement).
+ */
+const filtersAnnouncement = ref('');
+
+async function announceFilters(): Promise<void> {
+    const count = activeFilterCount.value;
+
+    filtersAnnouncement.value = '';
+    await nextTick();
+    filtersAnnouncement.value =
+        count === 0 ? 'Sin filtros aplicados' : `Filtros aplicados: ${count}`;
+}
+
 watchDebounced(search, apply, { debounce: 300 });
 
 function change(patch: Partial<InboxFilterState>): void {
@@ -456,6 +511,23 @@ function change(patch: Partial<InboxFilterState>): void {
     }
 
     apply();
+}
+
+/* "Mis conversaciones" never holds pending ones (the draft follows it too). */
+function changeDraft(patch: Partial<InboxFilterState>): void {
+    Object.assign(draft, patch);
+
+    if (draft.view === 'mine' && draft.status === 'pending') {
+        draft.status = 'active';
+    }
+}
+
+/* «Aplicar»: the draft becomes the list's filters, in one request. */
+function applyDraft(): void {
+    Object.assign(state, copyOf(draft));
+    filtersOpen.value = false;
+    apply();
+    void announceFilters();
 }
 
 function removeChip(chip: AppliedChip): void {
@@ -496,13 +568,46 @@ function clearFilters(): void {
     search.value = '';
     filtersOpen.value = false;
     apply();
+    void announceFilters();
 }
 
 defineExpose({ query });
 
-/* "Filtros": a popover on wide screens, a bottom sheet on phones. */
-const compact = useMediaQuery('(max-width: 639px)');
+/*
+ * "Filtros": a popover on wide screens, a bottom sheet on phones and on
+ * very short windows (200 % zoom and up), where a popover has no room.
+ */
+const compact = useMediaQuery('(max-width: 639px), (max-height: 499px)');
 const filtersOpen = ref(false);
+
+/*
+ * The applied filters the draft was started from. Closing the panel by
+ * accident (a click outside, Tab, rotating the phone) keeps an edited draft
+ * and the panel says «Tienes cambios sin aplicar» when it opens again; the
+ * draft only restarts from what is applied when it holds no edits, or when
+ * the applied filters changed meanwhile (a chip removed, «Limpiar»…).
+ */
+const sameFilters = (one: InboxFilterState, two: InboxFilterState): boolean =>
+    JSON.stringify(copyOf(one)) === JSON.stringify(copyOf(two));
+let draftBase: InboxFilterState = copyOf(state);
+const draftPending = computed(() => !sameFilters(draft, state));
+
+/* Escape or «Cerrar»: closed on purpose, the draft goes back to what is applied. */
+function discardDraft(): void {
+    Object.assign(draft, copyOf(state));
+    draftBase = copyOf(state);
+}
+
+watch(filtersOpen, (open) => {
+    if (!open) {
+        return;
+    }
+
+    if (sameFilters(draft, draftBase) || !sameFilters(state, draftBase)) {
+        Object.assign(draft, copyOf(state));
+        draftBase = copyOf(state);
+    }
+});
 
 /* Row "Administrar etiquetas": one dialog for the whole list. */
 const taggedConversation = ref<ConversationSummary | null>(null);
@@ -576,7 +681,6 @@ const indicatorClass =
                     <h1 class="truncate text-base font-semibold tracking-tight">
                         Conversaciones
                     </h1>
-                    <ModuleHelpButton module="conversaciones" icon-only />
                 </div>
                 <ExportMenu
                     v-if="canExport"
@@ -601,15 +705,12 @@ const indicatorClass =
                                 : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                         ]"
                         :aria-pressed="generalActive"
-                        :title="
-                            isGeneral
-                                ? 'Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.'
-                                : 'Las conversaciones activas de tu alcance.'
-                        "
+                        :title="baseTitle"
                         data-inbox-chip="base"
+                        data-tour="inbox.general"
                         @click="showGeneral"
                     >
-                        {{ isGeneral ? 'Bandeja general' : 'Todas' }}
+                        {{ viewLabels[baseView] }}
                         <span
                             class="rounded-full px-1.5 text-xs tabular-nums"
                             :class="
@@ -643,12 +744,9 @@ const indicatorClass =
                                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                         ]"
                         :aria-pressed="pendingActive"
-                        :title="
-                            isGeneral
-                                ? 'Conversaciones que esperan a que alguien de tu departamento las acepte. No incluye las que atienden tus compañeros.'
-                                : 'Conversaciones que esperan a que alguien las acepte.'
-                        "
+                        :title="pendingTitle"
                         data-inbox-chip="pending"
+                        data-tour="inbox.pending"
                         @click="togglePending"
                     >
                         <Hourglass
@@ -686,6 +784,7 @@ const indicatorClass =
                         :aria-pressed="state.unread"
                         title="Solo las conversaciones con mensajes del cliente que aún no has leído"
                         data-inbox-unread
+                        data-tour="inbox.unread"
                         @click="toggleUnread"
                     >
                         <MailWarning
@@ -720,6 +819,9 @@ const indicatorClass =
             <p class="sr-only" role="status" aria-live="polite">
                 {{ pendingAnnouncement }}
             </p>
+            <p class="sr-only" role="status" aria-live="polite">
+                {{ filtersAnnouncement }}
+            </p>
 
             <div class="flex items-center gap-2" role="search">
                 <div class="relative min-w-0 flex-1">
@@ -730,131 +832,51 @@ const indicatorClass =
                     <Input
                         v-model="search"
                         type="search"
+                        data-tour="inbox.search"
                         :placeholder="
                             state.searchIn === 'messages'
-                                ? 'Buscar en los mensajes'
-                                : 'Buscar por nombre, teléfono o correo'
+                                ? 'Buscar en mensajes'
+                                : 'Buscar'
+                        "
+                        :title="
+                            state.searchIn === 'messages'
+                                ? 'Busca palabras dentro de los mensajes'
+                                : 'Busca por nombre, teléfono o correo del cliente'
                         "
                         class="h-9 pl-8 pointer-coarse:h-10"
                         aria-label="Buscar conversaciones"
                     />
                 </div>
 
-                <Sheet v-if="compact" v-model:open="filtersOpen">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="h-9 shrink-0 pointer-coarse:h-10"
-                        :aria-label="
-                            activeFilterCount > 0
-                                ? `Filtros (${activeFilterCount} aplicados)`
-                                : 'Filtros'
-                        "
-                        aria-haspopup="dialog"
-                        :aria-expanded="filtersOpen"
-                        data-inbox-filters
-                        @click="filtersOpen = true"
-                    >
-                        <SlidersHorizontal aria-hidden="true" />
-                        Filtros
-                        <span
-                            v-if="activeFilterCount > 0"
-                            class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums"
-                            aria-hidden="true"
-                            >{{ activeFilterCount }}</span
-                        >
-                    </Button>
-                    <SheetContent
-                        side="bottom"
-                        class="max-h-[85dvh] gap-0 overflow-y-auto rounded-t-xl p-0"
-                    >
-                        <SheetHeader class="border-b px-4 py-3 text-left">
-                            <SheetTitle class="text-base">Filtros</SheetTitle>
-                            <SheetDescription class="text-sm">
-                                Se aplican al momento y se combinan entre sí.
-                            </SheetDescription>
-                        </SheetHeader>
-                        <div class="p-4">
-                            <InboxFilterPanel
-                                :state="state"
-                                :views="
-                                    inbox.views.filter(
-                                        (view) => view !== 'queue',
-                                    )
-                                "
-                                :view-labels="viewLabels"
-                                :status-options="statusOptions"
-                                :unread-count="unreadCount"
-                                :departments="departments"
-                                :can-see-unrouted="canSeeUnrouted"
-                                :show-agents="showAgents"
-                                :agents="agents"
-                                :channels="channels"
-                                :connections="connections"
-                                :tags="tags"
-                                :max-tags="MAX_FILTER_TAGS"
-                                :sort-options="sortOptions"
-                                :search-scopes="searchScopes"
-                                :has-filters="hasFilters"
-                                @change="change"
-                                @clear="clearFilters"
-                            />
-                        </div>
-                    </SheetContent>
-                </Sheet>
-
-                <Popover v-else v-model:open="filtersOpen">
-                    <PopoverTrigger as-child>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            class="h-9 shrink-0 pointer-coarse:h-10"
-                            :aria-label="
-                                activeFilterCount > 0
-                                    ? `Filtros (${activeFilterCount} aplicados)`
-                                    : 'Filtros'
-                            "
-                            data-inbox-filters
-                        >
-                            <SlidersHorizontal aria-hidden="true" />
-                            Filtros
-                            <span
-                                v-if="activeFilterCount > 0"
-                                class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums"
-                                aria-hidden="true"
-                                >{{ activeFilterCount }}</span
-                            >
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                        align="end"
-                        class="max-h-[min(75dvh,40rem)] w-80 overflow-y-auto"
-                        aria-label="Filtros de la bandeja"
-                    >
-                        <InboxFilterPanel
-                            :state="state"
-                            :views="
-                                inbox.views.filter((view) => view !== 'queue')
-                            "
-                            :view-labels="viewLabels"
-                            :status-options="statusOptions"
-                            :unread-count="unreadCount"
-                            :departments="departments"
-                            :can-see-unrouted="canSeeUnrouted"
-                            :show-agents="showAgents"
-                            :agents="agents"
-                            :channels="channels"
-                            :connections="connections"
-                            :tags="tags"
-                            :max-tags="MAX_FILTER_TAGS"
-                            :sort-options="sortOptions"
-                            :search-scopes="searchScopes"
-                            :has-filters="hasFilters"
-                            @change="change"
-                            @clear="clearFilters"
-                        />
-                    </PopoverContent>
-                </Popover>
+                <InboxFilterSurface
+                    v-model:open="filtersOpen"
+                    :compact="compact"
+                    :applied-count="activeFilterCount"
+                    :draft-count="draftFilterCount"
+                    :draft-pending="draftPending"
+                    @apply="applyDraft"
+                    @discard="discardDraft"
+                    @clear="clearFilters"
+                >
+                    <InboxFilterPanel
+                        :state="draft"
+                        :views="inbox.views.filter((view) => view !== 'queue')"
+                        :view-labels="viewLabels"
+                        :status-options="statusOptions"
+                        :unread-count="unreadCount"
+                        :departments="departments"
+                        :can-see-unrouted="canSeeUnrouted"
+                        :show-agents="showAgents"
+                        :agents="agents"
+                        :channels="channels"
+                        :connections="connections"
+                        :tags="tags"
+                        :max-tags="MAX_FILTER_TAGS"
+                        :sort-options="sortOptions"
+                        :search-scopes="searchScopes"
+                        @change="changeDraft"
+                    />
+                </InboxFilterSurface>
             </div>
 
             <p
@@ -914,8 +936,9 @@ const indicatorClass =
                 @keydown="onListKeydown"
             >
                 <li
-                    v-for="conversation in conversations.data"
+                    v-for="(conversation, position) in conversations.data"
                     :key="conversation.id"
+                    :data-tour="position === 0 ? 'inbox.item' : undefined"
                 >
                     <InboxListItem
                         :conversation="conversation"
@@ -978,7 +1001,9 @@ const indicatorClass =
                         ? 'Prueba con otra búsqueda, cambia los filtros o límpialos para ver toda tu bandeja.'
                         : isGeneral && (generalActive || pendingActive)
                           ? 'Aquí aparecen las pendientes que puedes aceptar y las que atiendes. Si tus departamentos distribuyen las conversaciones de forma manual, no tienes pendientes por aceptar: un supervisor te las asigna y aparecerán aquí al recibirlas.'
-                          : 'Las conversaciones aparecen cuando un cliente escribe a una de tus conexiones. Solo ves las que corresponden a tu alcance.'
+                          : inbox.scope === 'global'
+                            ? 'Las conversaciones aparecen cuando un cliente escribe a cualquiera de las conexiones de la organización, sin importar quién las atienda.'
+                            : 'Las conversaciones aparecen cuando un cliente escribe a una de tus conexiones. Solo ves las de tus departamentos o las asignadas a ti, según tu rol.'
                 "
             >
                 <Button

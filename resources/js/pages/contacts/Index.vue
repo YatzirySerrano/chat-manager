@@ -334,9 +334,7 @@ function contactSubtitle(contact: Contact): string | null {
 <template>
     <Head title="Contactos" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="contactos"
             title="Contactos"
@@ -354,6 +352,7 @@ function contactSubtitle(contact: Contact): string | null {
                 <Button
                     v-if="can.create"
                     class="max-sm:w-full lg:order-last"
+                    data-tour="contacts.new"
                     @click="openCreate"
                 >
                     <Plus />
@@ -361,6 +360,7 @@ function contactSubtitle(contact: Contact): string | null {
                 </Button>
                 <div
                     v-if="canExport || hasSecondaryActions"
+                    data-tour="contacts.more"
                     class="flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:*:flex-1"
                 >
                     <ExportMenu
@@ -401,7 +401,11 @@ function contactSubtitle(contact: Contact): string | null {
                     </Button>
                     <DropdownMenu v-if="hasSecondaryActions">
                         <DropdownMenuTrigger as-child>
-                            <Button variant="outline" class="lg:hidden">
+                            <Button
+                                variant="outline"
+                                class="lg:hidden"
+                                data-tour="contacts.more-mobile"
+                            >
                                 <Ellipsis />
                                 Más acciones
                                 <span
@@ -464,6 +468,7 @@ function contactSubtitle(contact: Contact): string | null {
             <div
                 class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
+                data-tour="contacts.search"
             >
                 <div class="relative order-1 min-w-0 flex-1">
                     <Search
@@ -552,12 +557,14 @@ function contactSubtitle(contact: Contact): string | null {
                     >
                         <SelectTrigger
                             class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate lg:w-40"
-                            aria-label="Filtrar por fuente de registro"
+                            aria-label="Cómo se agregó (a mano, importación, al escribir)"
                         >
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem :value="ALL">Toda fuente</SelectItem>
+                            <SelectItem :value="ALL"
+                                >Cualquier forma de alta</SelectItem
+                            >
                             <SelectItem
                                 v-for="option in sources"
                                 :key="option.value"
@@ -574,12 +581,14 @@ function contactSubtitle(contact: Contact): string | null {
                     >
                         <SelectTrigger
                             class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate lg:w-44"
-                            aria-label="Filtrar por origen"
+                            aria-label="Cómo nos conoció (anuncio, sitio web, QR…)"
                         >
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem :value="ALL">Todo origen</SelectItem>
+                            <SelectItem :value="ALL"
+                                >Cualquier procedencia</SelectItem
+                            >
                             <SelectItem
                                 v-for="option in originTypes"
                                 :key="option.value"
@@ -671,8 +680,11 @@ function contactSubtitle(contact: Contact): string | null {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="contact in contacts.data"
+                        v-for="(contact, position) in contacts.data"
                         :key="contact.id"
+                        :data-tour="
+                            position === 0 ? 'contacts.list' : undefined
+                        "
                         :class="contact.is_deleted && 'text-muted-foreground'"
                     >
                         <TableCell class="w-full max-w-0 py-3 pl-5">
@@ -791,7 +803,11 @@ function contactSubtitle(contact: Contact): string | null {
                 :class="loading && 'opacity-60'"
                 :aria-busy="loading"
             >
-                <li v-for="contact in contacts.data" :key="contact.id">
+                <li
+                    v-for="(contact, position) in contacts.data"
+                    :key="contact.id"
+                    :data-tour="position === 0 ? 'contacts.list' : undefined"
+                >
                     <RecordCard
                         :muted="contact.is_deleted"
                         :href="show(contact.id)"

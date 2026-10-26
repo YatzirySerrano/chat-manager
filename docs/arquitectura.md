@@ -61,7 +61,7 @@ Principios que atraviesan todos los módulos:
 - **Eliminación lógica** de entidades de negocio; nunca borrados físicos de historial (§3.3).
 - **Sin bypass de superusuario:** no existe `Gate::before`; el Superadministrador pasa por las mismas políticas y no
   puede leer chats internos ajenos ([seguridad-y-auditoria.md](seguridad-y-auditoria.md)).
-- **Lo simulado se etiqueta**: transporte `simulated` solo en desarrollo, con la etiqueta «Simulación» en la interfaz.
+- **Lo simulado se etiqueta**: transporte `simulated` solo en desarrollo, con la etiqueta «No enviado (modo de prueba)» en la interfaz (antes «Simulación»).
 
 ## 2. Mapa de módulos
 
@@ -279,7 +279,7 @@ valores internos no cambian. La acción para un fallido es «Reintentar».
 Reglas: solo hacia adelante; tolera desorden (un `read` temprano fija también `delivered_at` y `sent_at`); un evento
 repetido no cambia nada; un `failed` después de `delivered` no deshace la entrega; `delivery_unknown` es el único fallo
 local que la evidencia de Meta reemplaza. «Entregado» y «Leído» nunca se marcan sin un webhook de Meta; con el
-transporte simulado esos estados son **simulados** y llevan la etiqueta «Simulación». Clasificación de errores en
+transporte simulado esos estados son **simulados** y llevan la etiqueta «No enviado (modo de prueba)». Clasificación de errores en
 [mensajeria-whatsapp.md §5.3](mensajeria-whatsapp.md#53-clasificación-de-errores-metagraphclient).
 
 ## 11. Disponibilidad de agentes
@@ -352,18 +352,75 @@ El programador corre con `schedule:work` (Supervisor) o cron `schedule:run`; su 
 
 ## 13. Ayuda por módulo, lenguaje claro y presentación de la bitácora (fase 5)
 
-### Ayuda «¿Cómo funciona?»
+### Guía completa por módulo
 
 - Contenido en `resources/js/help/<módulo>.ts` (tipo `ModuleHelp` de `help/types.ts`: objetivo, acciones, flujo, campos,
   estados, permisos, errores comunes, consejos y ejemplos), en español claro y sin claves internas.
 - `resources/js/help/index.ts` es el registro: cada clave (`ModuleHelpKey`) carga su archivo bajo demanda (un fragmento
   por módulo, memorizado), así las páginas no incluyen todos los textos.
-- `components/help/ModuleHelpButton.vue` (props `module`, `label` = «¿Cómo funciona?», `iconOnly`) abre
-  `ModuleHelpSheet.vue`. `PageHeader` acepta la prop `help` con la clave y pinta el botón junto a las acciones; su `h1`
-  es `sr-only` salvo `show-title` (el título visible lo da el layout: sin títulos duplicados).
+- `components/help/ModuleHelpSheet.vue` muestra la guía completa del módulo; la abre el botón global de ayuda
+  (`components/tour/TourHelpButton.vue`), que primero ofrece los recorridos guiados de la pantalla. `PageHeader` acepta
+  la prop `help` con la clave del módulo de la pantalla (ya no pinta un botón propio); su `h1` es `sr-only` salvo
+  `show-title` (el título visible lo da el layout: sin títulos duplicados).
 - **Añadir un módulo:** crear `help/<clave>.ts` con `export default {…} satisfies ModuleHelp`, registrar la clave en
-  `loaders` de `index.ts` y pasar `help="<clave>"` al `PageHeader` (o usar `ModuleHelpButton` donde no hay encabezado).
+  `loaders` de `index.ts` y pasar `help="<clave>"` al `PageHeader`.
   Si una funcionalidad cambia, actualizar su archivo de ayuda en el mismo cambio.
+
+### Recorridos guiados (fase 5.1)
+
+Los recorridos guiados sustituyen a la ayuda de texto como experiencia principal; la guía completa queda como
+secundaria. Sin dependencias nuevas.
+
+- **Archivos:** `resources/js/tours/types.ts` (tipos `Tour`/`TourStep`), `tours/index.ts` (registro: índice ligero
+  síncrono para listar y carga perezosa de los pasos por módulo, como `help/index.ts`), un archivo por módulo
+  (`tours/<módulo>.ts`, mismas claves que `help/`, más `app.ts` para la navegación general),
+  `composables/useGuidedTour.ts` (estado global) y `components/tour/` (`TourHelpButton`, `TourOverlay`, `TourTooltip`,
+  `TourLauncherList`). Se montan una sola vez en `layouts/app/AppSidebarLayout.vue`; ninguna página los monta.
+- **Botón global de ayuda** (icono de brújula, «Ayuda y recorridos guiados»): flotante abajo a la derecha; pasa a la
+  barra superior cuando hay un compositor acoplado (chat o chat interno) para no tapar «Enviar» ni «Ir al final», y
+  sube sobre las barras de guardado fijas (`data-dock-bottom`, `composables/useDockedComposer.ts`). Su popover lista
+  los recorridos de la pantalla (filtrados por permiso), marca los nuevos, ofrece «Ver la guía completa del módulo»
+  (`ModuleHelpSheet`) y «Volver a mostrar los recorridos». Ningún recorrido se lanza solo.
+- **Objetivos:** cada paso apunta a un atributo `data-tour="<área>.<elemento>"` (p. ej. `inbox.pending`,
+  `inbox.filters`, `nav.sidebar`, `page.actions`). Un objetivo que no existe o no es visible tras 600 ms se salta; si
+  ninguno resuelve, el recorrido se cierra con un aviso. Cada paso puede pedir permisos, una condición de pantalla o
+  una variante móvil.
+- **Overlay:** oscurece la página, resalta el objetivo (sigue su tamaño y desplazamiento), captura los clics y no se
+  cierra al tocar fuera. Teclado: Escape cierra, ←/→ navegan; el foco queda dentro del tooltip y vuelve al elemento
+  previo al cerrar; cada paso se anuncia («Paso 2 de 6: …»). Respeta `prefers-reduced-motion` y `forced-colors`. Una
+  navegación Inertia cierra el recorrido sin marcarlo visto.
+- **Visto:** `localStorage` `cm.tours.seen.v1.<userId>` → `{ tourId: versión }` (preferencia por dispositivo; en modo
+  privado se comporta como «nunca visto» sin errores). Subir `version` de un recorrido lo vuelve a marcar como nuevo.
+- **Añadir un recorrido:** crear o ampliar `tours/<módulo>.ts`, registrarlo en `tours/index.ts`, poner los
+  `data-tour` en los elementos y mantener los textos cortos (título ≤ 40, cuerpo ≤ 180 caracteres). E2E:
+  `tests/e2e/tours.mjs`.
+
+### Sistema visual (fase 5.1)
+
+Todo en `resources/css/app.css`; los componentes consumen nombres, no valores sueltos.
+
+- **Tipografía:** `--text-xs` 13 px y `--text-sm` 15 px (cuerpo de la aplicación); nada crítico por debajo de 13 px;
+  se retiraron los tamaños arbitrarios `text-[10px]`/`text-[11px]`. Los encabezados de grupo usan `section-title`
+  (sin mayúsculas sostenidas). Cifras comparables con `tabular-nums`.
+- **Layout:** utilidad `page-shell` (ancho máximo y márgenes por tamaño de pantalla) en lugar de la cadena repetida de
+  clases; `--section-gap`, `--stack-gap`, `--control-h`, `--touch-min` (44 px táctil).
+- **Superficies y color:** `--surface-sunken`, `--surface-raised`, `--border-strong`; pares semánticos suaves
+  `--{success,warning,destructive,info}-soft` + `-soft-foreground` (AA ≥ 4,5:1) y variantes de `Badge`.
+- **Movimiento:** `--duration-fast` (150 ms), `--duration-base` (200 ms), `--duration-panel` (280 ms),
+  `--ease-standard`, `--ease-emphasized`; utilidades `interactive-surface` y `press`. Nada se mueve en reposo.
+- **Gráficas:** `--chart-primary`, `--chart-secondary`, `--chart-comparison`, `--chart-grid`, `--chart-axis` y
+  categóricos fijos `--chart-cat-1…8` (alias `--chart-1…5`; `app/Reports/Rendering/ReportPalette.php` usa los
+  mismos colores en las exportaciones). Ver [reportes §5](reportes-y-exportaciones.md#5-interfaz).
+- **Componentes nuevos:** `StatusNote.vue` (avisos informativos, de éxito, advertencia o error con icono y texto;
+  sustituye los avisos ad hoc), `SectionHeading.vue` (título de sección fuera de tarjetas), `RoleSummaryCard.vue` y
+  `RolePermissionsSheet.vue` (tarjeta ejecutiva del rol y detalle de permisos por módulo con búsqueda, sin mostrar
+  claves internas), `DataScopeOption.vue` (alcance con icono, descripción y ejemplo, `DataScope::example()`/`icon()`),
+  `InboxFilterSurface.vue` (panel de filtros, ver [bandejas](bandejas-y-asignacion.md#panel-de-filtros-fase-51)).
+- **Terminología:** «Pendientes» en lugar de «cola» para las personas, «promedio» en lugar de «prom.», frases
+  completas para la coincidencia de etiquetas en lugar de «(O)/(Y)», «Modo de prueba» / «No enviado (modo de prueba)» en lugar de
+  «Simulación», y los nombres técnicos solo en bloques «Detalles técnicos». La regla: cada texto dice qué hace, qué
+  pasará y qué sigue.
+- E2E de diseño y responsive (320–1440 px, claro y oscuro, sin desborde horizontal): `tests/e2e/diseno.mjs`.
 
 ### Presentación de la bitácora (`app/Support/Audit/*`)
 

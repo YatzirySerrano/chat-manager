@@ -1,5 +1,5 @@
 /**
- * Module-level help shown in the "¿Cómo funciona este módulo?" panel.
+ * Full guide of a module («Guía completa del módulo», secondary to the guided tours).
  *
  * Every text is written for the people who use the module day to day, in
  * plain Spanish: no internal keys, no technical jargon unless the module is

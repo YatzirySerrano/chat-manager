@@ -31,12 +31,40 @@ final class ReportPalette
     public const NEUTRAL_MARK = '#C3CAD1';
 
     /**
-     * Categorical order for charts with several categories or series
-     * (validated for color-vision deficiencies; always paired with labels).
+     * Categorical order for charts with several categories or series: the
+     * fixed light-mode categorical chart tokens of the app (--chart-cat-1…8,
+     * validated for color-vision deficiencies; always paired with labels).
      *
      * @var list<string>
      */
-    public const SERIES = ['#179765', '#2B88C0', '#D58D25', '#8968D4', '#D8516A'];
+    public const SERIES = ['#2A78D6', '#EB6834', '#15936A', '#B87A00', '#D55181', '#008300', '#6250D6', '#E34948'];
+
+    /**
+     * Status colors of the screen (useChartTheme statusColor): pending is
+     * the warning ink, in attention the first categorical hue, closed the
+     * muted ink.
+     *
+     * @var array<string, string>
+     */
+    public const STATUS = [
+        'pending' => '#8D4F00',
+        'open' => '#2A78D6',
+        'on_hold' => '#2A78D6',
+        'closed' => self::MUTED,
+    ];
+
+    /**
+     * Channel colors of the screen (useChartTheme channelColor): a channel is
+     * an entity, so it keeps its color whatever its rank.
+     *
+     * @var array<string, string>
+     */
+    public const CHANNEL = [
+        'web_chat' => '#2A78D6',
+        'whatsapp' => '#15936A',
+        'messenger' => '#6250D6',
+        'instagram' => '#D55181',
+    ];
 
     /**
      * Color for the n-th category; beyond the palette categories turn gray.
@@ -44,6 +72,16 @@ final class ReportPalette
     public static function series(int $index): string
     {
         return self::SERIES[$index] ?? self::NEUTRAL_MARK;
+    }
+
+    public static function status(string $status): string
+    {
+        return self::STATUS[$status] ?? self::MUTED;
+    }
+
+    public static function channel(?string $channel): string
+    {
+        return $channel === null ? self::MUTED : (self::CHANNEL[$channel] ?? self::MUTED);
     }
 
     /**

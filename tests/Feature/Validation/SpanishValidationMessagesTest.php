@@ -18,7 +18,7 @@ test('every validation rule Laravel ships has a Spanish message', function () {
 test('rules without a message of their own answer in Spanish with the field name', function (array $data, array $rules, string $message) {
     expect(Validator::make($data, $rules)->errors()->first())->toBe($message);
 })->with([
-    'uuid' => [['client_reference' => 'x'], ['client_reference' => 'uuid'], 'El campo referencia del envío debe ser un identificador UUID válido.'],
+    'uuid' => [['client_reference' => 'x'], ['client_reference' => 'uuid'], 'El campo referencia del envío no es válido. Recarga la página e inténtalo de nuevo.'],
     'required_without' => [[], ['phone' => 'required_without:email'], 'El campo teléfono es obligatorio cuando no se indica correo electrónico.'],
     'prohibited' => [['website' => 'spam'], ['website' => 'prohibited'], 'El campo sitio web no está permitido.'],
     'size' => [['role_change_fingerprint' => 'abc'], ['role_change_fingerprint' => 'size:64'], 'El campo confirmación del cambio de rol debe tener 64 caracteres.'],

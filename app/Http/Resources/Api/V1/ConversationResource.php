@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\Conversation;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -39,10 +40,12 @@ class ConversationResource extends JsonResource
                 // False while the customer is a provisional contact, not saved into the directory.
                 'is_saved' => $this->contact?->isSaved() ?? false,
             ],
-            'assigned_agent' => $this->assignee === null ? null : [
-                'id' => $this->assignee->id,
-                'name' => $this->assignee->name,
-            ],
+            // A protected account (root role) is presented as the system
+            // administration, without its id (an integration token is never
+            // the root authority).
+            'assigned_agent' => $this->assignee === null ? null : (app(ProtectedAccounts::class)->hides($this->assignee, null)
+                ? ['id' => null, 'name' => ProtectedAccounts::SYSTEM_NAME]
+                : ['id' => $this->assignee->id, 'name' => $this->assignee->name]),
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

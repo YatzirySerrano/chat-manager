@@ -25,6 +25,7 @@ use App\Reports\ReportSheet;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\ResolveContactOrigin;
 use App\Support\PhoneNumber;
+use App\Support\ProtectedAccounts;
 use Carbon\CarbonInterface;
 use Generator;
 use Illuminate\Database\Eloquent\Builder;
@@ -144,7 +145,7 @@ class ConversationDossierReport extends ReportDefinition
     {
         return [
             new Column('sent_at', 'Fecha', ColumnType::DateTime, width: 15),
-            new Column('direction', 'De', width: 10),
+            new Column('direction', 'Quién escribió', width: 10),
             new Column('sender', 'Autor', width: 18),
             new Column('type', 'Tipo', width: 11),
             new Column('body', 'Mensaje', width: 62),
@@ -162,7 +163,7 @@ class ConversationDossierReport extends ReportDefinition
         return [
             'sent_at' => $record->sent_at ?? $record->created_at,
             'direction' => $inbound ? 'Cliente' : 'Equipo',
-            'sender' => $inbound ? $this->conversation($context)->contact->name : ($record->sender->name ?? 'Sistema'),
+            'sender' => $inbound ? $this->conversation($context)->contact->name : ($this->nameFor($record->sender, $context) ?? 'Sistema'),
             'type' => $this->typeLabel($record->type),
             'body' => $record->body === null || $record->body === '' ? null : Str::limit($record->body, self::BODY_LENGTH),
             'status' => $this->statusLabel($record),
@@ -183,15 +184,15 @@ class ConversationDossierReport extends ReportDefinition
                 'Folio' => '#'.$conversation->id,
                 'Estado' => $conversation->status->label(),
                 'Departamento' => $conversation->department->name ?? 'Sin departamento',
-                'Agente' => $conversation->assignee->name ?? 'Sin asignar',
+                'Agente' => $this->nameFor($conversation->assignee, $context) ?? 'Sin asignar',
                 'Conexión' => $conversation->channelConnection->name,
                 'Creada' => $formatDate($conversation->created_at),
                 'Primera respuesta' => $formatDate($conversation->first_response_at),
                 'Último mensaje' => $formatDate($conversation->last_message_at),
                 'Cerrada' => $formatDate($conversation->closed_at),
-                'Cerrada por' => $conversation->closedBy?->name,
+                'Cerrada por' => $this->nameFor($conversation->closedBy, $context),
                 'Reaperturas' => (string) $conversation->reopen_count,
-                'Ventana 24 h' => $this->window->for($conversation, $context->generatedAt)->status->label(),
+                'Ventana de 24 h para responder' => $this->window->for($conversation, $context->generatedAt)->status->label(),
             ]),
             new ReportPanel('Contacto y origen', [
                 'Nombre' => $contact->name,
@@ -233,7 +234,7 @@ class ConversationDossierReport extends ReportDefinition
                 new Column('event', 'Evento', width: 22),
                 new Column('actor', 'Realizado por', width: 18),
                 new Column('detail', 'Detalle', width: 45),
-            ], $this->timeline($conversation), inPdf: true, beforeTable: true,
+            ], $this->timeline($conversation, $context), inPdf: true, beforeTable: true,
                 description: 'Asignaciones, transferencias, esperas y cierres (máximo '.number_format(self::MAX_ENTRIES).' eventos).');
         }
 
@@ -242,7 +243,7 @@ class ConversationDossierReport extends ReportDefinition
             new Column('author', 'Autor', width: 18),
             new Column('body', 'Nota', width: 62),
             new Column('edited_at', 'Editada', ColumnType::DateTime, width: 15),
-        ], $this->notes($conversation), inPdf: true, beforeTable: true,
+        ], $this->notes($conversation, $context), inPdf: true, beforeTable: true,
             description: 'Visibles solo para el equipo; nunca se envían al cliente (las primeras '.number_format(self::MAX_ENTRIES).' notas; el historial completo se consulta en la conversación).');
 
         return $sheets;
@@ -256,7 +257,7 @@ class ConversationDossierReport extends ReportDefinition
     /**
      * @return Generator<int, array<string, mixed>>
      */
-    private function timeline(Conversation $conversation): Generator
+    private function timeline(Conversation $conversation, ReportContext $context): Generator
     {
         $events = $conversation->events()
             ->with(['actor:id,name', 'fromUser:id,name', 'toUser:id,name', 'fromDepartment:id,name', 'toDepartment:id,name'])
@@ -272,7 +273,7 @@ class ConversationDossierReport extends ReportDefinition
                     ? 'Departamento: '.($event->fromDepartment->name ?? '—').' → '.($event->toDepartment->name ?? '—')
                     : null,
                 $event->fromUser !== null || $event->toUser !== null
-                    ? 'Agente: '.($event->fromUser->name ?? '—').' → '.($event->toUser->name ?? '—')
+                    ? 'Agente: '.($this->nameFor($event->fromUser, $context) ?? '—').' → '.($this->nameFor($event->toUser, $context) ?? '—')
                     : null,
                 $event->note,
             ]);
@@ -280,7 +281,7 @@ class ConversationDossierReport extends ReportDefinition
             yield [
                 'created_at' => $event->created_at,
                 'event' => $event->type->label(),
-                'actor' => $event->actor->name ?? 'Sistema',
+                'actor' => $this->nameFor($event->actor, $context) ?? 'Sistema',
                 'detail' => $detail === [] ? null : implode(' · ', $detail),
             ];
         }
@@ -289,7 +290,7 @@ class ConversationDossierReport extends ReportDefinition
     /**
      * @return Generator<int, array<string, mixed>>
      */
-    private function notes(Conversation $conversation): Generator
+    private function notes(Conversation $conversation, ReportContext $context): Generator
     {
         $notes = $conversation->notes()->with('author:id,name')->orderBy('id')->limit(self::MAX_ENTRIES)->get();
 
@@ -297,11 +298,20 @@ class ConversationDossierReport extends ReportDefinition
             /** @var ConversationNote $note */
             yield [
                 'created_at' => $note->created_at,
-                'author' => $note->author->name ?? 'Usuario eliminado',
+                'author' => $this->nameFor($note->author, $context) ?? 'Usuario eliminado',
                 'body' => Str::limit($note->body, self::BODY_LENGTH),
                 'edited_at' => $note->edited_at,
             ];
         }
+    }
+
+    /**
+     * The person's name as the actor may see it: protected accounts (root
+     * role) are presented as the system administration to everyone else.
+     */
+    private function nameFor(?User $user, ReportContext $context): ?string
+    {
+        return app(ProtectedAccounts::class)->nameFor($user, $context->actor);
     }
 
     private function conversation(ReportContext $context): Conversation

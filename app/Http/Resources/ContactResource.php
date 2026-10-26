@@ -6,6 +6,7 @@ use App\Models\Contact;
 use App\Models\ContactIdentity;
 use App\Models\Tag;
 use App\Services\ResolveContactOrigin;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -40,8 +41,8 @@ class ContactResource extends JsonResource
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator === null ? null : [
-                'id' => $this->creator->id,
-                'name' => $this->creator->name,
+                'id' => app(ProtectedAccounts::class)->idForRequest($this->creator, $request),
+                'name' => app(ProtectedAccounts::class)->nameForRequest($this->creator, $request),
             ]),
             'tags' => $this->whenLoaded('tags', fn (): array => $this->tags->map(fn (Tag $tag): array => [
                 'id' => $tag->id,

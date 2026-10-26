@@ -92,7 +92,7 @@ const props = defineProps<{
 
 const steps = [
     { key: 'upload', label: 'Origen y archivo' },
-    { key: 'mapping', label: 'Mapear y validar' },
+    { key: 'mapping', label: 'Relacionar columnas y revisar' },
     { key: 'result', label: 'Resultado' },
 ] as const;
 
@@ -270,7 +270,7 @@ function rowState(row: ContactImportPreviewRow): {
     if (row.status === 'error') {
         return {
             label: 'Con error',
-            class: 'bg-destructive/10 text-destructive',
+            class: 'bg-destructive-soft text-destructive-soft-foreground',
         };
     }
 
@@ -287,11 +287,14 @@ function rowState(row: ContactImportPreviewRow): {
                 configuration.decision === 'fill_empty'
                     ? 'Existe · completar vacíos'
                     : 'Existe · se omite',
-            class: 'bg-warning/10 text-warning',
+            class: 'bg-warning-soft text-warning-soft-foreground',
         };
     }
 
-    return { label: 'Nuevo', class: 'bg-success/10 text-success' };
+    return {
+        label: 'Nuevo',
+        class: 'bg-success-soft text-success-soft-foreground',
+    };
 }
 
 function displayPhone(phone: string): string {
@@ -318,7 +321,7 @@ function rollbackLabel(item: ContactImport): string | null {
         case 'completed':
             return 'Revertida';
         case 'failed':
-            return 'Reversión fallida';
+            return 'No se pudo revertir';
         default:
             return null;
     }
@@ -363,9 +366,7 @@ const progress = computed(() => {
 <template>
     <Head title="Importar contactos" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="importacion"
             title="Importar contactos"
@@ -411,7 +412,7 @@ const progress = computed(() => {
                             index === currentStep &&
                                 'border-primary bg-primary text-primary-foreground',
                             index < currentStep &&
-                                'border-success bg-success/10 text-success',
+                                'border-success bg-success-soft text-success-soft-foreground',
                         )
                     "
                 >
@@ -466,7 +467,7 @@ const progress = computed(() => {
                                         {{ option.label }}
                                         <span
                                             v-if="!option.validated"
-                                            class="inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
+                                            class="inline-flex rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground"
                                         >
                                             Pendiente de validación
                                         </span>
@@ -546,7 +547,7 @@ const progress = computed(() => {
 
             <SurfaceCard
                 title="Historial de lotes"
-                description="Cada importación es un lote trazable: puedes abrirlo para ver su resultado o revertirlo si es seguro."
+                description="Cada importación queda guardada: ábrela para ver qué pasó con cada fila o reviértela si todavía es posible."
             >
                 <EmptyState
                     v-if="recent.length === 0"
@@ -635,7 +636,7 @@ const progress = computed(() => {
 
             <SurfaceCard
                 title="Origen del archivo"
-                description="El origen sugiere el mapeo y normaliza los valores antes de validarlos. Puedes cambiarlo; el mapeo siempre es editable."
+                description="Según de dónde viene el archivo proponemos qué columna corresponde a cada dato y corregimos formatos (por ejemplo, teléfonos). Puedes cambiarlo."
                 body-class="flex flex-col gap-3 p-5"
             >
                 <div
@@ -740,7 +741,7 @@ const progress = computed(() => {
 
                 <SurfaceCard
                     title="Contactos que ya existen"
-                    description="Se detectan por teléfono normalizado o correo electrónico."
+                    description="Se reconocen por el mismo teléfono (aunque esté escrito distinto) o el mismo correo."
                     body-class="flex flex-col gap-3 p-5"
                 >
                     <label
@@ -805,7 +806,7 @@ const progress = computed(() => {
 
             <div
                 v-if="preview"
-                class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
+                class="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-6"
             >
                 <StatCard label="Filas" :value="preview.summary.total" />
                 <StatCard label="Nuevos" :value="preview.summary.new" />
@@ -1076,7 +1077,9 @@ const progress = computed(() => {
                 </Alert>
 
                 <template v-if="transfer.summary">
-                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div
+                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                    >
                         <StatCard
                             label="Creados"
                             :value="transfer.summary.created"
@@ -1118,7 +1121,7 @@ const progress = computed(() => {
                         transfer.rollback.status)
                 "
                 title="Reversión del lote"
-                description="Elimina lógicamente los contactos que este lote creó y no se han usado, y vacía los campos que completó si nadie los cambió. Lo que tenga actividad posterior se conserva."
+                description="Envía a «Eliminados» (se pueden restaurar) los contactos que creó esta importación y nadie ha usado, y vacía los campos que completó si nadie los cambió. Lo que tenga actividad posterior se conserva."
                 body-class="flex flex-col gap-4 p-5"
             >
                 <div
@@ -1154,7 +1157,9 @@ const progress = computed(() => {
                             )
                         }}
                     </p>
-                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div
+                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                    >
                         <StatCard
                             label="Contactos eliminados"
                             :value="transfer.rollback.summary.contacts_archived"

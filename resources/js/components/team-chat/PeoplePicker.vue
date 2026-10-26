@@ -149,7 +149,7 @@ function choose(contact: TeamContact): void {
             >
                 {{
                     search.trim() === ''
-                        ? 'No hay personas disponibles para chatear dentro de tu alcance.'
+                        ? 'No hay compañeros disponibles para chatear (solo puedes escribir a personas de tus departamentos).'
                         : 'Nadie coincide con la búsqueda.'
                 }}
             </p>

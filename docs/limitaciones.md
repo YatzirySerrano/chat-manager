@@ -78,8 +78,8 @@ nivel 7, `vue-tsc` y build de producción sin errores).
 
 - **Todo el tráfico de WhatsApp.** Mensajes y estados entrantes son cuerpos generados con el formato documentado por
   Meta y firmados con secretos desechables; los envíos usan `Http::fake`, el transporte `simulated` (IDs `sim.`,
-  `metadata.simulated = true`, etiqueta «Simulación») o un transporte de registro en las pruebas de concurrencia. Con el
-  transporte simulado, «Enviado», «Entregado» y «Leído» también son simulados. La etiqueta «Simulación» de un mensaje
+  `metadata.simulated = true`, etiqueta «No enviado (modo de prueba)») o un transporte de registro en las pruebas de concurrencia. Con el
+  transporte simulado, «Enviado», «Entregado» y «Leído» también son simulados. La etiqueta «No enviado (modo de prueba)» de un mensaje
   saliente aparece cuando llega el resultado de la entrega, no al confirmarse el envío.
 - **Multimedia simulada** sin `--file`: queda «no disponible» (`simulated_media`).
 - **Web Push:** los servicios push se sustituyen por respuestas HTTP falsas; el _service worker_ no se ejecutó en un
@@ -244,8 +244,11 @@ y [rendimiento-y-carga.md](rendimiento-y-carga.md).
 
 ## 8. Antes de producción
 
-1. Decidir si el Administrador recibe `system.view` / `system.manage`
-   ([seguridad-y-auditoria.md §3.1](seguridad-y-auditoria.md#31-permisos-por-rol-tras-la-actualización-de-la-estabilización)).
+1. Decidir si el Administrador recibe `system.view` / `system.manage` y, en instalaciones existentes, también
+   `integrations.view` / `integrations.manage` (fase 5.1: `--upgrade-default-roles --include-sensitive`, vista previa y
+   luego `--apply`; [infraestructura §Fase 5.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)). Decidir
+   también los dos índices recomendados en `conversation_events` para la supervisión por departamentos a gran escala
+   (requieren migración; no aplicados).
 2. En el servidor, con respaldo previo y en una ventana de bajo tráfico, aplicar las migraciones (aditivas; el primer
    FULLTEXT reconstruye la tabla), ejecutar `php artisan app:sync-permissions`, revisar y aplicar
    `--upgrade-default-roles` si corresponde y `php artisan analytics:rebuild` una vez. En la base local `chatmanager`

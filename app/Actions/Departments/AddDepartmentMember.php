@@ -33,7 +33,7 @@ class AddDepartmentMember
             }
 
             if (! $role->scope->allowsDepartmentMembership()) {
-                throw ValidationException::withMessages(['user_id' => "El rol {$role->label} ya tiene alcance sobre toda la organización; no necesita pertenecer a departamentos."]);
+                throw ValidationException::withMessages(['user_id' => "El rol {$role->label} ya ve toda la organización; no necesita pertenecer a departamentos."]);
             }
 
             try {

@@ -32,7 +32,7 @@ const help: ModuleHelp = {
         {
             name: 'WABA ID',
             description:
-                'Identificador de la cuenta de WhatsApp Business; necesario para activar y para sincronizar plantillas.',
+                'Identificador de la cuenta de WhatsApp Business (WABA ID); necesario para activar la conexión y para actualizar plantillas desde Meta.',
         },
         {
             name: 'Token de acceso, App secret y Token de verificación',
@@ -101,7 +101,7 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver conexiones» y «Administrar conexiones y credenciales» requieren alcance global; administrar es un permiso sensible.',
+        '«Ver conexiones» y «Administrar conexiones y credenciales (incluye eliminar y restaurar)» requieren un rol que vea toda la organización; administrar es un permiso de alto impacto (se pide confirmar al darlo o quitarlo).',
         'Restaurar una conexión eliminada requiere también «Consultar registros eliminados».',
     ],
     commonErrors: [
@@ -135,7 +135,7 @@ const help: ModuleHelp = {
             problem:
                 '«Requiere configurar la aplicación de Meta en el servidor…»',
             solution:
-                'El servidor no tiene META_APP_ID, META_APP_SECRET (o los de Instagram) y META_WEBHOOK_VERIFY_TOKEN. Solicítalo a quien administra el servidor.',
+                'Falta configurar la aplicación de Meta en el servidor. Pide al equipo técnico que la configure (en la pantalla de autorización, «Detalles técnicos» indica qué falta).',
         },
         {
             problem: '«La solicitud de autorización no es válida o venció…»',

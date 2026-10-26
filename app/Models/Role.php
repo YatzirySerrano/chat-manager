@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\DeletesLogically;
 use App\Enums\DataScope;
+use App\Enums\DefaultRole;
 use App\Enums\Permission;
 use Database\Factories\RoleFactory;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -67,6 +68,38 @@ class Role extends SpatieRole
     protected function active(Builder $query): void
     {
         $query->where('is_active', true);
+    }
+
+    /**
+     * Leave out the root role unless the viewer is the root authority.
+     *
+     * @param  Builder<Role>  $query
+     */
+    #[Scope]
+    protected function withoutProtectedFor(Builder $query, User $viewer): void
+    {
+        if (! $viewer->hasRootAuthority()) {
+            $query->where('is_root', false);
+        }
+    }
+
+    /**
+     * Whether the role must stay invisible to the viewer (the root role for
+     * anyone but the root authority).
+     */
+    public function isHiddenFrom(User $viewer): bool
+    {
+        return $this->is_root && ! $viewer->hasRootAuthority();
+    }
+
+    /**
+     * The description shown in the interface and exports. A default role
+     * still storing a wording that was replaced shows the current one, so
+     * stored texts never reference accounts the reader may not know about.
+     */
+    public function presentedDescription(): ?string
+    {
+        return DefaultRole::tryFrom($this->name)?->presentDescription($this->description) ?? $this->description;
     }
 
     /**

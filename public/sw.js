@@ -12,7 +12,9 @@
  *   stale page. Only when the network fails does the worker answer with the
  *   static offline page.
  * - Logging out asks the worker to delete its cache (CLEAR_CACHES) and the
- *   server answers with Clear-Site-Data: "cache".
+ *   page deletes it too. The server does not send Clear-Site-Data: Chrome
+ *   holds that response until its whole HTTP cache has been walked, which
+ *   left the sign out loading for a long time on large caches.
  *
  * Updates: a new version installs and waits; the page shows "Hay una nueva
  * versión disponible" and, when the person accepts, posts SKIP_WAITING and
@@ -44,7 +46,7 @@
  * to sign in), so no customer data is exposed.
  */
 
-const VERSION = '2026-10-24.2';
+const VERSION = '2026-10-24.3';
 const CACHE_PREFIX = 'chat-manager-static-';
 const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 const OFFLINE_URL = '/offline.html';

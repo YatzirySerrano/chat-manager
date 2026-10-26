@@ -120,10 +120,9 @@ function openDetail(entry: AuditLogEntry): void {
 <template>
     <Head title="Auditoría" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
+            help="auditoria"
             title="Auditoría"
             :description="
                 scope === 'own'
@@ -132,11 +131,16 @@ function openDetail(entry: AuditLogEntry): void {
             "
         >
             <template v-if="canExport" #actions>
-                <ExportMenu report="audit" :filters="filters" />
+                <span class="inline-flex" data-tour="audit.export">
+                    <ExportMenu report="audit" :filters="filters" />
+                </span>
             </template>
         </PageHeader>
 
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-end">
+        <div
+            class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-end"
+            data-tour="audit.filters"
+        >
             <Select
                 v-model="filterState.action"
                 @update:model-value="applyFilters"
@@ -211,6 +215,7 @@ function openDetail(entry: AuditLogEntry): void {
         <div
             v-if="logs.data.length > 0"
             class="overflow-hidden rounded-xl border bg-card shadow-card"
+            data-tour="audit.table"
         >
             <Table>
                 <TableHeader>
@@ -225,8 +230,9 @@ function openDetail(entry: AuditLogEntry): void {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="entry in logs.data"
+                        v-for="(entry, position) in logs.data"
                         :key="entry.id"
+                        :data-tour="position === 0 ? 'audit.row' : undefined"
                         class="cursor-pointer"
                         tabindex="0"
                         role="button"
@@ -235,11 +241,15 @@ function openDetail(entry: AuditLogEntry): void {
                         @keydown.enter.prevent="openDetail(entry)"
                         @keydown.space.prevent="openDetail(entry)"
                     >
-                        <TableCell class="text-muted-foreground tabular-nums">
+                        <TableCell
+                            class="text-xs text-muted-foreground tabular-nums"
+                        >
                             {{ formatDateTime(entry.created_at) }}
                         </TableCell>
                         <TableCell>
-                            <span class="inline-flex items-center gap-2">
+                            <span
+                                class="inline-flex items-center gap-2 font-medium"
+                            >
                                 <span
                                     class="size-1.5 shrink-0 rounded-full"
                                     :class="toneClasses[entry.action.tone]"
@@ -268,7 +278,8 @@ function openDetail(entry: AuditLogEntry): void {
 
         <EmptyState
             v-else
-            :icon="ScrollText"
+            :tone="hasFilters ? 'filtered' : 'neutral'"
+            :icon="hasFilters ? undefined : ScrollText"
             :title="
                 hasFilters
                     ? 'Sin resultados para estos filtros'

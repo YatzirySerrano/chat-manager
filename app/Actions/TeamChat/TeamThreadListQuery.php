@@ -64,7 +64,9 @@ class TeamThreadListQuery
                 ->where(fn (Builder $groups) => $groups->where('type', TeamThreadType::Group)->where('name', 'like', $term))
                 ->orWhereHas('activeParticipations', fn (Builder $participants) => $participants
                     ->where('user_id', '!=', $viewer->id)
-                    ->whereHas('user', fn (Builder $users) => $users->where('is_active', true)->where('name', 'like', $term))));
+                    // A protected account (root role) is never found by its real
+                    // name by anyone else (they see it as the system administration).
+                    ->whereHas('user', fn (Builder $users) => $users->where('is_active', true)->withoutProtectedFor($viewer)->where('name', 'like', $term))));
         }
 
         if ($filters['filter'] === 'unread') {

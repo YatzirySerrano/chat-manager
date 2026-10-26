@@ -37,7 +37,7 @@ class VisitorIdentityRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'external_id' => 'identificador externo',
+            'external_id' => 'identificador del usuario en tu sitio',
             'name' => 'nombre',
             'email' => 'correo electrónico',
             'iat' => 'fecha de emisión',

@@ -206,8 +206,8 @@ function groupByModule<T extends { group: string }>(
                         class="mt-0.5 size-4 shrink-0 text-muted-foreground"
                     />
                     <span>
-                        El nuevo rol tiene alcance sobre toda la organización,
-                        por lo que dejará de pertenecer a:
+                        Con el nuevo rol verá toda la organización, así que
+                        dejará de pertenecer a:
                         <strong>{{
                             impact.departments_to_leave
                                 .map((d) => d.name)
@@ -231,7 +231,7 @@ function groupByModule<T extends { group: string }>(
                                 ? 'conversación abierta regresará'
                                 : 'conversaciones abiertas regresarán'
                         }}
-                        a la cola de su departamento.
+                        a «Pendientes» de su departamento.
                     </span>
                 </p>
 

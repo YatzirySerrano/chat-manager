@@ -30,13 +30,15 @@ abstract class ConversationOperationController extends Controller
      * The agent named as destination of an assignment or transfer. Someone
      * outside the actor's scope is only resolved when they could attend the
      * destination department; anyone else "does not exist", so probing ids
-     * never reveals the names of people the actor may not see.
+     * never reveals the names of people the actor may not see. Protected
+     * accounts (root role) do not exist for anyone without the root authority.
      */
     protected function destinationAgent(int $userId, User $actor, ?Department $department): User
     {
         $agent = User::query()->find($userId);
 
         if ($agent === null
+            || $agent->isHiddenFrom($actor)
             || (! User::query()->visibleTo($actor)->whereKey($agent->id)->exists()
                 && ! app(ConversationAccess::class)->canAttend($agent, $department))) {
             throw new ConversationConflict('El agente elegido no existe.');

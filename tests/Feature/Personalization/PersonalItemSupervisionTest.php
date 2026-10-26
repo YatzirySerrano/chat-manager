@@ -220,11 +220,11 @@ test('the supervision screen hides contacts outside the supervisor\'s own reach'
         ->viewData('page')['props']['items']['data']);
 
     expect($rows->firstWhere('id', $visibleAlias->id)['contact'])->toMatchArray(['name' => 'Cliente de Ventas', 'phone_e164' => '+5215511111111'])
-        ->and($rows->firstWhere('id', $hiddenAlias->id)['contact'])->toMatchArray(['name' => 'Contacto fuera de tu alcance', 'phone_e164' => null]);
+        ->and($rows->firstWhere('id', $hiddenAlias->id)['contact'])->toMatchArray(['name' => 'Contacto que no puedes ver', 'phone_e164' => null]);
 
     $this->actingAs($supervisor)
         ->get(route('admin.personal-items.index', ['type' => 'appearance', 'user' => $colleague->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->has('items.data', 1)
-            ->where('items.data.0.scope_label', 'Conversación #'.$foreignConversation->id.' · Contacto fuera de tu alcance'));
+            ->where('items.data.0.scope_label', 'Conversación #'.$foreignConversation->id.' · Contacto que no puedes ver'));
 });

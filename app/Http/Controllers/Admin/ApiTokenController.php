@@ -11,6 +11,7 @@ use App\Models\ApiToken;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -96,7 +97,7 @@ class ApiTokenController extends Controller
             'name' => $token->name,
             'token' => $plain,
         ]);
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Token «{$token->name}» emitido. Cópialo ahora: no se volverá a mostrar."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Clave de acceso «{$token->name}» creada. Cópiala ahora: no se volverá a mostrar."]);
 
         return to_route('integrations.tokens.index');
     }
@@ -116,8 +117,8 @@ class ApiTokenController extends Controller
         $revoked = $revoke->handle($apiToken, $actor, $reason);
 
         Inertia::flash('toast', $revoked
-            ? ['type' => 'success', 'message' => "Token «{$apiToken->name}» revocado. Las llamadas que lo usen se rechazan desde ahora."]
-            : ['type' => 'info', 'message' => "El token «{$apiToken->name}» ya estaba revocado."]);
+            ? ['type' => 'success', 'message' => "Clave de acceso «{$apiToken->name}» revocada. El sistema que la usaba ya no puede conectarse."]
+            : ['type' => 'info', 'message' => "La clave de acceso «{$apiToken->name}» ya estaba revocada."]);
 
         return back(fallback: route('integrations.tokens.index'));
     }
@@ -153,9 +154,9 @@ class ApiTokenController extends Controller
             'expires_at' => $token->expires_at->toIso8601String(),
             'last_used_at' => $token->last_used_at?->toIso8601String(),
             'created_at' => $token->created_at?->toIso8601String(),
-            'created_by' => $token->creator?->name,
+            'created_by' => app(ProtectedAccounts::class)->nameForRequest($token->creator, request()),
             'revoked_at' => $token->revoked_at?->toIso8601String(),
-            'revoked_by' => $token->revoker?->name,
+            'revoked_by' => app(ProtectedAccounts::class)->nameForRequest($token->revoker, request()),
             'revoke_reason' => $token->revoke_reason,
         ];
     }

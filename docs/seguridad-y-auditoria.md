@@ -57,6 +57,18 @@ forgot-password` y `POST reset-password` aceptan 5 solicitudes por minuto por IP
   guardadas en el historial del navegador se cifran (`INERTIA_ENCRYPT_HISTORY=true` por defecto, `config/inertia.php`):
   tras cerrar sesión, «Atrás» no muestra datos de la sesión cerrada. El cifrado necesita un contexto seguro (https o
   localhost); por http plano el navegador guarda el historial sin cifrar y solo deja un aviso en la consola.
+- **Cierre de sesión sin bloqueo (fase 5.1).** La respuesta ya no envía `Clear-Site-Data: "cache"`: Chrome no entrega
+  una respuesta con ese encabezado hasta recorrer toda su caché HTTP (de todos los sitios), lo que en perfiles con
+  caché grande dejaba el cierre «cargando» segundos o minutos hasta recargar a mano. Responde `Cache-Control: no-store,
+private`. La privacidad no depende de ese encabezado: páginas y respuestas Inertia salen `private, no-cache`, los
+  adjuntos `private, no-cache` con `ETag` (ver [Archivos y multimedia](#archivos-y-multimedia)) y el _service worker_
+  solo guarda estáticos públicos, cuya caché vacía el cliente antes de cerrar. El diálogo (`LogoutConfirmDialog.vue`)
+  limita cada paso de limpieza a 1,5 s y la petición a 15 s; ante error de red, de servidor o tiempo agotado se queda
+  abierto con un mensaje y «Intentar de nuevo». La suscripción Web Push del navegador solo se elimina **después** de
+  que el servidor confirmó el cierre (o si la sesión ya no existía): un intento fallido conserva sesión y avisos. Un 419
+  comprueba si la sesión sigue abierta: si no, va al inicio de sesión; si se volvió a abrir en otra pestaña, lo explica
+  y ofrece reintentar con el token nuevo (un segundo 419 recarga la página). Pruebas: `tests/Feature/Auth/LogoutTest.php`
+  y E2E `tests/e2e/logout.mjs`.
 - Se auditan el cambio de contraseña propio, el restablecimiento por enlace, la activación (confirmada) y desactivación de
   la verificación en dos pasos y la regeneración de códigos de recuperación.
 
@@ -204,8 +216,11 @@ Detalle en [canal-chat-web.md](canal-chat-web.md), [widget-integracion.md](widge
 - Tipo real con `finfo` (nunca el nombre ni el tipo del navegador); lista blanca de tipos y extensiones; límites por tipo
   en `config/whatsapp.php` y `config/team-chat.php`. HTML, SVG, scripts y ejecutables se rechazan.
 - Nombres mostrados saneados (sin rutas, caracteres de control ni reservados). Las descargas llevan
-  `Content-Disposition`, `nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: private` y CSP `sandbox` (excepto PDF en
-  vista previa, ver riesgos). Los tipos no previsualizables se sirven como `application/octet-stream` adjunto.
+  `Content-Disposition`, `nosniff`, `Referrer-Policy: no-referrer` y CSP `sandbox` (excepto PDF en vista previa, ver
+  riesgos). Desde la fase 5.1 los adjuntos de conversaciones (`MessageAttachmentController`) salen con
+  `Cache-Control: private, no-cache`, `ETag` y `Last-Modified` (antes `private, max-age=300`): el navegador puede
+  guardarlos, pero los revalida con el servidor, que vuelve a autorizar, antes de mostrarlos (304 si no cambiaron). Así
+  ningún adjunto se sirve desde caché tras cerrar sesión o perder el acceso. Los tipos no previsualizables se sirven como `application/octet-stream` adjunto.
 - La descarga de multimedia entrante solo acepta hosts de Meta.
 
 ### Secretos
@@ -275,7 +290,8 @@ supervisados y discos privados. El preflight verifica todo esto sin escribir dat
   (`is_active = false`) para que no pasen a leerse como corporativas; pierden su propietario, así que el `down()` es
   destructivo para ellas y solo debe usarse con respaldo.
 - Cambios de permisos y membresías surten efecto en la siguiente petición de las sesiones abiertas (pruebas en
-  `tests/Feature/Auth/PermissionRevocationTest.php` y `tests/Feature/Validation/SecurityProbeTest.php`).
+  `tests/Feature/Auth/PermissionRevocationTest.php` y `tests/Feature/Validation/SecurityProbeTest.php`) y, desde la
+  fase 5.1, también en las páginas abiertas y en los trabajos en cola (ver [§3.3](#33-permisos-efectivos-y-cambios-en-vivo-fase-51)).
 
 ### 3.1 Permisos por rol tras la actualización de la estabilización
 
@@ -317,7 +333,10 @@ capacidad (desde la fase 5 no hay disponibilidad manual).
 y, con `system.manage`, a reintentar o descartar trabajos. Hoy solo los tiene el Superadministrador. Si se decide
 concederlos: `php artisan app:sync-permissions --upgrade-default-roles --include-sensitive` (vista previa) y después
 con `--apply`, o asignarlos a mano en Roles; ambos caminos quedan auditados (`role.permissions_changed`). Mientras no
-se decida, el Administrador no ve la página de Sistema ni recibe las alertas dirigidas a `system.view`.
+se decida, el Administrador no ve la página de Sistema ni recibe las alertas dirigidas a `system.view`. En la revisión
+de la fase 5.1 el rol Administrador de las instalaciones existentes carece de cuatro permisos sensibles de su
+definición: `integrations.view`, `integrations.manage`, `system.view` y `system.manage`; el mismo comando los pondría
+al día, **pendiente de autorización** (ver [infraestructura §Fase 5.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)).
 
 ### 3.2 Permisos nuevos de la fase 5
 
@@ -348,6 +367,52 @@ permiso de origen (roles y permisos directos de usuario) y a los roles raíz; su
   sensibles y solo se añaden con `--include-sensitive` (o ya llegaron por la migración si el rol tenía
   `templates.manage` / `users.update`). Revisa siempre la vista previa antes de `--apply`
   ([despliegue fase 5](infraestructura-y-despliegue.md#procedimiento-de-la-fase-5)).
+
+### 3.3 Permisos efectivos y cambios en vivo (fase 5.1)
+
+Diagnóstico de origen: se retiró `conversations.transfer` del rol «Agente» (0 usuarios afectados) mientras los agentes
+de prueba tenían otro rol; además, las páginas abiertas conservaban sus props `can` hasta recargar. El servidor ya
+rechazaba la acción; lo que faltaba era explicarlo y refrescar la interfaz.
+
+- **Editor de roles:** cada rol muestra cuántos usuarios **activos** lo tienen; el aviso de guardado
+  (`RoleSaveResult::toast()`) dice a cuántos llega el cambio y avisa cuando son 0 («el cambio no afectará a nadie
+  todavía»). La tarjeta del rol muestra «Sin usuarios» y, al cambiar el alcance, se explica la consecuencia antes de
+  guardar.
+- **Permisos conservados por otra vía:** `RoleGrantOverlap::retainedElsewhere()` calcula (con `GROUP BY` en SQL) qué
+  titulares conservan un permiso del rol por otro rol o por una concesión directa; la pantalla lo avisa antes y el
+  guardado lo repite si se retiró alguno («N usuarios conservan alguno de los permisos retirados…»).
+- **Permisos efectivos del usuario:** `AdminUserResource.access` indica cuántos permisos puede ejercer la cuenta y
+  cuáles no vienen de su rol (directos o de otro rol, con su origen); la lista de Usuarios lo explica.
+- **Páginas abiertas:** la señal `.access.changed` ([tiempo-real](tiempo-real.md#seguridad)) recarga la página;
+  `usePermissionRefresh.ts` descarta las páginas precargadas y muestra «Tus permisos se actualizaron». `SaveRole` vacía
+  la caché de permisos tras el commit y antes de que la señal llegue a nadie.
+- **Trabajos en cola:** un _worker_ conserva en memoria el mapa de roles y permisos que cargó para su primer trabajo.
+  `App\Listeners\Security\RefreshPermissionsBeforeQueuedJob` (evento `JobProcessing`) llama a
+  `PermissionRegistrar::clearPermissionsCollection()` antes de cada trabajo, así la distribución automática o la
+  elección de destinatarios de avisos nunca usan un permiso ya revocado. Aun así, reinicia los workers tras desplegar
+  (código nuevo).
+- Pruebas: `tests/Feature/Admin/EffectivePermissionsTest.php` (revocar y volver a conceder «Transferir» a un agente,
+  aviso de 0 titulares, permisos conservados, señales exactas a los titulares),
+  `tests/Feature/Admin/PermissionCacheFreshnessTest.php` y E2E `tests/e2e/roles.mjs`.
+
+### 3.4 Cuentas protegidas (fase 5.1)
+
+Las cuentas con el rol raíz (Superadministrador) son invisibles para cualquiera sin esa autoridad
+(`App\Support\ProtectedAccounts`, `User::withoutProtectedFor()`):
+
+- **Fuera de listas y selectores:** Usuarios (lista, búsqueda, filtros, contadores y exportación), Roles (el rol raíz,
+  sus permisos reservados y cualquier mención en descripciones), filtro de agente de la bandeja, destinos de
+  asignación y transferencia, directorio y grupos del chat interno, opciones de actor de la bitácora.
+- **En los registros:** sus mensajes, notas, asignaciones, eventos, entradas de bitácora no restringidas, chats internos
+  y textos de avisos se conservan, pero su nombre se presenta como «Administración del sistema» y su id viaja como
+  `null` (recursos web y API v1 `assigned_agent.id`). Nunca se reescribe lo guardado.
+- **Operaciones directas:** ver, editar, eliminar o restaurar una cuenta raíz o el rol raíz responde 404 como si no
+  existiera; asignar o transferir a su id falla como «agente desconocido»; `role_id` del rol raíz en Store/UpdateUser
+  se rechaza igual que un rol inexistente; filtrar la bandeja por su id no devuelve nada.
+- El Superadministrador sigue viendo todo. Pendiente aceptado: el aviso de «correo ya registrado» al crear una cuenta
+  revela que un correo existe (inevitable con correos únicos).
+- Pruebas: `tests/Feature/Admin/ProtectedAccountVisibilityTest.php` y
+  `tests/Feature/Security/ProtectedAccountOperationalVisibilityTest.php`.
 
 ## 4. Auditoría
 

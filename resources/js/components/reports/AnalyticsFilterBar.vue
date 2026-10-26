@@ -2,6 +2,7 @@
 import { reactive, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { zoneLabel } from '@/composables/useChartTheme';
 import type {
     AnalyticsOptions,
     AnalyticsPeriod,
@@ -121,7 +122,7 @@ const rangeInvalid = () =>
                     class="text-foreground"
                     @change="apply"
                 >
-                    <option value="">Todos los de tu alcance</option>
+                    <option value="">Todos los que puedes ver</option>
                     <option
                         v-for="department in options.departments"
                         :key="department.id"
@@ -208,7 +209,7 @@ const rangeInvalid = () =>
 
         <p class="text-xs text-muted-foreground">
             {{ period.label }} · comparado con {{ period.previous.label }} ·
-            hora de {{ period.timezone }}
+            {{ zoneLabel(period.timezone) }}
         </p>
     </div>
 </template>

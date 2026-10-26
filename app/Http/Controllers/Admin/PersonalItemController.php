@@ -44,7 +44,7 @@ class PersonalItemController extends Controller
 
     private const PER_PAGE = 25;
 
-    public const HIDDEN_CONTACT_LABEL = 'Contacto fuera de tu alcance';
+    public const HIDDEN_CONTACT_LABEL = 'Contacto que no puedes ver';
 
     /**
      * Contacts of the current page the actor may view (withVisibleContacts()).

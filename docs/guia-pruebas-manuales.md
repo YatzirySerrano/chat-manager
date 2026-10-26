@@ -3,10 +3,10 @@
 Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
 cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
 qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están en
-§27, las del chat web y la API de integración (fase 4), en §28, y las de la fase 5, en §29.
+§27, las del chat web y la API de integración (fase 4), en §28, las de la fase 5, en §29, y las de la fase 5.1, en §30.
 
 > **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
-> WhatsApp. Lo simulado lleva la etiqueta «Simulación».
+> WhatsApp. Lo simulado lleva la etiqueta «No enviado (modo de prueba)».
 
 ## 0. Preparación
 
@@ -131,7 +131,8 @@ sigue dentro. Registro: `auth.password_changed` con `sessions_closed`. Error: el
 ## 2. Dashboard
 
 **2.1 Panel principal.** Cuenta: Superadministrador y luego Valeria. Acción: abrir «Panel». Resultado: en vivo «En
-atención», «Pendientes», «Cerradas hoy», «Agentes disponibles»; del periodo, primera respuesta humana y recibidas. El
+atención», «Pendientes», «Finalizadas hoy», «Agentes activos»; del periodo, «Primera respuesta (promedio)» y las
+gráficas de actividad (desde la fase 5.1, ver §30.13). El
 Superadministrador ve toda la organización; Valeria solo sus cifras (alcance asignado). Registro: nada. Error: Valeria
 ve cifras de otros departamentos o el panel tarda o falla.
 
@@ -204,7 +205,7 @@ no aparece en eliminados.
 
 **6.1 Ficha y diagnóstico.** Cuenta: Superadministrador. Acción: Conexiones → Demo B · WhatsApp simulado. Resultado:
 estado (activa tras §0.3), salud (no «Operativa» porque las credenciales no están verificadas), URL del webhook,
-diagnóstico (entregas no confirmadas de 7 días con enlaces) y «Simulación». Sin `WHATSAPP_PILOT_RECIPIENTS` no aparece
+diagnóstico (entregas no confirmadas de 7 días con enlaces) y «Modo de prueba». Sin `WHATSAPP_PILOT_RECIPIENTS` no aparece
 «Piloto controlado». Error: aparece «Operativa» sin credenciales verificadas o se muestran secretos.
 
 **6.2 Pausar con una conversación abierta.** Cuenta: Administrador; Valeria con una conversación propia abierta en la
@@ -264,7 +265,7 @@ Requisitos: procesos de §0.3 en marcha y la conexión demo activa con credencia
 
 **10.1 Llega una conversación nueva.** Cuenta: Valeria (ponla «Disponible» con el interruptor de la bandeja) y el
 Superadministrador en otro navegador. Acción: comando «Nuevo contacto» de §0.4. Resultado: en segundos la fila aparece
-en «Pendientes» de Valeria y en «Todas» del Superadministrador, sin recargar. Óscar (Soporte) no la ve. Registro:
+en «Pendientes» de Valeria y en «Todas las conversaciones» del Superadministrador, sin recargar. Óscar (Soporte) no la ve. Registro:
 evento «Creada» en el historial; notificación de «conversación pendiente» para los disponibles. Error: Óscar la ve o
 tarda más de 20 s.
 
@@ -287,7 +288,7 @@ mensajes encuentra notas internas.
 ## 11. Mensajes
 
 **11.1 Responder.** Cuenta: Valeria en su conversación. Acción: escribir «Con gusto le ayudo» y Enter. Resultado: la
-burbuja pasa por Enviando → Enviado y lleva la etiqueta «Simulación». Con `WHATSAPP_SIMULATE_STATUSES` pasa
+burbuja pasa por Enviando → Enviado y lleva la etiqueta «No enviado (modo de prueba)». Con `WHATSAPP_SIMULATE_STATUSES` pasa
 sola a Entregado/Leído; si no, usa los comandos «Entregado» y «Leído» de §0.4. El administrador lo ve en vivo.
 Registro: evento en el historial; mensaje con `client_reference`. Error: el mensaje se duplica al reintentar por red o
 aparece «Entregado» sin señal (simulada) de estado.
@@ -321,7 +322,7 @@ Resultado: tarjeta del documento; se abre o descarga por la ruta autorizada. Sin
 el archivo se sirve desde una URL pública.
 
 **12.2 Enviar un archivo.** Cuenta: Valeria. Acción: adjuntar una imagen PNG pequeña y enviarla; después intentar un
-`.exe` renombrado a `.png` y un archivo mayor de 16 MB. Resultado: el primero se envía (Simulación); el segundo se
+`.exe` renombrado a `.png` y un archivo mayor de 16 MB. Resultado: el primero se envía (No enviado, modo de prueba); el segundo se
 rechaza por contenido; el tercero por tamaño, con el límite en el mismo formato que en el chat interno. Error: se
 acepta un ejecutable.
 
@@ -475,7 +476,7 @@ archivo. Error: se puede editar o borrar una entrada, o el Administrador ve entr
 `settings.updated`. Error: bajarlo desasigna conversaciones.
 
 **22.2 Horario y días no laborables.** Acción: definir un horario y un día festivo; simular un mensaje fuera de
-horario. Resultado: mensaje automático de fuera de horario si está activo en el departamento (con «Simulación»).
+horario. Resultado: mensaje automático de fuera de horario si está activo en el departamento (con «No enviado (modo de prueba)»).
 Registro: `settings.updated` / `department.hours_updated`.
 
 **22.3 Apariencia de la plataforma.** Acción: Administración → Apariencia → cambiar nombre y color. Registro:
@@ -539,7 +540,7 @@ con una app de Meta, WABA, número de prueba y token permanente, `WHATSAPP_TRANS
    `X-Hub-Signature-256` de cada POST.
 3. **Suscripción de la app** (`subscribed_apps`) desde la ficha de la conexión.
 4. **Ida y vuelta real**: escribir desde tu WhatsApp al número de prueba, responder desde la bandeja y ver
-   Enviado → Entregado → Leído reales (sin «Simulación»).
+   Enviado → Entregado → Leído reales (sin «No enviado (modo de prueba)»).
 5. **Piloto**: un envío a un número que no esté en `WHATSAPP_PILOT_RECIPIENTS` falla con «El destinatario no está en la
    lista del piloto…» sin llamar a Meta; la ficha muestra «Piloto controlado».
 6. **Multimedia real**: recibir imagen, audio y documento (descarga desde `lookaside.fbsbx.com`, incluido el corte por
@@ -623,14 +624,14 @@ distinto. Si algo de esta sección contradice §13.3, §14.2 o §15, vale esta s
 
 **29.1 Bandeja: indicadores y Filtros.** Cuenta: agente A. Resultado: arriba solo «Bandeja general», «Pendientes» (con
 contador) y «No leídas» (con contador); todo lo demás está en el botón **Filtros** (muestra el número de filtros
-aplicados; en móvil abre una hoja inferior). Elegir Estado «En atención», un departamento y dos etiquetas: aparecen
-chips removibles bajo la búsqueda y «Limpiar filtros». Copiar la URL, abrirla en otra pestaña: mismos filtros. Quitar
+aplicados; en móvil abre una hoja inferior). Elegir Estado «En atención», un departamento y dos etiquetas y pulsar
+«Aplicar» (desde la fase 5.1 nada cambia antes): aparecen chips removibles bajo la búsqueda y «Limpiar filtros». Copiar la URL, abrirla en otra pestaña: mismos filtros. Quitar
 un chip: la lista y los contadores cambian. «Limpiar filtros» vuelve a la bandeja general. Error: filtros que no se
 reflejan en la URL o contadores distintos de lo listado.
 
 **29.2 Etiquetas O / Y.** Con dos etiquetas aplicadas a conversaciones distintas y una conversación con ambas: modo
-«Cualquiera (O)» lista las tres; «Todas (Y)» solo la que tiene ambas (`tag_match=all` en la URL). Error: el modo Y
-muestra conversaciones con una sola etiqueta, o aparecen conversaciones fuera del alcance.
+«Con al menos una de estas etiquetas» lista las tres; «Con todas estas etiquetas a la vez» solo la que tiene ambas (`tag_match=all` en la URL). Error: el segundo
+modo muestra conversaciones con una sola etiqueta, o aparecen conversaciones fuera del alcance.
 
 **29.3 Etiquetas desde la fila.** Menú ⋮ de una fila → «Administrar etiquetas»: el diálogo dice que se aplican a la
 conversación; añadir una y guardar. Resultado: la fila muestra la etiqueta sin abrir el chat; auditoría de etiquetas.
@@ -733,10 +734,117 @@ del campo («correo electrónico»), nunca claves. Un error de Meta simulado mue
 solo al administrador en «Detalles técnicos». Una URL inexistente muestra la página 404 en español.
 
 **29.21 Ayuda, tarjetas y títulos.** En Conversaciones, Contactos, Respuestas rápidas, Conexiones, Usuarios, Reportes
-y Auditoría pulsar «¿Cómo funciona?»: se abre el panel con objetivo, pasos, permisos y errores comunes. Panel principal
+y Auditoría abrir el botón global de ayuda (brújula; desde la fase 5.1 sustituye a «¿Cómo funciona?», ver §30.11) →
+«Ver la guía completa del módulo»: se abre el panel con objetivo, pasos, permisos y errores comunes. Panel principal
 y departamentos: tarjetas de cifras compactas. Ninguna página repite su título (encabezado del layout + título de
 página). Error: panel vacío, texto en inglés o título duplicado.
 
 **29.22 Responsive y modo oscuro.** A 375, 768, 1280 y 1920 px, en modo claro y oscuro: bandeja, chat, filtros,
 diálogos de alias, apariencia, guardar contacto y elementos personales sin desbordes horizontales ni textos
 ilegibles. Error: contenido cortado o contraste insuficiente.
+
+## 30. Fase 5.1
+
+**Antes de empezar.** La fase 5.1 no tiene migraciones. `npm run build` (o `composer run dev`) y
+`php artisan queue:restart` para que los workers carguen el código nuevo
+([despliegue fase 5.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)). Cuentas: el Administrador (rol
+«Administrador», global, no raíz), un Supervisor de Ventas (alcance de departamentos), agentes A y B de Ventas y C de
+Soporte, cada uno en un perfil de navegador distinto, y el Superadministrador solo donde se indica. Comprueba en cada
+caso el rol **real** del usuario en Usuarios (no un rol con nombre parecido). Si algo contradice §29, vale esta sección.
+
+**30.1 El administrador ve las conversaciones de sus agentes.** Cuenta: Administrador, sin tocar filtros. Simular un
+mensaje nuevo (§0.4) y que A lo acepte y responda. Resultado: la bandeja abre en «Todas las conversaciones» y la
+conversación aparece en vivo, sigue ahí tras aceptarla A y su chat muestra las respuestas sin recargar. «Pendientes» y
+«No leídas» cuentan lo de toda la organización. Su propio trabajo está en Filtros → Vista → «Bandeja general» o «Mis
+conversaciones». Nunca aparece «Todas las visibles». Error: hay que elegir una vista para verla.
+
+**30.2 Supervisor por departamentos.** Cuenta: Supervisor de Ventas. Resultado: la vista por omisión se llama
+«Conversaciones de mis departamentos» y lista las de Ventas, atienda quien las atienda. Sin sonido ni aviso por cada
+mensaje de una conversación ajena: solo se actualizan la lista y los contadores. Error: suena o aparece un _toast_ por
+lo que solo observa.
+
+**30.3 Conversaciones transferidas.** A transfiere una conversación de Ventas a la cola de Soporte; C la acepta y la
+cierra. Resultado: el Administrador la sigue viendo en vivo (fila y chat, «Cerrada» al final, consultable en Filtros →
+Estado «Cerradas»); el Supervisor de Ventas la sigue viendo de solo lectura (sin compositor ni acciones); A deja de
+verla y abrirla por URL da 404. Error: desaparece para el Administrador o A la sigue viendo.
+
+**30.4 Alcance del agente.** Cuenta: agente A. Resultado: la bandeja abre en «Bandeja general» (pendientes que puede
+aceptar + las que atiende); no ve las que atiende B; una conversación que solo vivió en Soporte da 404 por URL; el
+Supervisor de Ventas tampoco la ve. Error: un agente ve conversaciones de compañeros.
+
+**30.5 Retirar y conceder «Transferir».** Con B con una conversación abierta en dos pestañas: el Administrador quita
+«Transferir conversaciones» del rol que B tiene realmente. Resultado: el aviso al guardar dice a cuántos usuarios
+activos afecta (o que no afecta a nadie si el rol no tiene titulares, con un aviso amarillo); en las dos pestañas de B
+desaparece «Transferir» sin recargar y aparece «Tus permisos se actualizaron»; un POST directo de transferencia
+responde 403. Volver a concederlo: la acción regresa en ambas pestañas. Si B conserva el permiso por otro rol o una
+concesión directa, el editor y el aviso lo dicen, y en Usuarios se explica de dónde viene. Error: hay que recargar o
+cerrar sesión para ver el cambio, o la petición directa funciona.
+
+**30.6 Sesión activa tras cambios de rol o alcance.** Con B conectado, cambiar el alcance del rol o el rol de B.
+Resultado: en segundos sus páginas abiertas muestran el menú y las acciones nuevas, sin bucles de recarga y con un solo
+aviso. Volver a la pestaña tras un rato también lo pone al día. Error: menús o botones viejos que el servidor rechaza.
+
+**30.7 Cerrar sesión sin recargar.** En Chrome con un perfil de uso real (caché grande), con la PWA/_service worker_
+activo y con dos pestañas: menú → «Cerrar sesión» → confirmar. Resultado: en pocos segundos llega al inicio de sesión
+sin recargar a mano; «Atrás» no muestra páginas de la sesión. Con DevTools → Offline o el servidor detenido: el diálogo
+muestra un mensaje claro y «Intentar de nuevo» (nunca gira para siempre, máximo 15 s) y la sesión y los avisos push
+siguen activos. Con la sesión ya vencida: va directo al inicio de sesión. En la respuesta (Network) no hay
+`Clear-Site-Data`. Error: «Cerrando sesión…» indefinido.
+
+**30.8 Fechas del chat sin encimarse.** Abrir una conversación con mensajes de varios días y desplazarse arriba y abajo
+a 375 y 1280 px, claro y oscuro, y con zoom 200 % y 400 %. Resultado: un solo separador por día («Hoy», «Ayer» o la
+fecha completa); el del día siguiente empuja al anterior, nunca dos superpuestos; «Ir al final» queda dentro del
+historial y el compositor accesible. Error: fechas apiladas o tapando mensajes.
+
+**30.9 Filtros sin cortes.** A 1440×900, 1024×640, 768×1024, 375×667 y 200 % de zoom, abrir «Filtros» con muchas
+etiquetas (Superadministrador o Administrador). Resultado: el panel (popover; hoja inferior en móvil) cabe en la
+pantalla, su cuerpo se desplaza y «Limpiar»/«Aplicar» siempre están visibles; nada cambia hasta «Aplicar»; cerrar con
+cambios sin aplicar avisa o los descarta con Escape; ningún scroll horizontal. Error: el final del panel queda fuera de
+la pantalla.
+
+**30.10 Superadministrador invisible.** Cuenta: Administrador. Resultado: ni en Usuarios (lista, búsqueda, filtros,
+contadores, exportación), ni en Roles (rol raíz ni permisos «Solo superadministrador»), ni en el filtro de agente,
+destinos de asignar o transferir, chat interno o filtro de actor de la bitácora aparece el Superadministrador. Donde
+participó (mensajes, notas, eventos, una conversación que atiende) se lee «Administración del sistema». Abrir por URL su
+usuario o el rol raíz responde 404. El Superadministrador sí lo ve todo. Error: aparece su nombre o su correo.
+
+**30.11 Recorridos guiados.** En la bandeja, pulsar el botón de ayuda (brújula, abajo a la derecha; en la barra
+superior si hay un chat abierto). Resultado: popover «Ayuda de esta pantalla» con los recorridos (insignia «Nuevo» la
+primera vez) y «Ver la guía completa del módulo». Iniciar uno: cada paso resalta el control real y la tarjeta queda en
+pantalla; «Siguiente», «Atrás», flechas y Escape funcionan; «Terminar» o Cerrar dejan la página usable (sin capa
+oscura). «Volver a mostrar los recorridos» los marca de nuevo como nuevos y se pueden reiniciar desde el paso 1. Navegar
+a otra pantalla cierra el recorrido. Repetir a 375 px. Error: un paso resalta un lugar vacío o queda una capa encima.
+
+**30.12 Permisos del panel principal.** Agente A: solo sus cifras, sin gráficas de agentes ni departamentos. Supervisor:
+cifras de sus departamentos. Administrador: toda la organización. Un usuario sin `dashboard.view` no ve el panel (ni por
+recarga parcial). Error: un agente ve cifras de otros.
+
+**30.13 Datos del panel y reportes.** Con el mismo periodo y filtros, comparar el panel con Reportes y con
+«Ver como tabla» de cada gráfica: actividad (por hora en «Hoy», por día en periodos largos), por canal (solo canales con
+datos), estado de lo recibido, primera respuesta (un día sin respuestas es un hueco, nunca 0), agentes y departamentos
+(8 + «Otros»). Exportar el panel a Excel y PDF: mismas gráficas, cifras y nombres que la pantalla. Error: totales que
+no cuadran o un 0 donde no hubo mediciones.
+
+**30.14 Respuestas rápidas en Excel y PDF.** Administrador con respuestas corporativas, propias y de otros usuarios:
+«Exportar» → «Reporte general» en Excel y en PDF. Resultado: todas las que puede consultar, sin importar la pestaña, con
+Atajo, Título, Contenido completo (sin cortar), Tipo, Propietario, Departamento, Estado y Fecha de creación. «Solo la
+vista actual» exporta la pestaña y filtros abiertos y lo dice en el documento. Error: faltan filas o el texto sale
+truncado.
+
+**30.15 Transiciones de pestañas.** En Respuestas rápidas, alternar «Corporativas», «Mis respuestas» y «De otros
+usuarios». Resultado: cambio suave sin recarga completa ni salto de scroll; con «Reducir movimiento» del sistema no hay
+animación. Error: parpadeo o la barra de pestañas se va de la pantalla.
+
+**30.16 Sin desbordes.** A 320, 375, 768, 1280 y 1440 px, claro y oscuro, y con zoom 200 %: panel, bandeja, chat,
+Filtros, Roles (tarjetas y «Ver permisos»), Usuarios, Reportes, Respuestas rápidas y Sistema sin scroll horizontal,
+sin textos por debajo de 13 px y con las etiquetas de las tarjetas de cifras completas. Error: contenido cortado.
+
+**30.17 Roles y alcance.** Roles → «Ver permisos» de un rol: detalle por módulo con búsqueda y «Mostrar solo los
+habilitados», sin claves internas. Editar el alcance: cada opción tiene descripción y ejemplo, se elige con flechas y,
+antes de guardar, se explica a cuántas personas afecta. Error: aparecen claves como `conversations.transfer`.
+
+**30.18 Lenguaje claro.** Recorrer bandeja, chat, notificaciones y Sistema: «Pendientes» en lugar de «cola»,
+«promedio» en lugar de «prom.», «No enviado (modo de prueba)» en mensajes simulados y detalles técnicos plegados. Error:
+jerga técnica como texto principal.
+
+Automatizado: [pruebas.md §2.3 y §6.4](pruebas.md#64-escenarios-de-la-fase-51).

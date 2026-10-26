@@ -10,7 +10,7 @@ withDefaults(defineProps<{ label?: string }>(), { label: 'No guardado' });
 
 <template>
     <span
-        class="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-medium text-foreground"
+        class="inline-flex items-center gap-1 rounded-full border border-transparent bg-warning-soft px-2 py-0.5 text-xs font-medium text-foreground"
         title="Registrado automáticamente al escribir; todavía no está guardado en el directorio de Contactos."
     >
         <UserRoundSearch class="size-3" aria-hidden="true" />

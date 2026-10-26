@@ -3,7 +3,9 @@
 namespace App\Http\Resources;
 
 use App\Actions\Users\UpdatePersonalQuickRepliesGrant;
+use App\Enums\Permission;
 use App\Models\Department;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -52,6 +54,9 @@ class AdminUserResource extends JsonResource
                 'granted_directly' => $personalGrant->grantedDirectly($this->resource),
                 'can_toggle' => $request->user() !== null && $personalGrant->allows($request->user(), $this->resource),
             ],
+            // Where the effective permissions come from, so an administrator
+            // knows when a permission survives a change of the role.
+            'access' => $this->access(),
             'is_current_user' => $request->user()?->is($this->resource) ?? false,
             'can' => [
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
@@ -60,5 +65,44 @@ class AdminUserResource extends JsonResource
                 'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
         ];
+    }
+
+    /**
+     * Number of permissions the account can exercise now, and those that do
+     * not come from its role: granted directly to the account or through
+     * another role it also holds (each with its sources).
+     *
+     * @return array{effective_count: int, extra_grants: list<array{value: string, label: string, sources: list<string>}>}
+     */
+    private function access(): array
+    {
+        $effective = $this->effectivePermissions();
+        $fromRole = $this->activeRole()?->permissionNames() ?? [];
+        $direct = $this->permissions->pluck('name')->all();
+        $otherRoles = $this->roles->slice(1)->filter(fn (mixed $role): bool => $role instanceof Role)->values();
+        $extra = [];
+
+        foreach ($effective as $name) {
+            if (in_array($name, $fromRole, true)) {
+                continue;
+            }
+
+            $sources = array_values($otherRoles
+                ->filter(fn (Role $role): bool => in_array($name, $role->permissionNames(), true))
+                ->map(fn (Role $role): string => $role->label)
+                ->all());
+
+            if (in_array($name, $direct, true)) {
+                $sources[] = 'Asignación directa';
+            }
+
+            $extra[] = [
+                'value' => $name,
+                'label' => Permission::from($name)->label(),
+                'sources' => $sources,
+            ];
+        }
+
+        return ['effective_count' => count($effective), 'extra_grants' => $extra];
     }
 }

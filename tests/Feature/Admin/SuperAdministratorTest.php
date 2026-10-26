@@ -44,7 +44,7 @@ test('an administrator cannot create superadministrators nor other administrator
 
     $this->actingAs($administrator)
         ->get(route('admin.users.index'))
-        ->assertInertia(fn (Assert $page) => $page->where('roles', fn ($roles) => collect($roles)->firstWhere('is_root', true)['assignable'] === false));
+        ->assertInertia(fn (Assert $page) => $page->where('roles', fn ($roles) => collect($roles)->where('is_root', true)->isEmpty()));
 });
 
 test('an administrator cannot elevate anybody, themselves included, to the root role', function () {
@@ -52,9 +52,10 @@ test('an administrator cannot elevate anybody, themselves included, to the root 
     $agent = User::factory()->agent()->create();
     $root = role(DefaultRole::SuperAdministrator);
 
+    // The root role does not exist for them, so it is refused as an unknown role.
     $this->actingAs($administrator)
         ->put(route('admin.users.update', $agent), ['name' => $agent->name, 'email' => $agent->email, 'role_id' => $root->id])
-        ->assertSessionHasErrors(['role_id' => 'No puedes asignar el rol Superadministrador porque otorga más privilegios de los que administras.']);
+        ->assertSessionHasErrors(['role_id' => 'El valor seleccionado en rol no es válido.']);
 
     $this->actingAs($administrator)
         ->put(route('admin.users.update', $administrator), ['name' => $administrator->name, 'email' => $administrator->email, 'role_id' => $root->id])
@@ -70,16 +71,16 @@ test('an administrator cannot edit, delete or restore the root role', function (
 
     $this->actingAs($administrator)
         ->put(route('admin.roles.update', $root), ['label' => 'Tomado', 'scope' => 'global', 'permissions' => []])
-        ->assertForbidden();
-    $this->actingAs($administrator)->delete(route('admin.roles.destroy', $root))->assertForbidden();
-    $this->actingAs($administrator)->patch(route('admin.roles.restore', $root))->assertForbidden();
+        ->assertNotFound();
+    $this->actingAs($administrator)->delete(route('admin.roles.destroy', $root))->assertNotFound();
+    $this->actingAs($administrator)->patch(route('admin.roles.restore', $root))->assertNotFound();
 
     expect($root->refresh()->label)->toBe('Superadministrador');
 });
 
 test('reserved permissions are never granted to another role, not even by a superadministrator', function () {
     $superAdministrator = User::factory()->superAdministrator()->create();
-    $message = 'Estos permisos están reservados al superadministrador y no pueden otorgarse a otro rol: Importar contactos desde Excel/CSV.';
+    $message = 'Estos permisos no pueden otorgarse a este rol: Importar contactos desde Excel/CSV.';
 
     $this->actingAs($superAdministrator)
         ->post(route('admin.roles.store'), ['label' => 'Importadores', 'scope' => 'global', 'permissions' => ['contacts.import']])

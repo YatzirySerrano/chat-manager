@@ -51,7 +51,7 @@ class AddGroupParticipantsRequest extends FormRequest
                 $requested = $this->userIds();
 
                 if (array_diff($requested, app(TeamChatDirectory::class)->contactableAmong($actor, $requested)) !== []) {
-                    $validator->errors()->add('user_ids', 'Algunas personas elegidas no están disponibles para el chat interno o están fuera de tu alcance.');
+                    $validator->errors()->add('user_ids', 'Algunas personas elegidas no están disponibles para el chat interno o no puedes escribirles (solo a personas de tus departamentos, salvo que tu rol lo permita).');
                 }
             },
         ];

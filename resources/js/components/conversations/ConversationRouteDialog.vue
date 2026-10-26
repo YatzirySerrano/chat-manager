@@ -256,7 +256,7 @@ function agentLabel(agent: TransferAgentOption): string {
                         :error="errors.department_id"
                         :help="{
                             description:
-                                'Cola a la que pasará la conversación. Solo aparecen departamentos activos autorizados para la conexión.',
+                                'Departamento que recibirá la conversación. Solo aparecen departamentos activos que pueden atender esta conexión.',
                             howTo: 'Deja el departamento actual para cambiar solo de agente.',
                         }"
                     >
@@ -292,14 +292,14 @@ function agentLabel(agent: TransferAgentOption): string {
                             description:
                                 'Persona que quedará como responsable. Solo aparecen personas activas que pueden atender el departamento elegido, y si ya atienden su máximo de conversaciones.',
                             howTo: isTransfer
-                                ? 'Elige «Sin agente» para dejarla pendiente en la cola del departamento.'
+                                ? 'Elige «Sin agente» para que quede en «Pendientes» del departamento y la tome quien esté disponible.'
                                 : 'Elige a quien atenderá la conversación.',
                         }"
                         :hint="
                             agents.length === 0
                                 ? 'No hay personas que puedas elegir en este departamento.'
                                 : hasBlockedAgents
-                                  ? 'Quien está al límite de carga solo puede recibirla de quien asigna conversaciones. Transfiérela a la cola del departamento.'
+                                  ? 'Algunos agentes ya atienden el máximo de conversaciones permitido; solo quien asigna conversaciones puede darles más. También puedes enviarla a «Pendientes» del departamento.'
                                   : undefined
                         "
                     >
@@ -311,7 +311,7 @@ function agentLabel(agent: TransferAgentOption): string {
                             <option :value="NO_AGENT">
                                 {{
                                     isTransfer
-                                        ? 'Sin agente: queda pendiente en la cola'
+                                        ? 'Sin agente: queda en «Pendientes» del departamento'
                                         : 'Elige un agente'
                                 }}
                             </option>

@@ -58,6 +58,7 @@ import { useRecordHighlight } from '@/composables/useRecordHighlight';
 import { useViewMode } from '@/composables/useViewMode';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { recordActions } from '@/lib/recordActions';
+import { scopeIcon } from '@/lib/roles';
 import {
     destroy as destroyUser,
     index as usersIndex,
@@ -198,7 +199,7 @@ const deletion = useRecordDeletion<AdminUser>({
             ? {
                   title: `¿Eliminar a ${user.name}?`,
                   description:
-                      'El usuario perderá el acceso de inmediato y sus conversaciones abiertas regresarán a la cola de su departamento. Su historial se conserva y podrás restaurarlo.',
+                      'El usuario perderá el acceso de inmediato y sus conversaciones abiertas volverán a «Pendientes» de su departamento para que otro agente las tome. Su historial se conserva y podrás restaurarlo.',
               }
             : {
                   title: `¿Restaurar a ${user.name}?`,
@@ -225,9 +226,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
 <template>
     <Head title="Usuarios" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="usuarios"
             title="Usuarios"
@@ -239,19 +238,26 @@ function actionsFor(user: AdminUser): RecordAction[] {
                     report="users"
                     :filters="filters"
                 />
-                <Button v-if="can.create" @click="openCreate">
+                <Button
+                    v-if="can.create"
+                    data-tour="users.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nuevo usuario
                 </Button>
             </template>
         </PageHeader>
 
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div
+            class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            data-tour="users.stats"
+        >
             <StatCard
                 label="Activos"
                 :value="stats.active"
                 :icon="UserCheck"
-                hint="Dentro de tu alcance; pueden iniciar sesión"
+                hint="Usuarios que puedes administrar y que pueden entrar a la plataforma"
             />
             <StatCard
                 label="Con verificación en dos pasos"
@@ -295,6 +301,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
             <div
                 class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
+                data-tour="users.search"
             >
                 <div class="relative order-1 min-w-0 flex-1">
                     <Search
@@ -417,7 +424,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="user in users.data"
+                        v-for="(user, position) in users.data"
                         :key="user.id"
                         class="transition-colors duration-700"
                         :class="[
@@ -494,7 +501,16 @@ function actionsFor(user: AdminUser): RecordAction[] {
                                     +{{ user.departments.length - 3 }}
                                 </span>
                             </div>
-                            <span v-else class="text-xs text-muted-foreground">
+                            <span
+                                v-else
+                                class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                            >
+                                <component
+                                    :is="scopeIcon('global')"
+                                    v-if="user.role?.is_root"
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
                                 {{
                                     user.role?.is_root
                                         ? 'Toda la organización'
@@ -522,6 +538,11 @@ function actionsFor(user: AdminUser): RecordAction[] {
                         </TableCell>
                         <TableCell class="w-px pr-5 text-right">
                             <RecordActions
+                                :data-tour="
+                                    position === 0
+                                        ? 'users.row-actions'
+                                        : undefined
+                                "
                                 :actions="actionsFor(user)"
                                 :record="user.name"
                                 :busy="deletion.processingId === user.id"
@@ -532,7 +553,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
             </Table>
 
             <RecordGrid v-else-if="users.data.length > 0">
-                <li v-for="user in users.data" :key="user.id">
+                <li v-for="(user, position) in users.data" :key="user.id">
                     <RecordCard
                         :muted="user.is_deleted"
                         :highlighted="highlightedId === user.id"
@@ -587,7 +608,16 @@ function actionsFor(user: AdminUser): RecordAction[] {
                                 +{{ user.departments.length - 3 }}
                             </span>
                         </div>
-                        <p v-else class="text-xs text-muted-foreground">
+                        <p
+                            v-else
+                            class="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                        >
+                            <component
+                                :is="scopeIcon('global')"
+                                v-if="user.role?.is_root"
+                                class="size-3.5"
+                                aria-hidden="true"
+                            />
                             {{
                                 user.role?.is_root
                                     ? 'Toda la organización'
@@ -605,6 +635,11 @@ function actionsFor(user: AdminUser): RecordAction[] {
                         </template>
                         <template #actions>
                             <RecordActions
+                                :data-tour="
+                                    position === 0
+                                        ? 'users.row-actions'
+                                        : undefined
+                                "
                                 :actions="actionsFor(user)"
                                 :record="user.name"
                                 :busy="deletion.processingId === user.id"

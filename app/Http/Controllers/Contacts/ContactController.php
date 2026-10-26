@@ -26,6 +26,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\ResolveContactOrigin;
+use App\Support\ProtectedAccounts;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
@@ -289,7 +290,7 @@ class ContactController extends Controller
     }
 
     /**
-     * @return list<array{id: int, body: string, author: array{id: int, name: string}|null, created_at: string|null}>
+     * @return list<array{id: int, body: string, author: array{id: int|null, name: string}|null, created_at: string|null}>
      */
     private function notes(Contact $contact): array
     {
@@ -300,7 +301,7 @@ class ContactController extends Controller
             ->map(fn (ContactNote $note): array => [
                 'id' => $note->id,
                 'body' => $note->body,
-                'author' => $note->author === null ? null : ['id' => $note->author->id, 'name' => $note->author->name],
+                'author' => $note->author === null ? null : ['id' => app(ProtectedAccounts::class)->idForRequest($note->author, request()), 'name' => (string) app(ProtectedAccounts::class)->nameForRequest($note->author, request())],
                 'created_at' => $note->created_at?->toIso8601String(),
             ])
             ->all());
@@ -369,8 +370,8 @@ class ContactController extends Controller
                     'is_active' => $conversation->department->is_active,
                 ],
                 'assignee' => $conversation->assignee === null ? null : [
-                    'id' => $conversation->assignee->id,
-                    'name' => $conversation->assignee->name,
+                    'id' => app(ProtectedAccounts::class)->idFor($conversation->assignee, $actor),
+                    'name' => app(ProtectedAccounts::class)->nameFor($conversation->assignee, $actor),
                 ],
                 'created_at' => $conversation->created_at?->toIso8601String(),
                 'last_message_at' => $conversation->last_message_at?->toIso8601String(),

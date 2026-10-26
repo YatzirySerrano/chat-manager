@@ -30,6 +30,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useEmailAvailability } from '@/composables/useEmailAvailability';
 import { useFormValidation } from '@/composables/useFormValidation';
+import { scopeIcon } from '@/lib/roles';
 import {
     email,
     matches,
@@ -423,12 +424,61 @@ function submit(): void {
                 </div>
                 <p v-if="selectedRole" class="text-xs text-muted-foreground">
                     {{ selectedRole.description ?? 'Rol personalizado.' }}
-                    Alcance:
-                    <strong class="font-medium text-foreground">{{
-                        selectedRole.scope_label
-                    }}</strong
+                    Información que ve:
+                    <span
+                        class="inline-flex items-center gap-1 align-bottom font-medium text-foreground"
+                    >
+                        <component
+                            :is="scopeIcon(selectedRole.scope)"
+                            class="size-3.5"
+                            aria-hidden="true"
+                        />{{ selectedRole.scope_label }}</span
                     >.
                 </p>
+                <div
+                    v-if="user"
+                    class="space-y-1.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground"
+                >
+                    <p v-if="user.access.effective_count === 0">
+                        Ahora no puede ejercer ningún permiso.
+                    </p>
+                    <p v-else>
+                        Puede ejercer
+                        <strong class="font-medium text-foreground">{{
+                            user.access.effective_count
+                        }}</strong>
+                        {{
+                            user.access.effective_count === 1
+                                ? 'permiso'
+                                : 'permisos'
+                        }}.
+                        <template v-if="user.access.extra_grants.length === 0">
+                            Todos vienen de su rol<template v-if="user.role">
+                                «{{ user.role.label }}»</template
+                            >.
+                        </template>
+                        <template v-else>
+                            Vienen de su rol<template v-if="user.role">
+                                «{{ user.role.label }}»</template
+                            >, salvo estos, que conserva aunque se retiren de
+                            ese rol:
+                        </template>
+                    </p>
+                    <ul
+                        v-if="user.access.extra_grants.length > 0"
+                        class="space-y-0.5"
+                    >
+                        <li
+                            v-for="grant in user.access.extra_grants"
+                            :key="grant.value"
+                        >
+                            <span class="text-foreground">{{
+                                grant.label
+                            }}</span>
+                            · {{ grant.sources.join(' y ') }}
+                        </li>
+                    </ul>
+                </div>
                 <InputError :message="roleChangeError" />
             </section>
 
@@ -477,8 +527,8 @@ function submit(): void {
                         </Label>
                     </div>
                     <p class="text-xs text-muted-foreground">
-                        El alcance del rol se aplica sobre los departamentos
-                        seleccionados.
+                        Esta persona solo verá información de los departamentos
+                        que marques.
                     </p>
                     <InputError :message="validation.error('department_ids')" />
                 </template>
@@ -488,7 +538,7 @@ function submit(): void {
                 >
                     {{
                         selectedRole
-                            ? 'Este rol tiene alcance sobre toda la organización; no necesita departamentos.'
+                            ? 'Este rol ya ve toda la organización; no hace falta elegir departamentos.'
                             : 'Selecciona un rol para elegir sus departamentos.'
                     }}
                 </p>
@@ -502,7 +552,7 @@ function submit(): void {
                             'Máximo de conversaciones abiertas o en espera que esta persona puede tener para aceptar o recibir automáticamente una nueva. Se cuentan las de todos sus departamentos.',
                         howTo: 'Déjalo vacío para usar el límite del departamento o, si no tiene, el de la plataforma.',
                         warning:
-                            'Bajarlo nunca le quita conversaciones; subirlo le reparte las que esperaban en la cola.',
+                            'Bajarlo nunca le quita conversaciones; subirlo le reparte de inmediato las que estaban en «Pendientes».',
                     }"
                 >
                     <Input

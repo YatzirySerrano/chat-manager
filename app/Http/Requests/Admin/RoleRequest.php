@@ -8,20 +8,24 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\PrivilegeGuard;
 use Closure;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class RoleRequest extends FormRequest
 {
-    public function authorize(): bool
+    /**
+     * A role the actor may not know about (the root role, for anyone but
+     * the root authority) answers as if it did not exist.
+     */
+    public function authorize(): Response
     {
         $role = $this->route('role');
 
-        return $role instanceof Role
-            ? ($this->user()?->can('update', $role) ?? false)
-            : ($this->user()?->can('create', Role::class) ?? false);
+        return $role instanceof Role ? Gate::inspect('update', $role) : Gate::inspect('create', Role::class);
     }
 
     protected function prepareForValidation(): void
@@ -58,7 +62,7 @@ class RoleRequest extends FormRequest
                     );
 
                     if ($reserved !== []) {
-                        $fail('Estos permisos están reservados al superadministrador y no pueden otorgarse a otro rol: '.$this->labels($reserved).'.');
+                        $fail('Estos permisos no pueden otorgarse a este rol: '.$this->labels($reserved).'.');
                     }
                 },
             ],
@@ -85,7 +89,7 @@ class RoleRequest extends FormRequest
                 $role = $this->route('role');
 
                 if (! $guard->canGrantScope($actor, $scope)) {
-                    $validator->errors()->add('scope', 'No puedes otorgar un alcance más amplio que el tuyo.');
+                    $validator->errors()->add('scope', 'No puedes dar a un rol acceso a más información de la que tú puedes ver.');
                 }
 
                 $notGrantable = $guard->canGrantPermissions($actor, $permissions) ? [] : array_diff($permissions, $actor->effectivePermissions());
@@ -104,7 +108,7 @@ class RoleRequest extends FormRequest
 
                 if ($role instanceof Role && $role->is_root) {
                     if ($scope !== DataScope::Global) {
-                        $validator->errors()->add('scope', 'El superadministrador siempre tiene alcance sobre toda la organización.');
+                        $validator->errors()->add('scope', 'El superadministrador siempre ve toda la organización; no se puede cambiar su alcance.');
                     }
 
                     $missing = array_diff(array_column(Permission::rootCapabilities(), 'value'), $permissions);

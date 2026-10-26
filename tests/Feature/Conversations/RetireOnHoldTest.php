@@ -50,7 +50,7 @@ test('a legacy on_hold conversation still loads, keeps its agent and counts as a
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversation.status', 'on_hold')
-            ->where('conversation.status_label', 'En espera (anterior)')
+            ->where('conversation.status_label', 'En espera (estado ya no usado)')
             ->missing('conversation.can.hold')
             ->missing('conversation.can.resume')
             ->missing('conversation.on_hold_reason'));

@@ -1,4 +1,8 @@
-import { formatDateTime } from '@/lib/format';
+import {
+    calendarDay,
+    calendarDayLabel,
+} from '@/components/conversations/dayGroups';
+import { formatDateTime, platformTimezone } from '@/lib/format';
 import type {
     ConversationMessagePreview,
     MessageStatusValue,
@@ -130,37 +134,19 @@ export function previewText(message: ConversationMessagePreview): string {
         : typeLabel(message.type);
 }
 
-/** Calendar day of an instant in the platform time zone (grouping key). */
+/** Calendar day ("YYYY-MM-DD") of an instant in the platform time zone. */
 export function dayKey(iso: string | null | undefined): string {
-    return formatDateTime(iso, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    });
+    return calendarDay(iso, platformTimezone()) ?? '';
+}
+
+/** Today in the platform time zone. */
+export function todayKey(): string {
+    return calendarDay(new Date(), platformTimezone()) ?? '';
 }
 
 /** "Hoy", "Ayer" or the full date, for day separators. */
 export function dayLabel(iso: string | null | undefined): string {
-    const key = dayKey(iso);
-    const today = dayKey(new Date().toISOString());
-    const yesterday = dayKey(
-        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    );
-
-    if (key === today) {
-        return 'Hoy';
-    }
-
-    if (key === yesterday) {
-        return 'Ayer';
-    }
-
-    return formatDateTime(iso, {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    });
+    return calendarDayLabel(dayKey(iso), todayKey());
 }
 
 export function formatTime(iso: string | null | undefined): string {

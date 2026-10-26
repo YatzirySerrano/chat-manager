@@ -76,9 +76,7 @@ async function copy(value: string, label: string): Promise<void> {
 <template>
     <Head :title="title" />
 
-    <div
-        class="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell [--page-max:56rem]">
         <PageHeader
             help="conexiones"
             show-title
@@ -110,7 +108,7 @@ async function copy(value: string, label: string): Promise<void> {
         <div
             v-if="!configured"
             role="alert"
-            class="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"
+            class="flex gap-3 rounded-xl border border-transparent bg-warning-soft p-4 text-sm"
         >
             <TriangleAlert
                 class="mt-0.5 size-5 shrink-0 text-warning"
@@ -129,10 +127,10 @@ async function copy(value: string, label: string): Promise<void> {
                     <summary
                         class="cursor-pointer font-medium select-none pointer-coarse:py-2"
                     >
-                        Detalles para el administrador del servidor
+                        Detalles técnicos (para el equipo técnico)
                     </summary>
                     <p class="mt-1 text-muted-foreground">
-                        Faltan estas variables de entorno:
+                        Faltan estas variables de entorno en el servidor:
                         <span class="font-mono break-all text-foreground">{{
                             missing.join(', ')
                         }}</span

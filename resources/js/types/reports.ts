@@ -1,3 +1,7 @@
+import type { AnalyticsActivity, ChannelChartRow } from './charts';
+
+export * from './charts';
+
 export type AnalyticsPreset =
     | 'today'
     | 'yesterday'
@@ -88,6 +92,8 @@ export type AnalyticsBreakdownRow = {
     resolved: number;
     first_attention_seconds: number | null;
     first_response_seconds: number | null;
+    /** Conversations with a measured first human response (base of the average). */
+    first_response_samples: number;
     resolution_seconds: number | null;
     transfers: number;
     reopened: number;
@@ -117,8 +123,12 @@ export type OperationalAnalytics = {
     };
     statuses: { status: string; label: string; count: number }[];
     trend: { granularity: 'day' | 'month'; points: AnalyticsTrendPoint[] };
+    /** Received/attended and first response per hour (one-day periods), day or month. */
+    activity: AnalyticsActivity;
     heatmap: { max: number; cells: number[][] };
     by_agent: AnalyticsBreakdownRow[];
     by_department: AnalyticsBreakdownRow[];
     by_connection: AnalyticsBreakdownRow[];
+    /** Derived from by_connection; channels without conversations left out. */
+    by_channel: ChannelChartRow[];
 };

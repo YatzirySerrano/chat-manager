@@ -27,6 +27,7 @@ use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
 use App\Support\Attachments\ChannelAttachmentPolicy;
 use App\Support\Personalization\ViewerAlias;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\JsonResponse;
@@ -203,9 +204,14 @@ class ConversationController extends Controller
             // Counters of every chip in one aggregate query, with the same
             // filters as the list and always within the actor's reach.
             'counts' => fn (): array => $inbox->counts($actor, $filters),
+            // The reach behind the views, so the screen names them for what
+            // they hold ("Todas las conversaciones", "Conversaciones de mis
+            // departamentos"...).
             'inbox' => fn (): array => [
                 'personal' => $filters['personal'],
                 'views' => $views,
+                'scope' => $actor->dataScope()?->value,
+                'supervises' => $this->access->supervisesReach($actor),
             ],
             // Conversations with messages unread for the viewer in the current
             // view, filters and status (never closed ones): what the "Unread"
@@ -213,7 +219,7 @@ class ConversationController extends Controller
             'unreadCount' => fn (): int => $inbox->handle($actor, [...$filters, 'unread' => true])->reorder()->count(),
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
-            'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
+            'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->withoutProtectedFor($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'connections' => fn (): array => array_values($connections()->map(fn (Connection $connection): array => [
                 'id' => $connection->id,
                 'name' => $connection->name,
@@ -487,7 +493,7 @@ class ConversationController extends Controller
                     'color' => $previous->department->color->value,
                     'is_active' => $previous->department->is_active,
                 ],
-                'assignee' => $previous->assignee?->name,
+                'assignee' => app(ProtectedAccounts::class)->nameFor($previous->assignee, $actor),
                 'created_at' => $previous->created_at?->toIso8601String(),
                 'closed_at' => $previous->closed_at?->toIso8601String(),
             ])->all()),
@@ -495,7 +501,7 @@ class ConversationController extends Controller
                 ? array_values($contact->notes()->with('author:id,name')->latest('id')->limit(3)->get()->map(fn (ContactNote $note): array => [
                     'id' => $note->id,
                     'body' => $note->body,
-                    'author' => $note->author?->name,
+                    'author' => app(ProtectedAccounts::class)->nameFor($note->author, $actor),
                     'created_at' => $note->created_at?->toIso8601String(),
                 ])->all())
                 : null,

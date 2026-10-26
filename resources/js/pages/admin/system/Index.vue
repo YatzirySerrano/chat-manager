@@ -160,15 +160,15 @@ const confirmCopy = computed(() => {
 
     return pending.value.kind === 'retry'
         ? {
-              title: `¿Reintentar ${pending.value.job.job}?`,
+              title: `¿Reintentar esta tarea (${pending.value.job.job})?`,
               description:
-                  'El trabajo vuelve a su cola original con los intentos reiniciados. Solo se permite para trabajos que pueden repetirse sin duplicar efectos. La acción queda registrada en auditoría.',
+                  'La tarea se vuelve a programar desde cero. Solo se permite para tareas que pueden repetirse sin hacer nada dos veces. La acción queda registrada en auditoría.',
               label: 'Reintentar',
           }
         : {
-              title: `¿Descartar ${pending.value.job.job}?`,
+              title: `¿Descartar esta tarea (${pending.value.job.job})?`,
               description:
-                  'El trabajo se elimina de la lista de fallidos y no se volverá a ejecutar. La acción queda registrada en auditoría.',
+                  'La tarea se quita de la lista de tareas con error y no se volverá a ejecutar. La acción queda registrada en auditoría.',
               label: 'Descartar',
           };
 });
@@ -185,6 +185,31 @@ function probeConnection(id: number): void {
     });
 }
 
+/**
+ * A check summary is a plain sentence, optionally followed by "Detalle
+ * técnico: …" for the technical team; that part goes in a folded block.
+ */
+function splitCheckSummary(summary: string): {
+    message: string;
+    technical: string | null;
+} {
+    const [message, technical] = summary.split(/\s*Detalle técnico:\s*/u, 2);
+
+    return { message, technical: technical ?? null };
+}
+
+/** Readable name of the configured WhatsApp transport. */
+function transportLabel(transport: string): string {
+    switch (transport) {
+        case 'meta':
+            return 'Real (Meta)';
+        case 'simulated':
+            return 'Modo de prueba';
+        default:
+            return 'Apagado';
+    }
+}
+
 function age(seconds: number | null): string {
     if (seconds === null) {
         return '—';
@@ -197,12 +222,11 @@ function age(seconds: number | null): string {
 <template>
     <Head title="Sistema" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
+            help="sistema"
             title="Sistema"
-            description="Estado técnico de la plataforma: salud de los servicios, colas, trabajos fallidos y conexiones. Solo información técnica, sin contenido de clientes."
+            description="Estado técnico de la plataforma: servicios, tareas en segundo plano, tareas con error y conexiones. Solo información técnica, sin contenido de clientes."
         >
             <template #actions>
                 <span class="text-xs text-muted-foreground">
@@ -212,6 +236,7 @@ function age(seconds: number | null): string {
                     variant="outline"
                     size="sm"
                     :disabled="refreshing"
+                    data-tour="system.refresh"
                     @click="refreshAll"
                 >
                     <Spinner v-if="refreshing" />
@@ -223,32 +248,33 @@ function age(seconds: number | null): string {
 
         <SurfaceCard
             body-class="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:gap-4"
+            data-tour="system.overall"
         >
             <HealthStatusBadge :status="overall" />
             <p class="text-sm">{{ overallCopy }}</p>
         </SurfaceCard>
 
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-                label="Trabajos pendientes"
+                label="Tareas pendientes"
                 :value="queuesAsync ? totalPending : null"
                 :icon="Inbox"
-                :hint="`Conexión de colas: ${queueConnection}`"
-                unavailable-label="Ejecución inmediata (sin workers)"
+                :hint="`Sistema de tareas: ${queueConnection}`"
+                unavailable-label="Las tareas se ejecutan al momento (sin procesos en segundo plano)"
             />
             <StatCard
                 label="Espera más larga"
                 :value="queuesAsync ? age(oldestAge) : null"
                 :icon="Clock"
-                hint="Trabajo pendiente más antiguo"
+                hint="Tarea pendiente más antigua"
                 unavailable-label="No aplica"
             />
             <StatCard
-                label="Trabajos fallidos"
+                label="Tareas con error"
                 :value="failedJobs ? failedJobs.meta.total : null"
                 :icon="ListX"
-                hint="En la lista de fallidos"
-                unavailable-label="No se guardan en la base"
+                hint="En la lista de tareas con error"
+                unavailable-label="No disponible en esta instalación"
             />
             <StatCard
                 label="Programador"
@@ -264,8 +290,9 @@ function age(seconds: number | null): string {
         </div>
 
         <SurfaceCard
+            data-tour="system.checks"
             title="Verificaciones"
-            description="Las fallas hacen que /health/ready responda «fail»; las advertencias solo se muestran aquí."
+            description="Una falla marca la plataforma como «no lista» ante el monitoreo externo; las advertencias solo se muestran aquí."
         >
             <ul class="divide-y">
                 <li
@@ -279,21 +306,32 @@ function age(seconds: number | null): string {
                             check.label
                         }}</span>
                     </div>
-                    <p class="text-sm text-muted-foreground">
-                        {{ check.summary }}
-                    </p>
+                    <div class="text-sm text-muted-foreground">
+                        <p>{{ splitCheckSummary(check.summary).message }}</p>
+                        <details
+                            v-if="splitCheckSummary(check.summary).technical"
+                            class="mt-1 text-xs"
+                        >
+                            <summary class="cursor-pointer select-none">
+                                Detalles técnicos (para el equipo técnico)
+                            </summary>
+                            <span class="font-mono break-words">{{
+                                splitCheckSummary(check.summary).technical
+                            }}</span>
+                        </details>
+                    </div>
                 </li>
             </ul>
         </SurfaceCard>
 
         <SurfaceCard
-            title="Colas"
-            description="Una cola por responsabilidad; cada grupo tiene su propio worker en producción."
+            title="Tareas en segundo plano"
+            description="Las tareas en segundo plano se agrupan por tipo; cada grupo tiene su propio proceso."
         >
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead>Cola</TableHead>
+                        <TableHead>Grupo de tareas</TableHead>
                         <TableHead class="text-right">Pendientes</TableHead>
                         <TableHead class="text-right">Programados</TableHead>
                         <TableHead class="text-right">En proceso</TableHead>
@@ -339,19 +377,23 @@ function age(seconds: number | null): string {
         </SurfaceCard>
 
         <SurfaceCard
-            title="Trabajos fallidos"
-            description="Solo los trabajos que pueden repetirse sin duplicar efectos admiten reintento. Los mensajes de WhatsApp se reintentan desde la conversación."
+            data-tour="system.failed"
+            title="Tareas con error"
+            description="Solo las tareas que pueden repetirse sin hacer nada dos veces admiten reintento. Los mensajes de WhatsApp se reintentan desde la conversación."
         >
             <template v-if="failedJobs && failedQueues.length > 0" #actions>
                 <Select
                     :model-value="queueFilter"
                     @update:model-value="applyQueueFilter"
                 >
-                    <SelectTrigger class="w-48" aria-label="Filtrar por cola">
-                        <SelectValue placeholder="Todas las colas" />
+                    <SelectTrigger
+                        class="w-48"
+                        aria-label="Filtrar por grupo de tareas"
+                    >
+                        <SelectValue placeholder="Todos los grupos" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem :value="ALL">Todas las colas</SelectItem>
+                        <SelectItem :value="ALL">Todos los grupos</SelectItem>
                         <SelectItem
                             v-for="queue in failedQueues"
                             :key="queue"
@@ -365,23 +407,32 @@ function age(seconds: number | null): string {
             <div v-if="failedJobs === null" class="p-5">
                 <EmptyState
                     :icon="CircleAlert"
-                    title="Los trabajos fallidos no se guardan en la base de datos"
-                    description="Configura QUEUE_FAILED_DRIVER=database-uuids para revisarlos desde aquí."
-                />
+                    title="Las tareas con error no se guardan en esta instalación"
+                    description="Pide al equipo técnico que guarde las tareas con error para poder revisarlas aquí."
+                >
+                    <details class="text-xs text-muted-foreground">
+                        <summary class="cursor-pointer select-none">
+                            Detalles técnicos (para el equipo técnico)
+                        </summary>
+                        <span class="font-mono break-words"
+                            >QUEUE_FAILED_DRIVER=database-uuids</span
+                        >
+                    </details>
+                </EmptyState>
             </div>
             <div v-else-if="failedJobs.data.length === 0" class="p-5">
                 <EmptyState
                     :icon="ListX"
-                    title="No hay trabajos fallidos"
-                    description="Cuando un trabajo agote sus intentos aparecerá aquí con la primera línea del error."
+                    title="No hay tareas con error"
+                    description="Cuando una tarea agote sus intentos aparecerá aquí con la primera línea del error."
                 />
             </div>
             <template v-else>
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Trabajo</TableHead>
-                            <TableHead>Cola</TableHead>
+                            <TableHead>Tarea</TableHead>
+                            <TableHead>Grupo</TableHead>
                             <TableHead>Falló</TableHead>
                             <TableHead>Error</TableHead>
                             <TableHead v-if="canManage" class="text-right"
@@ -441,7 +492,7 @@ function age(seconds: number | null): string {
                 <div class="border-t px-5 py-3">
                     <DataPagination
                         :meta="failedJobs.meta"
-                        noun="trabajos fallidos"
+                        noun="tareas con error"
                     />
                 </div>
             </template>
@@ -450,7 +501,7 @@ function age(seconds: number | null): string {
         <SurfaceCard
             v-if="connections !== null"
             title="Conexiones de WhatsApp"
-            description="Estado registrado a partir de la última evidencia (webhooks, envíos y verificaciones); no consulta a Meta en cada visita. «Probar» verifica las credenciales con Meta."
+            description="Estado según lo último que pasó (avisos de Meta, envíos y verificaciones); no consulta a Meta en cada visita. «Probar» comprueba con Meta que los datos de la conexión siguen siendo válidos."
         >
             <div v-if="connections.length === 0" class="p-5">
                 <EmptyState
@@ -463,7 +514,7 @@ function age(seconds: number | null): string {
                     <TableRow>
                         <TableHead>Conexión</TableHead>
                         <TableHead>Estado</TableHead>
-                        <TableHead>Último webhook</TableHead>
+                        <TableHead>Último aviso de Meta</TableHead>
                         <TableHead>Último error</TableHead>
                         <TableHead class="text-right">Acciones</TableHead>
                     </TableRow>
@@ -545,14 +596,14 @@ function age(seconds: number | null): string {
                 title="Errores recientes"
                 :description="
                     recentErrors.file
-                        ? `Últimas entradas de nivel error en ${recentErrors.file} (primera línea, con datos sensibles ocultos).`
-                        : 'No hay archivos de registro todavía.'
+                        ? `Últimos errores registrados (solo la primera línea; los datos sensibles se ocultan). Archivo: ${recentErrors.file}.`
+                        : 'Todavía no se ha registrado ningún error.'
                 "
             >
                 <div v-if="recentErrors.entries.length === 0" class="p-5">
                     <EmptyState
                         title="Sin errores recientes"
-                        description="No hay entradas de nivel error al final del registro."
+                        description="No se han registrado errores recientemente."
                     />
                 </div>
                 <ul v-else class="divide-y">
@@ -563,7 +614,7 @@ function age(seconds: number | null): string {
                     >
                         <div class="flex items-center gap-2 text-xs">
                             <span
-                                class="rounded bg-destructive/10 px-1.5 py-0.5 font-medium text-destructive uppercase"
+                                class="rounded-sm bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-soft-foreground uppercase"
                                 >{{ entry.level }}</span
                             >
                             <span class="text-muted-foreground">{{
@@ -592,19 +643,20 @@ function age(seconds: number | null): string {
                     <dd class="font-medium">{{ environment.php }}</dd>
                     <dt class="text-muted-foreground">Laravel</dt>
                     <dd class="font-medium">{{ environment.laravel }}</dd>
-                    <dt class="text-muted-foreground">Caché</dt>
+                    <dt class="text-muted-foreground">Memoria temporal</dt>
                     <dd class="font-medium">{{ environment.cache }}</dd>
                     <dt class="text-muted-foreground">Tiempo real</dt>
                     <dd class="font-medium">{{ environment.broadcasting }}</dd>
                     <dt class="text-muted-foreground">Envío WhatsApp</dt>
                     <dd class="font-medium">
-                        {{ environment.whatsapp_transport }}
+                        {{ transportLabel(environment.whatsapp_transport) }}
                         <span
                             v-if="
                                 environment.whatsapp_transport === 'simulated'
                             "
                             class="block text-xs text-amber-700 dark:text-amber-300"
-                            >Simulación: no se envía a Meta</span
+                            >Modo de prueba: los mensajes no salen a
+                            WhatsApp</span
                         >
                     </dd>
                 </dl>

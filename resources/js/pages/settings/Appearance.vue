@@ -18,9 +18,8 @@ defineOptions({
 <template>
     <Head title="Apariencia" />
 
-    <h1 class="sr-only">Apariencia</h1>
-
     <div class="space-y-6">
+        <h2 class="mb-1 text-lg font-semibold">Apariencia</h2>
         <p class="text-sm text-pretty text-muted-foreground">
             Elige el tema de la interfaz.
         </p>

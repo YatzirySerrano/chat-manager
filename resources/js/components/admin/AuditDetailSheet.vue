@@ -199,7 +199,7 @@ const technicalJson = computed(() =>
                                     technicalJson !== '{}' &&
                                     technicalJson !== '[]'
                                 "
-                                class="max-h-64 overflow-auto rounded bg-background p-2 font-mono text-[11px] leading-snug"
+                                class="max-h-64 overflow-auto rounded bg-background p-2 font-mono text-xs leading-snug"
                                 >{{ technicalJson }}</pre>
                         </CollapsibleContent>
                     </Collapsible>

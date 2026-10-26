@@ -136,7 +136,7 @@ const reference = computed(() => {
 const referenceUrl = computed(() => safeUrl(props.current?.source_url ?? null));
 
 const sourceTone: Record<DataSource['kind'], string> = {
-    confirmed: 'bg-success/10 text-success',
+    confirmed: 'bg-success-soft text-success-soft-foreground',
     declared: 'bg-muted text-muted-foreground',
     inferred: 'bg-muted text-muted-foreground',
 };
@@ -265,7 +265,7 @@ const sourceTone: Record<DataSource['kind'], string> = {
                         title="Fuente del dato"
                         :help="{
                             description:
-                                'Indica de dónde proviene la procedencia mostrada.',
+                                'Indica quién informó esta procedencia: Meta (confirmado) o una persona del equipo (declarado).',
                             howTo: '«Confirmado por Meta»: lo envió Meta al llegar el mensaje (por ejemplo, desde un anuncio). «Declarado por»: lo registró manualmente un administrador según lo que dijo la persona. «Inferido»: lo dedujo el sistema sin confirmación.',
                             warning:
                                 'Un dato declarado nunca se convierte en «Confirmado por Meta» y no reemplaza una procedencia confirmada.',
@@ -295,8 +295,8 @@ const sourceTone: Record<DataSource['kind'], string> = {
                     </span>
                 </dd>
                 <dd v-else class="text-xs text-muted-foreground">
-                    No hay evidencia de cómo llegó este contacto. Cuando escriba
-                    desde un anuncio de Meta se registrará automáticamente.
+                    Aún no sabemos cómo nos conoció este contacto. Si escribe
+                    desde un anuncio de Meta, se registrará automáticamente.
                 </dd>
             </div>
         </dl>
@@ -341,7 +341,7 @@ const sourceTone: Record<DataSource['kind'], string> = {
                     title="Registrar procedencia declarada"
                     :help="{
                         description:
-                            'Solo para administradores con alcance global, cuando la persona indicó cómo nos conoció y no hay evidencia del proveedor.',
+                            'Úsalo cuando la persona te dijo cómo nos conoció y Meta no lo informó. Solo administradores de toda la organización.',
                         howTo: 'Registra únicamente lo que la persona dijo. Quedará como «Declarado por» con tu nombre; el historial anterior se conserva.',
                         warning:
                             'Lo declarado nunca se muestra como «Confirmado por Meta» ni reemplaza una procedencia confirmada.',

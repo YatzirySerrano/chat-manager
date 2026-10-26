@@ -23,6 +23,7 @@ use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Support\PhoneNumber;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -47,9 +48,18 @@ class ConversationsReport extends ReportDefinition
      */
     private const VIEW_LABELS = [
         ConversationInboxQuery::VIEW_GENERAL => 'Bandeja general (pendientes por aceptar y en atención)',
-        ConversationInboxQuery::VIEW_ALL => 'Todas las de tu alcance',
         ConversationInboxQuery::VIEW_MINE => 'Asignadas a ti',
-        ConversationInboxQuery::VIEW_QUEUE => 'En cola para aceptar',
+        ConversationInboxQuery::VIEW_QUEUE => 'Pendientes por aceptar',
+    ];
+
+    /**
+     * Name of the "all" view after the actor's reach, as the inbox shows it.
+     *
+     * @var array<string, string>
+     */
+    private const ALL_VIEW_LABELS = [
+        'global' => 'Todas las conversaciones',
+        'departments' => 'Conversaciones de mis departamentos',
     ];
 
     public function __construct(
@@ -98,9 +108,11 @@ class ConversationsReport extends ReportDefinition
         $actor = $context->actor;
         // A personal inbox reaches only its own conversations: "all" of them
         // are the ones assigned to the actor.
-        $descriptions = ['Vista: '.($filters['personal'] && $filters['view'] === ConversationInboxQuery::VIEW_ALL
-            ? self::VIEW_LABELS[ConversationInboxQuery::VIEW_MINE]
-            : self::VIEW_LABELS[$filters['view']])];
+        $descriptions = ['Vista: '.match (true) {
+            $filters['view'] !== ConversationInboxQuery::VIEW_ALL => self::VIEW_LABELS[$filters['view']],
+            $filters['personal'] => self::VIEW_LABELS[ConversationInboxQuery::VIEW_MINE],
+            default => self::ALL_VIEW_LABELS[$actor->dataScope()->value ?? ''] ?? self::VIEW_LABELS[ConversationInboxQuery::VIEW_MINE],
+        }];
 
         $descriptions[] = 'Estado: '.match ($filters['status']) {
             'active' => 'Sin cerrar',
@@ -117,7 +129,7 @@ class ConversationsReport extends ReportDefinition
         if ($filters['agent'] !== null) {
             $descriptions[] = 'Agente: '.($filters['agent'] === ConversationInboxQuery::NONE
                 ? 'Sin agente'
-                : (User::query()->visibleTo($actor)->whereKey((int) $filters['agent'])->value('name') ?? 'No disponible'));
+                : (User::query()->visibleTo($actor)->withoutProtectedFor($actor)->whereKey((int) $filters['agent'])->value('name') ?? 'No disponible'));
         }
 
         if ($filters['connection'] !== null) {
@@ -134,7 +146,7 @@ class ConversationsReport extends ReportDefinition
             $names = Tag::query()->whereKey($tagIds)->orderBy('name')->pluck('name')->all();
             $matchesAll = ($filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY) === ConversationInboxQuery::TAG_MATCH_ALL;
             $descriptions[] = (count($names) > 1
-                ? ($matchesAll ? 'Etiquetas (todas, Y): ' : 'Etiquetas (cualquiera, O): ')
+                ? ($matchesAll ? 'Con todas estas etiquetas a la vez: ' : 'Con al menos una de estas etiquetas: ')
                 : 'Etiqueta: ').implode(', ', $names === [] ? ['No disponible'] : $names);
         }
 
@@ -177,7 +189,7 @@ class ConversationsReport extends ReportDefinition
             new Column('last_message_at', 'Último mensaje', ColumnType::DateTime, width: 15),
             new Column('last_inbound_at', 'Último del cliente', ColumnType::DateTime, width: 15),
             new Column('closed_at', 'Cerrada el', ColumnType::DateTime, width: 15),
-            new Column('window', 'Ventana 24 h', width: 14),
+            new Column('window', 'Ventana de 24 h para responder', width: 14),
         ];
     }
 
@@ -192,7 +204,7 @@ class ConversationsReport extends ReportDefinition
             'phone' => PhoneNumber::format($record->contact->phone_e164),
             'status' => $record->status->label(),
             'department' => $record->department->name ?? 'Sin departamento',
-            'agent' => $record->assignee->name ?? 'Sin asignar',
+            'agent' => app(ProtectedAccounts::class)->nameFor($record->assignee, $context->actor) ?? 'Sin asignar',
             'connection' => $record->channelConnection->name,
             'created_at' => $record->created_at,
             'last_message_at' => $record->last_message_at,

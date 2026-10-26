@@ -62,6 +62,26 @@ class ConversationAccess
      */
     private static ?WeakMap $rememberedPassage = null;
 
+    /**
+     * Conversations outside the supervisor's departments that passed through
+     * them, remembered per User instance (outsidePassageIds()).
+     *
+     * @var WeakMap<User, array{key: string, until: float, ids: list<int>|null}>|null
+     */
+    private static ?WeakMap $rememberedOutsidePassages = null;
+
+    /**
+     * Most conversations outsidePassageIds() inlines; beyond it the
+     * visibility keeps the uncorrelated subquery.
+     */
+    private const OUTSIDE_PASSAGES_INLINE_MAX = 2000;
+
+    /**
+     * Seconds the outside passages of a User instance are reused at most,
+     * on top of the event watermark (outsidePassageIds()).
+     */
+    private const OUTSIDE_PASSAGES_TTL = 10;
+
     public function __construct(private PlatformSettings $settings) {}
 
     /**
@@ -210,6 +230,68 @@ class ConversationAccess
     }
 
     /**
+     * Adds to the departments visibility the conversations that passed
+     * through the supervisor's departments. Those still in the departments
+     * are already visible, so only the ones now outside them matter: when
+     * they are few they are inlined (outsidePassageIds()), so the list, its
+     * counters and its unread counter do not each scan the events again;
+     * otherwise the uncorrelated semi-join on every passage is kept. Both
+     * give the same rows.
+     *
+     * @param  Builder<Conversation>  $query
+     * @param  list<int>  $departmentIds
+     */
+    private function orPassedThrough(Builder $query, User $user, array $departmentIds): void
+    {
+        $outside = $this->outsidePassageIds($user, $departmentIds);
+
+        if ($outside === null) {
+            $query->orWhereIn('conversations.id', $this->passageConversationIds($departmentIds));
+        } elseif ($outside !== []) {
+            $query->orWhereIntegerInRaw('conversations.id', $outside);
+        }
+    }
+
+    /**
+     * Ids of the conversations outside the departments (another one or none)
+     * with an event from or to them, or null when there are more than
+     * OUTSIDE_PASSAGES_INLINE_MAX. Read once and reused by the next queries
+     * of the same User instance (one request or job) while no conversation
+     * event was recorded (the latest event id is part of the key: transfers
+     * always record one) and for OUTSIDE_PASSAGES_TTL seconds at most.
+     *
+     * @param  list<int>  $departmentIds
+     * @return list<int>|null
+     */
+    private function outsidePassageIds(User $user, array $departmentIds): ?array
+    {
+        $sorted = $departmentIds;
+        sort($sorted);
+        $key = implode(',', $sorted).'@'.(int) DB::table('conversation_events')->max('id');
+
+        self::$rememberedOutsidePassages ??= new WeakMap;
+        $remembered = self::$rememberedOutsidePassages[$user] ?? null;
+
+        if ($remembered !== null && $remembered['key'] === $key && microtime(true) < $remembered['until']) {
+            return $remembered['ids'];
+        }
+
+        $ids = array_values(array_map('intval', $this->passageConversationIds($departmentIds)
+            ->join('conversations', 'conversations.id', '=', 'passages.conversation_id')
+            ->where(fn (QueryBuilder $outside) => $outside
+                ->whereNull('conversations.department_id')
+                ->orWhereNotIn('conversations.department_id', $departmentIds))
+            ->limit(self::OUTSIDE_PASSAGES_INLINE_MAX + 1)
+            ->pluck('passages.conversation_id')
+            ->all()));
+
+        $ids = count($ids) > self::OUTSIDE_PASSAGES_INLINE_MAX ? null : $ids;
+        self::$rememberedOutsidePassages[$user] = ['key' => $key, 'until' => microtime(true) + self::OUTSIDE_PASSAGES_TTL, 'ids' => $ids];
+
+        return $ids;
+    }
+
+    /**
      * Whether the user reads closed conversations (history): with the history
      * permission, or supervising their reach.
      */
@@ -269,13 +351,13 @@ class ConversationAccess
 
         match ($user->dataScope()) {
             DataScope::Global => null,
-            // The passage through the supervisor's departments is an
-            // uncorrelated semi-join (union of the from/to department index
-            // lookups on conversation_events), not a per-row EXISTS.
+            // The passage through the supervisor's departments: the ones now
+            // outside them, inlined or as an uncorrelated semi-join
+            // (orPassedThrough()), never a per-row EXISTS.
             DataScope::Departments => $query->where(fn (Builder $visible) => $visible
                 ->where('conversations.assigned_user_id', $user->id)
                 ->orWhereIn('conversations.department_id', $departmentIds)
-                ->when($supervises, fn (Builder $passed) => $passed->orWhereIn('conversations.id', $this->passageConversationIds($departmentIds)))),
+                ->when($supervises, fn (Builder $passed) => $this->orPassedThrough($passed, $user, $departmentIds))),
             default => $query->where(fn (Builder $visible) => $visible
                 ->where('conversations.assigned_user_id', $user->id)
                 ->orWhere(fn (Builder $queue) => $queue
@@ -386,7 +468,7 @@ class ConversationAccess
             ! $user->is_active => "La cuenta de {$user->name} está eliminada.",
             $user->dataScope() === null => "{$user->name} no tiene un rol activo.",
             ! $this->canAttendConversations($user) => "El rol de {$user->name} no le permite atender conversaciones.",
-            $department === null && $user->dataScope() !== DataScope::Global => 'Una conversación sin departamento solo puede asignarse a quien tiene alcance sobre toda la organización.',
+            $department === null && $user->dataScope() !== DataScope::Global => 'Una conversación sin departamento solo puede asignarse a alguien con un rol que ve toda la organización.',
             $department !== null && ! $department->is_active => "El departamento {$department->name} está inactivo.",
             $department !== null && ! $this->canAttend($user, $department) => "{$user->name} no pertenece al departamento {$department->name}.",
             default => null,
@@ -401,6 +483,20 @@ class ConversationAccess
     public function hasPersonalInbox(User $user): bool
     {
         return ! in_array($user->dataScope(), [DataScope::Global, DataScope::Departments], true);
+    }
+
+    /**
+     * Whether the user supervises a team reach (global or departments scope
+     * with the view and supervise permissions): their inbox opens on every
+     * conversation of their read reach (canView(), restrictToVisible()),
+     * whoever attends it. It is only a reading default: operations keep
+     * following canOperate() and ConversationPolicy.
+     */
+    public function supervisesReach(User $user): bool
+    {
+        return ! $this->hasPersonalInbox($user)
+            && $user->holdsPermission(Permission::ViewConversations)
+            && $user->holdsPermission(Permission::SuperviseConversations);
     }
 
     /**

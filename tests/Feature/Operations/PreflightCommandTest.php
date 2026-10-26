@@ -171,7 +171,7 @@ test('a webhook backlog is reported as a warning even when it is critical for th
     $check = preflightCheck(preflightJson(), 'webhooks');
 
     expect($check['status'])->toBe('warning')
-        ->and($check['summary'])->toContain('1 entregas de Meta');
+        ->and($check['summary'])->toContain('1 avisos de Meta');
 });
 
 test('demo accounts and the simulated connection block production and only warn elsewhere', function () {

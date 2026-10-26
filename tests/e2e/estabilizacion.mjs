@@ -46,6 +46,7 @@ import {
     login,
     measure,
     openInboxView,
+    applyInboxFilters,
     openRealtimeSession,
     operations,
     php,
@@ -291,7 +292,7 @@ const run = async () => {
                 20_000,
             );
             const simulated = await bubble(ana, text)
-                .getByText('Simulación')
+                .getByText('No enviado (modo de prueba)')
                 .count();
 
             return [
@@ -584,7 +585,8 @@ const run = async () => {
                 await page.waitForLoadState('networkidle');
                 await page.getByRole('button', { name: /^Filtros/ }).click();
                 await page.locator('#inbox-search-in').selectOption('messages');
-                await page.keyboard.press('Escape');
+                // Phase 5.1: the panel edits a draft applied with «Aplicar».
+                await applyInboxFilters(page);
                 await page
                     .getByRole('searchbox', { name: 'Buscar conversaciones' })
                     .fill(SEARCH_WORD);

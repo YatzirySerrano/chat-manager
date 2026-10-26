@@ -66,7 +66,7 @@ class StoreGroupThreadRequest extends FormRequest
                 }
 
                 if (array_diff($requested, app(TeamChatDirectory::class)->contactableAmong($actor, $requested)) !== []) {
-                    $validator->errors()->add('participant_ids', 'Algunas personas elegidas no están disponibles para el chat interno o están fuera de tu alcance.');
+                    $validator->errors()->add('participant_ids', 'Algunas personas elegidas no están disponibles para el chat interno o no puedes escribirles (solo a personas de tus departamentos, salvo que tu rol lo permita).');
                 }
             },
         ];

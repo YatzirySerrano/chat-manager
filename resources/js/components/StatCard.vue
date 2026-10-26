@@ -7,8 +7,10 @@ import { Skeleton } from '@/components/ui/skeleton';
  * of a fake zero, so unavailable data is never presented as real.
  *
  * `compact` (default) is meant for metric rows: small padding, the icon
- * inline with the label, the value at text-xl and the hint clamped to two
- * lines (the full text stays available as a tooltip and to screen readers).
+ * inline with the label and the value at text-xl. The label and the hint
+ * are never cut: they wrap (long words break and hyphenate), so the card
+ * only grows taller in narrow columns. Grids of compact cards use one
+ * column below `sm`.
  * `default` keeps the larger, roomier card for a single headline figure.
  */
 withDefaults(
@@ -34,16 +36,21 @@ withDefaults(
 <template>
     <div
         v-if="size === 'compact'"
-        class="flex min-w-0 flex-col gap-1 rounded-xl border bg-card px-3.5 py-3 shadow-card"
+        class="flex min-w-0 flex-col gap-1 rounded-xl border bg-surface-raised px-3.5 py-3 shadow-card"
+        data-stat-card
     >
-        <div class="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <div class="flex min-w-0 items-start gap-1.5 text-muted-foreground">
             <component
                 :is="icon"
                 v-if="icon"
-                class="size-3.5 shrink-0"
+                class="mt-px size-4 shrink-0"
                 aria-hidden="true"
             />
-            <span class="line-clamp-2 text-xs font-medium">{{ label }}</span>
+            <span
+                class="min-w-0 text-xs font-medium text-pretty break-words hyphens-auto"
+                data-stat-label
+                >{{ label }}</span
+            >
         </div>
 
         <template v-if="loading">
@@ -62,8 +69,8 @@ withDefaults(
             </p>
             <p
                 v-if="hint"
-                class="line-clamp-2 text-xs text-muted-foreground"
-                :title="hint"
+                class="text-xs text-pretty break-words hyphens-auto text-muted-foreground"
+                data-stat-hint
             >
                 {{ hint }}
             </p>
@@ -72,10 +79,15 @@ withDefaults(
 
     <div
         v-else
-        class="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-5 shadow-card"
+        class="flex min-w-0 flex-col gap-3 rounded-xl border bg-surface-raised p-5 shadow-card"
+        data-stat-card
     >
         <div class="flex items-center justify-between gap-2">
-            <span class="text-sm text-muted-foreground">{{ label }}</span>
+            <span
+                class="min-w-0 text-sm font-medium break-words hyphens-auto text-muted-foreground"
+                data-stat-label
+                >{{ label }}</span
+            >
             <span
                 v-if="icon"
                 class="flex size-8 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
@@ -98,7 +110,13 @@ withDefaults(
             <p v-else class="text-sm font-medium text-muted-foreground">
                 {{ unavailableLabel ?? 'Sin datos todavía' }}
             </p>
-            <p v-if="hint" class="text-xs text-muted-foreground">{{ hint }}</p>
+            <p
+                v-if="hint"
+                class="text-xs break-words hyphens-auto text-muted-foreground"
+                data-stat-hint
+            >
+                {{ hint }}
+            </p>
         </template>
     </div>
 </template>

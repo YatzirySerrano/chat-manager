@@ -31,7 +31,11 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { formatRelative } from '@/lib/format';
+import {
+    formatLocale,
+    formatRelative,
+    formatTemplateQuality,
+} from '@/lib/format';
 import {
     index as templatesIndex,
     show as showTemplate,
@@ -156,13 +160,11 @@ function sync(connection: TemplateConnectionOption): void {
 <template>
     <Head title="Plantillas de WhatsApp" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="plantillas"
             title="Plantillas de WhatsApp"
-            description="Plantillas aprobadas por Meta para iniciar o retomar conversaciones fuera de la ventana de 24 horas. Se crean y editan en WhatsApp Manager; aquí se sincronizan y consultan."
+            description="Plantillas aprobadas por Meta para iniciar o retomar conversaciones fuera de la ventana de 24 horas. Se crean y editan en WhatsApp Manager; aquí se consultan y se actualizan desde Meta."
         >
             <template v-if="canExport" #actions>
                 <ExportMenu
@@ -172,7 +174,10 @@ function sync(connection: TemplateConnectionOption): void {
             </template>
         </PageHeader>
 
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div
+            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            data-tour="templates.stats"
+        >
             <StatCard
                 label="Plantillas"
                 :value="stats.total"
@@ -198,8 +203,9 @@ function sync(connection: TemplateConnectionOption): void {
 
         <SurfaceCard
             v-if="syncable.length > 0"
-            title="Sincronización con Meta"
-            description="Copia el estado actual de las plantillas de la cuenta de WhatsApp Business de cada conexión. También se sincronizan automáticamente cada 6 horas y al recibir cambios de estado por webhook."
+            data-tour="templates.sync"
+            title="Actualizar desde Meta"
+            description="Trae de Meta las plantillas de cada conexión y su estado actual. También se actualizan solas cada 6 horas y cuando Meta avisa un cambio."
             body-class="grid gap-2 p-4"
         >
             <div
@@ -214,8 +220,8 @@ function sync(connection: TemplateConnectionOption): void {
                     <p class="text-xs text-muted-foreground">
                         {{
                             connection.last_synced_at
-                                ? `Última sincronización ${formatRelative(connection.last_synced_at)}`
-                                : 'Nunca sincronizada'
+                                ? `Actualizada desde Meta ${formatRelative(connection.last_synced_at)}`
+                                : 'Aún no se ha actualizado desde Meta'
                         }}
                     </p>
                 </div>
@@ -227,7 +233,7 @@ function sync(connection: TemplateConnectionOption): void {
                 >
                     <Spinner v-if="syncing === connection.id" />
                     <RefreshCw v-else />
-                    Sincronizar
+                    Actualizar desde Meta
                 </Button>
             </div>
         </SurfaceCard>
@@ -236,6 +242,7 @@ function sync(connection: TemplateConnectionOption): void {
             <div
                 class="grid gap-2 border-b p-4 sm:grid-cols-2 lg:grid-cols-6"
                 role="search"
+                data-tour="templates.search"
             >
                 <div class="relative min-w-0 lg:col-span-2">
                     <Search
@@ -307,7 +314,7 @@ function sync(connection: TemplateConnectionOption): void {
                         :key="language"
                         :value="language"
                     >
-                        {{ language }}
+                        {{ formatLocale(language) }}
                     </option>
                 </select>
                 <div class="flex gap-2 lg:col-span-6">
@@ -329,7 +336,7 @@ function sync(connection: TemplateConnectionOption): void {
                 </div>
             </div>
 
-            <Table v-if="templates.data.length > 0">
+            <Table v-if="templates.data.length > 0" data-tour="templates.table">
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Plantilla</TableHead>
@@ -359,7 +366,7 @@ function sync(connection: TemplateConnectionOption): void {
                                 {{ template.name }}
                             </Link>
                             <p class="text-xs text-muted-foreground">
-                                {{ template.language }}
+                                {{ formatLocale(template.language) }}
                             </p>
                         </TableCell>
                         <TableCell class="hidden md:table-cell">
@@ -382,7 +389,12 @@ function sync(connection: TemplateConnectionOption): void {
                                     v-if="template.quality_score"
                                     class="text-xs text-muted-foreground"
                                 >
-                                    Calidad {{ template.quality_score }}
+                                    Calidad
+                                    {{
+                                        formatTemplateQuality(
+                                            template.quality_score,
+                                        )
+                                    }}
                                 </span>
                             </div>
                         </TableCell>
@@ -404,7 +416,7 @@ function sync(connection: TemplateConnectionOption): void {
                 :title="
                     hasFilters
                         ? 'Ninguna plantilla coincide con los filtros'
-                        : 'Aún no hay plantillas sincronizadas'
+                        : 'Aún no se han traído plantillas de Meta'
                 "
                 :description="
                     hasFilters

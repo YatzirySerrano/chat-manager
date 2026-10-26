@@ -25,7 +25,7 @@ Documentos relacionados: [bandejas-y-asignacion.md](bandejas-y-asignacion.md) (b
 | Multimedia entrante  | `App\Jobs\DownloadInboundMedia`, `App\Services\Meta\MediaStorage`                 | Descarga segura y almacenamiento privado                   |
 | Envío                | `App\Jobs\DeliverOutboundMessage` + `WhatsAppTransport`                           | Reclamo con bloqueo, envío, aceptación                     |
 | Transporte real      | `App\Services\Meta\MetaCloudWhatsAppTransport` sobre `MetaGraphClient`            | Texto, multimedia, plantillas, respuestas                  |
-| Transporte simulado  | `App\Services\Meta\SimulatedWhatsAppTransport`                                    | **Solo desarrollo local**, etiquetado «Simulación»         |
+| Transporte simulado  | `App\Services\Meta\SimulatedWhatsAppTransport`                                    | **Solo desarrollo local**, etiquetado «Modo de prueba»     |
 | Reintento manual     | `App\Actions\Messaging\RetryOutboundMessage`                                      | Reintento autorizado de un fallido                         |
 | Plantillas           | `message_templates`, `App\Actions\Templates\*`, `pages/templates/*`               | Sincronización, consulta y envío                           |
 | Salud de la conexión | `App\Services\Meta\ConnectionMonitor`, `ConnectionDiagnostics`                    | Evidencia y `ConnectionHealthChanged`                      |
@@ -413,7 +413,7 @@ de reintentos automáticos.
 - `simulated` — **solo desarrollo local**. No sale nada a WhatsApp; los mensajes reciben IDs `sim.` y
   `metadata.simulated = true`; opcionalmente (`WHATSAPP_SIMULATE_STATUSES`, `WHATSAPP_SIMULATE_READ`) reporta
   enviado → entregado (→ leído) por el mismo procesamiento de estados de los webhooks. En producción se sustituye por
-  `unavailable` aunque esté configurado. La ficha de la conexión muestra «Simulación».
+  `unavailable` aunque esté configurado. La ficha de la conexión muestra «Modo de prueba» y cada mensaje así enviado, «No enviado (modo de prueba)».
 - `unavailable` (por defecto) — todo envío falla explícitamente con `transport_unavailable`.
 
 `WHATSAPP_PILOT_RECIPIENTS` (opcional, vacío = sin restricción): lista de números separados por comas. Con

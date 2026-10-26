@@ -72,7 +72,7 @@ function save(): void {
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
         <header
-            class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold tracking-wide text-warning uppercase"
+            class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-warning"
         >
             <Lock class="size-3.5" aria-hidden="true" />
             Nota interna — no se envía al cliente

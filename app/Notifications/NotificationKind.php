@@ -42,7 +42,7 @@ enum NotificationKind: string
     public function description(): string
     {
         return match ($this) {
-            self::ConversationPending => 'Cuando llega a la cola de tus departamentos una conversación que puedes aceptar y estás disponible. Las ráfagas se agrupan en un solo aviso por departamento.',
+            self::ConversationPending => 'Cuando llega a «Pendientes» de tus departamentos una conversación que puedes aceptar y estás disponible. Si llegan varias seguidas, recibes un solo aviso por departamento.',
             self::ConversationAssigned => 'Cuando alguien o la distribución automática te asigna una conversación, o vuelve a ti al reabrirse.',
             self::ConversationTransferred => 'Cuando otra persona te transfiere una conversación.',
             self::ConversationMessage => 'Cuando el cliente escribe en una conversación que atiendes. Se agrupan por conversación hasta que la abres.',

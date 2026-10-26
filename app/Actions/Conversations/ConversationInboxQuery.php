@@ -14,6 +14,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Support\FullTextTerms;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Validation\Rule;
@@ -24,11 +25,16 @@ use Illuminate\Validation\ValidationException;
  * the screen and the conversations report, so both always agree.
  *
  * The inbox depends on the actor's reach, never on role names:
- * - whoever attends conversations opens on the "general" inbox: in one
- *   query, the pending conversations they may accept and the open ones
- *   they attend (always inside visibleTo). They also get "mine" (assigned
- *   to them) and, with departments or global scope, "all" authorized
- *   conversations;
+ * - whoever supervises a team reach (conversations.supervise with global
+ *   or departments scope, ConversationAccess::supervisesReach()) opens on
+ *   "all": every conversation of their read reach, whoever attends it, in
+ *   any department, connection or status. When they also attend, the
+ *   "general" inbox and "mine" stay available as views;
+ * - any other user who attends conversations opens on the "general" inbox:
+ *   in one query, the pending conversations they may accept and the open
+ *   ones they attend (always inside visibleTo). They also get "mine"
+ *   (assigned to them) and, with departments or global scope, "all"
+ *   authorized conversations;
  * - whoever does not attend only gets "all".
  * "queue" is kept as an alias of the general inbox with status=pending,
  * so old links keep working. A view or filter outside the actor's options
@@ -265,14 +271,15 @@ class ConversationInboxQuery
      * Counters of the inbox chips in one aggregate query over the visible
      * conversations with the common filters (never the chip itself), so
      * every number is exactly what its chip lists with the same filters:
-     * - general: the general inbox (pending ones the actor may accept and
-     *   their open ones);
+     * - general: the default view (first chip): the general inbox (pending
+     *   ones the actor may accept and their open ones) or, for whoever opens
+     *   on "all" (supervisors, users who do not attend), every active
+     *   visible conversation;
      * - mine: the active conversations assigned to the actor (legacy rows
      *   on hold included, as the "mine" list shows them);
-     * - pending and attending: the branches of the general inbox.
-     * There is no "on hold" counter: that status is retired.
-     * Whoever does not attend conversations has no general inbox: their
-     * chips count over every visible conversation ("all") instead. Closed
+     * - pending and attending: the branches of the default view (for "all",
+     *   every visible pending or open conversation).
+     * There is no "on hold" counter: that status is retired. Closed
      * conversations are not counted: the history is large and its chip
      * shows no number.
      *
@@ -284,7 +291,7 @@ class ConversationInboxQuery
         $active = [ConversationStatus::Pending->value, ConversationStatus::Open->value, ConversationStatus::OnHold->value];
         $mine = ['conversations.assigned_user_id = ?', [$actor->id]];
 
-        if (in_array(self::VIEW_GENERAL, $filters['views'], true)) {
+        if ($filters['views'][0] === self::VIEW_GENERAL) {
             $pending = $this->pendingBranchSql($actor);
             $attending = ['conversations.status = ? AND conversations.assigned_user_id = ?', [ConversationStatus::Open->value, $actor->id]];
             $general = ["({$pending[0]}) OR ({$attending[0]})", [...$pending[1], ...$attending[1]]];
@@ -339,7 +346,10 @@ class ConversationInboxQuery
             ->when($department === self::NONE, fn (Builder $query) => $query->whereNull('conversations.department_id'))
             ->when(ctype_digit((string) $department), fn (Builder $query) => $query->where('conversations.department_id', (int) $department))
             ->when($agent === self::NONE, fn (Builder $query) => $query->whereNull('conversations.assigned_user_id'))
-            ->when(ctype_digit((string) $agent), fn (Builder $query) => $query->where('conversations.assigned_user_id', (int) $agent))
+            // A protected account (root role) is never a valid agent filter
+            // for anyone else: its id matches nothing, as an unknown id would.
+            ->when(ctype_digit((string) $agent), fn (Builder $query) => $query->where('conversations.assigned_user_id', (int) $agent)
+                ->when(app(ProtectedAccounts::class)->hides((int) $agent, $actor), fn (Builder $hidden) => $hidden->whereRaw('1 = 0')))
             ->when($filters['connection'] !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters['connection']))
             // Uncorrelated: the connections of the channel are read once,
             // deleted ones included (their history keeps its channel).
@@ -519,8 +529,15 @@ class ConversationInboxQuery
             return [self::VIEW_ALL];
         }
 
-        return $personal
-            ? [self::VIEW_GENERAL, self::VIEW_MINE]
+        if ($personal) {
+            return [self::VIEW_GENERAL, self::VIEW_MINE];
+        }
+
+        // Organizational supervision: whoever supervises their (global or
+        // departments) reach opens on every conversation of it, whoever
+        // attends it; their own work stays one view away.
+        return $this->access->supervisesReach($actor)
+            ? [self::VIEW_ALL, self::VIEW_GENERAL, self::VIEW_MINE]
             : [self::VIEW_GENERAL, self::VIEW_MINE, self::VIEW_ALL];
     }
 

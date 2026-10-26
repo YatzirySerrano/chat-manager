@@ -58,6 +58,13 @@ export type ManagedRole = {
     is_deleted: boolean;
     is_root: boolean;
     users_count: number;
+    /** Active accounts holding the role: the ones a change reaches now. */
+    active_users_count: number;
+    /**
+     * Active holders who also receive each permission from another role or
+     * a direct grant (revoking it from this role does not remove it).
+     */
+    retained_elsewhere: Record<string, number>;
     permissions: string[];
     is_current_user_role: boolean;
     can: { update: boolean; delete: boolean; restore: boolean };
@@ -67,6 +74,8 @@ export type ManagedRole = {
 export type CatalogPermission = {
     value: string;
     label: string;
+    /** What it allows and its limits, in plain words. */
+    description: string;
     available: boolean;
     sensitive: boolean;
     global_only: boolean;
@@ -77,13 +86,21 @@ export type CatalogPermission = {
 export type PermissionGroupCatalog = {
     value: string;
     label: string;
+    description: string;
+    /** Lucide icon name in kebab case (mapped by groupIcon()). */
+    icon: string;
     permissions: CatalogPermission[];
 };
 
 export type ScopeOption = {
     value: DataScopeValue;
     label: string;
+    /** Which information the scope reaches. */
     description: string;
+    /** A concrete case of what a person with this scope sees. */
+    example: string;
+    /** Lucide icon name in kebab case (mapped by scopeIcon()). */
+    icon: string;
     grantable: boolean;
 };
 
@@ -165,6 +182,12 @@ export type AdminUser = {
         granted_by_role: boolean;
         granted_directly: boolean;
         can_toggle: boolean;
+    };
+    /** Where the effective permissions come from. */
+    access: {
+        effective_count: number;
+        /** Permissions not coming from the role, with their sources. */
+        extra_grants: { value: string; label: string; sources: string[] }[];
     };
     is_current_user: boolean;
     can: {
@@ -372,6 +395,8 @@ export type PlatformSettings = {
 export type DashboardOverview = {
     scope: 'all' | 'departments' | 'own';
     messaging_connected: boolean;
+    /** False when the role lacks conversations.view (figures are null because of the role). */
+    conversations_visible: boolean;
     conversations: {
         active: number | null;
         pending: number | null;
@@ -383,6 +408,8 @@ export type DashboardOverview = {
     first_response_samples: number;
     received: { value: number | null; previous: number | null };
     trend: { label: string; received: number }[];
+    /** Per hour for a period of one day, otherwise per day or month. */
+    trend_granularity: 'hour' | 'day' | 'month';
     /** Active accounts with an active role able to attend (no manual availability). */
     agents: { active: number | null };
     departments: { active: number; total: number } | null;

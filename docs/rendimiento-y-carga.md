@@ -35,6 +35,10 @@ Documentos relacionados: [infraestructura y despliegue](infraestructura-y-despli
   de 55–62 _deadlocks_ a **0**, la cola `notifications` de ~13 000 a 1 602 trabajos como máximo y la señal
   `.message.recorded` de p95 7,0 s a 2,5 s (p99 22 s → 8,5 s). Sin pérdidas ni duplicados en ningún escenario,
   incluidos los nuevos de transferencias concurrentes y reinicio de Reverb.
+- **Bandeja de supervisión a gran escala (Fase 5.1, 2026-10-25, sección 12):** con 120 000 conversaciones y 340 000
+  eventos, la vista por omisión de supervisión («Todas las conversaciones») con alcance por departamentos pasó de
+  405 ms a 315 ms por carga completa (SQL de 234 ms a 154 ms). Los resultados son idénticos. Las señales de tiempo
+  real ya no consultan eventos si ningún departamento tiene supervisión por departamentos.
 
 ## 2. Entorno medido
 
@@ -313,16 +317,16 @@ conversaciones ya aceptadas por un escenario anterior.
 
 ## 8. Identificado y no corregido (con motivo)
 
-| Hallazgo                                                     | Evidencia                                                                                                                                            | Por qué no se cambió / recomendación                                                                                                                                                                                                                    |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cola `notifications` como cuello de botella del tiempo real  | ~13 000–14 000 jobs para 2 800 webhooks (≈5 por webhook: señales de tiempo real y notificaciones); con 2 workers la señal llega a 15–35 s en ráfagas | Es capacidad de workers, no un error. Con 3 workers dedicados la p95 bajó de 15,6 s a 7,0 s. Recomendación: workers propios para `notifications` y escalar según la cola (ver [infraestructura](infraestructura-y-despliegue.md)); Redis en producción. |
-| Pool `notifications,default` deja sin atender `default`      | `default` (métricas de reportes) se quedó en ~1 500 jobs hasta vaciar `notifications`; con un worker dedicado a `default`, pico 83                   | Plantilla de supervisor del módulo de operación; recomendación: un worker propio para `default`.                                                                                                                                                        |
-| Limitador de webhooks 1 200/min por conexión                 | 280–290 respuestas 429 en la ráfaga; ningún mensaje perdido porque el emisor reintenta, como hace Meta                                               | Es una protección deliberada (`WHATSAPP_WEBHOOK_RATE_LIMIT`). Meta reintenta durante días, pero retrasa la atención; ajustar a la demanda medida en producción.                                                                                         |
-| _Deadlocks_ restantes en `notifications`                     | 2–6 por corrida en `InAppChannel` (`insert into notifications` tras `FOR UPDATE` de la clave de agregación: mismo patrón de hueco)                   | Código del módulo de notificaciones; la cola los reintenta sin pérdidas. Se recomienda el mismo tratamiento que 7.3.                                                                                                                                    |
-| Conteos por estado de la bandeja recorren toda la tabla      | `EXPLAIN` de `select status, COUNT(*) … group by status`: `ALL`/`index` sobre ~9 700 filas (4–12 ms aquí)                                            | Escala lineal con el historial; con cientos de miles de conversaciones habrá que acotar (solo no cerradas) o cachear. No medido a esa escala.                                                                                                           |
-| Lista de la superadministración: 120 ms de PHP para 25 filas | 43 consultas, 30 ms de SQL                                                                                                                           | 13 permisos × 25 filas y consulta global de departamentos aceptables por fila (alcance global no usa la relación cargada). Candidato a memoizar por petición.                                                                                           |
-| Búsqueda con `LIKE '%…%'`                                    | `EXPLAIN` sin índice en contactos (ya documentado por la bandeja)                                                                                    | Con 7 500 contactos 12 ms; a gran escala requiere índice de texto completo.                                                                                                                                                                             |
-| Tormenta de reconexión                                       | 600 autorizaciones simultáneas ocupan los 8 procesos PHP ~2 s                                                                                        | Esperado con 8 procesos; en producción más procesos FPM o _backoff_ aleatorio en el cliente.                                                                                                                                                            |
+| Hallazgo                                                     | Evidencia                                                                                                                                                                      | Por qué no se cambió / recomendación                                                                                                                                                                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cola `notifications` como cuello de botella del tiempo real  | ~13 000–14 000 jobs para 2 800 webhooks (≈5 por webhook: señales de tiempo real y notificaciones); con 2 workers la señal llega a 15–35 s en ráfagas                           | Es capacidad de workers, no un error. Con 3 workers dedicados la p95 bajó de 15,6 s a 7,0 s. Recomendación: workers propios para `notifications` y escalar según la cola (ver [infraestructura](infraestructura-y-despliegue.md)); Redis en producción. |
+| Pool `notifications,default` deja sin atender `default`      | `default` (métricas de reportes) se quedó en ~1 500 jobs hasta vaciar `notifications`; con un worker dedicado a `default`, pico 83                                             | Plantilla de supervisor del módulo de operación; recomendación: un worker propio para `default`.                                                                                                                                                        |
+| Limitador de webhooks 1 200/min por conexión                 | 280–290 respuestas 429 en la ráfaga; ningún mensaje perdido porque el emisor reintenta, como hace Meta                                                                         | Es una protección deliberada (`WHATSAPP_WEBHOOK_RATE_LIMIT`). Meta reintenta durante días, pero retrasa la atención; ajustar a la demanda medida en producción.                                                                                         |
+| _Deadlocks_ restantes en `notifications`                     | 2–6 por corrida en `InAppChannel` (`insert into notifications` tras `FOR UPDATE` de la clave de agregación: mismo patrón de hueco)                                             | Código del módulo de notificaciones; la cola los reintenta sin pérdidas. Se recomienda el mismo tratamiento que 7.3.                                                                                                                                    |
+| Conteos de la bandeja sobre el historial                     | Ya solo cuentan conversaciones no cerradas (`range` sobre `(status, last_message_at)`). Con 120 000 conversaciones (18 000 activas): 23–29 ms para alcance global (sección 12) | Escala con las conversaciones activas, no con el historial. Si las activas crecen a cientos de miles, cachear o limitar los contadores de las recargas en vivo.                                                                                         |
+| Lista de la superadministración: 120 ms de PHP para 25 filas | 43 consultas, 30 ms de SQL                                                                                                                                                     | 13 permisos × 25 filas y consulta global de departamentos aceptables por fila (alcance global no usa la relación cargada). Candidato a memoizar por petición.                                                                                           |
+| Búsqueda con `LIKE '%…%'`                                    | `EXPLAIN` sin índice en contactos (ya documentado por la bandeja)                                                                                                              | Con 7 500 contactos 12 ms; a gran escala requiere índice de texto completo.                                                                                                                                                                             |
+| Tormenta de reconexión                                       | 600 autorizaciones simultáneas ocupan los 8 procesos PHP ~2 s                                                                                                                  | Esperado con 8 procesos; en producción más procesos FPM o _backoff_ aleatorio en el cliente.                                                                                                                                                            |
 
 ## 9. Límites de estas mediciones
 
@@ -643,3 +647,87 @@ cola (por ejemplo `realtime`) y con todos los workers de esa conexión así. No 
   PHP-FPM) y los workers de `webhooks` consultan cada segundo.
 - No hay instrumentación por etapa en milisegundos (columnas `timestamp` de 1 s); separar Meta + túnel de la cola
   propia requiere medir el desfase `occurredAt` → `received_at` → `processed_at`.
+
+## 12. Bandeja de supervisión a gran escala (Fase 5.1, 2026-10-25)
+
+> **Medición local en un portátil compartido.** Misma máquina que la sección 2: MariaDB 11.4 con _buffer pool_ de
+> 128 MB y otras pruebas del proyecto corriendo a ratos. Todo corrió solo contra `chatmanager_testing` y con el
+> candado de pruebas.
+
+En la Fase 5.1, quien supervisa abre por omisión la vista «Todas las conversaciones» (`view=all`). Con alcance por
+departamentos, esa vista incluye las conversaciones que pasaron por sus departamentos (cualquier evento desde o hacia
+ellos). Esta sección mide esa vista y sus contadores a una escala 12 veces mayor que la sección 6.1.
+
+### 12.1 Datos y procedimiento
+
+- **Datos:** `tests/load/seed.php` con `LOAD_CONVERSATIONS=120000`:
+    - 120 000 conversaciones (18 000 activas: 9 600 abiertas, 6 000 pendientes, 2 400 en espera);
+    - 867 666 mensajes y 336 000 eventos.
+- **Pasos añadidos:** un quinto departamento, «Calidad», con su supervisor. Calidad tiene el 1 % de las
+  conversaciones y otro 1 % pasó por él y siguió a Cobranza. Además, el 2 % de las conversaciones se transfirió de
+  Ventas a Cobranza. En total quedaron 340 473 eventos.
+- **Reparto:** Ventas 41 191 conversaciones (6 828 activas), Soporte 33 450, Cobranza 23 101, Postventa 21 058 y
+  Calidad 1 200 (180 activas).
+- **Medición:** en proceso, a través del kernel HTTP real:
+    - recarga parcial de `/conversations` con `conversations,counts,unreadCount,inbox,filters`, la misma que hace la
+      bandeja al abrirse o al recargarse en vivo;
+    - segunda página por cursor (`/conversations/page?after=…`);
+    - mediana de 5 corridas tras una de calentamiento, y `EXPLAIN` de cada consulta.
+- **Igualdad de resultados:** se compararon los ids de las dos páginas, los contadores y las no leídas, antes y
+  después del cambio, para cada usuario. Son idénticos.
+
+### 12.2 Resultados (ms de la petición completa / SQL total, mediana)
+
+| Usuario (vista por omisión)                            | Antes: petición / SQL | Después: petición / SQL | Página 2 antes → después |
+| ------------------------------------------------------ | --------------------- | ----------------------- | ------------------------ |
+| Agente (bandeja general)                               | 178 / 54              | 182 / 58                | 138 → 139                |
+| Supervisión Ventas (departamentos, 35 % de la tabla)   | 405 / 234             | 315 / 154               | 217 → 238                |
+| Supervisión Cobranza (departamentos + pasos de Ventas) | 368 / 200             | 270 / 116               | 220 → 233                |
+| Supervisión Calidad (departamentos, 1 % + pasos)       | 238 / 88              | 209 / 59                | 167 → 182                |
+| Administración (global)                                | 262 / 109             | 265 / 109               | 151 → 151                |
+| Superadministración (global)                           | 261 / 110             | 265 / 113               | 150 → 152                |
+
+Unos 120–140 ms de cada petición no son SQL y no dependen del rol: arranque del _framework_ en proceso, permisos y
+armado de 25 filas. La segunda página de supervisión es 13–21 ms más lenta: consulta los pasos una vez para una
+sola sentencia. Lo que se gana está en las cargas completas y en las recargas en vivo, que ejecutan la lista, los
+contadores y las no leídas en la misma petición.
+
+### 12.3 Qué costaba y qué se cambió
+
+- **Antes:** la visibilidad por departamentos de quien supervisa es
+  `department_id IN (…) OR id IN (unión de eventos desde/hacia sus departamentos)`.
+    - La rama «hacia» incluye el evento `created` de cada conversación del departamento: 42 000 filas en Ventas.
+    - Con índices de una sola columna, MariaDB recorre `conversation_events` completa (`ALL`, 330 000 filas,
+      unos 35 ms).
+    - Lo hacía en cada sentencia: lista, 45 ms; contadores, 60 ms; no leídas, 95 ms.
+    - Cambiar `IN` por un `EXISTS` correlacionado no ayuda: MariaDB lo convierte en la misma semiunión materializada
+      (45 / 60 / 95 ms).
+- **Después (`ConversationAccess::restrictToVisible`):** las conversaciones que siguen en los departamentos ya son
+  visibles por `department_id`. Por eso solo se buscan las que pasaron por ellos y hoy están fuera:
+    - una consulta por petición devuelve sus ids: 1 748 en Ventas, 221 en Cobranza y 1 200 en Calidad;
+    - las sentencias siguientes reciben esos ids escritos en la consulta. En Ventas, la lista baja a 13 ms, los
+      contadores a 13 ms y las no leídas a 34 ms;
+    - los ids se reutilizan mientras no se registre ningún evento de conversación (una transferencia siempre registra
+      uno) y como máximo 10 s;
+    - si hay más de 2 000 ids, se vuelve a la subconsulta anterior.
+- **Pendiente, requiere migración y aprobación:** índices compuestos `(to_department_id, conversation_id)` y
+  `(from_department_id, conversation_id)` en `conversation_events`. Probados en la base de pruebas, convierten el
+  recorrido completo en uno de índice: en Ventas, lista 45 → 21 ms, contadores 60 → 35 ms y no leídas 95 → 70 ms;
+  en Cobranza, 39 → 11, 53 → 25 y 80 → 52 ms. También abaratarían la consulta de pasos.
+- **No leídas de supervisión y administración:** es la sentencia más cara que queda (34–70 ms). Con 18 000
+  conversaciones activas y sin marcadores de lectura, todas cuentan como no leídas, así que es el peor caso. Si se
+  vuelve un problema, conviene espaciar las recargas en vivo de los contadores (es un cambio del cliente).
+
+### 12.4 Señales de tiempo real (`RealtimeSignals::inboxChannels`)
+
+- **Antes:** cada señal de bandeja leía los eventos de la conversación para avisar a los canales de supervisión de
+  los departamentos por los que pasó. Incluye los estados de entrega, que llegan al ritmo de los webhooks.
+- **Ahora:**
+    - solo se buscan departamentos que tienen a alguien con alcance por departamentos que puede supervisarlos
+      (`RealtimeAudience::canJoinDepartmentSupervision`) y que no reciben ya el aviso por su canal de departamento;
+    - si no queda ninguno, no se consulta nada. Es el caso común cuando solo supervisa la administración global;
+    - esa lista de departamentos se lee una vez por proceso y se reutiliza 60 s;
+    - quien empieza a supervisar recibe los pasos de sus departamentos en menos de un minuto. Sus propios
+      departamentos no dependen de esta lista.
+- Pruebas: `tests/Feature/Performance/RealtimeSignalQueriesTest.php` y
+  `tests/Feature/Performance/SupervisorPassagesVisibilityTest.php`.

@@ -45,7 +45,7 @@ const stateText: Record<CheckState, string> = {
     ok: 'Confirmado',
     pending: 'Pendiente',
     error: 'Con problema',
-    muted: 'Sin evidencia',
+    muted: 'Sin confirmar todavía',
 };
 
 const items = computed<Check[]>(() => {
@@ -96,11 +96,11 @@ const items = computed<Check[]>(() => {
         },
         {
             key: 'webhook',
-            label: 'Webhook',
+            label: 'Aviso de mensajes nuevos (webhook)',
             state: checks.webhook_verified_at ? 'ok' : 'muted',
             detail: checks.webhook_verified_at
-                ? `Verificado ${formatRelative(checks.webhook_verified_at)}.`
-                : 'Meta aún no verifica la URL del webhook de esta conexión.',
+                ? `Confirmado ${formatRelative(checks.webhook_verified_at)}.`
+                : 'Meta aún no confirma la dirección para avisarnos de mensajes. Pega la URL y el token de verificación en tu app de Meta (ver Diagnóstico).',
             title: checks.webhook_verified_at
                 ? formatDateTime(checks.webhook_verified_at)
                 : undefined,

@@ -14,6 +14,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 use Illuminate\Validation\Rules\Password;
 
 class UpdateUserRequest extends FormRequest
@@ -69,6 +70,10 @@ class UpdateUserRequest extends FormRequest
     {
         /** @var User $user */
         $user = $this->route('user');
+        /** @var User $actor */
+        $actor = $this->user();
+        /** @var User $actor */
+        $actor = $this->user();
         $currentDepartmentIds = $user->departmentIds();
         $editsOwnAccount = $this->editsOwnAccount();
         $profileRules = $this->profileRules($user->id);
@@ -82,7 +87,11 @@ class UpdateUserRequest extends FormRequest
             'password' => $editsOwnAccount
                 ? ['prohibited']
                 : ['nullable', 'string', Password::default(), 'confirmed'],
-            'role_id' => ['nullable', 'integer', Rule::exists(Role::class, 'id')],
+            // The root role "does not exist" for anyone but the root authority.
+            'role_id' => ['nullable', 'integer', Rule::exists(Role::class, 'id')->when(
+                ! $actor->hasRootAuthority(),
+                fn (Exists $rule): Exists => $rule->where('is_root', false),
+            )],
             'role_change_fingerprint' => ['nullable', 'string', 'size:64'],
             'department_ids' => ['sometimes', 'array'],
             'max_open_conversations' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:200'],

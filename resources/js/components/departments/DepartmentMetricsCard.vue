@@ -29,19 +29,19 @@ defineProps<{
     >
         <div
             v-if="metrics.total > 0"
-            class="grid grid-cols-2 gap-3 sm:grid-cols-3"
+            class="grid grid-cols-1 gap-3 sm:grid-cols-3"
         >
             <StatCard
                 label="Pendientes"
                 :value="metrics.pending"
                 :icon="Inbox"
-                hint="En cola, sin agente asignado."
+                hint="Esperando a que un agente las tome."
             />
             <StatCard
-                label="Activas"
+                label="En atención"
                 :value="metrics.open"
                 :icon="MessagesSquare"
-                hint="Asignadas y en atención."
+                hint="Con una persona responsable."
             />
             <StatCard
                 label="Sin asignar"
@@ -50,13 +50,13 @@ defineProps<{
                 hint="Abiertas sin agente responsable."
             />
             <StatCard
-                label="Cerradas hoy"
+                label="Finalizadas hoy"
                 :value="metrics.closed_today"
                 :icon="Clock"
                 hint="Según la zona horaria de la plataforma."
             />
             <StatCard
-                label="Cerradas en total"
+                label="Finalizadas en total"
                 :value="metrics.closed_total"
                 :icon="CheckCheck"
             />

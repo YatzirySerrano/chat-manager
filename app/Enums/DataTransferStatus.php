@@ -18,12 +18,12 @@ enum DataTransferStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::Draft => 'Por confirmar',
-            self::Queued => 'En cola',
+            self::Draft => 'Esperando tu confirmación',
+            self::Queued => 'En espera',
             self::Processing => 'Generando',
             self::Completed => 'Listo',
             self::Failed => 'Falló',
-            self::Expired => 'Expirado',
+            self::Expired => 'Archivo eliminado (venció)',
         };
     }
 

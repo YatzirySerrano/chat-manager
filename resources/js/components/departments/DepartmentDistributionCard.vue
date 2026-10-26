@@ -86,8 +86,8 @@ const current = () =>
                         title="Forma de distribución"
                         :help="{
                             description:
-                                'Decide si los agentes toman las conversaciones de la cola, si solo las entrega quien tiene permiso de asignar, o si se reparten solas.',
-                            howTo: 'La asignación automática elige al agente disponible con menos conversaciones activas; si nadie está disponible, la conversación espera en la cola.',
+                                'Decide si los agentes toman las conversaciones de «Pendientes», si solo las entrega quien tiene permiso de asignar, o si se reparten solas.',
+                            howTo: 'La asignación automática elige al agente disponible con menos conversaciones activas; si nadie está disponible, la conversación queda en «Pendientes».',
                             warning:
                                 'Cambiar la forma de distribución nunca quita conversaciones ya asignadas.',
                         }"
@@ -129,7 +129,7 @@ const current = () =>
                                 'Máximo de conversaciones en atención que un agente puede tener para aceptar o recibir automáticamente una conversación de este departamento. Se cuentan todas sus conversaciones abiertas o en espera, de cualquier departamento.',
                             howTo: 'Déjalo vacío para usar el límite de la plataforma. Un límite propio en la ficha del agente tiene prioridad.',
                             warning:
-                                'Bajar el límite nunca quita conversaciones ya asignadas; subirlo reparte la cola que esperaba.',
+                                'Bajar el límite no quita conversaciones ya asignadas; subirlo reparte de inmediato las pendientes.',
                         }"
                     />
                 </Label>

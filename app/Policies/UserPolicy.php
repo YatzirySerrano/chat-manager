@@ -78,8 +78,9 @@ class UserPolicy
 
     /**
      * Without the permission the answer is 403. With it, an account outside
-     * the actor's data scope (or deleted, for someone who cannot consult
-     * deleted records) answers exactly like an id that does not exist, so
+     * the actor's data scope, a protected (root) account for anyone but the
+     * root authority, or a deleted one for someone who cannot consult
+     * deleted records answers exactly like an id that does not exist, so
      * identifiers reveal nothing. Null when the account is within reach.
      */
     private function outOfReach(User $actor, User $user, Permission $permission): ?Response
@@ -92,7 +93,8 @@ class UserPolicy
             return null;
         }
 
-        if (! $this->guard->withinScope($actor, $user) || ($user->isDeleted() && ! $actor->canViewDeletedRecords())) {
+        if ($user->isHiddenFrom($actor)
+            || ! $this->guard->withinScope($actor, $user) || ($user->isDeleted() && ! $actor->canViewDeletedRecords())) {
             return Response::denyAsNotFound();
         }
 

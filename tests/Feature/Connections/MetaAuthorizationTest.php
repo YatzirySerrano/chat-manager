@@ -137,7 +137,7 @@ test('the callback rejects a missing, mismatched, expired or reused state withou
 
     // Mismatched (and the stored one is consumed by the attempt).
     $state = startMetaAuthorization($this, 'messenger');
-    $this->get(route('connections.meta.callback', ['channel' => 'messenger', 'code' => 'abc', 'state' => 'x'.substr($state, 1)]));
+    $this->get(route('connections.meta.callback', ['channel' => 'messenger', 'code' => 'abc', 'state' => ($state[0] === 'x' ? 'y' : 'x').substr($state, 1)]));
     $this->get(route('connections.meta.callback', ['channel' => 'messenger', 'code' => 'abc', 'state' => $state]))
         ->assertRedirect(route('connections.meta.show', 'messenger'));
 

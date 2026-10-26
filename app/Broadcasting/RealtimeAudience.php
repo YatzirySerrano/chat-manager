@@ -77,6 +77,19 @@ class RealtimeAudience
         return in_array($departmentId, $this->access->acceptableDepartmentIds($user), true);
     }
 
+    /**
+     * The supervision channel of a department (conversations that passed
+     * through it and now live elsewhere): members of the department who
+     * supervise it with a departments scope, the only ones whose read reach
+     * keeps those conversations. Global users already hear "inbox.global".
+     */
+    public function canJoinDepartmentSupervision(User $user, int $departmentId): bool
+    {
+        return $user->dataScope() === DataScope::Departments
+            && $this->access->supervisesReach($user)
+            && $user->belongsToDepartment($departmentId);
+    }
+
     public function canJoinGlobalInbox(User $user): bool
     {
         return $user->holdsPermission(Permission::ViewConversations) && $user->dataScope() === DataScope::Global;
@@ -85,7 +98,8 @@ class RealtimeAudience
     /**
      * Inbox channels the user should listen to, matching what their inbox
      * shows: everything (global scope), their departments (departments
-     * scope) or the queues they may accept from (personal inbox). Their own
+     * scope; supervisors also the conversations that passed through them)
+     * or the queues they may accept from (personal inbox). Their own
      * assignments always arrive on their personal channel.
      *
      * @return list<string>
@@ -98,7 +112,10 @@ class RealtimeAudience
 
         return match ($user->dataScope()) {
             DataScope::Global => [RealtimeChannels::globalInbox()],
-            DataScope::Departments => array_map(RealtimeChannels::departmentInbox(...), $user->departmentIds()),
+            DataScope::Departments => [
+                ...array_map(RealtimeChannels::departmentInbox(...), $user->departmentIds()),
+                ...($this->access->supervisesReach($user) ? array_map(RealtimeChannels::departmentSupervision(...), $user->departmentIds()) : []),
+            ],
             default => array_map(RealtimeChannels::departmentQueue(...), $this->access->acceptableDepartmentIds($user)),
         };
     }

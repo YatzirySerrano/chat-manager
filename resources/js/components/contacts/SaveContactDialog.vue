@@ -179,7 +179,7 @@ function submit(confirmDuplicate = false): void {
 
             <div
                 v-if="form.errors.confirm_duplicate"
-                class="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+                class="grid gap-2 rounded-lg border border-transparent bg-warning-soft p-3 text-sm"
                 role="alert"
             >
                 <InputError :message="form.errors.confirm_duplicate" />

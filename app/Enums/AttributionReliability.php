@@ -17,7 +17,7 @@ enum AttributionReliability: string
     public function label(): string
     {
         return match ($this) {
-            self::ProviderConfirmed => 'Confirmado por el proveedor',
+            self::ProviderConfirmed => 'Confirmado por Meta',
             self::ManuallyDeclared => 'Declarado manualmente',
         };
     }

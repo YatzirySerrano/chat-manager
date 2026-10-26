@@ -13,7 +13,7 @@ const help: ModuleHelp = {
     ],
     workflow: [
         'Elige el origen («Archivo de contactos (genérico)» o «Whaticket · contactos») y sube el archivo con «Subir y revisar».',
-        'En «Mapear y validar», asigna cada columna a Nombre, Teléfono, Correo electrónico, Etiquetas o Notas (o «No importar»).',
+        'En «Relacionar columnas y revisar», asigna cada columna a Nombre, Teléfono, Correo electrónico, Etiquetas o Notas (o «No importar»).',
         'Elige «Omitir los contactos que ya existen» (recomendado) o «Completar solo los campos vacíos» y pulsa «Actualizar vista previa».',
         'Revisa el resumen (Nuevos, Ya existen, Repetidos, Con error, Con advertencias) y confirma con «Importar N filas válidas».',
         'Descarga el reporte: incluye las filas omitidas y el motivo.',
@@ -63,7 +63,7 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Importar contactos desde Excel/CSV» está reservado al Superadministrador.',
+        '«Importar contactos desde Excel/CSV» requiere un permiso especial que no se otorga desde Roles.',
         'Solo quien subió un lote puede verlo, confirmarlo, cancelarlo, descargar su reporte o revertirlo.',
     ],
     commonErrors: [

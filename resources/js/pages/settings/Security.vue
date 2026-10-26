@@ -74,9 +74,8 @@ defineOptions({
 <template>
     <Head title="Seguridad" />
 
-    <h1 class="sr-only">Seguridad</h1>
-
     <div class="space-y-6">
+        <h2 class="mb-1 text-lg font-semibold">Seguridad</h2>
         <Heading
             variant="small"
             title="Actualizar contraseña"

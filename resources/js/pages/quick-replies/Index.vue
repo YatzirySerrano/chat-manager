@@ -11,15 +11,16 @@ import {
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
-import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import QuickReplyExportMenu from '@/components/quick-replies/QuickReplyExportMenu.vue';
 import QuickReplyFormDialog from '@/components/quick-replies/QuickReplyFormDialog.vue';
+import QuickReplyListSkeleton from '@/components/quick-replies/QuickReplyListSkeleton.vue';
 import QuickReplySandbox from '@/components/quick-replies/QuickReplySandbox.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
@@ -133,6 +134,49 @@ const hasFilters = computed(
 /** Segment whose list is being loaded (shown on its button). */
 const loadingSegment = ref<QuickReplySegment | null>(null);
 
+/**
+ * The skeleton replaces the list only when loading a tab takes long enough
+ * to notice; a fast answer swaps the content directly (with a short fade).
+ */
+const SKELETON_DELAY_MS = 150;
+const showSkeleton = ref(false);
+let skeletonTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Rows of the skeleton: about as many as the list had, so nothing jumps. */
+const skeletonRows = ref(4);
+
+/** Tab bar, kept in view when a switch makes the page shorter. */
+const segmentBar = ref<HTMLElement | null>(null);
+
+function stopSkeleton(): void {
+    if (skeletonTimer !== null) {
+        clearTimeout(skeletonTimer);
+        skeletonTimer = null;
+    }
+
+    showSkeleton.value = false;
+}
+
+function prefersReducedMotion(): boolean {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Brings the tab bar back into view if the person had scrolled past it. */
+function keepSegmentBarInView(): void {
+    const bar = segmentBar.value;
+
+    if (!bar || bar.getBoundingClientRect().top >= 0) {
+        return;
+    }
+
+    bar.scrollIntoView({
+        block: 'start',
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    });
+}
+
+onBeforeUnmount(stopSkeleton);
+
 function applyFilters(): void {
     const query: Record<string, string> = {};
 
@@ -164,7 +208,14 @@ function applyFilters(): void {
         replace: true,
         only: ['quickReplies', 'filters', 'segments', 'recordStates'],
         onFinish: () => {
+            const switchedSegment = loadingSegment.value !== null;
+
             loadingSegment.value = null;
+            stopSkeleton();
+
+            if (switchedSegment) {
+                keepSegmentBarInView();
+            }
         },
     });
 }
@@ -179,6 +230,14 @@ function selectSegment(segment: QuickReplySegment): void {
     }
 
     loadingSegment.value = segment;
+    skeletonRows.value = Math.min(
+        Math.max(props.quickReplies.data.length, 3),
+        8,
+    );
+    stopSkeleton();
+    skeletonTimer = setTimeout(() => {
+        showSkeleton.value = true;
+    }, SKELETON_DELAY_MS);
     filterState.segment = segment;
     filterState.department = ALL;
     filterState.owner = ALL;
@@ -192,7 +251,7 @@ function segmentHint(segment: QuickReplySegment): string {
         corporate:
             'Respuestas de la organización, para todos o por departamento.',
         mine: 'Solo tú las ves y las usas al escribir «/».',
-        others: 'Respuestas personales de usuarios de tu alcance.',
+        others: 'Respuestas personales de los usuarios que supervisas.',
     }[segment];
 }
 
@@ -242,9 +301,9 @@ const emptyState = computed((): { title: string; description: string } => {
 
     if (isOthers.value) {
         return {
-            title: 'Nadie de tu alcance tiene respuestas personales',
+            title: 'Ninguno de los usuarios que supervisas tiene respuestas personales',
             description:
-                'Cuando los usuarios de tu alcance creen respuestas personales podrás consultarlas aquí.',
+                'Cuando los usuarios que supervisas creen respuestas personales podrás consultarlas aquí.',
         };
     }
 
@@ -255,6 +314,20 @@ const emptyState = computed((): { title: string; description: string } => {
             : 'Cuando haya respuestas disponibles para ti aparecerán aquí.',
     };
 });
+
+const currentSegmentLabel = computed(
+    () =>
+        props.segments.find(
+            (segment) => segment.value === props.filters.segment,
+        )?.label ?? 'Respuestas rápidas',
+);
+
+/** Key of the list shown: a new tab fades its content in. */
+const listKey = computed(() =>
+    showSkeleton.value
+        ? 'loading'
+        : `${props.filters.segment}-${viewMode.value}`,
+);
 
 const formOpen = ref(false);
 const editingReply = ref<QuickReplySummary | null>(null);
@@ -301,7 +374,7 @@ const deletion = useRecordDeletion<QuickReplySummary>({
             : step === 'delete'
               ? {
                     title: `¿Eliminar la respuesta /${reply.shortcut}?`,
-                    description: `Nadie podrá usarla y su atajo /${reply.shortcut} quedará reservado mientras esté eliminada. Los mensajes ya enviados no cambian. Podrás restaurarla.`,
+                    description: `Nadie podrá usarla, y nadie podrá usar el atajo /${reply.shortcut} para otra respuesta mientras esté eliminada. Si la restauras, vuelve a funcionar. Los mensajes ya enviados no cambian.`,
                 }
               : {
                     title: `¿Restaurar la respuesta /${reply.shortcut}?`,
@@ -337,12 +410,17 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             description="Textos predefinidos que se insertan en el chat escribiendo «/» y su atajo. Se insertan para revisarlos; nunca se envían solos."
         >
             <template v-if="canCreateHere || canExport" #actions>
-                <ExportMenu
+                <QuickReplyExportMenu
                     v-if="canExport"
-                    report="quick-replies"
                     :filters="filters"
+                    :current-label="currentSegmentLabel"
+                    :filtered="hasFilters"
                 />
-                <Button v-if="canCreateHere" @click="openCreate">
+                <Button
+                    v-if="canCreateHere"
+                    data-tour="quick-replies.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     {{
                         isMine ? 'Nueva respuesta personal' : 'Nueva respuesta'
@@ -355,11 +433,13 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             <SurfaceCard>
                 <div
                     v-if="segments.length > 1"
-                    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 pt-4 pb-3"
+                    ref="segmentBar"
+                    class="flex scroll-mt-4 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 pt-4 pb-3"
                 >
                     <div
                         role="group"
                         aria-label="Tipo de respuestas"
+                        data-tour="quick-replies.segments"
                         :aria-busy="loadingSegment !== null"
                         class="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1"
                     >
@@ -370,32 +450,52 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                             :aria-pressed="
                                 filterState.segment === segment.value
                             "
-                            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-standard outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                             :class="
                                 filterState.segment === segment.value &&
                                 'bg-background text-foreground shadow-xs'
                             "
                             @click="selectSegment(segment.value)"
                         >
-                            <Spinner
-                                v-if="loadingSegment === segment.value"
-                                class="size-3.5"
-                            />
                             {{ segment.label }}
                             <span
-                                class="rounded-full px-1.5 text-xs tabular-nums"
+                                class="inline-flex min-w-6 justify-center rounded-full px-1.5 text-xs tabular-nums transition-colors duration-200 ease-standard"
                                 :class="
                                     filterState.segment === segment.value
                                         ? 'bg-muted'
                                         : 'bg-background'
                                 "
-                                >{{ segment.count }}</span
                             >
+                                <Spinner
+                                    v-if="loadingSegment === segment.value"
+                                    class="size-3"
+                                    aria-hidden="true"
+                                />
+                                <template v-else>{{ segment.count }}</template>
+                            </span>
                         </button>
                     </div>
-                    <p class="text-xs text-muted-foreground">
-                        {{ segmentHint(filterState.segment) }}
-                    </p>
+                    <!--
+                        The live region is the stable wrapper: a region
+                        inserted fresh on every change (the keyed hint inside
+                        the transition) is often not announced.
+                    -->
+                    <div aria-live="polite" data-segment-hint>
+                        <Transition
+                            mode="out-in"
+                            enter-active-class="transition-opacity duration-200 ease-standard"
+                            enter-from-class="opacity-0"
+                            leave-active-class="transition-opacity duration-100 ease-standard"
+                            leave-to-class="opacity-0"
+                        >
+                            <p
+                                :key="filterState.segment"
+                                class="text-xs text-muted-foreground"
+                            >
+                                {{ segmentHint(filterState.segment) }}
+                            </p>
+                        </Transition>
+                    </div>
                 </div>
 
                 <p
@@ -411,6 +511,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                 <div
                     class="flex flex-wrap items-center gap-2 border-b p-4"
                     role="search"
+                    data-tour="quick-replies.search"
                 >
                     <div class="relative order-1 min-w-0 flex-1">
                         <Search
@@ -543,193 +644,254 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                     </div>
                 </div>
 
-                <Table
-                    v-if="quickReplies.data.length > 0 && viewMode === 'table'"
+                <Transition
+                    enter-active-class="transition-[opacity,translate] duration-200 ease-standard"
+                    enter-from-class="translate-y-1 opacity-0"
+                    leave-active-class="hidden"
                 >
-                    <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                            <TableHead class="pl-5">Respuesta</TableHead>
-                            <TableHead class="hidden 2xl:table-cell"
-                                >Disponible para</TableHead
-                            >
-                            <TableHead class="hidden sm:table-cell"
-                                >Estado</TableHead
-                            >
-                            <TableHead class="pr-5 text-right">
-                                <span class="sr-only">Acciones</span>
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="reply in quickReplies.data"
-                            :key="reply.id"
-                            :class="reply.is_deleted && 'text-muted-foreground'"
+                    <div
+                        :key="listKey"
+                        :aria-busy="loadingSegment !== null"
+                        class="transition-opacity duration-150 ease-standard"
+                        :class="
+                            loadingSegment !== null &&
+                            !showSkeleton &&
+                            'opacity-60'
+                        "
+                    >
+                        <QuickReplyListSkeleton
+                            v-if="showSkeleton"
+                            :rows="skeletonRows"
+                            :layout="viewMode"
+                        />
+                        <Table
+                            v-else-if="
+                                quickReplies.data.length > 0 &&
+                                viewMode === 'table'
+                            "
                         >
-                            <TableCell class="w-full max-w-0 py-3 pl-5">
-                                <div class="flex min-w-0 items-center gap-2">
-                                    <span
-                                        class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
-                                        >/{{ reply.shortcut }}</span
+                            <TableHeader>
+                                <TableRow class="hover:bg-transparent">
+                                    <TableHead class="pl-5"
+                                        >Respuesta</TableHead
                                     >
-                                    <span
-                                        class="truncate font-medium text-foreground"
-                                        >{{ reply.title }}</span
+                                    <TableHead class="hidden 2xl:table-cell"
+                                        >Disponible para</TableHead
                                     >
-                                </div>
-                                <p
-                                    class="mt-1 truncate text-xs text-muted-foreground"
+                                    <TableHead class="hidden sm:table-cell"
+                                        >Estado</TableHead
+                                    >
+                                    <TableHead class="pr-5 text-right">
+                                        <span class="sr-only">Acciones</span>
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                <TableRow
+                                    v-for="reply in quickReplies.data"
+                                    :key="reply.id"
+                                    :class="
+                                        reply.is_deleted &&
+                                        'text-muted-foreground'
+                                    "
                                 >
-                                    {{ reply.body }}
-                                </p>
-                                <p
-                                    class="mt-0.5 truncate text-xs text-muted-foreground 2xl:hidden"
-                                >
-                                    {{ availabilityLabel(reply) }}
-                                </p>
-                            </TableCell>
-                            <TableCell class="hidden 2xl:table-cell">
-                                <span
-                                    v-if="reply.is_personal"
-                                    class="inline-flex items-center gap-1 text-xs"
-                                >
-                                    <component
-                                        :is="reply.is_own ? Lock : UserRound"
-                                        class="size-3"
-                                        aria-hidden="true"
-                                    />
-                                    {{ availabilityLabel(reply) }}
-                                </span>
-                                <span
-                                    v-else-if="reply.is_global"
-                                    class="inline-flex items-center gap-1 text-xs"
-                                >
-                                    <Globe class="size-3" aria-hidden="true" />
-                                    Todos los departamentos
-                                </span>
-                                <div v-else class="flex flex-wrap gap-1">
-                                    <DepartmentTag
-                                        v-for="department in reply.departments"
-                                        :key="department.id"
-                                        :name="department.name"
-                                        :color="department.color"
-                                        :muted="!department.is_active"
-                                    />
-                                </div>
-                            </TableCell>
-                            <TableCell class="hidden sm:table-cell">
-                                <DeletedBadge
-                                    v-if="reply.is_deleted"
-                                    feminine
-                                />
-                                <span
-                                    v-else
-                                    class="text-xs text-muted-foreground"
-                                    >Activa</span
-                                >
-                            </TableCell>
-                            <TableCell class="w-px pr-5 text-right">
-                                <RecordActions
-                                    :actions="actionsFor(reply)"
-                                    :record="`la respuesta /${reply.shortcut}`"
-                                    :busy="deletion.processingId === reply.id"
-                                />
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                                    <TableCell class="w-full max-w-0 py-3 pl-5">
+                                        <div
+                                            class="flex min-w-0 items-center gap-2"
+                                        >
+                                            <span
+                                                class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
+                                                >/{{ reply.shortcut }}</span
+                                            >
+                                            <span
+                                                class="truncate font-medium text-foreground"
+                                                >{{ reply.title }}</span
+                                            >
+                                        </div>
+                                        <p
+                                            class="mt-1 truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ reply.body }}
+                                        </p>
+                                        <p
+                                            class="mt-0.5 truncate text-xs text-muted-foreground 2xl:hidden"
+                                        >
+                                            {{ availabilityLabel(reply) }}
+                                        </p>
+                                    </TableCell>
+                                    <TableCell class="hidden 2xl:table-cell">
+                                        <span
+                                            v-if="reply.is_personal"
+                                            class="inline-flex items-center gap-1 text-xs"
+                                        >
+                                            <component
+                                                :is="
+                                                    reply.is_own
+                                                        ? Lock
+                                                        : UserRound
+                                                "
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            {{ availabilityLabel(reply) }}
+                                        </span>
+                                        <span
+                                            v-else-if="reply.is_global"
+                                            class="inline-flex items-center gap-1 text-xs"
+                                        >
+                                            <Globe
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            Todos los departamentos
+                                        </span>
+                                        <div
+                                            v-else
+                                            class="flex flex-wrap gap-1"
+                                        >
+                                            <DepartmentTag
+                                                v-for="department in reply.departments"
+                                                :key="department.id"
+                                                :name="department.name"
+                                                :color="department.color"
+                                                :muted="!department.is_active"
+                                            />
+                                        </div>
+                                    </TableCell>
+                                    <TableCell class="hidden sm:table-cell">
+                                        <DeletedBadge
+                                            v-if="reply.is_deleted"
+                                            feminine
+                                        />
+                                        <span
+                                            v-else
+                                            class="text-xs text-muted-foreground"
+                                            >Activa</span
+                                        >
+                                    </TableCell>
+                                    <TableCell class="w-px pr-5 text-right">
+                                        <RecordActions
+                                            :actions="actionsFor(reply)"
+                                            :record="`la respuesta /${reply.shortcut}`"
+                                            :busy="
+                                                deletion.processingId ===
+                                                reply.id
+                                            "
+                                        />
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
 
-                <RecordGrid v-else-if="quickReplies.data.length > 0">
-                    <li v-for="reply in quickReplies.data" :key="reply.id">
-                        <RecordCard :muted="reply.is_deleted">
-                            <template #title>
-                                <span class="flex min-w-0 items-center gap-2">
-                                    <span
-                                        class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
-                                        >/{{ reply.shortcut }}</span
-                                    >
-                                    <span class="truncate">{{
-                                        reply.title
-                                    }}</span>
-                                </span>
-                            </template>
-                            <template v-if="reply.is_deleted" #badges>
-                                <DeletedBadge feminine />
-                            </template>
-                            <p
-                                class="line-clamp-3 wrap-anywhere text-muted-foreground"
+                        <RecordGrid v-else-if="quickReplies.data.length > 0">
+                            <li
+                                v-for="reply in quickReplies.data"
+                                :key="reply.id"
                             >
-                                <WhatsAppText :text="reply.body" />
-                            </p>
-                            <template #meta>
-                                <span
-                                    v-if="reply.is_personal"
-                                    class="inline-flex items-center gap-1"
-                                >
-                                    <component
-                                        :is="reply.is_own ? Lock : UserRound"
-                                        class="size-3"
-                                        aria-hidden="true"
-                                    />
-                                    {{ availabilityLabel(reply) }}
-                                </span>
-                                <span
-                                    v-else-if="reply.is_global"
-                                    class="inline-flex items-center gap-1"
-                                >
-                                    <Globe class="size-3" aria-hidden="true" />
-                                    Todos los departamentos
-                                </span>
-                                <DepartmentTag
-                                    v-for="department in reply.departments"
-                                    v-else
-                                    :key="department.id"
-                                    :name="department.name"
-                                    :color="department.color"
-                                    :muted="!department.is_active"
-                                />
-                            </template>
-                            <template #actions>
-                                <RecordActions
-                                    :actions="actionsFor(reply)"
-                                    :record="`la respuesta /${reply.shortcut}`"
-                                    :busy="deletion.processingId === reply.id"
-                                />
-                            </template>
-                        </RecordCard>
-                    </li>
-                </RecordGrid>
+                                <RecordCard :muted="reply.is_deleted">
+                                    <template #title>
+                                        <span
+                                            class="flex min-w-0 items-center gap-2"
+                                        >
+                                            <span
+                                                class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
+                                                >/{{ reply.shortcut }}</span
+                                            >
+                                            <span class="truncate">{{
+                                                reply.title
+                                            }}</span>
+                                        </span>
+                                    </template>
+                                    <template v-if="reply.is_deleted" #badges>
+                                        <DeletedBadge feminine />
+                                    </template>
+                                    <p
+                                        class="line-clamp-3 wrap-anywhere text-muted-foreground"
+                                    >
+                                        <WhatsAppText :text="reply.body" />
+                                    </p>
+                                    <template #meta>
+                                        <span
+                                            v-if="reply.is_personal"
+                                            class="inline-flex items-center gap-1"
+                                        >
+                                            <component
+                                                :is="
+                                                    reply.is_own
+                                                        ? Lock
+                                                        : UserRound
+                                                "
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            {{ availabilityLabel(reply) }}
+                                        </span>
+                                        <span
+                                            v-else-if="reply.is_global"
+                                            class="inline-flex items-center gap-1"
+                                        >
+                                            <Globe
+                                                class="size-3"
+                                                aria-hidden="true"
+                                            />
+                                            Todos los departamentos
+                                        </span>
+                                        <DepartmentTag
+                                            v-for="department in reply.departments"
+                                            v-else
+                                            :key="department.id"
+                                            :name="department.name"
+                                            :color="department.color"
+                                            :muted="!department.is_active"
+                                        />
+                                    </template>
+                                    <template #actions>
+                                        <RecordActions
+                                            :actions="actionsFor(reply)"
+                                            :record="`la respuesta /${reply.shortcut}`"
+                                            :busy="
+                                                deletion.processingId ===
+                                                reply.id
+                                            "
+                                        />
+                                    </template>
+                                </RecordCard>
+                            </li>
+                        </RecordGrid>
 
-                <EmptyState
-                    v-else
-                    class="m-4 border-none"
-                    :icon="MessageSquareText"
-                    :title="emptyState.title"
-                    :description="emptyState.description"
-                >
-                    <Button
-                        v-if="hasFilters"
-                        variant="outline"
-                        @click="clearFilters"
-                        >Limpiar filtros</Button
-                    >
-                    <Button
-                        v-else-if="canCreateHere && !isOthers"
-                        @click="openCreate"
-                    >
-                        <Plus />
-                        {{
-                            isMine
-                                ? 'Nueva respuesta personal'
-                                : 'Nueva respuesta'
-                        }}
-                    </Button>
-                </EmptyState>
+                        <EmptyState
+                            v-else
+                            class="m-4 border-none"
+                            :icon="MessageSquareText"
+                            :title="emptyState.title"
+                            :description="emptyState.description"
+                        >
+                            <Button
+                                v-if="hasFilters"
+                                variant="outline"
+                                @click="clearFilters"
+                                >Limpiar filtros</Button
+                            >
+                            <Button
+                                v-else-if="canCreateHere && !isOthers"
+                                @click="openCreate"
+                            >
+                                <Plus />
+                                {{
+                                    isMine
+                                        ? 'Nueva respuesta personal'
+                                        : 'Nueva respuesta'
+                                }}
+                            </Button>
+                        </EmptyState>
+                    </div>
+                </Transition>
 
                 <div
                     v-if="
-                        quickReplies.meta.last_page > 1 ||
-                        quickReplies.data.length > 0
+                        !showSkeleton &&
+                        (quickReplies.meta.last_page > 1 ||
+                            quickReplies.data.length > 0)
                     "
                     class="border-t px-4 py-3"
                 >
@@ -743,6 +905,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             <SurfaceCard
                 v-if="can.use"
                 class="overflow-visible"
+                data-tour="quick-replies.sandbox"
                 title="Probar respuesta"
                 description="Escribe «/» como lo harás en el chat para buscar e insertar una respuesta."
                 body-class="p-4"

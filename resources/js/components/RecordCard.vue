@@ -8,8 +8,9 @@ import { cn } from '@/lib/utils';
  * Compact card of one record for the "Tarjetas" view of a list: identifier,
  * key information, status and the same actions as the table row.
  *
- * Slots: `leading` (avatar or icon), `title`, `subtitle`, `badges`, default
- * (key information), `meta` (footer metadata) and `actions`.
+ * Slots: `leading` (avatar or icon), `title`, `subtitle`, `summary` (one
+ * summary line under the title), `badges`, default (key information), `meta`
+ * (footer metadata) and `actions`.
  *
  * With `href` the whole card opens that record ("stretched link"): the title
  * becomes the card's only link and its ::after covers the card, while every
@@ -33,10 +34,12 @@ const props = defineProps<{
     <article
         :class="
             cn(
-                'relative flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-card transition-colors duration-700',
+                'relative flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-card',
+                !href &&
+                    'transition-colors duration-(--duration-panel) ease-(--ease-standard)',
                 muted && 'bg-muted/30',
                 href &&
-                    'has-[[data-record-card-link]:hover]:border-foreground/25 has-[[data-record-card-link]:hover]:bg-accent/40 [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:relative [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:z-10',
+                    'interactive-surface [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:relative [&_:is(a,button,input,select,textarea,label,[role=button],[role=checkbox],[role=switch],[tabindex]):not([data-record-card-link])]:z-10',
                 highlighted && 'border-primary/40 bg-primary-soft/60',
                 props.class,
             )
@@ -45,7 +48,7 @@ const props = defineProps<{
         <header class="flex min-w-0 items-start gap-3">
             <slot name="leading" />
             <div class="min-w-0 flex-1 space-y-0.5">
-                <div class="min-w-0 text-sm font-medium text-foreground">
+                <div class="min-w-0 text-sm font-semibold text-foreground">
                     <Link
                         v-if="href"
                         :href="href"
@@ -63,6 +66,12 @@ const props = defineProps<{
                 >
                     <slot name="subtitle" />
                 </div>
+                <p
+                    v-if="$slots.summary"
+                    class="min-w-0 pt-0.5 text-sm text-pretty text-muted-foreground"
+                >
+                    <slot name="summary" />
+                </p>
             </div>
         </header>
 

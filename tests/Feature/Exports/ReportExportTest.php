@@ -87,7 +87,7 @@ test('a small export downloads a styled workbook that never evaluates formulas',
 
     expect($workbook->getSheetNames())->toBe(['Resumen', 'Etiquetas'])
         ->and($workbook->getSheetByName('Resumen')->getChartCollection())->toHaveCount(1)
-        ->and($sheet->rangeToArray('A6:I6')[0])->toBe(['Nombre', 'Identificador', 'Color', 'Descripción', 'Estado', 'Contactos', 'Conversaciones', 'Creada por', 'Fecha de creación'])
+        ->and($sheet->rangeToArray('A6:I6')[0])->toBe(['Nombre', 'Nombre interno', 'Color', 'Descripción', 'Estado', 'Contactos', 'Conversaciones', 'Creada por', 'Fecha de creación'])
         ->and($sheet->getStyle('A6')->getFont()->getBold())->toBeTrue()
         ->and($sheet->getStyle('A6')->getFont()->getColor()->getRGB())->toBe('FFFFFF')
         ->and($sheet->getStyle('A6')->getFill()->getStartColor()->getRGB())->toBe(ReportPalette::rgb(ReportPalette::ACCENT))

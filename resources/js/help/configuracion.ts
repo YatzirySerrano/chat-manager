@@ -13,7 +13,7 @@ const help: ModuleHelp = {
         'Elegir el color principal en Personalización.',
     ],
     workflow: [
-        'Revisa la zona horaria: de ella dependen los horarios, «Cerradas hoy» y los reportes.',
+        'Revisa la zona horaria: de ella dependen los horarios, «Finalizadas hoy» y los reportes.',
         'Activa «Aplicar horario de atención» y define los días; si está desactivado, se considera atención continua.',
         'Agrega los días no laborables y pulsa «Guardar días» (se guardan aparte).',
         'Ajusta las reglas de operación y pulsa «Guardar configuración».',
@@ -22,7 +22,7 @@ const help: ModuleHelp = {
         {
             name: 'Departamento predeterminado',
             description:
-                'Recibe las conversaciones nuevas que no tienen departamento. Si queda vacío, solo las ven usuarios con alcance global.',
+                'Recibe las conversaciones nuevas que no tienen departamento. Si queda vacío, solo las ven quienes tienen un rol que ve toda la organización.',
         },
         {
             name: 'Máximo de conversaciones por agente',
@@ -42,7 +42,7 @@ const help: ModuleHelp = {
         {
             name: 'Objetivos de servicio (minutos)',
             description:
-                'De 1 a 43 200, medidos en tiempo hábil. Vacío para no medir cumplimiento.',
+                'De 1 a 43 200, contando solo el horario de atención. Vacío para no medir cumplimiento.',
         },
         {
             name: 'Color principal (Personalización)',
@@ -57,7 +57,7 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver configuración» y «Modificar configuración» requieren alcance global; modificar es sensible.',
+        '«Ver configuración» y «Modificar configuración» son solo para administradores de toda la organización; dar «Modificar configuración» pide confirmación.',
         '«Ver personalización» y «Modificar la apariencia global» controlan el color principal.',
     ],
     commonErrors: [

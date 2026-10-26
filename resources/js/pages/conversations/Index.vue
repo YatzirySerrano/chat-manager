@@ -2,7 +2,7 @@
 import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
 import { MessagesSquare, SearchX } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onScopeDispose, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
@@ -21,6 +21,7 @@ import {
     SheetDescription,
     SheetTitle,
 } from '@/components/ui/sheet';
+import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 import {
@@ -464,6 +465,10 @@ async function markReadFromList(id: number): Promise<void> {
 
 /* Layout: three panels on wide screens, list ↔ chat on small ones. */
 const wide = useMediaQuery('(min-width: 1024px)');
+
+// No PageHeader here: the global help button offers this module's tour
+// and guide.
+onBeforeUnmount(useGuidedTour().registerPageModule('conversaciones'));
 const extraWide = useMediaQuery('(min-width: 1280px)');
 const mobilePane = ref<'list' | 'chat'>(props.selectedId ? 'chat' : 'list');
 
@@ -554,7 +559,8 @@ function onAliasSaved(): void {
     <Head :title="title" />
 
     <div
-        class="grid h-[calc(100dvh-3.5rem)] min-h-0 grid-cols-1 overflow-hidden sm:h-[calc(100dvh-4rem)]"
+        class="grid h-[calc(100dvh-3.5rem)] min-h-0 grid-cols-1 overflow-hidden sm:h-[calc(100dvh-4rem)] [@media(max-height:32rem)]:h-[calc(100dvh-3rem)]!"
+        :data-pane="showChat && !wide ? 'chat' : 'list'"
         :class="
             showDetailsColumn
                 ? 'lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]'
@@ -631,7 +637,7 @@ function onAliasSaved(): void {
                     "
                     :description="
                         selectionMissing
-                            ? 'No existe o ya no está a tu alcance (por ejemplo, otra persona la aceptó o fue transferida).'
+                            ? 'No existe o ya no tienes acceso (por ejemplo, otra persona la aceptó o se transfirió).'
                             : 'Selecciona una conversación de la lista para ver sus mensajes y atender al cliente.'
                     "
                 />

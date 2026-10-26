@@ -34,6 +34,7 @@ test('nobody can assign a role with more privileges than their own', function ()
     $department = Department::factory()->create();
     $coordinator = delegatedAdministrator($department);
 
+    // The root role does not exist for them, so it is refused as an unknown role.
     $this->actingAs($coordinator)->post(route('admin.users.store'), [
         'name' => 'Escalado',
         'email' => 'escalado@empresa.test',
@@ -41,7 +42,7 @@ test('nobody can assign a role with more privileges than their own', function ()
         'password_confirmation' => 'password',
         'role_id' => role(DefaultRole::SuperAdministrator)->id,
         'department_ids' => [$department->id],
-    ])->assertSessionHasErrors(['role_id' => 'No puedes asignar un rol con más privilegios de los que administras.']);
+    ])->assertSessionHasErrors(['role_id' => 'El valor seleccionado en rol no es válido.']);
 
     $this->actingAs($coordinator)->post(route('admin.users.store'), [
         'name' => 'Agente Nuevo',
@@ -115,7 +116,7 @@ test('a role manager cannot grant more than they hold nor edit their own role', 
         'label' => 'Administrador',
         'scope' => 'global',
         'permissions' => array_column(Permission::rootCapabilities(), 'value'),
-    ])->assertForbidden();
+    ])->assertNotFound();
 
     expect($managerRole->refresh()->load('permissions')->grants(Permission::UpdateSettings))->toBeFalse();
 });

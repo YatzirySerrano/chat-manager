@@ -112,7 +112,7 @@ class DepartmentsReport extends ReportDefinition
             new Column('members', 'Miembros', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
             new Column('distribution', 'Distribución', width: 16),
             new Column('connections', 'Conexiones autorizadas', ColumnType::Number, width: 13, total: ColumnTotal::Sum),
-            new Column('default_connections', 'Predeterminado en conexiones', ColumnType::Number, width: 14, total: ColumnTotal::Sum),
+            new Column('default_connections', 'Conexiones de las que recibe las nuevas', ColumnType::Number, width: 14, total: ColumnTotal::Sum),
             new Column('open_conversations', 'Conversaciones abiertas', ColumnType::Number, width: 14, total: ColumnTotal::Sum),
             new Column('created_at', 'Fecha de creación', ColumnType::DateTime, width: 16),
         ];

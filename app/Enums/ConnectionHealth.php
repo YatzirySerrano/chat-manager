@@ -140,13 +140,13 @@ enum ConnectionHealth: string
     {
         return match ($this) {
             self::Inactive => 'La conexión está desactivada y no recibe ni envía mensajes.',
-            self::NotConfigured => 'Faltan identificadores o el token de acceso.',
+            self::NotConfigured => 'Faltan datos de Meta. Edita la conexión y complétalos.',
             self::Configured => 'Los datos están guardados, pero las credenciales aún no se han verificado con Meta.',
             self::CredentialsInvalid => 'Meta rechazó las credenciales en la última verificación.',
-            self::CredentialsVerified => 'Meta aceptó las credenciales; aún no hay evidencia de recepción por webhook.',
-            self::Receiving => 'El webhook fue verificado o ya se recibió al menos un mensaje.',
+            self::CredentialsVerified => 'Meta aceptó los datos; aún no llega ningún mensaje ni aviso.',
+            self::Receiving => 'Meta ya puede enviarnos mensajes (o ya llegó al menos uno).',
             self::Operational => 'Credenciales verificadas y se confirmó la recepción y el envío de mensajes.',
-            self::Error => 'El evento más reciente fue un error posterior al último éxito.',
+            self::Error => 'Lo último que pasó fue un error. Revisa el diagnóstico de la conexión.',
         };
     }
 

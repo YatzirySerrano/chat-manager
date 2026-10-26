@@ -12,6 +12,7 @@ use App\Services\PrivilegeGuard;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 use Illuminate\Validation\Validator;
 
 class StoreUserRequest extends FormRequest
@@ -47,7 +48,11 @@ class StoreUserRequest extends FormRequest
         return [
             ...$this->profileRules(),
             'password' => $this->passwordRules(),
-            'role_id' => ['required', 'integer', Rule::exists(Role::class, 'id')],
+            // The root role "does not exist" for anyone but the root authority.
+            'role_id' => ['required', 'integer', Rule::exists(Role::class, 'id')->when(
+                ! $actor->hasRootAuthority(),
+                fn (Exists $rule): Exists => $rule->where('is_root', false),
+            )],
             'department_ids' => ['array'],
             'department_ids.*' => [
                 'integer',

@@ -213,7 +213,7 @@ function linkLabel(expiresAt: string | null | undefined): string {
         :class="outbound ? 'justify-end' : 'justify-start'"
     >
         <div
-            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-[0.9375rem]/snug wrap-anywhere shadow-xs sm:max-w-[70%] md:text-sm"
+            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-sm/snug wrap-anywhere shadow-xs sm:max-w-[70%] md:text-sm"
             :class="[
                 outbound
                     ? [
@@ -262,10 +262,10 @@ function linkLabel(expiresAt: string | null | undefined): string {
                             'border border-current/40',
                         )
                     "
-                    :title="`Enviado por el transporte simulado de desarrollo: no llegó a ${channelLabel}.`"
+                    :title="`Este mensaje se registró en modo de prueba y no llegó al cliente por ${channelLabel}. Para enviar de verdad, un administrador debe activar el envío real.`"
                 >
                     <FlaskConical class="size-3.5" aria-hidden="true" />
-                    Simulación
+                    No enviado (modo de prueba)
                 </span>
             </p>
 

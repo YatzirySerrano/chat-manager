@@ -35,6 +35,8 @@ import {
     LABELS,
     LIVE_BUDGET_MS,
     USERS,
+    applyInboxFilters,
+    clearInboxFilters,
     alertDelta,
     exitWithSummary,
     launchBrowser,
@@ -247,32 +249,36 @@ const run = async () => {
             const channelOptions = await ana
                 .locator('#inbox-channel option')
                 .allInnerTexts();
+            // Phase 5.1: the panel edits a draft; «Aplicar» applies it.
             await ana.locator('#inbox-channel').selectOption('web_chat');
+            await applyInboxFilters(ana);
             await ana.waitForURL(/channel=web_chat/);
             await settled(ana);
             const webOnly = await rowLabels(ana);
             notes.push(`channel options=${JSON.stringify(channelOptions)}`);
             notes.push(`web_chat rows=${webOnly.length}`);
 
+            await ana.getByRole('button', { name: /^Filtros/ }).click();
             await ana.locator('#inbox-channel').selectOption({ index: 0 });
-            await ana.waitForURL((url) => !/channel=/.test(url.search));
             await ana
                 .locator('#inbox-connection')
                 .selectOption(String(data.connections.whatsapp.id));
+            await applyInboxFilters(ana);
             await ana.waitForURL(
-                new RegExp(`connection=${data.connections.whatsapp.id}`),
+                (url) =>
+                    !/channel=/.test(url.search) &&
+                    url.search.includes(
+                        `connection=${data.connections.whatsapp.id}`,
+                    ),
             );
             await settled(ana);
             const whatsappOnly = await rowLabels(ana);
             notes.push(`WhatsApp connection rows=${whatsappOnly.length}`);
-            // The one of the open panel (the row of applied chips has its
-            // own "Limpiar filtros", covered by the panel).
-            await ana
-                .getByRole('dialog')
-                .getByRole('button', { name: 'Limpiar filtros' })
-                .click();
+            // «Limpiar» of the panel resets and applies.
+            await ana.getByRole('button', { name: /^Filtros/ }).click();
+            await clearInboxFilters(ana);
             await settled(ana);
-            await ana.keyboard.press('Escape');
+            notes.push(`cleared url="${new URL(ana.url()).search}"`);
 
             return [
                 channelOptions.some((text) => /Chat web/.test(text)) &&

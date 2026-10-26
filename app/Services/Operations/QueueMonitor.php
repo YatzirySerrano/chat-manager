@@ -26,7 +26,7 @@ class QueueMonitor
      * @var array<string, string>
      */
     private const LABELS = [
-        Queues::WEBHOOKS => 'Webhooks de WhatsApp',
+        Queues::WEBHOOKS => 'Avisos de WhatsApp (webhooks)',
         Queues::MESSAGES => 'Mensajes salientes',
         Queues::REALTIME => 'Señales de tiempo real',
         Queues::NOTIFICATIONS => 'Notificaciones',
@@ -103,7 +103,7 @@ class QueueMonitor
         ];
 
         if (! $this->isAsynchronous()) {
-            return [...$base, 'status' => HealthStatus::Skipped->value, 'summary' => 'La conexión de colas ejecuta los trabajos en el momento (sin workers).'];
+            return [...$base, 'status' => HealthStatus::Skipped->value, 'summary' => 'Las tareas se ejecutan al momento (sin procesos en segundo plano).'];
         }
 
         try {
@@ -117,7 +117,7 @@ class QueueMonitor
                 'oldest_pending_age' => is_numeric($oldest) ? max(0, CarbonImmutable::now()->getTimestamp() - (int) $oldest) : null,
             ];
         } catch (Throwable $exception) {
-            return [...$base, 'status' => HealthStatus::Fail->value, 'summary' => 'No se pudo consultar la cola: '.SensitiveText::firstLine(class_basename($exception).': '.$exception->getMessage(), 160)];
+            return [...$base, 'status' => HealthStatus::Fail->value, 'summary' => 'No se pudo consultar este grupo de tareas. Detalle técnico: '.SensitiveText::firstLine(class_basename($exception).': '.$exception->getMessage(), 160)];
         }
 
         [$status, $summary] = $this->evaluate($responsibility, $stats['pending'], $stats['oldest_pending_age']);
@@ -134,14 +134,14 @@ class QueueMonitor
         $age = $oldestAge ?? 0;
 
         if ($pending >= $limits['critical_pending'] || $age >= $limits['critical_age']) {
-            return [HealthStatus::Fail, "Acumulación crítica: {$pending} pendientes, el más antiguo espera {$age} s. Revisa que los workers de esta cola estén activos."];
+            return [HealthStatus::Fail, "Muy atrasado: {$pending} tareas pendientes; la más antigua espera {$age} s. Pide al equipo técnico que revise el proceso en segundo plano de este grupo."];
         }
 
         if ($pending >= $limits['warning_pending'] || $age >= $limits['warning_age']) {
-            return [HealthStatus::Warning, "Acumulación: {$pending} pendientes, el más antiguo espera {$age} s."];
+            return [HealthStatus::Warning, "Atrasado: {$pending} tareas pendientes; la más antigua espera {$age} s."];
         }
 
-        return [HealthStatus::Ok, $pending === 0 ? 'Sin trabajos pendientes.' : "{$pending} pendientes en proceso normal."];
+        return [HealthStatus::Ok, $pending === 0 ? 'Sin tareas pendientes.' : "{$pending} tareas pendientes, a ritmo normal."];
     }
 
     /**

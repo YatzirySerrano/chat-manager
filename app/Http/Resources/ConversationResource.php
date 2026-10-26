@@ -8,6 +8,7 @@ use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
 use App\Support\Personalization\ViewerAlias;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -71,8 +72,8 @@ class ConversationResource extends JsonResource
                 'is_active' => $this->department->is_active,
             ]),
             'assignee' => $this->whenLoaded('assignee', fn (): ?array => $this->assignee === null ? null : [
-                'id' => $this->assignee->id,
-                'name' => $this->assignee->name,
+                'id' => app(ProtectedAccounts::class)->idFor($this->assignee, $viewer),
+                'name' => app(ProtectedAccounts::class)->nameFor($this->assignee, $viewer),
                 'is_active' => $this->assignee->is_active,
             ]),
             'last_message_at' => $this->last_message_at?->toIso8601String(),

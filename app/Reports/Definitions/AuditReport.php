@@ -19,6 +19,7 @@ use App\Reports\PdfOptions;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
 use App\Support\Audit\AuditPresenter;
+use App\Support\ProtectedAccounts;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -155,7 +156,7 @@ class AuditReport extends ReportDefinition
 
         return [
             'created_at' => $record->created_at,
-            'actor' => $record->actor_name ?? 'Sistema',
+            'actor' => $this->presenter->actorName($record, $context->actor),
             'action' => $record->action->label(),
             'subject' => $type === null ? $record->auditable_label : $type.': '.($record->auditable_label ?? '#'.$record->auditable_id),
             'details' => $this->summarize($record),
@@ -166,7 +167,8 @@ class AuditReport extends ReportDefinition
     public function metrics(ReportContext $context): array
     {
         $total = $this->count($context);
-        $actors = $this->aggregate($context)->whereNotNull('user_id')->distinct()->count('user_id');
+        // People, never counting a protected account (root role) for anyone else.
+        $actors = app(ProtectedAccounts::class)->excludeFrom($this->aggregate($context)->whereNotNull('user_id'), 'user_id', $context->actor)->distinct()->count('user_id');
         $top = $this->actionCounts($context, 1);
         $topAction = array_key_first($top);
         $metrics = [

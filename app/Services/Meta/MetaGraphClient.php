@@ -355,7 +355,7 @@ class MetaGraphClient
 
         [$kind, $hint] = match (true) {
             in_array($code, [0, 190], true) || ($code === null && $response->status() === 401) => [MetaGraphException::TOKEN_INVALID, 'El token de acceso es inválido o expiró. Genera un nuevo token de usuario del sistema.'],
-            in_array($code, [3, 10, 200, 131005], true) || ($code !== null && $code >= 200 && $code < 300) || ($code === null && $response->status() === 403) => [MetaGraphException::PERMISSION, 'El token no tiene los permisos necesarios (whatsapp_business_management y whatsapp_business_messaging) sobre este número.'],
+            in_array($code, [3, 10, 200, 131005], true) || ($code !== null && $code >= 200 && $code < 300) || ($code === null && $response->status() === 403) => [MetaGraphException::PERMISSION, 'El token no tiene los permisos necesarios (whatsapp_business_management y whatsapp_business_messaging) sobre este número. Genera un token nuevo en Meta con esos permisos y pégalo en la conexión.'],
             MetaErrorCatalog::isMessageError($code) => [MetaGraphException::MESSAGE_REJECTED, MetaErrorCatalog::explain($code, 'WhatsApp rechazó el mensaje.')],
             $code === 100 || $code === 803 || $response->status() === 404 => [MetaGraphException::INVALID_REQUEST, $operation === 'la verificación' ? 'El Phone number ID no existe o el token no tiene acceso a él.' : 'Meta rechazó la solicitud: un identificador no existe o un dato no es válido.'],
             default => [MetaGraphException::REJECTED, $operation === 'la verificación' ? 'Meta rechazó las credenciales.' : 'Meta rechazó la solicitud.'],

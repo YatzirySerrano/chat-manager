@@ -33,7 +33,7 @@ const emit = defineEmits<{ change: [] }>();
     >
         <SelectTrigger
             :class="cn('w-full lg:w-36', props.class)"
-            aria-label="Estado del registro"
+            aria-label="Mostrar activos o eliminados"
         >
             <SelectValue />
         </SelectTrigger>

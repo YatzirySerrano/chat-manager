@@ -154,6 +154,76 @@ const main = async () => {
             ];
         });
 
+        // 0b. A channel authorization that fails once with a server error
+        // (e.g. a deadlock on the rate limiter) is tried again by the client
+        // and the channel ends subscribed, without reloading the page.
+        await step('rt-auth-retry-after-500', async () => {
+            const retry = await openRealtimeSession(browser, 'retry', {
+                ignoreConsole:
+                    /status of (403|404|409|422|429|500)|WebSocket connection to|ERR_CONNECTION_REFUSED/,
+            });
+            const userChannel = /^private-users\.\d+$/;
+            let failed = 0;
+
+            try {
+                await retry.route('**/broadcasting/auth', async (route) => {
+                    let channel = '';
+
+                    try {
+                        channel = JSON.parse(
+                            route.request().postData() ?? '{}',
+                        ).channel_name;
+                    } catch {
+                        channel = '';
+                    }
+
+                    if (failed === 0 && userChannel.test(channel)) {
+                        failed++;
+                        await route.fulfill({
+                            status: 500,
+                            contentType: 'application/json',
+                            body: '{"message":"Server Error"}',
+                        });
+
+                        return;
+                    }
+
+                    await route.continue();
+                });
+                // The page reached after signing in connects on its own; a
+                // single socket proves the retry happened in that document.
+                await login(retry, USERS.beto);
+                await liveIndicator(retry).waitFor({ timeout: 15_000 });
+                const subscribed = await waitFor(
+                    () =>
+                        retry.frames$.some(
+                            (frame) =>
+                                frame.event ===
+                                    'pusher_internal:subscription_succeeded' &&
+                                userChannel.test(frame.channel ?? ''),
+                        ),
+                    15_000,
+                );
+                const attempts = retry.auth$
+                    .filter((answer) => userChannel.test(answer.channel ?? ''))
+                    .map((answer) => answer.status);
+                const sockets = retry.frames$.filter(
+                    (frame) => frame.event === '__open',
+                ).length;
+
+                return [
+                    failed === 1 &&
+                        subscribed &&
+                        attempts[0] === 500 &&
+                        attempts.includes(200) &&
+                        sockets === 1,
+                    `user channel auth answers=${JSON.stringify(attempts)}; subscribed=${subscribed}; sockets opened=${sockets}`,
+                ];
+            } finally {
+                await retry.context().close();
+            }
+        });
+
         await Promise.all([openQueueView(ana), openQueueView(beto)]);
 
         // 1. A simulated inbound message reaches both agents' queues and the
@@ -502,7 +572,9 @@ const main = async () => {
                 150,
             );
             const frame = frameSince(admin, 'message.status', since - 10_000);
-            const simulated = await target.getByText('Simulación').count();
+            const simulated = await target
+                .getByText('No enviado (modo de prueba)')
+                .count();
             const text = done
                 ? ''
                 : ` bubble: "${(await target.innerText()).replace(/\s+/g, ' ')}"`;
@@ -621,6 +693,28 @@ const main = async () => {
         ]);
 
         await step('rt-team-chat-message', async () => {
+            // B's requests to the team chat in flight / last activity, so
+            // the step only starts once B is quiet (see below).
+            let betoInFlight = 0;
+            let betoLastActivity = Date.now();
+            const isTeamChat = (request) =>
+                new URL(request.url()).pathname.startsWith('/team-chat');
+            const started = (request) => {
+                if (isTeamChat(request)) {
+                    betoInFlight++;
+                    betoLastActivity = Date.now();
+                }
+            };
+            const ended = (request) => {
+                if (isTeamChat(request)) {
+                    betoInFlight = Math.max(0, betoInFlight - 1);
+                    betoLastActivity = Date.now();
+                }
+            };
+            beto.on('request', started);
+            beto.on('requestfinished', ended);
+            beto.on('requestfailed', ended);
+            const creationSince = Date.now();
             await ana
                 .getByRole('button', { name: 'Nuevo chat', exact: true })
                 .first()
@@ -635,7 +729,36 @@ const main = async () => {
                     hasText: 'E2E Ana',
                 })
                 .waitFor({ timeout: LIVE_BUDGET_MS });
-            await beto.waitForTimeout(2_500);
+            // Root cause of an earlier intermittent miss: the reload B
+            // makes for the creation signal (queued signal, 400 ms debounce
+            // and the request itself) could still be running when Ana's
+            // message was stored, so it brought the unread badge before
+            // the message's own team-chat.changed frame arrived. Wait for
+            // the creation signal and for B to be quiet (no team chat
+            // request in flight, no new signal) before writing.
+            const quiet = await waitFor(
+                () => {
+                    const lastFrame = beto.frames$
+                        .filter(
+                            (frame) =>
+                                frame.t >= creationSince &&
+                                frame.event === 'team-chat.changed',
+                        )
+                        .at(-1);
+
+                    return (
+                        lastFrame !== undefined &&
+                        betoInFlight === 0 &&
+                        Date.now() - Math.max(betoLastActivity, lastFrame.t) >=
+                            1_500
+                    );
+                },
+                15_000,
+                100,
+            );
+            beto.off('request', started);
+            beto.off('requestfinished', ended);
+            beto.off('requestfailed', ended);
             const badgeBefore = await beto
                 .locator('[aria-label="1 sin leer"]')
                 .count();
@@ -656,8 +779,8 @@ const main = async () => {
                 .count();
 
             return [
-                badgeBefore === 0 && badge.live && preview > 0,
-                `thread listed for B on creation; ${badge.note}; preview in B's list: ${preview > 0}`,
+                quiet && badgeBefore === 0 && badge.live && preview > 0,
+                `thread listed for B on creation (B quiet before writing: ${quiet}); ${badge.note}; preview in B's list: ${preview > 0}`,
             ];
         });
 
@@ -713,13 +836,85 @@ const main = async () => {
                 .getByRole('dialog')
                 .getByRole('button', { name: 'Retirar' })
                 .click();
-            const measured = await measure(
-                'membership removed→B unavailable',
-                beto,
-                unavailableSelection(beto),
-                since,
-                'access.changed',
+            // Business rule: B's open chat becomes unavailable live and B's
+            // session re-authorizes its channels. The removal releases B's
+            // conversations (conversation.changed) and revokes B's access
+            // (access.changed) in the same request: either signal may reach
+            // the browser first and both lead to the same screen, so the
+            // UI change must come from the WebSocket (one of the two frames
+            // seen before it, within the live budget) and access.changed
+            // must still arrive within the budget, not in a fixed order.
+            await unavailableSelection(beto)
+                .first()
+                .waitFor({ timeout: LIVE_BUDGET_MS + 4_000 });
+            const elapsed = Date.now() - since;
+            const firstSignal = ['access.changed', 'conversation.changed']
+                .map((event) => frameSince(beto, event, since))
+                .filter((frame) => frame !== undefined)
+                .sort((a, b) => a.t - b.t)[0];
+            const accessArrived = await waitFor(
+                () => frameSince(beto, 'access.changed', since) !== undefined,
+                Math.max(0, LIVE_BUDGET_MS - (Date.now() - since)),
+                50,
             );
+            const accessFrame = frameSince(beto, 'access.changed', since);
+            // Nothing of the conversation stays rendered for B (the chat
+            // and the list row go; Inertia's initial page payload of the
+            // earlier full load, a <script>, is not rendered content).
+            const renderedProtected = () =>
+                beto.evaluate((text) => {
+                    const found = [];
+                    const walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_TEXT,
+                    );
+
+                    while (walker.nextNode()) {
+                        const node = walker.currentNode;
+                        const element = node.parentElement;
+
+                        if (
+                            !node.textContent.includes(text) ||
+                            !element ||
+                            element.closest('script, template')
+                        ) {
+                            continue;
+                        }
+
+                        const rect = element.getBoundingClientRect();
+
+                        if (rect.width > 0 && rect.height > 0) {
+                            found.push(
+                                element
+                                    .closest('[aria-label]')
+                                    ?.getAttribute('aria-label') ??
+                                    element.tagName,
+                            );
+                        }
+                    }
+
+                    return found;
+                }, 'Hola, soy Ana. Te ayudo enseguida.');
+            let rendered = [];
+            const protectedGone = await waitFor(
+                async () => {
+                    rendered = await renderedProtected();
+
+                    return rendered.length === 0;
+                },
+                Math.max(500, LIVE_BUDGET_MS - (Date.now() - since)),
+                100,
+            );
+            const goneMs = Date.now() - since;
+            const measured = {
+                live:
+                    elapsed <= LIVE_BUDGET_MS &&
+                    firstSignal !== undefined &&
+                    firstSignal.t - since <= elapsed &&
+                    accessArrived &&
+                    protectedGone,
+                note: `beto: UI ${elapsed} ms after ${firstSignal ? `${firstSignal.event} (${firstSignal.t - since} ms)` : 'no signal frame'}, WS access.changed ${accessFrame ? `${accessFrame.t - since} ms` : 'not seen'}; conversation content no longer rendered: ${protectedGone ? `${goneMs} ms` : JSON.stringify(rendered)}`,
+            };
             await beto.waitForTimeout(1_500);
             const reauth = beto.auth$
                 .slice(authBefore)

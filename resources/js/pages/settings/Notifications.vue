@@ -24,7 +24,7 @@ import type {
     PushSettings,
     PushSupport,
 } from '@/lib/notifications/push';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatUserAgent } from '@/lib/format';
 import { edit, update } from '@/routes/notifications/preferences';
 import {
     destroy as destroyPushSubscription,
@@ -83,19 +83,19 @@ const currentDevice = computed<PushDevice | null>(
 
 const pushText = computed(() => {
     if (props.push.public_key === null) {
-        return 'El servidor no tiene configuradas las notificaciones push (claves VAPID). Pide a un administrador que las configure.';
+        return 'Las notificaciones del navegador aún no están activadas en la plataforma. Pide a un administrador que las active.';
     }
 
     if (support.value === 'insecure') {
-        return 'Las notificaciones push solo funcionan con una conexión segura (HTTPS).';
+        return 'Las notificaciones del navegador solo funcionan si abres la plataforma con una dirección segura (https://).';
     }
 
     if (support.value === 'unsupported') {
-        return 'Este navegador no admite notificaciones push.';
+        return 'Este navegador no admite notificaciones del navegador. Prueba con Chrome, Edge, Firefox o Safari actualizados.';
     }
 
     if (permission.value === 'denied') {
-        return 'Bloqueaste las notificaciones de este sitio. Para activar las notificaciones push cámbialo en la configuración del navegador.';
+        return 'Bloqueaste las notificaciones de este sitio. Para recibirlas, permite las notificaciones de este sitio en la configuración del navegador.';
     }
 
     return currentDevice.value
@@ -144,7 +144,7 @@ async function enablePush(): Promise<void> {
                 onError: (errors) => {
                     pushError.value =
                         errors.endpoint ??
-                        'No se pudieron activar las notificaciones push.';
+                        'No se pudieron activar las notificaciones del navegador.';
                 },
                 onFinish: () => {
                     pushBusy.value = false;
@@ -153,7 +153,7 @@ async function enablePush(): Promise<void> {
         );
     } catch {
         pushError.value =
-            'El navegador no pudo activar las notificaciones push. Inténtalo de nuevo.';
+            'El navegador no pudo activar las notificaciones. Inténtalo de nuevo.';
         pushBusy.value = false;
     }
 }
@@ -212,9 +212,8 @@ function submit(): void {
 <template>
     <Head title="Notificaciones" />
 
-    <h1 class="sr-only">Notificaciones</h1>
-
     <div class="space-y-6">
+        <h2 class="mb-1 text-lg font-semibold">Notificaciones</h2>
         <p class="text-sm text-pretty text-muted-foreground">
             Elige qué avisos quieres recibir dentro de la plataforma, con sonido
             o como notificación del navegador.
@@ -285,7 +284,9 @@ function submit(): void {
                 />
                 <div class="min-w-0 flex-1 space-y-3">
                     <div>
-                        <p class="text-sm font-medium">Notificaciones push</p>
+                        <p class="text-sm font-medium">
+                            Notificaciones del navegador
+                        </p>
                         <p class="text-sm text-muted-foreground">
                             {{ pushText }}
                         </p>
@@ -323,7 +324,7 @@ function submit(): void {
                     <ul
                         v-if="push.subscriptions.length > 0"
                         class="divide-y rounded-lg border"
-                        aria-label="Dispositivos con notificaciones push"
+                        aria-label="Navegadores con notificaciones activadas"
                     >
                         <li
                             v-for="device in push.subscriptions"
@@ -332,7 +333,7 @@ function submit(): void {
                         >
                             <div class="min-w-0">
                                 <p class="truncate">
-                                    {{ device.user_agent ?? 'Navegador' }}
+                                    {{ formatUserAgent(device.user_agent) }}
                                     <span
                                         v-if="device.id === currentDevice?.id"
                                         class="text-xs text-muted-foreground"
@@ -350,7 +351,7 @@ function submit(): void {
                                 size="icon-sm"
                                 variant="ghost"
                                 :disabled="pushBusy"
-                                :aria-label="`Eliminar ${device.user_agent ?? 'navegador'}`"
+                                :aria-label="`Quitar ${formatUserAgent(device.user_agent)}`"
                                 @click="removeDevice(device)"
                             >
                                 <Trash2 />

@@ -271,7 +271,7 @@ test('department managers create replies only for their own departments', functi
 
     $this->actingAs($manager)
         ->post(route('quick-replies.store'), quickReplyInput(['is_global' => true]))
-        ->assertSessionHasErrors(['is_global' => 'Solo los usuarios con alcance global pueden crear respuestas disponibles para todos los departamentos. Elige tus departamentos.']);
+        ->assertSessionHasErrors(['is_global' => 'Solo quienes ven toda la organización pueden crear respuestas para todos los departamentos. Elige tus departamentos.']);
 
     $this->actingAs($manager)
         ->post(route('quick-replies.store'), quickReplyInput(['is_global' => false, 'department_ids' => [$own->id, $other->id]]))

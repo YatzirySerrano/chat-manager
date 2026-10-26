@@ -13,7 +13,7 @@ defineProps<{
 
 <template>
     <span
-        class="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive dark:bg-destructive/20"
+        class="inline-flex items-center gap-1 rounded-full bg-destructive-soft px-2 py-0.5 text-xs font-medium text-destructive-soft-foreground"
     >
         <Trash2 class="size-3" aria-hidden="true" />
         {{ feminine ? 'Eliminada' : 'Eliminado' }}

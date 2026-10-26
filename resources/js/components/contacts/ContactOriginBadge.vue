@@ -39,7 +39,7 @@ const confirmed = computed(
         <BadgeCheck
             v-if="confirmed"
             class="size-3.5 shrink-0 text-success"
-            aria-label="Confirmado por el proveedor"
+            aria-label="Confirmado por Meta"
         />
         <Hand
             v-else

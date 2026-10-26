@@ -92,7 +92,7 @@ const view = computed(() => {
                 class="inline-flex shrink-0 items-center gap-1.5 rounded-full text-xs font-medium"
                 :class="
                     view.pill
-                        ? 'border border-warning/40 bg-warning/10 px-2.5 py-1 text-warning'
+                        ? 'border border-transparent bg-warning-soft px-2.5 py-1 text-warning-soft-foreground'
                         : 'size-9 justify-center'
                 "
                 tabindex="0"

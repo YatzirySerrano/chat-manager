@@ -34,7 +34,7 @@ final class VisitorIdentityRules
     {
         return [
             $prefix => 'identidad',
-            "{$prefix}.external_id" => 'identificador externo',
+            "{$prefix}.external_id" => 'identificador del usuario en tu sitio',
             "{$prefix}.name" => 'nombre',
             "{$prefix}.email" => 'correo electrónico',
             "{$prefix}.iat" => 'fecha de emisión',

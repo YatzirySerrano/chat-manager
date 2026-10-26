@@ -10,7 +10,7 @@ const help: ModuleHelp = {
         'Abrir la ficha para ver datos, identidades por canal, campos personalizados, notas privadas e historial.',
         'Editar, eliminar (de forma lógica) y restaurar contactos.',
         'Resolver posibles duplicados en «Revisión de duplicados».',
-        'Exportar la lista o importar contactos desde Excel/CSV (solo Superadministrador).',
+        'Exportar la lista o, con el permiso correspondiente, importar contactos desde Excel/CSV.',
     ],
     workflow: [
         'Un cliente escribe por primera vez: se crea un contacto provisional para poder atenderlo, pero todavía no aparece en el directorio.',
@@ -39,19 +39,19 @@ const help: ModuleHelp = {
                 'Hasta 10 datos adicionales con nombre (máx. 60) y valor (máx. 500); cada nombre debe ser distinto.',
         },
         {
-            name: 'Identidades',
+            name: 'Números y cuentas vinculados',
             description:
-                'Identificadores técnicos con los que cada canal reconoce a la persona (por ejemplo, su número de WhatsApp o su visitante de Chat web). Permiten unir sus conversaciones a la misma ficha; no se editan a mano.',
+                'Datos con los que cada canal reconoce a la persona (por ejemplo, su número de WhatsApp o su visitante de Chat web). Permiten unir sus conversaciones a la misma ficha; no se editan a mano.',
         },
         {
-            name: 'Fuente',
+            name: 'Cómo se agregó',
             description:
-                'Cómo se registró: «Registro manual», «Importación» o automático por canal (WhatsApp, Chat web, Messenger, Instagram).',
+                'Cómo llegó al directorio: «Agregado a mano», «Importación» o creado al escribir por un canal (WhatsApp, Chat web, Messenger, Instagram).',
         },
         {
             name: 'Procedencia',
             description:
-                'Por qué llegó el contacto (anuncio, sitio web, código QR, recomendación…). «Confirmado por el proveedor» viene de Meta; «Declarado manualmente» lo registra un administrador con alcance global.',
+                'Por qué llegó el contacto (anuncio, sitio web, código QR, recomendación…). «Confirmado por Meta» lo informó Meta; «Declarado manualmente» lo anota un administrador de toda la organización según lo que dijo la persona.',
         },
         {
             name: 'Notas privadas',
@@ -76,11 +76,11 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver contactos» muestra los contactos de tu alcance: con «Sus departamentos», los que tuvieron conversación en tus departamentos o asignada a ti, más los que tú creaste.',
+        '«Ver contactos» muestra los contactos que puedes ver según tu rol: con «Sus departamentos», los que tuvieron conversación en tus departamentos o asignada a ti, más los que tú creaste.',
         '«Crear contactos» permite registrar contactos y guardar los provisionales desde la conversación.',
         '«Editar contactos» y «Eliminar y restaurar contactos» se otorgan por separado; restaurar también requiere «Consultar registros eliminados».',
         '«Registrar notas privadas de contactos» permite ver y escribir notas privadas.',
-        'La revisión de duplicados requiere ver y editar contactos con alcance global.',
+        'La revisión de duplicados requiere ver y editar contactos y un rol que vea toda la organización.',
     ],
     commonErrors: [
         {

@@ -127,7 +127,7 @@ test('a department deactivated after a listing no longer lets the same person ac
     $department->forceFill(['is_active' => false])->save();
 
     // Out of the general inbox (nothing left to accept), still in "all".
-    $this->actingAs($admin)->get(route('conversations.index'))
+    $this->actingAs($admin)->get(route('conversations.index', ['view' => 'general']))
         ->assertInertia(fn ($page) => $page->where('conversations.data', []));
 
     $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all']))

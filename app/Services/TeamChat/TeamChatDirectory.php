@@ -16,6 +16,9 @@ use Illuminate\Database\Eloquent\Builder;
  *   reach every such account.
  * - Everybody else only reaches people sharing at least one department.
  *
+ * - Protected accounts (root role) are only reachable by the root
+ *   authority: for anyone else they do not exist.
+ *
  * This only governs starting chats and adding people: an existing thread
  * stays available to its current participants.
  */
@@ -37,6 +40,7 @@ class TeamChatDirectory
         $query = User::query()
             ->active()
             ->whereKeyNot($actor->id)
+            ->withoutProtectedFor($actor)
             ->withPermission(Permission::UseTeamChat);
 
         if (! $this->reachesEveryone($actor)) {

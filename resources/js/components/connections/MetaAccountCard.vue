@@ -42,8 +42,8 @@ const stateLabel = computed(
 
 const stateTone = computed(() =>
     account.value.state === 'authorized'
-        ? 'bg-success/10 text-success'
-        : 'bg-warning/10 text-warning',
+        ? 'bg-success-soft text-success-soft-foreground'
+        : 'bg-warning-soft text-warning-soft-foreground',
 );
 
 const subscriptionLabel = computed(() => {

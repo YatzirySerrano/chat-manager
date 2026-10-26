@@ -143,7 +143,7 @@ test('a user subscribes their browser storing only the endpoint and a short devi
         ->withHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36')
         ->post(route('notifications.push-subscriptions.store'), ['endpoint' => PUSH_ENDPOINT, 'keys' => ['p256dh' => 'x', 'auth' => 'y']])
         ->assertRedirect()
-        ->assertInertiaFlash('toast.message', 'Notificaciones push activadas en este navegador.');
+        ->assertInertiaFlash('toast.message', 'Notificaciones del navegador activadas. Te avisaremos aunque la plataforma no esté a la vista.');
 
     $subscription = PushSubscription::query()->sole();
 
@@ -183,7 +183,7 @@ test('only endpoints of known push services over HTTPS are accepted', function (
 test('the endpoint validation explains the rejection', function () {
     $this->actingAs(User::factory()->agent()->create())
         ->post(route('notifications.push-subscriptions.store'), ['endpoint' => 'https://example.com/push'])
-        ->assertSessionHasErrors(['endpoint' => 'El navegador no usa un servicio de notificaciones push admitido.']);
+        ->assertSessionHasErrors(['endpoint' => 'Este navegador no usa un servicio de notificaciones compatible. Prueba con Chrome, Edge, Firefox o Safari actualizados.']);
 });
 
 test('a user keeps at most ten browsers, dropping the oldest', function () {

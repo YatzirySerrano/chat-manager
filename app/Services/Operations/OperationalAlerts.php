@@ -46,8 +46,8 @@ class OperationalAlerts
         if ($recentFailures >= $spike) {
             $alerts[] = [
                 'key' => 'failed-jobs-spike',
-                'title' => 'Aumento de trabajos fallidos',
-                'message' => "{$recentFailures} trabajos fallaron en los últimos {$spikeMinutes} minutos (umbral {$spike}). Revisa Administración > Sistema.",
+                'title' => 'Aumento de tareas con error',
+                'message' => "{$recentFailures} tareas fallaron en los últimos {$spikeMinutes} minutos (umbral {$spike}). Revisa Administración › Sistema.",
             ];
         }
 

@@ -65,7 +65,7 @@ const confirmCopy = computed(() => {
             return {
                 title: `¿Vincular el WhatsApp de «${reviewed}» a «${target}»?`,
                 description:
-                    'La identidad de WhatsApp, sus conexiones, su procedencia, notas y etiquetas pasan a la ficha existente. El registro automático queda eliminado y conserva su historial (puede restaurarse).',
+                    'El número de WhatsApp, sus notas, etiquetas y procedencia pasan al contacto existente. La ficha repetida se elimina, pero su historial se conserva (puede restaurarse).',
                 label: 'Vincular',
             };
         case 'duplicate_archived':
@@ -143,13 +143,11 @@ function phone(summary: ContactReviewSummary): string {
 <template>
     <Head title="Revisión de duplicados" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="contactos"
             title="Revisión de duplicados"
-            description="Posibles duplicados que no se resolvieron automáticamente para no fusionar personas sin evidencia suficiente ni revelar contactos entre departamentos."
+            description="Contactos que podrían estar repetidos. El sistema no los une solo para no mezclar a personas distintas; decide tú si son la misma persona."
         />
 
         <div
@@ -179,7 +177,7 @@ function phone(summary: ContactReviewSummary): string {
                     ? 'No hay posibles duplicados pendientes'
                     : 'Todavía no se ha resuelto ningún caso'
             "
-            description="Aparecen aquí cuando un remitente de WhatsApp coincide de forma ambigua con fichas existentes, o cuando alguien registra a mano un teléfono o correo que ya pertenece a contactos fuera de su alcance."
+            description="Aparecen aquí cuando alguien escribe por WhatsApp y se parece a varios contactos, o cuando se agrega a mano un teléfono o correo que ya usa otro contacto."
         />
 
         <SurfaceCard

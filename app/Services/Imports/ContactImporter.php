@@ -426,7 +426,7 @@ class ContactImporter
             $existing = Contact::query()->findOrFail($matches[0]['id']);
 
             if ($existing->isDeleted() && ($rolledBackBy = $this->rolledBackBatchOf($existing)) !== null) {
-                return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}» (#{$existing->id}), eliminado al revertir la importación #{$rolledBackBy}; restáuralo desde Contactos si quieres conservarlo.", $existing->id);
+                return $this->outcome($row, 'skipped', "Ya existe como «{$existing->name}», pero se eliminó al revertir una importación anterior (#{$rolledBackBy}); restáuralo desde Contactos › Eliminados si quieres conservarlo.", $existing->id);
             }
 
             if ($decision !== self::DECISION_FILL_EMPTY) {

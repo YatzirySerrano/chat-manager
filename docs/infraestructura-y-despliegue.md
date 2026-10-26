@@ -313,9 +313,9 @@ worker nunca lea filas aún no confirmadas.
 ### Opción Redis
 
 Configuración preparada, no activa por defecto: `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` (y opcionalmente
-`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Con un chat web público activo,
-lleva al menos los límites de uso a Redis aunque la caché siga en la base: `CACHE_LIMITER=redis` (`cache.limiter`; vacío
-usa `CACHE_STORE`). El almacén `database` sufre bloqueos mutuos (deadlock 1213) en ráfagas sobre la misma clave del
+`SESSION_DRIVER=redis`), `REDIS_HOST/PORT/PASSWORD`, `REDIS_QUEUE_RETRY_AFTER=900`. Siempre que haya Redis (desde la
+fase 5.1, no solo con un chat web público activo), lleva al menos los límites de uso a Redis aunque la caché siga en la
+base: `CACHE_LIMITER=redis` (`cache.limiter`; vacío usa `CACHE_STORE`). El almacén `database` sufre bloqueos mutuos (deadlock 1213) en ráfagas sobre la misma clave del
 limitador y no reintenta; el Preflight avisa en ese caso, y la API responde esos bloqueos como `503
 temporarily_unavailable` reintentable. `REDIS_QUEUE_BLOCK_FOR`
 (segundos, vacío por omisión) activa la espera bloqueante en lugar de consultar cada `--sleep`; déjalo vacío con la
@@ -598,6 +598,42 @@ quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
     [meta-messenger-instagram.md §9](meta-messenger-instagram.md#9-validación-con-una-app-real-pendiente)
     (pendiente de validación real).
 
+### Procedimiento de la fase 5.1
+
+> **Nada de esto se ejecutó sobre la base principal `chatmanager`.** Los cambios marcados como pendientes requieren
+> la autorización del responsable.
+
+1. **Sin migraciones.** La fase 5.1 no añade ni modifica tablas; `php artisan migrate --force` no hace nada nuevo.
+2. **Assets y PWA:** `npm ci && npm run build` (lo hace `deploy.sh`). `public/sw.js` subió su `VERSION`
+   (`2026-10-24.3`): cada pestaña abierta mostrará **una vez** «Hay una nueva versión disponible» (§20); es lo
+   esperado.
+3. **Workers:** `php artisan queue:restart` (lo hace `deploy.sh`) para que carguen el código nuevo, incluido el
+   _listener_ que refresca los permisos antes de cada trabajo
+   ([seguridad §3.3](seguridad-y-auditoria.md#33-permisos-efectivos-y-cambios-en-vivo-fase-51)). Sin reinicio, un
+   worker antiguo sigue con el código anterior.
+4. **Limitador:** si el servidor tiene Redis, se recomienda `CACHE_LIMITER=redis` aunque no haya chat web público
+   (§9 «Opción Redis»). La autorización de canales ya tolera los _deadlocks_ del almacén `database`
+   ([tiempo-real](tiempo-real.md#autorización-de-canales-en-ráfaga-fase-51)), pero el resto de límites no.
+5. **Índices recomendados (pendiente de aprobación, NO aplicados):** dos índices compuestos en `conversation_events`,
+   `(to_department_id, conversation_id)` y `(from_department_id, conversation_id)`, abaratan la vista de supervisión
+   por departamentos a gran escala ([rendimiento §12.3](rendimiento-y-carga.md#123-qué-costaba-y-qué-se-cambió)).
+   Requieren una migración nueva; no forman parte de esta fase.
+6. **Permisos del Administrador (pendiente de autorización):** en instalaciones existentes, el rol Administrador
+   carece de cuatro permisos sensibles de su definición: `integrations.view`, `integrations.manage`, `system.view` y
+   `system.manage`. Para ponerlo al día, revisar primero la vista previa y solo con autorización aplicar:
+
+    ```bash
+    php artisan app:sync-permissions --upgrade-default-roles --include-sensitive          # vista previa
+    php artisan app:sync-permissions --upgrade-default-roles --include-sensitive --apply  # aplica, auditado
+    ```
+
+    La actualización también vuelve a añadir permisos de la definición retirados a mano
+    ([seguridad §3.1](seguridad-y-auditoria.md#31-permisos-por-rol-tras-la-actualización-de-la-estabilización)).
+
+7. **Después:** comprobar que un administrador ve las conversaciones de sus agentes por omisión, que el cierre de
+   sesión termina sin recargar y que Administración > Sistema no muestra fallidos nuevos
+   ([guía §30](guia-pruebas-manuales.md#30-fase-51)).
+
 ### Webhooks durante la ventana de mantenimiento
 
 Mientras el sitio está en `artisan down` (migraciones y `optimize`, normalmente segundos), Laravel responde 503 a todo,
@@ -670,10 +706,14 @@ standalone`, idioma `es-MX`, colores claros). La vista raíz (`resources/views/a
   worker se instala y espera; la página muestra «Hay una nueva versión disponible» con «Actualizar», que envía
   `SKIP_WAITING` y recarga una vez cuando toma el control. Al activarse borra las cachés de versiones anteriores. La
   comprobación se repite como mucho cada hora al volver a la pestaña.
-- **Cerrar sesión:** el cliente borra sus cachés y pide al worker `CLEAR_CACHES`, da de baja la suscripción push
-  (con tiempo límite) y el servidor responde con `Clear-Site-Data: "cache"` e `Inertia::clearHistory()`
-  (`App\Http\Responses\LogoutResponse`). No se envía `"storage"` para no borrar la preferencia de apariencia ni
-  desregistrar el worker. Otra persona que inicia sesión en el mismo equipo no hereda nada en caché de la anterior.
+- **Cerrar sesión:** el cliente borra sus cachés y pide al worker `CLEAR_CACHES` (con tiempo límite), envía el
+  endpoint de su suscripción push y, solo cuando el servidor confirma el cierre, la da de baja en el navegador. El
+  servidor responde con `Inertia::clearHistory()` y `Cache-Control: no-store, private`
+  (`App\Http\Responses\LogoutResponse`). Desde la fase 5.1 **no** envía `Clear-Site-Data`: Chrome retenía la
+  respuesta hasta recorrer toda su caché HTTP y el cierre quedaba «cargando» (detalle en
+  [seguridad §Autenticación y sesión](seguridad-y-auditoria.md#autenticación-y-sesión)). Otra persona que inicia sesión
+  en el mismo equipo no hereda nada en caché de la anterior: la aplicación y los adjuntos se revalidan siempre con el
+  servidor.
 - **Instalar:** menú de usuario → «Instalar aplicación» en Chrome/Edge (aviso nativo `beforeinstallprompt`); en
   Safari iOS/iPadOS se muestran instrucciones (Compartir → «Agregar a inicio»).
 - **Limitaciones:** HTTPS obligatorio (o `http://localhost`); sin él no hay worker, ni instalación, ni Web Push. Safari

@@ -26,7 +26,7 @@ const tones: Record<ConversationStatusValue, Tone> = {
 /* Unknown values (a newer server) never break the badge. */
 const tone = computed<Tone>(() => tones[props.status] ?? tones.closed);
 const text = computed(() =>
-    props.status === 'on_hold' ? 'En espera (anterior)' : props.label,
+    props.status === 'on_hold' ? 'En espera (estado ya no usado)' : props.label,
 );
 </script>
 

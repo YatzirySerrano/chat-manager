@@ -171,9 +171,7 @@ function confirmRemoval(): void {
 <template>
     <Head :title="department.name" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="departamentos"
             show-title
@@ -240,6 +238,7 @@ function confirmRemoval(): void {
 
         <div class="grid gap-6 lg:grid-cols-2">
             <DepartmentDistributionCard
+                data-tour="department.distribution"
                 :department="department"
                 :modes="distributionModes"
                 :can-update="can.update"
@@ -249,6 +248,7 @@ function confirmRemoval(): void {
                 :can-update="can.update"
             />
             <DepartmentHoursCard
+                data-tour="department.hours"
                 :department="department"
                 :platform-hours="platformHours"
                 :weekdays="weekdays"
@@ -273,6 +273,7 @@ function confirmRemoval(): void {
 
         <EmptyState
             v-if="members.length === 0"
+            data-tour="department.members"
             :icon="Users"
             title="Este departamento no tiene miembros"
             :description="
@@ -289,8 +290,9 @@ function confirmRemoval(): void {
 
         <template v-else>
             <section
-                v-for="group in memberGroups"
+                v-for="(group, position) in memberGroups"
                 :key="group.key"
+                :data-tour="position === 0 ? 'department.members' : undefined"
                 class="space-y-3"
                 :aria-labelledby="`${group.key}-heading`"
             >
@@ -434,7 +436,7 @@ function confirmRemoval(): void {
         <ConfirmDialog
             v-model:open="removalOpen"
             :title="`¿Retirar a ${pendingRemoval?.name ?? ''}?`"
-            description="Dejará de ver las conversaciones del departamento y sus conversaciones abiertas en él regresarán a la cola."
+            description="Dejará de ver las conversaciones del departamento y sus conversaciones abiertas en él volverán a «Pendientes» del departamento."
             confirm-label="Retirar"
             destructive
             :processing="removing"

@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\ConversationEvent;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,13 +17,15 @@ class ConversationEventResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $protected = app(ProtectedAccounts::class);
+
         return [
             'id' => $this->id,
             'type' => $this->type->value,
             'label' => $this->type->label(),
-            'actor' => $this->actor?->name,
-            'from_user' => $this->fromUser?->name,
-            'to_user' => $this->toUser?->name,
+            'actor' => $protected->nameForRequest($this->actor, $request),
+            'from_user' => $protected->nameForRequest($this->fromUser, $request),
+            'to_user' => $protected->nameForRequest($this->toUser, $request),
             'from_department' => $this->fromDepartment?->name,
             'to_department' => $this->toDepartment?->name,
             'note' => $this->note,

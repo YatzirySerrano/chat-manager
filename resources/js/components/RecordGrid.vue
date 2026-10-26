@@ -16,7 +16,7 @@ const props = defineProps<{
         role="list"
         :class="
             cn(
-                'grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-3 p-4',
+                'grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-3 p-4',
                 props.class,
             )
         "

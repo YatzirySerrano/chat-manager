@@ -34,11 +34,41 @@ enum DefaultRole: string
     public function description(): string
     {
         return match ($this) {
-            self::SuperAdministrator => 'Autoridad raíz de la plataforma: controla todo, incluidas las capacidades reservadas y los demás superadministradores.',
-            self::Administrator => 'Administra la operación de toda la organización por debajo del superadministrador.',
+            self::SuperAdministrator => 'Control total de la plataforma, incluidas las funciones exclusivas y la gestión de otros superadministradores.',
+            self::Administrator => 'Administra usuarios, departamentos, conversaciones y configuraciones de toda la organización.',
             self::Supervisor => 'Supervisa las conversaciones y los miembros de sus departamentos.',
             self::Agent => 'Atiende las conversaciones que tiene asignadas.',
         };
+    }
+
+    /**
+     * Descriptions this role had in earlier versions. Installations keep the
+     * stored text (roles are managed from the interface), so a stored text
+     * that is still one of these is presented with the current wording.
+     *
+     * @return list<string>
+     */
+    public function previousDescriptions(): array
+    {
+        return match ($this) {
+            self::SuperAdministrator => ['Autoridad raíz de la plataforma: controla todo, incluidas las capacidades reservadas y los demás superadministradores.'],
+            self::Administrator => [
+                'Administra la operación de toda la organización por debajo del superadministrador.',
+                'Administra usuarios, departamentos, conversaciones y configuraciones dentro del alcance autorizado de la organización.',
+            ],
+            default => [],
+        };
+    }
+
+    /**
+     * The description to show for a stored one: the current wording when the
+     * stored text is an earlier default, otherwise the stored text.
+     */
+    public function presentDescription(?string $stored): ?string
+    {
+        return $stored !== null && in_array(trim($stored), $this->previousDescriptions(), true)
+            ? $this->description()
+            : $stored;
     }
 
     public function scope(): DataScope

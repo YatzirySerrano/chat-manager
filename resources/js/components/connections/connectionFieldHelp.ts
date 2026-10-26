@@ -31,7 +31,7 @@ export const connectionFieldHelp = {
         howTo: 'Cópialo en Configuración de la API de tu app («Identificador de la cuenta de WhatsApp Business») o en Business Manager › Cuentas › Cuentas de WhatsApp.',
         example: '102290129340398',
         warning:
-            'Es obligatorio para activar la conexión: con él se suscribe la app al webhook y se sincronizan las plantillas.',
+            'Es obligatorio para activar la conexión: con él se activa la recepción de mensajes (webhook) y se actualizan las plantillas desde Meta.',
     },
     metaAppId: {
         description:
@@ -114,8 +114,7 @@ export const connectionFieldHelp = {
             'Una ventana muy larga mezcla temas distintos en la misma conversación; una muy corta genera conversaciones duplicadas.',
     },
     active: {
-        description:
-            'Solo las conexiones activas recibirán y enviarán mensajes cuando se habilite la integración.',
+        description: 'Solo las conexiones activas reciben y envían mensajes.',
         howTo: 'Actívala cuando el Phone number ID, el WABA ID y el token estén guardados. Se recomienda verificar las credenciales antes.',
         warning:
             'Al desactivarla, la plataforma deja de procesar los mensajes de este número; el historial se conserva.',

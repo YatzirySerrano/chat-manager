@@ -811,7 +811,11 @@ const fieldError = (path: string): string | undefined =>
                             aria-hidden="true"
                         />
                         <p>
-                            Tu servidor firma los datos del usuario con
+                            <strong class="font-medium text-foreground"
+                                >Instrucciones para el desarrollador de tu
+                                sitio:</strong
+                            >
+                            tu servidor firma los datos del usuario con
                             HMAC-SHA256 usando el secreto de identificación. La
                             firma vale 5 minutos y cada nonce se acepta una sola
                             vez. El secreto nunca debe llegar al navegador ni al
@@ -869,7 +873,7 @@ const fieldError = (path: string): string | undefined =>
 
                 <div
                     v-if="revealedSecret"
-                    class="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3"
+                    class="grid gap-2 rounded-lg border border-transparent bg-warning-soft p-3"
                 >
                     <p class="flex gap-1.5 text-xs font-medium" role="status">
                         <TriangleAlert

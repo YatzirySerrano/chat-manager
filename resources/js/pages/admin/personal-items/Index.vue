@@ -55,7 +55,7 @@ defineOptions({
     layout: {
         breadcrumbs: [
             {
-                title: 'Supervisión de elementos personales',
+                title: 'Alias, colores y respuestas personales del equipo',
                 href: personalItemsIndex(),
             },
         ],
@@ -261,14 +261,12 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
 </script>
 
 <template>
-    <Head title="Supervisión de elementos personales" />
+    <Head title="Alias, colores y respuestas personales del equipo" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
-            title="Supervisión de elementos personales"
-            description="Consulta los alias, la apariencia del chat y las respuestas rápidas personales de los usuarios de tu alcance. Nada de esto se aplica a tu propia vista y cada cambio queda en la auditoría."
+            title="Alias, colores y respuestas personales del equipo"
+            description="Consulta los alias, los colores del chat y las respuestas rápidas personales de los usuarios que supervisas. Nada de esto se aplica a tu propia vista y cada cambio queda en la auditoría."
         />
 
         <p
@@ -354,8 +352,8 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
         <EmptyState
             v-if="items.data.length === 0"
             :icon="Eye"
-            title="No hay elementos personales"
-            description="Ningún usuario de tu alcance tiene elementos de este tipo con los filtros aplicados."
+            title="No hay nada que mostrar"
+            description="Ninguno de los usuarios que supervisas tiene elementos de este tipo con los filtros aplicados."
         />
 
         <div

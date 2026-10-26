@@ -18,6 +18,7 @@ use App\Reports\Orientation;
 use App\Reports\PdfOptions;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -106,7 +107,7 @@ class TagsReport extends ReportDefinition
     {
         return [
             new Column('name', 'Nombre', width: 26),
-            new Column('slug', 'Identificador', width: 22),
+            new Column('slug', 'Nombre interno', width: 22),
             new Column('color', 'Color', width: 12),
             new Column('description', 'Descripción', width: 40),
             new Column('status', 'Estado', width: 11),
@@ -130,7 +131,7 @@ class TagsReport extends ReportDefinition
             'status' => $record->isDeleted() ? 'Eliminada' : 'Activa',
             'contacts' => (int) $record->getAttribute('contacts_count'),
             'conversations' => (int) $record->getAttribute('conversations_count'),
-            'created_by' => $record->creator?->name,
+            'created_by' => app(ProtectedAccounts::class)->nameFor($record->creator, $context->actor),
             'created_at' => $record->created_at,
         ];
     }

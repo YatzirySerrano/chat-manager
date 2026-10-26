@@ -4,9 +4,15 @@ namespace App\Broadcasting;
 
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationStatus;
+use App\Enums\DataScope;
 use App\Events\Broadcasts\RealtimeSignal;
 use App\Models\Conversation;
 use App\Models\ConversationEvent;
+use App\Models\User;
+use Illuminate\Container\Attributes\Singleton;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -19,9 +25,29 @@ use Throwable;
  * truth and clients recover on reconnection and through their fallback
  * polling, so a stopped or slow Reverb server is logged and never breaks
  * the operation (or the queued listener) that produced the signal.
+ *
+ * It is a container singleton so a long-lived queue worker reuses, for a
+ * short while (SUPERVISED_DEPARTMENTS_TTL), the departments that have a
+ * departments-scope supervisor (supervisedDepartmentIds()).
  */
+#[Singleton]
 class RealtimeSignals
 {
+    /**
+     * Seconds the departments with a departments-scope supervisor are reused
+     * before being read again. Bounded so a supervisor appointed meanwhile
+     * hears the passages of their departments within a minute (their own
+     * departments' inbox channels never depend on it).
+     */
+    private const SUPERVISED_DEPARTMENTS_TTL = 60;
+
+    /** @var list<int>|null */
+    private ?array $supervisedDepartments = null;
+
+    private float $supervisedDepartmentsUntil = 0.0;
+
+    public function __construct(private RealtimeAudience $audience) {}
+
     /**
      * Lifecycle changes that can take a conversation out of a department
      * queue; queue channels learn about them only when the conversation was
@@ -155,18 +181,27 @@ class RealtimeSignals
 
     /**
      * Channels of every inbox that lists the conversation (global, its
-     * departments and, while queued, its department queue).
+     * departments, while queued its department queue and the supervision
+     * channel of every other department it passed through, whose
+     * departments-scope supervisors keep reading it; departments without
+     * such a supervisor get none, since nobody may join it).
      *
      * @return list<string>
      */
     public function inboxChannels(Conversation $conversation, string $reason, ?ConversationEvent $event): array
     {
         $channels = [RealtimeChannels::globalInbox()];
+        $departments = [];
 
         foreach ([$conversation->department_id, $event?->from_department_id, $event?->to_department_id] as $departmentId) {
             if ($departmentId !== null) {
+                $departments[$departmentId] = true;
                 $channels[] = RealtimeChannels::departmentInbox($departmentId);
             }
+        }
+
+        foreach ($this->passedDepartmentIds($conversation, array_keys($departments)) as $departmentId) {
+            $channels[] = RealtimeChannels::departmentSupervision($departmentId);
         }
 
         if ($conversation->status === ConversationStatus::Pending && $conversation->assigned_user_id === null && $conversation->department_id !== null) {
@@ -182,5 +217,82 @@ class RealtimeSignals
         }
 
         return array_values(array_unique($channels));
+    }
+
+    /**
+     * Other departments the conversation moved from or to (its events) whose
+     * supervision channel somebody may join: only departments with a
+     * departments-scope supervisor (supervisedDepartmentIds()) and not
+     * already reached through their department inbox ($excluded). When no
+     * such department remains, nothing is read; otherwise one lookup on the
+     * conversation_events(conversation_id, ...) index.
+     *
+     * @param  list<int>  $excluded
+     * @return list<int>
+     */
+    private function passedDepartmentIds(Conversation $conversation, array $excluded): array
+    {
+        $candidates = array_values(array_diff($this->supervisedDepartmentIds(), $excluded));
+
+        if ($candidates === []) {
+            return [];
+        }
+
+        $ids = [];
+
+        $passages = DB::table('conversation_events')
+            ->where('conversation_id', $conversation->id)
+            ->where(fn (QueryBuilder $passage) => $passage->whereIn('from_department_id', $candidates)->orWhereIn('to_department_id', $candidates))
+            ->distinct()
+            ->get(['from_department_id', 'to_department_id']);
+
+        foreach ($passages as $passage) {
+            foreach ([$passage->from_department_id, $passage->to_department_id] as $departmentId) {
+                if (is_numeric($departmentId) && in_array((int) $departmentId, $candidates, true)) {
+                    $ids[(int) $departmentId] = true;
+                }
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
+     * Departments with at least one member who may join their supervision
+     * channel (RealtimeAudience::canJoinDepartmentSupervision()): active
+     * members whose role has the departments scope and who supervise it.
+     * Read once per SUPERVISED_DEPARTMENTS_TTL seconds per process.
+     *
+     * @return list<int>
+     */
+    private function supervisedDepartmentIds(): array
+    {
+        if ($this->supervisedDepartments !== null && microtime(true) < $this->supervisedDepartmentsUntil) {
+            return $this->supervisedDepartments;
+        }
+
+        $ids = [];
+
+        User::query()
+            ->where('is_active', true)
+            ->whereHas('departments')
+            ->whereHas('roles', fn (Builder $role) => $role->where('scope', DataScope::Departments->value))
+            ->with(['roles', 'permissions', 'departments:id'])
+            ->get()
+            ->each(function (User $user) use (&$ids): void {
+                if ($user->isDeleted()) {
+                    return;
+                }
+
+                foreach ($user->departmentIds() as $departmentId) {
+                    if (! isset($ids[$departmentId]) && $this->audience->canJoinDepartmentSupervision($user, $departmentId)) {
+                        $ids[$departmentId] = true;
+                    }
+                }
+            });
+
+        $this->supervisedDepartmentsUntil = microtime(true) + self::SUPERVISED_DEPARTMENTS_TTL;
+
+        return $this->supervisedDepartments = array_keys($ids);
     }
 }

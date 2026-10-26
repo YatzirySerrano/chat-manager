@@ -10,10 +10,10 @@ defineProps<{
 }>();
 
 const toneClasses: Record<TemplateTone, string> = {
-    success: 'bg-success/10 text-success',
+    success: 'bg-success-soft text-success-soft-foreground',
     primary: 'bg-primary-soft text-primary-soft-foreground',
     warning: 'bg-warning/15 text-amber-700 dark:text-amber-300',
-    danger: 'bg-destructive/10 text-destructive',
+    danger: 'bg-destructive-soft text-destructive-soft-foreground',
     neutral: 'bg-muted text-muted-foreground',
 };
 </script>

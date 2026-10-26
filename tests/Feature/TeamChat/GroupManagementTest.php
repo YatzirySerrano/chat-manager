@@ -56,7 +56,7 @@ test('creating groups requires its permission and participants within reach', fu
 
     $this->actingAs($creator)
         ->post(route('team-chat.groups.store'), ['name' => 'Mi grupo', 'participant_ids' => [$this->beto->id, $outsider->id]])
-        ->assertSessionHasErrors(['participant_ids' => 'Algunas personas elegidas no están disponibles para el chat interno o están fuera de tu alcance.']);
+        ->assertSessionHasErrors(['participant_ids' => 'Algunas personas elegidas no están disponibles para el chat interno o no puedes escribirles (solo a personas de tus departamentos, salvo que tu rol lo permita).']);
 
     $this->actingAs($creator)
         ->post(route('team-chat.groups.store'), ['name' => '', 'participant_ids' => []])

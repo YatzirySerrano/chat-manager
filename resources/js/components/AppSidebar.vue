@@ -34,7 +34,7 @@ const { sections } = useNavigation();
             </SidebarMenu>
         </SidebarHeader>
 
-        <SidebarContent class="gap-1 py-3">
+        <SidebarContent class="gap-3 py-3" data-tour="shell.nav">
             <NavMain
                 v-for="section in sections"
                 :key="section.label"

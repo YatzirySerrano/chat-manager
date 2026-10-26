@@ -24,8 +24,8 @@ enum ContactReviewReason: string
     public function label(): string
     {
         return match ($this) {
-            self::AmbiguousIdentityMatch => 'Remitente de WhatsApp con coincidencia ambigua',
-            self::PossibleDuplicate => 'Registro manual con posible duplicado',
+            self::AmbiguousIdentityMatch => 'Alguien escribió por WhatsApp y se parece a varios contactos',
+            self::PossibleDuplicate => 'Contacto agregado a mano que podría estar repetido',
         };
     }
 }

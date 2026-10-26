@@ -329,7 +329,7 @@ async function send(): Promise<void> {
             },
             onNetworkError: () => {
                 localError.value =
-                    'Sin conexión con el servidor. Tu mensaje no se envió; revisa la conexión e inténtalo de nuevo.';
+                    'No hay conexión con la plataforma. Tu mensaje no se envió; revisa tu internet e inténtalo de nuevo.';
 
                 return false;
             },
@@ -357,7 +357,10 @@ async function send(): Promise<void> {
 </script>
 
 <template>
-    <div class="border-t bg-background p-2 sm:p-3">
+    <div
+        class="border-t bg-background p-2 sm:p-3"
+        data-tour="team-chat.composer"
+    >
         <div
             v-if="replyTo"
             class="mb-2 flex items-start gap-2 rounded-lg border-l-4 border-primary bg-muted px-3 py-2 text-xs"

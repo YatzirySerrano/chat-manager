@@ -3,7 +3,7 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Chat interno',
     objective:
-        'Mensajes entre el equipo, en chats privados o grupos. Son privados entre sus participantes (nadie más puede leerlos, ni siquiera un superadministrador) y nunca se envían a WhatsApp ni se mezclan con las conversaciones de clientes.',
+        'Mensajes entre el equipo, en chats privados o grupos. Son privados entre sus participantes (nadie más puede leerlos, ni siquiera la administración) y nunca se envían a WhatsApp ni se mezclan con las conversaciones de clientes.',
     mainActions: [
         'Iniciar un chat privado o crear un grupo con «Nuevo».',
         'Responder, editar y eliminar tus propios mensajes, y reaccionar con emojis.',
@@ -51,7 +51,7 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Usar el chat interno» habilita el módulo; sin alcance global solo puedes escribir a personas de tus departamentos.',
+        '«Usar el chat interno» habilita el módulo; si tu rol no ve toda la organización, solo puedes escribir a personas de tus departamentos.',
         '«Iniciar chats internos con personas de otros departamentos» amplía a toda la organización.',
         '«Crear grupos internos» y «Administrar los grupos internos en los que participa» se otorgan aparte.',
     ],

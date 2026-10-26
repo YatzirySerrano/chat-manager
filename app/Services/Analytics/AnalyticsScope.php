@@ -69,6 +69,8 @@ class AnalyticsScope
     /**
      * Stable fingerprint of everything that decides the user's reach, for
      * cache keys: two users with the same fingerprint see the same figures.
+     * The root authority is part of it on its own (it reveals protected
+     * accounts in the breakdowns), never inferred from the permissions.
      */
     public function fingerprint(User $user): string
     {
@@ -80,6 +82,7 @@ class AnalyticsScope
             $user->dataScope() === DataScope::Global ? 'org' : (string) $user->id,
             implode(',', $departments),
             implode(',', $user->effectivePermissions()),
+            $user->hasRootAuthority() ? 'root' : '',
         ]));
     }
 
@@ -104,7 +107,8 @@ class AnalyticsScope
 
     /**
      * Agents the user may filter by: people able to attend conversations
-     * within the user's reach. Personal reach has no agent filter.
+     * within the user's reach (protected root accounts only for the root
+     * authority). Personal reach has no agent filter.
      *
      * @return list<array{id: int, name: string}>
      */
@@ -116,6 +120,7 @@ class AnalyticsScope
 
         return array_values(User::query()
             ->visibleTo($user)
+            ->withoutProtectedFor($user)
             ->active()
             ->withPermission(Permission::ReplyConversations)
             ->orderBy('name')

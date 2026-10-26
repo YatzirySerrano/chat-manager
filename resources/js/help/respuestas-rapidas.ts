@@ -41,7 +41,7 @@ const help: ModuleHelp = {
         {
             name: 'Disponibilidad',
             description:
-                '«Disponible para todos los departamentos» (solo con alcance global) o «Departamentos seleccionados».',
+                '«Disponible para todos los departamentos» (solo si tu rol ve toda la organización) o «Departamentos seleccionados».',
         },
     ],
     states: [
@@ -68,9 +68,9 @@ const help: ModuleHelp = {
     ],
     permissions: [
         '«Usar respuestas rápidas» permite insertarlas en el chat.',
-        '«Administrar respuestas rápidas» permite crear y editar las corporativas; sin alcance global, solo las de tus departamentos.',
+        '«Administrar respuestas rápidas» permite crear y editar las corporativas; si tu rol no ve toda la organización, solo las de tus departamentos.',
         '«Crear y administrar sus respuestas rápidas personales» lo otorga un administrador por rol o por usuario. Si se retira, tus respuestas personales no se borran: puedes seguir usándolas, pero ya no editarlas.',
-        'Los supervisores con permiso de elementos personales pueden consultar o corregir respuestas personales de su alcance; esos cambios quedan en la auditoría.',
+        'Los supervisores con el permiso «Ver alias, colores de chat y respuestas personales de otros usuarios» pueden consultar o corregir las respuestas personales de los usuarios que supervisan; esos cambios quedan en la auditoría.',
     ],
     commonErrors: [
         {

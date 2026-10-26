@@ -204,6 +204,40 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
+     * Leave out protected accounts (holders of the root role) unless the
+     * viewer is the root authority: nobody else learns that they exist
+     * through lists, searches, filters, counters or exports.
+     *
+     * @param  Builder<User>  $query
+     */
+    #[Scope]
+    protected function withoutProtectedFor(Builder $query, User $viewer): void
+    {
+        if ($viewer->hasRootAuthority()) {
+            return;
+        }
+
+        $query->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('is_root', true));
+    }
+
+    /**
+     * Whether the account holds the root role (active or not): a protected
+     * account only the root authority sees and manages.
+     */
+    public function isProtectedAccount(): bool
+    {
+        return $this->roles->contains(fn (mixed $role): bool => $role instanceof Role && $role->is_root);
+    }
+
+    /**
+     * Whether the account must stay invisible to the viewer.
+     */
+    public function isHiddenFrom(User $viewer): bool
+    {
+        return $this->isProtectedAccount() && ! $viewer->hasRootAuthority();
+    }
+
+    /**
      * The single role assigned to the user, active or not.
      */
     public function role(): ?Role

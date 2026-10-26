@@ -29,7 +29,8 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * Roles with their reach and users, plus the permission matrix (roles ×
- * permissions grouped by module), mirroring the roles screen.
+ * permissions grouped by module), mirroring the roles screen: the root role
+ * and the permissions reserved to it only reach the root authority.
  *
  * A role is only marked as granting a permission when it can exercise it:
  * reserved permissions only count for the root authority and organization
@@ -59,7 +60,7 @@ class RolesReport extends ReportDefinition
 
     public function subtitle(): ?string
     {
-        return 'Roles, su alcance, usuarios y matriz de permisos';
+        return 'Roles, la información que ve cada uno (alcance), sus usuarios y la matriz de permisos';
     }
 
     public function fileName(): string
@@ -105,11 +106,9 @@ class RolesReport extends ReportDefinition
         return [
             new Column('label', 'Rol', width: 22),
             new Column('description', 'Descripción', width: 46),
-            new Column('scope', 'Alcance', width: 20),
-            new Column('root', 'Autoridad raíz', ColumnType::Boolean, width: 12),
+            new Column('scope', 'Alcance (información que ve)', width: 20),
             new Column('status', 'Estado', width: 11),
-            new Column('permissions', 'Permisos vigentes', ColumnType::Number, width: 11),
-            new Column('reserved', 'Reservados', ColumnType::Number, width: 11),
+            new Column('permissions', 'Permisos activos', ColumnType::Number, width: 11),
             new Column('users', 'Usuarios', ColumnType::Number, width: 10, total: ColumnTotal::Sum),
             new Column('created_at', 'Fecha de creación', ColumnType::DateTime, width: 16),
         ];
@@ -124,12 +123,10 @@ class RolesReport extends ReportDefinition
 
         return [
             'label' => $record->label,
-            'description' => $record->description,
+            'description' => $record->presentedDescription(),
             'scope' => $record->scope->label(),
-            'root' => $record->is_root,
             'status' => $record->is_active ? 'Activo' : 'Eliminado',
             'permissions' => count($effective),
-            'reserved' => count(array_filter($effective, fn (Permission $permission): bool => $permission->isReservedToRoot())),
             'users' => (int) $record->users_count,
             'created_at' => $record->created_at,
         ];
@@ -149,7 +146,7 @@ class RolesReport extends ReportDefinition
         }
 
         $metrics[] = new Metric('Usuarios asignados', (int) $roles->sum('users_count'), $context->actor->canViewDeletedRecords() ? 'Incluye cuentas eliminadas' : 'Cuentas activas');
-        $metrics[] = new Metric('Permisos disponibles', count(Permission::available()), 'En el catálogo de la plataforma');
+        $metrics[] = new Metric('Permisos disponibles', count($this->listedPermissions($context, Permission::available())), 'En el catálogo de la plataforma');
 
         return $metrics;
     }
@@ -193,10 +190,12 @@ class RolesReport extends ReportDefinition
             new ReportSheet(
                 'Matriz de permisos',
                 $columns,
-                $this->matrix($roles),
+                $this->matrix($roles, $this->listedPermissions($context, Permission::cases()), $context->actor->hasRootAuthority()),
                 inPdf: true,
                 newPage: true,
-                description: '✓ = el rol puede ejercer el permiso. Los reservados solo cuentan para la autoridad raíz y los de alcance global solo para roles globales.',
+                description: $context->actor->hasRootAuthority()
+                    ? '✓ = el rol puede usar el permiso. Los exclusivos del superadministrador solo cuentan para él, y los que piden ver toda la organización solo cuentan para roles con ese alcance.'
+                    : '✓ = el rol puede usar el permiso. Los que piden ver toda la organización solo cuentan para roles con ese alcance.',
             ),
         ];
     }
@@ -208,23 +207,24 @@ class RolesReport extends ReportDefinition
 
     /**
      * @param  Collection<int, Role>  $roles
+     * @param  list<Permission>  $permissions
      * @return Generator<int, array<string, string|null>>
      */
-    private function matrix(Collection $roles): Generator
+    private function matrix(Collection $roles, array $permissions, bool $showsReserved): Generator
     {
         $effective = $roles->mapWithKeys(fn (Role $role): array => [
             $role->id => array_map(fn (Permission $permission): string => $permission->value, $this->effectivePermissions($role)),
         ]);
 
-        foreach (Permission::cases() as $permission) {
+        foreach ($permissions as $permission) {
             $row = [
                 'group' => $permission->group()->label(),
                 'permission' => $permission->label(),
                 'notes' => implode(' · ', array_filter([
                     $permission->isAvailable() ? null : 'Próximamente',
-                    $permission->isReservedToRoot() ? 'Reservado' : null,
-                    $permission->requiresGlobalScope() ? 'Solo global' : null,
-                    $permission->isSensitive() ? 'Sensible' : null,
+                    $showsReserved && $permission->isReservedToRoot() ? 'Exclusivo del superadministrador' : null,
+                    $permission->requiresGlobalScope() ? 'Solo con «Toda la organización»' : null,
+                    $permission->isSensitive() ? 'Alto impacto' : null,
                 ])) ?: null,
             ];
 
@@ -251,6 +251,22 @@ class RolesReport extends ReportDefinition
                 && ($role->is_root || ! $permission->isReservedToRoot())
                 && (! $permission->requiresGlobalScope() || $role->scope === DataScope::Global),
         ));
+    }
+
+    /**
+     * The permissions the report lists to the actor: those reserved to the
+     * root role only for the root authority (like the roles screen).
+     *
+     * @param  list<Permission>  $permissions
+     * @return list<Permission>
+     */
+    private function listedPermissions(ReportContext $context, array $permissions): array
+    {
+        if ($context->actor->hasRootAuthority()) {
+            return $permissions;
+        }
+
+        return array_values(array_filter($permissions, fn (Permission $permission): bool => ! $permission->isReservedToRoot()));
     }
 
     /**

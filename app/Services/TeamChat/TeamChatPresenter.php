@@ -9,14 +9,18 @@ use App\Models\TeamChat\TeamMessageReaction;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Support\ProtectedAccounts;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 /**
  * Shapes internal chat records for the interface. Deleted accounts are
  * always shown as "Usuario eliminado"; deleted messages never expose their
  * (already erased) content; attachments are only reachable through the
- * authorized download route.
+ * authorized download route. Protected accounts (root role) are shown as
+ * «Administración del sistema» to anyone without the root authority (the
+ * person viewing the page).
  */
 class TeamChatPresenter
 {
@@ -24,7 +28,13 @@ class TeamChatPresenter
 
     public function userName(?User $user): string
     {
-        return $user === null || ! $user->is_active ? self::DELETED_USER : $user->name;
+        if ($user === null || ! $user->is_active) {
+            return self::DELETED_USER;
+        }
+
+        $viewer = Auth::user();
+
+        return (string) app(ProtectedAccounts::class)->nameFor($user, $viewer instanceof User ? $viewer : null);
     }
 
     /**

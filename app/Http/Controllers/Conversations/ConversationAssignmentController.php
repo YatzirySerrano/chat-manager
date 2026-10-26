@@ -67,6 +67,6 @@ class ConversationAssignmentController extends ConversationOperationController
 
         $release->handle($conversation, $request->user(), $request->reason(), $request->version());
 
-        return $this->done($conversation, $request->user(), 'La conversación regresó a la cola de su departamento.');
+        return $this->done($conversation, $request->user(), 'La conversación volvió a «Pendientes» de su departamento.');
     }
 }

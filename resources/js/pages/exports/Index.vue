@@ -68,11 +68,20 @@ const statusStyles: Record<
     DataTransferStatus,
     { class: string; icon: typeof Clock }
 > = {
-    queued: { class: 'bg-warning/10 text-warning', icon: Clock },
-    processing: { class: 'bg-warning/10 text-warning', icon: Hourglass },
-    completed: { class: 'bg-success/10 text-success', icon: CheckCircle2 },
+    queued: {
+        class: 'bg-warning-soft text-warning-soft-foreground',
+        icon: Clock,
+    },
+    processing: {
+        class: 'bg-warning-soft text-warning-soft-foreground',
+        icon: Hourglass,
+    },
+    completed: {
+        class: 'bg-success-soft text-success-soft-foreground',
+        icon: CheckCircle2,
+    },
     failed: {
-        class: 'bg-destructive/10 text-destructive',
+        class: 'bg-destructive-soft text-destructive-soft-foreground',
         icon: AlertCircle,
     },
     expired: { class: 'bg-muted text-muted-foreground', icon: Clock },
@@ -109,9 +118,7 @@ function detail(transfer: DataTransfer): string {
 <template>
     <Head title="Exportaciones" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="reportes"
             title="Exportaciones"
@@ -132,6 +139,7 @@ function detail(transfer: DataTransfer): string {
         <template v-if="transfers.data.length > 0">
             <div
                 class="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block"
+                data-tour="exports.list"
             >
                 <Table>
                     <TableHeader>
@@ -234,6 +242,7 @@ function detail(transfer: DataTransfer): string {
                                 <Button
                                     v-if="transfer.download_url"
                                     size="sm"
+                                    data-tour="exports.download"
                                     as-child
                                 >
                                     <a :href="transfer.download_url">
@@ -247,7 +256,7 @@ function detail(transfer: DataTransfer): string {
                 </Table>
             </div>
 
-            <ul class="grid gap-3 md:hidden">
+            <ul class="grid gap-3 md:hidden" data-tour="exports.list">
                 <li
                     v-for="transfer in transfers.data"
                     :key="transfer.id"
@@ -289,6 +298,7 @@ function detail(transfer: DataTransfer): string {
                         v-if="transfer.download_url"
                         size="sm"
                         class="w-full"
+                        data-tour="exports.download"
                         as-child
                     >
                         <a :href="transfer.download_url">

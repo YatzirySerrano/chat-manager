@@ -28,9 +28,9 @@ enum DistributionMode: string
     public function description(): string
     {
         return match ($this) {
-            self::Shared => 'Las conversaciones esperan en la cola y los agentes con permiso las aceptan.',
+            self::Shared => 'Las conversaciones nuevas quedan en «Pendientes» y cualquier agente del departamento con permiso puede tomarlas.',
             self::Manual => 'Solo quien tiene permiso de asignar entrega las conversaciones; los agentes no las aceptan por su cuenta.',
-            self::Automatic => 'Cada conversación nueva se asigna al agente disponible con menos conversaciones activas; si nadie está disponible, espera en la cola.',
+            self::Automatic => 'Cada conversación nueva se asigna al agente disponible con menos conversaciones activas; si nadie puede recibirla, queda en «Pendientes».',
         };
     }
 

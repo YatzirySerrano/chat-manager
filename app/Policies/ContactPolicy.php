@@ -104,7 +104,7 @@ class ContactPolicy
 
         return $actor->dataScope() === DataScope::Global
             ? Response::allow()
-            : Response::deny('Solo un administrador con alcance global puede registrar la procedencia declarada.');
+            : Response::deny('Solo un administrador de toda la organización puede registrar cómo nos conoció un contacto.');
     }
 
     private function allowWithinScope(User $actor, Contact $contact, Permission $permission): Response

@@ -8,7 +8,7 @@ const help: ModuleHelp = {
         'Aceptar una conversación pendiente de tus departamentos para hacerte responsable de ella.',
         'Responder al cliente con texto, emojis, archivos adjuntos y respuestas rápidas (escribe «/» y el atajo).',
         'Agregar notas internas que solo ve el equipo; el cliente nunca las recibe.',
-        'Transferir la conversación a otro departamento o agente, o devolverla a la cola de su departamento.',
+        'Transferir la conversación a otro departamento o agente, o devolverla a «Pendientes» de su departamento.',
         'Cerrar la conversación cuando la atención terminó y reabrirla si el cliente necesita seguimiento.',
         'Aplicar etiquetas a la conversación desde la bandeja o desde el panel de detalles.',
         'Guardar al cliente en el directorio de Contactos con «Guardar contacto» cuando aún no está registrado.',
@@ -16,7 +16,7 @@ const help: ModuleHelp = {
         'Enviar una plantilla aprobada de WhatsApp, solo si eres administrador con ese permiso.',
     ],
     workflow: [
-        'Un cliente escribe: la conversación entra como «Pendiente» en la cola del departamento de la conexión, o se asigna sola si el departamento usa asignación automática.',
+        'Un cliente escribe: la conversación entra como «Pendiente» en el departamento de la conexión, o se asigna sola si el departamento usa asignación automática.',
         'Revisa «Pendientes» y pulsa «Aceptar». A partir de ese momento tú eres el responsable y la conversación pasa a «En atención».',
         'Responde desde el compositor. Usa «Nota interna» para dejar contexto al equipo sin que el cliente lo vea.',
         'Si otra área debe atenderla, usa «Más acciones» → «Transferir». Se conservan mensajes, notas, etiquetas y procedencia, y no se envía nada al cliente.',
@@ -41,7 +41,7 @@ const help: ModuleHelp = {
         {
             name: 'Filtros',
             description:
-                'Vista, estado, departamento, responsable, conexión, canal, etiquetas, orden y «Buscar en». «Bandeja general», «Pendientes» y «No leídas» siempre están a la vista. Con varias etiquetas eliges «Cualquiera de las etiquetas (O)» (por defecto) o «Todas las etiquetas (Y)». Los filtros aplicados se muestran como chips y «Limpiar filtros» los quita todos.',
+                'Vista, estado, departamento, responsable, conexión, canal, etiquetas, orden y «Buscar en». «Bandeja general», «Pendientes» y «No leídas» siempre están a la vista. Con varias etiquetas eliges «Con al menos una de estas etiquetas» (por defecto) o «Con todas estas etiquetas a la vez». Los filtros aplicados se muestran como chips y «Limpiar filtros» los quita todos.',
         },
         {
             name: 'Ventana de 24 horas',
@@ -77,10 +77,10 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver conversaciones de su alcance» muestra las conversaciones de tus departamentos o las asignadas a ti, según el alcance de tu rol.',
+        '«Ver las conversaciones que le corresponden» muestra las conversaciones de tus departamentos o las asignadas a ti, según tu rol.',
         '«Aceptar conversaciones pendientes de sus departamentos» permite tomar las pendientes; «Atender y responder sus conversaciones» permite responder las tuyas.',
-        '«Asignar conversaciones y gestionar las de su alcance» permite entregar conversaciones a otra persona; «Transferir» y «Cerrar» se otorgan por separado.',
-        '«Supervisar conversaciones de su alcance» es solo lectura: deja ver todas las conversaciones del alcance, incluidas las cerradas y las que pasaron por tus departamentos, pero no permite responder, aceptar ni transferir.',
+        '«Asignar conversaciones a otras personas» permite entregar conversaciones a otra persona; «Transferir» y «Cerrar» se otorgan por separado.',
+        '«Supervisar conversaciones (solo lectura)» deja ver todas las conversaciones que tu rol puede ver, incluidas las cerradas y las que pasaron por tus departamentos, pero no permite responder, aceptar ni transferir.',
         'Las etiquetas desde la bandeja requieren «Asignar etiquetas a contactos y conversaciones» y ser el responsable (o poder asignar).',
         'Las plantillas de WhatsApp solo las envía quien tiene «Enviar plantillas de WhatsApp (administrativo)»; los agentes no las ven en el compositor.',
         '«Guardar contacto» requiere el permiso «Crear contactos».',

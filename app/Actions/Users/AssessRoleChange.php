@@ -76,7 +76,10 @@ class AssessRoleChange
             $blockers[] = "El rol {$to->label} está eliminado. Restáuralo antes de asignarlo.";
         }
 
-        if (! $this->guard->canAssignRole($actor, $to)) {
+        if ($to->isHiddenFrom($actor)) {
+            // The root role is never named to someone who may not know it exists.
+            $blockers[] = 'No puedes asignar un rol con más privilegios de los que administras.';
+        } elseif (! $this->guard->canAssignRole($actor, $to)) {
             $blockers[] = "No puedes asignar el rol {$to->label} porque otorga más privilegios de los que administras.";
         }
 

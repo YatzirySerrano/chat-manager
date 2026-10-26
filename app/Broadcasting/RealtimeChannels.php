@@ -14,6 +14,10 @@ namespace App\Broadcasting;
  * - inbox.queues.{id}: the pending queue of a department, for whoever may
  *   accept from it; it only carries signals about queued conversations, so
  *   agents never learn about colleagues' assigned conversations;
+ * - inbox.supervision.{id}: conversations that passed through a department
+ *   and now live elsewhere, for the members of that department who supervise
+ *   it with a departments scope (their read reach keeps them,
+ *   ConversationAccess::restrictToVisible());
  * - inbox.global: every conversation, for users with a global scope.
  */
 final class RealtimeChannels
@@ -25,6 +29,8 @@ final class RealtimeChannels
     public const DEPARTMENT_INBOX = 'inbox.departments.{departmentId}';
 
     public const DEPARTMENT_QUEUE = 'inbox.queues.{departmentId}';
+
+    public const DEPARTMENT_SUPERVISION = 'inbox.supervision.{departmentId}';
 
     public const GLOBAL_INBOX = 'inbox.global';
 
@@ -46,6 +52,11 @@ final class RealtimeChannels
     public static function departmentQueue(int $departmentId): string
     {
         return "inbox.queues.{$departmentId}";
+    }
+
+    public static function departmentSupervision(int $departmentId): string
+    {
+        return "inbox.supervision.{$departmentId}";
     }
 
     public static function globalInbox(): string

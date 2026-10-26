@@ -54,7 +54,7 @@ test('a spike of failed jobs raises an alert', function () {
     Artisan::call('ops:check-alerts');
 
     expect(sentAlertMessages())->toHaveCount(1)
-        ->and(sentAlertMessages()[0]->getOriginalMessage()->getSubject())->toContain('Aumento de trabajos fallidos');
+        ->and(sentAlertMessages()[0]->getOriginalMessage()->getSubject())->toContain('Aumento de tareas con error');
 });
 
 test('nothing is sent when the system is healthy', function () {

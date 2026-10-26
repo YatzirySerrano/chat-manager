@@ -9,7 +9,7 @@ use Illuminate\Validation\Rule;
 
 /**
  * The users list as the users screen shows it: within the actor's data
- * scope, the record state (deleted accounts only for people who can consult
+ * scope, never protected (root) accounts for anyone but the root authority, the record state (deleted accounts only for people who can consult
  * them), search over name and email, role, department and order.
  *
  * Shared by the users screen and the users report, so both always agree.
@@ -76,6 +76,7 @@ class UserListQuery
 
         return User::query()
             ->visibleTo($actor)
+            ->withoutProtectedFor($actor)
             ->inRecordState($filters['record'])
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $term = '%'.addcslashes($search, '\\%_').'%';

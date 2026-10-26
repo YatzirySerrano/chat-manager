@@ -42,7 +42,7 @@ class ConversationTransferController extends ConversationOperationController
 
         $transfer->handle($conversation, $department, $agent, $request->user(), $request->reason(), $request->version(), $request->confirmsOverCapacity());
 
-        $destination = $agent->name ?? "la cola de {$department?->name}";
+        $destination = $agent->name ?? "«Pendientes» de {$department?->name}";
 
         return $this->done($conversation, $request->user(), "Conversación transferida a {$destination}.");
     }

@@ -128,14 +128,14 @@ class ConnectionsReport extends ReportDefinition
             new Column('name', 'Conexión', width: 18),
             new Column('channel', 'Canal', width: 11, unbreakable: 21),
             new Column('display_phone', 'Número', width: 17, unbreakable: 29),
-            new Column('phone_number_id', 'ID del número', width: 18, unbreakable: 31),
+            new Column('phone_number_id', 'ID del número en Meta', width: 18, unbreakable: 31),
             new Column('status', 'Estado', width: 12),
             new Column('health', 'Salud', width: 18),
-            new Column('default_department', 'Predeterminado', width: 17),
+            new Column('default_department', 'Departamento que recibe las nuevas', width: 17),
             new Column('departments', 'Departamentos', width: 24),
             new Column('conversations', 'Conversaciones', ColumnType::Number, width: 15, total: ColumnTotal::Sum),
-            new Column('last_inbound_at', 'Último entrante', ColumnType::DateTime, width: 15),
-            new Column('last_outbound_at', 'Último saliente', ColumnType::DateTime, width: 15),
+            new Column('last_inbound_at', 'Último mensaje recibido', ColumnType::DateTime, width: 15),
+            new Column('last_outbound_at', 'Último mensaje enviado', ColumnType::DateTime, width: 15),
             new Column('created_at', 'Fecha de alta', ColumnType::DateTime, width: 15),
         ];
     }

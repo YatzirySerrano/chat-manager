@@ -69,7 +69,7 @@ export type Contact = {
     first_interaction_at: string | null;
     last_interaction_at: string | null;
     created_at: string | null;
-    creator?: { id: number; name: string } | null;
+    creator?: { id: number | null; name: string } | null;
     tags?: ContactTag[];
     identities?: ContactIdentitySummary[];
     origin?: ContactOriginSummary | null;
@@ -131,7 +131,7 @@ export type ContactAttribution = {
 export type ContactNote = {
     id: number;
     body: string;
-    author: { id: number; name: string } | null;
+    author: { id: number | null; name: string } | null;
     created_at: string | null;
 };
 
@@ -150,7 +150,7 @@ export type ContactConversation = {
         color: AppColor;
         is_active: boolean;
     } | null;
-    assignee: { id: number; name: string } | null;
+    assignee: { id: number | null; name: string } | null;
     created_at: string | null;
     last_message_at: string | null;
     closed_at: string | null;

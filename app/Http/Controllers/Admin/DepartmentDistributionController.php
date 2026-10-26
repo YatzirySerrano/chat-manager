@@ -21,7 +21,7 @@ class DepartmentDistributionController extends Controller
 
         Inertia::flash('toast', match (true) {
             $assigned === null => ['type' => 'info', 'message' => SaveToast::NO_CHANGES],
-            $assigned > 0 => ['type' => 'success', 'message' => "Distribución actualizada. Se asignaron {$assigned} conversaciones que esperaban en la cola."],
+            $assigned > 0 => ['type' => 'success', 'message' => "Distribución actualizada. Se asignaron {$assigned} conversaciones que estaban pendientes."],
             default => ['type' => 'success', 'message' => 'Distribución actualizada.'],
         });
 

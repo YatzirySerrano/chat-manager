@@ -57,6 +57,8 @@ import {
     measure,
     overflow,
     openInboxView,
+    applyInboxFilters,
+    clearInboxFilters,
     chooseInboxStatus,
     openPage,
     openRealtimeSession,
@@ -139,6 +141,42 @@ async function activate(page) {
     await page.evaluate(() => window.scrollTo(0, 0));
     const box = await page.locator('h1').first().boundingBox();
     await page.mouse.click(box.x + 2, box.y + box.height / 2);
+}
+
+/**
+ * Counts, on every DOM change, the toasts matching `pattern` that are on
+ * screen (a toast playing its exit animation has data-removed="true" and no
+ * longer counts): `now` and the most seen at once since the call.
+ */
+async function watchLiveToasts(page, pattern) {
+    await page.evaluate(
+        ({ source, flags }) => {
+            const matches = new RegExp(source, flags);
+            const state = { now: 0, maxLive: 0 };
+            const count = () => {
+                state.now = [
+                    ...document.querySelectorAll(
+                        '[data-sonner-toast]:not([data-removed="true"])',
+                    ),
+                ].filter((toast) => matches.test(toast.textContent)).length;
+                state.maxLive = Math.max(state.maxLive, state.now);
+            };
+            window.__liveToasts = state;
+            new MutationObserver(count).observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['data-removed'],
+                characterData: true,
+            });
+            count();
+        },
+        { source: pattern.source, flags: pattern.flags },
+    );
+}
+
+function liveToasts(page) {
+    return page.evaluate(() => ({ ...window.__liveToasts }));
 }
 
 /** Waits until a list update from the server has settled. */
@@ -375,10 +413,11 @@ const run = async () => {
                 await ana
                     .locator('#inbox-connection')
                     .selectOption(String(data.connections.b.id));
+                // Phase 5.1: the panel edits a draft; «Aplicar» applies it.
+                await applyInboxFilters(ana);
                 await ana.waitForURL(
                     new RegExp(`connection=${data.connections.b.id}`),
                 );
-                await ana.keyboard.press('Escape');
                 await settled(ana);
                 const unreadB = (await rowNames(ana)).sort();
                 notes.push(`unread+B=${unreadB.join('/')}`);
@@ -406,14 +445,9 @@ const run = async () => {
                 );
 
                 await ana.getByRole('button', { name: /^Filtros/ }).click();
-                // The one of the panel (the row of applied chips has its own
-                // "Limpiar filtros", covered by the open panel).
-                await ana
-                    .getByRole('dialog')
-                    .getByRole('button', { name: 'Limpiar filtros' })
-                    .click();
+                // «Limpiar» of the panel resets every filter and applies.
+                await clearInboxFilters(ana);
                 await settled(ana);
-                await ana.keyboard.press('Escape');
                 const unreadOffAfterClear =
                     (await unreadChip(ana).getAttribute('aria-pressed')) ===
                     'false';
@@ -642,6 +676,7 @@ const run = async () => {
                 await settled(ana);
                 await activate(ana);
                 const notes = [];
+                await watchLiveToasts(ana, /Cliente Bajío/);
 
                 const since = Date.now();
                 const first = await alertDelta(
@@ -666,6 +701,9 @@ const run = async () => {
                     `1st message: toasts=${firstToasts.length} chimes=${first.chimes} tones=${first.tones} media=${first.media}`,
                 );
 
+                // Measured when the folded toast shows, not after a fixed
+                // delay: a toast lives 4 s after its last update, so a later
+                // sample depends on how fast the webhook was delivered.
                 const second = await alertDelta(
                     ana,
                     async () => {
@@ -675,10 +713,12 @@ const run = async () => {
                             'Cliente Bajío',
                             'Es para el viernes',
                         );
-                        await toastText(
+                        const text = await toastText(
                             ana,
                             /2 mensajes nuevos de Cliente Bajío/,
                         );
+
+                        return { text, live: await liveToasts(ana) };
                     },
                     { settleMs: 2_500 },
                 );
@@ -687,13 +727,9 @@ const run = async () => {
                     since,
                     /Cliente Bajío/,
                 );
-                const visibleBajio = await ana
-                    .locator('[data-sonner-toast]', {
-                        hasText: /Cliente Bajío/,
-                    })
-                    .count();
+                const { maxLive } = await liveToasts(ana);
                 notes.push(
-                    `2nd message: toast elements since 1st=${bajioToasts.length}, visible=${visibleBajio}, chimes=${second.chimes} tones=${second.tones}`,
+                    `2nd message: "${second.result.text.slice(0, 60)}", on screen when shown=${second.result.live.now}, most at once=${maxLive}, toast elements since 1st=${bajioToasts.length} (1 = updated in place, 2 = the 1st had already closed), chimes=${second.chimes} tones=${second.tones}`,
                 );
 
                 const urgentSince = Date.now();
@@ -717,8 +753,12 @@ const run = async () => {
                     firstToasts.length === 1 &&
                         first.chimes === 1 &&
                         first.tones === 1 &&
-                        bajioToasts.length === 1 &&
-                        visibleBajio === 1 &&
+                        second.result.text.startsWith(
+                            '2 mensajes nuevos de Cliente Bajío',
+                        ) &&
+                        second.result.live.now === 1 &&
+                        maxLive === 1 &&
+                        bajioToasts.length <= 2 &&
                         second.chimes === 1 &&
                         urgentToasts.length === 1 &&
                         urgent.chimes === 1 &&
@@ -938,12 +978,43 @@ const run = async () => {
                         frame.t >= sent && frame.event === 'notification',
                 ).length;
                 const fetchesAfter = fetches.filter((t) => t >= sent).length;
-                const subscriptions = ana.frames$.filter(
-                    (frame) =>
-                        frame.t >= since &&
+                // A new socket (__open / connection_established) or a late
+                // access.changed legitimately subscribes the user channel
+                // again; only a re-subscription without either is a leak.
+                const userChannel = `private-users.${data.agents.ana}`;
+                const window$ = ana.frames$.filter((frame) => frame.t >= since);
+                let explained = false;
+                let subscriptions = 0;
+                let resubscriptions = 0;
+
+                for (const frame of window$) {
+                    if (
+                        frame.event === '__open' ||
+                        frame.event === 'pusher:connection_established' ||
+                        (frame.event === 'access.changed' &&
+                            frame.channel === userChannel)
+                    ) {
+                        explained = true;
+                    } else if (
                         frame.event ===
                             'pusher_internal:subscription_succeeded' &&
-                        frame.channel === `private-users.${data.agents.ana}`,
+                        frame.channel === userChannel
+                    ) {
+                        if (explained) {
+                            resubscriptions++;
+                        } else {
+                            subscriptions++;
+                        }
+                    }
+                }
+
+                const closes = window$.filter(
+                    (frame) => frame.event === '__close',
+                ).length;
+                const accessChanges = window$.filter(
+                    (frame) =>
+                        frame.event === 'access.changed' &&
+                        frame.channel === userChannel,
                 ).length;
 
                 return [
@@ -954,7 +1025,7 @@ const run = async () => {
                         fetchesAfter >= 1 &&
                         fetchesAfter <= signals &&
                         subscriptions === 0,
-                    `toasts=${toasts.length}, chimes=${delta.chimes}, tones=${delta.tones}; .notification signals=${signals}, GET /notifications after it=${fetchesAfter}; user channel re-subscriptions during the visits=${subscriptions}`,
+                    `toasts=${toasts.length}, chimes=${delta.chimes}, tones=${delta.tones}; .notification signals=${signals}, GET /notifications after it=${fetchesAfter}; user channel re-subscriptions during the visits=${subscriptions} (+${resubscriptions} after a reconnection or access change; __close=${closes}, access.changed=${accessChanges})`,
                 ];
             },
         );

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { Ban, Check, Copy, KeyRound, Plus, TriangleAlert } from '@lucide/vue';
+import { Ban, Check, Copy, KeyRound, Plus } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
 import { computed, onUnmounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -11,6 +11,7 @@ import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -65,11 +66,14 @@ const statusPresentation: Record<
     ApiTokenStatus,
     { label: string; class: string }
 > = {
-    active: { label: 'Activo', class: 'bg-success/10 text-success' },
-    expired: { label: 'Vencido', class: 'bg-muted text-muted-foreground' },
+    active: {
+        label: 'Activa',
+        class: 'bg-success-soft text-success-soft-foreground',
+    },
+    expired: { label: 'Vencida', class: 'bg-muted text-muted-foreground' },
     revoked: {
-        label: 'Revocado',
-        class: 'bg-destructive/10 text-destructive',
+        label: 'Revocada',
+        class: 'bg-destructive-soft text-destructive-soft-foreground',
     },
 };
 
@@ -168,7 +172,7 @@ async function copySecret(): Promise<void> {
     }
 
     await copy(issued.value.token);
-    toast.success('Token copiado al portapapeles.');
+    toast.success('Clave de acceso copiada al portapapeles.');
 }
 
 /* Revoking --------------------------------------------------------------- */
@@ -224,23 +228,21 @@ function departmentsLabel(token: ApiTokenSummary): string {
 <template>
     <Head title="Integraciones" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="integraciones"
             title="Integraciones"
-            description="Tokens de la API de integración (/api/v1) para que otros sistemas consulten conversaciones y envíen mensajes. Cada token tiene capacidades, conexiones permitidas y una fecha de vencimiento."
+            description="Claves de acceso (tokens) para que otros sistemas (por ejemplo, tu CRM) consulten conversaciones o envíen mensajes. Cada clave tiene permisos, conexiones permitidas y fecha de vencimiento."
         >
             <template v-if="can.manage" #actions>
-                <Button @click="openCreate">
+                <Button data-tour="integrations.new" @click="openCreate">
                     <Plus />
-                    Nuevo token
+                    Nueva clave de acceso
                 </Button>
             </template>
         </PageHeader>
 
-        <SurfaceCard>
+        <SurfaceCard data-tour="integrations.tokens">
             <ul v-if="tokens.data.length > 0" class="divide-y">
                 <li
                     v-for="token in tokens.data"
@@ -334,7 +336,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                                 </dd>
                             </div>
                             <div>
-                                <dt class="inline font-medium">Emitido:</dt>
+                                <dt class="inline font-medium">Creada:</dt>
                                 {{ ' ' }}
                                 <dd class="inline">
                                     {{ formatDate(token.created_at) }}
@@ -347,7 +349,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                                 v-if="token.status === 'revoked'"
                                 class="min-w-0 sm:col-span-2"
                             >
-                                <dt class="inline font-medium">Revocado:</dt>
+                                <dt class="inline font-medium">Revocada:</dt>
                                 {{ ' ' }}
                                 <dd class="inline wrap-anywhere">
                                     {{ formatDateTime(token.revoked_at) }}
@@ -364,6 +366,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                         v-if="can.manage && token.status === 'active'"
                         variant="outline"
                         class="w-full text-destructive sm:w-auto"
+                        data-tour="integrations.revoke"
                         @click="openRevoke(token)"
                     >
                         <Ban />
@@ -376,16 +379,16 @@ function departmentsLabel(token: ApiTokenSummary): string {
                 v-else
                 class="m-4 border-none"
                 :icon="KeyRound"
-                title="Aún no hay tokens de integración"
+                title="Aún no hay claves de acceso"
                 :description="
                     can.manage
-                        ? 'Emite un token para que otro sistema use la API de Chat Manager.'
-                        : 'Cuando se emitan tokens aparecerán aquí.'
+                        ? 'Crea una clave para que otro sistema se conecte con Chat Manager.'
+                        : 'Cuando se creen claves de acceso aparecerán aquí.'
                 "
             >
                 <Button v-if="can.manage" @click="openCreate">
                     <Plus />
-                    Nuevo token
+                    Nueva clave de acceso
                 </Button>
             </EmptyState>
 
@@ -393,19 +396,19 @@ function departmentsLabel(token: ApiTokenSummary): string {
                 v-if="tokens.meta.last_page > 1 || tokens.data.length > 0"
                 class="border-t px-4 py-3"
             >
-                <DataPagination :meta="tokens.meta" noun="tokens" />
+                <DataPagination :meta="tokens.meta" noun="claves" />
             </div>
         </SurfaceCard>
 
         <FormDialog
             v-if="can.manage"
             v-model:open="formOpen"
-            title="Nuevo token de integración"
-            description="El token se muestra una sola vez al emitirlo. Guárdalo en el gestor de secretos del sistema que lo usará."
+            title="Nueva clave de acceso"
+            description="La clave se muestra una sola vez al crearla. Guárdala en un lugar seguro del sistema que la usará."
             size="lg"
             :processing="form.processing"
             :dirty="form.isDirty"
-            submit-label="Emitir token"
+            submit-label="Crear clave"
             @submit="submit"
         >
             <div class="grid gap-5">
@@ -426,7 +429,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
 
                 <fieldset class="grid gap-2">
                     <legend class="mb-2 text-sm font-medium">
-                        Capacidades
+                        Permisos de la clave
                     </legend>
                     <label
                         v-for="ability in abilities"
@@ -499,7 +502,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                         Departamentos (opcional)
                     </legend>
                     <p class="mb-1 text-xs text-muted-foreground">
-                        Sin elegir ninguno, el token alcanza todos los
+                        Si no eliges ninguno, la clave podrá usar todos los
                         departamentos de sus conexiones.
                     </p>
                     <div class="grid gap-2 sm:grid-cols-2">
@@ -531,9 +534,9 @@ function departmentsLabel(token: ApiTokenSummary): string {
 
                 <FormField
                     id="token-ips"
-                    label="IP permitidas (opcional)"
+                    label="Direcciones IP permitidas (opcional)"
                     :error="firstError('allowed_ips')"
-                    hint="Una IP o rango CIDR por línea (IPv4 o IPv6). Vacío: cualquier IP."
+                    hint="Direcciones IP desde donde se permite usar la clave, una por línea (pídelas al proveedor del sistema). Vacío: desde cualquier lugar."
                 >
                     <Textarea
                         id="token-ips"
@@ -565,34 +568,26 @@ function departmentsLabel(token: ApiTokenSummary): string {
         <Dialog v-model:open="secretOpen">
             <DialogContent class="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>Token emitido</DialogTitle>
+                    <DialogTitle>Clave de acceso creada</DialogTitle>
                     <DialogDescription>
-                        Copia el token de «{{ issued?.name }}» y guárdalo en un
+                        Copia la clave de «{{ issued?.name }}» y guárdala en un
                         lugar seguro.
                     </DialogDescription>
                 </DialogHeader>
-                <div
-                    class="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
-                    role="alert"
-                >
-                    <TriangleAlert
-                        class="mt-0.5 size-4 shrink-0"
-                        aria-hidden="true"
-                    />
-                    <p>
-                        No se volverá a mostrar. Si lo pierdes, revócalo y emite
-                        uno nuevo.
-                    </p>
-                </div>
+                <StatusNote tone="warning">
+                    No se volverá a mostrar. Si la pierdes, revócala y crea una
+                    nueva.
+                </StatusNote>
                 <div class="grid gap-2">
-                    <Label for="issued-token">Token</Label>
+                    <Label for="issued-token">Clave de acceso (token)</Label>
                     <code
                         id="issued-token"
                         class="block rounded-lg border bg-muted p-3 font-mono text-xs break-all select-all"
                         >{{ issued?.token }}</code
                     >
                     <p class="text-xs text-muted-foreground">
-                        Envíalo en el encabezado
+                        Para el desarrollador del otro sistema: envíala en el
+                        encabezado
                         <code class="font-mono">Authorization: Bearer …</code>
                     </p>
                 </div>
@@ -604,7 +599,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                     >
                         <Check v-if="copied" />
                         <Copy v-else />
-                        {{ copied ? 'Copiado' : 'Copiar token' }}
+                        {{ copied ? 'Copiada' : 'Copiar clave' }}
                     </Button>
                     <Button @click="secretOpen = false">Listo</Button>
                 </DialogFooter>
@@ -613,9 +608,9 @@ function departmentsLabel(token: ApiTokenSummary): string {
 
         <ConfirmDialog
             v-model:open="revokeOpen"
-            :title="`¿Revocar el token ${revoking?.name ?? ''}?`"
-            description="Las llamadas que lo usen se rechazarán de inmediato. No se puede deshacer: para volver a conectar el sistema tendrás que emitir otro token."
-            confirm-label="Revocar token"
+            :title="`¿Revocar la clave ${revoking?.name ?? ''}?`"
+            description="El sistema que la usa dejará de conectarse de inmediato. No se puede deshacer: para volver a conectarlo tendrás que crear otra clave."
+            confirm-label="Revocar clave"
             destructive
             :processing="revokeProcessing"
             @confirm="confirmRevoke"

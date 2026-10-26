@@ -62,7 +62,8 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
 
 Todos son **privados** (prefijo `private-` en el protocolo), salvo los dos de presencia del chat interno (prefijo
 `presence-`, también autorizados por el servidor). Cada suscripción pasa por `POST /broadcasting/auth`
-(middleware `web`, `auth`, `verified`, `throttle:180,1`; `EnsureUserIsActive` cierra la sesión de cuentas eliminadas).
+(middleware `web`, `auth`, `verified`, `throttle.channels:180,1`; `EnsureUserIsActive` cierra la sesión de cuentas
+eliminadas). Ver [Autorización de canales en ráfaga](#autorización-de-canales-en-ráfaga-fase-51).
 
 | Canal                              | Quién puede suscribirse (evaluado en cada suscripción)                                                                                                                                 |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,13 +72,30 @@ Todos son **privados** (prefijo `private-` en el protocolo), salvo los dos de pr
 | `inbox.departments.{departmentId}` | Bandeja de equipo: alcance global, o alcance de departamentos y miembro del departamento.                                                                                              |
 | `inbox.queues.{departmentId}`      | Cola de pendientes: quien puede aceptar de ese departamento (`ConversationAccess::acceptableDepartmentIds`: departamento activo, distribución distinta de manual, permiso de aceptar). |
 | `inbox.global`                     | Alcance global con permiso de ver conversaciones.                                                                                                                                      |
+| `inbox.supervision.{departmentId}` | Fase 5.1: miembros del departamento con alcance de departamentos que lo supervisan (`RealtimeAudience::canJoinDepartmentSupervision`, `DepartmentSupervisionChannel`).                 |
 | `team-chat.threads.{threadId}`     | Registrado por el módulo de chat interno en `routes/channels/team-chat.php` (ver [chat-interno.md](chat-interno.md)).                                                                  |
 | `presence-team`                    | Presencia del chat interno para quien llega a todos (alcance global o `team-chat.cross-department`), con `team-chat.use` y cuenta activa. Carga `{id}`.                                |
 | `presence-team.departments.{id}`   | Presencia del chat interno para los miembros de ese departamento, con `team-chat.use` y cuenta activa. Carga `{id}`.                                                                   |
 
 La prop compartida `realtime.inbox_channels` indica qué canales de bandeja corresponden al usuario según su alcance:
-global → `inbox.global`; departamentos → `inbox.departments.{id}` de sus departamentos; personal (asignado) →
-`inbox.queues.{id}` de las colas que puede aceptar. Sus propias conversaciones le llegan siempre por `users.{id}`.
+global → `inbox.global`; departamentos → `inbox.departments.{id}` de sus departamentos (y, si supervisa,
+`inbox.supervision.{id}` de los mismos); personal (asignado) → `inbox.queues.{id}` de las colas que puede aceptar. Sus
+propias conversaciones le llegan siempre por `users.{id}`.
+
+### Supervisión por departamentos (fase 5.1)
+
+Quien supervisa con alcance de departamentos lee también las conversaciones que **pasaron** por sus departamentos y
+hoy están en otro ([bandejas §Vista general](bandejas-y-asignacion.md#vista-general-chips-y-contadores)). Esas no
+llegan por `inbox.departments.{id}` (que sigue el departamento actual), así que `RealtimeSignals::inboxChannels()`
+añade `inbox.supervision.{id}` de cada departamento de origen o destino de sus eventos que tenga al menos un
+supervisor con alcance de departamentos y no reciba ya la señal por su bandeja de equipo. Si ningún departamento tiene
+supervisión por departamentos (caso común: solo supervisa la administración global), no se consulta nada. La lista de
+departamentos supervisados se lee una vez por proceso y se reutiliza 60 s, así que un supervisor recién nombrado oye
+los pasos de sus departamentos en menos de un minuto (sus propios departamentos no dependen de ello). Medición en
+[rendimiento §12.4](rendimiento-y-carga.md#124-señales-de-tiempo-real-realtimesignalsinboxchannels).
+
+Estas señales solo recargan lista y contadores: nunca producen sonido, _toast_ ni notificación
+([notificaciones §Visibilidad frente a avisos](notificaciones-y-horarios.md#visibilidad-frente-a-avisos-fase-51)).
 
 **Separación cola / equipo.** Un agente ordinario nunca escucha la bandeja de equipo: solo la cola. La cola recibe
 señales únicamente de conversaciones que están en cola o que acaban de salir de ella (aceptada, asignada, transferida o
@@ -144,7 +162,7 @@ desbloquea sin recargar la página.
 
 Destinatarios de `.inbox.changed` por un cambio de conversación: `inbox.global`; bandeja de equipo del departamento
 actual y de los departamentos de origen/destino del evento; cola del departamento si está en cola (o si acaba de salir
-de ella); y canales personales del responsable actual y de los usuarios de origen/destino (transferencias,
+de ella); canal de supervisión de los demás departamentos supervisados por los que pasó (fase 5.1); y canales personales del responsable actual y de los usuarios de origen/destino (transferencias,
 reasignaciones). Las notas solo refrescan la conversación; `outbound_blocked` solo la conversación y su responsable.
 
 `.inbox.message_status` (fase 5) corrige el icono de entrega de la fila de la bandeja sin recargar la lista. Se envía
@@ -186,6 +204,11 @@ módulo. Editar solo nombre, correo o contraseña no cambia el acceso y no emite
 - Al cambiar permisos o membresías, el servidor envía `.access.changed`: el cliente recarga la página completa (si ya no
   puede verla, el servidor lo redirige; si la cuenta se eliminó, `EnsureUserIsActive` cierra la sesión) y **vuelve a
   autorizar todos sus canales**; los que ya no le corresponden son rechazados (403).
+- Fase 5.1: `SaveRole` vacía la caché de permisos **antes** de emitir la señal (tras el commit), así que la recarga ya
+  lee los permisos nuevos. Tras la recarga, `usePermissionRefresh.ts` (montado una vez en el layout autenticado) compara
+  rol, alcance y permisos efectivos; si cambiaron, descarta las páginas precargadas en memoria (`router.flushAll()`, que
+  traían los permisos y acciones anteriores) y muestra un único aviso discreto «Tus permisos se actualizaron». Nunca
+  recarga en bucle. El servidor rechaza cualquier acción revocada aunque la página aún no se haya recargado.
 - Limitación del protocolo: Pusher/Reverb no permite expulsar a un suscriptor desde el servidor. Entre el cambio y la
   re-autorización (normalmente < 1 s) el cliente podría recibir señales con IDs; nunca datos, porque toda lectura se
   vuelve a autorizar. Si una conversación se transfiere fuera del alcance de quien la mira, la recarga provocada por
@@ -197,6 +220,25 @@ módulo. Editar solo nombre, correo o contraseña no cambia el acceso y no emite
 - CSRF: la autorización usa la cookie de sesión y el encabezado `X-XSRF-TOKEN`.
 - El canal del visitante del chat web tiene su propio endpoint de autorización con Bearer y sin cookies; el de agentes
   nunca lo conoce (ver [Canal del visitante](#canal-del-visitante-del-chat-web)).
+
+### Autorización de canales en ráfaga (fase 5.1)
+
+Un supervisor con alcance de departamentos tiene dos canales por departamento, y el cliente autoriza todos sus canales
+a la vez al conectar o tras `.access.changed`. Con el almacén de límites en base de datos (`cache.limiter` vacío →
+`CACHE_STORE=database`), esas peticiones paralelas competían por la misma fila del contador y algunas fallaban con
+_deadlock_ (500), dejando canales sin suscribir.
+
+- **Servidor:** `throttle.channels` (`app/Http/Middleware/ThrottleChannelAuthorization.php`) cuenta por ruta como
+  `throttle`, pero con `App\Support\ConcurrencySafeRateLimiter`, que reintenta los _deadlocks_ del almacén y, si
+  persisten, deja pasar la petición en lugar de responder 500. Es inocuo aquí: el endpoint exige sesión verificada y
+  activa y cada canal se autoriza con su propia regla; el límite solo frena tormentas de reconexión. El inicio de sesión
+  y los demás límites conservan el limitador estricto.
+- **Cliente** (`resources/js/lib/realtime/`): como máximo 3 autorizaciones simultáneas; ante 429, 5xx o falta de red
+  reintenta hasta 3 veces con espera creciente y aleatoria (0,5 s, 1,5 s y 4 s ±25 %) o el `Retry-After` del servidor
+  (máximo 10 s). Un 403 se respeta como rechazo.
+- Con Redis disponible se recomienda `CACHE_LIMITER=redis` en todo entorno
+  ([infraestructura §Fase 5.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)).
+- Prueba: `tests/Feature/Realtime/ChannelAuthorizationThrottleTest.php`.
 
 ## Reconexión y respaldo
 

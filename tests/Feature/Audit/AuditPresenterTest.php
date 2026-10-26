@@ -130,7 +130,7 @@ test('phase five entries read in Spanish: saved contacts, supervised personal it
         ->and($present(AuditAction::SupervisionPersonalItemUpdated, ['item_type' => 'quick_reply', 'title' => 'Saludo']))
         ->toBe(['Tipo de elemento' => 'Respuesta rápida personal', 'Título' => 'Saludo'])
         ->and($present(AuditAction::ConversationOnHoldRetired, ['previous_status' => 'on_hold', 'new_status' => 'pending']))
-        ->toBe(['Estado anterior' => 'En espera (anterior)', 'Estado nuevo' => 'Pendiente'])
+        ->toBe(['Estado anterior' => 'En espera (estado ya no usado)', 'Estado nuevo' => 'Pendiente'])
         ->and($present(AuditAction::MessageRetriedWithDuplicateRisk, ['previous_error' => 'sender_not_allowed']))
         ->toBe(['Error anterior' => 'Quien escribió ya no podía responder la conversación']);
 });

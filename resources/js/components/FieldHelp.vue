@@ -242,7 +242,7 @@ onBeforeUnmount(clearTimers);
                     </div>
                     <div
                         v-if="help?.warning"
-                        class="flex gap-2 rounded-md bg-warning/10 p-2 text-foreground"
+                        class="flex gap-2 rounded-md bg-warning-soft p-2 text-foreground"
                     >
                         <TriangleAlert
                             class="mt-0.5 size-4 shrink-0 text-warning"

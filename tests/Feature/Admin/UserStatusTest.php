@@ -175,9 +175,9 @@ test('an administrator never deletes, restores or edits a superadministrator', f
     $root = User::factory()->superAdministrator()->create();
     $deletedRoot = User::factory()->superAdministrator()->inactive()->create();
 
-    $this->actingAs($administrator)->delete(route('admin.users.destroy', $root))->assertForbidden();
-    $this->actingAs($administrator)->patch(route('admin.users.restore', $deletedRoot))->assertForbidden();
-    $this->actingAs($administrator)->put(route('admin.users.update', $root), ['name' => 'X', 'email' => $root->email])->assertForbidden();
+    $this->actingAs($administrator)->delete(route('admin.users.destroy', $root))->assertNotFound();
+    $this->actingAs($administrator)->patch(route('admin.users.restore', $deletedRoot))->assertNotFound();
+    $this->actingAs($administrator)->put(route('admin.users.update', $root), ['name' => 'X', 'email' => $root->email])->assertNotFound();
 
     expect($root->refresh()->is_active)->toBeTrue()
         ->and($deletedRoot->refresh()->is_active)->toBeFalse();

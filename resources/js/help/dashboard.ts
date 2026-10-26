@@ -3,32 +3,33 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Panel principal',
     objective:
-        'Vista rápida del estado de la atención según tu alcance: conversaciones activas y pendientes, cerradas hoy, tiempo de primera respuesta, demanda del periodo y equipo.',
+        'Vista rápida del estado de la atención con la información que puedes ver: conversaciones pendientes y en atención, finalizadas hoy, tiempo de primera respuesta, demanda del periodo y equipo.',
     mainActions: [
         'Elegir el periodo («Hoy», «Últimos 7 días», «Últimos 30 días») y filtrar por departamento, agente o conexión.',
         'Ir a Reportes con «Ver reportes completos» para más detalle.',
         'Exportar el resumen, si tienes permiso.',
     ],
     workflow: [
-        'Revisa «Pendientes»: son conversaciones en cola sin agente.',
+        'Revisa «Pendientes»: son conversaciones que esperan que alguien las acepte.',
         'Compara la demanda del periodo con la tendencia.',
         'Si algo llama la atención, abre Reportes o la bandeja de conversaciones.',
     ],
     fields: [
         {
-            name: 'Activas',
-            description: 'Conversaciones asignadas y en atención.',
+            name: 'En atención',
+            description: 'Conversaciones con una persona responsable.',
         },
         {
             name: 'Pendientes',
-            description: 'En cola, sin agente asignado.',
+            description:
+                'Esperan que alguien las acepte; aún no tienen agente.',
         },
         {
-            name: 'Cerradas hoy',
+            name: 'Finalizadas hoy',
             description: 'Desde las 00:00 en la zona horaria de la plataforma.',
         },
         {
-            name: 'Primera respuesta humana (prom.)',
+            name: 'Primera respuesta (promedio)',
             description:
                 'Tiempo hasta el primer mensaje escrito por una persona en el periodo.',
         },
@@ -41,17 +42,18 @@ const help: ModuleHelp = {
     states: [],
     permissions: [
         '«Ver el panel principal» muestra los indicadores; sin él la página indica que tu rol no los incluye.',
-        'Los datos respetan tu alcance: toda la operación, tus departamentos o tu propia bandeja.',
+        'Solo ves los datos que tu rol permite: toda la organización, tus departamentos o tus propias conversaciones.',
         'Exportar el resumen requiere «Exportar información a Excel y PDF».',
     ],
     commonErrors: [
         {
-            problem: '«La mensajería de WhatsApp aún no está conectada».',
+            problem: '«Aún no hay canales con mensajes confirmados».',
             solution:
                 'No hay una conexión con tráfico confirmado. Un administrador debe configurarla en Conexiones.',
         },
         {
-            problem: '«Sin datos suficientes en el periodo».',
+            problem:
+                '«Sin conversaciones en este periodo» o «Aún no hay respuestas medidas en este periodo».',
             solution:
                 'Elige un periodo más largo o espera a que haya actividad.',
         },

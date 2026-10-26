@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\WebChatSession;
 use App\Services\WebChat\VisitorCursor;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\URL;
@@ -43,7 +44,7 @@ class VisitorMessageResource extends JsonResource
             'cursor' => app(VisitorCursor::class)->encode($this->id),
             'direction' => $this->direction->value,
             'author' => $inbound ? 'visitor' : ($this->sender_user_id !== null ? 'agent' : 'system'),
-            'agent_name' => ! $inbound && $this->sender_user_id !== null ? $this->sender?->name : null,
+            'agent_name' => ! $inbound && $this->sender_user_id !== null ? app(ProtectedAccounts::class)->nameForRequest($this->sender, $request) : null,
             'body' => $this->body,
             'attachments' => $inbound || ! $session instanceof WebChatSession ? [] : $this->attachments
                 ->filter(fn (MessageAttachment $attachment): bool => $attachment->status === AttachmentStatus::Available && filled($attachment->path))

@@ -3,15 +3,16 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Roles y permisos',
     objective:
-        'Define qué puede hacer cada persona (permisos) y sobre qué datos (alcance). Los cambios se aplican de inmediato a todos los usuarios con ese rol.',
+        'Define qué puede hacer cada persona (permisos) y qué información puede ver (alcance). Los cambios se aplican de inmediato a todos los usuarios con ese rol.',
     mainActions: [
         'Crear un rol con «Nuevo rol», elegir su alcance y marcar sus permisos.',
-        'Ver y editar los permisos de un rol existente.',
+        'Abrir «Ver permisos» en una tarjeta para consultar todos los permisos del rol, agrupados por módulo.',
+        'Editar los permisos y el alcance de un rol existente.',
         'Eliminar roles sin usuarios y restaurarlos.',
     ],
     workflow: [
         'Parte de un rol predeterminado parecido (Administrador, Supervisor o Agente) para decidir qué cambiar.',
-        'Escribe el nombre y elige el «Alcance de los datos».',
+        'Escribe el nombre y elige el alcance: qué información puede ver.',
         'Marca los permisos por grupo; usa «Buscar permiso» para encontrarlos.',
         'Revisa el resumen de cambios (cuántos usuarios se afectan y qué permisos sensibles se retiran) y guarda.',
     ],
@@ -23,33 +24,29 @@ const help: ModuleHelp = {
         {
             name: 'Toda la organización',
             description:
-                'Actúa sobre todos los departamentos, usuarios y conversaciones.',
+                'Puede consultar y trabajar con la información de todos los departamentos, usuarios y conversaciones. Ejemplo: una gerente revisa las conversaciones y los reportes de todas las áreas.',
         },
         {
             name: 'Sus departamentos',
             description:
-                'Actúa únicamente sobre los departamentos a los que pertenece la persona.',
+                'Solo ve y trabaja con la información de los departamentos a los que pertenece. Ejemplo: un supervisor de Ventas ve las conversaciones de Ventas, pero no las de Soporte.',
         },
         {
             name: 'Solo lo asignado',
             description:
-                'Actúa únicamente sobre los registros asignados a la persona.',
+                'Solo ve y trabaja con lo que tiene asignado a su nombre y con lo pendiente que puede tomar. Ejemplo: un agente ve las conversaciones que atiende y las pendientes de sus departamentos que puede aceptar.',
         },
         {
             name: 'Etiquetas de los permisos',
             description:
-                '«Sensible» pide confirmación al otorgarlo o retirarlo; «Requiere alcance de toda la organización» solo funciona con alcance global; «Solo superadministrador» está reservado.',
+                '«Alto impacto» da control sobre cuentas, configuración o información delicada: el editor te avisa al retirarlo. «Solo funciona con el alcance «Toda la organización»» no se puede dar a roles con un alcance menor.',
         },
     ],
     states: [
         {
-            name: 'Superadministrador',
-            description:
-                'Autoridad raíz: siempre tiene alcance global, no puede eliminarse y conserva los permisos de administración de usuarios y roles.',
-        },
-        {
             name: 'Administrador',
-            description: 'Todos los permisos excepto los reservados.',
+            description:
+                'Administra usuarios, departamentos, conversaciones y configuraciones dentro del alcance autorizado de la organización.',
         },
         {
             name: 'Supervisor',
@@ -62,9 +59,12 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver roles y permisos» permite consultar; crear, editar y eliminar roles requieren alcance global y son sensibles.',
+        'El alcance define qué información ve el rol; los permisos, qué acciones puede hacer con ella.',
+        '«Ver roles y permisos» permite consultar; crear, editar y eliminar roles solo funcionan con «Toda la organización» y son de alto impacto.',
         'Solo puedes otorgar permisos que tú tienes y un alcance que no supere el tuyo.',
-        '«Supervisar conversaciones de su alcance» es de solo lectura; «Enviar plantillas de WhatsApp» y la supervisión de elementos personales se otorgan explícitamente.',
+        'Antes de guardar verás a cuántos usuarios activos afecta el cambio. Si el rol no está asignado a nadie, el cambio no afecta a nadie todavía: revisa en Usuarios qué rol tienen las personas.',
+        'Retirar un permiso de un rol no se lo quita a quien también lo recibe por otro rol o por una asignación directa; el editor te avisa cuántos lo conservan.',
+        '«Supervisar conversaciones» es de solo lectura; «Enviar plantillas de WhatsApp» y la supervisión de elementos personales se otorgan explícitamente.',
     ],
     commonErrors: [
         {
@@ -74,7 +74,8 @@ const help: ModuleHelp = {
         {
             problem:
                 '«Estos permisos requieren el alcance «Toda la organización»…»',
-            solution: 'Cambia el alcance a global o quita esos permisos.',
+            solution:
+                'Cambia el alcance a «Toda la organización» o quita esos permisos.',
         },
         {
             problem: '«Solo puedes otorgar permisos que tú mismo tienes…»',

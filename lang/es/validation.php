@@ -76,7 +76,7 @@ return [
     'ip' => 'El campo :attribute debe ser una dirección IP válida.',
     'ipv4' => 'El campo :attribute debe ser una dirección IPv4 válida.',
     'ipv6' => 'El campo :attribute debe ser una dirección IPv6 válida.',
-    'json' => 'El campo :attribute debe tener un formato JSON válido.',
+    'json' => 'El campo :attribute tiene un formato que no se reconoce.',
     'list' => 'El campo :attribute debe ser una lista.',
     'lowercase' => 'El campo :attribute debe estar en minúsculas.',
     'lt' => [
@@ -159,9 +159,9 @@ return [
     'unique' => 'El valor de :attribute ya está en uso.',
     'uploaded' => 'No se pudo subir el archivo de :attribute. Revisa que no supere el tamaño permitido e inténtalo de nuevo.',
     'uppercase' => 'El campo :attribute debe estar en mayúsculas.',
-    'url' => 'El campo :attribute debe ser una URL válida.',
-    'ulid' => 'El campo :attribute debe ser un identificador ULID válido.',
-    'uuid' => 'El campo :attribute debe ser un identificador UUID válido.',
+    'url' => 'El campo :attribute debe ser un enlace válido (por ejemplo, https://ejemplo.com).',
+    'ulid' => 'El campo :attribute no es válido. Recarga la página e inténtalo de nuevo.',
+    'uuid' => 'El campo :attribute no es válido. Recarga la página e inténtalo de nuevo.',
 
     'custom' => [],
 
@@ -227,7 +227,7 @@ return [
         // Connections.
         'channel' => 'canal',
         'display_phone_number' => 'número de teléfono',
-        'phone_number_id' => 'Phone number ID',
+        'phone_number_id' => 'ID del número (Phone number ID)',
         'business_account_id' => 'ID de la cuenta de WhatsApp Business',
         'meta_app_id' => 'ID de la app de Meta',
         'access_token' => 'token de acceso',
@@ -353,7 +353,7 @@ return [
         'tag' => 'etiqueta',
         'sort' => 'orden',
         'page' => 'página',
-        'queue' => 'cola',
+        'queue' => 'grupo de tareas',
         'version' => 'versión',
         'signature' => 'firma',
         'nonce' => 'código de un solo uso',

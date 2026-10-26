@@ -22,12 +22,12 @@ enum ContactSource: string
     public function label(): string
     {
         return match ($this) {
-            self::Manual => 'Registro manual',
-            self::Whatsapp => 'Automático (WhatsApp)',
+            self::Manual => 'Agregado a mano',
+            self::Whatsapp => 'Creado al escribir por WhatsApp',
             self::Import => 'Importación',
-            self::WebChat => 'Automático (Chat web)',
-            self::Messenger => 'Automático (Messenger)',
-            self::Instagram => 'Automático (Instagram)',
+            self::WebChat => 'Creado al escribir por Chat web',
+            self::Messenger => 'Creado al escribir por Messenger',
+            self::Instagram => 'Creado al escribir por Instagram',
         };
     }
 

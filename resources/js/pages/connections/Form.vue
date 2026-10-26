@@ -216,9 +216,11 @@ const validation = useFormValidation(form, {
             'El Phone number ID solo contiene dígitos (de 5 a 64); lo encuentras en WhatsApp Manager o en la configuración de la API de tu app de Meta.',
         ),
         business_account_id: metaId(
-            'El WABA ID solo contiene dígitos (de 5 a 64).',
+            'El ID de la cuenta de WhatsApp Business (WABA ID) solo contiene dígitos (de 5 a 64).',
         ),
-        meta_app_id: metaId('El App ID solo contiene dígitos (de 5 a 64).'),
+        meta_app_id: metaId(
+            'El ID de la app de Meta (App ID) solo contiene dígitos (de 5 a 64).',
+        ),
         access_token: secret(
             20,
             2000,
@@ -498,9 +500,7 @@ const pageTitle = computed(() =>
     <Head :title="pageTitle" />
 
     <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
-        <div
-            class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-        >
+        <div class="page-shell [--page-max:72rem]">
             <PageHeader
                 help="conexiones"
                 show-title
@@ -637,7 +637,7 @@ const pageTitle = computed(() =>
                         <div class="grid gap-5 sm:grid-cols-2">
                             <FormField
                                 id="connection-phone-number-id"
-                                label="Phone number ID"
+                                label="ID del número (Phone number ID)"
                                 :error="validation.error('phone_number_id')"
                                 :help="help.phoneNumberId"
                             >
@@ -658,7 +658,7 @@ const pageTitle = computed(() =>
                             </FormField>
                             <FormField
                                 id="connection-waba-id"
-                                label="WABA ID"
+                                label="ID de la cuenta de WhatsApp Business (WABA ID)"
                                 :error="validation.error('business_account_id')"
                                 :help="help.businessAccountId"
                             >
@@ -679,7 +679,7 @@ const pageTitle = computed(() =>
                             </FormField>
                             <FormField
                                 id="connection-app-id"
-                                label="App ID (opcional)"
+                                label="ID de la app de Meta (App ID, opcional)"
                                 :error="validation.error('meta_app_id')"
                                 :help="help.metaAppId"
                                 class="sm:col-span-2"
@@ -1176,7 +1176,7 @@ const pageTitle = computed(() =>
 
                             <div
                                 v-if="phoneNotConnected"
-                                class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+                                class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
                             >
                                 <TriangleAlert
                                     class="mt-0.5 size-4 shrink-0 text-warning"
@@ -1379,6 +1379,7 @@ const pageTitle = computed(() =>
 
         <div
             v-if="can.update"
+            data-dock-bottom
             class="sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
         >
             <span

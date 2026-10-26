@@ -133,9 +133,7 @@ function leadersLabel(department: DepartmentSummary): string {
 <template>
     <Head title="Departamentos" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="departamentos"
             title="Departamentos"
@@ -151,7 +149,11 @@ function leadersLabel(department: DepartmentSummary): string {
                     report="departments"
                     :filters="filters"
                 />
-                <Button v-if="can.create" @click="openCreate">
+                <Button
+                    v-if="can.create"
+                    data-tour="departments.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nuevo departamento
                 </Button>
@@ -186,7 +188,7 @@ function leadersLabel(department: DepartmentSummary): string {
                 class="m-4 border-none"
                 :icon="Building2"
                 title="Ningún departamento en este estado"
-                description="Prueba con otro estado del registro."
+                description="Cambia el filtro (Activos, Eliminados o Todos)."
             />
 
             <Table v-else-if="viewMode === 'table'">
@@ -210,8 +212,11 @@ function leadersLabel(department: DepartmentSummary): string {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="department in departments"
+                        v-for="(department, position) in departments"
                         :key="department.id"
+                        :data-tour="
+                            position === 0 ? 'departments.list' : undefined
+                        "
                         :class="
                             department.is_deleted && 'text-muted-foreground'
                         "
@@ -284,7 +289,11 @@ function leadersLabel(department: DepartmentSummary): string {
             </Table>
 
             <RecordGrid v-else>
-                <li v-for="department in departments" :key="department.id">
+                <li
+                    v-for="(department, position) in departments"
+                    :key="department.id"
+                    :data-tour="position === 0 ? 'departments.list' : undefined"
+                >
                     <RecordCard
                         :muted="department.is_deleted"
                         :href="

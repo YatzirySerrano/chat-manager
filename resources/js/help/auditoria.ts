@@ -3,7 +3,7 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Auditoría',
     objective:
-        'Registro inalterable de las acciones administrativas: quién hizo qué, cuándo y sobre qué registro. No incluye contraseñas, tokens ni secretos, ni el contenido de los mensajes con clientes.',
+        'Registro inalterable de las acciones administrativas: quién hizo qué, cuándo y sobre qué registro. No incluye contraseñas, claves de acceso ni secretos, ni el contenido de los mensajes con clientes.',
     mainActions: [
         'Filtrar por acción, responsable y rango de fechas.',
         'Abrir un evento para ver quién lo realizó, la entidad afectada, los cambios y los detalles.',
@@ -19,7 +19,7 @@ const help: ModuleHelp = {
         {
             name: 'Acción',
             description:
-                'Qué ocurrió: usuarios, roles, departamentos, conexiones, contactos, etiquetas, respuestas rápidas, importaciones, seguridad de la cuenta, tokens de API, grupos del chat interno, supervisión de elementos personales y más.',
+                'Qué ocurrió: usuarios, roles, departamentos, conexiones, contactos, etiquetas, respuestas rápidas, importaciones, seguridad de la cuenta, claves de acceso de integraciones, grupos del chat interno, supervisión de elementos personales y más.',
         },
         {
             name: 'Responsable',
@@ -40,11 +40,11 @@ const help: ModuleHelp = {
         {
             name: 'Reservado',
             description:
-                'Evento visible solo para superadministradores (acciones sobre la cuenta o el rol raíz e importaciones).',
+                'Evento con acceso restringido: solo lo ven las cuentas autorizadas para consultarlo.',
         },
     ],
     permissions: [
-        '«Ver registros de auditoría»: con alcance global ves todos los eventos; sin él, solo las operaciones que tú realizaste.',
+        '«Ver registros de auditoría»: si tu rol ve toda la organización, ves todos los eventos; si no, solo los tuyos.',
         '«Exportar registros de auditoría» exporta únicamente lo que ya puedes consultar.',
     ],
     commonErrors: [
@@ -65,7 +65,7 @@ const help: ModuleHelp = {
     ],
     examples: [
         'Saber quién cambió los permisos del rol Supervisor la semana pasada.',
-        'Revisar qué tokens de API se emitieron o revocaron este mes.',
+        'Revisar qué claves de acceso de integraciones se crearon o revocaron este mes.',
     ],
 };
 

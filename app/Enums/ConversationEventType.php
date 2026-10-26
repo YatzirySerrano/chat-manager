@@ -31,7 +31,7 @@ enum ConversationEventType: string
             self::Accepted => 'Aceptada',
             self::Assigned => 'Asignada',
             self::AutoAssigned => 'Asignada automáticamente',
-            self::Unassigned => 'Devuelta a la cola',
+            self::Unassigned => 'Devuelta a Pendientes',
             self::Transferred => 'Transferida',
             self::PutOnHold => 'Puesta en espera',
             self::Resumed => 'Atención retomada',

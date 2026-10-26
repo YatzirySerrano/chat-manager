@@ -49,7 +49,7 @@ async function copySnippet(): Promise<void> {
         ><code class="font-mono break-all whitespace-pre-wrap" data-testid="web-chat-snippet">{{ snippet }}</code></pre>
         <p
             v-if="!configured"
-            class="rounded-lg bg-warning/10 p-3 text-xs"
+            class="rounded-lg bg-warning-soft p-3 text-xs"
             role="note"
         >
             El chat solo aparecerá en los dominios autorizados. Guarda al menos

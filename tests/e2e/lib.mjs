@@ -992,12 +992,42 @@ export async function runOperation(page, label) {
 /**
  * Inbox views offered in the "Vista" group of the "Filtros" panel (the
  * indicators of the list only cover the base view, pending and unread).
+ * Phase 5.1: "all" is named after the viewer's reach («Todas las
+ * conversaciones», «Conversaciones de mis departamentos»), so its radio is
+ * found by value.
  */
 const FILTER_PANEL_VIEWS = {
     'Mis conversaciones': 'mine',
-    'Todas las visibles': 'all',
+    'Todas las conversaciones': 'all',
+    'Conversaciones de mis departamentos': 'all',
     Todas: 'all',
 };
+
+/**
+ * Applies the draft of the open "Filtros" panel with «Aplicar» (phase 5.1:
+ * nothing reaches the list before it) and waits for the list and for the
+ * panel to close.
+ */
+export async function applyInboxFilters(page) {
+    const answered = inboxListAnswered(page);
+    await page.locator('[data-inbox-filter-apply]').click();
+    await answered;
+    await page
+        .locator('[data-inbox-filter-surface]')
+        .waitFor({ state: 'detached', timeout: 10_000 })
+        .catch(() => {});
+}
+
+/** «Limpiar» of the open "Filtros" panel: resets and applies. */
+export async function clearInboxFilters(page) {
+    const answered = inboxListAnswered(page);
+    await page.locator('[data-inbox-filter-clear]').click();
+    await answered;
+    await page
+        .locator('[data-inbox-filter-surface]')
+        .waitFor({ state: 'detached', timeout: 10_000 })
+        .catch(() => {});
+}
 
 /**
  * Waits for the partial reload the list asks after a filter change.
@@ -1020,7 +1050,7 @@ function inboxListAnswered(page) {
  * Switches the inbox to a view and waits until the server answered its
  * list. The operational indicators ("Bandeja general" / "Todas",
  * "Pendientes", "No leídas") are always visible chips of the list; "Mis
- * conversaciones" and "Todas las visibles" live in the "Vista" group of
+ * conversaciones" and the "all" view live in the "Vista" group of
  * the "Filtros" panel (a popover, or a bottom sheet on phones).
  */
 export async function openInboxView(page, label) {
@@ -1062,14 +1092,11 @@ export async function openInboxView(page, label) {
         return;
     }
 
-    const radioLabel = label === 'Todas' ? 'Todas las visibles' : label;
-    await page.locator('[data-inbox-filters]').first().click();
-    const radio = page.getByRole('radio', { name: radioLabel, exact: true });
+    await page.locator('[data-inbox-filters]:visible').first().click();
+    const radio = page.locator(`input[name="inbox-view"][value="${view}"]`);
     await radio.waitFor({ state: 'visible', timeout: 10_000 });
-    const answered = inboxListAnswered(page);
     await radio.check();
-    await answered;
-    await page.keyboard.press('Escape');
+    await applyInboxFilters(page);
     await page.waitForURL((url) => url.searchParams.get('view') === view, {
         timeout: 10_000,
     });
@@ -1080,17 +1107,18 @@ export async function openInboxView(page, label) {
  * atención", "Cerradas", …) and waits for the list.
  */
 export async function chooseInboxStatus(page, label) {
-    await page.locator('[data-inbox-filters]').first().click();
+    await page.locator('[data-inbox-filters]:visible').first().click();
     const radio = page.getByRole('radio', { name: label, exact: true });
     await radio.waitFor({ state: 'visible', timeout: 10_000 });
 
-    if (!(await radio.isChecked())) {
-        const answered = inboxListAnswered(page);
-        await radio.check();
-        await answered;
+    if (await radio.isChecked()) {
+        await page.keyboard.press('Escape');
+
+        return;
     }
 
-    await page.keyboard.press('Escape');
+    await radio.check();
+    await applyInboxFilters(page);
 }
 
 export async function openConversation(page, id, query = '') {

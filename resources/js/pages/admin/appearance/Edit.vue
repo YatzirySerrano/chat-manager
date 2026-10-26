@@ -3,6 +3,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 import { Check, Eye, Lock, MessagesSquare, RotateCcw } from '@lucide/vue';
 import { onBeforeUnmount, watch } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,9 @@ const props = defineProps<{
     defaultPalette: ThemePaletteValue;
     can: { update: boolean };
 }>();
+
+/** Bar heights (in %) of the decorative mini chart in the preview. */
+const previewBars = [38, 56, 44, 70, 52, 86];
 
 const form = useForm<{ palette: ThemePaletteValue }>({
     palette: props.palette,
@@ -57,27 +61,22 @@ function save(): void {
 <template>
     <Head title="Personalización" />
 
-    <div
-        class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell [--page-max:72rem]">
         <PageHeader
             help="configuracion"
             title="Personalización"
             description="Elige el color principal de la plataforma. Se aplica a todos los módulos y usuarios, en modo claro y oscuro."
         />
 
-        <p
-            v-if="!can.update"
-            class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
-        >
-            <Lock class="size-4" />
+        <StatusNote v-if="!can.update" tone="info" :icon="Lock">
             Puedes consultar la apariencia, pero no modificarla.
-        </p>
+        </StatusNote>
 
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
             <SurfaceCard
+                data-tour="appearance.palettes"
                 title="Paleta de color"
-                description="Paletas curadas con contraste legible en ambos modos."
+                description="Combinaciones de color probadas para leerse bien en modo claro y oscuro."
                 body-class="p-5"
             >
                 <div
@@ -93,11 +92,11 @@ function save(): void {
                         :data-palette="option.value"
                         :aria-checked="form.palette === option.value"
                         :disabled="!can.update || form.processing"
-                        class="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 text-left transition outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed"
+                        class="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed"
                         :class="
                             form.palette === option.value
-                                ? 'border-primary ring-1 ring-primary'
-                                : 'hover:border-primary/40'
+                                ? 'border-primary ring-2 ring-primary'
+                                : 'interactive-surface'
                         "
                         @click="form.palette = option.value"
                     >
@@ -114,7 +113,8 @@ function save(): void {
                             {{ option.label }}
                             <Check
                                 v-if="form.palette === option.value"
-                                class="size-4 text-primary"
+                                class="size-4 shrink-0 text-primary"
+                                aria-hidden="true"
                             />
                         </span>
                         <Badge
@@ -128,7 +128,11 @@ function save(): void {
                 </div>
             </SurfaceCard>
 
-            <SurfaceCard title="Vista previa" body-class="space-y-4 p-5">
+            <SurfaceCard
+                title="Vista previa"
+                body-class="space-y-4 p-5"
+                data-tour="appearance.preview"
+            >
                 <template #actions>
                     <Badge
                         v-if="form.isDirty"
@@ -163,6 +167,26 @@ function save(): void {
                         Departamentos
                     </p>
                 </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <Badge class="font-medium">Seleccionado</Badge>
+                    <Badge variant="success">Activo</Badge>
+                </div>
+                <div
+                    class="flex h-16 items-end gap-1.5 rounded-lg bg-surface-sunken px-3 pt-3 pb-2"
+                    aria-hidden="true"
+                >
+                    <span
+                        v-for="(height, index) in previewBars"
+                        :key="index"
+                        class="flex-1 rounded-t-sm"
+                        :class="
+                            index === previewBars.length - 1
+                                ? 'bg-primary'
+                                : 'bg-primary/35'
+                        "
+                        :style="{ height: `${height}%` }"
+                    />
+                </div>
                 <div class="flex flex-wrap gap-2">
                     <Button type="button" size="sm" tabindex="-1"
                         >Acción principal</Button
@@ -185,6 +209,7 @@ function save(): void {
         <div
             v-if="can.update"
             class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
+            data-tour="appearance.actions"
         >
             <Button
                 type="button"

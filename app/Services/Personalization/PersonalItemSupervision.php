@@ -54,14 +54,10 @@ class PersonalItemSupervision
      */
     public function owners(User $actor): Builder
     {
-        $query = User::query()->visibleTo($actor)->whereKeyNot($actor->id);
+        $query = User::query()->visibleTo($actor)->withoutProtectedFor($actor)->whereKeyNot($actor->id);
 
         if (! $this->canSupervise($actor)) {
             return $query->whereRaw('1 = 0');
-        }
-
-        if (! $actor->hasRootAuthority()) {
-            $query->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('is_root', true));
         }
 
         return $query;

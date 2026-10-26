@@ -37,7 +37,7 @@ const detail = computed(() => {
     if (event.from_user || event.to_user) {
         parts.push(
             [event.from_user, event.to_user]
-                .map((name) => name ?? 'cola')
+                .map((name) => name ?? 'Pendientes')
                 .join(' → '),
         );
     }

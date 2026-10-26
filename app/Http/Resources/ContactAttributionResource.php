@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Enums\AttributionReliability;
 use App\Models\ContactAttribution;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -46,7 +47,7 @@ class ContactAttributionResource extends JsonResource
             'captured_at' => $this->captured_at->toIso8601String(),
             'recorded_by' => $this->whenLoaded('recorder', fn (): ?array => $this->recorder === null ? null : [
                 'id' => $this->recorder->id,
-                'name' => $this->recorder->name,
+                'name' => app(ProtectedAccounts::class)->nameForRequest($this->recorder, $request),
             ]),
         ];
     }

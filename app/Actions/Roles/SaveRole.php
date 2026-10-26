@@ -28,6 +28,7 @@ class SaveRole
         private AuditLogger $audit,
         private PermissionRegistrar $registrar,
         private ReleaseAssignedConversations $releaseConversations,
+        private RoleGrantOverlap $overlap,
     ) {}
 
     /**
@@ -35,9 +36,42 @@ class SaveRole
      */
     public function handle(?Role $role, array $data, User $actor): Role
     {
-        $saved = $this->persist($role, $data, $actor);
+        return $this->save($role, $data, $actor)->role;
+    }
 
-        return $saved ?? $role ?? throw new LogicException('A new role is always saved.');
+    /**
+     * Create or update the role and tell whom the change reaches: active
+     * holders, and those who keep a revoked permission through another role
+     * or a direct grant (checked after the permission cache is refreshed,
+     * exactly as authorization will check it).
+     *
+     * @param  array{label: string, description: string|null, scope: DataScope, permissions: list<string>}  $data
+     */
+    public function save(?Role $role, array $data, User $actor): RoleSaveResult
+    {
+        $persisted = $this->persist($role, $data, $actor);
+
+        if ($persisted === null) {
+            return new RoleSaveResult($role ?? throw new LogicException('A new role is always saved.'), changed: false, created: false);
+        }
+
+        [$saved, $removed, $accessChanged] = $persisted;
+
+        if ($role === null) {
+            return new RoleSaveResult($saved, changed: true, created: true, accessChanged: true);
+        }
+
+        $retained = $removed === [] ? ['users' => 0, 'permissions' => []] : $this->overlap->retainedAfterRevocation($saved, $removed);
+
+        return new RoleSaveResult(
+            $saved,
+            changed: true,
+            created: false,
+            accessChanged: $accessChanged,
+            activeHolders: $saved->users()->where('users.is_active', true)->count(),
+            retainedUsers: $retained['users'],
+            retainedPermissions: $retained['permissions'],
+        );
     }
 
     /**
@@ -50,16 +84,16 @@ class SaveRole
      */
     public function update(Role $role, array $data, User $actor): bool
     {
-        return $this->persist($role, $data, $actor) !== null;
+        return $this->save($role, $data, $actor)->changed;
     }
 
     /**
      * @param  array{label: string, description: string|null, scope: DataScope, permissions: list<string>}  $data
-     * @return Role|null The saved role, or null when an existing role did not change.
+     * @return array{0: Role, 1: list<string>, 2: bool}|null The saved role, the permissions removed from it and whether its permissions or scope changed; null when an existing role did not change.
      */
-    private function persist(?Role $role, array $data, User $actor): ?Role
+    private function persist(?Role $role, array $data, User $actor): ?array
     {
-        $saved = DB::transaction(function () use ($role, $data, $actor): ?Role {
+        $saved = DB::transaction(function () use ($role, $data, $actor): ?array {
             $creating = $role === null;
             $role ??= new Role(['guard_name' => 'web', 'name' => $this->uniqueName($data['label'])]);
             $role->loadMissing('permissions');
@@ -105,13 +139,19 @@ class SaveRole
 
             $role->syncPermissions($permissions);
 
+            // Forget the permission cache as soon as the change commits and
+            // before UserAccessChanged (dispatched after commit) reaches any
+            // listener: a concurrent request may have cached the old grants
+            // again between the sync and the commit.
+            DB::afterCommit(fn (): bool => $this->registrar->forgetCachedPermissions());
+
             if ($creating) {
                 $this->audit->record(AuditAction::RoleCreated, $role, [
                     'scope' => $role->scope->label(),
                     'permissions' => $permissions,
                 ], $actor);
 
-                return $role;
+                return [$role, [], true];
             }
 
             if ($changes !== []) {
@@ -136,7 +176,7 @@ class SaveRole
                 DB::afterCommit(fn () => $this->releaseConversationsOf($holders, $actor));
             }
 
-            return $role;
+            return [$role, $removed, $added !== [] || $removed !== [] || array_key_exists('scope', $changes)];
         });
 
         if ($saved === null) {
@@ -144,8 +184,9 @@ class SaveRole
         }
 
         $this->registrar->forgetCachedPermissions();
+        $saved[0]->load('permissions');
 
-        return $saved->load('permissions');
+        return $saved;
     }
 
     /**

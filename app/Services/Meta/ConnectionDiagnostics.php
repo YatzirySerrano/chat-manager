@@ -61,9 +61,9 @@ class ConnectionDiagnostics
             'transport' => [
                 'mode' => $this->transport->name(),
                 'label' => match ($this->transport->name()) {
-                    'meta' => 'WhatsApp Cloud API (real)',
-                    'simulated' => 'Simulación local: ningún mensaje sale a WhatsApp',
-                    default => 'Envío deshabilitado en esta instalación (WHATSAPP_TRANSPORT)',
+                    'meta' => 'Envío real por WhatsApp (Cloud API de Meta)',
+                    'simulated' => 'Los mensajes se guardan pero no llegan a los clientes.',
+                    default => 'El envío de mensajes está apagado en esta instalación. Pide al equipo técnico que lo active.',
                 },
                 // The pilot list only restricts the real Meta transport.
                 'pilot_recipients' => $this->transport->name() === 'meta' ? count(MetaCloudWhatsAppTransport::pilotRecipients()) : 0,

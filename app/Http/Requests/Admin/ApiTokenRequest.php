@@ -83,7 +83,7 @@ class ApiTokenRequest extends FormRequest
             'connection_ids.*.exists' => 'Una de las conexiones no existe o fue eliminada.',
             'department_ids.*.exists' => 'Uno de los departamentos no existe o fue eliminado.',
             'expires_at.after' => 'La fecha de vencimiento debe ser posterior a hoy.',
-            'expires_at.before_or_equal' => 'Un token puede durar como máximo '.(int) config('integrations.tokens.max_days', 365).' días.',
+            'expires_at.before_or_equal' => 'Una clave de acceso puede durar como máximo '.(int) config('integrations.tokens.max_days', 365).' días.',
         ];
     }
 

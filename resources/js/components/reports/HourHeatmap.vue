@@ -10,7 +10,6 @@ const props = defineProps<{
     /** 7 rows (Monday first) × 24 hours. */
     cells: number[][];
     max: number;
-    timezone: string;
 }>();
 
 const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -56,7 +55,7 @@ function describe(day: number, hour: number, count: number): string {
     <div class="space-y-3">
         <div class="overflow-x-auto">
             <table
-                class="w-full min-w-[560px] border-separate border-spacing-0.5 text-[10px]"
+                class="w-full min-w-[600px] border-separate border-spacing-0.5 text-xs"
             >
                 <caption class="sr-only">
                     Conversaciones recibidas por día de la semana y hora
@@ -112,7 +111,7 @@ function describe(day: number, hour: number, count: number): string {
                 Mayor demanda: {{ fullDays[busiest.day] }} a las
                 {{ String(busiest.hour).padStart(2, '0') }}:00 ({{
                     busiest.count.toLocaleString('es-MX')
-                }}). Hora local de {{ timezone }}.
+                }}). Hora local.
             </p>
             <p v-else>Sin conversaciones recibidas en el periodo.</p>
             <span class="flex items-center gap-1.5" aria-hidden="true">

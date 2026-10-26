@@ -218,7 +218,7 @@ function submit(confirmDuplicate = false): void {
         <div class="grid gap-5">
             <div
                 v-if="duplicates"
-                class="space-y-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
+                class="space-y-3 rounded-lg border border-transparent bg-warning-soft p-4 text-sm"
                 role="alert"
             >
                 <div class="flex gap-2">

@@ -97,7 +97,7 @@ test('a colleague who cannot assign may not transfer to someone at their limit, 
     $this->actingAs($colleague)
         ->from(route('conversations.show', $conversation))
         ->post(route('conversations.transfer', $conversation), ['user_id' => $this->agent->id, 'confirm_over_capacity' => true, 'version' => 0])
-        ->assertSessionHasErrors(['user_id' => 'Ana ya atiende el máximo de 1 conversaciones. Transfiérela a la cola del departamento o pide a quien asigna conversaciones que lo autorice.']);
+        ->assertSessionHasErrors(['user_id' => 'Ana ya atiende el máximo de 1 conversaciones. Envíala a «Pendientes» del departamento o pide a quien asigna conversaciones que lo autorice.']);
 
     expect($conversation->refresh()->assigned_user_id)->toBe($colleague->id);
 

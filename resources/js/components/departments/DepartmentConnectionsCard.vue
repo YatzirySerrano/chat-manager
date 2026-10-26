@@ -16,10 +16,10 @@ defineProps<{
 }>();
 
 const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
-    success: 'bg-success/10 text-success',
+    success: 'bg-success-soft text-success-soft-foreground',
     primary: 'bg-primary-soft text-primary-soft-foreground',
-    warning: 'bg-warning/10 text-warning',
-    danger: 'bg-destructive/10 text-destructive',
+    warning: 'bg-warning-soft text-warning-soft-foreground',
+    danger: 'bg-destructive-soft text-destructive-soft-foreground',
     neutral: 'bg-muted text-muted-foreground',
 };
 </script>

@@ -86,6 +86,7 @@ class DepartmentController extends Controller
         $actor = $request->user();
 
         $members = $department->members()
+            ->withoutProtectedFor($actor)
             ->hidingDeletedFrom($actor)
             ->with(['roles.permissions', 'departments:id'])
             ->orderBy('users.name')

@@ -39,7 +39,7 @@ class SyncMessageTemplates
     public function handle(Connection $connection): array
     {
         if (blank($connection->business_account_id) || blank($connection->access_token)) {
-            throw new MetaGraphException('Guarda el WhatsApp Business Account ID y el token de acceso antes de sincronizar plantillas.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
+            throw new MetaGraphException('Esta conexión está incompleta: un administrador debe completar sus datos de Meta en Conexiones antes de actualizar plantillas.', rejected: true, kind: MetaGraphException::INVALID_REQUEST);
         }
 
         try {
@@ -116,7 +116,7 @@ class SyncMessageTemplates
                 'fields' => self::FIELDS,
                 'limit' => (int) config('whatsapp.templates.page_size', 100),
                 'after' => $after,
-            ], fn (mixed $value): bool => $value !== null), 'la sincronización de plantillas');
+            ], fn (mixed $value): bool => $value !== null), 'la actualización de plantillas desde Meta');
 
             foreach (is_array($page['data'] ?? null) ? $page['data'] : [] as $item) {
                 $parsed = is_array($item) ? $this->parse($item) : null;

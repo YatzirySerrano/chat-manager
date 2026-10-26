@@ -8,11 +8,15 @@
         <text x="{{ $label['x'] }}" y="{{ $geometry['top'] + $geometry['plotHeight'] + 16 }}" text-anchor="middle" class="chart-axis">{{ $label['label'] }}</text>
     @endforeach
     @foreach ($geometry['series'] as $series)
-        <polyline points="{{ $series['points'] }}" fill="none" stroke="{{ $series['color'] }}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        @foreach ($series['segments'] as $points)
+            <polyline points="{{ $points }}" fill="none" stroke="{{ $series['color'] }}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        @endforeach
         @foreach ($series['dots'] as $dot)
             <circle cx="{{ $dot['x'] }}" cy="{{ $dot['y'] }}" r="2.5" fill="#ffffff" stroke="{{ $series['color'] }}" stroke-width="1.5"/>
         @endforeach
-        <text x="{{ $series['last']['x'] + 6 }}" y="{{ $series['last']['y'] + 3 }}" class="chart-value">{{ $series['last']['value'] }}</text>
+        @if ($series['last'] !== null)
+            <text x="{{ $series['last']['x'] + 6 }}" y="{{ $series['last']['y'] + 3 }}" class="chart-value">{{ $series['last']['value'] }}</text>
+        @endif
     @endforeach
 </svg>
 @if (count($geometry['series']) > 1)

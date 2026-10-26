@@ -1127,7 +1127,8 @@
                         "enum": ["pending", "open", "on_hold", "closed"]
                     },
                     "status_label": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Texto en español del estado; puede cambiar (programa contra status). on_hold se rotula «En espera (estado ya no usado)»."
                     },
                     "connection": {
                         "type": ["object", "null"],
@@ -1171,9 +1172,11 @@
                     },
                     "assigned_agent": {
                         "type": ["object", "null"],
+                        "description": "Agente responsable. Una cuenta protegida del sistema se presenta con id null y el nombre «Administración del sistema».",
                         "properties": {
                             "id": {
-                                "type": "integer"
+                                "type": ["integer", "null"],
+                                "description": "null cuando el responsable es una cuenta protegida del sistema."
                             },
                             "name": {
                                 "type": "string"

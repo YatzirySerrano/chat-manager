@@ -55,7 +55,7 @@ defineProps<{
                 class="flex flex-col items-end gap-1"
             >
                 <span
-                    class="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    class="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"
                 >
                     {{ message.label }}
                     <span

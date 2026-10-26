@@ -43,7 +43,7 @@ class PushSubscriptionController extends Controller
             PushSubscription::query()->whereKey($stale)->delete();
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Notificaciones push activadas en este navegador.']);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Notificaciones del navegador activadas. Te avisaremos aunque la plataforma no esté a la vista.']);
 
         return back();
     }
@@ -61,7 +61,7 @@ class PushSubscriptionController extends Controller
 
         abort_if($deleted === 0, 404);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Dispositivo eliminado de las notificaciones push.']);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Ese navegador ya no recibirá notificaciones.']);
 
         return back();
     }

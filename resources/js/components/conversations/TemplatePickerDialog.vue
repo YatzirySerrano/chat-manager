@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import WhatsAppText from '@/components/WhatsAppText.vue';
+import { formatLocale } from '@/lib/format';
 import {
     index as templatesIndex,
     store as storeTemplate,
@@ -326,7 +327,8 @@ async function send(): Promise<void> {
                 <LayoutTemplate class="size-8" aria-hidden="true" />
                 <p>
                     No hay plantillas aprobadas para esta conexión. Un
-                    administrador puede sincronizarlas desde Plantillas.
+                    administrador puede traerlas desde Plantillas › «Actualizar
+                    desde Meta».
                 </p>
             </div>
             <div v-else class="grid gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
@@ -369,7 +371,7 @@ async function send(): Promise<void> {
                                 template.name
                             }}</span>
                             <span class="text-xs text-muted-foreground">
-                                {{ template.language }}
+                                {{ formatLocale(template.language) }}
                                 <template v-if="template.category?.label">
                                     · {{ template.category.label }}</template
                                 >

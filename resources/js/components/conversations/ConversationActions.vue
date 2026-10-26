@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
 import {
-    ArrowRightLeft,
+    ArrowLeftRight,
     EllipsisVertical,
     Hand,
     RotateCcw,
@@ -105,10 +105,10 @@ const reasonCopy = computed<
     >
 >(() => ({
     release: {
-        title: 'Devolver a la cola',
+        title: 'Devolver a Pendientes',
         description:
-            'Dejarás de ser responsable y la conversación esperará en la cola de su departamento.',
-        confirm: 'Devolver a la cola',
+            'Dejarás de ser responsable y la conversación volverá a «Pendientes» de su departamento para que otro agente la tome.',
+        confirm: 'Devolver a Pendientes',
         label: 'Motivo',
     },
     close: {
@@ -267,7 +267,7 @@ const secondary = computed<Action[]>(() => {
         actions.push({
             key: 'transfer',
             label: 'Transferir',
-            icon: ArrowRightLeft,
+            icon: ArrowLeftRight,
             run: () => openRouteDialog('transfer'),
         });
     }
@@ -275,7 +275,7 @@ const secondary = computed<Action[]>(() => {
     if (can.value.release) {
         actions.push({
             key: 'release',
-            label: 'Devolver a la cola',
+            label: 'Devolver a Pendientes',
             icon: Undo2,
             run: () => openReasonDialog('release'),
         });

@@ -767,7 +767,7 @@ onBeforeUnmount(() => {
 
         <p
             v-if="actionError"
-            class="shrink-0 border-t bg-destructive/5 px-4 py-1.5 text-xs text-destructive"
+            class="shrink-0 border-t bg-destructive-soft px-4 py-1.5 text-xs text-destructive-soft-foreground"
             role="alert"
         >
             {{ actionError }}

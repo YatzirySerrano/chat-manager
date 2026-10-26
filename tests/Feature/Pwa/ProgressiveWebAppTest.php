@@ -44,7 +44,7 @@ test('app pages link the manifest and the installable app metadata', function ()
         ->assertSee('viewport-fit=cover', false);
 });
 
-test('signing out clears the browser cache and forgets only this browser push subscription', function () {
+test('signing out forgets only this browser push subscription', function () {
     $user = User::factory()->agent()->create();
     $thisBrowser = PushSubscription::factory()->for($user)->endpoint('https://push.example.test/this-browser')->create();
     $otherDevice = PushSubscription::factory()->for($user)->endpoint('https://push.example.test/other-device')->create();
@@ -52,7 +52,7 @@ test('signing out clears the browser cache and forgets only this browser push su
 
     $this->actingAs($user)
         ->post(route('logout'), ['push_endpoint' => 'https://push.example.test/this-browser'])
-        ->assertHeader('Clear-Site-Data', '"cache"');
+        ->assertHeaderMissing('Clear-Site-Data');
 
     $this->assertGuest();
     expect(PushSubscription::query()->find($thisBrowser->id))->toBeNull()
@@ -64,7 +64,7 @@ test('signing out without a push endpoint keeps every subscription', function ()
     $user = User::factory()->agent()->create();
     PushSubscription::factory()->for($user)->create();
 
-    $this->actingAs($user)->post(route('logout'))->assertHeader('Clear-Site-Data', '"cache"');
+    $this->actingAs($user)->post(route('logout'))->assertHeaderMissing('Clear-Site-Data');
 
     expect(PushSubscription::query()->count())->toBe(1);
 });

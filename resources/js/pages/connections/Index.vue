@@ -289,9 +289,7 @@ function phoneLabel(connection: Connection): string {
 <template>
     <Head title="Conexiones" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="conexiones"
             title="Conexiones"
@@ -303,7 +301,11 @@ function phoneLabel(connection: Connection): string {
                     report="connections"
                     :filters="filters"
                 />
-                <Button v-if="can.create" @click="channelPickerOpen = true">
+                <Button
+                    v-if="can.create"
+                    data-tour="connections.new"
+                    @click="channelPickerOpen = true"
+                >
                     <Plus />
                     Nueva conexión
                 </Button>
@@ -312,7 +314,8 @@ function phoneLabel(connection: Connection): string {
 
         <div
             v-if="stats.total > 0"
-            class="grid grid-cols-2 gap-3 lg:grid-cols-4"
+            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            data-tour="connections.stats"
         >
             <StatCard
                 label="Conexiones"
@@ -488,7 +491,11 @@ function phoneLabel(connection: Connection): string {
             </EmptyState>
 
             <RecordGrid v-else-if="viewMode === 'cards'">
-                <li v-for="connection in connections" :key="connection.id">
+                <li
+                    v-for="(connection, position) in connections"
+                    :key="connection.id"
+                    :data-tour="position === 0 ? 'connections.item' : undefined"
+                >
                     <RecordCard
                         :muted="!connection.is_active || connection.is_deleted"
                         :href="showConnection(connection.id)"
@@ -608,8 +615,11 @@ function phoneLabel(connection: Connection): string {
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="connection in connections"
+                        v-for="(connection, position) in connections"
                         :key="connection.id"
+                        :data-tour="
+                            position === 0 ? 'connections.item' : undefined
+                        "
                         :class="
                             !connection.is_active && 'text-muted-foreground'
                         "

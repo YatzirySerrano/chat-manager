@@ -21,12 +21,19 @@ class UserRoleImpactController extends Controller
     {
         Gate::authorize('assignRole', $user);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
+        // The root role "does not exist" for anyone but the root authority.
         $validated = $request->validate([
-            'role_id' => ['required', 'integer', Rule::exists(Role::class, 'id')],
+            'role_id' => ['required', 'integer', Rule::exists(Role::class, 'id')->when(
+                ! $actor->hasRootAuthority(),
+                fn ($rule) => $rule->where('is_root', false),
+            )],
         ]);
 
         $role = Role::query()->with('permissions')->findOrFail((int) $validated['role_id']);
 
-        return response()->json($assessRoleChange->handle($user, $role, $request->user())->toArray());
+        return response()->json($assessRoleChange->handle($user, $role, $actor)->toArray());
     }
 }

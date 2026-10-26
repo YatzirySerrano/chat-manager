@@ -104,7 +104,7 @@ class TransferConversation
             $limit = $agent === null || $agent->id === $fromUser ? null : $this->access->reachedLimit($agent, $destination, lockingRead: true);
 
             if ($limit !== null && ! $actor->holdsPermission(Permission::AssignConversations)) {
-                throw ValidationException::withMessages(['user_id' => "{$agent->name} ya atiende el máximo de {$limit} conversaciones. Transfiérela a la cola del departamento o pide a quien asigna conversaciones que lo autorice."]);
+                throw ValidationException::withMessages(['user_id' => "{$agent->name} ya atiende el máximo de {$limit} conversaciones. Envíala a «Pendientes» del departamento o pide a quien asigna conversaciones que lo autorice."]);
             }
 
             if ($limit !== null && ! $confirmOverCapacity) {

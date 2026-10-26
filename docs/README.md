@@ -10,29 +10,29 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 
 ## Documentos
 
-| Documento                                                          | Contenido                                                                                                                |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| [arquitectura.md](arquitectura.md)                                 | Arquitectura, módulos, modelo de datos, flujos, estados, disponibilidad, colas, ayuda por módulo, bitácora legible       |
-| [bandejas-y-asignacion.md](bandejas-y-asignacion.md)               | Bandeja de tres paneles, compositor, búsqueda y paginación, visibilidad, distribución, asignación, capacidad             |
-| [mensajeria-whatsapp.md](mensajeria-whatsapp.md)                   | Webhooks, conexiones, mensajes entrantes y salientes, multimedia, plantillas, simulador, activación real                 |
-| [canal-chat-web.md](canal-chat-web.md)                             | Canal Chat web: arquitectura, modelo, configuración, ciclo del visitante, identidad firmada, privacidad                  |
-| [meta-messenger-instagram.md](meta-messenger-instagram.md)         | Facebook Messenger e Instagram: autorización OAuth, webhook de la app, envío, permisos, App Review, validación pendiente |
-| [widget-integracion.md](widget-integracion.md)                     | Insertar el widget: fragmento, API JS, jQuery, `postMessage`, CSP del sitio, móviles, caché, tamaños, demo               |
-| [api-v1.md](api-v1.md) y [openapi/v1.json](openapi/v1.json)        | API `/api/v1`: integración y visitante, tokens, capacidades, errores, paginación, límites, idempotencia                  |
-| [tiempo-real.md](tiempo-real.md)                                   | Reverb, canales privados y de presencia, eventos, cola `realtime`, reconexión y respaldo por sondeo                      |
-| [chat-interno.md](chat-interno.md)                                 | Chat entre empleados: privacidad, grupos, menciones, reacciones, «escribiendo…», presencia, adjuntos                     |
-| [notificaciones-y-horarios.md](notificaciones-y-horarios.md)       | Notificaciones, Web Push, horario de atención, días no laborables, mensajes automáticos                                  |
-| [reportes-y-exportaciones.md](reportes-y-exportaciones.md)         | Métricas, tiempo hábil y objetivos, reportes, panel principal, motor de exportaciones XLSX/PDF                           |
-| [migracion-whaticket.md](migracion-whaticket.md)                   | Importación de contactos, adaptador Whaticket, trazabilidad y reversión por lote                                         |
-| [seguridad-y-auditoria.md](seguridad-y-auditoria.md)               | Modelo de amenazas, controles, permisos por rol, bitácora, privacidad, hallazgos, riesgos y dependencias                 |
-| [pruebas.md](pruebas.md)                                           | Pest sobre MariaDB, análisis estático, E2E, concurrencia, carga, real frente a simulado                                  |
-| [guia-pruebas-manuales.md](guia-pruebas-manuales.md)               | Guía práctica de pruebas manuales por módulo (fase 5 en §29), con cuentas, simulador y resultados esperados              |
-| [rendimiento-y-carga.md](rendimiento-y-carga.md)                   | Batería de carga y resistencia, resultados medidos y cuellos de botella                                                  |
-| [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md) | Servidor, variables, Nginx, colas y workers, Reverb, salud, alertas, preflight, despliegue (fase 5 incluida), PWA        |
-| [recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)         | Respaldos de base y archivos, copia externa, verificación, restauración                                                  |
-| [limitaciones.md](limitaciones.md)                                 | Dependencias externas; probado, simulado, pendiente de validación, resuelto y trabajo futuro                             |
-| [estabilizacion-final.md](estabilizacion-final.md)                 | Registro de la fase de estabilización: problemas del informe anterior, estado, cómo se resolvió y archivos               |
-| [decisiones.md](decisiones.md)                                     | Registro de decisiones (ADR) por módulo                                                                                  |
+| Documento                                                          | Contenido                                                                                                                    |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| [arquitectura.md](arquitectura.md)                                 | Arquitectura, módulos, modelo de datos, flujos, estados, colas, ayuda y recorridos guiados, sistema visual, bitácora         |
+| [bandejas-y-asignacion.md](bandejas-y-asignacion.md)               | Bandeja de tres paneles, compositor, búsqueda y paginación, visibilidad, distribución, asignación, capacidad                 |
+| [mensajeria-whatsapp.md](mensajeria-whatsapp.md)                   | Webhooks, conexiones, mensajes entrantes y salientes, multimedia, plantillas, simulador, activación real                     |
+| [canal-chat-web.md](canal-chat-web.md)                             | Canal Chat web: arquitectura, modelo, configuración, ciclo del visitante, identidad firmada, privacidad                      |
+| [meta-messenger-instagram.md](meta-messenger-instagram.md)         | Facebook Messenger e Instagram: autorización OAuth, webhook de la app, envío, permisos, App Review, validación pendiente     |
+| [widget-integracion.md](widget-integracion.md)                     | Insertar el widget: fragmento, API JS, jQuery, `postMessage`, CSP del sitio, móviles, caché, tamaños, demo                   |
+| [api-v1.md](api-v1.md) y [openapi/v1.json](openapi/v1.json)        | API `/api/v1`: integración y visitante, tokens, capacidades, errores, paginación, límites, idempotencia                      |
+| [tiempo-real.md](tiempo-real.md)                                   | Reverb, canales privados y de presencia, eventos, cola `realtime`, reconexión y respaldo por sondeo                          |
+| [chat-interno.md](chat-interno.md)                                 | Chat entre empleados: privacidad, grupos, menciones, reacciones, «escribiendo…», presencia, adjuntos                         |
+| [notificaciones-y-horarios.md](notificaciones-y-horarios.md)       | Notificaciones, Web Push, horario de atención, días no laborables, mensajes automáticos                                      |
+| [reportes-y-exportaciones.md](reportes-y-exportaciones.md)         | Métricas, tiempo hábil y objetivos, reportes, panel principal, motor de exportaciones XLSX/PDF                               |
+| [migracion-whaticket.md](migracion-whaticket.md)                   | Importación de contactos, adaptador Whaticket, trazabilidad y reversión por lote                                             |
+| [seguridad-y-auditoria.md](seguridad-y-auditoria.md)               | Modelo de amenazas, controles, permisos por rol, bitácora, privacidad, hallazgos, riesgos y dependencias                     |
+| [pruebas.md](pruebas.md)                                           | Pest sobre MariaDB, análisis estático, E2E, concurrencia, carga, real frente a simulado                                      |
+| [guia-pruebas-manuales.md](guia-pruebas-manuales.md)               | Guía práctica de pruebas manuales por módulo (fase 5 en §29, fase 5.1 en §30), con cuentas, simulador y resultados esperados |
+| [rendimiento-y-carga.md](rendimiento-y-carga.md)                   | Batería de carga y resistencia, resultados medidos y cuellos de botella                                                      |
+| [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md) | Servidor, variables, Nginx, colas y workers, Reverb, salud, alertas, preflight, despliegue (fases 5 y 5.1), PWA              |
+| [recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)         | Respaldos de base y archivos, copia externa, verificación, restauración                                                      |
+| [limitaciones.md](limitaciones.md)                                 | Dependencias externas; probado, simulado, pendiente de validación, resuelto y trabajo futuro                                 |
+| [estabilizacion-final.md](estabilizacion-final.md)                 | Registro de la fase de estabilización: problemas del informe anterior, estado, cómo se resolvió y archivos                   |
+| [decisiones.md](decisiones.md)                                     | Registro de decisiones (ADR) por módulo                                                                                      |
 
 ## Índice de temas obligatorios
 
@@ -96,6 +96,23 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | Migraciones y despliegue (no ejecutados) | [infraestructura §16 «Procedimiento de la fase 5»](infraestructura-y-despliegue.md#procedimiento-de-la-fase-5)                                                                                             |
 | Pruebas manuales                         | [guia-pruebas-manuales.md §29](guia-pruebas-manuales.md#29-fase-5)                                                                                                                                         |
 
+### Fase 5.1: supervisión, permisos en vivo, cierre de sesión, recorridos y gráficas
+
+| Tema                                             | Dónde                                                                                                                                                                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Supervisión: vista por omisión y nombres         | [bandejas §Vista general](bandejas-y-asignacion.md#vista-general-chips-y-contadores) y [ADR-INBOX-12](decisiones.md#adr-inbox-12--quien-supervisa-abre-todas-las-conversaciones-de-su-alcance-enmienda-a-adr-inbox-11) |
+| Canal `inbox.supervision.{id}` y ráfagas de auth | [tiempo-real §Supervisión](tiempo-real.md#supervisión-por-departamentos-fase-51) y [§Autorización en ráfaga](tiempo-real.md#autorización-de-canales-en-ráfaga-fase-51)                                                 |
+| Ver no es recibir avisos                         | [notificaciones §Visibilidad frente a avisos](notificaciones-y-horarios.md#visibilidad-frente-a-avisos-fase-51)                                                                                                        |
+| Permisos efectivos y cambios en vivo             | [seguridad §3.3](seguridad-y-auditoria.md#33-permisos-efectivos-y-cambios-en-vivo-fase-51)                                                                                                                             |
+| Superadministrador invisible                     | [seguridad §3.4](seguridad-y-auditoria.md#34-cuentas-protegidas-fase-51) y [API v1 `assigned_agent.id`](api-v1.md#5-recursos)                                                                                          |
+| Cierre de sesión y caché de adjuntos             | [seguridad §Autenticación y sesión](seguridad-y-auditoria.md#autenticación-y-sesión) y [§Archivos](seguridad-y-auditoria.md#archivos-y-multimedia)                                                                     |
+| Fechas del chat y panel de filtros               | [bandejas §Historial](bandejas-y-asignacion.md#historial) y [§Panel de filtros](bandejas-y-asignacion.md#panel-de-filtros-fase-51)                                                                                     |
+| Recorridos guiados y sistema visual              | [arquitectura §13](arquitectura.md#recorridos-guiados-fase-51)                                                                                                                                                         |
+| Panel, reportes, gráficas y exportaciones        | [reportes §5 y §6](reportes-y-exportaciones.md#5-interfaz)                                                                                                                                                             |
+| Rendimiento de la bandeja de supervisión         | [rendimiento §12](rendimiento-y-carga.md#12-bandeja-de-supervisión-a-gran-escala-fase-51-2026-10-25)                                                                                                                   |
+| Despliegue (sin migraciones; pendientes)         | [infraestructura §16 «Procedimiento de la fase 5.1»](infraestructura-y-despliegue.md#procedimiento-de-la-fase-51)                                                                                                      |
+| Pruebas automáticas y manuales                   | [pruebas §2.3 y §6.4](pruebas.md#64-escenarios-de-la-fase-51) y [guía §30](guia-pruebas-manuales.md#30-fase-51)                                                                                                        |
+
 Bandeja general con ambos canales: [bandejas-y-asignacion.md](bandejas-y-asignacion.md#vista-general-chips-y-contadores).
 Terminología de estados: [arquitectura.md §8](arquitectura.md#8-estados-de-mensajes).
 
@@ -127,7 +144,7 @@ Chromium para los PDF.
 6. **WhatsApp simulado:** `WHATSAPP_TRANSPORT=simulated` (solo desarrollo; opcionalmente `WHATSAPP_SIMULATE_STATUSES` y
    `WHATSAPP_SIMULATE_READ`). Mensajes de prueba: `php artisan chat-manager:simulate-inbound laura "Hola" --confirm`
    ([mensajeria-whatsapp.md §8](mensajeria-whatsapp.md#8-transportes)). Todo lo enviado así lleva la etiqueta
-   «Simulación». El valor por defecto `unavailable` no envía nada.
+   «No enviado (modo de prueba)». El valor por defecto `unavailable` no envía nada.
 7. **Arrancar:** `composer run dev` levanta el servidor (`php artisan serve`), Vite, Reverb, un `queue:listen` con todas
    las colas en orden de prioridad (`realtime` incluida), `schedule:work` y `pail` para los logs. Si un cambio de
    interfaz no aparece o falta el manifiesto de Vite, ejecuta `npm run build` o `npm run dev`.

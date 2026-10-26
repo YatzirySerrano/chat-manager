@@ -26,9 +26,12 @@ let accessTimer: ReturnType<typeof setTimeout> | null = null;
  * The user's role, permissions, departments or state changed: reload the
  * whole current page (permissions, navigation and data are authorized
  * again; a page that is no longer allowed redirects, a deleted account is
- * signed out) and then authorize every channel again.
+ * signed out) and then authorize every channel again. Prefetched pages kept
+ * in memory carry the previous permissions, so they are dropped at once.
  */
 function handleAccessChanged(): void {
+    router.flushAll();
+
     if (accessTimer) {
         clearTimeout(accessTimer);
     }

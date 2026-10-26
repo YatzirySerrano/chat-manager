@@ -97,7 +97,7 @@ class RetireOnHoldConversation
                 $this->lifecycle->record($conversation, ConversationEventType::Unassigned, null, [
                     'from_user_id' => $previous,
                     'from_department_id' => $conversation->department_id,
-                    'note' => 'Se retiró el estado «En espera»: vuelve a la cola.',
+                    'note' => 'El estado «En espera» ya no existe; la conversación pasó a «Pendiente».',
                     'metadata' => $metadata,
                 ]);
             }

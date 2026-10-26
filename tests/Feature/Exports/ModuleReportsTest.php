@@ -328,7 +328,7 @@ test('the connections report never contains credentials', function () {
 });
 
 test('the roles report includes the permission matrix in both formats', function () {
-    $admin = User::factory()->administrator()->create();
+    $admin = User::factory()->superAdministrator()->create();
 
     $path = renderReport('roles', $admin, ExportFormat::Xlsx);
     $workbook = reportWorkbook($path);
@@ -340,7 +340,7 @@ test('the roles report includes the permission matrix in both formats', function
         ->and($matrix->getCell('D6')->getValue())->toBe('Superadministrador')
         ->and($matrix->getCell('D7')->getValue())->toBe('✓');
 
-    expect(reportHtml('roles', $admin))->toContain('Matriz de permisos')->toContain('Reservado');
+    expect(reportHtml('roles', $admin))->toContain('Matriz de permisos')->toContain('Exclusivo del superadministrador');
 });
 
 test('audit exports require audit.export and never reveal restricted entries to administrators', function () {
@@ -398,7 +398,7 @@ test('the conversations report describes the tag filter and its match mode', fun
     $urgent = Tag::factory()->create(['name' => 'Urgente']);
     $admin = User::factory()->administrator()->create();
 
-    expect(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id], 'tag_match' => 'all']))->toContain('Etiquetas (todas, Y): Urgente, VIP')
-        ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id]]))->toContain('Etiquetas (cualquiera, O): Urgente, VIP')
+    expect(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id], 'tag_match' => 'all']))->toContain('Con todas estas etiquetas a la vez: Urgente, VIP')
+        ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id, $urgent->id]]))->toContain('Con al menos una de estas etiquetas: Urgente, VIP')
         ->and(reportHtml('conversations', $admin, ['tags' => [$vip->id]]))->toContain('Etiqueta: VIP');
 });

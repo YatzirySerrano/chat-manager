@@ -13,7 +13,7 @@ use App\Reports\Chart;
  * @phpstan-type BarGeometry array{width: int, height: int, labelWidth: int, plotWidth: int, rows: list<BarRow>, legend: list<array{name: string, color: string}>}
  * @phpstan-type DonutSegment array{label: string, value: string, percent: string, color: string, dash: string, offset: float}
  * @phpstan-type DonutGeometry array{size: int, radius: float, stroke: float, circumference: float, total: string, segments: list<DonutSegment>}
- * @phpstan-type LineSeries array{name: string, color: string, points: string, dots: list<array{x: float, y: float}>, last: array{x: float, y: float, value: string}}
+ * @phpstan-type LineSeries array{name: string, color: string, segments: list<string>, dots: list<array{x: float, y: float}>, last: array{x: float, y: float, value: string}|null}
  * @phpstan-type LineGeometry array{width: int, height: int, left: int, top: int, plotWidth: int, plotHeight: int, ticks: list<array{y: float, label: string}>, labels: list<array{x: float, label: string}>, series: list<LineSeries>}
  */
 final class ChartGeometry
@@ -45,7 +45,7 @@ final class ChartGeometry
                 $bars[] = [
                     'y' => round($index * $rowHeight + $seriesIndex * (self::BAR_HEIGHT + 2), 2),
                     'width' => $max > 0 ? round(max($value > 0 ? 2 : 0, $value / $max * $plotWidth), 2) : 0,
-                    'color' => $seriesCount === 1 ? ReportPalette::ACCENT : ReportPalette::series($seriesIndex),
+                    'color' => $seriesCount === 1 ? ($chart->colorOf($index) ?? ReportPalette::ACCENT) : ReportPalette::series($seriesIndex),
                     'value' => $this->number($value),
                 ];
             }
@@ -70,7 +70,7 @@ final class ChartGeometry
      */
     public function donut(Chart $chart, int $size = 132): array
     {
-        $values = array_map(fn (int|float $value): float => max(0, (float) $value), $chart->series[0]->values ?? []);
+        $values = array_map(fn (int|float|null $value): float => max(0, (float) $value), $chart->series[0]->values ?? []);
         $total = array_sum($values);
         $stroke = 20.0;
         $radius = ($size - $stroke) / 2;
@@ -88,7 +88,7 @@ final class ChartGeometry
                 'label' => $label,
                 'value' => $this->number($value),
                 'percent' => $total > 0 ? number_format($value / $total * 100, 1, '.', ',').' %' : '0 %',
-                'color' => $count === 2 ? ($index === 0 ? ReportPalette::ACCENT : ReportPalette::NEUTRAL_MARK) : ReportPalette::series($index),
+                'color' => $chart->colorOf($index) ?? ($count === 2 ? ($index === 0 ? ReportPalette::ACCENT : ReportPalette::NEUTRAL_MARK) : ReportPalette::series($index)),
                 'dash' => round(max(0, $length - $gap), 3).' '.round($circumference, 3),
                 'offset' => round(-$offset, 3),
             ];
@@ -106,7 +106,9 @@ final class ChartGeometry
     }
 
     /**
-     * Lines over evenly spaced labels with a zero-based value axis.
+     * Lines over evenly spaced labels with a zero-based value axis. A null
+     * value is a gap: the line stops there and starts again at the next
+     * value (an isolated value is only a dot), so no bucket is invented.
      *
      * @return LineGeometry
      */
@@ -142,22 +144,36 @@ final class ChartGeometry
 
         foreach ($chart->series as $seriesIndex => $values) {
             $dots = [];
+            $segments = [];
+            $run = [];
+            $last = null;
 
-            foreach ($chart->labels as $index => $label) {
-                $dots[] = ['x' => $x($index), 'y' => $y((float) ($values->values[$index] ?? 0))];
+            foreach (array_keys($chart->labels) as $index) {
+                $value = $values->values[$index] ?? null;
+
+                if ($value === null) {
+                    $segments[] = $run;
+                    $run = [];
+
+                    continue;
+                }
+
+                $dot = ['x' => $x($index), 'y' => $y((float) $value)];
+                $dots[] = $dot;
+                $run[] = "{$dot['x']},{$dot['y']}";
+                $last = [...$dot, 'value' => $this->number((float) $value)];
             }
 
-            $lastIndex = max(0, $count - 1);
+            $segments[] = $run;
             $series[] = [
                 'name' => $values->name,
                 'color' => count($chart->series) === 1 ? ReportPalette::ACCENT : ReportPalette::series($seriesIndex),
-                'points' => implode(' ', array_map(fn (array $dot): string => "{$dot['x']},{$dot['y']}", $dots)),
+                'segments' => array_values(array_map(
+                    fn (array $points): string => implode(' ', $points),
+                    array_filter($segments, fn (array $points): bool => count($points) > 1),
+                )),
                 'dots' => $dots,
-                'last' => [
-                    'x' => $dots[$lastIndex]['x'] ?? (float) $left,
-                    'y' => $dots[$lastIndex]['y'] ?? (float) $top,
-                    'value' => $this->number((float) ($values->values[$lastIndex] ?? 0)),
-                ],
+                'last' => $last,
             ];
         }
 

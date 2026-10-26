@@ -43,7 +43,7 @@ class TransferDestinations
             ->orderBy('name')
             ->get();
 
-        $candidates = $this->candidates($departments->modelKeys());
+        $candidates = $this->candidates($departments->modelKeys(), $actor);
 
         return [
             // Handing it to someone at their limit is an
@@ -61,15 +61,17 @@ class TransferDestinations
     /**
      * People who may attend at least one of the departments (or, with an
      * organization-wide scope, conversations without department), with the
-     * number of conversations they attend in any department.
+     * number of conversations they attend in any department. Protected
+     * accounts (root role) are only offered to the root authority.
      *
      * @param  array<int, mixed>  $departmentIds
      * @return Collection<int, User>
      */
-    private function candidates(array $departmentIds): Collection
+    private function candidates(array $departmentIds, User $actor): Collection
     {
         return User::query()
             ->active()
+            ->withoutProtectedFor($actor)
             ->withPermission(Permission::ViewConversations)
             ->withPermission(Permission::ReplyConversations)
             ->where(fn (Builder $reach) => $reach

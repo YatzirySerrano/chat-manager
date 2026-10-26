@@ -116,6 +116,12 @@ dentro de cada prefijo.
 - [ADR-API-2 — Idempotencia sin tabla y errores con código estable](#adr-api-2--idempotencia-sin-tabla-y-errores-con-código-estable)
 - [ADR-INBOX-11 — Bandeja general como primera vista, con contadores en una agregación](#adr-inbox-11--bandeja-general-como-primera-vista-con-contadores-en-una-agregación)
 - [ADR-UX-1 — Terminología de estados solo de presentación](#adr-ux-1--terminología-de-estados-solo-de-presentación)
+- [ADR-INBOX-12 — Quien supervisa abre todas las conversaciones de su alcance (enmienda a ADR-INBOX-11)](#adr-inbox-12--quien-supervisa-abre-todas-las-conversaciones-de-su-alcance-enmienda-a-adr-inbox-11)
+- [ADR-RT-7 — Canal de supervisión por departamento y visibilidad sin avisos](#adr-rt-7--canal-de-supervisión-por-departamento-y-visibilidad-sin-avisos)
+- [ADR-SEC-10 — Cuentas protegidas invisibles sin reescribir la historia](#adr-sec-10--cuentas-protegidas-invisibles-sin-reescribir-la-historia)
+- [ADR-SEC-11 — Cierre de sesión sin `Clear-Site-Data`](#adr-sec-11--cierre-de-sesión-sin-clear-site-data)
+- [ADR-UX-2 — Recorridos guiados propios como ayuda principal](#adr-ux-2--recorridos-guiados-propios-como-ayuda-principal)
+- [ADR-REP-5 — Gráficas SVG propias, sin librería de gráficas](#adr-rep-5--gráficas-svg-propias-sin-librería-de-gráficas)
 
 **Documentación** ([README.md](README.md)):
 
@@ -669,6 +675,9 @@ alcance, de todos los canales, ordenadas por actividad reciente. `queue` se norm
 Los chips usan un único prop `counts` calculado con `SUM(CASE …)` en una consulta y cada número es lo que lista su
 chip con los mismos filtros. Aceptar no toca `last_message_at`, así que la fila no salta. No hizo falta migración.
 
+> **Enmienda (fase 5.1):** la vista por omisión de quien supervisa ya no es `general`; ver
+> [ADR-INBOX-12](#adr-inbox-12--quien-supervisa-abre-todas-las-conversaciones-de-su-alcance-enmienda-a-adr-inbox-11).
+
 ## ADR-UX-1 — Terminología de estados solo de presentación
 
 Los valores de `MessageStatus` no cambian; las etiquetas sí: «Enviando» (`queued`, `sending`), «Enviado» (`accepted`,
@@ -698,3 +707,58 @@ en su ficha (`SaveContactToDirectory`: bloquea la fila, reautoriza, actualiza no
 - `is_saved` se expone en `ContactResource`, en el `contact` de `ConversationResource` y en la API v1.
 - Se distinguen cuatro cosas: datos técnicos de la conversación (identidad del canal), contacto corporativo del
   directorio (compartido), alias personal (solo lo ve su autor, nunca cambia la ficha) y etiquetas corporativas.
+
+## ADR-INBOX-12 — Quien supervisa abre todas las conversaciones de su alcance (enmienda a ADR-INBOX-11)
+
+Problema: un administrador que también atendía abría la bandeja general (pendientes que puede aceptar + sus
+abiertas) y creía no ver las conversaciones de sus agentes ni las transferidas; solo aparecían en «Todas las
+visibles», que no era la vista por omisión. La visibilidad era correcta. Decisión: quien tiene
+`conversations.supervise` con alcance global o de departamentos (`ConversationAccess::supervisesReach()`) abre
+`view=all`; su propio trabajo («Bandeja general», «Mis conversaciones») sigue a un clic. `all` se nombra por el alcance
+real («Todas las conversaciones», «Conversaciones de mis departamentos») y desaparece «Todas las visibles». Para el
+resto de perfiles se mantiene ADR-INBOX-11. Alternativa descartada: ampliar la bandeja general de los supervisores
+(mezclaría su trabajo con el de todo el equipo y sus contadores dejarían de significar «lo que espera por ti»).
+
+## ADR-RT-7 — Canal de supervisión por departamento y visibilidad sin avisos
+
+Las conversaciones que pasaron por un departamento y hoy están en otro siguen siendo legibles para sus supervisores
+con alcance de departamentos, pero `inbox.departments.{id}` sigue el departamento actual. Se añade
+`inbox.supervision.{id}`, que solo reciben esos supervisores y que solo se publica para departamentos que tienen alguno
+(lista cacheada 60 s por proceso; sin supervisores por departamentos no se consulta nada). Visibilidad y avisos se
+separan: las señales de bandeja solo recargan lista y contadores; las notificaciones siguen sus reglas (responsable,
+quien puede aceptar, quien recibe la transferencia) y nunca suenan por lo que alguien solo observa. Se descartó
+suscribir a los supervisores a los canales de todos los departamentos (fuga de ids fuera de su alcance).
+
+## ADR-SEC-10 — Cuentas protegidas invisibles sin reescribir la historia
+
+Las cuentas con rol raíz no aparecen para nadie sin esa autoridad: se quitan de listas, selectores, filtros y
+exportaciones (`User::withoutProtectedFor`), sus operaciones directas responden 404 y su id no viaja (null, también en
+la API v1). En los registros donde participaron se muestran como «Administración del sistema»
+(`App\Support\ProtectedAccounts`, ids leídos una vez por petición o trabajo). No se reescribe ningún dato guardado:
+la sustitución es solo de presentación, así la auditoría restringida conserva quién hizo qué.
+
+## ADR-SEC-11 — Cierre de sesión sin `Clear-Site-Data`
+
+La fase 5 añadió `Clear-Site-Data: "cache"` al cierre de sesión. Chrome no entrega esa respuesta hasta recorrer toda su
+caché HTTP, y en perfiles reales el cierre quedaba «cargando» (las pruebas E2E usan perfiles limpios y no lo
+detectaron). Se retira el encabezado y la privacidad se asegura por revalidación: páginas `private, no-cache`, adjuntos
+`private, no-cache` con `ETag`, respuesta de cierre `no-store`, caché del _service worker_ solo para estáticos
+públicos y vaciada por el cliente. El diálogo acota cada paso y la petición (15 s), muestra error y reintento, y da de
+baja Web Push solo tras la confirmación del servidor.
+
+## ADR-UX-2 — Recorridos guiados propios como ayuda principal
+
+La ayuda de texto («¿Cómo funciona?») se leía poco. Se sustituye como experiencia principal por recorridos guiados
+sobre la pantalla real (`resources/js/tours/*`, `useGuidedTour`, overlay propio) lanzados desde un único botón global;
+la guía completa sigue disponible como secundaria y `ModuleHelpButton` se retiró. Sin dependencias nuevas (se
+descartaron Shepherd.js, Driver.js e Intro.js: cambiar dependencias requiere aprobación y un overlay propio respeta los
+tokens, el modo oscuro, el foco y `prefers-reduced-motion`). El estado «visto» se guarda por dispositivo en
+`localStorage` (sin backend nuevo); ningún recorrido se lanza solo.
+
+## ADR-REP-5 — Gráficas SVG propias, sin librería de gráficas
+
+El panel y los reportes amplían los componentes SVG existentes (`components/charts/*`, `useChartTheme`) en lugar de
+instalar ApexCharts, Chart.js o similares: no se cambian dependencias sin aprobación, el volumen de datos es pequeño
+(pocas categorías y puntos por gráfica) y así comparten _tokens_, accesibilidad (tabla alternativa, teclado) y
+colores con la exportación (`ReportPalette`). Reglas de datos: promedios sin muestras en `null` (la línea se corta),
+8 filas + «Otros» en agentes y departamentos, exportación desde el mismo cálculo que la pantalla.

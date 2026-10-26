@@ -1,6 +1,10 @@
 import { usePage } from '@inertiajs/vue3';
 
-function platformTimezone(): string | undefined {
+/**
+ * The platform time zone every date is shown in (undefined falls back to the
+ * browser's). Shared by formatDateTime() and the chat's day separators.
+ */
+export function platformTimezone(): string | undefined {
     try {
         return usePage().props.platform?.timezone;
     } catch {
@@ -114,4 +118,128 @@ export function formatFileSize(bytes: number | null | undefined): string {
  */
 export function endSentence(text: string): string {
     return text.endsWith('.') ? text : `${text}.`;
+}
+
+/** Spanish names of the time zones a Mexican organization usually picks. */
+const timeZoneNames: Record<string, string> = {
+    'America/Mexico_City': 'Ciudad de México',
+    'America/Cancun': 'Cancún',
+    'America/Tijuana': 'Tijuana',
+    'America/Hermosillo': 'Hermosillo',
+    'America/Mazatlan': 'Mazatlán',
+    'America/Chihuahua': 'Chihuahua',
+    'America/Ciudad_Juarez': 'Ciudad Juárez',
+    'America/Monterrey': 'Monterrey',
+    'America/Merida': 'Mérida',
+    'America/Matamoros': 'Matamoros',
+    'America/Bogota': 'Bogotá',
+    'America/Lima': 'Lima',
+    'America/Santiago': 'Santiago de Chile',
+    'America/Argentina/Buenos_Aires': 'Buenos Aires',
+    'America/New_York': 'Nueva York',
+    'America/Los_Angeles': 'Los Ángeles',
+    'Europe/Madrid': 'Madrid',
+    UTC: 'Tiempo universal',
+};
+
+/**
+ * Readable name of an IANA time zone with its current offset, e.g.
+ * "Ciudad de México (UTC−6)". Other zones keep their IANA name.
+ */
+export function formatTimeZone(zone: string): string {
+    const name = timeZoneNames[zone] ?? zone.replaceAll('_', ' ');
+
+    try {
+        const offset =
+            new Intl.DateTimeFormat('en-US', {
+                timeZone: zone,
+                timeZoneName: 'shortOffset',
+            })
+                .formatToParts(new Date())
+                .find((part) => part.type === 'timeZoneName')
+                ?.value.replace('GMT', 'UTC')
+                .replace('-', '−') ?? '';
+
+        return offset === ''
+            ? name
+            : `${name} (${offset === 'UTC' ? 'UTC±0' : offset})`;
+    } catch {
+        return name;
+    }
+}
+
+/**
+ * Short readable name of a browser user agent, e.g. "Chrome en Windows".
+ * A minimal parser: unknown agents fall back to "Navegador".
+ */
+export function formatUserAgent(userAgent: string | null | undefined): string {
+    if (!userAgent) {
+        return 'Navegador';
+    }
+
+    const browsers: [RegExp, string][] = [
+        [/Edg(e|A|iOS)?\//, 'Edge'],
+        [/OPR\/|Opera/, 'Opera'],
+        [/SamsungBrowser\//, 'Samsung Internet'],
+        [/Firefox\/|FxiOS\//, 'Firefox'],
+        [/Chrome\/|CriOS\//, 'Chrome'],
+        [/Safari\//, 'Safari'],
+    ];
+    const systems: [RegExp, string][] = [
+        [/Windows/, 'Windows'],
+        [/Android/, 'Android'],
+        [/iPhone|iPad|iPod/, 'iPhone o iPad'],
+        [/Mac OS X|Macintosh/, 'Mac'],
+        [/CrOS/, 'Chromebook'],
+        [/Linux/, 'Linux'],
+    ];
+    const browser = browsers.find(([pattern]) => pattern.test(userAgent))?.[1];
+    const system = systems.find(([pattern]) => pattern.test(userAgent))?.[1];
+
+    if (browser && system) {
+        return `${browser} en ${system}`;
+    }
+
+    return browser ?? system ?? 'Navegador';
+}
+
+/**
+ * Readable name of a Meta template language code, e.g. "es_MX" →
+ * "Español (México)". Unknown codes are shown as they come.
+ */
+export function formatLocale(code: string | null | undefined): string {
+    if (!code) {
+        return '—';
+    }
+
+    try {
+        const name = new Intl.DisplayNames(['es'], { type: 'language' }).of(
+            code.replace('_', '-'),
+        );
+
+        return name
+            ? name.charAt(0).toLocaleUpperCase('es') + name.slice(1)
+            : code;
+    } catch {
+        return code;
+    }
+}
+
+/** Meta's quality rating of a template (GREEN/YELLOW/RED) in plain words. */
+export function formatTemplateQuality(
+    score: string | null | undefined,
+): string {
+    switch (score?.toUpperCase()) {
+        case 'GREEN':
+        case 'HIGH':
+            return 'Alta';
+        case 'YELLOW':
+        case 'MEDIUM':
+            return 'Media';
+        case 'RED':
+        case 'LOW':
+            return 'Baja';
+        default:
+            return 'Sin calificación';
+    }
 }

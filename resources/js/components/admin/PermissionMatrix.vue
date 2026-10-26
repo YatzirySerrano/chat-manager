@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { groupIcon, normalizeSearch as normalize } from '@/lib/roles';
 import type { CatalogPermission, PermissionGroupCatalog } from '@/types';
 
 /**
@@ -26,12 +27,6 @@ const props = defineProps<{
 const selected = defineModel<string[]>({ required: true });
 
 const search = ref('');
-
-const normalize = (value: string): string =>
-    value
-        .toLocaleLowerCase('es')
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '');
 
 function isEditable(permission: CatalogPermission): boolean {
     return (
@@ -57,9 +52,9 @@ const groups = computed(() => {
             const permissions = group.permissions.filter(
                 (permission) =>
                     term === '' ||
-                    normalize(`${group.label} ${permission.label}`).includes(
-                        term,
-                    ),
+                    normalize(
+                        `${group.label} ${permission.label} ${permission.description}`,
+                    ).includes(term),
             );
             const editable = group.permissions.filter(isEditable);
             const available = group.permissions.filter(
@@ -68,6 +63,7 @@ const groups = computed(() => {
 
             return {
                 ...group,
+                iconComponent: groupIcon(group.icon),
                 permissions,
                 editable,
                 available,
@@ -186,6 +182,11 @@ function clearSelection(): void {
                                     )
                             "
                         />
+                        <component
+                            :is="group.iconComponent"
+                            class="size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                        />
                         <span :id="`group-${group.value}`">{{
                             group.label
                         }}</span>
@@ -235,6 +236,12 @@ function clearSelection(): void {
                                 >
                                     {{ permission.label }}
                                 </span>
+                                <span
+                                    v-if="permission.description"
+                                    class="mt-0.5 line-clamp-2 block text-xs text-pretty text-muted-foreground"
+                                >
+                                    {{ permission.description }}
+                                </span>
                                 <span class="mt-1 flex flex-wrap gap-1">
                                     <Badge
                                         v-if="locked.includes(permission.value)"
@@ -253,10 +260,10 @@ function clearSelection(): void {
                                     </Badge>
                                     <Badge
                                         v-if="permission.sensitive"
-                                        variant="outline"
-                                        class="border-warning/40 text-xs font-normal text-warning"
+                                        variant="warning"
+                                        class="text-xs font-normal"
                                     >
-                                        Sensible
+                                        Alto impacto
                                     </Badge>
                                     <Badge
                                         v-if="
@@ -266,7 +273,8 @@ function clearSelection(): void {
                                         variant="outline"
                                         class="text-xs font-normal"
                                     >
-                                        Requiere alcance de toda la organización
+                                        Solo funciona con el alcance «Toda la
+                                        organización»
                                     </Badge>
                                     <Badge
                                         v-if="

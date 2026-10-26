@@ -490,8 +490,13 @@ class XlsxRenderer implements ReportRenderer
 
             foreach ($chart->series as $seriesIndex => $series) {
                 $letter = Coordinate::stringFromColumnIndex($seriesIndex + 2);
-                $sheet->setCellValueExplicit("{$letter}{$row}", $series->values[$index] ?? 0, DataType::TYPE_NUMERIC);
-                $sheet->getStyle("{$letter}{$row}")->getNumberFormat()->setFormatCode('#,##0');
+                $value = $series->values[$index] ?? null;
+
+                // A bucket without data stays empty: the native chart shows a gap.
+                if ($value !== null) {
+                    $sheet->setCellValueExplicit("{$letter}{$row}", $value, DataType::TYPE_NUMERIC);
+                    $sheet->getStyle("{$letter}{$row}")->getNumberFormat()->setFormatCode(is_float($value) && floor($value) !== $value ? '#,##0.0' : '#,##0');
+                }
             }
         }
 
@@ -506,8 +511,10 @@ class XlsxRenderer implements ReportRenderer
             $letter = Coordinate::stringFromColumnIndex($seriesIndex + 2);
             $names[] = new DataSeriesValues(DataSeriesValues::DATASERIES_TYPE_STRING, "{$sheetRef}!\${$letter}\${$headerRow}", null, 1);
             $color = match ($chart->type) {
-                ChartType::Donut => array_map(fn (int $index): string => ReportPalette::rgb($this->donutColor($index, count($chart->labels))), array_keys($chart->labels)),
-                default => ReportPalette::rgb(count($chart->series) === 1 ? ReportPalette::ACCENT : ReportPalette::series($seriesIndex)),
+                ChartType::Donut => array_map(fn (int $index): string => ReportPalette::rgb($chart->colorOf($index) ?? $this->donutColor($index, count($chart->labels))), array_keys($chart->labels)),
+                default => count($chart->series) === 1 && $chart->colors !== []
+                    ? array_map(fn (int $index): string => ReportPalette::rgb($chart->colorOf($index) ?? ReportPalette::ACCENT), array_keys($chart->labels))
+                    : ReportPalette::rgb(count($chart->series) === 1 ? ReportPalette::ACCENT : ReportPalette::series($seriesIndex)),
             };
             $values[] = new DataSeriesValues(DataSeriesValues::DATASERIES_TYPE_NUMBER, "{$sheetRef}!\${$letter}\${$first}:\${$letter}\${$last}", null, count($chart->labels), null, null, $color);
 

@@ -52,9 +52,8 @@ function submit(): void {
 <template>
     <Head title="Perfil" />
 
-    <h1 class="sr-only">Perfil</h1>
-
     <div class="flex flex-col space-y-6">
+        <h2 class="mb-1 text-lg font-semibold">Perfil</h2>
         <p class="text-sm text-pretty text-muted-foreground">
             Actualiza tu nombre y correo electrónico.
         </p>

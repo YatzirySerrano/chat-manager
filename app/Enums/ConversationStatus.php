@@ -39,7 +39,7 @@ enum ConversationStatus: string
         return match ($this) {
             self::Pending => 'Pendiente',
             self::Open => 'En atención',
-            self::OnHold => 'En espera (anterior)',
+            self::OnHold => 'En espera (estado ya no usado)',
             self::Closed => 'Cerrada',
         };
     }

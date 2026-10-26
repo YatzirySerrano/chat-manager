@@ -160,9 +160,7 @@ function usageLabel(
 <template>
     <Head title="Etiquetas" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="etiquetas"
             title="Etiquetas"
@@ -170,7 +168,11 @@ function usageLabel(
         >
             <template v-if="can.manage || canExport" #actions>
                 <ExportMenu v-if="canExport" report="tags" :filters="filters" />
-                <Button v-if="can.manage" @click="openCreate">
+                <Button
+                    v-if="can.manage"
+                    data-tour="tags.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nueva etiqueta
                 </Button>
@@ -181,6 +183,7 @@ function usageLabel(
             <div
                 class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"
+                data-tour="tags.search"
             >
                 <div class="relative order-1 min-w-0 flex-1">
                     <Search
@@ -227,8 +230,9 @@ function usageLabel(
                 </TableHeader>
                 <TableBody>
                     <TableRow
-                        v-for="tag in tags.data"
+                        v-for="(tag, position) in tags.data"
                         :key="tag.id"
+                        :data-tour="position === 0 ? 'tags.list' : undefined"
                         :class="tag.is_deleted && 'text-muted-foreground'"
                     >
                         <TableCell class="w-full max-w-0 py-3 pl-5">
@@ -298,7 +302,11 @@ function usageLabel(
             </Table>
 
             <RecordGrid v-else-if="tags.data.length > 0">
-                <li v-for="tag in tags.data" :key="tag.id">
+                <li
+                    v-for="(tag, position) in tags.data"
+                    :key="tag.id"
+                    :data-tour="position === 0 ? 'tags.list' : undefined"
+                >
                     <RecordCard :muted="tag.is_deleted">
                         <template #title>
                             <TagBadge

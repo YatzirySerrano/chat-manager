@@ -22,6 +22,7 @@ import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -104,8 +105,8 @@ const hasConfirmedOrigin = computed(() =>
 );
 
 const conversationTone: Record<ContactConversation['status'], string> = {
-    pending: 'bg-warning/10 text-warning',
-    open: 'bg-success/10 text-success',
+    pending: 'bg-warning-soft text-warning-soft-foreground',
+    open: 'bg-success-soft text-success-soft-foreground',
     closed: 'bg-muted text-muted-foreground',
 };
 </script>
@@ -113,9 +114,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
 <template>
     <Head :title="contact.name" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader help="contactos" show-title :title="contact.name">
             <template #eyebrow>
                 <div class="flex flex-wrap items-center gap-2">
@@ -175,29 +174,22 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             a escribir, se sigue usando este mismo contacto.
         </DeletedRecordNotice>
 
-        <div
+        <StatusNote
             v-else-if="!contact.is_saved"
-            class="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
-            role="status"
+            tone="warning"
+            title="Contacto no guardado"
+            :icon="UserRoundSearch"
         >
-            <UserRoundSearch
-                class="mt-0.5 size-4 shrink-0 text-warning"
-                aria-hidden="true"
-            />
-            <div class="space-y-1">
-                <p class="font-medium">Contacto no guardado</p>
-                <p class="text-muted-foreground">
-                    Se registró automáticamente cuando escribió. Sus
-                    conversaciones y respuestas funcionan con normalidad, pero
-                    no aparece en el directorio de Contactos, en sus reportes ni
-                    en los conteos de etiquetas hasta que alguien lo guarde.
-                </p>
-            </div>
-        </div>
+            Se registró automáticamente cuando escribió. Sus conversaciones y
+            respuestas funcionan con normalidad, pero no aparece en el
+            directorio de Contactos, en sus reportes ni en los conteos de
+            etiquetas hasta que alguien lo guarde.
+        </StatusNote>
 
         <div class="grid items-start gap-6 lg:grid-cols-3">
             <div class="flex flex-col gap-6 lg:col-span-2">
                 <SurfaceCard
+                    data-tour="contact.history"
                     title="Historial de conversaciones"
                     description="Solo se muestran las conversaciones que tienes permitido ver."
                 >
@@ -270,7 +262,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                         class="m-4 border-none py-10"
                         :icon="MessagesSquare"
                         title="Sin conversaciones"
-                        description="Aquí aparecerán las conversaciones de WhatsApp con este contacto cuando la bandeja de atención esté disponible."
+                        description="Este contacto aún no tiene conversaciones que puedas ver. Aparecerán aquí cuando escriba o le escribas."
                     />
                 </SurfaceCard>
 
@@ -347,7 +339,10 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                     </dl>
                 </SurfaceCard>
 
-                <SurfaceCard title="Identidades" body-class="p-5">
+                <SurfaceCard
+                    title="Números y cuentas vinculados"
+                    body-class="p-5"
+                >
                     <ul
                         v-if="(contact.identities ?? []).length > 0"
                         class="space-y-2"
@@ -384,7 +379,11 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                     </p>
                 </SurfaceCard>
 
-                <SurfaceCard title="Etiquetas" body-class="p-5">
+                <SurfaceCard
+                    title="Etiquetas"
+                    body-class="p-5"
+                    data-tour="contact.tags"
+                >
                     <TagPicker
                         :contact-id="contact.id"
                         :selected="contact.tags ?? []"

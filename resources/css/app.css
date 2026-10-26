@@ -17,11 +17,21 @@
       Type scale for all-day reading: every step pairs its size with a
       1.4–1.5 line-height, and larger steps tighten their tracking slightly.
       Headings stay at 500/600; nothing in the scale asks for 700+.
+      No critical data is rendered below 13 px (text-xs).
+
+      Typographic roles:
+        h1 (PageHeader showTitle)  text-2xl font-semibold
+        h2 page section            text-lg font-semibold  (SectionHeading)
+        h2 card title              text-base font-semibold (SurfaceCard)
+        h3                         text-sm font-semibold
+        body                       text-sm (15 px)
+        secondary / metadata       text-xs text-muted-foreground (13 px)
+        group label                section-title utility (no uppercase)
     */
-    --text-xs: 0.75rem;
+    --text-xs: 0.8125rem;
     --text-xs--line-height: 1.125rem;
-    --text-sm: 0.875rem;
-    --text-sm--line-height: 1.3125rem;
+    --text-sm: 0.9375rem;
+    --text-sm--line-height: 1.375rem;
     --text-base: 1rem;
     --text-base--line-height: 1.5rem;
     --text-lg: 1.125rem;
@@ -37,7 +47,10 @@
     --text-3xl--line-height: 2.25rem;
     --text-3xl--letter-spacing: -0.02em;
 
+    --font-weight-heading: 600;
+
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
 
     --radius-xl: calc(var(--radius) + 4px);
     --radius-lg: var(--radius);
@@ -72,6 +85,19 @@
     --color-primary-soft-foreground: var(--primary-soft-foreground);
     --color-success: var(--success);
     --color-warning: var(--warning);
+    --color-info: var(--info);
+    --color-success-soft: var(--success-soft);
+    --color-success-soft-foreground: var(--success-soft-foreground);
+    --color-warning-soft: var(--warning-soft);
+    --color-warning-soft-foreground: var(--warning-soft-foreground);
+    --color-destructive-soft: var(--destructive-soft);
+    --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+    --color-info-soft: var(--info-soft);
+    --color-info-soft-foreground: var(--info-soft-foreground);
+
+    --color-surface-sunken: var(--surface-sunken);
+    --color-surface-raised: var(--surface-raised);
+    --color-border-strong: var(--border-strong);
 
     --shadow-card:
         0 1px 2px hsl(var(--shadow-color) / 0.04),
@@ -82,6 +108,9 @@
     --shadow-elevated:
         0 12px 30px -10px hsl(var(--shadow-color) / 0.16),
         0 4px 12px -4px hsl(var(--shadow-color) / 0.08);
+    --shadow-hover:
+        0 2px 4px -1px hsl(var(--shadow-color) / 0.06),
+        0 4px 12px -4px hsl(var(--shadow-color) / 0.1);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -92,6 +121,11 @@
     --color-chart-3: var(--chart-3);
     --color-chart-4: var(--chart-4);
     --color-chart-5: var(--chart-5);
+    --color-chart-primary: var(--chart-primary);
+    --color-chart-secondary: var(--chart-secondary);
+    --color-chart-comparison: var(--chart-comparison);
+    --color-chart-grid: var(--chart-grid);
+    --color-chart-axis: var(--chart-axis);
 
     --color-sidebar: var(--sidebar-background);
     --color-sidebar-foreground: var(--sidebar-foreground);
@@ -144,13 +178,47 @@
     --destructive-foreground: oklch(0.99 0 0);
     --success: oklch(0.5 0.13 155);
     --warning: oklch(0.49 0.12 65);
+    --info: oklch(0.52 0.13 245);
+    --success-soft: oklch(0.96 0.03 155);
+    --success-soft-foreground: oklch(0.4 0.11 155);
+    --warning-soft: oklch(0.96 0.04 80);
+    --warning-soft-foreground: oklch(0.42 0.11 60);
+    --destructive-soft: oklch(0.96 0.03 27);
+    --destructive-soft-foreground: oklch(0.47 0.18 27);
+    --info-soft: oklch(0.96 0.03 245);
+    --info-soft-foreground: oklch(0.43 0.13 245);
+    --surface-sunken: oklch(0.965 0.005 247);
+    --surface-raised: oklch(1 0 0);
     --border: oklch(0.925 0.006 250);
+    --border-strong: oklch(0.86 0.008 250);
     --input: oklch(0.9 0.008 250);
-    --chart-1: oklch(0.6 0.13 160);
-    --chart-2: oklch(0.6 0.12 240);
-    --chart-3: oklch(0.7 0.14 70);
-    --chart-4: oklch(0.6 0.16 295);
-    --chart-5: oklch(0.62 0.17 12);
+    /*
+      Charts (components/charts, useChartTheme). Main series follows the
+      platform palette; the second series is a neutral ink so it never clashes
+      with any palette; the previous period is muted and dashed. Categorical
+      hues are fixed (never rotated, independent of the palette) and validated
+      for color-vision deficiencies; every one reaches 3:1 on the chart card
+      (WCAG 1.4.11) in both themes. app/Reports/Rendering/
+      ReportPalette.php mirrors the light values. --chart-1..5 stay as aliases.
+    */
+    --chart-primary: var(--primary);
+    --chart-secondary: color-mix(in oklch, var(--foreground) 62%, transparent);
+    --chart-comparison: var(--muted-foreground);
+    --chart-grid: color-mix(in oklch, var(--border) 70%, transparent);
+    --chart-axis: var(--muted-foreground);
+    --chart-cat-1: #2a78d6;
+    --chart-cat-2: #eb6834;
+    --chart-cat-3: #15936a;
+    --chart-cat-4: #b87a00;
+    --chart-cat-5: #d55181;
+    --chart-cat-6: #008300;
+    --chart-cat-7: #6250d6;
+    --chart-cat-8: #e34948;
+    --chart-1: var(--chart-cat-1);
+    --chart-2: var(--chart-cat-2);
+    --chart-3: var(--chart-cat-3);
+    --chart-4: var(--chart-cat-4);
+    --chart-5: var(--chart-cat-5);
     --radius: 0.625rem;
     --sidebar-background: oklch(1 0 0);
     --sidebar: oklch(1 0 0);
@@ -159,6 +227,28 @@
     --sidebar-accent-foreground: oklch(0.21 0.02 255);
     --sidebar-border: oklch(0.93 0.006 250);
     --shadow-color: 220 40% 12%;
+
+    /* Layout rhythm shared by every page (see the page-shell utility). */
+    --page-gutter: 1rem;
+    --page-gutter-md: 1.5rem;
+    --page-gutter-lg: 2rem;
+    --page-max: 80rem;
+    --section-gap: 1.5rem;
+    --stack-gap: 0.75rem;
+    --control-h: 2.25rem;
+    --control-h-coarse: 2.5rem;
+    --touch-min: 2.75rem;
+
+    /* Motion: controls 150 ms, toggles/popovers 200 ms, panels 280 ms. */
+    --duration-fast: 150ms;
+    --duration-base: 200ms;
+    --duration-panel: 280ms;
+    /* Also exposed as ease-standard / ease-emphasized utilities via @theme. */
+    --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
+
+    /* Dims everything around a guided-tour spotlight. */
+    --shadow-focus-spot: 0 0 0 9999px
+        color-mix(in oklch, var(--background) 8%, oklch(0.15 0.02 255 / 0.62));
 }
 
 .dark {
@@ -175,16 +265,36 @@
     --accent: oklch(0.26 0.013 255);
     --accent-foreground: oklch(0.96 0.005 250);
     --destructive: oklch(0.7 0.19 25);
-    --destructive-foreground: oklch(0.99 0 0);
+    --destructive-foreground: oklch(0.2 0.03 25);
     --success: oklch(0.72 0.14 155);
     --warning: oklch(0.8 0.14 75);
+    --info: oklch(0.74 0.12 245);
+    --success-soft: oklch(0.28 0.05 155);
+    --success-soft-foreground: oklch(0.86 0.12 155);
+    --warning-soft: oklch(0.3 0.06 75);
+    --warning-soft-foreground: oklch(0.88 0.12 80);
+    --destructive-soft: oklch(0.29 0.07 25);
+    --destructive-soft-foreground: oklch(0.86 0.12 25);
+    --info-soft: oklch(0.29 0.05 245);
+    --info-soft-foreground: oklch(0.86 0.1 245);
+    --surface-sunken: oklch(0.185 0.011 255);
+    --surface-raised: oklch(0.225 0.012 255);
     --border: oklch(0.29 0.012 255);
+    --border-strong: oklch(0.36 0.012 255);
     --input: oklch(0.33 0.012 255);
-    --chart-1: oklch(0.72 0.13 160);
-    --chart-2: oklch(0.72 0.12 240);
-    --chart-3: oklch(0.8 0.14 75);
-    --chart-4: oklch(0.72 0.15 295);
-    --chart-5: oklch(0.72 0.16 12);
+    --chart-cat-1: #3987e5;
+    --chart-cat-2: #d95926;
+    --chart-cat-3: #199e70;
+    --chart-cat-4: #c98500;
+    --chart-cat-5: #d55181;
+    --chart-cat-6: #008300;
+    --chart-cat-7: #9085e9;
+    --chart-cat-8: #e66767;
+    --chart-1: var(--chart-cat-1);
+    --chart-2: var(--chart-cat-2);
+    --chart-3: var(--chart-cat-3);
+    --chart-4: var(--chart-cat-4);
+    --chart-5: var(--chart-cat-5);
     --sidebar-background: oklch(0.185 0.012 255);
     --sidebar: oklch(0.185 0.012 255);
     --sidebar-foreground: oklch(0.8 0.01 255);
@@ -393,6 +503,7 @@
     :root {
         /* Focus indicator for elements without their own ring utility. */
         --focus-ring: color-mix(in oklch, var(--primary) 70%, transparent);
+        --focus-ring-strong: var(--primary);
     }
 
     body {
@@ -440,7 +551,7 @@
         transition-property:
             color, background-color, border-color, opacity, box-shadow,
             text-decoration-color;
-        transition-duration: 150ms;
+        transition-duration: var(--duration-fast);
         transition-timing-function: var(--ease-standard);
     }
 
@@ -448,6 +559,77 @@
     :where([aria-disabled='true']) {
         cursor: not-allowed;
     }
+}
+
+/*
+  Page container: one source for the gutter/max-width chain every page used
+  to repeat (mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8).
+*/
+@utility page-shell {
+    margin-inline: auto;
+    display: flex;
+    width: 100%;
+    max-width: var(--page-max);
+    flex: 1 1 0%;
+    flex-direction: column;
+    gap: var(--section-gap);
+    padding: var(--page-gutter);
+
+    @media (width >= 48rem) {
+        padding: var(--page-gutter-md);
+    }
+
+    @media (width >= 64rem) {
+        padding: var(--page-gutter-lg);
+    }
+}
+
+/*
+  Navigable cards and rows (RecordCard with href, linked chart cards, scope
+  options): background, strong border, a 1 px lift and a soft shadow on hover.
+*/
+@utility interactive-surface {
+    transition-property: background-color, border-color, box-shadow, translate;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+
+    @media (hover: hover) {
+        &:hover {
+            background-color: color-mix(
+                in oklch,
+                var(--card) 50%,
+                var(--accent)
+            );
+            border-color: var(--border-strong);
+            box-shadow: var(--shadow-hover);
+            translate: 0 -1px;
+        }
+    }
+
+    &:active {
+        translate: 0 0;
+        box-shadow: var(--shadow-card);
+    }
+}
+
+/* Press feedback for primary buttons and the floating help button. */
+@utility press {
+    transition-property:
+        color, background-color, border-color, opacity, box-shadow, scale;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+
+    &:active:not(:disabled) {
+        scale: 0.98;
+    }
+}
+
+/* Group label: replaces uppercase eyebrows, which read poorly in Spanish. */
+@utility section-title {
+    font-size: --theme(--text-xs);
+    line-height: --theme(--text-xs--line-height);
+    font-weight: --theme(--font-weight-heading);
+    color: var(--muted-foreground);
 }
 
 /*

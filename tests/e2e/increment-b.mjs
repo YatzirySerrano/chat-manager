@@ -19,6 +19,7 @@
 import {
     BASE,
     USERS,
+    applyInboxFilters,
     chromium,
     exitWithSummary,
     inbound,
@@ -290,7 +291,7 @@ const run = async () => {
         record(
             'transfer-to-queue',
             'mouse',
-            /transferida a la cola de E2E Soporte/.test(transferToast),
+            /transferida a «Pendientes» de E2E Soporte/.test(transferToast),
             transferToast,
         );
 
@@ -373,9 +374,10 @@ const run = async () => {
         await admin
             .locator('#inbox-department')
             .selectOption({ label: 'E2E Soporte' });
+        // Phase 5.1: the panel edits a draft applied with «Aplicar».
+        await applyInboxFilters(admin);
         await admin.waitForURL(/department=/);
         await admin.waitForLoadState('networkidle');
-        await admin.keyboard.press('Escape');
         const filteredUrl = new URL(admin.url());
         await listRow(admin, 'Cliente E2E Anuncio').click();
         await admin.waitForURL(new RegExp(`c=${firstId}`));
@@ -432,18 +434,22 @@ const run = async () => {
         const staleTab = await admin.context().newPage();
         await openConversation(staleTab, firstId);
         // Fase 5: "Poner en espera" is retired; the admin's change that makes
-        // the other tab stale is returning it to the queue.
-        await runOperation(admin, 'Devolver a la cola');
+        // the other tab stale is returning it to the queue. The second tab
+        // opens its confirmation first: with E2E_REVERB=1 its screen follows
+        // the change live, so only a decision already in progress can be
+        // stale (without Reverb the whole tab is).
+        await runOperation(staleTab, 'Devolver a Pendientes');
+        await staleTab.getByRole('dialog').waitFor();
+        await runOperation(admin, 'Devolver a Pendientes');
         await admin
             .getByRole('dialog')
-            .getByRole('button', { name: 'Devolver a la cola' })
+            .getByRole('button', { name: 'Devolver a Pendientes' })
             .click();
         await admin.getByRole('dialog').waitFor({ state: 'detached' });
         await admin.waitForLoadState('networkidle');
-        await runOperation(staleTab, 'Devolver a la cola');
         await staleTab
             .getByRole('dialog')
-            .getByRole('button', { name: 'Devolver a la cola' })
+            .getByRole('button', { name: 'Devolver a Pendientes' })
             .click();
         const staleToast = await toastText(
             staleTab,

@@ -8,6 +8,7 @@ use App\Enums\MessageType;
 use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Support\Attachments\AttachmentDownloadLink;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -45,8 +46,8 @@ class ConversationMessageResource extends JsonResource
             'body' => $this->body,
             'status' => $this->status->value,
             'sender' => $this->whenLoaded('sender', fn (): ?array => $this->sender === null ? null : [
-                'id' => $this->sender->id,
-                'name' => $this->sender->name,
+                'id' => app(ProtectedAccounts::class)->idForRequest($this->sender, $request),
+                'name' => app(ProtectedAccounts::class)->nameForRequest($this->sender, $request),
             ]),
             'error_code' => $this->error_code,
             'error_message' => $this->error_message,

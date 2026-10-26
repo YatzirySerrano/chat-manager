@@ -49,7 +49,7 @@ test('an agent\'s inbox opens on the general inbox: their own conversations and 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.view', 'general')
-            ->where('inbox', ['personal' => true, 'views' => ['general', 'mine']])
+            ->where('inbox', ['personal' => true, 'views' => ['general', 'mine'], 'scope' => 'assigned', 'supervises' => false])
             ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->mineClosed, $this->queued]))
             ->where('counts', ['general' => 2, 'mine' => 1, 'pending' => 1, 'attending' => 1])
             ->where('agents', []));
@@ -133,7 +133,7 @@ test('an unknown view is rejected', function () {
         ->assertSessionHasErrors('view');
 });
 
-test('team inboxes open on the general inbox, with every authorized conversation and "only mine" as views', function () {
+test('supervised team inboxes open on every authorized conversation, with the general inbox and "only mine" as views', function () {
     $supervisor = User::factory()->supervisor()->inDepartments($this->sales)->create();
     $own = Conversation::factory()->inDepartment($this->support)->assignedTo($supervisor)->create();
 
@@ -141,10 +141,16 @@ test('team inboxes open on the general inbox, with every authorized conversation
         ->get(route('conversations.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('inbox', ['personal' => false, 'views' => ['general', 'mine', 'all']])
-            ->where('filters.view', 'general')
-            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $own]))
+            ->where('inbox', ['personal' => false, 'views' => ['all', 'general', 'mine'], 'scope' => 'departments', 'supervises' => true])
+            ->where('filters.view', 'all')
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->colleagues, $this->queued, $own]))
             ->where('agents', fn ($agents) => collect($agents)->pluck('id')->contains($this->colleague->id)));
+
+    $this->actingAs($supervisor)
+        ->get(route('conversations.index', ['view' => 'general']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.view', 'general')
+            ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $own])));
 
     $this->actingAs($supervisor)
         ->get(route('conversations.index', ['view' => 'all']))

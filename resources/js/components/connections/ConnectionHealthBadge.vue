@@ -10,7 +10,10 @@ defineProps<{
 }>();
 
 const toneClasses: Record<ConnectionTone, { badge: string; dot: string }> = {
-    success: { badge: 'bg-success/10 text-success', dot: 'bg-success' },
+    success: {
+        badge: 'bg-success-soft text-success-soft-foreground',
+        dot: 'bg-success',
+    },
     primary: {
         badge: 'bg-primary-soft text-primary-soft-foreground',
         dot: 'bg-primary',
@@ -20,7 +23,7 @@ const toneClasses: Record<ConnectionTone, { badge: string; dot: string }> = {
         dot: 'bg-warning',
     },
     danger: {
-        badge: 'bg-destructive/10 text-destructive',
+        badge: 'bg-destructive-soft text-destructive-soft-foreground',
         dot: 'bg-destructive',
     },
     neutral: {

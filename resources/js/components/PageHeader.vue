@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import ModuleHelpButton from '@/components/help/ModuleHelpButton.vue';
+import { onBeforeUnmount, watch } from 'vue';
+import { useGuidedTour } from '@/composables/useGuidedTour';
 import type { ModuleHelpKey } from '@/help';
 
 /**
- * Page introduction: the page's single <h1>, its description, the
- * "¿Cómo funciona?" help trigger and the page-level actions.
+ * Page introduction: the page's single <h1>, its description and the
+ * page-level actions.
+ *
+ * `help` declares the module of the screen: the global help button (in the
+ * layout) offers its guided tours and, secondary, its full guide. The page
+ * header no longer shows a help button of its own.
  *
  * The sticky top bar already shows the page name as the last breadcrumb (on
  * every viewport), so by default the <h1> is visually hidden but kept for
@@ -17,11 +22,11 @@ import type { ModuleHelpKey } from '@/help';
  * it only when both fit; otherwise they wrap to their own row. On phones every
  * action link or button is at least 44px tall.
  */
-withDefaults(
+const props = withDefaults(
     defineProps<{
         title: string;
         description?: string;
-        /** Module whose "¿Cómo funciona este módulo?" panel is offered. */
+        /** Module of the screen (guided tours and full guide of the help button). */
         help?: ModuleHelpKey;
         /** Show the title visually (it is always present for screen readers). */
         showTitle?: boolean;
@@ -32,6 +37,21 @@ withDefaults(
         showTitle: false,
     },
 );
+
+const tours = useGuidedTour();
+
+let unregister: () => void = () => {};
+
+watch(
+    () => props.help,
+    (key) => {
+        unregister();
+        unregister = key ? tours.registerPageModule(key) : () => {};
+    },
+    { immediate: true },
+);
+
+onBeforeUnmount(() => unregister());
 </script>
 
 <template>
@@ -59,11 +79,11 @@ withDefaults(
         </div>
         <h1 v-else class="sr-only">{{ title }}</h1>
         <div
-            v-if="$slots.actions || help"
+            v-if="$slots.actions"
+            data-tour="page.actions"
             class="flex min-w-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:[&_a]:min-h-11 max-sm:[&_button]:min-h-11"
             :class="!(showTitle || description || $slots.eyebrow) && 'ml-auto'"
         >
-            <ModuleHelpButton v-if="help" :module="help" />
             <slot name="actions" />
         </div>
     </header>

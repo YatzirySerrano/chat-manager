@@ -210,7 +210,7 @@ const label = computed(() => {
             class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
             :class="[
                 selected
-                    ? 'border-l-primary bg-accent'
+                    ? 'border-l-primary bg-primary-soft'
                     : pending
                       ? 'border-l-warning hover:bg-accent/60'
                       : unread > 0
@@ -243,11 +243,11 @@ const label = computed(() => {
                 <span class="flex items-baseline justify-between gap-2">
                     <span class="flex min-w-0 items-center gap-1.5">
                         <span
-                            class="truncate text-[15px] leading-5"
+                            class="truncate text-sm font-semibold"
                             :class="
                                 unread > 0
-                                    ? 'font-semibold text-foreground'
-                                    : 'font-medium'
+                                    ? 'text-foreground'
+                                    : 'text-foreground/90'
                             "
                             :title="displayName"
                             >{{ displayName }}</span
@@ -281,7 +281,7 @@ const label = computed(() => {
                         class="flex min-w-0 flex-1 items-center gap-1 truncate text-sm"
                         :class="
                             unread > 0
-                                ? 'text-foreground'
+                                ? 'font-medium text-foreground'
                                 : 'text-muted-foreground'
                         "
                     >
@@ -331,17 +331,14 @@ const label = computed(() => {
                     "
                     class="mt-1.5 flex flex-wrap items-center gap-1"
                 >
-                    <!-- Pending: text and icon on a warning tint, with the
-                         foreground color so it keeps ≥4.5:1 in both themes. -->
+                    <!-- Pending: text and icon on the soft warning pair
+                         (≥4.5:1 in both themes), never color alone. -->
                     <span
                         v-if="pending"
-                        class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/15 px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-foreground"
+                        class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-warning-soft-foreground"
                         data-inbox-pending
                     >
-                        <Hourglass
-                            class="size-3 shrink-0 text-warning"
-                            aria-hidden="true"
-                        />
+                        <Hourglass class="size-3 shrink-0" aria-hidden="true" />
                         {{ conversation.status_label }}
                     </span>
                     <ConversationStatusBadge
@@ -380,7 +377,7 @@ const label = computed(() => {
                     />
                     <span
                         v-if="hiddenTags > 0"
-                        class="text-xs text-muted-foreground"
+                        class="rounded-sm bg-surface-sunken px-1 text-xs text-muted-foreground tabular-nums"
                         :title="`${hiddenTags} etiquetas más`"
                         >+{{ hiddenTags }}</span
                     >

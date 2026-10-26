@@ -13,7 +13,7 @@ const help: ModuleHelp = {
     ],
     workflow: [
         'Crea el departamento con nombre, descripción y color.',
-        'Agrega a sus miembros con «Agregar miembros». Los roles con alcance global no necesitan pertenecer a departamentos.',
+        'Agrega a sus miembros con «Agregar miembros». Quien tiene un rol que ve toda la organización no necesita ser miembro de departamentos.',
         'Elige la distribución y, si quieres, un límite de conversaciones por agente.',
         'Define el horario propio o usa el de la plataforma, y los mensajes de bienvenida y fuera de horario.',
         'En Conexiones, autoriza el departamento en las conexiones que deben llegarle.',
@@ -26,7 +26,7 @@ const help: ModuleHelp = {
         {
             name: 'Bandeja compartida',
             description:
-                'Las conversaciones esperan en la cola y los agentes con permiso las aceptan.',
+                'Las conversaciones nuevas quedan en «Pendientes» y cualquier agente del departamento con permiso puede tomarlas.',
         },
         {
             name: 'Asignación manual',
@@ -36,7 +36,7 @@ const help: ModuleHelp = {
         {
             name: 'Asignación automática',
             description:
-                'Cada conversación nueva va al miembro activo que puede atender y tiene menos conversaciones; si nadie puede recibirla, espera en la cola.',
+                'Cada conversación nueva va al miembro activo que puede atender y tiene menos conversaciones; si nadie puede recibirla, queda en «Pendientes».',
         },
         {
             name: 'Límite de conversaciones por agente (opcional)',
@@ -66,8 +66,8 @@ const help: ModuleHelp = {
         },
     ],
     permissions: [
-        '«Ver departamentos»: sin alcance global solo ves los departamentos a los que perteneces.',
-        '«Crear departamentos» y «Eliminar y restaurar departamentos» requieren alcance global.',
+        '«Ver departamentos»: si tu rol no ve toda la organización, solo ves los departamentos a los que perteneces.',
+        '«Crear departamentos» y «Eliminar y restaurar departamentos» requieren un rol que vea toda la organización.',
         '«Editar departamentos» incluye horario, distribución y mensajes; «Administrar miembros» se otorga aparte.',
     ],
     commonErrors: [
@@ -83,7 +83,7 @@ const help: ModuleHelp = {
         },
         {
             problem:
-                '«El rol X ya tiene alcance sobre toda la organización; no necesita pertenecer a departamentos.»',
+                '«El rol X ya ve toda la organización; no necesita pertenecer a departamentos.»',
             solution: 'Esa persona ya ve todo; no hace falta agregarla.',
         },
         {
@@ -93,7 +93,7 @@ const help: ModuleHelp = {
         },
     ],
     tips: [
-        'Retirar a un miembro devuelve a la cola sus conversaciones abiertas en ese departamento.',
+        'Retirar a un miembro devuelve a «Pendientes» sus conversaciones abiertas en ese departamento.',
         'Cambiar la forma de distribución nunca quita conversaciones ya asignadas.',
     ],
     examples: [

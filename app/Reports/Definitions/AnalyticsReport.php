@@ -16,6 +16,7 @@ use App\Reports\ColumnType;
 use App\Reports\Metric;
 use App\Reports\Orientation;
 use App\Reports\PdfOptions;
+use App\Reports\Rendering\ReportPalette;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
 use App\Reports\ReportSheet;
@@ -55,6 +56,13 @@ class AnalyticsReport extends ReportDefinition
      * @var array<string, Analytics>
      */
     private array $reports = [];
+
+    /**
+     * Agent rows by real id, computed once per export.
+     *
+     * @var array<string, array<int, BreakdownRow>>
+     */
+    private array $agentRows = [];
 
     /**
      * Filters resolved once per export context.
@@ -111,7 +119,7 @@ class AnalyticsReport extends ReportDefinition
         $descriptions = [
             "Periodo: {$period->label()} ({$period->timezone})",
             "Comparado con: {$previous->label()}",
-            'Alcance: '.match ($this->scope->label($context->actor)) {
+            'Incluye: '.match ($this->scope->label($context->actor)) {
                 'all' => 'toda la organización',
                 'departments' => 'tus departamentos',
                 default => 'tus conversaciones',
@@ -123,7 +131,7 @@ class AnalyticsReport extends ReportDefinition
         }
 
         if ($filters->agentId !== null) {
-            $descriptions[] = 'Agente: '.User::query()->whereKey($filters->agentId)->value('name');
+            $descriptions[] = 'Agente: '.User::query()->whereKey($filters->agentId)->withoutProtectedFor($context->actor)->value('name');
         }
 
         if ($filters->connectionId !== null) {
@@ -172,16 +180,14 @@ class AnalyticsReport extends ReportDefinition
     public function map(Model $record, ReportContext $context): array
     {
         $agentId = $record->getAttribute('agent_id');
-        $agentId = $agentId === null ? null : (int) $agentId;
-
-        foreach ($this->report($context)['by_agent'] as $row) {
-            if ($row['id'] === $agentId) {
-                return $this->row($row);
-            }
-        }
+        $row = $this->agentRows($context)[$agentId === null ? 0 : (int) $agentId] ?? null;
 
         // Rows and figures are read from the same snapshot (see the class).
-        throw new LogicException('The agent of an exported row is missing from the computed report.');
+        if ($row === null) {
+            throw new LogicException('The agent of an exported row is missing from the computed report.');
+        }
+
+        return $this->row($row);
     }
 
     public function metrics(ReportContext $context): array
@@ -193,18 +199,18 @@ class AnalyticsReport extends ReportDefinition
             new Metric('Recibidas', $summary['received']['value'], $this->versus($summary['received']['previous'])),
             new Metric('Atendidas', $summary['attended']['value'], 'Aceptadas, asignadas por una persona o respondidas (la distribución automática no cuenta)'),
             new Metric('Resueltas', $summary['resolved']['value'], 'Cerradas al menos una vez'),
-            new Metric('Primera respuesta humana (prom., calendario)', $this->duration($summary['first_response_seconds']['value']), $this->samples($summary['first_response_seconds']['samples'], $summary['first_response_seconds']['previous'])),
-            new Metric('Primera respuesta humana (prom., hábil)', $this->duration($summary['first_response_business_seconds']['value']), $this->samples($summary['first_response_business_seconds']['samples'], $summary['first_response_business_seconds']['previous'])),
-            new Metric('Primera atención (prom., calendario)', $this->duration($summary['first_attention_seconds']['value']), $this->samples($summary['first_attention_seconds']['samples'], $summary['first_attention_seconds']['previous'])),
-            new Metric('Resolución (prom., calendario)', $this->duration($summary['resolution_seconds']['value']), $this->samples($summary['resolution_seconds']['samples'], $summary['resolution_seconds']['previous'])),
-            new Metric('Resolución (prom., hábil)', $this->duration($summary['resolution_business_seconds']['value']), $this->samples($summary['resolution_business_seconds']['samples'], $summary['resolution_business_seconds']['previous'])),
+            new Metric('Primera respuesta (promedio, tiempo real)', $this->duration($summary['first_response_seconds']['value']), $this->samples($summary['first_response_seconds']['samples'], $summary['first_response_seconds']['previous'])),
+            new Metric('Primera respuesta (promedio, horario de atención)', $this->duration($summary['first_response_business_seconds']['value']), $this->samples($summary['first_response_business_seconds']['samples'], $summary['first_response_business_seconds']['previous'])),
+            new Metric('Primera atención (promedio, tiempo real)', $this->duration($summary['first_attention_seconds']['value']), $this->samples($summary['first_attention_seconds']['samples'], $summary['first_attention_seconds']['previous'])),
+            new Metric('Resolución (promedio, tiempo real)', $this->duration($summary['resolution_seconds']['value']), $this->samples($summary['resolution_seconds']['samples'], $summary['resolution_seconds']['previous'])),
+            new Metric('Resolución (promedio, horario de atención)', $this->duration($summary['resolution_business_seconds']['value']), $this->samples($summary['resolution_business_seconds']['samples'], $summary['resolution_business_seconds']['previous'])),
             ...$this->slaMetrics($summary),
             new Metric('Reabiertas', $summary['reopened']['value'], 'Conversaciones reabiertas al menos una vez'),
             new Metric('Transferencias', $summary['transfers']['value'], $this->versus($summary['transfers']['previous'])),
             new Metric('Fuera de horario', $summary['out_of_hours']['value'], $summary['out_of_hours']['value'] === null ? 'Sin horario laboral configurado' : 'Recibidas fuera del horario laboral'),
             new Metric('Mensajes recibidos / enviados', number_format((int) $summary['messages_in']['value']).' / '.number_format((int) $summary['messages_out']['value']), 'De las conversaciones del periodo'),
             new Metric('Errores de envío', $summary['failed_out']['value'], $summary['failure_rate']['value'] === null ? 'Sin mensajes enviados' : $summary['failure_rate']['value'].' % de los enviados'),
-            new Metric('Pendientes ahora', $current['pending'], 'En cola sin agente (estado actual)'),
+            new Metric('Pendientes ahora', $current['pending'], 'Esperan que alguien las acepte (ahora)'),
         ];
     }
 
@@ -243,8 +249,29 @@ class AnalyticsReport extends ReportDefinition
                 'Estado actual de las recibidas',
                 array_column($report['statuses'], 'label'),
                 [new ChartSeries('Conversaciones', array_column($report['statuses'], 'count'))],
+                colors: array_map(fn (array $row): string => ReportPalette::status($row['status']), $report['statuses']),
             ),
         ];
+
+        // Every bucket keeps its place; one without measured responses is a gap (never a fake 0).
+        $charts[] = new Chart(
+            ChartType::Line,
+            'Tiempo de primera respuesta',
+            array_column($report['activity']['points'], 'label'),
+            [new ChartSeries('Promedio (min)', array_map(fn (array $point): ?float => $point['first_response_seconds'] === null ? null : round($point['first_response_seconds'] / 60, 1), $report['activity']['points']))],
+            'Promedio por '.$this->unit($report['activity']['granularity']).' en minutos; los huecos son periodos sin respuestas medidas',
+        );
+
+        $charts[] = new Chart(
+            ChartType::Bar,
+            'Conversaciones por canal',
+            array_column($report['by_channel'], 'label'),
+            [
+                new ChartSeries('Recibidas', array_column($report['by_channel'], 'received')),
+                new ChartSeries('Atendidas', array_column($report['by_channel'], 'attended')),
+            ],
+            'Recibidas en el periodo',
+        );
 
         if ($report['by_department'] !== []) {
             $top = array_slice($report['by_department'], 0, 10);
@@ -281,7 +308,18 @@ class AnalyticsReport extends ReportDefinition
             [new Column('name', 'Conexión', width: 24), ...$this->figureColumns()],
             array_map(fn (array $row): array => $this->row($row), $report['by_connection']),
             inPdf: true,
-            description: 'Número de WhatsApp por el que llegó cada conversación.',
+            description: 'Conexión (número de WhatsApp o chat web) por la que llegó cada conversación.',
+        );
+
+        $sheets[] = new ReportSheet(
+            'Por canal',
+            [
+                new Column('label', 'Canal', width: 20),
+                new Column('received', 'Recibidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                new Column('attended', 'Atendidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+            ],
+            array_map(fn (array $row): array => ['label' => $row['label'], 'received' => $row['received'], 'attended' => $row['attended']], $report['by_channel']),
+            description: 'Suma de las conexiones de cada canal (incluidas las eliminadas).',
         );
 
         $sheets[] = new ReportSheet(
@@ -299,6 +337,25 @@ class AnalyticsReport extends ReportDefinition
                 'previous_received' => $point['previous_received'],
             ], $report['trend']['points']),
             description: 'Recibidas por fecha de llegada; resueltas por fecha de su primer cierre.',
+        );
+
+        $sheets[] = new ReportSheet(
+            'Actividad',
+            [
+                new Column('label', ucfirst($this->unit($report['activity']['granularity'])), width: 14),
+                new Column('received', 'Recibidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                new Column('attended', 'Atendidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                new Column('first_response', 'Primera respuesta (min)', ColumnType::Number, width: 18, decimals: 1),
+                new Column('first_response_samples', 'Conversaciones medidas', ColumnType::Number, width: 18, total: ColumnTotal::Sum),
+            ],
+            array_map(fn (array $point): array => [
+                'label' => $point['label'],
+                'received' => $point['received'],
+                'attended' => $point['attended'],
+                'first_response' => $this->minutes($point['first_response_seconds']),
+                'first_response_samples' => $point['first_response_samples'],
+            ], $report['activity']['points']),
+            description: 'Por fecha de llegada. Atendidas: de las recibidas en ese periodo, las que ya fueron aceptadas o asignadas.',
         );
 
         $hourColumns = [new Column('day', 'Día', width: 12)];
@@ -394,12 +451,24 @@ class AnalyticsReport extends ReportDefinition
                 "Objetivo de {$label}",
                 $sla['rate'] === null ? null : "{$sla['rate']} %",
                 $sla['samples'] === 0
-                    ? "Objetivo {$this->duration($sla['target_seconds'])} hábiles · sin conversaciones medidas"
-                    : "{$sla['met']} de {$sla['samples']} dentro de {$this->duration($sla['target_seconds'])} hábiles",
+                    ? "Objetivo {$this->duration($sla['target_seconds'])} en horario de atención · sin conversaciones medidas"
+                    : "{$sla['met']} de {$sla['samples']} dentro de {$this->duration($sla['target_seconds'])} en horario de atención",
             );
         }
 
         return $metrics;
+    }
+
+    /**
+     * @param  'hour'|'day'|'month'  $granularity
+     */
+    private function unit(string $granularity): string
+    {
+        return match ($granularity) {
+            'hour' => 'hora',
+            'day' => 'día',
+            'month' => 'mes',
+        };
     }
 
     private function minutes(?int $seconds): ?float
@@ -439,6 +508,30 @@ class AnalyticsReport extends ReportDefinition
     private function filters(ReportContext $context): AnalyticsFilters
     {
         return $this->filters[spl_object_id($context)] ??= AnalyticsFilters::from($context->filters, $context->actor, $this->scope, $context->timezone, $context->asOf());
+    }
+
+    /**
+     * Rows of the agents of the period keyed by their real id (0 without
+     * agent), so each hidden protected account keeps its own figures. They
+     * are computed inside the same export snapshot as the report.
+     *
+     * @return array<int, BreakdownRow>
+     */
+    private function agentRows(ReportContext $context): array
+    {
+        $key = "{$context->actor->id}:{$this->filters($context)->cacheKey()}";
+
+        if (! isset($this->agentRows[$key])) {
+            $this->agentRows[$key] = [];
+
+            foreach ($this->analytics->breakdown($context->actor, $this->filters($context), 'agent_id', withSourceIds: true) as $row) {
+                $sourceId = $row['source_id'];
+                unset($row['source_id']);
+                $this->agentRows[$key][$sourceId ?? 0] = $row;
+            }
+        }
+
+        return $this->agentRows[$key];
     }
 
     /**

@@ -1,89 +1,92 @@
 import type { ModuleHelp } from './types';
 
 const help: ModuleHelp = {
-    title: 'Integraciones (API)',
+    title: 'Integraciones',
     objective:
-        'Tokens de la API de integración (/api/v1) para que otros sistemas, como un CRM, consulten conversaciones y mensajes o envíen mensajes. Cada token tiene capacidades, conexiones permitidas, IP opcionales y una fecha de vencimiento.',
+        'Claves de acceso (tokens) para que otros sistemas, como un CRM, consulten conversaciones y mensajes o envíen mensajes. Cada clave tiene permisos, conexiones permitidas, direcciones IP opcionales y una fecha de vencimiento.',
     mainActions: [
-        'Emitir un token con «Nuevo token de integración».',
-        'Copiar el token recién emitido (solo se muestra una vez).',
-        'Revocar un token de inmediato.',
-        'Consultar el estado de cada token: activo, vencido o revocado.',
+        'Crear una clave con «Nueva clave de acceso».',
+        'Copiar la clave recién creada (solo se muestra una vez).',
+        'Revocar una clave de inmediato.',
+        'Consultar el estado de cada clave: activa, vencida o revocada.',
     ],
     workflow: [
-        'Ponle un nombre que identifique al sistema que lo usará (por ejemplo «CRM de ventas»).',
-        'Elige solo las capacidades necesarias y las conexiones (y, si quieres, departamentos e IP) que podrá usar.',
-        'Define el vencimiento (máximo 365 días) y emítelo.',
-        'Copia el token y guárdalo en el otro sistema; se envía en el encabezado «Authorization: Bearer …».',
-        'Antes del vencimiento emite uno nuevo, cámbialo en el otro sistema y revoca el anterior.',
+        'Ponle un nombre que identifique al sistema que la usará (por ejemplo «CRM de ventas»).',
+        'Elige solo los permisos necesarios y las conexiones (y, si quieres, departamentos y direcciones IP) que podrá usar.',
+        'Define el vencimiento (máximo 365 días) y pulsa «Crear clave».',
+        'Copia la clave y entrégala a quien configura el otro sistema (se envía en el encabezado «Authorization: Bearer …»).',
+        'Antes del vencimiento crea una nueva, cámbiala en el otro sistema y revoca la anterior.',
     ],
     fields: [
         {
-            name: 'Capacidades',
+            name: 'Permisos de la clave',
             description:
-                '«Consultar conversaciones», «Consultar mensajes» y «Enviar mensajes». Al menos una.',
+                '«Consultar conversaciones», «Consultar mensajes» y «Enviar mensajes». Al menos uno.',
         },
         {
             name: 'Conexiones',
-            description: 'Entre 1 y 100 conexiones que el token puede usar.',
+            description: 'Entre 1 y 100 conexiones que la clave puede usar.',
         },
         {
             name: 'Departamentos (opcional)',
-            description: 'Vacío significa todos los departamentos.',
+            description:
+                'Si no eliges ninguno, la clave podrá usar todos los departamentos de sus conexiones.',
         },
         {
-            name: 'IP permitidas (opcional)',
+            name: 'Direcciones IP permitidas (opcional)',
             description:
-                'Hasta 50 IP o rangos CIDR; vacío permite cualquier IP.',
+                'Hasta 50 direcciones (o rangos) desde donde se permite usar la clave; pídelas al proveedor del sistema. Vacío: desde cualquier lugar.',
         },
         {
-            name: 'Idempotency-Key',
+            name: 'Clave anti-duplicados (Idempotency-Key)',
             description:
-                'Encabezado obligatorio al enviar mensajes (8 a 64 caracteres). Reintentar con la misma clave no duplica el mensaje.',
+                'Dato que el otro sistema debe incluir al enviar mensajes (8 a 64 caracteres). Si reintenta con la misma clave, el mensaje no se envía dos veces.',
         },
     ],
     states: [
         {
-            name: 'Activo',
+            name: 'Activa',
             description: 'Puede usarse hasta su fecha de vencimiento.',
         },
         {
-            name: 'Vencido',
-            description: 'Pasó su fecha de vencimiento; emite uno nuevo.',
+            name: 'Vencida',
+            description: 'Pasó su fecha de vencimiento; crea una nueva.',
         },
         {
-            name: 'Revocado',
+            name: 'Revocada',
             description:
-                'Se rechaza desde el momento de la revocación; no puede deshacerse.',
+                'Se rechaza desde el momento en que se revocó; no puede deshacerse.',
         },
     ],
     permissions: [
-        '«Ver los tokens de la API de integración» y «Emitir y revocar tokens de la API de integración» requieren alcance global; emitir es sensible.',
+        '«Ver las claves de acceso de integraciones» y «Crear y revocar claves de acceso de integraciones» requieren un rol que vea toda la organización; crear claves pide confirmación al otorgarse.',
     ],
     commonErrors: [
         {
-            problem: 'La API responde 401 «No autenticado».',
+            problem: 'Error 401: «No autenticado».',
             solution:
-                'El token falta, es incorrecto, venció, fue revocado o la IP no está permitida. Por seguridad la respuesta no indica cuál.',
+                'La clave falta, es incorrecta, venció, fue revocada o la dirección IP no está permitida. Por seguridad la respuesta no indica cuál.',
         },
         {
-            problem: '403 «forbidden».',
+            problem: 'Error 403: la clave no tiene permiso para esta acción.',
             solution:
-                'Al token le falta la capacidad necesaria para esa operación.',
+                'Los permisos de una clave no se pueden cambiar: crea una nueva con el permiso que falta (por ejemplo «Enviar mensajes») y revoca la anterior.',
         },
         {
-            problem: '409 «customer_window_closed» o «conversation_closed».',
+            problem:
+                'Error 409: la ventana de 24 horas está cerrada o la conversación terminó.',
             solution:
-                'La ventana de 24 horas de WhatsApp está cerrada o la conversación terminó; no se puede enviar texto libre.',
+                'WhatsApp no permite enviar texto libre fuera de la ventana de 24 horas ni en conversaciones cerradas.',
         },
         {
-            problem: '429 «rate_limited».',
+            problem:
+                'Error 429: se enviaron demasiadas solicitudes por minuto.',
             solution:
-                'Se superó el límite por token (600 lecturas o 60 envíos por minuto). Espera y reintenta.',
+                'Cada clave admite 600 consultas o 60 envíos por minuto. Espera un momento y vuelve a intentarlo.',
         },
     ],
     tips: [
-        'Usa un token por sistema para poder revocar uno sin afectar a los demás.',
+        'Usa una clave por sistema para poder revocar una sin afectar a los demás.',
     ],
     examples: [
         'CRM que consulta conversaciones cerradas cada hora: solo «Consultar conversaciones» y «Consultar mensajes».',

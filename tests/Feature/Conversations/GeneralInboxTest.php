@@ -70,12 +70,14 @@ test('legacy conversations on hold leave the general inbox but stay readable in 
 });
 
 test('a supervisor\'s general inbox never lists colleagues\' open or legacy on hold conversations', function () {
-    expect(generalIds($this->supervisor))->toBe(idsOf([$this->salesPending]))
-        ->and(generalIds($this->supervisor, ['status' => 'all']))->toBe(idsOf([$this->salesPending, $this->mineClosed]));
+    // Supervisors open on every conversation of their reach
+    // (SupervisionInboxTest); their general inbox is one view away.
+    expect(generalIds($this->supervisor, ['view' => 'general']))->toBe(idsOf([$this->salesPending]))
+        ->and(generalIds($this->supervisor, ['view' => 'general', 'status' => 'all']))->toBe(idsOf([$this->salesPending, $this->mineClosed]));
 });
 
 test('a global general inbox adds the pending conversations without department', function () {
-    expect(generalIds($this->admin))->toBe(idsOf([
+    expect(generalIds($this->admin, ['view' => 'general']))->toBe(idsOf([
         $this->salesPending, $this->supportPending, $this->unroutedPending,
     ]));
 });

@@ -134,7 +134,9 @@ const run = async () => {
             async () => {
                 await ana.goto(`${BASE}/contacts`);
                 const deletedFilter = await ana
-                    .getByRole('combobox', { name: 'Estado del registro' })
+                    .getByRole('combobox', {
+                        name: 'Mostrar activos o eliminados',
+                    })
                     .count();
                 const exportMenu = await ana
                     .getByRole('button', { name: 'Exportar' })
@@ -299,7 +301,7 @@ const run = async () => {
                     })
                     .count()) === 0;
             await admin
-                .getByRole('combobox', { name: 'Estado del registro' })
+                .getByRole('combobox', { name: 'Mostrar activos o eliminados' })
                 .click();
             await admin.getByRole('option', { name: 'Eliminados' }).click();
             await admin

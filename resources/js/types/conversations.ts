@@ -59,7 +59,7 @@ export type ConversationSummary = {
         color: AppColor;
         is_active: boolean;
     } | null;
-    assignee: { id: number; name: string; is_active: boolean } | null;
+    assignee: { id: number | null; name: string; is_active: boolean } | null;
     last_message_at: string | null;
     last_inbound_at: string | null;
     assigned_at: string | null;
@@ -126,9 +126,9 @@ export type ConversationSearchScope = 'contact' | 'messages';
 
 /**
  * Views of the inbox: the general inbox of whoever attends conversations
- * (pending ones they may accept, their own open ones and the ones on hold
- * within their reach), the viewer's own ones, every authorized conversation
- * (team inboxes) and 'queue', kept as an alias of general with
+ * (pending ones they may accept and their own open ones), the viewer's own
+ * ones, every authorized conversation (team inboxes; the default of
+ * supervisors) and 'queue', kept as an alias of general with
  * status=pending.
  */
 export type InboxView = 'general' | 'mine' | 'queue' | 'all';
@@ -161,6 +161,13 @@ export type ConversationInbox = {
     personal: boolean;
     /** Views the viewer may open; the first one is the default. */
     views: InboxView[];
+    /** Data scope of the viewer's role, null without an active role. */
+    scope: 'global' | 'departments' | 'assigned' | null;
+    /**
+     * Supervises a team reach: the inbox opens on every conversation of it
+     * ('all'), whoever attends it.
+     */
+    supervises: boolean;
 };
 
 export type ConversationFilters = {
@@ -251,7 +258,7 @@ export type ConversationMessage = {
     type: MessageTypeValue;
     body: string | null;
     status: MessageStatusValue;
-    sender?: { id: number; name: string } | null;
+    sender?: { id: number | null; name: string } | null;
     error_code: string | null;
     error_message: string | null;
     /** Partial delivery note (e.g. the file went out but its text did not). */
@@ -286,7 +293,7 @@ export type ConversationMessage = {
 export type ConversationNote = {
     id: number;
     body: string;
-    author?: { id: number; name: string } | null;
+    author?: { id: number | null; name: string } | null;
     created_at: string | null;
     edited_at: string | null;
     can: { update: boolean };

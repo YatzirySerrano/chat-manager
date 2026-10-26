@@ -69,7 +69,7 @@ class UsersReport extends ReportDefinition
 
     public function subtitle(): ?string
     {
-        return 'Cuentas del equipo, su rol, alcance y seguridad';
+        return 'Cuentas del equipo, su rol, la información que ven (alcance) y su seguridad';
     }
 
     public function fileName(): string
@@ -100,7 +100,7 @@ class UsersReport extends ReportDefinition
         $this->describeSearch($descriptions, $context);
 
         if ($filters['role'] !== null) {
-            $descriptions[] = 'Rol: '.(Role::query()->hidingDeletedFrom($context->actor)->whereKey($filters['role'])->value('label') ?? 'No disponible');
+            $descriptions[] = 'Rol: '.(Role::query()->withoutProtectedFor($context->actor)->hidingDeletedFrom($context->actor)->whereKey($filters['role'])->value('label') ?? 'No disponible');
         }
 
         if ($filters['department'] !== null) {
@@ -142,7 +142,7 @@ class UsersReport extends ReportDefinition
             new Column('name', 'Nombre', width: 22),
             new Column('email', 'Correo electrónico', width: 30),
             new Column('role', 'Rol', width: 18),
-            new Column('scope', 'Alcance', width: 18),
+            new Column('scope', 'Alcance (información que ve)', width: 18),
             new Column('departments', 'Departamentos', width: 24),
             new Column('status', 'Estado', width: 11),
             new Column('two_factor', 'Doble factor', ColumnType::Boolean, width: 12),

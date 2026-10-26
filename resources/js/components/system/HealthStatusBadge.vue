@@ -16,7 +16,7 @@ const styles: Record<
     { badge: string; dot: string; label: string }
 > = {
     ok: {
-        badge: 'bg-success/10 text-success',
+        badge: 'bg-success-soft text-success-soft-foreground',
         dot: 'bg-success',
         label: 'Correcto',
     },
@@ -26,7 +26,7 @@ const styles: Record<
         label: 'Atención',
     },
     fail: {
-        badge: 'bg-destructive/10 text-destructive',
+        badge: 'bg-destructive-soft text-destructive-soft-foreground',
         dot: 'bg-destructive',
         label: 'Falla',
     },

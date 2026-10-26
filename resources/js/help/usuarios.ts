@@ -46,12 +46,13 @@ const help: ModuleHelp = {
         {
             name: 'Eliminado',
             description:
-                'Pierde el acceso de inmediato y sus conversaciones abiertas regresan a la cola. Su historial se conserva y puede restaurarse; al restaurarlo no se le reasignan conversaciones.',
+                'Pierde el acceso de inmediato y sus conversaciones abiertas vuelven a «Pendientes» de su departamento. Su historial se conserva y puede restaurarse; al restaurarlo no se le reasignan conversaciones.',
         },
     ],
     permissions: [
         '«Ver usuarios», «Crear usuarios», «Editar usuarios», «Asignar roles a usuarios» y «Eliminar y restaurar usuarios» se otorgan por separado; todos excepto ver son sensibles.',
-        'Solo administras usuarios de tu alcance con roles que podrías asignar; nunca tu propia cuenta. Solo un Superadministrador administra a otro Superadministrador.',
+        'Solo puedes administrar a los usuarios de tus departamentos (o de toda la organización, si tu rol lo permite) y con roles que puedas asignar; nunca tu propia cuenta.',
+        'Al editar un usuario verás cuántos permisos puede ejercer y cuáles no dependen de su rol (asignación directa u otro rol).',
     ],
     commonErrors: [
         {
@@ -65,11 +66,6 @@ const help: ModuleHelp = {
             solution: 'Pide a alguien con un rol superior que haga el cambio.',
         },
         {
-            problem: '«Es el último superadministrador activo…»',
-            solution:
-                'Siempre debe quedar al menos un Superadministrador. Nombra a otro antes de cambiarlo o eliminarlo.',
-        },
-        {
             problem: 'No puedo cambiar mi correo o contraseña aquí.',
             solution:
                 'Tus propios datos se cambian en Mi cuenta → Perfil o Seguridad.',
@@ -77,11 +73,11 @@ const help: ModuleHelp = {
     ],
     tips: [
         'Activa la verificación en dos pasos para las cuentas con permisos sensibles.',
-        'Antes de eliminar a alguien, revisa sus conversaciones abiertas: regresarán a la cola.',
+        'Antes de eliminar a alguien, revisa sus conversaciones abiertas: volverán a «Pendientes».',
     ],
     examples: [
         'Nueva agente de Soporte: rol Agente, departamento Soporte, límite 6.',
-        'Un supervisor cambia de área: edita sus departamentos; sus conversaciones abiertas en el área anterior regresan a la cola.',
+        'Un supervisor cambia de área: edita sus departamentos; sus conversaciones abiertas en el área anterior vuelven a «Pendientes».',
     ],
 };
 

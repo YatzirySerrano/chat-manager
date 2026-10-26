@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\ThrottleChannelAuthorization;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\WebChat\AuthenticateVisitorSession;
 use App\Models\Conversation;
@@ -40,10 +41,12 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     // Real-time channel authorization (POST /broadcasting/auth): only signed
     // in, verified and active users (EnsureUserIsActive runs in "web"),
-    // throttled so a reconnection storm cannot flood the application.
+    // throttled so a reconnection storm cannot flood the application. Its
+    // limiter survives the deadlocks of parallel authorizations of one user
+    // on the database cache store (ThrottleChannelAuthorization).
     ->withBroadcasting(
         __DIR__.'/../routes/channels.php',
-        ['middleware' => ['web', 'auth', 'verified', 'throttle:180,1']],
+        ['middleware' => ['web', 'auth', 'verified', 'throttle.channels:180,1']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
@@ -51,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // "throttle:attempts,minutes" counts per route, not one shared counter per user.
         $middleware->alias([
             'throttle' => ThrottleRequestsPerRoute::class,
+            'throttle.channels' => ThrottleChannelAuthorization::class,
             'api.token' => AuthenticateApiToken::class,
             'api.ability' => EnsureApiTokenAbility::class,
             'webchat.session' => AuthenticateVisitorSession::class,

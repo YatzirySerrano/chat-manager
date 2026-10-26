@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
 import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
-import { useDocumentVisibility, watchDebounced } from '@vueuse/core';
+import {
+    useDocumentVisibility,
+    useElementSize,
+    watchDebounced,
+} from '@vueuse/core';
 import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
@@ -288,14 +292,38 @@ const customColors = computed(() => Boolean(appearance.value?.colors));
 const chatStyle = computed(() => chatColorVariables(appearance.value?.colors));
 
 provide(CUSTOM_CHAT_COLORS, customColors);
+
+/*
+ * The header's height, for the history's own height on very short windows
+ * (pane minus header: the history and its «Ir al final» button fill the
+ * first screen; the composer follows below).
+ */
+const header = ref<HTMLElement | null>(null);
+const { height: headerHeight } = useElementSize(header, undefined, {
+    box: 'border-box',
+});
+const paneStyle = computed(() => ({
+    '--chat-header-h': `${Math.round(headerHeight.value)}px`,
+}));
 </script>
 
 <template>
+    <!--
+        Very short viewports (a laptop at 400 % zoom is 320 × 200 CSS px):
+        the header, the history and the composer no longer fit in one
+        screen, so the pane scrolls as a whole instead. The header scrolls
+        away and the history keeps a usable height of its own.
+    -->
     <section
-        class="flex h-full min-h-0 min-w-0 flex-col bg-background"
+        class="flex h-full min-h-0 min-w-0 flex-col bg-background [@media(max-height:20rem)]:overflow-y-auto"
         :aria-label="`Conversación con ${conversation.contact.display_name}`"
+        :style="paneStyle"
+        data-chat-pane
     >
-        <header class="flex items-center gap-2 border-b px-2 py-2 sm:px-4">
+        <header
+            ref="header"
+            class="flex items-center gap-2 border-b px-2 py-2 sm:px-4 [@media(max-height:32rem)]:py-0.5"
+        >
             <Button
                 variant="ghost"
                 size="icon"
@@ -319,9 +347,17 @@ provide(CUSTOM_CHAT_COLORS, customColors);
                 <h2
                     class="flex min-w-0 items-center gap-2 text-base font-semibold"
                 >
-                    <span class="truncate">{{
-                        conversation.contact.display_name
-                    }}</span>
+                    <!-- On phones the channel shows here, next to the name. -->
+                    <ChannelIcon
+                        :channel="conversation.connection.channel"
+                        class="size-4 shrink-0 text-muted-foreground sm:hidden"
+                        aria-hidden="true"
+                    />
+                    <span
+                        class="truncate"
+                        :title="conversation.contact.display_name"
+                        >{{ conversation.contact.display_name }}</span
+                    >
                     <span
                         v-if="conversation.contact.alias"
                         class="shrink-0 rounded-full border px-1.5 py-px text-xs font-medium text-muted-foreground"
@@ -335,11 +371,23 @@ provide(CUSTOM_CHAT_COLORS, customColors);
                         >
                     </span>
                 </h2>
+                <!--
+                    One line on phones and short screens: the state, then
+                    the phone (cut with an ellipsis); the channel moves next
+                    to the name and the department and agent stay in
+                    «Detalles». On very short windows (400 % zoom) only the
+                    name shows and this line is left to screen readers.
+                -->
                 <p
-                    class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
+                    class="flex min-w-0 flex-nowrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground sm:flex-wrap [@media(max-height:20rem)]:sr-only [@media(max-height:32rem)]:flex-nowrap"
                 >
+                    <ConversationStatusBadge
+                        class="shrink-0"
+                        :status="conversation.status"
+                        :label="conversation.status_label"
+                    />
                     <span
-                        class="inline-flex shrink-0 items-center gap-1"
+                        class="inline-flex shrink-0 items-center gap-1 max-sm:sr-only"
                         :title="`Canal: ${conversation.connection.channel_label}`"
                         data-channel-indicator
                     >
@@ -351,21 +399,20 @@ provide(CUSTOM_CHAT_COLORS, customColors);
                         <span class="sr-only">Canal:</span>
                         {{ conversation.connection.channel_label }}
                     </span>
-                    <span v-if="phone" class="truncate tabular-nums">{{
-                        phone
-                    }}</span>
-                    <ConversationStatusBadge
-                        :status="conversation.status"
-                        :label="conversation.status_label"
-                    />
+                    <span
+                        v-if="phone"
+                        class="min-w-0 truncate tabular-nums"
+                        :title="phone"
+                        >{{ phone }}</span
+                    >
                     <DepartmentTag
                         v-if="conversation.department"
-                        class="hidden sm:inline-flex"
+                        class="min-w-0 max-sm:hidden"
                         :name="conversation.department.name"
                         :color="conversation.department.color"
                         :muted="!conversation.department.is_active"
                     />
-                    <span class="hidden truncate md:inline">
+                    <span class="hidden min-w-0 truncate md:inline">
                         {{
                             conversation.assignee
                                 ? `Atiende ${conversation.assignee.name}`
@@ -375,6 +422,7 @@ provide(CUSTOM_CHAT_COLORS, customColors);
                 </p>
             </button>
             <ConversationActions
+                data-tour="chat.actions"
                 :conversation="conversation"
                 :transfer-reason-required="transferReasonRequired"
             />
@@ -400,6 +448,7 @@ provide(CUSTOM_CHAT_COLORS, customColors);
                         : 'Mostrar el panel de detalles'
                 "
                 :aria-pressed="detailsOpen"
+                data-tour="chat.details"
                 @click="emit('toggleDetails')"
             >
                 <PanelRightClose v-if="detailsOpen" aria-hidden="true" />
@@ -421,6 +470,7 @@ provide(CUSTOM_CHAT_COLORS, customColors);
         />
 
         <ChatComposer
+            data-tour="chat.composer"
             v-model:reply-to="replyTo"
             :conversation="conversation"
             :window="window"

@@ -284,7 +284,7 @@ test('changing only the permissions of a role is saved and audited', function ()
             'scope' => 'departments',
             'permissions' => ['dashboard.view', 'contacts.view'],
         ])
-        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Rol Coordinación actualizado.']);
+        ->assertInertiaFlash('toast', ['type' => 'warning', 'message' => 'Rol Coordinación actualizado. Este rol no está asignado a ningún usuario activo: el cambio no afectará a nadie todavía.']);
 
     expect($role->refresh()->permissionNames())->toContain('contacts.view')
         ->and(AuditLog::query()->where('action', AuditAction::RolePermissionsChanged)->sole()->properties['added'])->toBe(['contacts.view']);

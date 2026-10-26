@@ -63,7 +63,7 @@ class SystemHealth
 
             return HealthCheck::ok('database', 'Base de datos', 'Conexión correcta.', ['driver' => (string) config('database.connections.'.config('database.default').'.driver'), 'version' => $version]);
         } catch (Throwable $exception) {
-            return HealthCheck::fail('database', 'Base de datos', 'Sin conexión a la base de datos ('.class_basename($exception).').');
+            return HealthCheck::fail('database', 'Base de datos', 'La plataforma no puede leer ni guardar información. Pide al equipo técnico que revise la base de datos. Detalle técnico: '.class_basename($exception).'.');
         }
     }
 
@@ -72,9 +72,9 @@ class SystemHealth
         try {
             $this->cache->get('operations:health-probe');
 
-            return HealthCheck::ok('cache', 'Caché', 'El almacén de caché responde.', ['store' => (string) config('cache.default')]);
+            return HealthCheck::ok('cache', 'Memoria temporal', 'La memoria temporal responde.', ['store' => (string) config('cache.default')]);
         } catch (Throwable $exception) {
-            return HealthCheck::fail('cache', 'Caché', 'El almacén de caché no responde ('.class_basename($exception).').', ['store' => (string) config('cache.default')]);
+            return HealthCheck::fail('cache', 'Memoria temporal', 'La memoria temporal (caché) no responde; la plataforma puede ir lenta o fallar. Pide al equipo técnico que la revise. Detalle técnico: '.class_basename($exception).'.', ['store' => (string) config('cache.default')]);
         }
     }
 
@@ -86,10 +86,10 @@ class SystemHealth
         ));
 
         if ($notWritable !== []) {
-            return HealthCheck::fail('storage', 'Almacenamiento', 'Sin permiso de escritura en: '.implode(', ', array_map(fn (string $path): string => str_replace(base_path().'/', '', $path), $notWritable)).'.');
+            return HealthCheck::fail('storage', 'Almacenamiento', 'La plataforma no puede guardar archivos. Pide al equipo técnico que revise los permisos de las carpetas. Detalle técnico: '.implode(', ', array_map(fn (string $path): string => str_replace(base_path().'/', '', $path), $notWritable)).'.');
         }
 
-        return HealthCheck::ok('storage', 'Almacenamiento', 'Los directorios de la aplicación admiten escritura.');
+        return HealthCheck::ok('storage', 'Almacenamiento', 'La plataforma puede guardar archivos.');
     }
 
     /**
@@ -113,7 +113,7 @@ class SystemHealth
     public function queueBacklog(): HealthCheck
     {
         if (! $this->queues->isAsynchronous()) {
-            return HealthCheck::skipped('queues', 'Colas', 'La conexión "'.$this->queues->connectionName().'" ejecuta los trabajos en el momento; no hay workers que supervisar.');
+            return HealthCheck::skipped('queues', 'Tareas en segundo plano', 'Las tareas se ejecutan al momento (sin procesos en segundo plano); no hay nada que vigilar. Detalle técnico: conexión «'.$this->queues->connectionName().'».');
         }
 
         $stats = $this->queues->stats();
@@ -122,32 +122,32 @@ class SystemHealth
         $troubled = array_values(array_filter($stats, fn (array $queue): bool => in_array($queue['status'], [HealthStatus::Warning->value, HealthStatus::Fail->value], true)));
 
         $summary = $troubled === []
-            ? "Colas al día ({$pending} trabajos pendientes en total)."
-            : implode(' ', array_map(fn (array $queue): string => "{$queue['label']} ({$queue['name']}): {$queue['summary']}", $troubled));
+            ? "Tareas al día ({$pending} pendientes en total)."
+            : implode(' ', array_map(fn (array $queue): string => "{$queue['label']}: {$queue['summary']}", $troubled));
 
-        return new HealthCheck('queues', 'Colas', $status, $summary, ['connection' => $this->queues->connectionName(), 'pending' => $pending]);
+        return new HealthCheck('queues', 'Tareas en segundo plano', $status, $summary, ['connection' => $this->queues->connectionName(), 'pending' => $pending]);
     }
 
     public function failedJobsCheck(): HealthCheck
     {
         if (! $this->failedJobs->isAvailable()) {
-            return HealthCheck::warning('failed_jobs', 'Trabajos fallidos', 'Los trabajos fallidos no se guardan en la base de datos (QUEUE_FAILED_DRIVER); no se pueden revisar desde aquí.');
+            return HealthCheck::warning('failed_jobs', 'Tareas con error', 'Las tareas con error no se guardan, así que no se pueden revisar aquí. Pide al equipo técnico que las guarde. Detalle técnico: QUEUE_FAILED_DRIVER=database-uuids.');
         }
 
         try {
             $recent = $this->failedJobs->count(CarbonImmutable::now()->subDay());
             $total = $this->failedJobs->count();
         } catch (Throwable $exception) {
-            return HealthCheck::fail('failed_jobs', 'Trabajos fallidos', 'No se pudo consultar la tabla de trabajos fallidos ('.class_basename($exception).').');
+            return HealthCheck::fail('failed_jobs', 'Tareas con error', 'No se pudo consultar la lista de tareas con error. Detalle técnico: '.class_basename($exception).'.');
         }
 
         $details = ['last_24h' => $recent, 'total' => $total];
 
         if ($recent >= max(1, (int) config('operations.failed_jobs.warning_count', 1))) {
-            return HealthCheck::warning('failed_jobs', 'Trabajos fallidos', "{$recent} trabajos fallaron en las últimas 24 horas ({$total} en la lista). Revísalos y reintenta o descarta.", $details);
+            return HealthCheck::warning('failed_jobs', 'Tareas con error', "{$recent} tareas fallaron en las últimas 24 horas ({$total} en la lista). Revísalas abajo y reinténtalas o descártalas.", $details);
         }
 
-        return HealthCheck::ok('failed_jobs', 'Trabajos fallidos', $total === 0 ? 'No hay trabajos fallidos.' : "Sin fallas recientes ({$total} antiguos en la lista).", $details);
+        return HealthCheck::ok('failed_jobs', 'Tareas con error', $total === 0 ? 'No hay tareas con error.' : "Sin errores recientes ({$total} antiguas en la lista).", $details);
     }
 
     public function scheduler(): HealthCheck
@@ -156,11 +156,11 @@ class SystemHealth
         $limit = $this->heartbeat->staleAfterSeconds();
 
         if ($age === null) {
-            return HealthCheck::warning('scheduler', 'Tareas programadas', 'Aún no hay registro del programador. Configura schedule:work (Supervisor) o la línea de cron de schedule:run.', ['age_seconds' => null]);
+            return HealthCheck::warning('scheduler', 'Tareas programadas', 'Las tareas programadas aún no se han ejecutado nunca. Pide al equipo técnico que active el programador. Detalle técnico: schedule:work (Supervisor) o cron con schedule:run.', ['age_seconds' => null]);
         }
 
         if ($age > $limit) {
-            return HealthCheck::fail('scheduler', 'Tareas programadas', "El programador no se ejecuta desde hace {$age} s (límite {$limit} s): no se cierran conversaciones inactivas ni se reconcilian entregas.", ['age_seconds' => $age]);
+            return HealthCheck::fail('scheduler', 'Tareas programadas', "Las tareas programadas no se ejecutan desde hace {$age} s (límite {$limit} s): no se cierran las conversaciones inactivas ni se revisan los envíos pendientes. Pide al equipo técnico que active el programador.", ['age_seconds' => $age]);
         }
 
         return HealthCheck::ok('scheduler', 'Tareas programadas', "Última ejecución hace {$age} s.", ['age_seconds' => $age]);
@@ -170,7 +170,7 @@ class SystemHealth
     {
         try {
             if (! class_exists(WebhookEvent::class) || ! Schema::hasTable((new WebhookEvent)->getTable())) {
-                return HealthCheck::skipped('webhooks', 'Webhooks de WhatsApp', 'El registro de webhooks no está instalado.');
+                return HealthCheck::skipped('webhooks', 'Avisos de WhatsApp (webhooks)', 'El registro de avisos de Meta no está instalado.');
             }
 
             $grace = max(10, (int) config('operations.webhooks.grace_seconds', 120));
@@ -183,26 +183,26 @@ class SystemHealth
                 ->where('updated_at', '>=', CarbonImmutable::now()->subDay())
                 ->count();
         } catch (Throwable $exception) {
-            return HealthCheck::fail('webhooks', 'Webhooks de WhatsApp', 'No se pudo consultar el registro de webhooks ('.class_basename($exception).').');
+            return HealthCheck::fail('webhooks', 'Avisos de WhatsApp (webhooks)', 'No se pudo consultar el registro de avisos de Meta. Detalle técnico: '.class_basename($exception).'.');
         }
 
         $details = ['backlog' => $backlog, 'failed_24h' => $failed];
 
         if ($backlog >= (int) config('operations.webhooks.critical_backlog', 1000)) {
-            return HealthCheck::fail('webhooks', 'Webhooks de WhatsApp', "{$backlog} entregas de Meta llevan más de {$grace} s sin procesarse. Revisa el worker de la cola de webhooks.", $details);
+            return HealthCheck::fail('webhooks', 'Avisos de WhatsApp (webhooks)', "{$backlog} avisos de Meta (mensajes nuevos o estados) llevan más de {$grace} s sin procesarse. Pide al equipo técnico que revise el proceso en segundo plano de avisos de WhatsApp.", $details);
         }
 
         if ($backlog >= (int) config('operations.webhooks.warning_backlog', 50) || $failed > 0) {
-            return HealthCheck::warning('webhooks', 'Webhooks de WhatsApp', "{$backlog} entregas atrasadas y {$failed} con error en las últimas 24 horas.", $details);
+            return HealthCheck::warning('webhooks', 'Avisos de WhatsApp (webhooks)', "{$backlog} avisos de Meta atrasados y {$failed} con error en las últimas 24 horas.", $details);
         }
 
-        return HealthCheck::ok('webhooks', 'Webhooks de WhatsApp', 'Las entregas de Meta se procesan al día.', $details);
+        return HealthCheck::ok('webhooks', 'Avisos de WhatsApp (webhooks)', 'Los avisos de Meta se procesan al día.', $details);
     }
 
     public function realtime(): HealthCheck
     {
         if (config('broadcasting.default') !== 'reverb') {
-            return HealthCheck::skipped('realtime', 'Tiempo real (Reverb)', 'Tiempo real desactivado (BROADCAST_CONNECTION='.config('broadcasting.default').'); las pantallas se actualizan periódicamente.');
+            return HealthCheck::skipped('realtime', 'Tiempo real (Reverb)', 'Las actualizaciones al instante están apagadas; las pantallas se actualizan cada cierto tiempo. Detalle técnico: BROADCAST_CONNECTION='.config('broadcasting.default').'.');
         }
 
         [$host, $port] = $this->reverbAddress();
@@ -210,12 +210,12 @@ class SystemHealth
         $socket = @stream_socket_client("tcp://{$host}:{$port}", $errorCode, $errorMessage, $timeout);
 
         if ($socket === false) {
-            return HealthCheck::warning('realtime', 'Tiempo real (Reverb)', "El servidor de Reverb no responde en {$host}:{$port}. Las pantallas siguen funcionando con actualización periódica.", ['host' => $host, 'port' => $port]);
+            return HealthCheck::warning('realtime', 'Tiempo real (Reverb)', "Las actualizaciones al instante no responden; las pantallas siguen funcionando y se actualizan cada cierto tiempo. Detalle técnico: Reverb en {$host}:{$port}.", ['host' => $host, 'port' => $port]);
         }
 
         fclose($socket);
 
-        return HealthCheck::ok('realtime', 'Tiempo real (Reverb)', "Servidor de Reverb disponible en {$host}:{$port}.", ['host' => $host, 'port' => $port]);
+        return HealthCheck::ok('realtime', 'Tiempo real (Reverb)', "Las actualizaciones al instante funcionan. Detalle técnico: Reverb en {$host}:{$port}.", ['host' => $host, 'port' => $port]);
     }
 
     /**

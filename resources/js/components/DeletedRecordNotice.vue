@@ -15,7 +15,7 @@ defineProps<{
 
 <template>
     <div
-        class="flex gap-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm dark:bg-destructive/10"
+        class="flex gap-3 rounded-xl bg-destructive-soft px-4 py-3 text-sm"
         role="status"
     >
         <Trash2

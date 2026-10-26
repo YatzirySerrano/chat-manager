@@ -7,6 +7,7 @@ use App\Models\WebChatSession;
 use App\Models\WebChatWidget;
 use App\Services\WebChat\VisitorRealtimeConfig;
 use App\Services\WebChat\WebChatAvailability;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -47,7 +48,7 @@ class VisitorSessionResource extends JsonResource
             'expires_at' => $this->expires_at->toIso8601String(),
             'conversation' => [
                 'status' => $conversation?->status->value ?? 'none',
-                'agent_name' => $conversation?->assignee?->name,
+                'agent_name' => app(ProtectedAccounts::class)->nameForRequest($conversation?->assignee, $request),
             ],
             'availability' => app(WebChatAvailability::class)->for($widget),
             'realtime' => app(VisitorRealtimeConfig::class)->for($this->resource),

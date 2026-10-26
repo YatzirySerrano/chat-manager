@@ -44,6 +44,7 @@ import {
     SHOTS,
     USERS,
     WIDTHS,
+    applyInboxFilters,
     exitWithSummary,
     launchBrowser,
     listRow,
@@ -53,11 +54,22 @@ import {
     printProblems,
     problems,
     recordPageProblems,
+    requireRealtimeEnvironment,
     shot,
     signedWebhook,
     step,
     waitFor,
 } from './lib.mjs';
+
+// Replies are delivered inside the request (sync queue, simulated
+// transport): this scenario starts no queue worker, so with any other queue
+// a reply stays "Enviando" and its status webhooks never apply.
+requireRealtimeEnvironment();
+
+if (process.env.QUEUE_CONNECTION !== 'sync') {
+    console.error('Run with QUEUE_CONNECTION=sync (see the header).');
+    process.exit(2);
+}
 
 const SEED = join(HERE, 'fase5-seed.php');
 const data = JSON.parse(php(SEED, 'prepare'));
@@ -346,19 +358,26 @@ const run = async () => {
             await panel
                 .getByRole('checkbox', { name: data.tags.invoice })
                 .click();
+            // Phase 5.1: the panel edits a draft; nothing changes before
+            // «Aplicar».
+            const draftOnly = !/tag/.test(new URL(ana.url()).search);
+            await applyInboxFilters(ana);
             const [any, anyRows] = await sameRows(ana, [
                 'Cliente Etiquetas Ambas',
                 'Cliente Solo Urgente',
                 'Cliente Solo Factura',
             ]);
+            await ana.locator('[data-inbox-filters]').first().click();
             await panel
-                .getByRole('radio', { name: /Todas las etiquetas \(Y\)/ })
+                .getByRole('radio', {
+                    name: /Con todas estas etiquetas a la vez/,
+                })
                 .check();
+            await applyInboxFilters(ana);
             await ana.waitForURL(/tag_match=all/);
             const [all, allRows] = await sameRows(ana, [
                 'Cliente Etiquetas Ambas',
             ]);
-            await ana.keyboard.press('Escape');
             const chips = await ana
                 .getByRole('group', { name: 'Filtros aplicados' })
                 .locator('[data-inbox-applied]')
@@ -369,6 +388,7 @@ const run = async () => {
 
             return [
                 Object.values(indicators).every(Boolean) &&
+                    draftOnly &&
                     any &&
                     all &&
                     chips.some((chip) =>
@@ -378,7 +398,7 @@ const run = async () => {
                         chip.includes(`Etiqueta: ${data.tags.invoice}`),
                     ) &&
                     chips.some((chip) =>
-                        chip.includes('Con todas las etiquetas (Y)'),
+                        chip.includes('Tiene todas las etiquetas elegidas'),
                     ) &&
                     cleared &&
                     !/tag/.test(url),
@@ -511,7 +531,7 @@ const run = async () => {
                     await chat.locator('h2').first().innerText()
                 ).trim();
                 const operational = chat.getByRole('button', {
-                    name: /^(Asignar|Transferir|Cerrar conversación|Devolver a la cola|Aceptar)/,
+                    name: /^(Asignar|Transferir|Cerrar conversación|Devolver a Pendientes|Aceptar)/,
                 });
                 let visible = await operational.count();
                 const more = chat.getByRole('button', {
@@ -898,15 +918,23 @@ const run = async () => {
                                     .waitFor();
                             });
                             await attempt('ayuda', async () => {
+                                // Since 5.1 the global help button opens the
+                                // tours and, secondary, the full guide.
+                                await page.keyboard.press('Escape');
                                 await page
                                     .getByRole('button', {
-                                        name: '¿Cómo funciona este módulo?',
+                                        name: /^Ayuda y recorridos guiados/,
                                     })
                                     .first()
                                     .click();
                                 await page
+                                    .getByRole('button', {
+                                        name: 'Ver la guía completa del módulo',
+                                    })
+                                    .click();
+                                await page
                                     .getByRole('dialog')
-                                    .getByText('¿Cómo funciona este módulo?')
+                                    .getByText('Guía completa del módulo')
                                     .first()
                                     .waitFor();
                             });
@@ -934,7 +962,10 @@ const run = async () => {
                                     .getByText('Activos', { exact: true })
                                     .first()
                                     .waitFor();
-                                // Compact cards: two per row on phones, short.
+                                // Compact cards: short; phase 5.1 stacks them
+                                // in one column below 640 px so the longer
+                                // hints are never cut (diseno.mjs checks
+                                // the text), and three per row from 640 px.
                                 const cards = await page
                                     .getByText('Activos', { exact: true })
                                     .first()
@@ -961,7 +992,7 @@ const run = async () => {
 
                                 if (
                                     cards.length === 0 ||
-                                    firstRow < 2 ||
+                                    firstRow < (width < 640 ? 1 : 3) ||
                                     cards.some((card) => card.height > 160)
                                 ) {
                                     notes.push(
@@ -1139,7 +1170,7 @@ const run = async () => {
             return [
                 marked.length > 0 &&
                     marker === null &&
-                    /cache/.test(headers['clear-site-data'] ?? ''),
+                    headers['clear-site-data'] === undefined,
                 `caches before=${JSON.stringify(marked)}; marker left in=${marker}; Clear-Site-Data=${headers['clear-site-data']}; landed on ${new URL(pwa.url()).pathname}`,
             ];
         });

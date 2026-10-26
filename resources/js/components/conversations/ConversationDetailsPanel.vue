@@ -207,7 +207,7 @@ function safeUrl(url: string | null): string | null {
                     </div>
                     <div
                         v-if="details.contact.first_interaction_at"
-                        class="text-xs text-muted-foreground"
+                        class="text-sm text-muted-foreground"
                     >
                         <dt class="inline">Cliente desde:</dt>
                         <dd class="ml-1 inline">
@@ -219,7 +219,7 @@ function safeUrl(url: string | null): string | null {
                 </dl>
                 <p
                     v-if="!details.contact.is_saved"
-                    class="text-xs text-muted-foreground"
+                    class="text-sm text-muted-foreground"
                 >
                     Los datos técnicos de esta conversación (teléfono o
                     identificador del canal) se conservan aunque no lo guardes.
@@ -293,11 +293,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section class="grid gap-3 border-b px-4 py-4 text-sm">
-                <h3
-                    class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                >
-                    Conversación
-                </h3>
+                <h3 class="section-title">Conversación</h3>
                 <dl
                     class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2"
                 >
@@ -370,9 +366,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section class="grid gap-2 border-b px-4 py-4 text-sm">
-                <h3
-                    class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                >
+                <h3 class="flex items-center gap-1.5 section-title">
                     <Megaphone class="size-3.5" aria-hidden="true" />
                     Procedencia
                 </h3>
@@ -385,10 +379,10 @@ function safeUrl(url: string | null): string | null {
                         <p class="font-medium">
                             {{ attribution.origin_label }}
                         </p>
-                        <p class="text-xs text-success">
+                        <p class="text-sm text-success">
                             {{ attribution.reliability_label }}
                         </p>
-                        <p v-if="attribution.headline" class="text-xs">
+                        <p v-if="attribution.headline" class="text-sm">
                             {{ attribution.headline }}
                         </p>
                         <a
@@ -396,12 +390,12 @@ function safeUrl(url: string | null): string | null {
                             :href="safeUrl(attribution.source_url) ?? undefined"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="truncate text-xs text-primary underline-offset-2 hover:underline"
+                            class="truncate text-sm text-primary underline-offset-2 hover:underline"
                             >{{ attribution.source_url }}</a
                         >
                     </div>
                 </template>
-                <p v-else class="text-xs text-muted-foreground">
+                <p v-else class="text-sm text-muted-foreground">
                     {{
                         isWebChat
                             ? 'Origen no identificado.'
@@ -411,9 +405,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section class="grid gap-2 border-b px-4 py-4 text-sm">
-                <h3
-                    class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                >
+                <h3 class="flex items-center gap-1.5 section-title">
                     <History class="size-3.5" aria-hidden="true" />
                     Conversaciones anteriores
                 </h3>
@@ -425,7 +417,7 @@ function safeUrl(url: string | null): string | null {
                             @click="emit('select', previous.id)"
                         >
                             <span class="min-w-0">
-                                <span class="block truncate text-xs">
+                                <span class="block truncate text-sm">
                                     {{ formatDate(previous.created_at) }}
                                     <template v-if="previous.department">
                                         ·
@@ -445,8 +437,8 @@ function safeUrl(url: string | null): string | null {
                         </button>
                     </li>
                 </ul>
-                <p v-else class="text-xs text-muted-foreground">
-                    No hay otras conversaciones de este cliente a tu alcance.
+                <p v-else class="text-sm text-muted-foreground">
+                    No hay otras conversaciones de este cliente que puedas ver.
                 </p>
             </section>
 
@@ -454,9 +446,7 @@ function safeUrl(url: string | null): string | null {
                 v-if="details.contactNotes !== null"
                 class="grid gap-2 px-4 py-4 text-sm"
             >
-                <h3
-                    class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                >
+                <h3 class="flex items-center gap-1.5 section-title">
                     <NotebookPen class="size-3.5" aria-hidden="true" />
                     Notas del contacto
                 </h3>
@@ -464,7 +454,7 @@ function safeUrl(url: string | null): string | null {
                     <li
                         v-for="note in details.contactNotes"
                         :key="note.id"
-                        class="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs"
+                        class="rounded-md border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm"
                     >
                         <p class="line-clamp-4 break-words whitespace-pre-line">
                             {{ note.body }}
@@ -475,7 +465,7 @@ function safeUrl(url: string | null): string | null {
                         </p>
                     </li>
                 </ul>
-                <p v-else class="text-xs text-muted-foreground">
+                <p v-else class="text-sm text-muted-foreground">
                     El contacto no tiene notas privadas.
                 </p>
             </section>

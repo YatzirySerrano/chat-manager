@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const classes = computed(() => {
     if (!props.role) {
-        return 'border-destructive/30 bg-destructive/10 text-destructive';
+        return 'border-destructive/30 bg-destructive-soft text-destructive-soft-foreground';
     }
 
     if (props.role.is_active === false) {

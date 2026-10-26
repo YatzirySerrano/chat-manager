@@ -485,7 +485,7 @@ function submit(): void {
                                     : 'Marca uno o varios de tus departamentos.',
                                 warning: canManageGlobal
                                     ? undefined
-                                    : 'Solo los usuarios con alcance global pueden publicar respuestas para todos los departamentos.',
+                                    : 'Solo quienes ven toda la organización pueden publicar respuestas para todos los departamentos.',
                             }"
                         />
                     </legend>
@@ -612,8 +612,12 @@ function submit(): void {
                                 (simulateMissingContactName = checked === true)
                         "
                     />
-                    Simular un contacto sin nombre registrado
+                    Ver cómo queda si el cliente no tiene nombre guardado
                 </Label>
+                <p class="-mt-1 pl-6 text-xs text-muted-foreground">
+                    Solo cambia esta vista previa; no crea ni modifica
+                    contactos.
+                </p>
             </aside>
         </div>
     </FormDialog>

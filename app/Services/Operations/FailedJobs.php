@@ -118,16 +118,16 @@ class FailedJobs
     public function retry(string $uuid, User $actor): void
     {
         Cache::lock("operations:failed-job:{$uuid}", 30)->block(5, function () use ($uuid, $actor): void {
-            $job = $this->find($uuid) ?? throw new FailedJobActionRefused('El trabajo ya no está en la lista de fallidos (otra persona lo reintentó o lo descartó).');
+            $job = $this->find($uuid) ?? throw new FailedJobActionRefused('La tarea ya no está en la lista de tareas con error (otra persona la reintentó o la descartó).');
 
             if (! $this->isRetryable($job['job_class'])) {
-                throw new FailedJobActionRefused('Este tipo de trabajo no se puede reintentar desde aquí porque repetirlo podría duplicar efectos (por ejemplo, un mensaje que quizá ya llegó a Meta). Usa la acción propia del módulo o descártalo.');
+                throw new FailedJobActionRefused('Este tipo de tarea no se puede reintentar desde aquí porque repetirla podría hacer algo dos veces (por ejemplo, un mensaje que quizá ya llegó a Meta). Usa la acción propia del módulo o descártalo.');
             }
 
             Artisan::call('queue:retry', ['id' => [$uuid]]);
 
             if ($this->table()->where('uuid', $uuid)->exists()) {
-                throw new FailedJobActionRefused('La cola no aceptó el trabajo; sigue en la lista de fallidos.');
+                throw new FailedJobActionRefused('No se pudo volver a programar la tarea; sigue en la lista de tareas con error.');
             }
 
             $this->audit->record(AuditAction::SystemJobRetried, null, $this->auditProperties($job), $actor);
@@ -141,10 +141,10 @@ class FailedJobs
      */
     public function forget(string $uuid, User $actor): void
     {
-        $job = $this->find($uuid) ?? throw new FailedJobActionRefused('El trabajo ya no está en la lista de fallidos.');
+        $job = $this->find($uuid) ?? throw new FailedJobActionRefused('La tarea ya no está en la lista de tareas con error.');
 
         if ($this->table()->where('uuid', $uuid)->delete() === 0) {
-            throw new FailedJobActionRefused('El trabajo ya no está en la lista de fallidos.');
+            throw new FailedJobActionRefused('La tarea ya no está en la lista de tareas con error.');
         }
 
         $this->audit->record(AuditAction::SystemJobForgotten, null, $this->auditProperties($job), $actor);

@@ -148,8 +148,8 @@ class UserController extends Controller
 
     /**
      * Roles for filtering, flagging the ones the actor can assign (never a
-     * deleted role, never the root role for a non-root actor). Deleted roles
-     * are only listed for people who can consult them.
+     * deleted role). The root role is only listed for the root authority and
+     * deleted roles only for people who can consult them.
      *
      * @return list<array{id: int, label: string, description: string|null, scope: string, scope_label: string, is_active: bool, is_root: bool, assignable: bool, allows_departments: bool}>
      */
@@ -158,6 +158,7 @@ class UserController extends Controller
         $guard = app(PrivilegeGuard::class);
 
         return array_values(Role::query()
+            ->withoutProtectedFor($actor)
             ->hidingDeletedFrom($actor)
             ->with('permissions')
             ->orderByDesc('is_root')
@@ -166,7 +167,7 @@ class UserController extends Controller
             ->map(fn (Role $role): array => [
                 'id' => $role->id,
                 'label' => $role->label,
-                'description' => $role->description,
+                'description' => $role->presentedDescription(),
                 'scope' => $role->scope->value,
                 'scope_label' => $role->scope->label(),
                 'is_active' => $role->is_active,
@@ -178,15 +179,16 @@ class UserController extends Controller
     }
 
     /**
-     * Counters over the actor's scope. Deleted accounts are only counted for
-     * people who can consult them (null otherwise).
+     * Counters over the actor's scope (protected accounts only for the root
+     * authority). Deleted accounts are only counted for people who can
+     * consult them (null otherwise).
      *
      * @return array{active: int, two_factor: int, deleted: int|null}
      */
     private function stats(User $actor): array
     {
         /** @var object{active: int|string|null, two_factor: int|string|null, deleted: int|string|null} $counts */
-        $counts = User::query()->visibleTo($actor)->toBase()
+        $counts = User::query()->visibleTo($actor)->withoutProtectedFor($actor)->toBase()
             ->selectRaw('SUM(CASE WHEN is_active = ? THEN 1 ELSE 0 END) AS active', [true])
             ->selectRaw('SUM(CASE WHEN is_active = ? AND two_factor_confirmed_at IS NOT NULL THEN 1 ELSE 0 END) AS two_factor', [true])
             ->selectRaw('SUM(CASE WHEN is_active = ? THEN 0 ELSE 1 END) AS deleted', [true])

@@ -11,6 +11,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Support\Audit\AuditPresenter;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -50,6 +51,8 @@ class AuditLogController extends Controller
             'actors' => AuditLog::query()
                 ->visibleTo($viewer)
                 ->whereNotNull('user_id')
+                // Protected accounts (root role) are no option for anyone else.
+                ->when(! $viewer->hasRootAuthority(), fn ($query) => $query->whereNotIn('user_id', app(ProtectedAccounts::class)->ids()))
                 ->select(['user_id', 'actor_name'])
                 ->distinct()
                 ->orderBy('actor_name')

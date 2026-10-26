@@ -263,3 +263,26 @@ test('the composer receives the same limits the server enforces', function () {
             ->where('composer.attachments.whatsapp.kinds', fn ($rules) => collect($rules)->firstWhere('type', 'video')['max_bytes'] === 2048
                 && in_array('application/pdf', collect($rules)->firstWhere('key', 'document')['mimes'], true)));
 });
+
+test('attachments are revalidated on every open so they never outlive the session or the access', function () {
+    $image = storedAttachment($this->conversation, 'image/png', 'foto.png', 'png-bytes');
+    $url = route('conversations.messages.attachments.show', [$this->conversation, $image->message_id, $image]);
+
+    $first = $this->actingAs($this->agent)->get($url)->assertOk();
+    $cacheControl = (string) $first->headers->get('Cache-Control');
+    $etag = (string) $first->headers->get('ETag');
+
+    expect($cacheControl)->toContain('private')
+        ->toContain('no-cache')
+        ->not->toContain('max-age=300')
+        ->and($etag)->not->toBe('')
+        ->and($first->headers->get('Last-Modified'))->not->toBeNull();
+
+    // An unchanged file answers 304 without sending its bytes again.
+    $this->actingAs($this->agent)->get($url, ['If-None-Match' => $etag])
+        ->assertStatus(304)
+        ->assertHeader('ETag', $etag);
+
+    // Revalidation re-authorizes: someone who cannot see the conversation gets nothing, even with the tag.
+    $this->actingAs($this->colleague)->get($url, ['If-None-Match' => $etag])->assertNotFound();
+});

@@ -207,7 +207,7 @@ class ImportBatchRollback
             RollbackContactImport::dispatch($transfer->id)->onQueue(Queues::name(Queues::EXPORTS));
         } catch (Throwable $exception) {
             report($exception);
-            $this->fail($transfer->refresh(), $actor, 'No se pudo poner la reversión en la cola de trabajos. Inténtalo de nuevo más tarde.');
+            $this->fail($transfer->refresh(), $actor, 'No se pudo programar la reversión. Inténtalo de nuevo más tarde.');
 
             throw ValidationException::withMessages(['rollback' => 'No se pudo iniciar la reversión. Inténtalo de nuevo más tarde.']);
         }

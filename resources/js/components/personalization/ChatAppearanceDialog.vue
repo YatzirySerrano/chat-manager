@@ -595,7 +595,7 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                     </div>
                     <ul
                         v-if="warnings.length > 0"
-                        class="grid gap-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs"
+                        class="grid gap-1 rounded-md border border-transparent bg-warning-soft p-2 text-xs"
                         role="status"
                     >
                         <li

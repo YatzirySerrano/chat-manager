@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
 import { ArrowDown, MessagesSquare } from '@lucide/vue';
+import {
+    useDocumentVisibility,
+    useElementSize,
+    useIntervalFn,
+} from '@vueuse/core';
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
-import { dayKey, dayLabel } from '@/components/conversations/messageFormat';
+import { groupByCalendarDay } from '@/components/conversations/dayGroups';
+import { todayKey } from '@/components/conversations/messageFormat';
 import TimelineEvent from '@/components/conversations/TimelineEvent.vue';
 import TimelineNote from '@/components/conversations/TimelineNote.vue';
 import type { TimelineItem } from '@/components/conversations/useConversationTimeline';
@@ -16,6 +22,7 @@ import {
     CUSTOM_BUBBLE_CLASSES,
     CUSTOM_CHAT_COLORS,
 } from '@/lib/chatAppearance';
+import { platformTimezone } from '@/lib/format';
 import { retry as retryRoute } from '@/routes/conversations/messages';
 import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
 import type {
@@ -64,37 +71,55 @@ const BOTTOM_THRESHOLD = 96;
  * reserves room below its last item, so the button never covers the last
  * message, its delivery state or its retry button.
  */
-const showJumpButton = computed(() => unseen.value > 0 || !atBottom.value);
-
-type Row =
-    | { type: 'day'; key: string; label: string }
-    | { type: 'item'; key: string; item: TimelineItem };
-
-const rows = computed<Row[]>(() => {
-    const list: Row[] = [];
-    let currentDay = '';
-
-    for (const item of props.items) {
-        const at =
-            item.kind === 'message'
-                ? (item.message.sent_at ?? item.at)
-                : item.at;
-        const day = dayKey(at);
-
-        if (day !== currentDay) {
-            currentDay = day;
-            list.push({
-                type: 'day',
-                key: `d${day}-${item.key}`,
-                label: dayLabel(at),
-            });
-        }
-
-        list.push({ type: 'item', key: item.key, item });
-    }
-
-    return list;
+const scrollerSize = useElementSize(scroller, undefined, {
+    box: 'border-box',
 });
+
+/*
+ * In a history squeezed below ~88 px the button would cover most of what is
+ * left of it, so it is not shown there (End still jumps to the newest
+ * message from the focused history). On very short windows it is smaller.
+ */
+const MIN_JUMP_HEIGHT = 88;
+
+const showJumpButton = computed(
+    () =>
+        (unseen.value > 0 || !atBottom.value) &&
+        scrollerSize.height.value >= MIN_JUMP_HEIGHT,
+);
+
+/*
+ * One group per calendar day of the platform time zone, keyed by the same
+ * instant the timeline is ordered by (item.at), so days come out contiguous
+ * and each one gets exactly one separator, also after an older page is
+ * prepended or a new message arrives. "Hoy"/"Ayer" follow `today`, which
+ * moves at midnight while the chat stays open.
+ */
+const today = ref(todayKey());
+
+function refreshToday(): void {
+    const current = todayKey();
+
+    if (current !== today.value) {
+        today.value = current;
+    }
+}
+
+useIntervalFn(refreshToday, 30_000);
+watch(useDocumentVisibility(), (visibility) => {
+    if (visibility === 'visible') {
+        refreshToday();
+    }
+});
+
+const dayGroups = computed(() =>
+    groupByCalendarDay(
+        props.items,
+        (item) => item.at,
+        today.value,
+        platformTimezone(),
+    ),
+);
 
 function measureBottom(): void {
     const element = scroller.value;
@@ -462,12 +487,22 @@ defineExpose({ scrollToBottom });
 </script>
 
 <template>
-    <div class="relative min-h-0 flex-1">
+    <!--
+        Below 20rem of window height the chat pane scrolls as a whole and
+        the history takes the pane's height minus the chat header (the top
+        bar is 3rem there; --chat-header-h is set by ConversationChat), so
+        it never collapses under the header and the composer.
+    -->
+    <div
+        class="relative min-h-0 flex-1 [@media(max-height:20rem)]:h-[max(6rem,calc(100dvh-3rem-var(--chat-header-h,0px)))] [@media(max-height:20rem)]:flex-none"
+    >
         <div
             ref="scroller"
-            class="h-full overflow-y-auto overscroll-contain px-3 pt-4 sm:px-6"
+            class="h-full overflow-y-auto overscroll-contain px-3 pt-4 sm:px-6 [@media(max-height:20rem)]:overscroll-auto [@media(max-height:20rem)]:pt-2"
             :class="[
-                showJumpButton ? 'pb-16' : 'pb-4',
+                showJumpButton
+                    ? 'pb-16 [@media(max-height:20rem)]:pb-10'
+                    : 'pb-4',
                 customColors ? CUSTOM_BUBBLE_CLASSES.chat : 'bg-muted/30',
             ]"
             tabindex="0"
@@ -512,48 +547,60 @@ defineExpose({ scrollToBottom });
                     description="Cuando el cliente escriba o alguien responda, los mensajes aparecerán aquí."
                 />
 
-                <template v-for="row in rows" :key="row.key">
-                    <div
-                        v-if="row.type === 'day'"
-                        class="sticky top-0 z-10 flex justify-center py-1"
-                        role="separator"
-                        :aria-label="row.label"
+                <!--
+                    Each day is its own section and its separator sticks only
+                    inside it: the next day's section pushes it away, so two
+                    separators never pile up on top of each other.
+                -->
+                <section
+                    v-for="group in dayGroups"
+                    :key="group.day"
+                    class="grid grid-cols-1 gap-2 pt-0.5"
+                    :data-day="group.day"
+                >
+                    <h3
+                        class="pointer-events-none sticky top-0 z-10 flex justify-center py-1"
+                        data-day-separator
                     >
                         <span
-                            class="rounded-full border bg-background/95 px-3 py-0.5 text-xs font-medium text-muted-foreground shadow-xs first-letter:uppercase"
-                            >{{ row.label }}</span
+                            class="max-w-full rounded-full border bg-background px-3 py-0.5 text-center text-xs font-medium text-balance break-words text-muted-foreground shadow-xs"
+                            >{{ group.label }}</span
                         >
-                    </div>
-                    <MessageBubble
-                        v-else-if="row.item.kind === 'message'"
-                        :message="row.item.message"
-                        :contact-name="conversation.contact.display_name"
-                        :channel-label="conversation.connection.channel_label"
-                        :can-retry="
-                            conversation.can.reply &&
-                            conversation.connection.can_send &&
-                            row.item.message.direction === 'outbound' &&
-                            row.item.message.status === 'failed'
-                        "
-                        :retrying="retryingId === row.item.message.id"
-                        :can-quote="conversation.can.reply"
-                        @retry="requestRetry"
-                        @quote="(message) => emit('quote', message)"
-                        :revoking-attachment-id="revokingAttachmentId"
-                        @jump="jumpTo"
-                        @revoke-link="requestRevokeLink"
-                    />
-                    <TimelineNote
-                        v-else-if="row.item.kind === 'note'"
-                        :note="row.item.note"
-                        :conversation-id="conversation.id"
-                        :max-length="noteMaxLength"
-                        @saved="
-                            (noteId) => emit('refresh', { notes: [noteId] })
-                        "
-                    />
-                    <TimelineEvent v-else :event="row.item.event" />
-                </template>
+                    </h3>
+                    <template v-for="item in group.items" :key="item.key">
+                        <MessageBubble
+                            v-if="item.kind === 'message'"
+                            :message="item.message"
+                            :contact-name="conversation.contact.display_name"
+                            :channel-label="
+                                conversation.connection.channel_label
+                            "
+                            :can-retry="
+                                conversation.can.reply &&
+                                conversation.connection.can_send &&
+                                item.message.direction === 'outbound' &&
+                                item.message.status === 'failed'
+                            "
+                            :retrying="retryingId === item.message.id"
+                            :can-quote="conversation.can.reply"
+                            @retry="requestRetry"
+                            @quote="(message) => emit('quote', message)"
+                            :revoking-attachment-id="revokingAttachmentId"
+                            @jump="jumpTo"
+                            @revoke-link="requestRevokeLink"
+                        />
+                        <TimelineNote
+                            v-else-if="item.kind === 'note'"
+                            :note="item.note"
+                            :conversation-id="conversation.id"
+                            :max-length="noteMaxLength"
+                            @saved="
+                                (noteId) => emit('refresh', { notes: [noteId] })
+                            "
+                        />
+                        <TimelineEvent v-else :event="item.event" />
+                    </template>
+                </section>
             </div>
         </div>
 
@@ -561,7 +608,7 @@ defineExpose({ scrollToBottom });
             v-if="showJumpButton"
             size="sm"
             variant="secondary"
-            class="absolute right-4 bottom-4 rounded-full shadow-elevated pointer-coarse:h-10"
+            class="absolute right-4 bottom-4 rounded-full shadow-elevated pointer-coarse:h-10 [@media(max-height:20rem)]:right-2 [@media(max-height:20rem)]:bottom-2 [@media(max-height:20rem)]:h-7 [@media(max-height:20rem)]:px-2.5"
             @click="scrollToBottom(true)"
         >
             <ArrowDown aria-hidden="true" />

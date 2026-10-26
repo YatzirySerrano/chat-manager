@@ -6,7 +6,11 @@ import PageHeader from '@/components/PageHeader.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TemplatePreview from '@/components/templates/TemplatePreview.vue';
 import TemplateStatusBadge from '@/components/templates/TemplateStatusBadge.vue';
-import { formatDateTime } from '@/lib/format';
+import {
+    formatDateTime,
+    formatLocale,
+    formatTemplateQuality,
+} from '@/lib/format';
 import { index as templatesIndex } from '@/routes/templates';
 import type { MessageTemplateSummary } from '@/types';
 
@@ -27,14 +31,12 @@ defineProps<{
 <template>
     <Head :title="`Plantilla ${template.name}`" />
 
-    <div
-        class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell [--page-max:64rem]">
         <PageHeader
             help="plantillas"
             show-title
             :title="template.name"
-            :description="`${template.language} · ${template.connection?.name ?? ''}`"
+            :description="`${formatLocale(template.language)} · ${template.connection?.name ?? ''}`"
         />
 
         <DeletedRecordNotice
@@ -43,8 +45,8 @@ defineProps<{
             :deleted-at="template.deleted_at"
         >
             Se conserva para el historial de los mensajes que la usaron, pero no
-            puede enviarse. Si vuelve a existir en Meta, la siguiente
-            sincronización la restaura.
+            puede enviarse. Si vuelve a existir en Meta, se restaura la próxima
+            vez que se actualicen las plantillas.
         </DeletedRecordNotice>
 
         <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
@@ -79,7 +81,9 @@ defineProps<{
                             <dt class="text-muted-foreground">Calidad</dt>
                             <dd class="font-medium">
                                 {{
-                                    template.quality_score ?? 'Sin dato de Meta'
+                                    formatTemplateQuality(
+                                        template.quality_score,
+                                    )
                                 }}
                             </dd>
                         </div>
@@ -103,7 +107,9 @@ defineProps<{
                             </dd>
                         </div>
                         <div class="flex justify-between gap-3">
-                            <dt class="text-muted-foreground">Sincronizada</dt>
+                            <dt class="text-muted-foreground">
+                                Actualizada desde Meta
+                            </dt>
                             <dd>
                                 {{ formatDateTime(template.last_synced_at) }}
                             </dd>
@@ -111,7 +117,7 @@ defineProps<{
                     </dl>
                     <div
                         v-if="!template.sendable && template.unsupported_reason"
-                        class="flex gap-2 rounded-lg bg-warning/10 p-3 text-xs"
+                        class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
                     >
                         <TriangleAlert
                             class="mt-0.5 size-4 shrink-0 text-warning"
@@ -140,7 +146,7 @@ defineProps<{
                         <p class="text-xs text-muted-foreground">
                             {{
                                 parameter.kind === 'media_url'
-                                    ? 'URL https del archivo'
+                                    ? 'Enlace público (que empiece con https://) a la imagen, video o documento'
                                     : `Texto, hasta ${parameter.max} caracteres`
                             }}
                             <template v-if="parameter.example">

@@ -282,8 +282,9 @@ const run = async () => {
                 // The badge comes with the delivery result (simulated
                 // transport), so it is read once the status arrived.
                 const simulated =
-                    (await bubble(ana, text).getByText('Simulación').count()) >
-                    0;
+                    (await bubble(ana, text)
+                        .getByText('No enviado (modo de prueba)')
+                        .count()) > 0;
                 const id = await bubble(ana, text).getAttribute(
                     'data-message-id',
                 );
@@ -510,16 +511,19 @@ const run = async () => {
         await step('admin-inbox', 'render', administrator, async () => {
             await administrator.goto(`${BASE}/conversations`);
             await administrator.waitForLoadState('networkidle');
-            // Phase 5: the inbox opens on "Bandeja general" (pending ones and
-            // the person's own); every authorized conversation is the
-            // "Todas las visibles" view of the "Filtros" panel.
+            // Phase 5.1: an administrator (supervisor) opens on every
+            // authorized conversation, «Todas las conversaciones» (the
+            // "all" view, also in the "Vista" group of the "Filtros" panel).
             await openInboxView(administrator, 'Todas');
             await administrator.waitForLoadState('networkidle');
             await administrator
                 .getByRole('button', { name: /^Filtros/ })
                 .click();
             const all = await administrator
-                .getByRole('radio', { name: 'Todas las visibles', exact: true })
+                .getByRole('radio', {
+                    name: 'Todas las conversaciones',
+                    exact: true,
+                })
                 .count();
             const agentFilter = await administrator
                 .locator('#inbox-agent')

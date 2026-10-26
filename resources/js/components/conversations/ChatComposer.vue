@@ -195,7 +195,7 @@ const replyBlock = computed<string | null>(() => {
 
     /* Retired state, only on old conversations not migrated yet. */
     if (conversation.status === 'on_hold') {
-        return 'La conversación quedó «En espera (anterior)», un estado que ya no se usa. Pide a un administrador que la migre para volver a atenderla.';
+        return 'La conversación quedó «En espera», un estado que ya no se usa. Pide a un administrador que la pase a «Pendiente» para volver a atenderla.';
     }
 
     if (!canReply.value) {
@@ -634,7 +634,7 @@ function responseMessage(failure: unknown): string {
         }
 
         if (response.status === 404) {
-            return 'La conversación ya no está a tu alcance.';
+            return 'Ya no tienes acceso a esta conversación (pudo transferirse o asignarse a otra persona). Actualiza la bandeja.';
         }
 
         if (response.status === 429) {
@@ -642,10 +642,10 @@ function responseMessage(failure: unknown): string {
         }
 
         if (response.status === 413) {
-            return 'El archivo es demasiado grande para que el servidor lo reciba. Intenta con un archivo más pequeño o pide a un administrador que amplíe el límite de subida.';
+            return 'El archivo pesa demasiado. Envía uno más pequeño o pide a un administrador que permita archivos más grandes.';
         }
 
-        return 'El servidor no pudo procesar el envío. Inténtalo de nuevo.';
+        return 'No se pudo enviar el mensaje; el cliente no lo recibió. Inténtalo de nuevo y, si se repite, avisa a un administrador.';
     }
 
     return 'No hay conexión con el servidor. Revisa tu red e inténtalo de nuevo: el mensaje no se duplicará.';
@@ -796,21 +796,28 @@ defineExpose({ focus });
 </script>
 
 <template>
+    <!--
+        A size container: in narrow panes the message-type switch uses its
+        short labels («Responder» / «Nota») and stays on one row.
+    -->
     <div
-        class="border-t bg-background px-3 pt-2 pb-3 sm:px-4"
+        class="@container border-t bg-background px-3 pt-2 pb-3 sm:px-4 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
         :class="mode === 'note' && 'bg-warning/5'"
     >
-        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div
+            class="mb-2 flex flex-wrap items-center justify-between gap-2 [@media(max-height:32rem)]:mb-1 [@media(max-height:32rem)]:flex-nowrap"
+        >
             <div
-                class="inline-flex rounded-lg border bg-muted/40 p-0.5 text-sm"
+                class="inline-flex shrink-0 rounded-lg border bg-muted/40 p-0.5 text-sm"
                 role="group"
                 aria-label="Tipo de mensaje"
             >
                 <button
                     type="button"
                     :aria-pressed="mode === 'reply'"
+                    aria-label="Responder al cliente"
                     :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10"
+                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'reply'
                             ? 'bg-background text-foreground shadow-xs'
@@ -819,14 +826,19 @@ defineExpose({ focus });
                     @click="mode = 'reply'"
                 >
                     <Send class="size-3.5" aria-hidden="true" />
-                    Responder al cliente
+                    <span class="whitespace-nowrap"
+                        >Responder<span class="hidden @min-[30rem]:inline">
+                            al cliente</span
+                        ></span
+                    >
                 </button>
                 <button
                     v-if="canNote"
                     type="button"
                     :aria-pressed="mode === 'note'"
+                    aria-label="Nota interna"
                     :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10"
+                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'note'
                             ? 'bg-warning/20 text-foreground shadow-xs'
@@ -835,11 +847,15 @@ defineExpose({ focus });
                     @click="mode = 'note'"
                 >
                     <StickyNote class="size-3.5" aria-hidden="true" />
-                    Nota interna
+                    <span class="whitespace-nowrap"
+                        >Nota<span class="hidden @min-[30rem]:inline">
+                            interna</span
+                        ></span
+                    >
                 </button>
             </div>
             <p
-                class="line-clamp-2 min-w-0 basis-full text-xs wrap-anywhere text-muted-foreground sm:line-clamp-none sm:basis-auto sm:truncate"
+                class="line-clamp-2 min-w-0 basis-full text-xs wrap-anywhere text-muted-foreground sm:line-clamp-none sm:basis-auto sm:truncate [@media(max-height:32rem)]:flex-1 [@media(max-height:32rem)]:basis-auto [@media(max-height:32rem)]:truncate"
                 :title="mode === 'reply' ? `Para: ${recipient}` : undefined"
             >
                 <template v-if="mode === 'reply'">
@@ -868,7 +884,7 @@ defineExpose({ focus });
 
         <div
             v-if="disabledReason"
-            class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground"
+            class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground [@media(max-height:32rem)]:gap-2 [@media(max-height:32rem)]:py-1.5"
             role="status"
         >
             <Lock class="size-4 shrink-0" aria-hidden="true" />
@@ -887,7 +903,7 @@ defineExpose({ focus });
         <form
             v-else
             novalidate
-            class="grid grid-cols-1 gap-2"
+            class="grid grid-cols-1 gap-2 [@media(max-height:32rem)]:gap-1"
             @submit.prevent="submit"
         >
             <div
@@ -1049,7 +1065,7 @@ defineExpose({ focus });
                     "
                     :aria-invalid="tooLong || error !== null"
                     :placeholder="placeholder"
-                    class="flex field-sizing-content max-h-48 min-h-11 w-full resize-y rounded-lg border bg-background px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+                    class="flex field-sizing-content max-h-48 min-h-11 w-full resize-y rounded-lg border bg-background px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 [@media(max-height:32rem)]:max-h-20 [@media(max-height:32rem)]:min-h-9 [@media(max-height:32rem)]:py-1.5"
                     :class="
                         mode === 'note' &&
                         'border-warning/60 bg-warning/5 focus-visible:border-warning focus-visible:ring-warning/30'
@@ -1166,7 +1182,7 @@ defineExpose({ focus });
             <p
                 v-else-if="mode === 'reply' && unverifiedConnection"
                 id="chat-composer-hint"
-                class="flex items-start gap-1 text-xs text-warning"
+                class="flex items-start gap-1 text-xs text-warning [@media(max-height:32rem)]:line-clamp-1"
                 role="status"
             >
                 <TriangleAlert
@@ -1180,7 +1196,7 @@ defineExpose({ focus });
             <p
                 v-else
                 id="chat-composer-hint"
-                class="text-xs text-muted-foreground pointer-coarse:sr-only"
+                class="text-xs text-muted-foreground pointer-coarse:sr-only [@media(max-height:32rem)]:sr-only"
             >
                 {{ hint }}
             </p>

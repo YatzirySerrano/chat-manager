@@ -229,9 +229,11 @@ test('the unread filter combines with the view, status and department filters an
             ->where('filters.unread', true)
             ->where('unreadCount', 2)
             ->where('conversations.data', fn ($rows) => rowIds(collect($rows)->all()) === collect([$unreadSales->id, $unreadSupport->id])->sort()->values()->all())
-            // The administrator attends nothing: of the unread ones, only the pending one is theirs to take.
+            // The administrator supervises the organization: the chips count
+            // every unread conversation of their reach, pending or attended by
+            // an agent.
             ->where('counts.pending', 1)
-            ->where('counts.attending', 0));
+            ->where('counts.attending', 1));
 
     expect(rowIds(inboxRows($admin, ['view' => 'all', 'unread' => 1, 'department' => (string) $this->sales->id])))->toBe([$unreadSales->id])
         ->and(rowIds(inboxRows($admin, ['view' => 'all', 'unread' => 1, 'status' => 'pending'])))->toBe([$unreadSupport->id])

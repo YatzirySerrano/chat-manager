@@ -27,7 +27,7 @@ class StorePushSubscriptionRequest extends FormRequest
         return [
             'endpoint' => ['required', 'string', 'max:2048', 'url:https', function (string $attribute, mixed $value, Closure $fail): void {
                 if (! is_string($value) || ! self::isAllowedPushService($value)) {
-                    $fail('El navegador no usa un servicio de notificaciones push admitido.');
+                    $fail('Este navegador no usa un servicio de notificaciones compatible. Prueba con Chrome, Edge, Firefox o Safari actualizados.');
                 }
             }],
         ];
@@ -38,7 +38,7 @@ class StorePushSubscriptionRequest extends FormRequest
      */
     public function attributes(): array
     {
-        return ['endpoint' => 'suscripción push'];
+        return ['endpoint' => 'notificaciones del navegador'];
     }
 
     public static function isAllowedPushService(string $endpoint): bool

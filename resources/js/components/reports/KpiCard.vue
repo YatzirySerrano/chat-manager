@@ -2,11 +2,14 @@
 import type { LucideIcon } from '@lucide/vue';
 import { ArrowDownRight, ArrowUpRight, Minus } from '@lucide/vue';
 import { computed } from 'vue';
+import { formatPercent } from '@/composables/useChartTheme';
 
 /**
  * A headline figure with its comparison against the previous period.
  * `value === null` renders "Sin datos suficientes", never a fake zero, and
- * the comparison is only shown when both periods have data.
+ * the comparison is only shown when both periods have data. The label and
+ * the hint are never cut (they wrap; long words break and hyphenate), as in
+ * StatCard: grids of these cards use one column below `sm`.
  */
 const props = withDefaults(
     defineProps<{
@@ -88,24 +91,32 @@ const previousText = computed(
 <template>
     <div
         :class="[
-            'flex min-w-0 flex-col rounded-xl border bg-card shadow-card',
+            'flex min-w-0 flex-col rounded-xl border bg-surface-raised shadow-card',
             size === 'compact' ? 'gap-1 px-3.5 py-3' : 'gap-2 p-4',
         ]"
     >
         <div
             v-if="size === 'compact'"
-            class="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+            class="flex min-w-0 items-start gap-1.5 text-muted-foreground"
         >
             <component
                 :is="icon"
                 v-if="icon"
-                class="size-3.5 shrink-0"
+                class="mt-px size-4 shrink-0"
                 aria-hidden="true"
             />
-            <span class="line-clamp-2 text-xs font-medium">{{ label }}</span>
+            <span
+                class="min-w-0 text-xs font-medium text-pretty break-words hyphens-auto"
+                data-kpi-label
+                >{{ label }}</span
+            >
         </div>
         <div v-else class="flex items-start justify-between gap-2">
-            <span class="text-sm text-muted-foreground">{{ label }}</span>
+            <span
+                class="min-w-0 text-sm break-words hyphens-auto text-muted-foreground"
+                data-kpi-label
+                >{{ label }}</span
+            >
             <component
                 :is="icon"
                 v-if="icon"
@@ -144,12 +155,12 @@ const previousText = computed(
             <span>
                 {{
                     change.direction === 'flat'
-                        ? 'Sin cambio'
-                        : `${change.direction === 'up' ? '+' : '−'}${change.percent.toFixed(1)} %`
+                        ? 'Igual que el periodo anterior'
+                        : `${formatPercent(change.percent / 100)} ${change.direction === 'up' ? 'más' : 'menos'} que el periodo anterior`
                 }}
             </span>
             <span class="text-muted-foreground">
-                vs. {{ previousText }} antes
+                (antes: {{ previousText }})
             </span>
         </p>
         <p
@@ -166,11 +177,8 @@ const previousText = computed(
         </p>
         <p
             v-if="hint"
-            :class="[
-                'text-xs text-muted-foreground',
-                size === 'compact' && 'line-clamp-2',
-            ]"
-            :title="hint"
+            class="text-xs text-pretty break-words hyphens-auto text-muted-foreground"
+            data-kpi-hint
         >
             {{ hint }}
         </p>

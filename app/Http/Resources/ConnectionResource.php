@@ -9,6 +9,7 @@ use App\Models\Connection;
 use App\Models\Department;
 use App\Models\WebChatWidget;
 use App\Services\Meta\MetaApp;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -136,7 +137,7 @@ class ConnectionResource extends JsonResource
             },
             'granted_scopes' => array_map(fn (string $scope): array => ['value' => $scope, 'label' => MetaApp::scopeLabel($scope)], array_values(array_filter($this->granted_scopes ?? [], 'is_string'))),
             'authorized_at' => $this->authorized_at?->toIso8601String(),
-            'authorized_by' => $this->whenLoaded('authorizedBy', fn (): ?string => $this->authorizedBy?->name),
+            'authorized_by' => $this->whenLoaded('authorizedBy', fn (): ?string => app(ProtectedAccounts::class)->nameForRequest($this->authorizedBy, request())),
             'token_expires_at' => $expiresAt?->toIso8601String(),
             'subscribed' => $this->app_subscribed,
             'subscription_checked_at' => $this->subscription_checked_at?->toIso8601String(),

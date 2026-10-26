@@ -4,6 +4,7 @@ namespace App\Actions\Users;
 
 use App\Enums\AuditAction;
 use App\Enums\Permission;
+use App\Events\Users\UserAccessChanged;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\PrivilegeGuard;
@@ -80,6 +81,9 @@ class UpdatePersonalQuickRepliesGrant
                 ['personal_quick_replies' => $user->personalQuickReplies()->notDeleted()->count()],
                 $actor,
             );
+
+            // Open sessions of the user reload their permissions at once.
+            UserAccessChanged::dispatch([$user->id], 'permissions_changed');
         });
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

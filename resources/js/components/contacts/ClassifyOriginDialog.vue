@@ -123,7 +123,7 @@ function submit(): void {
                         'Cómo dice la persona que nos conoció. Es un dato declarado: se muestra como «Declarado por» con tu nombre y la fecha.',
                     howTo: 'Elige la opción más cercana solo si la persona lo indicó. Si no lo sabes, no registres nada: el contacto seguirá como «Origen no identificado».',
                     warning:
-                        'Un dato declarado nunca se convierte en «Confirmado por Meta» ni reemplaza una procedencia confirmada por el proveedor.',
+                        'Un dato declarado nunca se convierte en «Confirmado por Meta» ni reemplaza una procedencia confirmada por Meta.',
                 }"
             >
                 <Select v-model="form.origin_type">

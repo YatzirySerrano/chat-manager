@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Contact;
 use App\Models\ContactReviewCase;
+use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
@@ -34,7 +35,7 @@ class ContactReviewCaseResource extends JsonResource
             'resolution' => $this->resolution?->value,
             'resolution_label' => $this->resolution?->label(),
             'resolved_contact_id' => $this->resolved_contact_id,
-            'resolved_by' => $this->whenLoaded('resolver', fn (): ?string => $this->resolver?->name),
+            'resolved_by' => $this->whenLoaded('resolver', fn (): ?string => app(ProtectedAccounts::class)->nameForRequest($this->resolver, $request)),
             'resolved_at' => $this->resolved_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'contact' => $this->summary($this->contact),

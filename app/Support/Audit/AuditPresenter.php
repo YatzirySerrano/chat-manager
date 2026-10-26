@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\Meta\MetaErrorCatalog;
 use App\Services\PlatformSettings;
+use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
@@ -88,7 +89,7 @@ final class AuditPresenter
         [$error, $errorDetail] = $this->error($log, $properties);
 
         return [
-            'summary' => $this->summary($log),
+            'summary' => $this->summary($log, $viewer),
             'subject' => $this->subject($log, $viewer, $subject),
             'changes' => $this->changes($log, $properties),
             'details' => $this->details($log, $properties, $technical),
@@ -174,7 +175,7 @@ final class AuditPresenter
     /**
      * "Conexión creada: Conexión «Ventas (+52 55 1234 5678)». Lo realizó Ana López el 24/10/2026 a las 12:30."
      */
-    public function summary(AuditLog $log): string
+    public function summary(AuditLog $log, ?User $viewer = null): string
     {
         $what = $log->action->label();
         $type = AuditSubjectTypes::label($log->auditable_type);
@@ -188,9 +189,23 @@ final class AuditPresenter
         $when = 'el '.$moment->format('d/m/Y').' a las '.$moment->format('H:i');
         $who = $log->user_id === null && ($log->actor_name === null || $log->actor_name === 'Sistema')
             ? "Lo registró el sistema {$when}."
-            : 'Lo realizó '.($log->actor_name ?? 'Sistema')." {$when}.";
+            : 'Lo realizó '.$this->actorName($log, $viewer)." {$when}.";
 
         return "{$what}. {$who}";
+    }
+
+    /**
+     * Who performed the action as the viewer may see it: the entry keeps the
+     * stored name, but a protected account (root role) is presented as the
+     * system administration to anyone without the root authority.
+     */
+    public function actorName(AuditLog $log, ?User $viewer): string
+    {
+        if ($log->user_id !== null && app(ProtectedAccounts::class)->hides($log->user_id, $viewer)) {
+            return ProtectedAccounts::SYSTEM_NAME;
+        }
+
+        return $log->actor_name ?? 'Sistema';
     }
 
     /**

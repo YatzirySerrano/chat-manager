@@ -101,9 +101,9 @@ final class TemplateStructure
                     'key' => 'header.media',
                     'component' => 'header',
                     'label' => match ($this->header['format']) {
-                        'IMAGE' => 'Imagen del encabezado (URL https pública)',
-                        'VIDEO' => 'Video del encabezado (URL https pública)',
-                        default => 'Documento del encabezado (URL https pública)',
+                        'IMAGE' => 'Imagen del encabezado (enlace público que empiece con https://)',
+                        'VIDEO' => 'Video del encabezado (enlace público que empiece con https://)',
+                        default => 'Documento del encabezado (enlace público que empiece con https://)',
                     },
                     'kind' => 'media_url',
                     'example' => null,
@@ -112,17 +112,17 @@ final class TemplateStructure
             }
 
             foreach ($this->header['parameters'] as $position => $name) {
-                $parameters[] = ['key' => "header.{$name}", 'component' => 'header', 'label' => "Encabezado {{{$name}}}", 'kind' => 'text', 'example' => $this->header['examples'][$position] ?? null, 'max' => self::HEADER_MAX];
+                $parameters[] = ['key' => "header.{$name}", 'component' => 'header', 'label' => 'Encabezado – '.self::parameterName($name), 'kind' => 'text', 'example' => $this->header['examples'][$position] ?? null, 'max' => self::HEADER_MAX];
             }
         }
 
         foreach ($this->body['parameters'] ?? [] as $position => $name) {
-            $parameters[] = ['key' => "body.{$name}", 'component' => 'body', 'label' => "Cuerpo {{{$name}}}", 'kind' => 'text', 'example' => $this->body['examples'][$position] ?? null, 'max' => self::BODY_PARAMETER_MAX];
+            $parameters[] = ['key' => "body.{$name}", 'component' => 'body', 'label' => 'Texto – '.self::parameterName($name), 'kind' => 'text', 'example' => $this->body['examples'][$position] ?? null, 'max' => self::BODY_PARAMETER_MAX];
         }
 
         foreach ($this->buttons as $index => $button) {
             foreach ($button['parameters'] as $position => $name) {
-                $parameters[] = ['key' => "button.{$index}.{$name}", 'component' => 'button', 'label' => "Botón «{$button['text']}» {{{$name}}}", 'kind' => 'text', 'example' => $button['examples'][$position] ?? null, 'max' => 2000];
+                $parameters[] = ['key' => "button.{$index}.{$name}", 'component' => 'button', 'label' => "Botón «{$button['text']}» – ".self::parameterName($name), 'kind' => 'text', 'example' => $button['examples'][$position] ?? null, 'max' => 2000];
             }
         }
 
@@ -393,5 +393,14 @@ final class TemplateStructure
             ...($this->named ? ['parameter_name' => $name] : []),
             'text' => (string) ($values["{$component}.{$name}"] ?? ''),
         ], $names);
+    }
+
+    /**
+     * How a placeholder is named in the form: "dato 1" for positional ones,
+     * "dato «nombre»" for named ones (never the raw {{…}} syntax).
+     */
+    private static function parameterName(string|int $name): string
+    {
+        return ctype_digit((string) $name) ? "dato {$name}" : "dato «{$name}»";
     }
 }

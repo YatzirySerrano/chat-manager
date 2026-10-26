@@ -12,6 +12,7 @@ use App\Models\Department;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Support\ProtectedAccounts;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
@@ -222,7 +223,7 @@ class NotificationPresenter
 
         $waiting = $visible->filter(fn (Conversation $conversation): bool => $conversation->assigned_user_id === null)->count();
         $body = $waiting > 0
-            ? ($occurrences > 1 ? "{$waiting} siguen esperando en la cola." : "{$this->contactName($latest)} espera ser atendido.")
+            ? ($occurrences > 1 ? "{$waiting} siguen en «Pendientes», esperando que alguien las acepte." : "{$this->contactName($latest)} espera ser atendido.")
             : 'Ya fueron atendidas.';
         $url = $occurrences > 1
             ? $this->routeOrNull('conversations.index', ['view' => 'queue'])
@@ -243,7 +244,7 @@ class NotificationPresenter
             return $this->noAccess('Conversación asignada');
         }
 
-        $actor = $this->userName($data['actor_id'] ?? null);
+        $actor = $this->userName($data['actor_id'] ?? null, $viewer);
         $title = match ($data['reason'] ?? null) {
             'reopened' => 'Una conversación tuya se reabrió',
             'auto_assigned' => 'Se te asignó una conversación automáticamente',
@@ -268,7 +269,7 @@ class NotificationPresenter
             return $this->noAccess('Transferencia recibida');
         }
 
-        $actor = $this->userName($data['actor_id'] ?? null) ?? 'Un compañero';
+        $actor = $this->userName($data['actor_id'] ?? null, $viewer) ?? 'Un compañero';
 
         return [
             'Transferencia recibida',
@@ -322,7 +323,7 @@ class NotificationPresenter
             return [$title, 'Ya no tienes acceso a esta conversación interna.', null, false];
         }
 
-        $author = $this->userName($data['author_id'] ?? null);
+        $author = $this->userName($data['author_id'] ?? null, $viewer);
         $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId]);
 
         return [$title, $author !== null ? "De {$author}." : null, $url, true];
@@ -391,10 +392,18 @@ class NotificationPresenter
         ];
     }
 
-    private function userName(mixed $id): ?string
+    /**
+     * The person's name as the viewer may see it: a protected account (root
+     * role) is the system administration for anyone else.
+     */
+    private function userName(mixed $id, User $viewer): ?string
     {
         if (! is_int($id)) {
             return null;
+        }
+
+        if (app(ProtectedAccounts::class)->hides($id, $viewer)) {
+            return ProtectedAccounts::SYSTEM_NAME;
         }
 
         return $this->userNames[$id] ??= (string) User::query()->whereKey($id)->value('name');

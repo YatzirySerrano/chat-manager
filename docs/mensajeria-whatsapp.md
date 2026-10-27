@@ -267,6 +267,15 @@ reconocen solo con su extensión Office.
 | Messenger | JPEG/PNG/GIF 8 MB | MP3, M4A, AAC, WAV, OGG 25 MB                                                      | MP4/MOV 25 MB                  | PDF, TXT, CSV, Office 25 MB             | enlace de descarga         | no                   |
 | Instagram | PNG/JPEG 8 MB     | AAC, M4A, WAV 25 MB                                                                | MP4, OGG, AVI, MOV, WebM 25 MB | solo PDF 25 MB                          | enlace de descarga         | no                   |
 
+**Unidades (fase 5.2.1).** Meta publica «5 MB», «16 MB» y «100 MB» sin decir si un MB son 10^6 o 2^20 bytes. Para no
+aceptar nunca un archivo que Meta pueda rechazar, los límites del compositor usan la lectura menor, **MB decimal
+(1 MB = 1 000 000 bytes)**: 5 000 000, 16 000 000 y 100 000 000 bytes en WhatsApp, 8 000 000 / 25 000 000 en Messenger e
+Instagram; también los propios (chat web 25 000 000, ZIP como enlace 100 000 000). `whatsapp.media.types.*.max_bytes`
+(que también rige los medios entrantes y sigue en MiB) solo puede bajar el límite de salida, nunca subirlo. Los tamaños
+y límites del compositor se muestran en la misma unidad (`ChannelAttachmentRules::humanSize`, `formatFileSize`, en toda la
+interfaz: tarjeta del compositor, burbuja y chat interno), como los muestra macOS: un video de 16,2 MB (16 200 704 bytes, menos de 16 MiB) se rechaza con el mensaje del canal. Los
+límites de PHP (`2M` = 2 MiB) se muestran en su propia unidad.
+
 El chat web usa un único límite configurable (`WEBCHAT_ATTACHMENT_MAX_BYTES`, 25 MB). Los stickers no se envían desde
 el compositor. Cualquier otro tipo (ejecutables, scripts, HTML…) se rechaza con la lista de lo que sí se acepta. El
 tope de la petición es el máximo del canal de la conversación.
@@ -297,10 +306,40 @@ imágenes, Videos, Documentos, Audio; el ZIP es un documento), con el `accept` d
 (`native`, `link` o `mixed`), y `storage.ready` / `storage.message` para desactivar el clip si el disco no está listo.
 Comportamiento en el compositor: [bandejas §7](bandejas-y-asignacion.md#7-archivos-adjuntos).
 
-**Límites del servidor.** Un archivo mayor que `upload_max_filesize` de PHP no llega a Laravel: el compositor muestra
-«El servidor no pudo recibir el archivo (su límite de subida es …)». Una petición mayor que `post_max_size` responde
-413 con una explicación en español. Ver [infraestructura-y-despliegue.md §6](infraestructura-y-despliegue.md#6-https-y-nginx)
-para los valores necesarios.
+**Límites del servidor (fase 5.2.1).** Un archivo mayor que `upload_max_filesize` de PHP llega a Laravel sin
+contenido (`UPLOAD_ERR_INI_SIZE`) y una petición mayor que `post_max_size` llega vacía (`PostTooLargeException`). No es
+culpa del usuario ni una regla de Meta, y nunca se responde «Escribe un mensaje o adjunta un archivo» (un archivo
+enviado cuenta aunque PHP lo haya rechazado; el texto es opcional junto a un archivo). Cada causa tiene su mensaje y un
+`code` estable en `{message, code, errors}` (422) o `{message, code}` (413) — `AttachmentRejected`,
+`ServerUploadLimits`:
+
+| `code`                    | Causa                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `server_upload_limit`     | `UPLOAD_ERR_INI_SIZE` o 413: el límite del servidor es menor que el del canal                                 |
+| `upload_invalid`          | `UPLOAD_ERR_FORM_SIZE` (`MAX_FILE_SIZE` lo pone el cliente: no es un límite del servidor)                     |
+| `upload_interrupted`      | `UPLOAD_ERR_PARTIAL`: la subida se cortó (conexión)                                                           |
+| `server_upload_failure`   | `UPLOAD_ERR_NO_TMP_DIR`/`CANT_WRITE`/`EXTENSION`: problema temporal del servidor                              |
+| `unsupported_type`        | el contenido real no es un tipo que el canal acepte                                                           |
+| `extension_mismatch`      | la extensión no corresponde al contenido real                                                                 |
+| `channel_size_limit`      | supera el límite del canal para su categoría («Este video supera el tamaño permitido para WhatsApp (16 MB)…») |
+| `unsupported_audio_codec` | OGG que no es Opus mono                                                                                       |
+| `storage_unavailable`     | (503) el disco de adjuntos no está listo                                                                      |
+
+El código viaja también en los errores, en `errors.upload_code` (useHttp e Inertia solo entregan los errores de un
+422). `upload_interrupted`, `server_upload_failure` y `upload_invalid` (y el 503 o un fallo de red) son temporales: el
+compositor deja el archivo listo para reintentar; los demás son definitivos y la tarjeta queda «rechazada». Antes de
+subir, el aviso va en presente con el tamaño del archivo («Esta imagen pesa 2.2 MB y el servidor de Chat Manager acepta
+hasta 2.1 MB; un administrador puede ampliar el límite.») y el menú del clip anuncia el límite efectivo («hasta 2.1 MB
+en este servidor») cuando `server_limited`. Un 413 sin sesión de página (webhooks, `/up`, `broadcasting`, API) responde
+texto plano, sin crear sesión.
+
+El compositor recibe `server` (límite efectivo = mín(`upload_max_filesize`, `post_max_size` − 256 KB) y la
+explicación) y `categories[].server_limited`, y rechaza **antes de subir** un archivo que el canal aceptaría pero el
+servidor no. `app:preflight` y Administración → Sistema muestran el aviso `uploads` («upload_max_filesize (2M) es menor
+que el máximo del canal (100 MB)»). La subida a `/media` usa su propio tiempo límite (`META_MEDIA_UPLOAD_TIMEOUT`, 60 s),
+acotado para que subida + `POST /messages` (`META_GRAPH_TIMEOUT` + 5 s de conexión) + 10 s de margen quepan en un intento
+de `DeliverOutboundMessage` (140 s; worker `--timeout=150`, `retry_after` 900 en todas las conexiones de cola):
+como máximo 115 s con los valores por defecto. Valores necesarios: [infraestructura-y-despliegue.md §6](infraestructura-y-despliegue.md#6-https-y-nginx).
 
 ### 4.3 Límites y vigencia de los medios en Meta
 

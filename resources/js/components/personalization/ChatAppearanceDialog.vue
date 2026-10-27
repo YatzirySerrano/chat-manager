@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
-import { COLOR_LABELS } from '@/lib/chatAppearance';
+import { colorLabelsFor } from '@/lib/chatAppearance';
 import {
     contrastRatio,
     formatRatio,
@@ -26,8 +26,13 @@ import {
     destroy as destroyAppearance,
     update as updateAppearance,
 } from '@/routes/conversations/appearance';
+import {
+    destroy as destroyThreadAppearance,
+    update as updateThreadAppearance,
+} from '@/routes/team-chat/threads/appearance';
 import type {
     ChatAppearanceResponse,
+    ChatAppearanceTarget,
     ChatColorKey,
     ChatColors,
     ChatColorSet,
@@ -37,12 +42,14 @@ import type {
 /**
  * Editor of the viewer's own chat colors: a preset or custom colors (light
  * and dark), a preview of both modes before saving, undo of unsaved
- * changes and restoring the defaults, for this conversation only or for all
- * of the viewer's conversations. Text colors that would be hard to read are
- * replaced by the server with near-black or white (the preview shows it).
+ * changes and restoring the defaults, for this chat only or for all of the
+ * viewer's chats. The same editor serves customer conversations and
+ * internal (team chat) threads; only the copy and the endpoint change. Text
+ * colors that would be hard to read are replaced by the server with
+ * near-black or white (the preview shows it).
  */
 const props = defineProps<{
-    conversationId: number;
+    target: ChatAppearanceTarget;
     appearance: ViewerChatAppearance;
 }>();
 
@@ -64,14 +71,62 @@ const KEYS: ChatColorKey[] = [
     'received_text',
     'chat_bg',
 ];
-const TEXT_PAIRS: [ChatColorKey, ChatColorKey, string][] = [
-    ['sent_text', 'sent_bg', 'Texto de tus mensajes'],
-    ['received_text', 'received_bg', 'Texto de los mensajes del cliente'],
+const TEXT_PAIRS: [ChatColorKey, ChatColorKey][] = [
+    ['sent_text', 'sent_bg'],
+    ['received_text', 'received_bg'],
 ];
 const MODES: { value: Mode; label: string }[] = [
     { value: 'light', label: 'Modo claro' },
     { value: 'dark', label: 'Modo oscuro' },
 ];
+
+const isThread = computed(() => props.target.type === 'team_thread');
+const COLOR_LABELS = computed(() => colorLabelsFor(props.target));
+/** Copy that depends on the kind of chat (customer copy is unchanged). */
+const copy = computed(() =>
+    isThread.value
+        ? {
+              description:
+                  'Colores solo para tu vista. No cambian los mensajes ni lo que ven los demás participantes.',
+              only: 'Solo este chat',
+              all: 'Todos mis chats',
+              inherits: 'Este chat usa tus colores de todos los chats.',
+              receivedSample: '¿Revisamos el pendiente de hoy?',
+              savedOne: 'Apariencia guardada para este chat.',
+              savedAll: 'Apariencia guardada para todos tus chats.',
+              resetOne: 'Restablecimos los colores de este chat.',
+              resetAll:
+                  'Restablecimos los colores predeterminados en todos tus chats.',
+          }
+        : {
+              description:
+                  'Colores solo para tu vista. No cambian los mensajes ni lo que ven tus compañeros o el cliente.',
+              only: 'Solo esta conversación',
+              all: 'Todas mis conversaciones',
+              inherits:
+                  'Esta conversación usa tus colores de todas las conversaciones.',
+              receivedSample: 'Hola, ¿me ayudas con mi pedido?',
+              savedOne: 'Apariencia guardada para esta conversación.',
+              savedAll: 'Apariencia guardada para todas tus conversaciones.',
+              resetOne: 'Restablecimos los colores de esta conversación.',
+              resetAll:
+                  'Restablecimos los colores predeterminados en todas tus conversaciones.',
+          },
+);
+
+function updateUrl(): string {
+    return isThread.value
+        ? updateThreadAppearance.url(props.target.id)
+        : updateAppearance.url(props.target.id);
+}
+
+function destroyUrl(scope: Scope): string {
+    const options = { query: { scope } };
+
+    return isThread.value
+        ? destroyThreadAppearance.url(props.target.id, options)
+        : destroyAppearance.url(props.target.id, options);
+}
 
 const scope = ref<Scope>('conversation');
 const choice = ref<string>(DEFAULT);
@@ -215,7 +270,8 @@ const warnings = computed<string[]>(() => {
     const list: string[] = [];
 
     for (const { value: mode, label: modeLabel } of MODES) {
-        for (const [text, background, label] of TEXT_PAIRS) {
+        for (const [text, background] of TEXT_PAIRS) {
+            const label = COLOR_LABELS.value[text];
             const ratio = contrastRatio(
                 draft[mode][text],
                 draft[mode][background],
@@ -231,7 +287,7 @@ const warnings = computed<string[]>(() => {
         for (const key of ['sent_bg', 'received_bg'] as ChatColorKey[]) {
             if (contrastRatio(draft[mode].chat_bg, draft[mode][key]) < 1.1) {
                 list.push(
-                    `${COLOR_LABELS[key]} (${modeLabel.toLowerCase()}) casi no se distingue del fondo del chat.`,
+                    `${COLOR_LABELS.value[key]} (${modeLabel.toLowerCase()}) casi no se distingue del fondo del chat.`,
                 );
             }
         }
@@ -274,10 +330,9 @@ async function save(): Promise<void> {
     saveHttp.colors = copyColors(draft);
 
     try {
-        const response = await saveHttp.put(
-            updateAppearance.url(props.conversationId),
-            { onHttpException: () => false },
-        );
+        const response = await saveHttp.put(updateUrl(), {
+            onHttpException: () => false,
+        });
 
         // A validation refusal resolves without a response.
         if (!response) {
@@ -293,8 +348,8 @@ async function save(): Promise<void> {
         } else {
             toast.success(
                 scope.value === 'all'
-                    ? 'Apariencia guardada para todas tus conversaciones.'
-                    : 'Apariencia guardada para esta conversación.',
+                    ? copy.value.savedAll
+                    : copy.value.savedOne,
             );
         }
 
@@ -316,12 +371,9 @@ async function restore(): Promise<void> {
     }
 
     try {
-        const response = await resetHttp.delete(
-            destroyAppearance.url(props.conversationId, {
-                query: { scope: scope.value },
-            }),
-            { onHttpException: () => false },
-        );
+        const response = await resetHttp.delete(destroyUrl(scope.value), {
+            onHttpException: () => false,
+        });
 
         if (!response) {
             error.value = 'No se pudo restablecer la apariencia.';
@@ -330,9 +382,7 @@ async function restore(): Promise<void> {
         }
 
         toast.success(
-            scope.value === 'all'
-                ? 'Restablecimos los colores predeterminados en todas tus conversaciones.'
-                : 'Restablecimos los colores de esta conversación.',
+            scope.value === 'all' ? copy.value.resetAll : copy.value.resetOne,
         );
         emit('saved', response.appearance);
         open.value = false;
@@ -364,8 +414,7 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                 <DialogHeader>
                     <DialogTitle>Apariencia del chat</DialogTitle>
                     <DialogDescription>
-                        Colores solo para tu vista. No cambian los mensajes ni
-                        lo que ven tus compañeros o el cliente.
+                        {{ copy.description }}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -374,14 +423,8 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                     <div class="flex flex-wrap gap-2">
                         <label
                             v-for="option in [
-                                {
-                                    value: 'conversation',
-                                    label: 'Solo esta conversación',
-                                },
-                                {
-                                    value: 'all',
-                                    label: 'Todas mis conversaciones',
-                                },
+                                { value: 'conversation', label: copy.only },
+                                { value: 'all', label: copy.all },
                             ]"
                             :key="option.value"
                             class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm has-checked:border-primary has-checked:bg-primary/5"
@@ -404,8 +447,14 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                         "
                         class="text-xs text-muted-foreground"
                     >
-                        Esta conversación usa tus colores de todas las
-                        conversaciones.
+                        {{ copy.inherits }}
+                    </p>
+                    <p
+                        v-if="scope === 'all'"
+                        class="text-xs text-muted-foreground"
+                    >
+                        Se usan en las conversaciones con clientes y en el chat
+                        interno, salvo donde elegiste colores propios.
                     </p>
                 </fieldset>
 
@@ -583,7 +632,7 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                                 class="w-fit max-w-[85%] rounded-2xl rounded-bl-md border px-3 py-1.5 text-sm shadow-xs"
                                 :style="previewStyle(mode.value, 'received')"
                             >
-                                Hola, ¿me ayudas con mi pedido?
+                                {{ copy.receivedSample }}
                             </p>
                             <p
                                 class="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md px-3 py-1.5 text-sm shadow-xs"

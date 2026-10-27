@@ -252,6 +252,15 @@ function submit(): void {
                             <Volume2 />
                             Probar sonido
                         </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            @click="playNotificationSound(false, 'team-chat')"
+                        >
+                            <Volume2 />
+                            Probar sonido del chat interno
+                        </Button>
                     </div>
                     <p
                         v-if="notificationSoundState === 'locked'"
@@ -271,6 +280,12 @@ function submit(): void {
                         role="status"
                     >
                         Este navegador no permite reproducir el sonido de aviso.
+                    </p>
+                    <p class="text-xs text-muted-foreground">
+                        Con varias pestañas abiertas el aviso suena una sola
+                        vez. Los mensajes del chat interno que tienes abierto y
+                        a la vista no suenan. El sonido depende también del
+                        volumen y de los ajustes de tu dispositivo.
                     </p>
                 </div>
             </div>
@@ -444,7 +459,9 @@ function submit(): void {
             <p class="text-xs text-muted-foreground">
                 Si desactivas un aviso en la app tampoco sonará ni aparecerá en
                 el navegador. Las notificaciones nunca muestran el contenido de
-                los mensajes de los clientes.
+                los mensajes de los clientes. Las del chat interno muestran
+                quién escribió y un fragmento breve solo dentro de la
+                plataforma; las del navegador no incluyen el fragmento.
             </p>
 
             <div class="flex justify-end gap-2">

@@ -1,4 +1,5 @@
 import { formatFileSize } from '@/lib/format';
+import { serverLimitNotice } from '@/lib/uploads';
 import type { AttachmentKindRule, ChannelAttachmentRules } from '@/types';
 
 /**
@@ -110,8 +111,16 @@ export function categoryOptions(
 
         if (native.length > 0) {
             const max = Math.max(...native.map((rule) => rule.max_bytes));
+            /* The effective limit: this server's PHP may accept less than the channel. */
+            const serverMax = rules?.server?.max_file_bytes ?? null;
+            const limitedHere =
+                rules?.categories?.find((entry) => entry.key === category)
+                    ?.server_limited ??
+                (serverMax !== null && serverMax < max);
             parts.push(
-                `${extensionList(native)} · hasta ${formatFileSize(max)}`,
+                limitedHere && serverMax !== null
+                    ? `${extensionList(native)} · hasta ${formatFileSize(serverMax)} en este servidor`
+                    : `${extensionList(native)} · hasta ${formatFileSize(max)}`,
             );
         }
 
@@ -209,6 +218,19 @@ export function acceptedSummary(kinds: AttachmentKindRule[]): string {
     return parts.length > 0 ? `${parts.join(', ')} o ${last}` : (last ?? '');
 }
 
+/**
+ * Why a file cannot be sent, with the same codes the server answers
+ * (AttachmentRejected): the channel cannot carry it (unsupported_type,
+ * wrong_category, extension_mismatch, channel_size_limit) or this server's
+ * PHP upload limit is lower than the channel's (server_upload_limit).
+ */
+export type AttachmentRefusal =
+    | 'unsupported_type'
+    | 'wrong_category'
+    | 'extension_mismatch'
+    | 'channel_size_limit'
+    | 'server_upload_limit';
+
 export type AttachmentEvaluation = {
     /** The kind of the file on this channel, when it has one. */
     rule: AttachmentKindRule | undefined;
@@ -216,9 +238,19 @@ export type AttachmentEvaluation = {
     category: AttachmentCategory;
     /** Why the file cannot be sent; null when it can. */
     error: string | null;
+    /** The cause of `error`. */
+    reason: AttachmentRefusal | null;
     /** How it would reach the customer when it can be sent. */
     delivery: 'native' | 'link' | null;
 };
+
+/**
+ * Where a chosen file is on its way to the customer: checked here
+ * (`ready`, or `invalid` with the reason), `uploading`, or refused by the
+ * server after the upload (`rejected`, with the server's own explanation);
+ * a sent file leaves the composer.
+ */
+export type AttachmentState = 'ready' | 'invalid' | 'uploading' | 'rejected';
 
 /** Words for a kind on the card and in messages ("Archivo ZIP" for archives). */
 export function kindLabel(
@@ -261,6 +293,7 @@ export function evaluateAttachment(
             rule: undefined,
             category: fallback,
             error: `Por ${channelLabel} no se pueden enviar archivos desde aquí.`,
+            reason: 'unsupported_type',
             delivery: null,
         };
     }
@@ -278,6 +311,7 @@ export function evaluateAttachment(
             error: chosen
                 ? `Este tipo de archivo no se puede enviar ${CATEGORY_TEXT[chosen].as} por ${channelLabel}.${options ? ` Puedes adjuntar ${acceptedSummary(options.kinds)}.` : ''}`
                 : `Este tipo de archivo no se puede enviar por ${channelLabel}. Puedes adjuntar ${acceptedSummary(kinds)}.`,
+            reason: 'unsupported_type',
             delivery: null,
         };
     }
@@ -295,6 +329,7 @@ export function evaluateAttachment(
             error: available
                 ? `Este archivo es ${CATEGORY_TEXT[category].article}, no ${CATEGORY_TEXT[chosen].article}. Para enviarlo, elige «${CATEGORY_TEXT[category].menu}» en el menú de adjuntar.`
                 : `Este tipo de archivo no se puede enviar ${CATEGORY_TEXT[chosen].as} por ${channelLabel}.`,
+            reason: 'wrong_category',
             delivery: null,
         };
     }
@@ -304,6 +339,7 @@ export function evaluateAttachment(
             rule,
             category,
             error: `La extensión «.${extension}» no corresponde al tipo de archivo. Revisa que sea el archivo correcto.`,
+            reason: 'extension_mismatch',
             delivery: null,
         };
     }
@@ -312,15 +348,47 @@ export function evaluateAttachment(
         return {
             rule,
             category,
-            error:
-                rule.delivery === 'link'
-                    ? `${subjectOf(rule, category)} supera ${formatFileSize(rule.max_bytes)}, el máximo para enviarlo como enlace privado (pesa ${formatFileSize(file.size)}).`
-                    : `${subjectOf(rule, category)} supera ${formatFileSize(rule.max_bytes)}, el máximo que admite ${channelLabel} (pesa ${formatFileSize(file.size)}).`,
+            error: `${subjectOf(rule, category)} supera el tamaño permitido para ${rule.delivery === 'link' ? `enviarlo como enlace privado por ${channelLabel}` : channelLabel} (${formatFileSize(rule.max_bytes)}): pesa ${weight(file.size, rule.max_bytes)}. Envía un archivo más pequeño.`,
+            reason: 'channel_size_limit',
             delivery: null,
         };
     }
 
-    return { rule, category, error: null, delivery: rule.delivery };
+    /*
+     * The channel accepts it, but this server's PHP would refuse the upload
+     * (upload_max_filesize / post_max_size): said before uploading, as the
+     * server's configuration, never as a rule of the channel.
+     */
+    const serverMax = rules?.server?.max_file_bytes ?? null;
+
+    if (serverMax !== null && file.size > serverMax) {
+        return {
+            rule,
+            category,
+            error: serverLimitNotice(
+                file.size,
+                serverMax,
+                subjectOf(rule, category),
+            ),
+            reason: 'server_upload_limit',
+            delivery: null,
+        };
+    }
+
+    return {
+        rule,
+        category,
+        error: null,
+        reason: null,
+        delivery: rule.delivery,
+    };
+}
+
+/** A size over a limit, never shown equal to it ("más de 5 MB"). */
+function weight(bytes: number, limit: number): string {
+    const size = formatFileSize(bytes);
+
+    return size === formatFileSize(limit) ? `más de ${size}` : size;
 }
 
 /** Same file chosen again: same name, size and modification time. */

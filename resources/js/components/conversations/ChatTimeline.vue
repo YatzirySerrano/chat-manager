@@ -518,6 +518,7 @@ defineExpose({ scrollToBottom });
                         variant="ghost"
                         size="sm"
                         class="pointer-coarse:h-10"
+                        :class="customColors && 'bg-background'"
                         :disabled="loadingOlder"
                         @click="loadOlder"
                     >
@@ -527,6 +528,10 @@ defineExpose({ scrollToBottom });
                     <p
                         v-else-if="items.length > 0"
                         class="text-xs text-muted-foreground"
+                        :class="
+                            customColors &&
+                            'rounded-full bg-background px-2.5 py-0.5'
+                        "
                     >
                         Inicio de la conversación
                     </p>
@@ -534,6 +539,10 @@ defineExpose({ scrollToBottom });
                 <p
                     v-if="failed"
                     class="text-center text-xs text-destructive"
+                    :class="
+                        customColors &&
+                        'mx-auto w-fit rounded-full bg-background px-2.5 py-0.5'
+                    "
                     role="alert"
                 >
                     No se pudieron cargar los mensajes anteriores.
@@ -541,7 +550,8 @@ defineExpose({ scrollToBottom });
 
                 <EmptyState
                     v-if="items.length === 0"
-                    class="border-none bg-transparent"
+                    class="border-none"
+                    :class="customColors ? 'bg-background' : 'bg-transparent'"
                     :icon="MessagesSquare"
                     title="Sin mensajes todavía"
                     description="Cuando el cliente escriba o alguien responda, los mensajes aparecerán aquí."

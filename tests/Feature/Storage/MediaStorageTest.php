@@ -414,7 +414,7 @@ test('the composer receives per channel attachment categories and the storage st
     $categories = collect($whatsapp['categories'])->keyBy('key');
 
     expect($categories->keys()->all())->toBe(['image', 'video', 'document', 'audio'])
-        ->and($categories['image'])->mimes->toBe(['image/jpeg', 'image/png'])->max_bytes->toBe(5 * 1024 * 1024)->delivery->toBe('native')
+        ->and($categories['image'])->mimes->toBe(['image/jpeg', 'image/png'])->max_bytes->toBe(5_000_000)->delivery->toBe('native')
         ->and($categories['document'])->kinds->toBe(['document', 'archive'])->delivery->toBe('mixed')
         ->and($categories['audio']['accept'])->toContain('audio/ogg')
         ->and(collect($whatsapp['kinds'])->firstWhere('key', 'archive'))->category->toBe('document')->delivery->toBe('link')

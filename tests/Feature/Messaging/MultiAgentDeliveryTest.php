@@ -205,7 +205,7 @@ test('only an earlier reply still expected to leave holds the next one; other co
     'queued in another conversation of the same number' => [fn () => WhatsAppFixtures::outbound(($this->attended)('14155550102'))],
     'already accepted by Meta' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.earlier'])],
     'failed' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'failed', 'error_code' => 'meta_131026'])],
-    'ambiguous for longer than the job timeout (left for reconciliation)' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'sending', 'sending_started_at' => now()->subMinutes(2)])],
+    'ambiguous for longer than the job timeout (left for reconciliation)' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'sending', 'sending_started_at' => now()->subSeconds(DeliverOutboundMessage::TIMEOUT + 30)])],
     'queued but forgotten for longer than the longest backoff' => [fn (Conversation $conversation) => tap(WhatsAppFixtures::outbound($conversation), fn (Message $message) => Message::query()->whereKey($message->id)->update(['updated_at' => now()->subMinutes(10)]))],
 ]);
 

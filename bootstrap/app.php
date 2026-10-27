@@ -14,7 +14,10 @@ use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\WebChat\AuthenticateVisitorSession;
 use App\Models\Conversation;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -22,7 +25,9 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Routing\Exceptions\InvalidSignatureException;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
@@ -99,18 +104,34 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json(['message' => 'No se encontró la página o el recurso solicitado.'], 404);
         });
 
-        // A request larger than PHP's post_max_size arrives without its
-        // fields (the file never reaches validation): explain it in Spanish.
+        // A request larger than PHP's post_max_size arrives without any of
+        // its fields (ValidatePostSize stops it before the session starts):
+        // it is this server's configuration, not the user's file nor a rule
+        // of the channel. JSON clients get 413 {message, code}; a page of a
+        // signed-in session goes back with the explanation on the
+        // "attachment" field and a toast (its session is started here just
+        // for that). Anything else (webhooks, health, broadcasting, API, no
+        // session cookie) gets a stateless 413.
         $exceptions->render(function (PostTooLargeException $e, Request $request) {
-            if (! $request->expectsJson()) {
-                return null;
+            $message = app(ServerUploadLimits::class)->limitMessage();
+
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json(['message' => $message, 'code' => ServerUploadLimits::SERVER_LIMIT], 413);
             }
 
-            $limit = trim((string) ini_get('post_max_size'));
+            if (! $request->cookies->has((string) config('session.cookie'))
+                || $request->is('webhooks/*', 'up', 'health/*', 'broadcasting/*', 'api/*')) {
+                return response($message, 413, ['Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store']);
+            }
 
-            return response()->json([
-                'message' => 'El archivo es demasiado grande para que el servidor lo reciba'.($limit !== '' ? " (límite actual: {$limit}B)" : '').'. Intenta con un archivo más pequeño o pide a un administrador que amplíe el límite de subida.',
-            ], 413);
+            return (new Pipeline(app()))
+                ->send($request)
+                ->through([EncryptCookies::class, AddQueuedCookiesToResponse::class, StartSession::class])
+                ->then(function () use ($message) {
+                    Inertia::flash('toast', ['type' => 'error', 'message' => $message]);
+
+                    return back(fallback: route('dashboard'))->withErrors(['attachment' => $message]);
+                });
         });
 
         // Download links sent to customers: an altered or expired link gets

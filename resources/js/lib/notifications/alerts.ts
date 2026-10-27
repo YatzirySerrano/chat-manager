@@ -204,32 +204,83 @@ export function unlockNotificationSound(): void {
     );
 }
 
-function chime(context: AudioContext, urgent: boolean): void {
-    const now = context.currentTime;
-    const tones = urgent ? [880, 1175] : [660];
+/**
+ * `default`: the chime of every notification (two tones when urgent);
+ * `team-chat`: a softer, lower two-note "pop" for internal chat messages,
+ * distinct from customer notifications without being louder.
+ */
+export type NotificationTone = 'default' | 'team-chat';
 
-    tones.forEach((frequency, index) => {
+type Note = {
+    frequency: number;
+    at: number;
+    length: number;
+    peak: number;
+    wave: OscillatorType;
+};
+
+function notes(urgent: boolean, tone: NotificationTone): Note[] {
+    if (tone === 'team-chat') {
+        return [
+            {
+                frequency: 587,
+                at: 0,
+                length: 0.12,
+                peak: 0.12,
+                wave: 'triangle',
+            },
+            {
+                frequency: 784,
+                at: 0.09,
+                length: 0.16,
+                peak: 0.1,
+                wave: 'triangle',
+            },
+        ];
+    }
+
+    return (urgent ? [880, 1175] : [660]).map((frequency, index) => ({
+        frequency,
+        at: index * 0.14,
+        length: 0.22,
+        peak: 0.18,
+        wave: 'sine',
+    }));
+}
+
+function chime(
+    context: AudioContext,
+    urgent: boolean,
+    tone: NotificationTone,
+): void {
+    const now = context.currentTime;
+
+    notes(urgent, tone).forEach((note) => {
         const oscillator = context.createOscillator();
         const gain = context.createGain();
-        const start = now + index * 0.14;
+        const start = now + note.at;
 
-        oscillator.type = 'sine';
-        oscillator.frequency.value = frequency;
+        oscillator.type = note.wave;
+        oscillator.frequency.value = note.frequency;
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+        gain.gain.exponentialRampToValueAtTime(note.peak, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + note.length);
         oscillator.connect(gain).connect(context.destination);
         oscillator.start(start);
-        oscillator.stop(start + 0.25);
+        oscillator.stop(start + note.length + 0.03);
     });
 }
 
 /**
- * A short chime (two tones when urgent). While the browser keeps audio
- * blocked (no interaction with the page yet) nothing is attempted and
- * nothing fails; a context suspended by the browser is resumed first.
+ * A short chime (two tones when urgent, a softer one for the internal
+ * chat). While the browser keeps audio blocked (no interaction with the
+ * page yet) nothing is attempted and nothing fails; a context suspended by
+ * the browser is resumed first.
  */
-export function playNotificationSound(urgent: boolean): void {
+export function playNotificationSound(
+    urgent: boolean,
+    tone: NotificationTone = 'default',
+): void {
     try {
         const context = contextAfterGesture();
 
@@ -238,7 +289,7 @@ export function playNotificationSound(urgent: boolean): void {
         }
 
         if (context.state === 'running') {
-            chime(context, urgent);
+            chime(context, urgent, tone);
 
             return;
         }
@@ -253,7 +304,7 @@ export function playNotificationSound(urgent: boolean): void {
                     context.state === 'running' &&
                     Date.now() - requestedAt < RESUME_GRACE_MS
                 ) {
-                    chime(context, urgent);
+                    chime(context, urgent, tone);
                 }
             },
             () => {

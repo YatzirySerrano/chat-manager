@@ -3,7 +3,7 @@
 Guía práctica para probar Chat Manager a mano en el entorno local, ordenada por módulos. Cada prueba indica la
 cuenta, el módulo, la acción exacta, los datos, el resultado esperado, qué ve el administrador y qué ve el agente,
 qué queda registrado y qué indicaría un error. Las pruebas que necesitan credenciales oficiales de Meta están en
-§27, las del chat web y la API de integración (fase 4), en §28, las de la fase 5, en §29, las de la fase 5.1, en §30, y las de la fase 5.2, en §31.
+§27, las del chat web y la API de integración (fase 4), en §28, las de la fase 5, en §29, las de la fase 5.1, en §30, las de la fase 5.2, en §31, y las de la fase 5.2.1, en §32.
 
 > **Todo el tráfico de WhatsApp de esta guía es simulado** (transporte `simulated` y simulador local). Nada sale a
 > WhatsApp. Lo simulado lleva la etiqueta «No enviado (modo de prueba)».
@@ -1003,3 +1003,161 @@ debe aparecer), o aparecen duplicados.
 la necesitas.
 
 Automatizado: [pruebas.md §2.4 y §6.5](pruebas.md#65-escenarios-de-la-fase-52).
+
+## 32. Fase 5.2.1
+
+Subidas de archivos sin el falso «Escribe un mensaje o adjunta un archivo», avisos del chat interno y colores propios
+en el chat interno. Todo el tráfico de WhatsApp sigue siendo simulado.
+
+**Antes de empezar (desde cero).**
+
+1. **Respaldo** de la base que vayas a usar (§0.3 punto 1). La fase trae **una migración**
+   (`2026_10_26_172120_add_team_thread_to_chat_appearances_table`,
+   [infraestructura §16 fase 5.2.1](infraestructura-y-despliegue.md#procedimiento-de-la-fase-521)). **No la apliques en
+   `chatmanager` sin la autorización del responsable**; para probar, usa una copia como en §31 «Antes de empezar» punto
+   1 y ejecuta ahí `php artisan migrate`.
+2. `npm run build` (o `composer run dev`), `php artisan queue:restart` y los procesos de §0.3 punto 3 (Reverb y la cola
+   `notifications` en marcha: los avisos del chat interno pasan por ella).
+3. `.env` con `WHATSAPP_TRANSPORT=simulated` y la conexión demo (§0.3 punto 4).
+4. Cuentas: Superadministrador (tiene `system.view`), agente A y agente B del mismo departamento, ambos con
+   `team-chat.use`, **cada uno en un navegador o perfil distinto** (dos ventanas lado a lado), y un usuario con
+   `supervision.view-personal` y otro con `supervision.manage-personal` (o el Superadministrador) para §32.7.
+5. Archivos de prueba (en una carpeta tuya, nunca con datos de clientes): una imagen PNG o JPG de ~1 MB y otra de
+   ~2.5 MB; un MP4 de ~4 MB y otro de más de 16 MB; un PDF pequeño y uno de ~30 MB; una imagen de más de 5 MB; un
+   ejecutable o un ZIP renombrado `factura.pdf`. En macOS se pueden generar con
+   `mkfile -n 30m grande.pdf` solo para pruebas de tamaño (ese archivo no es un PDF real: sirve para el paso de
+   extensión cambiada).
+
+**32.1 Con el límite de 2M del php.ini (antes de cambiar nada).** Cuenta: agente A, responsable de una conversación
+de WhatsApp abierta (simula un mensaje con §0.4 y acéptalo). El PHP de Homebrew trae `upload_max_filesize = 2M` y
+`post_max_size = 8M`.
+
+1. Clic en el clip: cada categoría dice «… · hasta 2.1 MB en este servidor». Error: muestra solo los límites de
+   WhatsApp.
+2. Elige la imagen de ~2.5 MB. Resultado, **antes de subir**: «Esta imagen pesa 2.5 MB y el servidor de Chat Manager
+   acepta hasta 2.1 MB; un administrador puede ampliar el límite.» No se envía nada. Error: «Escribe un mensaje o
+   adjunta un archivo» o un mensaje que culpe a WhatsApp.
+3. La imagen de ~1 MB sin texto: se envía (el texto es opcional junto a un archivo).
+4. Superadministrador → Administración → Sistema: el chequeo «Límites de subida» está en advertencia («…upload_max_filesize
+   (2M) es menor que el máximo del canal (100 MB)…»). `php artisan app:preflight` muestra la misma advertencia.
+5. Chat interno (A escribe a B): adjunta la imagen de ~2.5 MB. Resultado: «… pesa 2.5 MB y el servidor de Chat Manager
+   acepta hasta 2.1 MB…» y el archivo no se agrega. Error: «Escribe un mensaje o adjunta un archivo».
+
+**32.2 Aplicar el ini local de subidas (requiere autorización y acción del administrador del equipo).** Esta guía no
+lo aplica: lo hace quien administra la máquina. No se edita `php.ini`; se crea un archivo aparte.
+
+1. Crear `/opt/homebrew/etc/php/8.4/conf.d/99-chat-manager-uploads.ini` con:
+
+    ```ini
+    ; Chat Manager: WhatsApp acepta documentos de hasta 100 MB.
+    upload_max_filesize = 100M
+    post_max_size = 110M
+    max_input_time = 300
+    ```
+
+    `memory_limit` no cambia (128M): la subida, el SHA-256, el guardado y el envío a Meta son en streaming.
+
+2. Detener `composer run dev` (Ctrl+C) y volver a ejecutarlo: `php artisan serve` lee el ini solo al arrancar.
+3. Verificar: `php --ini` lista `99-chat-manager-uploads.ini`;
+   `php -r 'echo ini_get("upload_max_filesize"), " ", ini_get("post_max_size"), PHP_EOL;'` → `100M 110M`;
+   `php artisan app:preflight` → «Límites de subida: Correcto»; Administración → Sistema → «Límites de subida» en
+   verde («El servidor acepta archivos de hasta 104.9 MB…»). Esta última es la verificación definitiva: la calcula el
+   propio proceso que atiende el navegador.
+4. Para volver atrás: borrar el archivo y reiniciar `composer run dev`.
+
+Producción (Nginx + PHP-FPM): plantillas `deploy/` y [infraestructura §6 punto 5](infraestructura-y-despliegue.md#6-https-y-nginx).
+
+**32.3 Envíos con el límite ampliado.** Cuenta: agente A, misma conversación de WhatsApp.
+
+1. **Sin texto:** la imagen de ~2.5 MB, el MP4 de ~4 MB y el PDF pequeño, cada uno solo. Resultado: se envían; la
+   burbuja muestra el archivo y «No enviado (modo de prueba)». Error: cualquier aviso de «escribe un mensaje».
+2. **Con texto:** una imagen con un pie: llega la imagen con su pie.
+3. **Demasiado grande para el canal:** la imagen de más de 5 MB y el MP4 de más de 16 MB. Resultado: la tarjeta queda
+   rechazada con «Esta imagen supera el tamaño permitido para WhatsApp (5 MB): pesa … Envía un archivo más
+   pequeño.» (o «Este video … (16 MB)»). Los tamaños están en MB decimales, como los muestra el Finder.
+4. **Extensión cambiada:** `factura.pdf` (que no es un PDF). Resultado: «El archivo no se puede enviar: su extensión
+   «.pdf» no corresponde a su contenido real (…)». No se envía.
+5. **Cancelar:** DevTools → Network → «Slow 3G»; envía el PDF de ~30 MB. Resultado: barra de progreso con porcentaje y
+   **«Cancelar envío»**; al pulsarlo: «Se canceló el envío. El archivo sigue adjunto: puedes volver a enviarlo o
+   quitarlo.» y no aparece ningún mensaje nuevo. Envíalo otra vez sin limitar la red: se envía una sola vez (pulsar
+   enviar dos veces no duplica). Quita el límite de red al terminar.
+6. **Chat interno** (A → B): un archivo solo (sin texto) se envía; varios archivos muestran la barra de progreso con
+   «Cancelar envío» y, al cancelar, «Se canceló el envío. Los archivos siguen adjuntos…». Un archivo de más de 10.5 MB
+   se descarta antes de subir con su nombre y el máximo; con varios archivos con problemas, cada uno tiene su propio
+   mensaje y el chip del archivo rechazado por el servidor queda en rojo.
+
+Error: un archivo rechazado se envía, aparece un mensaje duplicado, o el texto del error culpa al usuario o a Meta de
+un límite del servidor.
+
+**32.4 Avisos del chat interno (dos navegadores).** A en el navegador 1 y B en el navegador 2, ventanas lado a lado.
+Antes, B hace un clic en su página (el navegador no permite sonido hasta la primera interacción; si no, ve una vez
+«Sonido de avisos en pausa»). Volumen del equipo encendido.
+
+1. **Otro módulo:** B en la Bandeja. A escribe a B «Hola, ¿revisas el pedido 1042?». Resultado en B, en ~1–2 s: _toast_
+   «Mensaje nuevo de A» con la vista previa, «Abrir» y la «X»; un sonido corto y suave (distinto del de clientes); la
+   campana sube en 1 y el menú «Chat interno» muestra 1 sin leer. A no oye nada.
+2. **Abrir:** B pulsa «Abrir»: se abre el chat, la notificación queda leída (la campana baja) y el badge desaparece.
+3. **Hilo abierto:** B deja ese chat abierto, con su ventana enfocada (clic dentro). A escribe otra vez. Resultado: el
+   mensaje aparece en el chat de B sin _toast_ ni sonido, y la campana no sube. Clic en la ventana de A (B pierde el
+   foco) y A escribe: B oye el sonido pero no ve _toast_ (el chat está en pantalla) y el mensaje queda sin leer hasta
+   que B vuelve a su ventana.
+4. **Otro hilo:** B abre otro chat (un grupo); A escribe en el privado. Resultado: _toast_ y sonido en B.
+5. **Grupo y mención:** A escribe en un grupo común «@B revisa esto». Resultado: «A te mencionó en <grupo>» (urgente),
+   también si B silenció el grupo.
+6. **Sonido desactivado:** B → Mi cuenta → Notificaciones → «Mensajes del chat interno»: desmarca «Sonido» y guarda. A
+   escribe: _toast_ sin sonido. Vuelve a activarlo: suena. **«Probar sonido del chat interno»** reproduce el tono propio
+   y «Probar sonido» el de clientes; deben oírse distintos.
+7. **Dos pestañas:** B abre una segunda pestaña de la plataforma en otra página. A escribe. Resultado: _toast_ en ambas
+   pestañas pero **un solo sonido**. Ahora B abre el chat de A en la pestaña 2 (con foco) y deja la 1 en la Bandeja: A
+   escribe; ninguna pestaña muestra _toast_ ni suena.
+8. **Pestaña oculta:** con «Navegador» activado para ese tipo y el permiso del sistema concedido, B minimiza la ventana;
+   el aviso del sistema dice quién escribió **sin** el texto del mensaje.
+9. **Reconexión:** detén Reverb unos segundos (o desconecta la red de B), A envía tres mensajes, reactiva. Resultado: al
+   reconectar, el badge se actualiza y suena **una vez** (puede haber un _toast_ por notificación). Con más de 5 min
+   desconectado, los avisos viejos solo aparecen en la campana, sin _toast_ ni sonido.
+10. **Sin acceso:** un administrador del grupo retira a B; en la campana de B la notificación de ese grupo dice «Ya no
+    tienes acceso a esta conversación interna.» sin autor ni texto.
+
+Error: suena dos veces para un mismo mensaje, hay aviso con el chat abierto y a la vista, el autor recibe su propio
+aviso, o la vista previa aparece para quien ya no participa.
+
+**32.5 Colores propios en el chat interno.** Cuenta: agente A, en un grupo con B.
+
+1. **Aplicar:** en el encabezado del chat, botón de paleta «Apariencia del chat». Elige «Océano», alcance «Solo este
+   chat», guardar. Resultado: «Apariencia guardada para este chat.» y el historial cambia de color sin recargar. Las
+   etiquetas dicen «mensajes de tus compañeros».
+2. **Recargar** (F5): los colores siguen. **Cerrar sesión e iniciar** de nuevo: siguen.
+3. **Otro hilo:** el privado de A con otra persona conserva el tema (o el predeterminado de A).
+4. **Otro usuario:** B, en el mismo grupo, ve el tema normal, no los colores de A.
+5. **Predeterminado compartido:** en otro chat, alcance «Todos mis chats», elige otra paleta: se ve la nota «Se usan en
+   las conversaciones con clientes y en el chat interno, salvo donde elegiste colores propios.»; al guardar, una
+   conversación de cliente de A en la Bandeja también la usa; el grupo del paso 1 conserva «Océano».
+6. **Texto ilegible:** «Elige cada color», texto de tus mensajes casi igual a su burbuja, guardar. Resultado: «Ajustamos
+   el color del texto para que sea legible sobre la burbuja (contraste mínimo 4.5:1).»
+7. **Modo oscuro:** Perfil → Apariencia → «Oscuro»: el chat usa el juego oscuro, legible; los iconos de reaccionar y de
+   acciones junto a las burbujas se distinguen (fondo del tema detrás). Con un fondo de chat negro en modo claro,
+   también.
+8. **Restaurar:** «Restablecer predeterminados» con «Solo este chat»: «Restablecimos los colores de este chat.» y
+   vuelve al predeterminado (o al tema); tras recargar, igual. Con «Todos mis chats» vuelve al tema de la plataforma.
+9. A 390 px el botón de paleta sigue visible y no hay desplazamiento horizontal.
+
+Error: B ve los colores de A, se pierden al recargar, o un texto queda ilegible.
+
+**32.6 Hilo ajeno.** Una persona que no participa en el grupo intenta
+`PUT /team-chat/threads/{id}/appearance` (por ejemplo, desde la consola con la URL del grupo): 404, igual que un hilo
+inexistente.
+
+**32.7 Supervisión de colores del chat interno.** Administración → Elementos personales.
+
+1. Con `supervision.view-personal`: la apariencia del paso 32.5 aparece como **«Chat interno #id»** (sin nombre del
+   grupo ni participantes) con su muestra estática; no hay botones para editar ni restablecer, y la URL del hilo
+   sigue respondiendo 404 a quien no participa.
+2. Con `supervision.manage-personal`: editar los colores de A en ese chat y luego restablecerlos. Resultado: A los ve
+   cambiar en su chat; Auditoría registra `supervision.personal_item_updated` y `_deleted` con «Folio del chat interno».
+
+Error: la supervisión muestra nombres del grupo o participantes, o da acceso al hilo.
+
+**Al terminar:** si usaste una copia, vuelve a apuntar `DB_DATABASE` a tu base habitual y `config:clear`. El ini de
+§32.2 se conserva solo si el administrador lo decide.
+
+Automatizado: [pruebas.md §2.5 y §6.6](pruebas.md#66-escenarios-de-la-fase-521).

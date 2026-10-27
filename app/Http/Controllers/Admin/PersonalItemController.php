@@ -89,9 +89,13 @@ class PersonalItemController extends Controller
                 ->through(fn (ChatAppearance $appearance): array => [
                     'id' => $appearance->id,
                     'owner' => ['id' => $appearance->user->id, 'name' => $appearance->user->name],
-                    'scope_label' => $appearance->isDefault()
-                        ? 'Todas sus conversaciones'
-                        : 'Conversación #'.$appearance->conversation_id.($appearance->conversation?->contact === null ? '' : ' · '.$this->contactLabel($appearance->conversation->contact->id, $appearance->conversation->contact->name)),
+                    // An internal chat is named by its folio only: supervising
+                    // personal colors never reveals who talks to whom.
+                    'scope_label' => match (true) {
+                        $appearance->isDefault() => 'Todas sus conversaciones',
+                        $appearance->team_thread_id !== null => 'Chat interno #'.$appearance->team_thread_id,
+                        default => 'Conversación #'.$appearance->conversation_id.($appearance->conversation?->contact === null ? '' : ' · '.$this->contactLabel($appearance->conversation->contact->id, $appearance->conversation->contact->name)),
+                    },
                     ...($appearances->present($appearance) ?? []),
                     'can' => ['update' => $canManageOwner($appearance->user), 'delete' => $canManageOwner($appearance->user)],
                 ]),
@@ -159,9 +163,9 @@ class PersonalItemController extends Controller
     {
         $owner = $appearance->user;
 
-        ['adjusted' => $adjusted] = $appearances->save($owner, $appearance->conversation, $request->preset(), $request->colors());
+        ['adjusted' => $adjusted] = $appearances->save($owner, $appearance->chat(), $request->preset(), $request->colors());
 
-        $this->audit($audit, AuditAction::SupervisionPersonalItemUpdated, $owner, 'chat_appearance', $appearance->id, ['conversation_id' => $appearance->conversation_id]);
+        $this->audit($audit, AuditAction::SupervisionPersonalItemUpdated, $owner, 'chat_appearance', $appearance->id, $this->appearanceChat($appearance));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $adjusted ? 'Apariencia actualizada. '.ChatAppearances::ADJUSTED_NOTICE : 'Apariencia actualizada.']);
 
@@ -175,7 +179,7 @@ class PersonalItemController extends Controller
         $owner = $appearance->user;
         $appearance->delete();
 
-        $this->audit($audit, AuditAction::SupervisionPersonalItemDeleted, $owner, 'chat_appearance', $appearance->id, ['conversation_id' => $appearance->conversation_id]);
+        $this->audit($audit, AuditAction::SupervisionPersonalItemDeleted, $owner, 'chat_appearance', $appearance->id, $this->appearanceChat($appearance));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Apariencia restablecida para ese usuario.']);
 
@@ -217,6 +221,18 @@ class PersonalItemController extends Controller
     private function contactLabel(int $contactId, ?string $name): string
     {
         return $this->canSeeContact($contactId) ? (string) $name : self::HIDDEN_CONTACT_LABEL;
+    }
+
+    /**
+     * Which chat the appearance belongs to, for the audit record.
+     *
+     * @return array<string, int|null>
+     */
+    private function appearanceChat(ChatAppearance $appearance): array
+    {
+        return $appearance->team_thread_id === null
+            ? ['conversation_id' => $appearance->conversation_id]
+            : ['team_thread_id' => $appearance->team_thread_id];
     }
 
     /**

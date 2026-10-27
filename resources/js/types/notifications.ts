@@ -37,7 +37,9 @@ export type AppNotification = {
     created_at: string | null;
     updated_at: string | null;
     conversation_id: number | null;
-    /** Announced live with a toast when it arrives (urgent kinds and customer messages). */
+    /** Internal chat thread it is about (only while the viewer participates). */
+    team_thread_id: number | null;
+    /** Announced live with a toast when it arrives (urgent kinds, customer and internal chat messages). */
     toast: boolean;
 };
 
@@ -49,6 +51,8 @@ export type NotificationListResponse = {
     preferences: Record<NotificationKindValue, NotificationPreference>;
     next_before: string | null;
     next_before_id: string | null;
+    /** Server clock when the list was built. */
+    server_time: string;
 };
 
 export type NotificationKindOption = {

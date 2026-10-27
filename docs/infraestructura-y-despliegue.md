@@ -277,8 +277,8 @@ Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el ges
    del paquete certbot; `sudo systemctl reload nginx` en el hook de renovación).
 2. Copia `deploy/nginx/chat-manager.conf`, ajusta dominio y rutas, `sudo nginx -t && sudo systemctl reload nginx`.
 3. La plantilla: redirige 80→443; sirve solo `public/`; niega archivos ocultos (`.env`, `.git`) y extensiones
-   sensibles; solo ejecuta `index.php`; `client_max_body_size 24m` (alineado con `upload_max_filesize=20M` y
-   `post_max_size=24M` del pool; súbelo si aumentas `WHATSAPP_DOCUMENT_MAX_BYTES`); proxy de WebSockets en `location ^~ /app/`
+   sensibles; solo ejecuta `index.php`; `client_max_body_size 110m` (igual a `post_max_size=110M` del pool, con
+   `upload_max_filesize=100M`; ver punto 5); proxy de WebSockets en `location ^~ /app/`
    hacia Reverb (con la barra final: un prefijo `/app` capturaría también `/apple-touch-icon.png`); `/apps` (API HTTP de Reverb) no se expone; pasa `$request_id` a Laravel (`X-Request-Id`).
    **Chat web:** añade el bloque de caché corta del cargador `/widget/v1/chat-manager.js` (`max-age=300,
 stale-while-revalidate`) de [widget-integracion.md §8](widget-integracion.md#8-caché-del-cargador); la plantilla aún
@@ -288,18 +288,28 @@ stale-while-revalidate`) de [widget-integracion.md §8](widget-integracion.md#8-
    HSTS en peticiones seguras.
 5. **Tamaño de los adjuntos.** La política de adjuntos acepta documentos de WhatsApp de hasta 100 MB (límite de Meta,
    `WHATSAPP_DOCUMENT_MAX_BYTES`), ZIP enviados como enlace hasta 100 MB (`ATTACHMENT_LINK_MAX_BYTES`) y 25 MB en el
-   chat web (`WEBCHAT_ATTACHMENT_MAX_BYTES`). Las plantillas actuales (`upload_max_filesize=20M`, `post_max_size=24M`,
-   `client_max_body_size 24m`) cortan antes los archivos de más de ~20 MB, y el PHP de línea de comandos de desarrollo
-   muestra `2M`/`8M`, así que ahí falla todo lo mayor de 2 MB antes de llegar a Laravel (la bandeja muestra un mensaje
-   claro, no un error técnico). Para admitir 100 MB, en el despliegue (no en el repositorio sin revisión):
-    - PHP-FPM: `upload_max_filesize = 105M`, `post_max_size = 110M`, `max_input_time` y `request_terminate_timeout`
-      ≥ 300 s (subidas lentas), `memory_limit` puede quedar en 256M: el archivo se escribe en streaming (`storeAs`,
-      `hash_file`) y se sube a Meta con un stream, nunca completo en memoria.
-    - Nginx: `client_max_body_size 110m;` y `client_body_timeout`/`fastcgi_read_timeout` ≥ 300 s; `client_body_temp_path`
-      en un disco con espacio para varias subidas simultáneas.
+   chat web (`WEBCHAT_ATTACHMENT_MAX_BYTES`); MB decimal (10^6 bytes, [mensajería §4.2](mensajeria-whatsapp.md)). Desde la
+   fase 5.2.1 las plantillas `deploy/php-fpm/chat-manager.conf` y `deploy/nginx/chat-manager.conf` ya traen estos
+   valores (antes 20M/24M/24m cortaban a ~20 MB). El PHP de Homebrew en desarrollo trae `2M`/`8M`: ahí todo lo mayor de
+   2 MB lo rechaza PHP (el compositor lo avisa antes de subir como límite del servidor). Valores:
+    - PHP-FPM: `upload_max_filesize = 100M` (≥ 100 MB decimales), `post_max_size = 110M` (≈10 % para el multipart),
+      `max_input_time = 300`, `max_execution_time = 120` (guardar 100 MB en un disco externo) y
+      `request_terminate_timeout = 300s`; `memory_limit` queda en 256M: el archivo se escribe en streaming (`storeAs`,
+      `hash_file`, `writeStream`) y se sube a Meta con un stream, nunca completo en memoria. `upload_tmp_dir` opcional
+      (comentado en la plantilla) en un disco con espacio.
+    - Nginx: `client_max_body_size 110m` (= `post_max_size`), `client_body_buffer_size 1m`, `client_body_timeout 300s`,
+      `fastcgi_read_timeout`/`fastcgi_send_timeout 300s`; `client_body_temp_path` en un disco con espacio para varias
+      subidas simultáneas. Un proxy o CDN delante (p. ej. Cloudflare, 100 MB por petición en planes Free/Pro) también
+      limita el cuerpo.
     - Workers (`messages`): el envío sube el archivo a Meta en streaming; el `--timeout` del worker debe superar el
-      tiempo de subida de 100 MB por la red del servidor (los clientes HTTP de Meta usan ≥ 30 s; ajústalo si la red es
-      lenta). Memoria de worker: 256 MB es suficiente.
+      tiempo de subida de 100 MB por la red del servidor (la carga a `/media` usa `META_MEDIA_UPLOAD_TIMEOUT`, 60 s por
+      defecto, acotado a 115 s para que el envío del mensaje quepa en los 140 s del job `DeliverOutboundMessage`,
+      por debajo del `--timeout=150` del grupo `critical` y del `retry_after` de 900 s, también en beanstalkd). Memoria de worker: 256 MB es suficiente.
+    - Verificación: `app:preflight` y Administración → Sistema incluyen el chequeo «Límites de subida» (`uploads`), que
+      avisa si `upload_max_filesize` o `post_max_size` (menos 256 KB de margen multipart) quedan por debajo del máximo
+      de los canales. El preflight lee el `php.ini` de la línea de comandos; la página de Sistema, el de PHP-FPM.
+      Medido en la fase 5.2.1 (E2E `subidas.mjs` por HTTP real con `memory_limit=128M`): un PDF de 99 MB se recibe,
+      guarda y sube al transporte completo (mismo SHA-256) sin cargarse en memoria.
     - Disco: `MEDIA_DISK` (por defecto `local` = `storage/app/private`, nunca público) debe tener espacio para los
       adjuntos y los ZIP entregados por enlace (no se borran al vencer el enlace; se rigen por la retención general).
     - `APP_URL` debe ser la URL pública https: las URLs firmadas de descarga (`/descargas/{id}`) se generan con ella
@@ -656,6 +666,35 @@ de humo), queda marcada con un archivo `FAILED` y `rollback.sh` no vuelve a eleg
 
 Después: revisa Administración > Sistema (colas al día, sin fallidos nuevos, latido reciente).
 
+### Rutas en caché y compilación (Wayfinder)
+
+`npm run build` ejecuta `php artisan wayfinder:generate` (plugin de Vite) para generar `resources/js/routes` y
+`resources/js/actions` (ignorados por Git) **a partir de las rutas registradas**. Si queda una caché de rutas
+(`bootstrap/cache/routes-v7.php`, creada por `php artisan optimize` o `route:cache`) de una versión anterior, Wayfinder
+genera las rutas viejas y la compilación falla con `UNLOADABLE_DEPENDENCY` en los imports de las rutas nuevas (en la
+fase 5.2: `@/routes/admin/history-import`, `@/routes/admin/history`…). `deploy.sh` ejecuta `route:clear` antes de
+compilar. Si la aplicación se actualiza **en el mismo directorio** (sin `deploy.sh`), el orden obligatorio es:
+
+```bash
+cd <directorio-de-la-aplicación>
+php artisan down --retry=30          # opcional: evita servir código a medio actualizar
+git pull
+composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+php artisan route:clear              # ANTES de compilar: Wayfinder lee las rutas registradas
+npm ci --no-audit --no-fund
+npm run build                        # aplicación y widget
+rm -f public/hot
+php artisan migrate --force          # respaldo previo de la base
+php artisan app:sync-permissions --no-interaction   # añade los permisos nuevos (no cambia roles existentes)
+php artisan optimize                 # vuelve a guardar en caché config, rutas, vistas y eventos
+php artisan queue:restart && php artisan reverb:restart
+sudo systemctl reload php8.4-fpm
+php artisan up
+```
+
+Para comprobar antes de compilar: `php artisan route:list --name=history` debe listar las rutas del importador y
+`ls bootstrap/cache/` no debe mostrar `routes-v7.php`.
+
 **Fase 4 (chat web y API v1).** `npm run build` ya construye también el widget (`vp build && vp build --config
 vite.widget.config.ts`): genera `public/widget/v1/chat-manager.js`, que está en `.gitignore`, así que sin el build el
 fragmento de los sitios responde 404. CI (`.github/workflows/tests.yml`) ejecuta el mismo `npm run build`. `deploy.sh`
@@ -679,7 +718,7 @@ quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
    `ATTACHMENT_LINK_MAX_BYTES`, `ATTACHMENT_LINK_DOWNLOADS_PER_MINUTE`, `WEBCHAT_ATTACHMENT_MAX_BYTES`. Todas son
    opcionales (vacío = valor por defecto).
 3. **Límites de subida:** subir PHP-FPM (`upload_max_filesize`, `post_max_size`, tiempos) y Nginx
-   (`client_max_body_size`, tiempos) según §6 punto 5; las plantillas del repositorio siguen en 20M/24M/24m.
+   (`client_max_body_size`, tiempos) según §6 punto 5; las plantillas del repositorio ya traen 100M/110M/110m (fase 5.2.1).
 4. **`php artisan migrate --force`** aplica 7 migraciones (todas aditivas):
 
     | Migración                                                            | Propósito                                                                                                                                                                      | Reversión (`down()`)                                                                                                         |
@@ -794,6 +833,29 @@ quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
 9. **Assets:** `npm ci && npm run build` (lo hace `deploy.sh`).
 10. **Después:** recorrer la [guía §31](guia-pruebas-manuales.md#31-fase-52) en un entorno que no sea de producción y,
     en producción, confirmar que Administración > Sistema no muestra advertencias de almacenamiento.
+
+### Procedimiento de la fase 5.2.1
+
+> **Nada de esto se aplicó** en el servidor ni en la base `chatmanager`, ni en el `php.ini` de desarrollo: requiere la
+> **autorización del responsable**.
+
+1. **Respaldo** verificado, como en la fase 5.2.
+2. **`.env`** (opcional): `META_MEDIA_UPLOAD_TIMEOUT` (60 s por defecto; se acota a 115 s con los valores por defecto,
+   §6 punto 5). `BEANSTALKD_QUEUE_RETRY_AFTER` pasa a 900 por defecto, como las demás conexiones.
+3. **PHP-FPM y Nginx:** copiar las plantillas actualizadas `deploy/php-fpm/chat-manager.conf` (100M/110M, tiempos) y
+   `deploy/nginx/chat-manager.conf` (`client_max_body_size 110m`, tiempos), revisar y recargar:
+   `sudo php-fpm8.4 -t && sudo systemctl reload php8.4-fpm`; `sudo nginx -t && sudo systemctl reload nginx`. Un
+   proxy o CDN delante también limita el cuerpo (Cloudflare Free/Pro: 100 MB).
+4. **`php artisan migrate --force`** aplica 1 migración aditiva:
+
+    | Migración                                                     | Propósito                                                                                                                                                                                      | Reversión (`down()`)                                                        |
+    | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+    | `2026_10_26_172120_add_team_thread_to_chat_appearances_table` | `chat_appearances.team_thread_id` (FK), columna generada `team_thread_key`, único `chat_appearances_user_chat_unique` en lugar de (`user_id`, `conversation_key`) y, solo en MariaDB, un CHECK | Borra las apariencias de hilos internos y restaura el índice único anterior |
+
+5. **Workers:** `php artisan queue:restart` (lo hace `deploy.sh`): `DeliverOutboundMessage` tiene ahora 140 s por
+   intento, por debajo del `--timeout=150` del grupo `critical`.
+6. **Verificar:** Administración → Sistema y `php artisan app:preflight` muestran «Límites de subida: Correcto»; la
+   [guía §32](guia-pruebas-manuales.md#32-fase-521).
 
 ### Webhooks durante la ventana de mantenimiento
 

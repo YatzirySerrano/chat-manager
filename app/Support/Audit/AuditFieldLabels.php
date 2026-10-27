@@ -123,6 +123,7 @@ final class AuditFieldLabels
         'previous_error' => 'Error anterior',
         'error_code' => 'Motivo del error',
         'conversation_id' => 'Folio de la conversación',
+        'team_thread_id' => 'Folio del chat interno',
         'assigned_user_id' => 'Folio del agente asignado',
         'duplicate_risk_confirmed' => 'Riesgo de duplicado aceptado',
 

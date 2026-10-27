@@ -415,9 +415,20 @@ export type ChannelAttachmentRules = {
         max_bytes: number;
         /** 'mixed': part of the category travels as a download link (ZIP among documents). */
         delivery: 'native' | 'link' | 'mixed';
+        /** This server's upload limit is lower than the category's. */
+        server_limited?: boolean;
     }[];
     /** Whether files can be stored right now (MediaDisk); the message explains why not. */
     storage?: { ready: boolean; message: string | null };
+    /** This server's PHP upload limits (ServerUploadLimits; null: no limit). */
+    server?: {
+        max_file_bytes: number | null;
+        max_request_bytes: number | null;
+        upload_max_filesize: string;
+        post_max_size: string;
+        /** The explanation shown when a file exceeds it. */
+        message: string;
+    };
 };
 
 export type ComposerSettings = {

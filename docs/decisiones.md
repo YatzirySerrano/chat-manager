@@ -136,6 +136,15 @@ dentro de cada prefijo.
 - [ADR-QA-7 — Límite de canales que deja pasar sin contar solo ante interbloqueos](#adr-qa-7--límite-de-canales-que-deja-pasar-sin-contar-solo-ante-interbloqueos)
 - [ADR-UX-3 — Exportaciones sin módulo propio: archivos preparados desde cada módulo](#adr-ux-3--exportaciones-sin-módulo-propio-archivos-preparados-desde-cada-módulo)
 
+**Fase 5.2.1: subidas, avisos y colores del chat interno** ([mensajeria-whatsapp.md](mensajeria-whatsapp.md), [chat-interno.md](chat-interno.md)):
+
+- [ADR-META-11 — Límites de canal en MB decimales, la lectura conservadora](#adr-meta-11--límites-de-canal-en-mb-decimales-la-lectura-conservadora)
+- [ADR-INBOX-14 — Error de subida auténtico con `code` estable y texto opcional junto a un archivo](#adr-inbox-14--error-de-subida-auténtico-con-code-estable-y-texto-opcional-junto-a-un-archivo)
+- [ADR-SEC-13 — 413 sin estado para las rutas de máquinas](#adr-sec-13--413-sin-estado-para-las-rutas-de-máquinas)
+- [ADR-OPS-9 — Tiempos encadenados: subida, job, worker y `retry_after`](#adr-ops-9--tiempos-encadenados-subida-job-worker-y-retry_after)
+- [ADR-AUT-6 — Avisos del chat interno sobre el centro de notificaciones, coordinados entre pestañas](#adr-aut-6--avisos-del-chat-interno-sobre-el-centro-de-notificaciones-coordinados-entre-pestañas)
+- [ADR-TC-6 — Colores del chat interno en `chat_appearances` con una columna aditiva](#adr-tc-6--colores-del-chat-interno-en-chat_appearances-con-una-columna-aditiva)
+
 **Documentación** ([README.md](README.md)):
 
 - [ADR-DOC-1 — Un documento por área y documentos transversales](#adr-doc-1--un-documento-por-área-y-documentos-transversales)
@@ -879,3 +888,59 @@ conversación. Cada archivo se busca solo en su propio ZIP, o en uno único del 
 (`HistoryImportPaused`) en lugar de llenar el historial de archivos faltantes, y no se puede confirmar mientras el disco
 no esté listo (bloqueo `storage_unavailable`). Una conversación que falla se reintenta como máximo 3 veces
 («Reintentar fallidas», resultado `completed_with_errors`), conservando sus datos de preparación hasta entonces.
+
+## ADR-META-11 — Límites de canal en MB decimales, la lectura conservadora
+
+Meta publica «5 MB», «16 MB» y «100 MB» sin decir si son 10^6 o 2^20 bytes. Se toma la lectura menor (1 MB =
+1 000 000 bytes) para el compositor y para los límites propios (chat web, ZIP como enlace): así nunca se acepta un
+archivo que Meta pueda rechazar, a costa de rechazar algunos que quizá habría aceptado (un video de 16,2 MB). Los
+tamaños se muestran en la misma unidad en toda la interfaz, como los muestra macOS; `whatsapp.media.types.*.max_bytes`
+solo puede bajar el límite de salida. Pendiente de confirmar con Meta real ([limitaciones §4.1](limitaciones.md#41-meta-real)).
+
+## ADR-INBOX-14 — Error de subida auténtico con `code` estable y texto opcional junto a un archivo
+
+Un archivo que PHP rechazó llegaba como «ausente» y la regla `required_without` respondía «Escribe un mensaje o
+adjunta un archivo», que culpaba al usuario de algo que era la configuración del servidor. Decisión: un archivo
+enviado cuenta aunque PHP lo haya rechazado (el texto es obligatorio solo si no se envió ningún archivo), y cada causa
+responde en su propio campo con su mensaje y un `code` estable (`AttachmentRejected`, `ServerUploadLimits`; también en
+`errors.upload_code`, porque `useHttp` e Inertia solo entregan los errores de un 422). Los códigos separan lo temporal
+(reintentable) de lo definitivo y la configuración del servidor de las reglas del canal; los compositores avisan antes
+de subir cuando el servidor no aceptará el archivo. Se descartó subir el límite de PHP como única corrección: el
+mensaje equivocado reaparecería con cualquier otro límite.
+
+## ADR-SEC-13 — 413 sin estado para las rutas de máquinas
+
+Por encima de `post_max_size` la petición llega vacía y `ValidatePostSize` la corta antes de iniciar la sesión. Una
+página con sesión vuelve atrás con el error en el campo del archivo y un _toast_ (la sesión se inicia solo para eso);
+un cliente JSON recibe `413 {message, code}`. Webhooks, `/up`, `health/*`, `broadcasting/*`, la API y cualquier
+petición sin cookie de sesión reciben un 413 en texto plano, sin crear sesión ni cookies: un remitente automático no
+debe generar sesiones ni recibir redirecciones.
+
+## ADR-OPS-9 — Tiempos encadenados: subida, job, worker y `retry_after`
+
+Un documento de 100 MB necesita más que una llamada JSON a Graph, pero el job no puede morir a mitad del envío del
+mensaje (quedaría ambiguo). La subida a `/media` tiene su propio tiempo (`META_MEDIA_UPLOAD_TIMEOUT`, 60 s), acotado
+para que subida + `POST /messages` (`META_GRAPH_TIMEOUT` + 5 s de conexión) + 10 s de margen quepan en un intento de
+`DeliverOutboundMessage` (140 s); ese intento queda por debajo del `--timeout=150` del grupo `critical` y este, del
+`retry_after` de 900 s de todas las conexiones (también beanstalkd, antes 90). Subir uno exige subir los siguientes.
+
+## ADR-AUT-6 — Avisos del chat interno sobre el centro de notificaciones, coordinados entre pestañas
+
+Los avisos del chat interno reutilizan el `NotificationCenter` (recibos, agrupación por hilo, preferencias, campana,
+Web Push) en vez de un canal propio: `TeamChatMessage` se anuncia en la página y el texto (remitente y vista previa de
+90 caracteres) se arma al leer solo para participantes vigentes ([ADR-AUT-2](#adr-aut-2--el-texto-de-una-notificación-se-construye-al-leerla));
+la vista previa es la excepción acotada a «nunca el cuerpo de los mensajes», porque es lo que la lista de hilos ya
+muestra, y nunca sale de la plataforma (ni en avisos del sistema ni en Web Push). Varias pestañas no deben sonar
+varias veces ni avisar de un hilo que se está leyendo en otra: se coordinan por `localStorage` con Web Locks
+(un reclamo por versión de notificación, enfriamiento de 2 s, hilos mirados con latido y caducidad), sin servidor ni
+`BroadcastChannel`, y sin almacenamiento cada pestaña decide sola. Leer un hilo lee sus avisos en cola detrás del
+aviso mismo, con una segunda comprobación para la carrera entre ambos.
+
+## ADR-TC-6 — Colores del chat interno en `chat_appearances` con una columna aditiva
+
+En lugar de una tabla nueva, `chat_appearances` gana `team_thread_id` y la columna generada `team_thread_key`, y el
+único pasa a (`user_id`, `conversation_key`, `team_thread_key`). Así el predeterminado del usuario es uno solo para
+clientes y chat interno, el servicio `ChatAppearances`, el editor y la supervisión de elementos personales se
+reutilizan, y las filas existentes no cambian de significado. La supervisión nombra el hilo solo por su folio («Chat
+interno #id») para no revelar quién habla con quién. El CHECK «conversación o hilo, nunca ambos» solo se crea en
+MariaDB (MySQL no admite CHECK sobre columnas de FK con acciones referenciales); en otro motor lo garantiza el servicio.

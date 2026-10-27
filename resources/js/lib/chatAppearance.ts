@@ -1,5 +1,5 @@
 import type { ComputedRef, InjectionKey } from 'vue';
-import type { ChatColorKey, ChatColors } from '@/types';
+import type { ChatAppearanceTarget, ChatColorKey, ChatColors } from '@/types';
 
 /**
  * Personal chat colors are applied as CSS custom properties on the chat
@@ -53,3 +53,16 @@ export const COLOR_LABELS: Record<ChatColorKey, string> = {
     received_text: 'Texto de los mensajes del cliente',
     chat_bg: 'Fondo del chat',
 };
+
+/** In the internal chat the received messages are the colleagues'. */
+export const TEAM_COLOR_LABELS: Record<ChatColorKey, string> = {
+    ...COLOR_LABELS,
+    received_bg: 'Fondo de los mensajes de tus compañeros',
+    received_text: 'Texto de los mensajes de tus compañeros',
+};
+
+export function colorLabelsFor(
+    target: ChatAppearanceTarget,
+): Record<ChatColorKey, string> {
+    return target.type === 'team_thread' ? TEAM_COLOR_LABELS : COLOR_LABELS;
+}

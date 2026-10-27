@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\TeamChat\TeamThread;
 use Database\Factories\ChatAppearanceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -13,15 +14,19 @@ use Illuminate\Support\Carbon;
 
 /**
  * Personal chat colors of a user, applied only to their own view. The row
- * without conversation is the user's default for every chat; a row with a
- * conversation overrides it for that chat. conversation_key is a stored
- * generated column (conversation_id or 0) that makes (user_id,
- * conversation_key) unique; it is never written.
+ * without chat (no conversation and no internal thread) is the user's
+ * default for every chat, customer or internal; a row with a customer
+ * conversation or an internal thread (never both) overrides it for that
+ * chat. conversation_key and team_thread_key are stored generated columns
+ * (the id or 0) that make (user_id, conversation_key, team_thread_key)
+ * unique; they are never written.
  *
  * @property int $id
  * @property int $user_id
  * @property int|null $conversation_id
+ * @property int|null $team_thread_id
  * @property int $conversation_key
+ * @property int $team_thread_key
  * @property string|null $preset
  * @property array{light?: array{sent_bg?: string, sent_text?: string, received_bg?: string, received_text?: string, chat_bg?: string}, dark?: array{sent_bg?: string, sent_text?: string, received_bg?: string, received_text?: string, chat_bg?: string}}|null $colors
  * @property Carbon|null $created_at
@@ -43,6 +48,7 @@ class ChatAppearance extends Model
         return [
             'colors' => 'array',
             'conversation_key' => 'integer',
+            'team_thread_key' => 'integer',
         ];
     }
 
@@ -62,19 +68,39 @@ class ChatAppearance extends Model
         return $this->belongsTo(Conversation::class);
     }
 
+    /**
+     * @return BelongsTo<TeamThread, $this>
+     */
+    public function teamThread(): BelongsTo
+    {
+        return $this->belongsTo(TeamThread::class);
+    }
+
     public function isDefault(): bool
     {
-        return $this->conversation_id === null;
+        return $this->conversation_id === null && $this->team_thread_id === null;
     }
 
     /**
-     * The user's default appearance (the row without conversation).
+     * The chat this row overrides, or null for the user's default.
+     */
+    public function chat(): Conversation|TeamThread|null
+    {
+        return match (true) {
+            $this->conversation_id !== null => $this->conversation,
+            $this->team_thread_id !== null => $this->teamThread,
+            default => null,
+        };
+    }
+
+    /**
+     * The user's default appearance (the row without chat).
      *
      * @param  Builder<ChatAppearance>  $query
      */
     #[Scope]
     protected function defaults(Builder $query): void
     {
-        $query->whereNull($query->qualifyColumn('conversation_id'));
+        $query->whereNull($query->qualifyColumn('conversation_id'))->whereNull($query->qualifyColumn('team_thread_id'));
     }
 }

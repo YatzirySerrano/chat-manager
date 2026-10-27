@@ -37,6 +37,11 @@ return [
         'graph_version' => env('META_GRAPH_VERSION') ?: 'v26.0',
         'base_url' => env('META_GRAPH_BASE_URL') ?: 'https://graph.facebook.com',
         'timeout' => (int) (env('META_GRAPH_TIMEOUT') ?: 10),
+        // Uploading a file to WhatsApp (POST /{phone-number-id}/media, up to
+        // 100 MB, streamed from the media disk). Capped so the upload plus
+        // the message send fit in one delivery attempt (140 s): at most
+        // 140 - META_GRAPH_TIMEOUT - 5 - 10 s (115 s with the defaults).
+        'media_upload_timeout' => (int) (env('META_MEDIA_UPLOAD_TIMEOUT') ?: 60),
 
         /*
         | Meta app used to authorize Facebook Messenger pages and Instagram

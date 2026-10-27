@@ -134,6 +134,18 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | Decisiones                                   | [decisiones.md, grupo «Fase 5.2»](decisiones.md#índice)                                                                                                                                                |
 | Pruebas automáticas y manuales               | [pruebas §2.4 y §6.5](pruebas.md#65-escenarios-de-la-fase-52) y [guía §31](guia-pruebas-manuales.md#31-fase-52)                                                                                        |
 
+### Fase 5.2.1: subidas, avisos y colores del chat interno
+
+| Tema                                                | Dónde                                                                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Errores de subida con `code` y límites del servidor | [mensajeria-whatsapp.md §4.2](mensajeria-whatsapp.md#42-saliente) e [infraestructura §6 punto 5](infraestructura-y-despliegue.md#6-https-y-nginx) |
+| Avisos del chat interno                             | [chat-interno §Avisos](chat-interno.md#avisos-del-chat-interno-fase-521) y [notificaciones §1.5](notificaciones-y-horarios.md#15-interfaz)        |
+| Colores propios en el chat interno                  | [seguridad §5.1](seguridad-y-auditoria.md#51-elementos-personales-alias-apariencia-del-chat-respuestas-personales)                                |
+| Migración (no aplicada) y despliegue                | [infraestructura §16 «Procedimiento de la fase 5.2.1»](infraestructura-y-despliegue.md#procedimiento-de-la-fase-521)                              |
+| Decisiones                                          | [decisiones.md, grupo «Fase 5.2.1»](decisiones.md#índice)                                                                                         |
+| Pendiente                                           | [limitaciones §4.5](limitaciones.md#45-entorno-local-y-navegadores-fase-521)                                                                      |
+| Pruebas automáticas y manuales                      | [pruebas §2.5 y §6.6](pruebas.md#66-escenarios-de-la-fase-521) y [guía §32](guia-pruebas-manuales.md#32-fase-521)                                 |
+
 Bandeja general con ambos canales: [bandejas-y-asignacion.md](bandejas-y-asignacion.md#vista-general-chips-y-contadores).
 Terminología de estados: [arquitectura.md §8](arquitectura.md#8-estados-de-mensajes).
 

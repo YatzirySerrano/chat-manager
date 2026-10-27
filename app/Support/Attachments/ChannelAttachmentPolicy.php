@@ -30,7 +30,13 @@ use Illuminate\Http\UploadedFile;
  */
 class ChannelAttachmentPolicy
 {
-    private const MB = 1024 * 1024;
+    /**
+     * Meta publishes its limits as "5 MB", "16 MB", "100 MB" without saying
+     * whether a megabyte is 10^6 or 2^20 bytes: the smaller reading (10^6)
+     * is used, so a file Meta could refuse is never accepted. The limits of
+     * this platform (web chat, download links) use the same unit.
+     */
+    private const MB = 1_000_000;
 
     /** Attachment menu categories, in menu order (as in WhatsApp). */
     private const CATEGORIES = ['image', 'video', 'document', 'audio'];
@@ -156,9 +162,13 @@ class ChannelAttachmentPolicy
      * attachment menu: each kind carries its menu `category` (image, video,
      * audio or document; ZIP archives are documents sent as a link), the
      * channel lists its `categories` (accept hint, size limit and how they
-     * are delivered) and `storage` says whether files can be stored now.
+     * are delivered), `storage` says whether files can be stored now and
+     * `server` carries the upload limit of this server's PHP
+     * (ServerUploadLimits), which may be lower than the channel's: each
+     * category then says `server_limited`, so the composer refuses such a
+     * file before uploading it with the server's explanation.
      *
-     * @return array<string, array{channel: string, channel_label: string, max_bytes: int, link_ttl_days: int, kinds: list<array<string, mixed>>, categories: list<array{key: string, kinds: list<string>, mimes: list<string>, extensions: list<string>, accept: string, max_bytes: int, delivery: string}>, storage: array{ready: bool, message: string|null}}>
+     * @return array<string, array{channel: string, channel_label: string, max_bytes: int, link_ttl_days: int, kinds: list<array<string, mixed>>, categories: list<array{key: string, kinds: list<string>, mimes: list<string>, extensions: list<string>, accept: string, max_bytes: int, delivery: string, server_limited: bool}>, storage: array{ready: bool, message: string|null}, server: array{max_file_bytes: int|null, max_request_bytes: int|null, upload_max_filesize: string, post_max_size: string, message: string}}>
      */
     public function describeAll(): array
     {
@@ -166,6 +176,7 @@ class ChannelAttachmentPolicy
         $storage = $mediaDisk->ready()
             ? ['ready' => true, 'message' => null]
             : ['ready' => false, 'message' => 'Por ahora no se pueden adjuntar archivos: el almacenamiento de archivos no está disponible. Puedes enviar mensajes de texto; avisa a un administrador.'];
+        $server = app(ServerUploadLimits::class);
         $described = [];
 
         foreach (ConnectionChannel::cases() as $channel) {
@@ -175,8 +186,13 @@ class ChannelAttachmentPolicy
                 fn (array $kind): array => [...$kind, 'category' => self::categoryOf($kind['type'])],
                 $description['kinds'],
             );
-            $description['categories'] = $this->categories($rules);
+            $serverMax = $server->maxFileBytes();
+            $description['categories'] = array_map(
+                fn (array $category): array => [...$category, 'server_limited' => $serverMax !== null && $serverMax < $category['max_bytes']],
+                $this->categories($rules),
+            );
             $description['storage'] = $storage;
+            $description['server'] = [...$server->describe(), 'message' => $server->limitMessage($channel->label())];
             $described[$channel->value] = $description;
         }
 
@@ -257,7 +273,9 @@ class ChannelAttachmentPolicy
             $mimes = isset($rule['mimes']) && is_array($rule['mimes']) && $rule['mimes'] !== []
                 ? array_diff(array_map('strval', $rule['mimes']), ['application/zip', 'application/vnd.ms-office', 'application/x-ole-storage', 'application/cdfv2', 'video/ogg'])
                 : $defaultMimes;
-            $max = isset($rule['max_bytes']) && is_numeric($rule['max_bytes']) && (int) $rule['max_bytes'] > 0 ? (int) $rule['max_bytes'] : $defaultMax;
+            // `whatsapp.media.types` (shared with inbound media) may lower the
+            // limit for this server, never raise it above Meta's (decimal) one.
+            $max = isset($rule['max_bytes']) && is_numeric($rule['max_bytes']) && (int) $rule['max_bytes'] > 0 ? min((int) $rule['max_bytes'], $defaultMax) : $defaultMax;
 
             return new AttachmentKind($key, $type, $label, $this->extensionsFor($mimes), $max, $caption);
         };

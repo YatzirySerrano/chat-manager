@@ -1,16 +1,29 @@
 <script setup lang="ts">
 import { Link, router, useHttp } from '@inertiajs/vue3';
-import { Archive, ArrowDown, ArrowLeft, BellOff, Settings2 } from '@lucide/vue';
-import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
+import {
+    Archive,
+    ArrowDown,
+    ArrowLeft,
+    BellOff,
+    Palette,
+    Settings2,
+} from '@lucide/vue';
+import {
+    useDocumentVisibility,
+    useIntervalFn,
+    useWindowFocus,
+} from '@vueuse/core';
 import {
     computed,
     nextTick,
     onBeforeUnmount,
     onMounted,
+    provide,
     ref,
     watch,
 } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import ChatAppearanceDialog from '@/components/personalization/ChatAppearanceDialog.vue';
 import MessageBubble from '@/components/team-chat/MessageBubble.vue';
 import MessageComposer from '@/components/team-chat/MessageComposer.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
@@ -18,6 +31,11 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useChannel } from '@/composables/useChannel';
 import { useTeamPresence } from '@/composables/useTeamPresence';
+import {
+    CUSTOM_BUBBLE_CLASSES,
+    CUSTOM_CHAT_COLORS,
+    chatColorVariables,
+} from '@/lib/chatAppearance';
 import { onReconnect, realtimeState } from '@/lib/realtime';
 import { formatDate } from '@/lib/format';
 import { index as teamChatIndex } from '@/routes/team-chat';
@@ -31,6 +49,7 @@ import {
     destroy as removeReaction,
     store as addReaction,
 } from '@/routes/team-chat/threads/messages/reactions';
+import type { ViewerChatAppearance } from '@/types';
 import type {
     TeamChatLimits,
     TeamMention,
@@ -58,6 +77,26 @@ const emit = defineEmits<{
     unreadChanged: [total: number, requestedAt: number];
 }>();
 
+/*
+ * The viewer's own chat colors for this thread (PERSONALIZATION): CSS
+ * variables on the history only, replaced right after saving without
+ * reloading the page. Nobody else's colors ever reach this view.
+ */
+const appearance = ref<ViewerChatAppearance | null>(
+    props.thread.appearance ?? null,
+);
+const appearanceOpen = ref(false);
+
+watch(
+    () => props.thread.appearance,
+    (value) => (appearance.value = value ?? null),
+);
+
+const customColors = computed(() => Boolean(appearance.value?.colors));
+const chatStyle = computed(() => chatColorVariables(appearance.value?.colors));
+
+provide(CUSTOM_CHAT_COLORS, customColors);
+
 const FALLBACK_INTERVAL_MS = 15_000;
 const TYPING_TTL_MS = 5_000;
 
@@ -79,6 +118,8 @@ const deleting = ref(false);
 const savingId = ref<number | null>(null);
 const actionError = ref<string | null>(null);
 const visibility = useDocumentVisibility();
+/** Read only while the user looks at the chat (visible and focused window). */
+const focused = useWindowFocus();
 
 const olderHttp = useHttp<Record<string, never>, TeamMessagePage>({});
 const newerHttp = useHttp<Record<string, never>, TeamMessagePage>({});
@@ -397,6 +438,7 @@ async function markLatestRead(): Promise<void> {
         !latest ||
         latest.id <= lastReadSent ||
         visibility.value !== 'visible' ||
+        !focused.value ||
         !atBottom.value ||
         hasMoreAfter.value
     ) {
@@ -570,8 +612,8 @@ useIntervalFn(() => {
     }
 }, FALLBACK_INTERVAL_MS);
 
-watch(visibility, (state) => {
-    if (state === 'visible') {
+watch([visibility, focused], ([state, hasFocus]) => {
+    if (state === 'visible' && hasFocus) {
         void markLatestRead();
     }
 });
@@ -643,6 +685,17 @@ onBeforeUnmount(() => {
                 </p>
             </div>
             <Button
+                v-if="appearance"
+                variant="ghost"
+                size="icon"
+                class="shrink-0"
+                title="Apariencia del chat"
+                aria-label="Cambiar los colores de tu chat"
+                @click="appearanceOpen = true"
+            >
+                <Palette aria-hidden="true" />
+            </Button>
+            <Button
                 variant="ghost"
                 size="icon"
                 :aria-label="
@@ -675,6 +728,9 @@ onBeforeUnmount(() => {
             <div
                 ref="scroller"
                 class="h-full overflow-y-auto overscroll-contain py-3"
+                :class="customColors && CUSTOM_BUBBLE_CLASSES.chat"
+                :style="chatStyle"
+                :data-custom-colors="customColors || undefined"
                 role="log"
                 aria-live="polite"
                 aria-relevant="additions"
@@ -685,6 +741,7 @@ onBeforeUnmount(() => {
                     <Button
                         variant="ghost"
                         size="sm"
+                        :class="customColors && 'bg-background'"
                         :disabled="loadingOlder"
                         @click="loadOlder"
                     >
@@ -696,12 +753,19 @@ onBeforeUnmount(() => {
                     v-else-if="messages.length > 0"
                     class="px-4 pb-2 text-center text-xs text-muted-foreground"
                 >
-                    Inicio de la conversación
+                    <span
+                        :class="
+                            customColors &&
+                            'rounded-full bg-background px-2.5 py-0.5'
+                        "
+                        >Inicio de la conversación</span
+                    >
                 </p>
 
                 <p
                     v-if="messages.length === 0"
                     class="mx-auto mt-10 max-w-xs px-4 text-center text-sm text-muted-foreground"
+                    :class="customColors && 'rounded-lg bg-background py-2'"
                 >
                     Aún no hay mensajes. Escribe el primero: solo
                     {{
@@ -750,6 +814,7 @@ onBeforeUnmount(() => {
                     <Button
                         variant="ghost"
                         size="sm"
+                        :class="customColors && 'bg-background'"
                         :disabled="loadingNewer"
                         @click="loadNewer"
                     >
@@ -828,6 +893,14 @@ onBeforeUnmount(() => {
                 }
             "
             @confirm="confirmDelete"
+        />
+
+        <ChatAppearanceDialog
+            v-if="appearance"
+            v-model:open="appearanceOpen"
+            :target="{ type: 'team_thread', id: thread.id }"
+            :appearance="appearance"
+            @saved="(value) => (appearance = value)"
         />
     </section>
 </template>

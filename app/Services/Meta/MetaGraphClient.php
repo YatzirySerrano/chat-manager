@@ -2,6 +2,7 @@
 
 namespace App\Services\Meta;
 
+use App\Jobs\DeliverOutboundMessage;
 use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\LazyOpenStream;
 use GuzzleHttp\Psr7\StreamWrapper;
@@ -25,6 +26,9 @@ use Throwable;
  */
 class MetaGraphClient
 {
+    /** Seconds kept free in a delivery attempt after the upload and the message send. */
+    private const UPLOAD_MARGIN_SECONDS = 10;
+
     /**
      * Fields requested when checking a WhatsApp business phone number.
      *
@@ -107,7 +111,12 @@ class MetaGraphClient
      */
     public function upload(string $accessToken, string $phoneNumberId, $contents, string $mimeType, string $fileName): string
     {
+        // The file travels as a stream (never read into memory) with its own,
+        // longer timeout: a 100 MB document needs more than a JSON call.
+        $timeout = self::uploadTimeout();
+
         $payload = $this->decode($this->send($accessToken, fn (PendingRequest $request): Response => $request
+            ->timeout($timeout)
             ->attach('file', $contents, $fileName, ['Content-Type' => $mimeType])
             ->post(rawurlencode($phoneNumberId).'/media', [
                 'messaging_product' => 'whatsapp',
@@ -294,6 +303,21 @@ class MetaGraphClient
             ->timeout($absolute ? max(30, $timeout) : $timeout);
 
         return $absolute ? $request : $request->baseUrl(self::baseUrl());
+    }
+
+    /**
+     * Seconds allowed to upload one file (`services.meta.media_upload_timeout`),
+     * capped so that the upload, then POST /messages (its timeout plus the
+     * connection timeout) and a margin always fit in one delivery attempt
+     * (DeliverOutboundMessage::TIMEOUT): the job is never killed halfway
+     * through sending the message.
+     */
+    public static function uploadTimeout(): int
+    {
+        $graph = max(1, (int) config('services.meta.timeout'));
+        $budget = DeliverOutboundMessage::TIMEOUT - $graph - min(5, $graph) - self::UPLOAD_MARGIN_SECONDS;
+
+        return max(1, min(max($graph, (int) config('services.meta.media_upload_timeout', 60)), $budget));
     }
 
     public static function baseUrl(): string

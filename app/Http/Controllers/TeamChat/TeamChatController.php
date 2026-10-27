@@ -9,7 +9,9 @@ use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\Personalization\ChatAppearances;
 use App\Services\TeamChat\TeamChatPresenter;
+use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -26,6 +28,7 @@ class TeamChatController extends Controller
         private TeamMessageHistory $history,
         private TeamChatPresenter $presenter,
         private TeamUnreadCounter $unread,
+        private ChatAppearances $appearances,
     ) {}
 
     public function index(Request $request): Response
@@ -94,6 +97,8 @@ class TeamChatController extends Controller
                 'maxThreads' => TeamThreadListQuery::MAX_LIMIT,
                 'maxMentions' => (int) config('team-chat.max_mentions'),
                 'reactions' => array_values(array_map('strval', (array) config('team-chat.reactions'))),
+                // This server's PHP upload limits (may be lower than maxKilobytes).
+                'server' => app(ServerUploadLimits::class)->describe(),
             ],
         ]);
     }
@@ -137,6 +142,8 @@ class TeamChatController extends Controller
                 'leave' => Gate::allows('leave', $thread),
             ],
             'post_blocked_reason' => $canPost ? null : $postBlockedReason,
+            // The viewer's own chat colors for this thread (never anyone else's).
+            'appearance' => $this->appearances->forViewer($viewer, $thread),
         ];
     }
 }

@@ -46,6 +46,10 @@ class NotificationController extends Controller
             'preferences' => $preferences->for($user),
             'next_before' => $hasMore && $last !== null ? $last->updated_at?->toIso8601String() : null,
             'next_before_id' => $hasMore && $last !== null ? (string) $last->id : null,
+            // Lets the client tell news from notifications that were already
+            // old when it fetched them (after a long disconnection), without
+            // trusting the device clock.
+            'server_time' => now()->toIso8601String(),
         ]);
     }
 

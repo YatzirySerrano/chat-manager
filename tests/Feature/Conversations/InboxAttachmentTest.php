@@ -124,7 +124,7 @@ test('each type keeps the WhatsApp size limit', function () {
 
     sendFile($this, UploadedFile::fake()->image('grande.png', 400, 400)->size(5))
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['attachment' => 'El archivo pesa más de 1 KB']);
+        ->assertJsonValidationErrors(['attachment' => 'Esta imagen supera el tamaño permitido para WhatsApp (1 KB)']);
 });
 
 test('audio cannot carry a caption', function () {

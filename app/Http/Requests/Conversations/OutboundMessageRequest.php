@@ -3,11 +3,16 @@
 namespace App\Http\Requests\Conversations;
 
 use App\Concerns\AuthorizesVisibleConversation;
+use App\Exceptions\AttachmentRejected;
 use App\Models\Conversation;
 use App\Support\Attachments\ChannelAttachmentPolicy;
 use App\Support\Attachments\ChannelAttachmentRules;
+use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 
 /**
  * An ordinary reply: text, or one file with an optional caption. There is
@@ -17,9 +22,10 @@ use Illuminate\Foundation\Http\FormRequest;
  * engine; here the upload is only capped at the largest file the
  * conversation's channel accepts (ChannelAttachmentPolicy).
  *
- * A file larger than PHP's upload_max_filesize never reaches Laravel (the
- * upload fails with UPLOAD_ERR_INI_SIZE): it is answered with a clear
- * explanation instead of a generic "failed to upload".
+ * A file PHP refused (larger than upload_max_filesize, a partial upload, no
+ * temporary directory) still counts as "a file was sent": the reply is
+ * refused only on the attachment field, with the cause and a stable code
+ * (ServerUploadLimits, AttachmentRejected), never with "write a message".
  */
 class OutboundMessageRequest extends FormRequest
 {
@@ -34,7 +40,7 @@ class OutboundMessageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'body' => ['nullable', 'required_without:attachment', 'string', 'max:'.self::BODY_MAX_LENGTH],
+            'body' => ['nullable', Rule::requiredIf(fn (): bool => $this->sentAttachment() === null), 'string', 'max:'.self::BODY_MAX_LENGTH],
             'client_reference' => ['required', 'uuid'],
             'attachment' => ['nullable', 'file', 'max:'.(int) ceil($this->uploadCapBytes() / 1024)],
             'reply_to_message_id' => ['nullable', 'integer', 'min:1'],
@@ -47,21 +53,53 @@ class OutboundMessageRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'body.required_without' => 'Escribe un mensaje o adjunta un archivo.',
+            'body.required' => 'Escribe un mensaje o adjunta un archivo.',
             'attachment.max' => sprintf('El archivo pesa más de %s, el máximo que se puede enviar por esta conversación.', ChannelAttachmentRules::humanSize($this->uploadCapBytes())),
-            'attachment.uploaded' => self::serverRejectedUpload(),
+            'attachment.uploaded' => $this->uploadFailure()['message'] ?? 'No se pudo recibir el archivo. Inténtalo de nuevo.',
         ];
     }
 
     /**
-     * Why the server refused a file before the application could read it:
-     * PHP's upload_max_filesize (or a partial or interrupted upload).
+     * A file PHP refused is answered with its own cause and code only.
      */
-    public static function serverRejectedUpload(): string
+    protected function failedValidation(Validator $validator): void
     {
-        $limit = trim((string) ini_get('upload_max_filesize'));
+        $failure = $this->uploadFailure();
 
-        return 'El servidor no pudo recibir el archivo'.($limit !== '' ? " (su límite de subida es {$limit}B)" : '').'. Intenta con un archivo más pequeño o pide a un administrador que amplíe el límite de subida del servidor.';
+        if ($failure !== null && $validator->errors()->has('attachment')) {
+            throw AttachmentRejected::fromValidator($validator, $failure['code'])
+                ->errorBag($this->errorBag)
+                ->redirectTo($this->getRedirectUrl());
+        }
+
+        parent::failedValidation($validator);
+    }
+
+    /**
+     * The file field as PHP delivered it, also when the upload failed
+     * (UPLOAD_ERR_NO_FILE means nothing was chosen).
+     */
+    public function sentAttachment(): ?UploadedFile
+    {
+        $file = $this->file('attachment');
+
+        return $file instanceof UploadedFile && $file->getError() !== UPLOAD_ERR_NO_FILE ? $file : null;
+    }
+
+    /**
+     * @return array{code: string, message: string}|null
+     */
+    private function uploadFailure(): ?array
+    {
+        $file = $this->sentAttachment();
+
+        if ($file === null) {
+            return null;
+        }
+
+        $conversation = $this->route('conversation');
+
+        return app(ServerUploadLimits::class)->failure($file, $conversation instanceof Conversation ? $conversation->channelConnection?->channel->label() : null);
     }
 
     /**

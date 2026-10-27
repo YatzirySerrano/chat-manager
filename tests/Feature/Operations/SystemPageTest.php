@@ -41,7 +41,7 @@ test('administrators see health, queues, failed jobs and connections', function 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('admin/system/Index')
-            ->has('checks', 8)
+            ->has('checks', 9)
             ->where('checks.0.key', 'database')
             ->where('checks.0.status', 'ok')
             ->has('queues', count(Queues::all()))

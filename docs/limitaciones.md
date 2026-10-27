@@ -1,6 +1,6 @@
 # Limitaciones y dependencias externas
 
-Estado real de Chat Manager tras la fase de estabilización (2026-10-22), actualizado en la fase 5.2 (2026-10-25): qué está probado, qué es simulado, qué
+Estado real de Chat Manager tras la fase de estabilización (2026-10-22), actualizado en la fase 5.2 (2026-10-25) y en la 5.2.1 (2026-10-26): qué está probado, qué es simulado, qué
 depende de una validación externa, qué se resolvió del informe anterior y qué sigue abierto. Cada módulo conserva el
 detalle técnico en su documento; el registro completo de la fase (problema por problema, archivos y funciones
 intervenidas) está en [estabilizacion-final.md](estabilizacion-final.md).
@@ -110,6 +110,11 @@ Nunca se ha intercambiado un mensaje auténtico con Meta ([mensajeria-whatsapp.m
   grupos ([mensajeria §12](mensajeria-whatsapp.md#12-grupos-de-whatsapp-fase-52)); el cobro de mensajes de servicio
   desde el 1-oct-2026 (cupo de 1,000 entregados al mes por número) no se refleja en la aplicación, que no calcula
   costos ([mensajeria §6.1](mensajeria-whatsapp.md#61-costos)).
+- fase 5.2.1: la subida real de archivos grandes a `/media` (hasta 100 MB) con `META_MEDIA_UPLOAD_TIMEOUT`; solo se
+  probó contra un sustituto local de Graph (`tests/e2e/fake-graph.php`). **La unidad de los límites de Meta no está
+  confirmada** (Meta no dice si «16 MB» son 10^6 o 2^20 bytes): se usa la lectura decimal, la conservadora
+  ([ADR-META-11](decisiones.md#adr-meta-11--límites-de-canal-en-mb-decimales-la-lectura-conservadora)); si Meta usa
+  MiB, el compositor rechaza archivos que Meta habría aceptado (entre 16 000 000 y 16 777 216 bytes, por ejemplo).
 
 ### 4.1.1 Facebook Messenger e Instagram
 
@@ -143,6 +148,11 @@ El disco S3 (`MEDIA_DISK=s3`) se probó con dobles de disco (`FailingDisk`, disc
 contra un bucket real** (AWS, Synology C2 ni MinIO). La lista vigente de operaciones S3 que admite C2 no se pudo
 confirmar. Validarlo con `app:preflight` y la [guía §31.8](guia-pruebas-manuales.md#31-fase-52).
 
+Fase 5.2.1: al enviar a WhatsApp desde un disco S3, `MetaCloudWhatsAppTransport::upload` abre `readStream`, que en S3
+no tiene tamaño ni se puede rebobinar, así que Guzzle lo envía como multipart _chunked_ (sin `Content-Length`). **No
+está verificado** en un entorno de pruebas real que Graph acepte ese cuerpo ni cómo se comporta un reintento de
+Guzzle; el E2E `subidas.mjs` cubre solo el disco local.
+
 ### 4.4 Servidor real
 
 - Nginx, PHP-FPM, Supervisor, systemd, logrotate, cron, sudoers y los scripts `deploy.sh`, `rollback.sh`,
@@ -159,7 +169,27 @@ confirmar. Validarlo con `app:preflight` y la [guía §31.8](guia-pruebas-manual
   para la campana) son metas de diseño; las cifras medidas están en [rendimiento-y-carga.md](rendimiento-y-carga.md).
   Ninguna cifra de carga es una promesa de producción.
 - La ventana de mantenimiento del despliegue (503 a los webhooks; Meta reintenta) no se ha medido.
+- **Límites de subida (fase 5.2.1):** las plantillas `deploy/php-fpm/chat-manager.conf` y `deploy/nginx/chat-manager.conf`
+  ya traen 100M/110M/110m y los tiempos de 300 s, pero **no se han aplicado en ningún servidor**. Un proxy o CDN
+  delante también limita el cuerpo: Cloudflare Free/Pro acepta 100 MB por petición, menos que un documento de 100 MB
+  más el multipart; hay que subirlo o excluir la ruta. Solo se midió en local (PDF de 99 MB por HTTP real con
+  `memory_limit=128M`).
 - Restauración de respaldos y objetivos RPO/RTO: deben medirse en la primera verificación mensual.
+
+### 4.5 Entorno local y navegadores (fase 5.2.1)
+
+- **`php.ini` local en 2M/8M** hasta que el administrador del equipo aplique el ini de subidas
+  ([guía §32.2](guia-pruebas-manuales.md#32-fase-521)): mientras tanto, en `composer run dev` todo archivo de más de
+  2.1 MB se rechaza **antes de subir** con el mensaje del límite del servidor (no es un fallo de la aplicación) y
+  Administración → Sistema muestra la advertencia «Límites de subida».
+- **Navegadores:** los escenarios E2E de subidas, avisos y colores del chat interno corren solo en Chromium (lanzado sin
+  la restricción de autoplay). Safari, Firefox y los móviles reales (iOS, Android) no se verificaron: Web Locks, el
+  audio bloqueado hasta la primera interacción, la coordinación entre pestañas y el tono del chat interno pueden
+  comportarse distinto.
+- **Avisos del chat interno:** no hay horarios de silencio en la aplicación; tras una reconexión aparece un _toast_ por
+  notificación acumulada (un _toast_ resumen queda pendiente). El fallo intermitente de la fase 5.1 en
+  `rt-team-chat-message` sigue sin causa determinada ([chat-interno](chat-interno.md#limitaciones-y-pendientes)).
+- La migración `2026_10_26_172120_add_team_thread_to_chat_appearances_table` **no está aplicada** en `chatmanager`.
 
 ## 5. Resuelto en la estabilización
 
@@ -291,3 +321,8 @@ y [rendimiento-y-carga.md](rendimiento-y-carga.md).
     `app:preflight` sin bloqueantes en `storage.media`. Configurar `CACHE_LIMITER=redis` si hay Redis. Registrar el
     método de pago en Meta (los mensajes de servicio por encima del cupo no se entregan sin él) y validar los formatos
     de Whaticket con muestras reales antes de importar historial.
+11. **Fase 5.2.1:** con autorización y respaldo, aplicar la migración de colores del chat interno, desplegar las
+    plantillas de PHP-FPM y Nginx (y revisar el límite de cuerpo del proxy o CDN), reiniciar workers
+    ([procedimiento](infraestructura-y-despliegue.md#procedimiento-de-la-fase-521)) y comprobar «Límites de subida» en
+    Administración → Sistema. Probar con Meta real un documento de ~99 MB (desde el disco que se vaya a usar, también
+    S3) y probar los avisos en Safari, Firefox y un móvil.

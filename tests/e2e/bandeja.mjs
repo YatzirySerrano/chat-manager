@@ -326,7 +326,9 @@ const run = async () => {
                 .then(() => true)
                 .catch(() => false);
             const delta = await alertDelta(ana, () =>
-                ana.getByRole('button', { name: 'Probar sonido' }).click(),
+                ana
+                    .getByRole('button', { name: 'Probar sonido', exact: true })
+                    .click(),
             );
 
             return [

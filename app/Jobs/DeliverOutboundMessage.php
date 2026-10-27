@@ -86,9 +86,17 @@ class DeliverOutboundMessage implements ShouldQueue
 {
     use Queueable;
 
+    /**
+     * Seconds one attempt may take: the media upload (up to 100 MB, capped
+     * by MetaGraphClient::uploadTimeout() so the message send still fits)
+     * plus POST /messages. Below the worker's --timeout (150 s, deploy/) and
+     * every queue connection's retry_after (900 s, config/queue.php).
+     */
+    public const TIMEOUT = 140;
+
     public int $tries;
 
-    public int $timeout = 90;
+    public int $timeout = self::TIMEOUT;
 
     /** When the delivery was first queued (Unix time with microseconds); null on jobs queued before it existed. */
     public ?float $queuedAt = null;

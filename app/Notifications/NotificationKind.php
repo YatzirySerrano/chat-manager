@@ -46,8 +46,8 @@ enum NotificationKind: string
             self::ConversationAssigned => 'Cuando alguien o la distribución automática te asigna una conversación, o vuelve a ti al reabrirse.',
             self::ConversationTransferred => 'Cuando otra persona te transfiere una conversación.',
             self::ConversationMessage => 'Cuando el cliente escribe en una conversación que atiendes. Se agrupan por conversación hasta que la abres.',
-            self::TeamChatMention => 'Cuando un compañero te menciona en el chat interno.',
-            self::TeamChatMessage => 'Cuando recibes un mensaje en una conversación interna.',
+            self::TeamChatMention => 'Cuando un compañero te menciona en el chat interno, aunque hayas silenciado ese chat. Verás quién te escribió y un fragmento breve del mensaje.',
+            self::TeamChatMessage => 'Cuando un compañero te escribe en un chat interno que no silenciaste. Verás quién escribió y un fragmento breve; si tienes ese chat abierto a la vista, no aparece el aviso ni suena.',
             self::ExportFinished => 'Cuando un archivo que pediste generar en segundo plano está listo o falló.',
             self::ImportFinished => 'Cuando termina o falla una importación de contactos que iniciaste.',
             self::ConnectionProblem => 'Cuando una conexión de WhatsApp deja de funcionar o Meta rechaza sus credenciales.',
@@ -70,13 +70,16 @@ enum NotificationKind: string
     /**
      * Whether a fresh notification of the kind is announced live in the open
      * page with a toast (besides the bell). Urgent kinds ask for an action;
-     * a customer writing in a conversation the agent attends is the news an
-     * agent waits for, so it is announced too although it stays informative
-     * (it does not count as urgent in the bell nor in Web Push).
+     * a customer writing in a conversation the agent attends, or a colleague
+     * writing to them in the internal chat, is the news they wait for, so it
+     * is announced too although it stays informative (it does not count as
+     * urgent in the bell nor in Web Push).
      */
     public function announcesInPage(): bool
     {
-        return $this->level() === NotificationLevel::Urgent || $this === self::ConversationMessage;
+        return $this->level() === NotificationLevel::Urgent
+            || $this === self::ConversationMessage
+            || $this === self::TeamChatMessage;
     }
 
     /**

@@ -5,6 +5,9 @@ namespace App\Services\Operations;
 use App\Enums\WebhookEventStatus;
 use App\Models\WebhookEvent;
 use App\Services\Storage\MediaDisk;
+use App\Support\Attachments\ChannelAttachmentPolicy;
+use App\Support\Attachments\ChannelAttachmentRules;
+use App\Support\Attachments\ServerUploadLimits;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Database\ConnectionResolverInterface;
@@ -44,6 +47,7 @@ class SystemHealth
             $this->database(),
             $this->cache(),
             $this->storage(),
+            $this->uploads(),
             $this->queueBacklog(),
             $this->failedJobsCheck(),
             $this->scheduler(),
@@ -135,6 +139,49 @@ class SystemHealth
         $where = $media->isExternal() ? 'en el almacenamiento externo' : 'en el disco del servidor';
 
         return HealthCheck::ok('storage', 'Almacenamiento', "La plataforma puede guardar archivos. Los adjuntos ocupan {$amount} {$where}".($usage['percent'] !== null ? " ({$usage['percent']}% del espacio contratado)." : '.'), $details);
+    }
+
+    /**
+     * PHP's upload limits of this process against the largest file the
+     * channels (and the team chat) accept: lower limits are a warning,
+     * because those files are refused by the server before the application
+     * sees them. Read from the running process: the web server's PHP may
+     * load another php.ini than the command line.
+     */
+    public function uploads(): HealthCheck
+    {
+        $limits = app(ServerUploadLimits::class);
+        $channelMax = app(ChannelAttachmentPolicy::class)->hardCapBytes();
+        $teamMax = max(0, (int) config('team-chat.attachments.max_kilobytes')) * 1024;
+        $needed = max($channelMax, $teamMax);
+        $fileMax = $limits->maxFileBytes();
+        $uploadMax = ServerUploadLimits::bytes($limits->uploadMaxFilesize());
+        $postMax = ServerUploadLimits::bytes($limits->postMaxSize());
+        $details = [
+            'upload_max_filesize' => $limits->uploadMaxFilesize(),
+            'post_max_size' => $limits->postMaxSize(),
+            'memory_limit' => (string) ini_get('memory_limit'),
+            'max_file_bytes' => $fileMax,
+            'channel_max_bytes' => $channelMax,
+            'team_chat_max_bytes' => $teamMax,
+            'sapi' => PHP_SAPI,
+        ];
+
+        if ($fileMax === null || $fileMax >= $needed) {
+            return HealthCheck::ok('uploads', 'Límites de subida', sprintf('El servidor acepta archivos de hasta %s, suficiente para el máximo de los canales (%s).', $fileMax === null ? 'cualquier tamaño' : ChannelAttachmentRules::humanSize($fileMax), ChannelAttachmentRules::humanSize($needed)), $details);
+        }
+
+        $problems = [];
+
+        if ($uploadMax !== null && $uploadMax < $needed) {
+            $problems[] = sprintf('upload_max_filesize (%s) es menor que el máximo del canal (%s)', $limits->uploadMaxFilesize(), ChannelAttachmentRules::humanSize($needed));
+        }
+
+        if ($postMax !== null && $postMax - ServerUploadLimits::MULTIPART_MARGIN_BYTES < $needed) {
+            $problems[] = sprintf('post_max_size (%s) no deja margen para un archivo de %s más el resto del formulario (usa al menos un 10 %% más)', $limits->postMaxSize(), ChannelAttachmentRules::humanSize($needed));
+        }
+
+        return HealthCheck::warning('uploads', 'Límites de subida', 'El servidor tiene límites de subida menores que los de los canales: '.implode('; ', $problems).'. Los archivos más grandes que '.ChannelAttachmentRules::humanSize($fileMax).' se rechazarán por la configuración del servidor, no por el canal: pide al equipo técnico que amplíe esos valores de PHP (y client_max_body_size del servidor web).', $details);
     }
 
     private static function gigabytes(int $bytes): string

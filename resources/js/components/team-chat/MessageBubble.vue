@@ -8,7 +8,7 @@ import {
     SmilePlus,
     Trash2,
 } from '@lucide/vue';
-import { computed, nextTick, ref } from 'vue';
+import { computed, inject, nextTick, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -22,6 +22,10 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    CUSTOM_BUBBLE_CLASSES,
+    CUSTOM_CHAT_COLORS,
+} from '@/lib/chatAppearance';
 import { formatDateTime, formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { TeamMessage } from '@/types/team-chat';
@@ -50,6 +54,19 @@ const emit = defineEmits<{
     delete: [message: TeamMessage];
     jump: [messageId: number];
 }>();
+
+/*
+ * The viewer's own chat colors (CSS variables of the chat), when set. Only
+ * the chosen text color is guaranteed (≥4.5:1) on the bubble, so text
+ * inside it uses that color at full strength (currentColor): theme tones,
+ * opacity and translucent fills stay for the theme's own bubbles. A
+ * deleted message keeps the theme's muted look.
+ */
+const customColors = inject(
+    CUSTOM_CHAT_COLORS,
+    computed(() => false),
+);
+const custom = computed(() => customColors.value && !props.message.deleted);
 
 const editing = ref(false);
 const reactionsOpen = ref(false);
@@ -179,8 +196,18 @@ function onEditKeydown(event: KeyboardEvent): void {
                     cn(
                         'min-w-0 rounded-2xl px-3 py-2 text-sm shadow-xs transition-colors',
                         message.is_mine
-                            ? 'rounded-br-md bg-primary text-primary-foreground'
-                            : 'rounded-bl-md border bg-card text-card-foreground',
+                            ? [
+                                  'rounded-br-md',
+                                  custom
+                                      ? CUSTOM_BUBBLE_CLASSES.sent
+                                      : 'bg-primary text-primary-foreground',
+                              ]
+                            : [
+                                  'rounded-bl-md border',
+                                  custom
+                                      ? CUSTOM_BUBBLE_CLASSES.received
+                                      : 'bg-card text-card-foreground',
+                              ],
                         message.deleted &&
                             'bg-muted text-muted-foreground italic shadow-none',
                         highlighted &&
@@ -193,9 +220,10 @@ function onEditKeydown(event: KeyboardEvent): void {
                     :class="
                         cn(
                             'mb-0.5 text-xs font-semibold',
-                            message.author?.deleted
-                                ? 'text-muted-foreground'
-                                : 'text-primary',
+                            !custom &&
+                                (message.author?.deleted
+                                    ? 'text-muted-foreground'
+                                    : 'text-primary'),
                         )
                     "
                 >
@@ -208,9 +236,11 @@ function onEditKeydown(event: KeyboardEvent): void {
                     :class="
                         cn(
                             'mb-1.5 block w-full rounded-lg border-l-4 px-2 py-1 text-left text-xs',
-                            message.is_mine
-                                ? 'border-primary-foreground/60 bg-primary-foreground/10'
-                                : 'border-primary/60 bg-muted',
+                            custom
+                                ? 'border-current/60'
+                                : message.is_mine
+                                  ? 'border-primary-foreground/60 bg-primary-foreground/10'
+                                  : 'border-primary/60 bg-muted',
                         )
                     "
                     @click="emit('jump', message.reply_to.id)"
@@ -218,7 +248,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                     <span class="block font-semibold">
                         {{ message.reply_to.author }}
                     </span>
-                    <span class="line-clamp-2 opacity-90">
+                    <span class="line-clamp-2" :class="!custom && 'opacity-90'">
                         {{ message.reply_to.excerpt }}
                     </span>
                 </button>
@@ -265,7 +295,9 @@ function onEditKeydown(event: KeyboardEvent): void {
                                     cn(
                                         'rounded px-0.5 font-semibold',
                                         message.is_mine
-                                            ? 'bg-primary-foreground/20'
+                                            ? custom
+                                                ? 'underline underline-offset-2'
+                                                : 'bg-primary-foreground/20'
                                             : 'bg-primary-soft text-primary-soft-foreground',
                                     )
                                 "
@@ -307,9 +339,11 @@ function onEditKeydown(event: KeyboardEvent): void {
                                 :class="
                                     cn(
                                         'flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs',
-                                        message.is_mine
-                                            ? 'bg-primary-foreground/15 hover:bg-primary-foreground/25'
-                                            : 'bg-muted hover:bg-accent',
+                                        custom
+                                            ? 'border border-current/30 hover:underline'
+                                            : message.is_mine
+                                              ? 'bg-primary-foreground/15 hover:bg-primary-foreground/25'
+                                              : 'bg-muted hover:bg-accent',
                                     )
                                 "
                             >
@@ -320,9 +354,11 @@ function onEditKeydown(event: KeyboardEvent): void {
                                 <span class="min-w-0 flex-1 truncate">{{
                                     file.name
                                 }}</span>
-                                <span class="shrink-0 opacity-75">{{
-                                    formatFileSize(file.size_bytes)
-                                }}</span>
+                                <span
+                                    class="shrink-0"
+                                    :class="!custom && 'opacity-75'"
+                                    >{{ formatFileSize(file.size_bytes) }}</span
+                                >
                                 <Download
                                     class="size-3.5 shrink-0"
                                     aria-hidden="true"
@@ -375,9 +411,11 @@ function onEditKeydown(event: KeyboardEvent): void {
                     :class="
                         cn(
                             'mt-0.5 flex items-center justify-end gap-1 text-xs',
-                            message.is_mine && !message.deleted
-                                ? 'text-primary-foreground/75'
-                                : 'text-muted-foreground',
+                            custom
+                                ? ''
+                                : message.is_mine && !message.deleted
+                                  ? 'text-primary-foreground/75'
+                                  : 'text-muted-foreground',
                         )
                     "
                     :title="fullDate"
@@ -392,12 +430,21 @@ function onEditKeydown(event: KeyboardEvent): void {
                 </p>
             </div>
 
+            <!--
+                The controls next to the bubble sit on the chat background:
+                with personal colors (unknown contrast with theme tones) they
+                get the theme's own background, so the icons keep ≥ 3:1
+                (WCAG 1.4.11).
+            -->
             <Popover v-if="canReact && !editing" v-model:open="reactionsOpen">
                 <PopoverTrigger as-child>
                     <Button
                         variant="ghost"
                         size="icon"
                         class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        :class="
+                            customColors && 'border bg-background shadow-xs'
+                        "
                         aria-label="Reaccionar"
                         title="Reaccionar"
                     >
@@ -432,6 +479,9 @@ function onEditKeydown(event: KeyboardEvent): void {
                         variant="ghost"
                         size="icon"
                         class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        :class="
+                            customColors && 'border bg-background shadow-xs'
+                        "
                         aria-label="Acciones del mensaje"
                         title="Acciones del mensaje"
                     >

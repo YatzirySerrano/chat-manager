@@ -60,7 +60,7 @@ class Preflight
         foreach ([
             'php' => fn (): array => [$this->phpVersion(), $this->phpExtensions(), $this->optionalExtensions()],
             'app' => fn (): array => [$this->environment(), $this->debug(), $this->appKey(), $this->appUrl(), $this->configCache(), $this->devDependencies()],
-            'http' => fn (): array => [$this->sessionCookies(), $this->trustedProxies()],
+            'http' => fn (): array => [$this->sessionCookies(), $this->trustedProxies(), $this->uploads()],
             'database' => fn (): array => [$this->databaseServer(), $this->migrations()],
             'storage' => fn (): array => [$this->health->storage(), $this->privateStorage(), $this->mediaStorage(), $this->diskSpace(), $this->backups()],
             'runtime' => fn (): array => [
@@ -233,6 +233,23 @@ class Preflight
         }
 
         return HealthCheck::ok('app.dev-dependencies', 'Dependencias de desarrollo', $installed ? 'Paquetes de desarrollo presentes (normal fuera de producción).' : 'Sin paquetes de desarrollo.');
+    }
+
+    /**
+     * The upload limits (SystemHealth::uploads) as read by this process.
+     * From the command line they are those of the CLI's php.ini, which may
+     * differ from PHP-FPM's: the summary says so, and the system page
+     * (served by the web server's PHP) shows the real ones.
+     */
+    public function uploads(): HealthCheck
+    {
+        $check = $this->health->uploads();
+
+        if (PHP_SAPI !== 'cli') {
+            return $check;
+        }
+
+        return new HealthCheck($check->key, $check->label, $check->status, $check->summary.' Valores leídos por PHP de línea de comandos ('.(php_ini_loaded_file() ?: 'sin php.ini').'); PHP-FPM puede usar otro php.ini: compruébalo también en Administración → Sistema.', $check->details);
     }
 
     public function sessionCookies(): HealthCheck

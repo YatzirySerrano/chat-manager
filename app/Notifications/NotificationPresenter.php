@@ -5,10 +5,13 @@ namespace App\Notifications;
 use App\Enums\ConnectionHealth;
 use App\Enums\DataTransferStatus;
 use App\Enums\Permission;
+use App\Enums\TeamChat\TeamAttachmentKind;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\DataTransfer;
 use App\Models\Department;
+use App\Models\TeamChat\TeamAttachment;
+use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
@@ -16,6 +19,7 @@ use App\Support\ProtectedAccounts;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 /**
  * Builds the visible text of notifications at read time. Stored payloads only
@@ -24,17 +28,23 @@ use Illuminate\Support\Facades\Route;
  * visible to them shows a generic "Ya no tienes acceso" without details.
  *
  * Names shown (contact, department, colleague, connection) are the same the
- * recipient sees on the screens they can open; message bodies, phone numbers,
- * notes and transfer reasons never appear.
+ * recipient sees on the screens they can open; customer message bodies, phone
+ * numbers, notes and transfer reasons never appear. The only exception is the
+ * internal chat: a current participant of the thread sees who wrote and a
+ * short, plain-text preview of the message (or what kind of file it was),
+ * exactly what the thread list already shows them.
  *
  * @phpstan-type PresentedNotification array{
  *     id: string, kind: string, level: string, title: string, body: string|null, url: string|null,
  *     accessible: bool, occurrences: int, read_at: string|null, created_at: string|null, updated_at: string|null,
- *     conversation_id: int|null, toast: bool
+ *     conversation_id: int|null, team_thread_id: int|null, toast: bool
  * }
  */
 class NotificationPresenter
 {
+    /** Characters of an internal message shown in its notification. */
+    private const TEAM_PREVIEW_LENGTH = 90;
+
     /** @var Collection<int, Conversation> */
     private Collection $conversations;
 
@@ -45,7 +55,7 @@ class NotificationPresenter
      * Records referenced by the page being presented, loaded once per page
      * (one query per kind, never one per notification).
      *
-     * @var array{departments: array<int, Department>, transfers: array<int, DataTransfer>, connections: array<int, Connection>, threads: array<int, true>}|null
+     * @var array{departments: array<int, Department>, transfers: array<int, DataTransfer>, connections: array<int, Connection>, threads: array<int, true>, team_messages: array<int, TeamMessage>}|null
      */
     private ?array $related = null;
 
@@ -107,6 +117,7 @@ class NotificationPresenter
             'created_at' => $notification->created_at?->toIso8601String(),
             'updated_at' => $notification->updated_at?->toIso8601String(),
             'conversation_id' => $accessible && isset($data['conversation_id']) && is_int($data['conversation_id']) ? $data['conversation_id'] : null,
+            'team_thread_id' => $accessible && in_array($kind, [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage], true) && is_int($data['thread_id'] ?? null) ? $data['thread_id'] : null,
             'toast' => $accessible && $kind !== null && $kind->announcesInPage(),
         ];
     }
@@ -119,6 +130,7 @@ class NotificationPresenter
         $conversationIds = [];
         $userIds = [];
         $related = ['department_id' => [], 'transfer_id' => [], 'connection_id' => [], 'thread_id' => []];
+        $teamMessageIds = [];
 
         foreach ($notifications as $notification) {
             /** @var array<string, mixed> $data */
@@ -141,6 +153,10 @@ class NotificationPresenter
                     $related[$key][] = $data[$key];
                 }
             }
+
+            if ($this->isTeamChat($notification) && is_int($data['message_id'] ?? null)) {
+                $teamMessageIds[] = $data['message_id'];
+            }
         }
 
         // The visibility of every conversation is decided against the
@@ -157,6 +173,7 @@ class NotificationPresenter
                 ->whereNull('left_at')
                 ->pluck('team_thread_id')
                 ->all()), true),
+            'team_messages' => $teamMessageIds === [] ? [] : $this->teamMessages($teamMessageIds),
         ];
 
         $this->conversations = Conversation::query()
@@ -303,12 +320,17 @@ class NotificationPresenter
     }
 
     /**
+     * Who wrote, where, and a short preview of the latest message, only for
+     * a current participant of the thread who may still use the internal
+     * chat; anyone else gets a generic text without names or content.
+     *
      * @param  array<string, mixed>  $data
      * @return array{string, string|null, string|null, bool}
      */
     private function teamChat(NotificationKind $kind, array $data, User $viewer, int $occurrences): array
     {
-        $title = $kind === NotificationKind::TeamChatMention ? 'Te mencionaron en el chat interno' : ($occurrences > 1 ? "{$occurrences} mensajes nuevos en el chat interno" : 'Mensaje nuevo en el chat interno');
+        $mentioned = $kind === NotificationKind::TeamChatMention;
+        $generic = $mentioned ? 'Te mencionaron en el chat interno' : ($occurrences > 1 ? "{$occurrences} mensajes nuevos en el chat interno" : 'Mensaje nuevo en el chat interno');
 
         $threadId = $data['thread_id'] ?? null;
         $participates = is_int($threadId) && ($this->related === null
@@ -320,13 +342,93 @@ class NotificationPresenter
             : isset($this->related['threads'][$threadId]));
 
         if (! $viewer->holdsPermission(Permission::UseTeamChat) || ! $participates) {
-            return [$title, 'Ya no tienes acceso a esta conversación interna.', null, false];
+            return [$generic, 'Ya no tienes acceso a esta conversación interna.', null, false];
         }
 
-        $author = $this->userName($data['author_id'] ?? null, $viewer);
         $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId]);
+        $author = $this->userName($data['author_id'] ?? null, $viewer);
+        $message = $this->teamMessage($data['message_id'] ?? null);
 
-        return [$title, $author !== null ? "De {$author}." : null, $url, true];
+        if ($message === null || $message->team_thread_id !== $threadId || $author === null) {
+            return [$generic, $author !== null ? "De {$author}." : null, $url, true];
+        }
+
+        $group = $message->thread !== null && $message->thread->isGroup() ? (string) $message->thread->name : null;
+        $preview = $this->teamMessagePreview($message);
+
+        $title = match (true) {
+            $mentioned && $occurrences > 1 => $group !== null ? "Te mencionaron {$occurrences} veces en {$group}" : "{$author} te mencionó {$occurrences} veces",
+            $mentioned => $group !== null ? "{$author} te mencionó en {$group}" : "{$author} te mencionó",
+            $occurrences > 1 => $group !== null ? "{$occurrences} mensajes nuevos en {$group}" : "{$occurrences} mensajes nuevos de {$author}",
+            default => $group !== null ? "{$author} en {$group}" : "Mensaje nuevo de {$author}",
+        };
+
+        // A folded group notification may gather several authors: the
+        // preview says who wrote the latest message.
+        $body = $group !== null && $occurrences > 1 && $preview !== null ? "{$author}: {$preview}" : $preview;
+
+        return [$title, $body, $url, true];
+    }
+
+    /**
+     * Plain-text preview of an internal message: its text squished and
+     * shortened, or what was sent when it only carries files.
+     */
+    private function teamMessagePreview(TeamMessage $message): ?string
+    {
+        if ($message->isDeleted()) {
+            return 'Se eliminó este mensaje.';
+        }
+
+        if (filled($message->body)) {
+            return Str::limit(Str::squish((string) $message->body), self::TEAM_PREVIEW_LENGTH);
+        }
+
+        $kinds = $message->attachments->map(fn (TeamAttachment $attachment): TeamAttachmentKind => $attachment->kind)->unique();
+        $count = $message->attachments->count();
+
+        if ($count === 0) {
+            return null;
+        }
+
+        if ($kinds->count() > 1) {
+            return "Envió {$count} archivos";
+        }
+
+        return match ($kinds->first()) {
+            TeamAttachmentKind::Image => $count === 1 ? 'Envió una imagen' : "Envió {$count} imágenes",
+            TeamAttachmentKind::Video => $count === 1 ? 'Envió un video' : "Envió {$count} videos",
+            TeamAttachmentKind::Audio => $count === 1 ? 'Envió un audio' : "Envió {$count} audios",
+            default => $count === 1 ? 'Envió un documento' : "Envió {$count} documentos",
+        };
+    }
+
+    private function teamMessage(mixed $id): ?TeamMessage
+    {
+        if (! is_int($id)) {
+            return null;
+        }
+
+        return $this->related === null ? ($this->teamMessages([$id])[$id] ?? null) : ($this->related['team_messages'][$id] ?? null);
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return array<int, TeamMessage>
+     */
+    private function teamMessages(array $ids): array
+    {
+        return TeamMessage::query()
+            ->with(['thread:id,type,name', 'attachments:id,team_message_id,kind'])
+            ->whereKey(array_values(array_unique($ids)))
+            ->get()
+            ->keyBy('id')
+            ->all();
+    }
+
+    private function isTeamChat(DatabaseNotification $notification): bool
+    {
+        return in_array(NotificationKind::tryFrom((string) $notification->getAttribute('kind')), [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage], true);
     }
 
     /**

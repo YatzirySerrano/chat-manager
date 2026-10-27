@@ -5,6 +5,7 @@ namespace App\Http\Requests\Personalization;
 use App\Enums\ChatAppearancePreset;
 use App\Models\ChatAppearance;
 use App\Models\Conversation;
+use App\Models\TeamChat\TeamThread;
 use App\Support\Color\Contrast;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -14,8 +15,8 @@ use Illuminate\Validation\Rule;
 
 /**
  * Personal chat colors: a light and a dark set of five #RRGGBB colors, an
- * optional preset and, from a conversation, whether they apply to it only
- * or to every chat of the user. Unreadable text colors are not rejected:
+ * optional preset and, from a chat (customer conversation or internal
+ * thread), whether they apply to it only or to every chat of the user. Unreadable text colors are not rejected:
  * ChatAppearances replaces them with a readable one and says so.
  *
  * @phpstan-import-type ChatColors from ChatAppearancePreset
@@ -23,16 +24,17 @@ use Illuminate\Validation\Rule;
 class ChatAppearanceRequest extends FormRequest
 {
     /**
-     * From a conversation the viewer must see it (otherwise 404, like a
-     * missing one); someone else's item goes through its policy
-     * (personal items supervision). Both run before any validation.
+     * From a chat the viewer must see it (otherwise 404, like a missing
+     * one): a conversation they may view or an internal thread they
+     * currently participate in. Someone else's item goes through its policy
+     * (personal items supervision). All run before any validation.
      */
     public function authorize(): Response
     {
-        $conversation = $this->route('conversation');
+        $chat = $this->chat();
 
-        if ($conversation instanceof Conversation) {
-            return Gate::forUser($this->user())->allows('view', $conversation) ? Response::allow() : Response::denyAsNotFound();
+        if ($chat !== null) {
+            return Gate::forUser($this->user())->allows('view', $chat) ? Response::allow() : Response::denyAsNotFound();
         }
 
         $item = $this->route('appearance');
@@ -50,7 +52,7 @@ class ChatAppearanceRequest extends FormRequest
     public function rules(): array
     {
         $rules = [
-            'scope' => [Rule::requiredIf($this->route('conversation') !== null), Rule::in([self::SCOPE_CONVERSATION, self::SCOPE_ALL])],
+            'scope' => [Rule::requiredIf($this->chat() !== null), Rule::in([self::SCOPE_CONVERSATION, self::SCOPE_ALL])],
             'preset' => ['nullable', Rule::enum(ChatAppearancePreset::class)],
             'colors' => ['required', 'array:light,dark'],
             'colors.light' => ['required', 'array:'.implode(',', ChatAppearancePreset::COLOR_KEYS)],
@@ -87,6 +89,16 @@ class ChatAppearanceRequest extends FormRequest
             'preset' => 'paleta',
             'colors' => 'colores',
         ];
+    }
+
+    /**
+     * The chat the viewer is personalizing, when reached from one.
+     */
+    public function chat(): Conversation|TeamThread|null
+    {
+        $chat = $this->route('conversation') ?? $this->route('thread');
+
+        return $chat instanceof Conversation || $chat instanceof TeamThread ? $chat : null;
     }
 
     public function appliesToAll(): bool

@@ -148,6 +148,19 @@ TEST_DB_LOCK_WAIT=3600 php artisan test --compact tests/Feature/HistoryImport te
 
 Estas pruebas usan solo `chatmanager_testing` y archivos sintéticos; nunca la base principal ni exportaciones reales.
 
+### 2.5 Pruebas añadidas en la fase 5.2.1
+
+| Área                         | Archivos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cadena de subida             | `tests/Feature/Conversations/AttachmentUploadFailuresTest.php`: archivo sin texto en WhatsApp y chat web, texto solo y archivo con pie, nada que enviar, cada error de PHP (`UPLOAD_ERR_*`) con su `code` y nunca «Escribe un mensaje…», 413 por `post_max_size` (con sesión de página y sin estado para webhooks/`up`/`broadcasting`/API), límite del canal por categoría, archivos justo bajo los límites decimales, disco caído (503), subida rechazada por Meta, límite del servidor en el compositor y en la salud, presupuesto de tiempo de la subida dentro de un intento, y el chat interno con un archivo solo o rechazado por PHP. Cambios en `OutboundAttachmentPolicyTest.php`, `InboxAttachmentTest.php`, `MultiAgentDeliveryTest.php`, `MediaStorageTest.php` y `SystemPageTest.php` (unidades decimales y chequeo `uploads`) |
+| Personalización chat interno | `tests/Feature/Personalization/TeamChatAppearanceTest.php`: tema y predeterminado, hilo que prevalece solo para su dueño, predeterminado compartido y restablecer por niveles, texto ilegible ajustado e inválidos rechazados, solo participantes vigentes (404), supervisión con `view-personal` (solo consulta, sin el hilo) y `manage-personal` (edita y restablece, auditado), y el CHECK que impide conversación e hilo a la vez                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Avisos del chat interno      | `tests/Feature/Notifications/TeamChatNotificationTest.php` (ampliado): remitente, grupo y vista previa para participantes, texto largo recortado, mensajes solo con archivos, agrupadas con el autor del último, sin acceso (genérico), nadie fuera del hilo, mensaje ya leído no se notifica, leer el hilo lee sus avisos (salvo la agrupada con un mensaje más nuevo), sonido por omisión frente a la preferencia guardada y la lectura que llega mientras se guarda (BAJO-5)                                                                                                                                                                                                                                                                                                                                                             |
+
+```bash
+TEST_DB_LOCK_WAIT=3600 php artisan test --compact tests/Feature/Conversations/AttachmentUploadFailuresTest.php \
+  tests/Feature/Personalization/TeamChatAppearanceTest.php tests/Feature/Notifications/TeamChatNotificationTest.php
+```
+
 ## 3. Análisis estático, formato y frontend
 
 ```bash
@@ -390,6 +403,50 @@ env E2E_REVERB=1 E2E_PORT=8140 E2E_REVERB_PORT=8197 WHATSAPP_TRANSPORT=simulated
   privado elegido); batería de carga A (`profile,webhooks:3000`) y D (`webhooks:600`, `reconnect`, `transfers:200`,
   `export:30`) sin mensajes perdidos ni duplicados y sin jobs fallidos. Los 429 del limitador de webhooks son
   esperados; el escenario `export` los cuenta como «perdidos» si dura más de ~40 s a 30/s.
+
+### 6.6 Escenarios de la fase 5.2.1
+
+`subidas.mjs` (fase 5.2.1): la cadena de subida por HTTP real con archivos generados en un directorio temporal
+(imágenes 1–5,2 MB, videos 3,7–16,5 MB, documentos de 4 KB a 101 MB, con y sin texto, extensión cambiada, cancelación,
+doble clic, 390 y 1280 px). El transporte real de WhatsApp sube cada archivo a `tests/e2e/fake-graph.php` (sustituto
+local de Graph API, registra tamaño y SHA-256); se comprueba en la base que el mensaje y su archivo existen con el
+tamaño exacto. Dos pasadas: con límites de producción y con los del `php.ini` (2M/8M: error de configuración del
+servidor antes de subir, y con la página sin conocer el límite, `UPLOAD_ERR_INI_SIZE` y 413 en la tarjeta). Semilla
+`subidas-seed.php`, que al final borra los archivos guardados.
+
+```bash
+env E2E_PORT=8140 WHATSAPP_TRANSPORT=meta META_GRAPH_BASE_URL=http://127.0.0.1:8141 QUEUE_CONNECTION=sync \
+  E2E_UPLOAD_MAX_FILESIZE=100M E2E_POST_MAX_SIZE=110M TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php subidas.mjs
+env E2E_PORT=8140 WHATSAPP_TRANSPORT=meta META_GRAPH_BASE_URL=http://127.0.0.1:8141 QUEUE_CONNECTION=sync \
+  TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php subidas.mjs
+```
+
+`chat-interno-avisos.mjs`: avisos del chat interno en navegadores reales con Reverb real y un worker de cola que
+arranca el propio escenario (no usa `QUEUE_CONNECTION=sync`). Pasos: aviso en otro módulo (_toast_ con remitente,
+vista previa, «Abrir» y cerrar; campana; badge; un sonido; ninguno para el autor), «Abrir» lleva al hilo y lee la
+notificación, hilo abierto y visible sin aviso, otro hilo con aviso, mensaje propio sin sonido, sonido desactivado
+(_toast_ sin sonido) y reactivado, dos pestañas con un solo sonido, hilo abierto en otra pestaña sin aviso en ninguna,
+reconexión con un solo sonido y el badge actualizado, _toast_ a 390 y 1280 px en claro y oscuro (dentro de la
+pantalla, botones con área suficiente) y el worker vivo al final. El sonido se cuenta espiando los osciladores de Web
+Audio (`installAlertSpy` de `lib.mjs`; un tono = osciladores creados en 100 ms), sin salida de audio real. Semilla
+`chat-interno-avisos-seed.php`.
+
+`chat-interno-apariencia.mjs`: colores propios en el chat interno (Ana y Beto de `increment-b-seed.php` en el grupo
+«E2E Apariencia»; Ana también tiene un privado con Carla). Guardar «Océano» solo para el hilo sin recargar, texto
+≥ 4,5:1 medido en la página, persiste al recargar y al cerrar e iniciar sesión, el otro hilo conserva el tema, Beto no
+ve los colores de Ana, modo oscuro, matriz 360/390/430/768/1024/1440 px en claro y oscuro (sin desplazamiento
+horizontal, botón «Apariencia» alcanzable, iconos de reacción y acciones ≥ 3:1 respecto de lo que tienen detrás),
+texto ilegible ajustado con aviso, fondo negro en modo claro con iconos ≥ 3:1 y «Restablecer predeterminados».
+Semilla `chat-interno-apariencia-seed.php`.
+
+```bash
+env E2E_REVERB=1 WHATSAPP_TRANSPORT=simulated TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php chat-interno-avisos.mjs
+env E2E_PORT=8130 TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php chat-interno-apariencia.mjs
+```
+
+- Resultados (2026-10-26, en serie con el candado): `subidas` 24/24 con límites de producción y 12/12 con los del
+  `php.ini` (2M/8M), `chat-interno-avisos` 14/14 y `chat-interno-apariencia` 25/25.
+- Solo Chromium (Playwright): Safari, Firefox y móviles reales no se verificaron.
 
 ## 7. Carga y resistencia
 

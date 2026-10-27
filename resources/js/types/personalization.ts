@@ -27,13 +27,26 @@ export type ChatAppearanceChoice = {
     updated_at: string | null;
 };
 
-/** The viewer's own chat colors for the open conversation. */
+/**
+ * The chat whose colors are edited: a customer conversation or an internal
+ * (team chat) thread. The user's default is shared by both kinds.
+ */
+export type ChatAppearanceTarget = {
+    type: 'conversation' | 'team_thread';
+    id: number;
+};
+
+/** The viewer's own chat colors for the open chat (conversation or thread). */
 export type ViewerChatAppearance = {
-    /** Where the effective colors come from; "system" = platform theme. */
+    /**
+     * Where the effective colors come from: "conversation" = the open
+     * chat's own choice (also for a thread), "system" = platform theme.
+     */
     source: 'conversation' | 'default' | 'system';
     preset: string | null;
     colors: ChatColors | null;
     default: ChatAppearanceChoice | null;
+    /** The open chat's own choice, whatever its kind. */
     conversation: ChatAppearanceChoice | null;
     presets: ChatAppearancePresetOption[];
 };

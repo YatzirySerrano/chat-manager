@@ -34,7 +34,7 @@ Código: `app/Notifications/*` (tipos, canal `Channels\InAppChannel`, `Notificat
 | `conversation.assigned`    | Urgente     | Asignación manual, automática o regreso al agente al reabrirse                                                                    | El nuevo responsable si aún la tiene y puede verla; nunca quien se la asignó a sí mismo (aceptar)                                                                                                                        | Recibo por evento                                                                                                      |
 | `conversation.transferred` | Urgente     | Transferencia directa a un agente                                                                                                 | El agente que la recibe                                                                                                                                                                                                  | Recibo por evento                                                                                                      |
 | `conversation.message`     | Informativa | Mensaje entrante del cliente                                                                                                      | El responsable actual, si puede verla                                                                                                                                                                                    | Una sin leer por conversación; se marca leída al abrir la conversación (evento `ConversationChanged` con razón `read`) |
-| `team-chat.message`        | Informativa | Mensaje en un hilo interno                                                                                                        | Participantes actuales, excepto el autor y quien silenció el hilo                                                                                                                                                        | Una sin leer por hilo                                                                                                  |
+| `team-chat.message`        | Informativa | Mensaje en un hilo interno                                                                                                        | Participantes actuales, excepto el autor, quien silenció el hilo y quien ya leyó ese mensaje                                                                                                                             | Una sin leer por hilo; se marca leída al leer el hilo (`ReadTeamChatNotifications`)                                    |
 | `team-chat.mention`        | Urgente     | Mención (`metadata.mentions` del mensaje)                                                                                         | El mencionado, aunque haya silenciado el hilo                                                                                                                                                                            | Una sin leer por hilo                                                                                                  |
 | `export.finished`          | Informativa | Exportación en cola completada o fallida                                                                                          | El dueño de la exportación                                                                                                                                                                                               | Recibo por transferencia y estado                                                                                      |
 | `import.finished`          | Informativa | Importación de contactos completada o fallida                                                                                     | Quien la inició                                                                                                                                                                                                          | Recibo por transferencia y estado                                                                                      |
@@ -43,10 +43,12 @@ Código: `app/Notifications/*` (tipos, canal `Channels\InAppChannel`, `Notificat
 
 **Valores predeterminados** (mientras el usuario no guarde una preferencia para el tipo; una preferencia guardada
 siempre manda): en la app sí, navegador no, y sonido sí para los tipos que se anuncian en vivo
-(`NotificationKind::announcesInPage()`): todos los urgentes y `conversation.message`. Estos mismos tipos muestran un
+(`NotificationKind::announcesInPage()`): todos los urgentes, `conversation.message` y, desde la fase 5.2.1,
+`team-chat.message`. Estos mismos tipos muestran un
 aviso (_toast_) en la parte inferior de la página al llegar (campo `toast` de cada elemento de
-`notifications.index`, falso si el usuario ya no tiene acceso al registro). `conversation.message` sigue siendo
-informativa: no cuenta como urgente en la campana ni en Web Push. Las respuestas del propio agente (salientes) nunca
+`notifications.index`, falso si el usuario ya no tiene acceso al registro). `conversation.message` y
+`team-chat.message` siguen siendo informativas: no cuentan como urgentes en la campana ni en Web Push. Detalle de los
+avisos del chat interno (remitente, vista previa, pestañas, tono): [chat-interno §Avisos](chat-interno.md#avisos-del-chat-interno-fase-521). Las respuestas del propio agente (salientes) nunca
 generan notificación.
 
 **Pérdida de acceso**: cuando una conversación deja a su agente (transferencia, devolución a la cola o reasignación)
@@ -87,7 +89,10 @@ importaciones sin modificar los jobs). Todos los listeners van en cola `notifica
   conexiones, dueño de la transferencia). Si ya no tiene acceso se muestra un texto genérico («Ya no tienes acceso a
   esta conversación») sin nombres ni enlace.
 - Se muestran únicamente datos que la persona ya ve en pantalla (nombre del contacto, departamento, compañero,
-  conexión). Nunca el cuerpo de los mensajes.
+  conexión). Nunca el cuerpo de los mensajes de clientes. **Única excepción (fase 5.2.1):** las notificaciones del chat
+  interno muestran a un participante vigente quién escribió y una vista previa en texto plano de 90 caracteres (o el
+  tipo de archivo), lo mismo que ya le muestra la lista de hilos; el texto se lee del mensaje al presentar, nunca se
+  copia en `data`, y los avisos del sistema operativo no incluyen la vista previa.
 - Las rutas JSON solo consultan notificaciones del usuario autenticado; un id ajeno simplemente no coincide
   (`changed: false`). La ruta para marcar una conversación como leída recibe un número, no resuelve el modelo, y no
   revela si existe.
@@ -112,14 +117,20 @@ omiten (como mucho un _timeout_ por trabajo) y la notificación nunca se pierde 
   navegador. Solo se listan los tipos que pueden afectar al usuario por sus permisos actuales.
 - **Navegador**: el permiso de notificaciones del sistema solo se solicita al pulsar «Permitir en este navegador».
   Se muestran únicamente cuando la pestaña no está visible; con la pestaña visible, los tipos que se anuncian en vivo
-  (urgentes y mensajes del cliente) aparecen como aviso dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
+  (urgentes, mensajes del cliente y mensajes del chat interno) aparecen como aviso dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
   del sistema (`useNotificationCenter`, `showUnlessPushed`): el aviso lo da el _service worker_, así que no se duplica
   pestaña + push. El sonido es un tono generado con Web Audio (sin archivos).
 - **Notificaciones push**: en la misma página, «Activar en este navegador» y la lista de dispositivos suscritos
   (ver 1.8).
 - Si la notificación es de la conversación que el usuario tiene abierta **en una pestaña visible y con foco**, no
   suena ni avisa: se marca leída. Si la pestaña está oculta o la ventana sin foco, avisa con normalidad y se marca
-  leída al volver a ella.
+  leída al volver a ella. Lo mismo vale para el hilo interno abierto (fase 5.2.1) y, además, para un hilo que el
+  usuario mira en **otra pestaña** del mismo navegador (`lib/notifications/tabs.ts`).
+- **Varias pestañas (fase 5.2.1):** cada una tiene su campana y sus _toasts_, pero el sonido de un lote suena una sola
+  vez entre todas y ningún sonido no urgente se repite en 2 s. Un lote de notificaciones nuevas suena una vez. Una
+  notificación con más de 5 minutos al recibirla (`server_time` de `notifications.index`) se lista sin _toast_ ni
+  sonido. El chat interno tiene su propio tono, más suave, y la página de preferencias ofrece «Probar sonido del chat
+  interno».
 - **Avisos en pantalla**: el `Toaster` del layout (`AppSidebarLayout`) queda abajo, pero por encima del compositor de
   mensajes cuando hay uno acoplado al pie (conversaciones y chat interno), en escritorio y en móvil
   (`useToastClearance`), para no tapar el cuadro de texto ni el botón de enviar. Solo cuenta un bloque con cuadro de
@@ -300,6 +311,10 @@ automática y, ahora, quién recibe avisos de cola.
 - **Menciones del chat interno**: resueltas; el compositor y el servidor guardan `team_messages.metadata.mentions` y
   el listener envía `TeamChatMention` ([chat-interno.md](chat-interno.md#funciones)).
 - **Alertas operativas** (log y correo) siguen fuera del centro de notificaciones.
+- **Sin horarios de silencio** («no molestar») en la aplicación: el horario de atención de §2 no silencia avisos. Solo
+  se silencia por tipo (preferencias) o por hilo interno. La coordinación entre pestañas y los tonos solo se
+  verificaron en Chromium; Safari, Firefox y móviles, pendientes. Tras una reconexión aparece un _toast_ por
+  notificación acumulada (con un solo sonido); un _toast_ resumen queda pendiente.
 - **Envío real**: los mensajes automáticos se encolan igual que los de un agente; su entrega depende del transporte
   de WhatsApp configurado (ver [mensajeria-whatsapp.md](mensajeria-whatsapp.md)). Sin credenciales reales de Meta
   la validación es con pruebas automatizadas y el transporte simulado.

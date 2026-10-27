@@ -50,30 +50,73 @@ final readonly class ChannelAttachmentRules
      */
     public function refusal(UploadedFile $file, string $mime): ?string
     {
+        return $this->rejection($file, $mime)['message'] ?? null;
+    }
+
+    /**
+     * Why the file cannot be sent through this channel, with a stable code
+     * (unsupported_type, extension_mismatch, channel_size_limit or
+     * unsupported_audio_codec), or null when it can.
+     *
+     * @return array{code: string, message: string}|null
+     */
+    public function rejection(UploadedFile $file, string $mime): ?array
+    {
         $kind = $this->kindFor($mime);
         $channel = $this->channel->label();
 
         if ($kind === null) {
-            return sprintf('Este tipo de archivo no se puede enviar por %s. Puedes adjuntar %s.', $channel, $this->acceptedSummary());
+            return ['code' => 'unsupported_type', 'message' => sprintf('Este tipo de archivo no se puede enviar por %s. Puedes adjuntar %s.', $channel, $this->acceptedSummary())];
         }
 
         if (! $kind->acceptsExtension($mime, $file->getClientOriginalExtension())) {
-            return sprintf(
+            return ['code' => 'extension_mismatch', 'message' => sprintf(
                 'El archivo no se puede enviar: su extensión «.%s» no corresponde a su contenido real (%s). Revisa que sea el archivo correcto.',
                 strtolower($file->getClientOriginalExtension()),
                 strtoupper((string) $kind->canonicalExtension($mime)),
-            );
+            )];
         }
 
         if ((int) $file->getSize() > $kind->maxBytes) {
-            return sprintf('El archivo pesa más de %s, el máximo para %s por %s.', self::humanSize($kind->maxBytes), $kind->label, $channel);
+            return ['code' => 'channel_size_limit', 'message' => sprintf(
+                '%s supera el tamaño permitido para %s (%s): pesa %s. Envía un archivo más pequeño.',
+                self::subjectOf($kind),
+                $kind->delivery === AttachmentDeliveryMethod::Link ? "enviarlo como enlace privado por {$channel}" : $channel,
+                self::humanSize($kind->maxBytes),
+                self::weight((int) $file->getSize(), $kind->maxBytes),
+            )];
         }
 
         if ($this->oggRequiresOpus && $mime === 'audio/ogg' && ! self::isMonoOpus($file)) {
-            return sprintf('%s solo acepta audios OGG codificados con Opus en mono. Convierte el audio o adjúntalo como MP3 o M4A.', $channel);
+            return ['code' => 'unsupported_audio_codec', 'message' => sprintf('%s solo acepta audios OGG codificados con Opus en mono. Convierte el audio o adjúntalo como MP3 o M4A.', $channel)];
         }
 
         return null;
+    }
+
+    /**
+     * The size of a file over a limit, never shown equal to the limit
+     * ("más de 5 MB" when both round to 5 MB).
+     */
+    private static function weight(int $bytes, int $limit): string
+    {
+        $size = self::humanSize($bytes);
+
+        return $size === self::humanSize($limit) ? "más de {$size}" : $size;
+    }
+
+    /**
+     * "Esta imagen", "Este video"... to start a sentence about the file.
+     */
+    private static function subjectOf(AttachmentKind $kind): string
+    {
+        return match ($kind->key) {
+            'image' => 'Esta imagen',
+            'video' => 'Este video',
+            'audio' => 'Este audio',
+            'archive' => 'Este archivo ZIP',
+            default => 'Este documento',
+        };
     }
 
     /**
@@ -133,10 +176,14 @@ final readonly class ChannelAttachmentRules
         return str_starts_with($head, 'OggS') && $position !== false && isset($head[$position + 9]) && ord($head[$position + 9]) === 1;
     }
 
+    /**
+     * A size in decimal units (1 MB = 10^6 bytes), the unit of the channel
+     * limits (ChannelAttachmentPolicy) and of the sizes macOS shows.
+     */
     public static function humanSize(int $bytes): string
     {
-        return $bytes >= 1024 * 1024
-            ? rtrim(rtrim(number_format($bytes / 1024 / 1024, 1), '0'), '.').' MB'
-            : (int) ceil($bytes / 1024).' KB';
+        return $bytes >= 1_000_000
+            ? rtrim(rtrim(number_format($bytes / 1_000_000, 1, '.', ''), '0'), '.').' MB'
+            : max(1, (int) round($bytes / 1000)).' KB';
     }
 }

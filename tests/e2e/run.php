@@ -33,6 +33,14 @@
 |   E2E_REVERB=1          also start a Reverb server for real-time scenarios,
 |                         with throwaway credentials generated for the run
 |   E2E_REVERB_PORT       Reverb port (default 8081)
+|   E2E_UPLOAD_MAX_FILESIZE, E2E_POST_MAX_SIZE
+|                         PHP upload limits of the local web server
+|                         (-d upload_max_filesize / -d post_max_size), e.g.
+|                         100M and 110M as in production; unset, the
+|                         server keeps the php.ini values (subidas.mjs
+|                         runs with and without them)
+|   E2E_MEMORY_LIMIT      -d memory_limit of the local web server (only to
+|                         prove streaming under a given limit)
 |   E2E_HOST_PORT         also serve tests/e2e/hosts/ (the widget's host
 |                         pages) on this port; the scenarios open them as
 |                         http://tienda.test:{port} and
@@ -225,8 +233,19 @@ if ($seeded !== 0) {
     $fail('Seeding the scenario data failed.');
 }
 
+// Upload limits of the web server process (php.ini values when unset).
+$iniOverrides = [];
+
+foreach (['E2E_UPLOAD_MAX_FILESIZE' => 'upload_max_filesize', 'E2E_POST_MAX_SIZE' => 'post_max_size', 'E2E_MEMORY_LIMIT' => 'memory_limit'] as $variable => $directive) {
+    $value = getenv($variable);
+
+    if (is_string($value) && preg_match('/^-?\d+[KMG]?$/i', $value) === 1) {
+        array_push($iniOverrides, '-d', "{$directive}={$value}");
+    }
+}
+
 $server = proc_open(
-    [PHP_BINARY, '-S', "127.0.0.1:{$port}", $root.'/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'],
+    [PHP_BINARY, ...$iniOverrides, '-S', "127.0.0.1:{$port}", $root.'/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'],
     [1 => $serverLog('php-server'), 2 => $serverLog('php-server')],
     $pipes,
     $root.'/public',

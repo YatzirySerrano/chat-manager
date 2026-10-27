@@ -97,19 +97,22 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 /**
- * Human file size ("850 KB", "1.5 MB", "2 MB"), shared by the inbox and the
- * team chat so the same file always reads the same.
+ * Human file size ("850 KB", "1.5 MB", "2 MB") in decimal units (1 MB =
+ * 10^6 bytes): the unit of the channel attachment limits (Meta's "16 MB"
+ * read conservatively, ChannelAttachmentRules::humanSize) and of the sizes
+ * macOS shows. Shared by the inbox and the team chat so the same file
+ * always reads the same, in the composer card and in the sent bubble.
  */
 export function formatFileSize(bytes: number | null | undefined): string {
     if (bytes === null || bytes === undefined) {
         return '';
     }
 
-    if (bytes >= 1024 * 1024) {
-        return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`;
+    if (bytes >= 1_000_000) {
+        return `${(bytes / 1_000_000).toFixed(1).replace(/\.0$/, '')} MB`;
     }
 
-    return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+    return `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
 
 /**

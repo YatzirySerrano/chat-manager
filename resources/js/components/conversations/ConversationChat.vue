@@ -489,7 +489,7 @@ const paneStyle = computed(() => ({
         <ChatAppearanceDialog
             v-if="appearance"
             v-model:open="appearanceOpen"
-            :conversation-id="conversation.id"
+            :target="{ type: 'conversation', id: conversation.id }"
             :appearance="appearance"
             @saved="(value) => (appearance = value)"
         />

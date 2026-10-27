@@ -529,6 +529,29 @@ elimina con sus concesiones. **No aplicada en `chatmanager`** (pendiente de auto
   cada texto sobre su burbuja; si no se cumple, reemplaza el texto por casi negro o blanco y avisa. Se aplica con
   variables CSS solo en el contenedor del chat del dueño: no cambia mensajes, otros usuarios, el widget del chat web ni
   datos de Meta.
+- **Apariencia del chat interno (fase 5.2.1).** La misma tabla sirve a los hilos internos: una fila apunta a una
+  conversación, a un hilo (`team_thread_id`) o a ninguno (el predeterminado del usuario, **compartido** por las
+  conversaciones de clientes y el chat interno). El hilo prevalece sobre el predeterminado; «Todos mis chats» guarda el
+  predeterminado y se aplica en ambos módulos salvo donde haya colores propios. Restablecer «Solo este chat» vuelve al
+  predeterminado y restablecer «Todos mis chats», al tema de la plataforma.
+    - Migración aditiva `2026_10_26_172120_add_team_thread_to_chat_appearances_table`: `team_thread_id` (FK a
+      `team_threads`, `cascadeOnDelete`), columna generada almacenada `team_thread_key` (`IFNULL(team_thread_id, 0)`) y
+      el índice único `chat_appearances_user_chat_unique` (`user_id`, `conversation_key`, `team_thread_key`), creado
+      antes de quitar el único anterior (`user_id`, `conversation_key`), que haría chocar la fila de un hilo con la
+      predeterminada. Las filas existentes conservan su significado. Solo en MariaDB se añade el CHECK
+      `chat_appearances_single_chat_check` (nunca conversación e hilo a la vez); MySQL rechaza CHECK sobre columnas de
+      FK con acciones referenciales. `down()` borra las apariencias de hilos y restaura el índice anterior. **No
+      aplicada** en `chatmanager`.
+    - Rutas `team-chat.threads.appearance.update` / `.destroy` (`PUT/DELETE team-chat/threads/{thread}/appearance`,
+      `throttle:60,1`, en `routes/personalization.php`). `ChatAppearanceRequest` autoriza con la política `view` del
+      hilo antes de validar: solo **participantes vigentes**; cualquier otro recibe 404, como un hilo inexistente.
+      El hilo (`TeamChatController::threadDetail`) solo entrega `appearance` del propio visitante.
+    - Interfaz: botón de paleta «Apariencia del chat» en el encabezado del hilo; el mismo `ChatAppearanceDialog` con
+      textos del chat interno («Solo este chat» / «Todos mis chats», «mensajes de tus compañeros»). Se aplica sin
+      recargar con variables CSS solo en el historial.
+    - Contraste: texto ≥ 4.5:1 sobre su burbuja como siempre; con colores propios, los iconos de reaccionar y de
+      acciones junto a la burbuja (sobre el fondo personalizado del chat) toman el fondo del tema para conservar
+      ≥ 3:1 (WCAG 1.4.11), y el texto de la burbuja usa el color elegido a plena intensidad.
 - **Privado entre compañeros no significa privado frente al administrador autorizado.** En
   «Administración › Elementos personales» (`/admin/personal-items`), `supervision.view-personal` permite consultar alias
   (con el nombre oficial del contacto) y apariencias (muestra estática, nunca aplicada a quien consulta) y
@@ -536,10 +559,13 @@ elimina con sus concesiones. **No aplicada en `chatmanager`** (pendiente de auto
   departamentos → usuarios que comparten al menos un departamento; asignado → nadie. Los elementos de un
   Superadministrador quedan fuera del alcance de los demás. El nombre y el teléfono del contacto (y el contacto de la
   conversación de una apariencia) solo se muestran si quien consulta puede ver ese contacto (`contacts.view` y su
-  alcance de contactos); si no, aparece «Contacto fuera de tu alcance». Las respuestas rápidas personales se supervisan en
+  alcance de contactos); si no, aparece «Contacto fuera de tu alcance». Una apariencia de un hilo interno aparece como
+  **«Chat interno #id»**, sin nombre del grupo ni participantes: supervisarla no revela quién habla con quién ni da
+  acceso al hilo. `view-personal` la consulta (sin poder cambiarla); `manage-personal` la edita o la restablece. Las respuestas rápidas personales se supervisan en
   «Respuestas rápidas › De otros usuarios».
 - Cada intervención administrativa se audita (`supervision.personal_item_updated` / `_deleted`) con quién actuó, el
-  dueño (sujeto de la entrada), `owner_user_id`, `item_type`, `item_id` y la fecha; nunca se guarda el texto del alias.
+  dueño (sujeto de la entrada), `owner_user_id`, `item_type`, `item_id`, el chat (`conversation_id` o, para un hilo
+  interno, `team_thread_id`, «Folio del chat interno») y la fecha; nunca se guarda el texto del alias.
   Los cambios que cada usuario hace en sus propios elementos no se auditan (solo afectan su vista).
 
 ## 6. Hallazgos corregidos

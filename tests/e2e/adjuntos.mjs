@@ -390,7 +390,7 @@ const run = async () => {
 
                 return [
                     alert.startsWith(
-                        'Este video supera 16 MB, el máximo que admite WhatsApp',
+                        'Este video supera el tamaño permitido para WhatsApp (16 MB)',
                     ) && !canSend,
                     `"${alert}"; send enabled=${canSend}`,
                 ];
@@ -726,6 +726,28 @@ const run = async () => {
 
         await ana.context().close();
 
+        /*
+         * Each state is photographed while it is on screen (before its
+         * cleanup), so the screenshots show the menu, the link offer, the
+         * refusal and the preview, not the emptied composer.
+         */
+        const visible = (name, prepare) => ({
+            name,
+            prepare: async (page, tag) => {
+                await prepare(page);
+
+                // The attachment menu closes with an animation after a choice.
+                if (name !== 'menu') {
+                    await menu(page)
+                        .waitFor({ state: 'detached' })
+                        .catch(() => {});
+                }
+
+                await shot(page, `adjuntos-${tag}-${name}`, {
+                    fullPage: false,
+                });
+            },
+        });
         const STATES = [
             {
                 name: 'menu',
@@ -749,21 +771,29 @@ const run = async () => {
                 },
             },
             {
-                name: 'link-offer',
-                prepare: (page) => choose(page, 'Documentos', FILES.zip),
+                ...visible('link-offer', (page) =>
+                    choose(page, 'Documentos', FILES.zip),
+                ),
                 cleanup: removeAttachment,
             },
             {
-                name: 'refusal',
-                prepare: (page) => choose(page, 'Videos', FILES.bigMp4),
+                ...visible('refusal', (page) =>
+                    choose(page, 'Videos', FILES.bigMp4),
+                ),
                 cleanup: removeAttachment,
             },
             {
-                name: 'image',
-                prepare: (page) => choose(page, 'Fotos e imágenes', FILES.png),
+                ...visible('image', (page) =>
+                    choose(page, 'Fotos e imágenes', FILES.png),
+                ),
                 cleanup: removeAttachment,
             },
         ];
+        /* The menu state (a popup) is photographed by its own prepare. */
+        STATES[0] = {
+            ...STATES[0],
+            ...visible('menu', STATES[0].prepare),
+        };
 
         for (const scheme of ['light', 'dark']) {
             for (const width of [320, 375, 768, 1280]) {
@@ -785,18 +815,18 @@ const run = async () => {
 
                         try {
                             await openChat(page, data.whatsapp);
-                            const measured = await layoutMatrix(page, STATES);
+                            const tag = `${width}-${scheme}`;
+                            const measured = await layoutMatrix(
+                                page,
+                                STATES.map((state) => ({
+                                    ...state,
+                                    prepare: (target) =>
+                                        state.prepare(target, tag),
+                                })),
+                            );
                             const notes = [];
 
                             for (const state of measured) {
-                                await shot(
-                                    page,
-                                    `adjuntos-${width}-${scheme}-${state.name}`,
-                                    {
-                                        fullPage: false,
-                                    },
-                                );
-
                                 if (state.problems) {
                                     notes.push(
                                         `${state.name}: ${state.problems}`,

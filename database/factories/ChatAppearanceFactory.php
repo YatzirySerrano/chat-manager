@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\ChatAppearance;
 use App\Models\Conversation;
+use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -38,6 +39,16 @@ class ChatAppearanceFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'conversation_id' => $conversation === null ? Conversation::factory() : $conversation->id,
+        ]);
+    }
+
+    /**
+     * An override for one internal chat.
+     */
+    public function forTeamThread(?TeamThread $thread = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'team_thread_id' => $thread === null ? TeamThread::factory() : $thread->id,
         ]);
     }
 }

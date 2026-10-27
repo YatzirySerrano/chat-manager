@@ -115,8 +115,8 @@ test('WhatsApp refuses files over the limit of their type', function (Closure $f
 
     expect(Message::query()->count())->toBe(0);
 })->with([
-    'image over 5 MB' => [fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(5 * 1024 + 1), 'El archivo pesa más de 5 MB, el máximo para imágenes por WhatsApp'],
-    'video over 16 MB' => [fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(16 * 1024 + 1), 'El archivo pesa más de 16 MB, el máximo para videos por WhatsApp'],
+    'image over 5 MB' => [fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(5 * 1024 + 1), 'Esta imagen supera el tamaño permitido para WhatsApp (5 MB)'],
+    'video over 16 MB' => [fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(16 * 1024 + 1), 'Este video supera el tamaño permitido para WhatsApp (16 MB)'],
     'document over 100 MB' => [fn () => UploadedFile::fake()->createWithContent('manual.pdf', "%PDF-1.4\n%%EOF\n")->size(100 * 1024 + 1), 'El archivo pesa más de 100 MB'],
 ]);
 
@@ -247,7 +247,7 @@ test('a file PHP could not receive gets a clear explanation', function () {
 
     postAttachment($this, policyConversation($this), $tooLarge)
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['attachment' => 'El servidor no pudo recibir el archivo']);
+        ->assertJsonValidationErrors(['attachment' => 'El servidor de Chat Manager no pudo recibir el archivo']);
 });
 
 test('the composer receives the policy of every channel', function () {
@@ -271,11 +271,11 @@ test('Messenger and Instagram refuse files over the limit of their type', functi
 
     expect(Message::query()->count())->toBe(0);
 })->with([
-    'Messenger image over 8 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(8 * 1024 + 1), 'El archivo pesa más de 8 MB, el máximo para imágenes por Facebook Messenger'],
-    'Messenger video over 25 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(25 * 1024 + 1), 'El archivo pesa más de 25 MB, el máximo para videos por Facebook Messenger'],
-    'Messenger document over 25 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->createWithContent('manual.pdf', "%PDF-1.4\n%%EOF\n")->size(25 * 1024 + 1), 'El archivo pesa más de 25 MB, el máximo para documentos por Facebook Messenger'],
-    'Instagram image over 8 MB' => [ConnectionChannel::Instagram, fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(8 * 1024 + 1), 'El archivo pesa más de 8 MB, el máximo para imágenes por Instagram'],
-    'Instagram video over 25 MB' => [ConnectionChannel::Instagram, fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(25 * 1024 + 1), 'El archivo pesa más de 25 MB, el máximo para videos por Instagram'],
+    'Messenger image over 8 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(8 * 1024 + 1), 'Esta imagen supera el tamaño permitido para Facebook Messenger (8 MB)'],
+    'Messenger video over 25 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(25 * 1024 + 1), 'Este video supera el tamaño permitido para Facebook Messenger (25 MB)'],
+    'Messenger document over 25 MB' => [ConnectionChannel::Messenger, fn () => UploadedFile::fake()->createWithContent('manual.pdf', "%PDF-1.4\n%%EOF\n")->size(25 * 1024 + 1), 'Este documento supera el tamaño permitido para Facebook Messenger (25 MB)'],
+    'Instagram image over 8 MB' => [ConnectionChannel::Instagram, fn () => UploadedFile::fake()->image('foto.png', 20, 20)->size(8 * 1024 + 1), 'Esta imagen supera el tamaño permitido para Instagram (8 MB)'],
+    'Instagram video over 25 MB' => [ConnectionChannel::Instagram, fn () => UploadedFile::fake()->createWithContent('video.mp4', "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom".str_repeat("\x00", 32))->size(25 * 1024 + 1), 'Este video supera el tamaño permitido para Instagram (25 MB)'],
     'Instagram GIF image' => [ConnectionChannel::Instagram, fn () => UploadedFile::fake()->image('animacion.gif', 20, 20), 'no se puede enviar por Instagram'],
 ]);
 

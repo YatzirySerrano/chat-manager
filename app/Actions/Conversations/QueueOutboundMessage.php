@@ -8,6 +8,7 @@ use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
+use App\Exceptions\AttachmentRejected;
 use App\Exceptions\ConversationConflict;
 use App\Exceptions\StorageUnavailable;
 use App\Jobs\DeliverOutboundMessage;
@@ -22,6 +23,7 @@ use App\Services\Storage\MediaDisk;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentKind;
 use App\Support\Attachments\ChannelAttachmentPolicy;
+use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
@@ -68,6 +70,7 @@ class QueueOutboundMessage
         private CustomerServiceWindow $window,
         private ChannelAttachmentPolicy $attachments,
         private MediaDisk $mediaDisk,
+        private ServerUploadLimits $serverLimits,
     ) {}
 
     public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null): Message
@@ -345,12 +348,19 @@ class QueueOutboundMessage
             throw new ConversationConflict('La conversación no tiene una conexión disponible para enviar mensajes.');
         }
 
+        // PHP refused the upload (OutboundMessageRequest answers it first).
+        $failure = $this->serverLimits->failure($attachment, $channel->label());
+
+        if ($failure !== null) {
+            throw AttachmentRejected::because($failure['code'], $failure['message']);
+        }
+
         $rules = $this->attachments->forChannel($channel);
         $mime = $this->attachments->detectMime($attachment);
-        $refusal = $rules->refusal($attachment, $mime);
+        $rejection = $rules->rejection($attachment, $mime);
 
-        if ($refusal !== null) {
-            throw ValidationException::withMessages(['attachment' => $refusal]);
+        if ($rejection !== null) {
+            throw AttachmentRejected::because($rejection['code'], $rejection['message']);
         }
 
         /** @var AttachmentKind $kind */

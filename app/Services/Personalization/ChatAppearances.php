@@ -5,16 +5,20 @@ namespace App\Services\Personalization;
 use App\Enums\ChatAppearancePreset;
 use App\Models\ChatAppearance;
 use App\Models\Conversation;
+use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Support\Color\Contrast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
- * Personal chat colors of one user: the row of a conversation overrides the
- * user's default row, and without either the platform theme applies. They
- * only ever reach their owner's own view (and, read-only, an authorized
- * supervisor); they never change messages, other users or the web chat.
+ * Personal chat colors of one user: the row of a chat (a customer
+ * conversation or an internal thread) overrides the user's default row,
+ * shared by every chat of both kinds, and without either the platform
+ * theme applies. They only ever reach their owner's own view (and an
+ * authorized supervisor); they never change messages, other users or the
+ * web chat. In ViewerAppearance, "conversation" is the open chat's own
+ * choice, whatever its kind.
  *
  * @phpstan-import-type ChatColors from ChatAppearancePreset
  * @phpstan-import-type ChatColorSet from ChatAppearancePreset
@@ -30,20 +34,24 @@ class ChatAppearances
     public const ADJUSTED_NOTICE = 'Ajustamos el color del texto para que sea legible sobre la burbuja (contraste mínimo 4.5:1).';
 
     /**
-     * What the viewer's chat of the conversation looks like, with both of the
-     * viewer's choices so the editor can show and change either. One query.
+     * What the viewer's chat (customer conversation or internal thread)
+     * looks like, with both of the viewer's choices so the editor can show
+     * and change either. One query.
      *
      * @return ViewerAppearance
      */
-    public function forViewer(User $viewer, Conversation $conversation): array
+    public function forViewer(User $viewer, Conversation|TeamThread $chat): array
     {
+        $column = $this->chatColumn($chat);
         $rows = ChatAppearance::query()
             ->where('user_id', $viewer->id)
-            ->where(fn (Builder $query) => $query->whereNull('conversation_id')->orWhere('conversation_id', $conversation->id))
+            ->where(fn (Builder $query) => $query
+                ->where(fn (Builder $defaults) => $defaults->whereNull('conversation_id')->whereNull('team_thread_id'))
+                ->orWhere($column, $chat->getKey()))
             ->get();
 
-        $default = $rows->first(fn (ChatAppearance $row): bool => $row->conversation_id === null);
-        $override = $rows->first(fn (ChatAppearance $row): bool => $row->conversation_id === $conversation->id);
+        $default = $rows->first(fn (ChatAppearance $row): bool => $row->isDefault());
+        $override = $rows->first(fn (ChatAppearance $row): bool => $row->getAttribute($column) === $chat->getKey());
         $effective = $override ?? $default;
 
         return [
@@ -88,18 +96,21 @@ class ChatAppearances
     }
 
     /**
-     * Stores the user's colors for the conversation, or as their default for
-     * every chat when no conversation is given. The preset is kept only while
-     * the colors are still exactly the preset's.
+     * Stores the user's colors for the chat, or as their default for every
+     * chat when no chat is given. The preset is kept only while the colors
+     * are still exactly the preset's.
      *
      * @param  ChatColors  $colors
      * @return array{appearance: ChatAppearance, adjusted: bool}
      */
-    public function save(User $owner, ?Conversation $conversation, ?ChatAppearancePreset $preset, array $colors): array
+    public function save(User $owner, Conversation|TeamThread|null $chat, ?ChatAppearancePreset $preset, array $colors): array
     {
         ['colors' => $colors, 'adjusted' => $adjusted] = $this->normalize($colors);
 
-        $appearance = $this->ownedBy($owner, $conversation)->first() ?? (new ChatAppearance)->forceFill(['user_id' => $owner->id, 'conversation_id' => $conversation?->id]);
+        $appearance = $this->ownedBy($owner, $chat)->first() ?? (new ChatAppearance)->forceFill([
+            'user_id' => $owner->id,
+            ...($chat === null ? [] : [$this->chatColumn($chat) => $chat->getKey()]),
+        ]);
         $attributes = [
             'preset' => $preset !== null && $preset->colors() == $colors ? $preset->value : null,
             'colors' => $colors,
@@ -110,7 +121,7 @@ class ChatAppearances
         } catch (UniqueConstraintViolationException) {
             // A concurrent request (double submit) created the row between
             // the lookup and the insert: the last write wins as an update.
-            $appearance = $this->ownedBy($owner, $conversation)->firstOrFail();
+            $appearance = $this->ownedBy($owner, $chat)->firstOrFail();
             $appearance->fill($attributes)->save();
         }
 
@@ -118,28 +129,34 @@ class ChatAppearances
     }
 
     /**
-     * Back to the next level: the default row for a conversation, the
-     * platform theme for the default.
+     * Back to the next level: the default row for a chat, the platform
+     * theme for the default.
      */
-    public function clear(User $owner, ?Conversation $conversation): void
+    public function clear(User $owner, Conversation|TeamThread|null $chat): void
     {
-        $this->ownedBy($owner, $conversation)->delete();
+        $this->ownedBy($owner, $chat)->delete();
     }
 
     /**
-     * The owner's row for the conversation, or their default row.
+     * The owner's row for the chat, or their default row.
      *
      * @return Builder<ChatAppearance>
      */
-    private function ownedBy(User $owner, ?Conversation $conversation): Builder
+    private function ownedBy(User $owner, Conversation|TeamThread|null $chat): Builder
     {
-        return ChatAppearance::query()
-            ->where('user_id', $owner->id)
-            ->when(
-                $conversation === null,
-                fn (Builder $query) => $query->whereNull('conversation_id'),
-                fn (Builder $query) => $query->where('conversation_id', $conversation?->id),
-            );
+        $query = ChatAppearance::query()->where('user_id', $owner->id);
+
+        return $chat === null
+            ? $query->defaults()
+            : $query->where($this->chatColumn($chat), $chat->getKey());
+    }
+
+    /**
+     * Column of chat_appearances that points to the chat.
+     */
+    private function chatColumn(Conversation|TeamThread $chat): string
+    {
+        return $chat instanceof TeamThread ? 'team_thread_id' : 'conversation_id';
     }
 
     /**

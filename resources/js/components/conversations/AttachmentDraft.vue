@@ -12,7 +12,10 @@ import {
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { kindLabel } from '@/lib/conversations/attachments';
-import type { AttachmentEvaluation } from '@/lib/conversations/attachments';
+import type {
+    AttachmentEvaluation,
+    AttachmentState,
+} from '@/lib/conversations/attachments';
 import { formatFileSize } from '@/lib/format';
 
 /**
@@ -22,6 +25,8 @@ import { formatFileSize } from '@/lib/format';
  * the upload progress and the reason it cannot be sent, if any. A file the
  * channel only carries as a private link needs the agent's explicit choice
  * («Usar enlace privado», which can be undone) before «Enviar» sends it.
+ * A file the server refused after the upload stays marked as refused, with
+ * the server's explanation, until it is removed or changed.
  */
 const props = defineProps<{
     file: File;
@@ -38,6 +43,10 @@ const props = defineProps<{
     problem: string | null;
     /** Informative notice (the same file chosen again or already sent). */
     notice: string | null;
+    /** Where the file is (checked here, uploading, refused by the server). */
+    state: AttachmentState;
+    /** The server's explanation when it refused the file. */
+    rejection: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -89,7 +98,7 @@ const ttl = computed(
     () => `${props.linkTtlDays} ${props.linkTtlDays === 1 ? 'día' : 'días'}`,
 );
 const deliveryText = computed(() => {
-    if (props.evaluation.delivery === null) {
+    if (props.evaluation.delivery === null || props.state === 'rejected') {
         return null;
     }
 
@@ -118,11 +127,16 @@ const kindIcon = computed(() => {
     <div
         data-layout-box="attachment"
         class="grid min-w-0 grid-cols-1 gap-2 rounded-lg border px-3 py-2"
-        :class="(evaluation.error || problem) && 'border-destructive/60'"
+        :class="
+            (evaluation.error || problem || rejection) &&
+            'border-destructive/60'
+        "
         role="group"
         aria-label="Archivo adjunto"
         :data-attachment-category="evaluation.category"
         :data-attachment-delivery="evaluation.delivery ?? 'none'"
+        :data-attachment-state="state"
+        :data-attachment-reason="evaluation.reason ?? undefined"
     >
         <div class="flex items-center gap-3">
             <img
@@ -223,6 +237,14 @@ const kindIcon = computed(() => {
             role="alert"
         >
             {{ evaluation.error }}
+        </p>
+        <p
+            v-else-if="rejection"
+            class="text-xs text-destructive"
+            role="alert"
+            data-attachment-rejection
+        >
+            {{ rejection }} Quita el archivo o elige otro.
         </p>
         <p v-else-if="problem" class="text-xs text-destructive" role="alert">
             {{ problem }}

@@ -5,11 +5,18 @@ import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 import { useUserChannel } from '@/composables/useUserChannel';
 import { afterUserVisits } from '@/lib/realtime';
 import {
+    notificationSoundState,
     playNotificationSound,
     showBrowserNotification,
     unlockNotificationSound,
 } from '@/lib/notifications/alerts';
 import { currentPushSubscription } from '@/lib/notifications/push';
+import {
+    VIEWED_THREAD_HEARTBEAT_MS,
+    announceViewedThread,
+    claimNotificationSound,
+    isThreadViewedInAnotherTab,
+} from '@/lib/notifications/tabs';
 import {
     index as notificationsIndex,
     read,
@@ -27,9 +34,22 @@ import type {
 /** Refresh period while real-time signals are not available. */
 const FALLBACK_INTERVAL_MS = 60_000;
 
+/**
+ * A notification whose latest occurrence is older than this when it is
+ * fetched (after a long disconnection or a sleeping device) is listed in
+ * the bell without a toast or a sound: it is no longer news.
+ */
+const STALE_ALERT_MS = 5 * 60_000;
+
+/** Internal chat kinds (their own, softer sound). */
+const TEAM_CHAT_KINDS: NotificationKindValue[] = [
+    'team-chat.message',
+    'team-chat.mention',
+];
+
 /** What the page does for one new notification. */
 export type NotificationAlertPlan = {
-    /** About the conversation on screen: marked read, never alerted. */
+    /** About the conversation or internal chat on screen: marked read, never alerted. */
     markRead: boolean;
     sound: boolean;
     /** A system notification (the tab is hidden). */
@@ -46,15 +66,28 @@ export type NotificationAlertPlan = {
  * right to an alert about it, so a supervisor watching every conversation
  * hears nothing per message of other agents' conversations. One sound at
  * most per batch (`soundPlayed`).
+ *
+ * An internal chat the user is looking at (open in this tab while it is
+ * visible and focused, `attended`, like customer conversations; or in
+ * another tab: `threadViewedElsewhere`) is being read, so its messages
+ * neither sound nor show a toast; the chat itself updates as usual. Open
+ * in a window that is visible but not focused (next to another app), the
+ * message still sounds and stays unread (no toast: the chat is on screen).
+ * A notification that was already old when fetched (`stale`) is only
+ * listed in the bell.
  */
 export function notificationAlertPlan(
-    item: Pick<AppNotification, 'conversation_id' | 'toast'>,
+    item: Pick<AppNotification, 'conversation_id' | 'team_thread_id' | 'toast'>,
     context: {
         viewedConversationId: number | null;
         attended: boolean;
         hidden: boolean;
         preference: NotificationPreference | undefined;
         soundPlayed: boolean;
+        viewedThreadId?: number | null;
+        visible?: boolean;
+        threadViewedElsewhere?: boolean;
+        stale?: boolean;
     },
 ): NotificationAlertPlan {
     const none = {
@@ -72,7 +105,23 @@ export function notificationAlertPlan(
         return { ...none, markRead: true };
     }
 
-    if (!context.preference) {
+    let onScreen = false;
+
+    if (item.team_thread_id !== null) {
+        if (item.team_thread_id === context.viewedThreadId) {
+            if (context.attended) {
+                return { ...none, markRead: true };
+            }
+
+            onScreen = Boolean(context.visible);
+        }
+
+        if (context.threadViewedElsewhere) {
+            return none;
+        }
+    }
+
+    if (!context.preference || context.stale) {
         return none;
     }
 
@@ -82,7 +131,7 @@ export function notificationAlertPlan(
         markRead: false,
         sound: context.preference.sound && !context.soundPlayed,
         browser,
-        toast: !browser && item.toast,
+        toast: !browser && item.toast && !onScreen,
     };
 }
 
@@ -152,6 +201,20 @@ export function useNotificationCenter() {
         }
 
         return typeof props.selectedId === 'number' ? props.selectedId : null;
+    });
+
+    /** The internal chat open on this page (team-chat/Index with a thread). */
+    const viewedThreadId = computed<number | null>(() => {
+        if (page.component !== 'team-chat/Index') {
+            return null;
+        }
+
+        const thread = (page.props as Record<string, unknown>).activeThread as
+            | { id?: number }
+            | null
+            | undefined;
+
+        return typeof thread?.id === 'number' ? thread.id : null;
     });
 
     function version(item: AppNotification): string {
@@ -262,7 +325,7 @@ export function useNotificationCenter() {
             }
 
             if (!options.silent) {
-                alert(fresh);
+                alert(fresh, response.server_time);
             }
         } catch {
             if (request === requestCounter) {
@@ -287,13 +350,97 @@ export function useNotificationCenter() {
             return;
         }
 
-        showBrowserNotification(item.id, item.title, item.body, () =>
-            open(item),
+        // A system notification can show outside the app (lock screen,
+        // notification history): internal chat ones say who wrote, never
+        // what they wrote.
+        showBrowserNotification(
+            item.id,
+            item.title,
+            isTeamChat(item) ? null : item.body,
+            () => open(item),
         );
     }
 
-    function alert(fresh: AppNotification[]): void {
+    function isTeamChat(item: AppNotification): boolean {
+        return TEAM_CHAT_KINDS.includes(item.kind);
+    }
+
+    function isStale(item: AppNotification, serverTime: string): boolean {
+        const now = Date.parse(serverTime);
+        const at = Date.parse(item.updated_at ?? '');
+
+        return (
+            Number.isFinite(now) &&
+            Number.isFinite(at) &&
+            now - at > STALE_ALERT_MS
+        );
+    }
+
+    let soundHintShown = false;
+
+    /**
+     * Pause of a tab the user is not looking at before it claims the sound,
+     * so the tab in use (whose audio is surely unlocked) plays it first.
+     */
+    const BACKGROUND_CLAIM_DELAY_MS = 300;
+
+    /**
+     * One sound for the batch, unless another tab already played it (or one
+     * just played): see claimNotificationSound(). A tab whose audio is still
+     * blocked never claims it (another tab can play it) and, when visible,
+     * says once how to enable it. Never throws.
+     */
+    async function playBatchSound(
+        item: AppNotification,
+        batch: AppNotification[],
+    ): Promise<void> {
+        try {
+            if (notificationSoundState.value !== 'ready') {
+                if (
+                    notificationSoundState.value === 'locked' &&
+                    !soundHintShown &&
+                    document.visibilityState === 'visible'
+                ) {
+                    // Browsers keep audio blocked until the first click or
+                    // key on the page after opening or reloading it.
+                    soundHintShown = true;
+                    toast('Sonido de avisos en pausa', {
+                        id: 'notification-sound-locked',
+                        description:
+                            'El navegador lo activa cuando haces clic o pulsas una tecla en esta página.',
+                    });
+                }
+
+                return;
+            }
+
+            if (!pageIsAttended()) {
+                await new Promise((resolve) =>
+                    setTimeout(resolve, BACKGROUND_CLAIM_DELAY_MS),
+                );
+            }
+
+            const keys = batch.map((fresh) => `${fresh.id}|${version(fresh)}`);
+            const urgent = batch.some(
+                (fresh) => fresh.level === 'urgent' && !isTeamChat(fresh),
+            );
+
+            if (!(await claimNotificationSound(keys, urgent))) {
+                return;
+            }
+
+            playNotificationSound(
+                item.level === 'urgent',
+                isTeamChat(item) ? 'team-chat' : 'default',
+            );
+        } catch {
+            // Sound is a courtesy: never break the page for it.
+        }
+    }
+
+    function alert(fresh: AppNotification[], serverTime: string): void {
         let played = false;
+        const visible = document.visibilityState === 'visible';
 
         for (const item of fresh) {
             const plan = notificationAlertPlan(item, {
@@ -302,15 +449,30 @@ export function useNotificationCenter() {
                 hidden: document.visibilityState === 'hidden',
                 preference: preferences.value[item.kind],
                 soundPlayed: played,
+                viewedThreadId: viewedThreadId.value,
+                visible,
+                threadViewedElsewhere:
+                    item.team_thread_id !== null &&
+                    isThreadViewedInAnotherTab(item.team_thread_id),
+                stale: isStale(item, serverTime),
             });
 
-            if (plan.markRead && item.conversation_id !== null) {
-                void markConversationRead(item.conversation_id);
+            if (plan.markRead) {
+                if (item.conversation_id !== null) {
+                    void markConversationRead(item.conversation_id);
+                } else {
+                    // The listed (reactive) copy, so the bell updates too.
+                    void markRead(
+                        items.value.find((listed) => listed.id === item.id) ??
+                            item,
+                    );
+                }
+
                 continue;
             }
 
             if (plan.sound) {
-                playNotificationSound(item.level === 'urgent');
+                void playBatchSound(item, fresh);
                 played = true;
             }
 
@@ -465,15 +627,38 @@ export function useNotificationCenter() {
     // Back to the tab with the conversation open: what arrived meanwhile
     // was alerted and is now seen.
     function onAttentionChange(): void {
+        announceThread();
+
         if (pageIsAttended()) {
             readViewedConversation();
         }
     }
 
+    /**
+     * Tells the other tabs which internal chat the user is looking at in
+     * this one (visible and focused, the same rule as conversations).
+     */
+    function announceThread(): void {
+        announceViewedThread(pageIsAttended() ? viewedThreadId.value : null);
+    }
+
+    watch(viewedThreadId, announceThread);
+
+    let viewedHeartbeat: ReturnType<typeof setInterval> | null = null;
+    const forgetThread = (): void => announceViewedThread(null);
+
     onMounted(() => {
         unlockNotificationSound();
         document.addEventListener('visibilitychange', onAttentionChange);
         window.addEventListener('focus', onAttentionChange);
+        window.addEventListener('blur', onAttentionChange);
+        window.addEventListener('pagehide', forgetThread);
+        announceThread();
+        viewedHeartbeat = setInterval(() => {
+            if (viewedThreadId.value !== null) {
+                announceThread();
+            }
+        }, VIEWED_THREAD_HEARTBEAT_MS);
         void load();
     });
 
@@ -481,6 +666,14 @@ export function useNotificationCenter() {
         stopFallback();
         document.removeEventListener('visibilitychange', onAttentionChange);
         window.removeEventListener('focus', onAttentionChange);
+        window.removeEventListener('blur', onAttentionChange);
+        window.removeEventListener('pagehide', forgetThread);
+
+        if (viewedHeartbeat !== null) {
+            clearInterval(viewedHeartbeat);
+        }
+
+        forgetThread();
     });
 
     return {

@@ -116,7 +116,8 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - **Historial**: paginación por cursor (`before`/`after`, 30 por página) estable aunque lleguen mensajes nuevos;
   `?around={id}` abre el hilo centrado en un mensaje (resultados de búsqueda, saltar a la respuesta).
 - **No leídos**: por hilo y total (badge del menú y encabezado). El marcador de lectura solo avanza; se actualiza al
-  ver el final del chat con la pestaña visible. Los mensajes propios, los de sistema y los eliminados no cuentan.
+  ver el final del chat con la pestaña visible **y la ventana con foco** (fase 5.2.1: una ventana visible junto a otra
+  aplicación ya no marca como leído). Los mensajes propios, los de sistema y los eliminados no cuentan.
   Silenciar un chat lo excluye del badge global (sigue mostrando su contador en la lista).
 - **«Visto»**: en chats privados, bajo tu último mensaje cuando la otra persona ya lo leyó.
 - **Disponibilidad**: punto de estado con la disponibilidad declarada por la persona (Disponible/No disponible, la misma
@@ -127,7 +128,11 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - **Filtros** de la lista: Todos, No leídos, Privados, Grupos, Archivados (se recuerda el último en el navegador).
 - **Notificaciones**: cada mensaje emite `TeamMessagePosted`; el módulo de notificaciones
   (`App\Listeners\Notifications\NotifyTeamChatMessage`) avisa a los demás participantes activos que no silenciaron el
-  hilo. Ver [notificaciones-y-horarios.md](notificaciones-y-horarios.md).
+  hilo. Desde la fase 5.2.1 el aviso se anuncia en la página con remitente y vista previa; ver
+  [Avisos del chat interno](#avisos-del-chat-interno-fase-521) y
+  [notificaciones-y-horarios.md](notificaciones-y-horarios.md).
+- **Apariencia del chat** (fase 5.2.1): botón de paleta en el encabezado del hilo; ver
+  [Personalización](#personalización-de-colores-fase-521).
 
 ## Adjuntos
 
@@ -137,7 +142,19 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   Permitidos: JPEG, PNG, GIF, WebP, PDF, TXT/LOG, CSV, Word/Excel/PowerPoint (97 y OOXML), OpenDocument texto/hoja,
   MP3, OGG, M4A y MP4. Nunca HTML, SVG, scripts ni ejecutables. Los OOXML/ODF que `finfo` reporta como ZIP se aceptan solo
   si contienen el manifiesto de su formato.
-- Límites: `TEAM_CHAT_MAX_KILOBYTES` (10 240 KB) por archivo y `TEAM_CHAT_MAX_FILES` (5) por mensaje.
+- Límites: `TEAM_CHAT_MAX_KILOBYTES` (10 240 KB) por archivo y `TEAM_CHAT_MAX_FILES` (5) por mensaje. Desde la fase
+  5.2.1 los tamaños se muestran en MB decimales (10 240 KB = 10.5 MB), como en el compositor de clientes.
+- **Compositor (fase 5.2.1)**: un mensaje puede llevar solo archivos (el texto es opcional junto a un archivo). Antes de
+  subir se descartan, cada uno con su motivo, los archivos que superan el límite del chat, los que superan el límite de
+  subida de PHP de este servidor (`limits.server`, «… pesa 2.2 MB y el servidor de Chat Manager acepta hasta 2.1 MB; un
+  administrador puede ampliar el límite.») y los que, sumados, superan `post_max_size` («envíalos en varios
+  mensajes»). Durante la subida se ve una barra de progreso con porcentaje (luego «procesando…») y **«Cancelar
+  envío»** mientras aún viajan los bytes; al cancelar, los archivos siguen adjuntos («Se canceló el envío…»). Los
+  errores del servidor llegan por archivo (`attachments.N`): el chip del archivo se marca en rojo, lleva «(no se pudo
+  enviar)» para lectores de pantalla y `aria-describedby` hacia su error. Un archivo que PHP rechazó
+  (`UPLOAD_ERR_INI_SIZE`, `PARTIAL`…) responde con su causa y su `code` estable (`AttachmentRejected`, misma tabla que
+  [mensajería §4.2](mensajeria-whatsapp.md#42-saliente)), nunca con «Escribe un mensaje o adjunta un archivo»; un 413
+  muestra el mensaje del límite del servidor. Quitar un archivo limpia los errores (sus posiciones ya no existen).
 - Descarga solo por `GET team-chat/threads/{thread}/messages/{message}/attachments/{attachment}`, que vuelve a autorizar.
   `Content-Disposition: attachment` salvo `?inline=1` para imágenes seguras y PDF; siempre
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` y CSP con `sandbox` (salvo la vista previa de PDF, porque los navegadores no muestran un PDF dentro de un documento aislado). No hay URLs públicas ni
@@ -166,6 +183,7 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 | PUT/DELETE      | `/team-chat/threads/{thread}/messages/{message}/reactions`                | JSON: añadir / retirar la reacción propia (`emoji`, 120/min)    |
 | POST            | `/team-chat/threads/{thread}/typing`                                      | Señal «escribiendo…» (204, 30/min, no se guarda)                |
 | GET             | `/team-chat/threads/{thread}/messages/{message}/attachments/{attachment}` | Descarga autorizada                                             |
+| PUT/DELETE      | `/team-chat/threads/{thread}/appearance`                                  | JSON: colores propios del hilo (`routes/personalization.php`)   |
 
 ## Tiempo real
 
@@ -211,7 +229,86 @@ restringidas como en el resto del sistema.
   determinista y se corrigieron, pero no está probado que fueran la causa del fallo intermitente observado en la fase
   5.1. Si reaparece, conservar el registro del escenario y las capturas.
 
+## Avisos del chat interno (fase 5.2.1)
+
+Antes, un mensaje interno solo sumaba en la campana: no había _toast_, ni sonido por omisión, ni texto útil. Ahora:
+
+- **Se anuncia en la página.** `NotificationKind::TeamChatMessage` entra en `announcesInPage()` (como las urgentes y
+  `conversation.message`): _toast_ con «Abrir» y botón de cerrar, y sonido activado por omisión mientras el usuario no
+  guarde otra preferencia. Sigue siendo informativa (no cuenta como urgente en la campana ni en Web Push).
+  `TeamChatMention` ya se anunciaba (urgente).
+- **Remitente y vista previa segura.** `NotificationPresenter::teamChat()` arma el texto al leer y solo para un
+  **participante vigente** con `team-chat.use`: «Mensaje nuevo de Ana», «Ana en Ventas» (grupo), «3 mensajes nuevos en
+  Ventas» con «Ana: …» del último, «Ana te mencionó en Ventas». El cuerpo es el texto del mensaje en texto plano,
+  compactado y cortado a 90 caracteres (`TEAM_PREVIEW_LENGTH`), o qué se envió si solo lleva archivos («Envió una
+  imagen», «Envió 3 archivos»); un mensaje eliminado dice «Se eliminó este mensaje.». Es lo mismo que la lista de hilos
+  ya le muestra. Quien salió, fue retirado o perdió `team-chat.use` ve el texto genérico «Ya no tienes acceso a esta
+  conversación interna.» sin autor, vista previa ni enlace. Los mensajes se cargan una sola vez por página de la
+  campana (`team_messages`, con su hilo y el tipo de sus adjuntos). Lo guardado en `notifications.data` sigue siendo
+  solo ids. El aviso del sistema operativo (pestaña oculta) lleva el título, **nunca** la vista previa, porque puede
+  verse fuera de la aplicación (pantalla de bloqueo); Web Push sigue genérico.
+- **Sin aviso para lo que ya se está leyendo.** `notificationAlertPlan()` recibe `team_thread_id`: si ese hilo está
+  abierto en esta pestaña **visible y con foco**, la notificación se marca leída y no suena ni muestra _toast_. Visible
+  pero sin foco (ventana junto a otra aplicación): suena y queda sin leer, sin _toast_ (el chat ya está en pantalla).
+  Los mensajes propios nunca notifican.
+- **Coordinación entre pestañas** (`resources/js/lib/notifications/tabs.ts`, `localStorage` + Web Locks): cada
+  pestaña anuncia el hilo que el usuario mira en ella (visible y con foco; latido cada 30 s, caduca a los 90 s; se
+  borra en `pagehide`). Un hilo mirado en **otra** pestaña silencia sus avisos en todas. El sonido de un lote suena **una
+  sola vez** entre todas las pestañas (`claimNotificationSound`: la primera que puede reproducir audio lo reclama; una
+  con el audio bloqueado no reclama, y una pestaña en segundo plano espera 300 ms para que gane la que está en uso) y
+  ninguna repite un sonido no urgente en 2 s. Sin almacenamiento (modo privado) cada pestaña decide sola.
+- **Un sonido por lote** (varias notificaciones nuevas en la misma recarga de la campana) y **tono propio**: el chat
+  interno usa un «pop» de dos notas más suave y grave (Web Audio, `NotificationTone` `team-chat` en
+  `lib/notifications/alerts.ts`), distinto del aviso de clientes; sin archivos de audio.
+- **Avisos viejos sin _toast_.** `notifications.index` devuelve `server_time`; una notificación cuya última ocurrencia
+  tiene más de 5 minutos al recibirla (`STALE_ALERT_MS`, tras una desconexión larga o un equipo suspendido) solo se
+  lista en la campana, sin _toast_ ni sonido. Se compara con la hora del servidor, no con el reloj del equipo.
+- **Reconexión.** El badge del menú (`useTeamChatUnread`) se recarga una vez al volver la conexión y espera la visita
+  en curso del usuario; la campana recarga como siempre y el lote acumulado suena una vez.
+- **Leer el hilo lee sus avisos.** `TeamThreadRead` (en cualquier pestaña o dispositivo) dispara
+  `ReadTeamChatNotifications` (cola `notifications`), que llama a `NotificationCenter::markTeamThreadRead($user,
+$thread, $upTo)`: marca leídas las `team-chat.message`/`team-chat.mention` del hilo cuyo `message_id` ≤ el leído (una
+  agrupada que ya cuenta un mensaje más nuevo sigue sin leer) y publica la pista `.notification` en `users.{id}` (no un
+  `NotificationSignal`, para no despertar Web Push) para que el contador baje y el _toast_ de otra pestaña se cierre.
+- **Carrera lectura/aviso.** `NotifyTeamChatMessage` no notifica un mensaje que el participante ya leyó
+  (`last_read_message_id ≥ message_id`) y, tras guardar la notificación, vuelve a leer `last_read_message_id`: si la
+  lectura llegó mientras se guardaba (otro worker ejecutó `ReadTeamChatNotifications` en medio), la marca leída en el
+  acto (hallazgo BAJO-5 de la revisión).
+- **Audio bloqueado.** Si el navegador aún no permite sonido (sin clic ni tecla desde que se abrió o recargó la
+  página), la pestaña visible muestra una vez «Sonido de avisos en pausa · El navegador lo activa cuando haces clic o
+  pulsas una tecla en esta página.».
+
+**Preferencias de sonido** (_Mi cuenta › Notificaciones_, `pages/settings/Notifications.vue`): «Mensajes del chat
+interno» y «Menciones en el chat interno» tienen en la app, sonido y navegador como los demás tipos; desactivar el
+sonido deja el _toast_. Junto a «Probar sonido» está **«Probar sonido del chat interno»** (reproduce el tono propio). La
+página explica que con varias pestañas suena una vez, que el chat abierto y a la vista no suena, que el sonido depende
+del volumen y del dispositivo, y que el navegador bloquea el audio hasta la primera interacción (autoplay; ver
+[notificaciones §1.5](notificaciones-y-horarios.md#15-interfaz)). La vista previa solo aparece dentro de la plataforma.
+
+Código: `app/Notifications/{NotificationKind,NotificationPresenter,NotificationCenter}.php`,
+`app/Listeners/Notifications/{NotifyTeamChatMessage,ReadTeamChatNotifications}.php`,
+`resources/js/composables/useNotificationCenter.ts`, `resources/js/lib/notifications/{tabs,alerts}.ts`. Pruebas:
+`tests/Feature/Notifications/TeamChatNotificationTest.php` y `tests/e2e/chat-interno-avisos.mjs`
+([pruebas.md §6.6](pruebas.md#66-escenarios-de-la-fase-521)).
+
+## Personalización de colores (fase 5.2.1)
+
+Cada participante puede elegir colores propios para un hilo o usar su predeterminado, compartido con las
+conversaciones de clientes (`chat_appearances`, columna aditiva `team_thread_id`). Solo cambian su propia vista; los
+demás participantes no los ven. Detalle (alcance, migración, rutas, supervisión y contraste) en
+[seguridad-y-auditoria.md §5.1](seguridad-y-auditoria.md#51-elementos-personales-alias-apariencia-del-chat-respuestas-personales).
+
 ## Limitaciones y pendientes
+
+- **Avisos (fase 5.2.1):** no hay horarios de silencio («no molestar») en la aplicación: se silencia por tipo en las
+  preferencias o por hilo con «Silenciar» (las menciones avisan igual). La coordinación entre pestañas y el tono se
+  probaron solo en Chromium (E2E, lanzado sin la restricción de autoplay, así que el aviso «Sonido de avisos en pausa»
+  no se ejercita ahí); Safari, Firefox y los móviles no se verificaron. Tras una
+  reconexión breve (< 5 min) aparece un _toast_ por notificación acumulada (con un solo sonido); un _toast_ resumen
+  queda pendiente (B4 de la revisión). Un aviso urgente de cliente no espera el enfriamiento de 2 s, pero una
+  mención del chat interno sí.
+- El fallo intermitente de la fase 5.1 en `rt-team-chat-message` (`realtime.mjs`) sigue **sin causa determinada**
+  (ver [Correcciones de la fase 5.2](#correcciones-de-la-fase-52)).
 
 - **Presencia parcial para quien llega a todos**: una persona con alcance global o `team-chat.cross-department` ve en
   línea a quienes también llegan a todos y a los miembros de sus propios departamentos, pero no a personas de otros

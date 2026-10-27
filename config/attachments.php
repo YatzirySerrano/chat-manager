@@ -15,7 +15,7 @@ return [
 
     'link_ttl_days' => max(1, (int) (env('ATTACHMENT_LINK_TTL_DAYS') ?: 7)),
 
-    'link_max_bytes' => (int) (env('ATTACHMENT_LINK_MAX_BYTES') ?: 100 * 1024 * 1024),
+    'link_max_bytes' => (int) (env('ATTACHMENT_LINK_MAX_BYTES') ?: 100_000_000),
 
     /** Downloads per minute and address on the public link route. */
     'link_downloads_per_minute' => (int) (env('ATTACHMENT_LINK_DOWNLOADS_PER_MINUTE') ?: 30),
@@ -56,7 +56,7 @@ return [
 
     /** The web chat serves the files itself: one limit for every type. */
     'web_chat' => [
-        'max_bytes' => (int) (env('WEBCHAT_ATTACHMENT_MAX_BYTES') ?: 25 * 1024 * 1024),
+        'max_bytes' => (int) (env('WEBCHAT_ATTACHMENT_MAX_BYTES') ?: 25_000_000),
     ],
 
 ];

@@ -1,4 +1,5 @@
 import type { AppColor } from './admin';
+import type { ViewerChatAppearance } from './personalization';
 
 /**
  * Internal (employee) chat, independent from customer conversations.
@@ -83,6 +84,8 @@ export type TeamThreadDetail = {
         leave: boolean;
     };
     post_blocked_reason: string | null;
+    /** The viewer's own chat colors for this thread. */
+    appearance?: ViewerChatAppearance;
 };
 
 export type TeamAttachment = {
@@ -146,6 +149,14 @@ export type TeamChatLimits = {
     maxMentions: number;
     /** Allowed reactions. */
     reactions: string[];
+    /** This server's PHP upload limits (null: no limit), with their explanation. */
+    server?: {
+        max_file_bytes: number | null;
+        max_request_bytes: number | null;
+        upload_max_filesize: string;
+        post_max_size: string;
+        message: string;
+    };
 };
 
 export type TeamChatFilters = {

@@ -22,6 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { usePermissions } from '@/composables/usePermissions';
 import { useLiveCustomerWindow } from '@/composables/useLiveCustomerWindow';
+import { useUploadProgress } from '@/composables/useUploadProgress';
 import {
     conversationActionErrorMessage,
     conversationActionFailure,
@@ -33,8 +34,12 @@ import {
     rememberSentFile,
     wasFileSent,
 } from '@/lib/conversations/attachments';
-import type { AttachmentCategory } from '@/lib/conversations/attachments';
+import type {
+    AttachmentCategory,
+    AttachmentState,
+} from '@/lib/conversations/attachments';
 import { formatDuration } from '@/lib/format';
+import { UPLOAD_CODE_FIELD, isRetryableUpload } from '@/lib/uploads';
 import { formatPhone } from '@/lib/phone';
 import { store as storeMessage } from '@/routes/conversations/messages';
 import { store as storeNote } from '@/routes/conversations/notes';
@@ -74,6 +79,13 @@ import type {
  * carries as a secure download link (ZIP on WhatsApp) need the agent's
  * explicit choice. The upload shows its progress and can be cancelled
  * while it runs (AttachmentDraft).
+ *
+ * The chosen file goes through explicit states (AttachmentState): checked
+ * here (ready, or invalid with its reason, including a file larger than
+ * this server's PHP upload limit), uploading, and refused by the server
+ * (rejected) with the server's own explanation of the attachment (or of a
+ * 413), never the "write a message" one: the draft stays marked as
+ * refused until the file is removed or changed. A file alone can be sent.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -125,10 +137,10 @@ const attachmentCategory = ref<AttachmentCategory | null>(null);
 /* The agent chose to send a file the channel only carries as a link. */
 const linkConfirmed = ref(false);
 const attachmentNotice = ref<string | null>(null);
+/* The server refused the attached file (its explanation); cleared with the file. */
+const attachmentRejection = ref<string | null>(null);
 const error = ref<string | null>(null);
 const sending = ref(false);
-/* Set when the agent cancels an upload in progress. */
-let uploadCancelled = false;
 let clientReference = newClientReference();
 
 watch(
@@ -297,6 +309,7 @@ const canSubmit = computed(
         !tooLong.value &&
         (mode.value === 'note' ||
             (attachmentError.value === null &&
+                attachmentRejection.value === null &&
                 captionBlock.value === null &&
                 (attachmentEvaluation.value?.delivery !== 'link' ||
                     linkConfirmed.value))) &&
@@ -325,15 +338,33 @@ const attachmentError = computed(
     () => attachmentEvaluation.value?.error ?? null,
 );
 
+const attachmentState = computed<AttachmentState | null>(() => {
+    if (!attachment.value) {
+        return null;
+    }
+
+    if (attachmentRejection.value !== null) {
+        return 'rejected';
+    }
+
+    if (attachmentError.value !== null) {
+        return 'invalid';
+    }
+
+    return sending.value && mode.value === 'reply' ? 'uploading' : 'ready';
+});
+
 function clearAttachment(): void {
     attachment.value = null;
     attachmentCategory.value = null;
     linkConfirmed.value = false;
     attachmentNotice.value = null;
+    attachmentRejection.value = null;
 }
 
 function chooseFile(file: File, category: AttachmentCategory | null): void {
     if (
+        attachmentRejection.value === null &&
         attachment.value &&
         fileFingerprint(attachment.value) === fileFingerprint(file) &&
         (category === null || category === attachmentCategory.value)
@@ -495,34 +526,16 @@ const noteHttp = useHttp<{ body: string }, { data: ConversationNote }>({
     body: '',
 });
 
-const uploadProgress = computed(() => {
-    const percentage = sendHttp.progress?.percentage;
-
-    return sending.value && attachment.value && percentage !== undefined
-        ? Math.round(percentage)
-        : null;
-});
-
-/*
- * The upload can be cancelled while its bytes are still travelling; once
- * they all arrived the server may already have stored the message.
- */
-const canCancelUpload = computed(
-    () =>
-        sending.value &&
-        mode.value === 'reply' &&
-        attachment.value !== null &&
-        (uploadProgress.value ?? 0) < 100,
+/* Upload progress and «Cancelar envío» (shared with the team chat composer). */
+const {
+    progress: uploadProgress,
+    canCancel: canCancelUpload,
+    cancel: cancelUpload,
+    wasCancelled: uploadWasCancelled,
+} = useUploadProgress(
+    sendHttp,
+    () => sending.value && mode.value === 'reply' && attachment.value !== null,
 );
-
-function cancelUpload(): void {
-    if (!canCancelUpload.value) {
-        return;
-    }
-
-    uploadCancelled = true;
-    sendHttp.cancel();
-}
 
 function responseMessage(failure: unknown): string {
     const refused = conversationActionFailure(failure);
@@ -550,11 +563,13 @@ function responseMessage(failure: unknown): string {
         return 'Estás enviando demasiado rápido. Espera unos segundos e inténtalo de nuevo.';
     }
 
-    // 413: the file is too big (the server's text names the limit).
+    // 413: larger than this server's post_max_size (its configuration).
+    // A development server may print a PHP warning before the JSON body.
     if (status === 413) {
         return (
             body?.message ??
-            'El archivo pesa demasiado. Envía uno más pequeño o pide a un administrador que permita archivos más grandes.'
+            channelRules.value?.server?.message ??
+            'El servidor de Chat Manager no pudo recibir el archivo: su límite de subida es menor que el tamaño del archivo. Pide a un administrador que amplíe el límite de subida del servidor.'
         );
     }
 
@@ -596,7 +611,7 @@ async function submit(): Promise<void> {
             return;
         }
 
-        uploadCancelled = false;
+        uploadWasCancelled();
         sendHttp.body = text.value;
         sendHttp.client_reference = clientReference;
         sendHttp.attachment = attachment.value;
@@ -608,7 +623,31 @@ async function submit(): Promise<void> {
             {
                 onError: (errors) => {
                     rejected = true;
-                    error.value = Object.values(errors)[0] ?? null;
+
+                    const others = Object.entries(errors).filter(
+                        ([field]) =>
+                            field !== 'attachment' &&
+                            field !== UPLOAD_CODE_FIELD,
+                    );
+
+                    // A temporary failure (interrupted upload, server
+                    // trouble) keeps the file ready to send again; a
+                    // definitive refusal (type, size, server limit) is
+                    // explained on its card, by its own cause.
+                    if (attachment.value && errors.attachment) {
+                        if (isRetryableUpload(errors)) {
+                            error.value = errors.attachment;
+
+                            return;
+                        }
+
+                        attachmentRejection.value = errors.attachment;
+                        error.value = others[0]?.[1] ?? null;
+
+                        return;
+                    }
+
+                    error.value = others[0]?.[1] ?? null;
                 },
             },
         );
@@ -637,9 +676,8 @@ async function submit(): Promise<void> {
             clientReference = newClientReference();
         }
     } catch (failure) {
-        if (uploadCancelled) {
+        if (uploadWasCancelled()) {
             // Nothing reached the server completely: a new attempt is new.
-            uploadCancelled = false;
             clientReference = newClientReference();
             error.value =
                 'Se canceló el envío. El archivo sigue adjunto: puedes volver a enviarlo o quitarlo.';
@@ -647,9 +685,16 @@ async function submit(): Promise<void> {
             return;
         }
 
-        error.value = responseMessage(failure);
-
         const status = conversationActionFailure(failure)?.status ?? null;
+
+        // The server could not receive the file (413, its configuration):
+        // the card says why and the draft stays refused. Storage that is
+        // not available (503) is temporary: the same file can be retried.
+        if (attachment.value && status === 413) {
+            attachmentRejection.value = responseMessage(failure);
+        } else {
+            error.value = responseMessage(failure);
+        }
 
         // A conflict or refusal stored nothing; a network error might have.
         if (status !== null && status >= 400 && status < 500) {
@@ -866,6 +911,8 @@ defineExpose({ focus });
                 :can-cancel="canCancelUpload"
                 :problem="captionBlock"
                 :notice="attachmentNotice"
+                :state="attachmentState ?? 'ready'"
+                :rejection="attachmentRejection"
                 @remove="clearAttachment"
                 @cancel="cancelUpload"
                 @confirm-link="linkConfirmed = true"

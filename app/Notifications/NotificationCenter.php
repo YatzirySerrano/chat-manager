@@ -113,6 +113,33 @@ class NotificationCenter
     }
 
     /**
+     * The user read an internal thread up to the given message: its message
+     * and mention notifications that only cover messages up to there are no
+     * longer news (a folded one that already counts a newer message stays
+     * unread). Returns the ids marked read.
+     *
+     * @return list<string>
+     */
+    public function markTeamThreadRead(User $user, int $threadId, int $upToMessageId): array
+    {
+        $unread = fn (): Builder => $this->ownedBy($user)
+            ->whereNull('read_at')
+            ->whereIn('kind', [NotificationKind::TeamChatMention->value, NotificationKind::TeamChatMessage->value])
+            ->where('data->thread_id', $threadId)
+            ->where('data->message_id', '<=', $upToMessageId);
+
+        $ids = array_values(array_map('strval', $unread()->pluck('id')->all()));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $this->retryingDeadlocks(fn (): int => $unread()->whereKey($ids)->toBase()->update(['read_at' => now()]));
+
+        return $ids;
+    }
+
+    /**
      * Runs an idempotent update again when the database chose it as the
      * victim of a deadlock or a lock wait (bounded attempts, short pause).
      *

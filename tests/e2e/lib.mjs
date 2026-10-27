@@ -423,7 +423,7 @@ export function launchBrowser(options = {}) {
  * tones created within 100 ms form one chime. Media elements are counted
  * too (no audio file is expected).
  */
-function installAlertSpy() {
+export function installAlertSpy() {
     const alerts = {
         contexts: 0,
         tones: 0,

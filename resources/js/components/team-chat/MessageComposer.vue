@@ -10,7 +10,9 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
+import { useUploadProgress } from '@/composables/useUploadProgress';
 import { formatFileSize } from '@/lib/format';
+import { UPLOAD_CODE_FIELD, serverLimitNotice } from '@/lib/uploads';
 import { cn } from '@/lib/utils';
 import { typing as announceTyping } from '@/routes/team-chat/threads';
 import { store as storeMessage } from '@/routes/team-chat/threads/messages';
@@ -74,7 +76,9 @@ const textareaId = useId();
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const emojiOpen = ref(false);
-const localError = ref<string | null>(null);
+/* Problems found here (files refused before uploading, network, cancellation). */
+const localErrors = ref<string[]>([]);
+const errorIdPrefix = useId();
 
 const TYPING_INTERVAL_MS = 3000;
 const MENTION_QUERY = /(?:^|\s)@([^\s@]{0,30})$/u;
@@ -132,15 +136,54 @@ const canSend = computed(
         remaining.value >= 0 &&
         (http.body.trim() !== '' || http.attachments.length > 0),
 );
+/*
+ * Every problem, each with an id: the server's per file errors
+ * ("attachments.N") also mark their chip (see failedFiles).
+ */
 const errors = computed(() => {
-    const list = Object.entries(
+    const server = Object.entries(
         http.errors as Record<string, string | undefined>,
     )
-        .map(([, message]) => message)
-        .filter((message): message is string => Boolean(message));
+        .filter(
+            (entry): entry is [string, string] =>
+                entry[0] !== UPLOAD_CODE_FIELD && Boolean(entry[1]),
+        )
+        .map(([field, message]) => ({
+            id: `${errorIdPrefix}-${field.replace(/\W/g, '-')}`,
+            message,
+            file: /^attachments\.(\d+)$/.exec(field)?.[1] ?? null,
+        }));
 
-    return localError.value ? [localError.value, ...list] : list;
+    return [
+        ...localErrors.value.map((message, index) => ({
+            id: `${errorIdPrefix}-local-${index}`,
+            message,
+            file: null,
+        })),
+        ...server,
+    ];
 });
+
+/* Chip position → id of the error that explains why it failed. */
+const failedFiles = computed(
+    () =>
+        new Map(
+            errors.value
+                .filter((entry) => entry.file !== null)
+                .map((entry) => [Number(entry.file), entry.id]),
+        ),
+);
+
+/* Upload progress and «Cancelar envío» (shared with the customer reply composer). */
+const {
+    progress: uploadProgress,
+    canCancel: canCancelUpload,
+    cancel: cancelUpload,
+    wasCancelled: uploadWasCancelled,
+} = useUploadProgress(
+    http,
+    () => http.processing && http.attachments.length > 0,
+);
 
 function resize(): void {
     const element = textarea.value;
@@ -267,30 +310,77 @@ function pickFiles(event: Event): void {
     const input = event.target as HTMLInputElement;
     const chosen = Array.from(input.files ?? []);
     input.value = '';
-    localError.value = null;
+    http.clearErrors();
+    const problems: string[] = [];
 
     const tooBig = chosen.filter(
         (file) => file.size > props.limits.maxKilobytes * 1024,
     );
 
-    if (tooBig.length > 0) {
-        localError.value = `«${tooBig[0].name}» supera el máximo de ${formatFileSize(props.limits.maxKilobytes * 1024)} por archivo.`;
+    for (const file of tooBig) {
+        problems.push(
+            `«${file.name}» supera el máximo de ${formatFileSize(props.limits.maxKilobytes * 1024)} por archivo.`,
+        );
     }
 
-    const accepted = chosen.filter((file) => !tooBig.includes(file));
-    const merged = [...http.attachments, ...accepted];
+    /* Within the chat's limit but above this server's PHP upload limit. */
+    const serverMax = props.limits.server?.max_file_bytes ?? null;
+    const overServer = chosen.filter(
+        (file) =>
+            !tooBig.includes(file) &&
+            serverMax !== null &&
+            file.size > serverMax,
+    );
+
+    for (const file of overServer) {
+        problems.push(
+            serverLimitNotice(file.size, serverMax ?? 0, `«${file.name}»`),
+        );
+    }
+
+    const accepted = chosen.filter(
+        (file) => !tooBig.includes(file) && !overServer.includes(file),
+    );
+    let merged = [...http.attachments, ...accepted];
 
     if (merged.length > props.limits.maxFiles) {
-        localError.value = `Puedes adjuntar como máximo ${props.limits.maxFiles} archivos por mensaje.`;
+        problems.push(
+            `Puedes adjuntar como máximo ${props.limits.maxFiles} archivos por mensaje.`,
+        );
+        merged = merged.slice(0, props.limits.maxFiles);
     }
 
-    http.attachments = merged.slice(0, props.limits.maxFiles);
+    /* Every file travels in one request, capped by post_max_size. */
+    const requestMax = props.limits.server?.max_request_bytes ?? null;
+
+    let trimmed = false;
+
+    while (
+        requestMax !== null &&
+        merged.length > http.attachments.length &&
+        merged.reduce((total, file) => total + file.size, 0) > requestMax
+    ) {
+        merged = merged.slice(0, -1);
+        trimmed = true;
+    }
+
+    if (trimmed && requestMax !== null) {
+        problems.push(
+            `Los archivos juntos pesan más de lo que el servidor de Chat Manager acepta en un mensaje (${formatFileSize(requestMax)}): envíalos en varios mensajes; un administrador puede ampliar el límite.`,
+        );
+    }
+
+    localErrors.value = problems;
+    http.attachments = merged;
 }
 
+/* The errors referred to positions that no longer exist: they go too. */
 function removeFile(index: number): void {
     http.attachments = http.attachments.filter(
         (_, position) => position !== index,
     );
+    localErrors.value = [];
+    http.clearErrors();
 }
 
 async function insertEmoji(emoji: string): Promise<void> {
@@ -311,7 +401,8 @@ async function send(): Promise<void> {
         return;
     }
 
-    localError.value = null;
+    localErrors.value = [];
+    uploadWasCancelled();
     http.reply_to_message_id = props.replyTo?.id ?? null;
     http.mentions = mentionsInText();
     mentionQuery.value = null;
@@ -320,20 +411,31 @@ async function send(): Promise<void> {
     try {
         const response = await http.post(storeMessage.url(props.threadId), {
             onHttpException: (response) => {
-                localError.value =
+                const message =
                     response.status === 403
                         ? 'Ya no puedes enviar mensajes en este chat.'
-                        : 'No se pudo enviar el mensaje. Inténtalo de nuevo.';
+                        : response.status === 413
+                          ? (props.limits.server?.message ??
+                            'El servidor de Chat Manager no pudo recibir los archivos: su límite de subida es menor que su tamaño. Pide a un administrador que lo amplíe.')
+                          : 'No se pudo enviar el mensaje. Inténtalo de nuevo.';
+                localErrors.value = [message];
 
                 return false;
             },
             onNetworkError: () => {
-                localError.value =
-                    'No hay conexión con la plataforma. Tu mensaje no se envió; revisa tu internet e inténtalo de nuevo.';
+                localErrors.value = [
+                    'No hay conexión con la plataforma. Tu mensaje no se envió; revisa tu internet e inténtalo de nuevo.',
+                ];
 
                 return false;
             },
         });
+
+        // Refused by validation: the draft and its files stay, with the
+        // errors shown (http.errors).
+        if (!response) {
+            return;
+        }
 
         // A successful request makes the sent values the form defaults, so
         // reset() would bring the sent text back: empty the composer instead.
@@ -351,7 +453,13 @@ async function send(): Promise<void> {
         resize();
         focus();
     } catch {
-        // Errors are shown from http.errors / localError.
+        if (uploadWasCancelled()) {
+            localErrors.value = [
+                'Se canceló el envío. Los archivos siguen adjuntos: puedes volver a enviarlos o quitarlos.',
+            ];
+        }
+
+        // Other errors are shown from http.errors / localErrors.
     }
 }
 </script>
@@ -394,9 +502,18 @@ async function send(): Promise<void> {
                 v-for="(file, index) in http.attachments"
                 :key="`${file.name}-${index}`"
                 class="flex max-w-56 items-center gap-1.5 rounded-md border bg-muted px-2 py-1 text-xs"
+                :class="
+                    failedFiles.has(index) &&
+                    'border-destructive/60 text-destructive'
+                "
+                :data-attachment-failed="failedFiles.has(index) || undefined"
+                :aria-describedby="failedFiles.get(index)"
             >
                 <Paperclip class="size-3.5 shrink-0" aria-hidden="true" />
                 <span class="truncate">{{ file.name }}</span>
+                <span v-if="failedFiles.has(index)" class="sr-only">
+                    (no se pudo enviar)</span
+                >
                 <button
                     type="button"
                     class="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -407,6 +524,38 @@ async function send(): Promise<void> {
                 </button>
             </li>
         </ul>
+
+        <div
+            v-if="uploadProgress !== null"
+            class="mb-2 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+            <div
+                class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label="Progreso de la subida de los archivos"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="uploadProgress"
+            >
+                <div
+                    class="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
+                    :style="{ width: `${uploadProgress}%` }"
+                />
+            </div>
+            <span class="shrink-0 tabular-nums">{{
+                uploadProgress < 100 ? `${uploadProgress} %` : 'procesando…'
+            }}</span>
+            <Button
+                v-if="canCancelUpload"
+                type="button"
+                variant="outline"
+                size="sm"
+                class="h-7 shrink-0 pointer-coarse:h-10"
+                @click="cancelUpload"
+            >
+                Cancelar envío
+            </Button>
+        </div>
 
         <div class="flex items-end gap-1.5">
             <input
@@ -531,9 +680,10 @@ async function send(): Promise<void> {
         <div class="mt-1 flex items-start justify-between gap-2 px-1">
             <div class="min-w-0 space-y-0.5">
                 <InputError
-                    v-for="message in errors"
-                    :key="message"
-                    :message="message"
+                    v-for="entry in errors"
+                    :id="entry.id"
+                    :key="entry.id"
+                    :message="entry.message"
                 />
             </div>
             <span

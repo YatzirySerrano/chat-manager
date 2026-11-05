@@ -292,6 +292,25 @@ inactivo no aporta mensajes (se usa la conexión).
 - No modifica `first_response_at` ni `last_outbound_at` (no es una respuesta del equipo; la conversación sigue
   esperando atención humana). Sí avanza `last_message_at`.
 
+### 3.3 Diagnóstico
+
+- **Regla clave**: el saludo (bienvenida o fuera de horario) se envía una vez por ciclo. Un cliente que escribe fuera
+  de horario en una conversación que **sigue abierta o pendiente** no recibe otro saludo; solo lo recibe al iniciar una
+  conversación nueva o al reabrir una cerrada (por mensaje entrante). Sin cierre automático por inactividad
+  (`operations.auto_close_after_hours`), una conversación de pruebas puede quedar abierta indefinidamente.
+- **Sin horario aplicado** (ni horario propio del departamento ni «Aplicar horario de atención») la atención es
+  continua y el mensaje fuera de horario **nunca** se envía.
+- Los horarios no cruzan la medianoche: la validación exige que el cierre sea posterior a la apertura de cada día.
+- En la conexión de WhatsApp, la tarjeta de diagnóstico tiene la sección «Mensajes automáticos»: horario que aplica,
+  hora local y si está dentro o fuera, qué saludo recibiría ahora una conversación nueva (con el departamento
+  predeterminado), los enviados y fallidos de los últimos 7 días con el último error de Meta, y avisos (fuera de
+  horario activado sin horario; sin cierre automático).
+- Cuando no se envía un mensaje automático se registra en `laravel.log` `Automatic message not sent.` con el id de la
+  conversación y de la conexión, la ranura o el tipo y el motivo: `processed_late`, `welcome_not_configured`,
+  `away_not_configured` (con `schedule` e `is_open`), `not_configured` (despedida), `conversation_state_changed`,
+  `connection_not_operational` o `customer_window_closed`. Nunca el texto ni el teléfono del cliente. Si se encoló y Meta
+  lo rechazó, el mensaje aparece en la conversación como fallido con el error del proveedor.
+
 ## 4. Configuración de departamentos
 
 La ficha del departamento reúne: distribución (bandeja compartida, manual o automática — sin cambios en el motor),

@@ -9,8 +9,10 @@ use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\Department;
 use App\Services\Automation\AutomaticMessages;
+use App\Services\BusinessHours;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Sends the automatic messages of a conversation cycle:
@@ -48,6 +50,7 @@ class SendAutomaticMessages implements ShouldQueue
     public function __construct(
         private AutomaticMessages $messages,
         private QueueAutomaticMessage $queueMessage,
+        private BusinessHours $hours,
     ) {}
 
     public function viaQueue(): string
@@ -83,17 +86,56 @@ class SendAutomaticMessages implements ShouldQueue
 
         if ($type === ConversationEventType::Closed) {
             $plan = $this->messages->farewell($connection);
+
+            if ($plan === null) {
+                $this->skipped($conversation, 'farewell', 'not_configured');
+            }
         } else {
-            if (! $this->startedByCustomer($type, $record) || ! $this->isRecent($conversation)) {
+            // A cycle started by a person (manual reopen, import) gets no greeting by design.
+            if (! $this->startedByCustomer($type, $record)) {
                 return;
             }
 
-            $plan = $this->messages->greeting($connection, $this->operatingDepartment($conversation->department), now());
+            if (! $this->isRecent($conversation)) {
+                $this->skipped($conversation, 'greeting', 'processed_late');
+
+                return;
+            }
+
+            $department = $this->operatingDepartment($conversation->department);
+            $plan = $this->messages->greeting($connection, $department, now());
+
+            if ($plan === null) {
+                $attention = $this->hours->describe($department);
+
+                // Outside hours without an away message, or within hours without a welcome.
+                $this->skipped($conversation, 'greeting', $attention['is_open'] ? 'welcome_not_configured' : 'away_not_configured', [
+                    'schedule' => $attention['mode'],
+                    'is_open' => $attention['is_open'],
+                ]);
+            }
         }
 
         if ($plan !== null) {
             $this->queueMessage->handle($conversation, $plan, $conversation->reopen_count, $record->id);
         }
+    }
+
+    /**
+     * Why a cycle got no automatic message, for administrators diagnosing
+     * one that "did not arrive" (no customer data, no message text).
+     *
+     * @param  array<string, scalar|null>  $context
+     */
+    private function skipped(Conversation $conversation, string $slot, string $reason, array $context = []): void
+    {
+        Log::info('Automatic message not sent.', [
+            'conversation_id' => $conversation->id,
+            'connection_id' => $conversation->connection_id,
+            'slot' => $slot,
+            'reason' => $reason,
+            ...$context,
+        ]);
     }
 
     private function startedByCustomer(ConversationEventType $type, ConversationEvent $record): bool

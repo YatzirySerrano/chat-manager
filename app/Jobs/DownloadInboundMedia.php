@@ -54,6 +54,14 @@ class DownloadInboundMedia implements ShouldQueue
 
     public int $timeout = 120;
 
+    /**
+     * What is known about the file when it is given up (logged without
+     * URLs, tokens or personal data, see markUnavailable()).
+     *
+     * @var array<string, scalar|null>
+     */
+    private array $diagnostics = [];
+
     public function __construct(public int $attachmentId)
     {
         $this->onQueue(Queues::name(Queues::MEDIA));
@@ -120,6 +128,8 @@ class DownloadInboundMedia implements ShouldQueue
                 $graph->download(null, $sourceUrl, $temporary, $storage->rules($kind, $channel)['max_bytes']);
             } else {
                 $media = $graph->media($token, (string) $attachment->whatsapp_media_id);
+                // Only the host of the short-lived download URL: its query string is a credential.
+                $this->diagnostics += ['meta_mime' => $media['mime_type'], 'meta_size' => $media['file_size'], 'download_host' => parse_url($media['url'], PHP_URL_HOST) ?: null];
 
                 if ($media['file_size'] !== null) {
                     $storage->assertSize($kind, $media['file_size'], $channel);
@@ -131,6 +141,10 @@ class DownloadInboundMedia implements ShouldQueue
 
             $stored = $storage->store($temporary, $kind, $channel);
         } catch (MediaRejected $exception) {
+            if (is_file($temporary) && filesize($temporary) > 0) {
+                $this->diagnostics += ['received_size' => (int) filesize($temporary), 'detected_mime' => $storage->detect($temporary)];
+            }
+
             $this->markUnavailable($attachment, $exception->reason);
 
             return;
@@ -140,6 +154,8 @@ class DownloadInboundMedia implements ShouldQueue
 
             return;
         } catch (MetaGraphException $exception) {
+            $this->diagnostics += ['meta_kind' => $exception->kind, 'http_status' => $exception->status, 'meta_code' => $exception->metaCode];
+
             if ($exception->isRetryable() || $exception->isAmbiguous()) {
                 $this->retryLater($attachment);
 
@@ -251,6 +267,20 @@ class DownloadInboundMedia implements ShouldQueue
             ->update(['status' => AttachmentStatus::Unavailable, 'error_code' => $reason, 'updated_at' => now()]);
 
         if ($updated > 0) {
+            $content = $attachment->message->metadata['content'] ?? null;
+
+            // Enough to tell the causes apart in production; never the media
+            // URL, the token, the sender or the file's content.
+            Log::warning('Customer media marked unavailable.', [
+                'attachment_id' => $attachment->id,
+                'message_type' => $attachment->message->type->value,
+                'reason' => $reason,
+                'declared_mime' => $attachment->mime_type,
+                'animated' => is_array($content) && is_bool($content['animated'] ?? null) ? $content['animated'] : null,
+                'attempt' => $this->job !== null ? $this->attempts() : null,
+                ...$this->diagnostics,
+            ]);
+
             ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
         }
     }

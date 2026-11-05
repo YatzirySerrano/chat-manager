@@ -187,6 +187,11 @@ class ConversationMessageResource extends JsonResource
                 'title' => $this->text($content['button_reply']['title'] ?? $content['list_reply']['title'] ?? null),
                 'description' => $this->text($content['list_reply']['description'] ?? null),
             ],
+            // Meta's own flag; the file is served as received, so an animated
+            // WebP keeps its frames in the browser.
+            MessageType::Sticker => [
+                'animated' => ($content['animated'] ?? null) === true,
+            ],
             MessageType::Reaction => [
                 'emoji' => $this->text($content['emoji'] ?? null),
                 'reacted_message_id' => $this->resource->relationLoaded('reactionTarget') && $this->resource->getRelation('reactionTarget') instanceof Message

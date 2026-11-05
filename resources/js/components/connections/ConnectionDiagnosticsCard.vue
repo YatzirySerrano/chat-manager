@@ -136,6 +136,48 @@ const checks = computed<
         },
     ];
 });
+
+const SCHEDULE_LABELS = {
+    department: 'Horario propio del departamento',
+    platform: 'Horario de atención de Configuración',
+    continuous: 'Atención continua (sin horario aplicado)',
+} as const;
+
+/**
+ * What the automatic messages do: the schedule that applies now, which
+ * greeting a customer starting a conversation right now would get, and the
+ * warnings that explain one that "did not arrive".
+ */
+const automation = computed(() => {
+    const state = props.diagnostics.automation;
+    const messages = props.connection.messages;
+    const warnings: string[] = [];
+
+    if (messages.away.enabled && state.schedule === 'continuous') {
+        warnings.push(
+            'El mensaje fuera de horario está activado, pero no hay un horario aplicado: la atención se considera continua y nunca se envía. Activa «Aplicar horario de atención» en Configuración.',
+        );
+    }
+
+    if (state.auto_close_after_hours === null) {
+        warnings.push(
+            'No hay cierre automático por inactividad: una conversación sigue abierta hasta que un asesor la cierra, y mientras tanto el cliente no recibe otro saludo.',
+        );
+    }
+
+    return {
+        schedule: SCHEDULE_LABELS[state.schedule],
+        now:
+            state.schedule === 'continuous'
+                ? `Ahora son las ${state.local_time} (${state.timezone}).`
+                : `Ahora son las ${state.local_time} (${state.timezone}): ${state.is_open ? 'dentro del horario' : `fuera del horario${state.holiday ? ` (${state.holiday})` : ''}`}.${!state.is_open && state.next_opening ? ` Se abre ${formatDateTime(state.next_opening)}.` : ''}`,
+        greeting: state.greeting_now
+            ? `Un cliente que inicie una conversación ahora recibirá «${state.greeting_now.label}»${state.greeting_now.source === 'department' ? ` del departamento ${state.department ?? ''}` : ''}.`
+            : `Un cliente que inicie una conversación ahora no recibirá ningún saludo: ${state.is_open ? 'la bienvenida no está activada' : 'el mensaje fuera de horario no está activado'}${state.department ? ' ni en la conexión ni en su departamento' : ''}.`,
+        recent: `Últimos ${state.days} días: ${state.sent.welcome} de bienvenida, ${state.sent.away} fuera de horario y ${state.sent.farewell} de despedida${state.failed > 0 ? `; ${state.failed} no se pudieron enviar` : ''}.`,
+        warnings,
+    };
+});
 </script>
 
 <template>
@@ -294,6 +336,43 @@ const checks = computed<
                     </span>
                 </li>
             </ul>
+        </div>
+
+        <div class="grid gap-1.5 text-xs" data-diagnostics="automation">
+            <p class="font-medium">Mensajes automáticos</p>
+            <p class="text-muted-foreground">
+                {{ automation.schedule }}. {{ automation.now }}
+            </p>
+            <p>{{ automation.greeting }}</p>
+            <p class="text-muted-foreground">
+                El saludo (bienvenida o fuera de horario) se envía una vez por
+                conversación: cuando el cliente inicia una nueva o reabre una
+                cerrada, nunca en una que sigue abierta. La despedida, al
+                cerrarla, solo dentro de la ventana de 24 horas.
+            </p>
+            <p class="text-muted-foreground">{{ automation.recent }}</p>
+            <p
+                v-if="diagnostics.automation.last_failure"
+                class="text-destructive"
+            >
+                Último envío automático fallido
+                {{ formatRelative(diagnostics.automation.last_failure.at) }}:
+                {{
+                    diagnostics.automation.last_failure.error ??
+                    diagnostics.automation.last_failure.code
+                }}
+            </p>
+            <p
+                v-for="warning in automation.warnings"
+                :key="warning"
+                class="flex gap-2 rounded-lg bg-warning-soft p-3"
+            >
+                <TriangleAlert
+                    class="mt-0.5 size-4 shrink-0 text-warning"
+                    aria-hidden="true"
+                />
+                <span>{{ warning }}</span>
+            </p>
         </div>
 
         <div v-if="diagnostics.signals.length > 0" class="grid gap-1 text-xs">

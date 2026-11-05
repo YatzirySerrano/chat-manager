@@ -11,6 +11,10 @@ use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Models\WebhookEvent;
+use App\Services\Automation\AutomaticMessageKind;
+use App\Services\Automation\AutomaticMessages;
+use App\Services\BusinessHours;
+use App\Services\PlatformSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
@@ -23,7 +27,15 @@ use Illuminate\Support\Carbon;
  */
 class ConnectionDiagnostics
 {
-    public function __construct(private WhatsAppTransport $transport) {}
+    public function __construct(
+        private WhatsAppTransport $transport,
+        private BusinessHours $hours,
+        private AutomaticMessages $automaticMessages,
+        private PlatformSettings $settings,
+    ) {}
+
+    /** Days of automatic messages summarized. */
+    public const AUTOMATIC_DAYS = 7;
 
     /** Days of failed deliveries of unknown outcome shown to administrators. */
     public const UNKNOWN_DELIVERY_DAYS = 7;
@@ -105,6 +117,7 @@ class ConnectionDiagnostics
                 'unknown_days' => self::UNKNOWN_DELIVERY_DAYS,
                 'unknown_conversations' => $viewer === null ? [] : $this->unknownConversations($unknown, $viewer),
             ],
+            'automation' => $this->automation($connection),
             'signals' => collect($connection->provider_signals ?? [])
                 ->map(fn (mixed $signal, string $field): array => [
                     'field' => $field,
@@ -113,6 +126,53 @@ class ConnectionDiagnostics
                 ])
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * What the automatic messages of the connection would do right now and
+     * what they did recently, so an administrator can tell why one "did not
+     * arrive" (schedule not applied, a cycle that did not start, a refusal
+     * by Meta) without reading the database. Evaluated with the connection's
+     * default department, as a new conversation without routing would be.
+     *
+     * @return array<string, mixed>
+     */
+    private function automation(Connection $connection): array
+    {
+        $department = $connection->defaultDepartment()->first();
+        $department = $department !== null && $department->is_active && ! $department->isDeleted() ? $department : null;
+        $now = now();
+        $attention = $this->hours->describe($department, $now);
+        $plan = $this->automaticMessages->greeting($connection, $department, $now);
+
+        $recent = Message::query()
+            ->where('metadata->automatic', true)
+            ->where('created_at', '>=', $now->copy()->subDays(self::AUTOMATIC_DAYS))
+            ->whereHas('conversation', fn (Builder $query) => $query->where('connection_id', $connection->id));
+        $lastFailure = (clone $recent)->where('status', MessageStatus::Failed)->latest('id')->first(['id', 'error_code', 'error_message', 'failed_at', 'metadata']);
+
+        return [
+            'schedule' => $attention['mode'],
+            'is_open' => $attention['is_open'],
+            'next_opening' => $attention['next_opening'],
+            'holiday' => $attention['holiday'],
+            'timezone' => $attention['timezone'],
+            'local_time' => $now->copy()->setTimezone($attention['timezone'])->format('H:i'),
+            'department' => $department?->name,
+            'greeting_now' => $plan === null ? null : ['kind' => $plan->kind->value, 'label' => $plan->kind->label(), 'source' => $plan->source],
+            'auto_close_after_hours' => $this->settings->get('operations.auto_close_after_hours'),
+            'days' => self::AUTOMATIC_DAYS,
+            'sent' => collect(AutomaticMessageKind::cases())->mapWithKeys(fn (AutomaticMessageKind $kind): array => [
+                $kind->value => (clone $recent)->where('metadata->automatic_kind', $kind->value)->whereNot('status', MessageStatus::Failed)->count(),
+            ])->all(),
+            'failed' => (clone $recent)->where('status', MessageStatus::Failed)->count(),
+            'last_failure' => $lastFailure === null ? null : [
+                'kind' => is_string($lastFailure->metadata['automatic_kind'] ?? null) ? $lastFailure->metadata['automatic_kind'] : null,
+                'code' => $lastFailure->error_code,
+                'error' => $lastFailure->error_message,
+                'at' => $lastFailure->failed_at?->toIso8601String(),
+            ],
         ];
     }
 

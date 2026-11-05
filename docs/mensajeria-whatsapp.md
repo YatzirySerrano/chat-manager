@@ -200,7 +200,7 @@ Tipos admitidos y texto legible guardado en `messages.body` (el contenido origin
    desde hosts de Meta** (`*.fbsbx.com`, `*.facebook.com`, `*.fbcdn.net`, `*.whatsapp.net`). El token nunca va en la URL
    ni en logs.
 3. `MediaStorage` valida el tipo real con `finfo` y el tamaño (límites en `config/whatsapp.php`, alineados a Meta:
-   imagen JPEG/PNG 5 MB, sticker WebP 500 KB, audio AAC/MP4/MPEG/AMR/OGG 16 MB, video MP4/3GPP 16 MB, documento 100 MB
+   imagen JPEG/PNG 5 MB, sticker WebP (fijo o animado) 5 MB — ver «Stickers recibidos» —, audio AAC/MP4/MPEG/AMR/OGG 16 MB, video MP4/3GPP 16 MB, documento 100 MB
    configurable con `WHATSAPP_DOCUMENT_MAX_BYTES`) y lo guarda en el disco privado `filesystems.media_disk`
    (`MEDIA_DISK`, por defecto `local` = `storage/app/private`) en `media/{aaaa}/{mm}/{uuid}`, sin extensión ni nombre
    original.
@@ -227,6 +227,32 @@ idempotente; nunca borra nada):
 2. `pending` que ya usaron los 12 intentos (`max_download_attempts`) → `unavailable / download_failed`;
 3. otros `pending` sin actividad en `ATTACHMENT_PENDING_STALE_MINUTES` (60) → se vuelven a encolar;
 4. con el disco listo otra vez, los `storage_unavailable` dentro de esos límites → se vuelven a encolar.
+
+**Stickers recibidos.** Los 100 KB (fijo) y 500 KB (animado) que publica Meta son las reglas para _crear_ un paquete
+de stickers, no un límite publicado de lo que un cliente puede enviar. En producción llegaron stickers animados de más
+de 500 KiB que se rechazaban como `too_large` antes de descargarse (el tamaño que informa Meta superaba el límite).
+El límite de stickers recibidos es ahora el de las imágenes de WhatsApp, 5 MB (`WHATSAPP_STICKER_MAX_BYTES`), solo
+para stickers: el contenido debe seguir siendo WebP real (`finfo`), el tope se aplica también durante la descarga y no
+cambia ningún otro límite. El archivo se guarda y se sirve tal como llega (sin convertirlo), así que un sticker
+animado conserva su movimiento en la bandeja; se muestra a tamaño de sticker con el texto alternativo «Sticker» o
+«Sticker animado» (indicador `animated` del webhook). Cada archivo se trata según el tipo de mensaje que anuncia Meta y su contenido real: un GIF que llegue como video MP4 se
+muestra como video, una imagen GIF dentro de un mensaje de imagen se rechaza (WhatsApp solo admite JPEG y PNG) y ningún
+GIF se trata como sticker (no se verificó con Meta real qué tipo usa WhatsApp para los GIF).
+
+**Diagnóstico de archivos no disponibles.** Cada archivo que queda `unavailable` registra en `laravel.log` el aviso
+`Customer media marked unavailable.` con el id del adjunto, el tipo de mensaje, el motivo (`error_code`), el tipo
+anunciado por el webhook, si el sticker es animado, el intento y, cuando se conocen, el tipo y tamaño que devolvió
+Meta, el host de descarga (nunca la URL firmada ni el token), el estado HTTP y el código de error de Meta, y el tipo
+detectado y el tamaño recibido. La conversación muestra un texto por motivo (`expired`, `too_large`,
+`type_not_allowed`, `empty`, `credentials_rejected`, `credentials_missing`, `download_failed`) en lugar de uno genérico.
+
+`php artisan attachments:retry-unavailable [--type=sticker] [--since=AAAA-MM-DD] [--reason=…]` solo **lee**: resume
+los no disponibles por motivo y tipo y lista los últimos 20 (sin datos personales). Con `--apply` vuelve a encolar,
+como máximo `--limit` (50) por ejecución, solo los que aún pueden descargarse: con ID de medio de WhatsApp, recibidos
+dentro de `inbound_available_days` (7 días), con intentos disponibles y con un motivo que una nueva descarga puede
+resolver (`expired`, `download_failed`, `too_large`, `type_not_allowed`, `empty`; no las credenciales). Nada se marca
+disponible a mano: el trabajo vuelve a validar el archivo con las reglas vigentes, y lo que Meta ya no conserve queda
+otra vez no disponible con su motivo.
 
 ### 4.2 Saliente
 
@@ -351,7 +377,7 @@ ejemplos con v26.0, consultada el 2026-10-25; la página no muestra fecha de act
 | Audio     | `audio/aac`, `audio/amr`, `audio/mpeg`, `audio/mp4` (.m4a), `audio/ogg` (solo códec Opus y mono)            | 16 MB                        |
 | Documento | `text/plain`, PDF, Word, Excel y PowerPoint (`.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`); **no ZIP** | 100 MB                       |
 | Imagen    | `image/jpeg`, `image/png` (8 bits, RGB o RGBA)                                                              | 5 MB                         |
-| Sticker   | `image/webp` (solo en mensajes de sticker)                                                                  | 500 KB animado / 100 KB fijo |
+| Sticker   | `image/webp` (solo en mensajes de sticker; Chat Manager no envía stickers)                                  | 500 KB animado / 100 KB fijo |
 | Video     | `video/3gpp`, `video/mp4` (H.264 + AAC, una pista de audio o ninguna)                                       | 16 MB                        |
 
 - Los archivos subidos «persisten 30 días»; «los ID de medios que devuelve la API vencen a los 30 días» y «los ID de

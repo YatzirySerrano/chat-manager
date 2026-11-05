@@ -177,6 +177,13 @@ const reaction = computed(() =>
         : null,
 );
 
+/** Meta's flag for an animated sticker (the file keeps its frames either way). */
+const stickerAnimated = computed(
+    () =>
+        props.message.type === 'sticker' &&
+        (content.value as { animated?: boolean } | null)?.animated === true,
+);
+
 const isMedia = computed(() =>
     ['image', 'audio', 'video', 'document', 'sticker'].includes(
         props.message.type,
@@ -347,6 +354,11 @@ function linkLabel(expiresAt: string | null | undefined): string {
                     <MessageAttachmentPreview
                         :attachment="attachment"
                         :channel-label="channelLabel"
+                        :sticker="
+                            message.type === 'sticker'
+                                ? { animated: stickerAnimated }
+                                : null
+                        "
                     />
                     <div
                         v-if="attachment.delivery_method === 'link'"

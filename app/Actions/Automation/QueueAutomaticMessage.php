@@ -16,6 +16,7 @@ use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Ramsey\Uuid\Uuid;
 
 /**
@@ -74,6 +75,7 @@ class QueueAutomaticMessage
         $conversation = $this->lifecycle->lock($conversation);
         $reference = self::reference($conversation->id, $plan->kind, $cycle);
 
+        // Already sent in this cycle (repeated webhook or event): nothing to record.
         if ($conversation->reopen_count !== $cycle || Message::query()->where('client_reference', $reference)->exists()) {
             return null;
         }
@@ -81,13 +83,17 @@ class QueueAutomaticMessage
         $closed = $conversation->status === ConversationStatus::Closed;
 
         if ($plan->kind === AutomaticMessageKind::Farewell ? ! $closed : $closed) {
-            return null;
+            return $this->skipped($conversation, $plan, 'conversation_state_changed');
         }
 
         $connection = $conversation->channelConnection()->first();
 
-        if ($connection === null || ! $connection->isOperational() || ! $this->window->for($conversation)->allowsFreeFormMessages()) {
-            return null;
+        if ($connection === null || ! $connection->isOperational()) {
+            return $this->skipped($conversation, $plan, 'connection_not_operational');
+        }
+
+        if (! $this->window->for($conversation)->allowsFreeFormMessages()) {
+            return $this->skipped($conversation, $plan, 'customer_window_closed');
         }
 
         $message = new Message([
@@ -116,5 +122,20 @@ class QueueAutomaticMessage
         MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);
 
         return $message;
+    }
+
+    /**
+     * Logs why the message was not queued (no customer data, no text).
+     */
+    private function skipped(Conversation $conversation, AutomaticMessagePlan $plan, string $reason): null
+    {
+        Log::info('Automatic message not sent.', [
+            'conversation_id' => $conversation->id,
+            'connection_id' => $conversation->connection_id,
+            'kind' => $plan->kind->value,
+            'reason' => $reason,
+        ]);
+
+        return null;
     }
 }

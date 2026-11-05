@@ -21,11 +21,19 @@ const props = withDefaults(
         attachment: MessageAttachment;
         /** Name of the conversation's channel the file came from. */
         channelLabel?: string;
+        /**
+         * A WhatsApp sticker: shown at sticker size, without the image frame.
+         * The WebP is served as received, so an animated one keeps moving.
+         */
+        sticker?: { animated: boolean } | null;
     }>(),
-    { channelLabel: 'el canal' },
+    { channelLabel: 'el canal', sticker: null },
 );
 
 const broken = ref(false);
+const stickerLabel = computed(() =>
+    props.sticker?.animated ? 'Sticker animado' : 'Sticker',
+);
 
 /**
  * Inside a bubble with personal colors only its text color is guaranteed to
@@ -83,6 +91,27 @@ const kind = computed(() => {
 const name = computed(() => props.attachment.file_name ?? 'Archivo adjunto');
 
 /**
+ * The reason a customer's file was given up (DownloadInboundMedia), so a
+ * file the channel no longer keeps is not confused with one Chat Manager
+ * refused or with a connection problem.
+ */
+const UNAVAILABLE_DETAILS: Record<string, (channel: string) => string> = {
+    expired: (channel) =>
+        `${channel} ya no conserva este archivo o no permitió descargarlo.`,
+    too_large: () =>
+        'El archivo recibido supera el tamaño que Chat Manager acepta para este tipo de mensaje.',
+    type_not_allowed: () =>
+        'El contenido del archivo recibido no corresponde a un tipo permitido para este mensaje.',
+    empty: () => 'El archivo recibido estaba vacío.',
+    credentials_rejected: (channel) =>
+        `${channel} rechazó la descarga: revisa las credenciales de la conexión.`,
+    credentials_missing: () =>
+        'La conexión no tiene credenciales para descargar el archivo.',
+    download_failed: (channel) =>
+        `No se pudo descargar el archivo desde ${channel} después de varios intentos.`,
+};
+
+/**
  * Why the file cannot be shown. Without a stored copy there is no link at
  * all: a history import whose file never arrived, or the file storage not
  * answering, say so instead of pointing to a file that is not there.
@@ -121,7 +150,9 @@ const unavailable = computed<{ title: string; detail: string | null }>(() => {
     if (status === 'unavailable') {
         return {
             title: 'Archivo no disponible',
-            detail: `No se pudo descargar el archivo desde ${props.channelLabel}.`,
+            detail:
+                UNAVAILABLE_DETAILS[code ?? '']?.(props.channelLabel) ??
+                `No se pudo descargar el archivo desde ${props.channelLabel}.`,
         };
     }
 
@@ -162,13 +193,29 @@ const opensInline = computed(
                 target="_blank"
                 rel="noopener noreferrer"
                 class="block overflow-hidden rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                :aria-label="`Abrir imagen ${name} en una pestaña nueva`"
+                :class="sticker ? 'w-fit' : ''"
+                :aria-label="
+                    sticker
+                        ? `Abrir ${stickerLabel.toLowerCase()} en una pestaña nueva`
+                        : `Abrir imagen ${name} en una pestaña nueva`
+                "
             >
                 <img
                     :src="attachment.url"
-                    :alt="name"
+                    :alt="sticker ? stickerLabel : name"
                     loading="lazy"
-                    class="max-h-72 w-auto max-w-full rounded-lg object-contain"
+                    :class="
+                        sticker
+                            ? 'size-32 object-contain sm:size-40'
+                            : 'max-h-72 w-auto max-w-full rounded-lg object-contain'
+                    "
+                    :data-sticker="
+                        sticker
+                            ? sticker.animated
+                                ? 'animated'
+                                : 'static'
+                            : undefined
+                    "
                     @error="broken = true"
                 />
             </a>

@@ -290,21 +290,24 @@ const messageDefinitions: {
     {
         kind: 'welcome',
         label: 'Bienvenida',
-        trigger: 'Al iniciar una conversación nueva',
+        trigger:
+            'Cuando el cliente inicia una conversación nueva o reabre una cerrada, dentro del horario de atención',
         placeholder:
             '¡Hola! Gracias por escribir a *Mi Empresa*. En breve te atiende un asesor.',
     },
     {
         kind: 'away',
         label: 'Fuera de horario',
-        trigger: 'Cuando el cliente escribe fuera del horario de atención',
+        trigger:
+            'Cuando el cliente inicia una conversación nueva o reabre una cerrada fuera del horario de atención (requiere «Aplicar horario de atención» en Configuración o un horario propio del departamento)',
         placeholder:
             'Nuestro horario es de lunes a viernes de _9:00 a 18:00_. Te responderemos en cuanto abramos.',
     },
     {
         kind: 'farewell',
         label: 'Despedida',
-        trigger: 'Cuando un asesor cierra la conversación',
+        trigger:
+            'Cuando se cierra la conversación (por un asesor o por inactividad), si el cliente escribió en las últimas 24 horas',
         placeholder:
             'Gracias por contactarnos. Si necesitas algo más, escríbenos aquí.',
     },

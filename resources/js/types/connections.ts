@@ -212,6 +212,31 @@ export type ConnectionDiagnostics = {
             last_failed_at: string | null;
         }[];
     };
+    /** What the automatic messages would do now and did recently. */
+    automation: {
+        schedule: 'department' | 'platform' | 'continuous';
+        is_open: boolean;
+        next_opening: string | null;
+        holiday: string | null;
+        timezone: string;
+        local_time: string;
+        department: string | null;
+        greeting_now: {
+            kind: 'welcome' | 'away';
+            label: string;
+            source: 'department' | 'connection';
+        } | null;
+        auto_close_after_hours: number | null;
+        days: number;
+        sent: Record<'welcome' | 'away' | 'farewell', number>;
+        failed: number;
+        last_failure: {
+            kind: 'welcome' | 'away' | 'farewell' | null;
+            code: string | null;
+            error: string | null;
+            at: string | null;
+        } | null;
+    };
     signals: { field: string; at: string | null; event: string | null }[];
 };
 

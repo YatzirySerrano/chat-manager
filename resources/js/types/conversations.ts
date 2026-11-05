@@ -252,7 +252,8 @@ export type MessageContent =
       }
     | { contacts: { name: string | null; phones: string[] }[] }
     | { kind: string | null; title: string | null; description: string | null }
-    | { emoji: string | null; reacted_message_id: number | null };
+    | { emoji: string | null; reacted_message_id: number | null }
+    | { animated: boolean };
 
 export type ConversationMessage = {
     id: number;

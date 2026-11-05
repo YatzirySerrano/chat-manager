@@ -100,9 +100,14 @@ return [
                 'mimes' => ['image/jpeg', 'image/png'],
                 'max_bytes' => 5 * 1024 * 1024,
             ],
+            // Received only (stickers are never sent from the composer). Meta's
+            // 100 KB static / 500 KB animated are the rules for creating a
+            // sticker pack, not a published limit on what a customer can send,
+            // and animated stickers above 500 KB do arrive (seen in production).
+            // Capped like WhatsApp images; the content must still be WebP.
             'sticker' => [
                 'mimes' => ['image/webp'],
-                'max_bytes' => 500 * 1024,
+                'max_bytes' => (int) (env('WHATSAPP_STICKER_MAX_BYTES') ?: 5 * 1024 * 1024),
             ],
             'audio' => [
                 'mimes' => ['audio/aac', 'audio/mp4', 'audio/mpeg', 'audio/amr', 'audio/ogg', 'audio/opus', 'video/ogg'],

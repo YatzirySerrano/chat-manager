@@ -34,7 +34,14 @@ class UpdatePlatformSettings
             // are offered again once the new value is committed.
             $limit = $changes['operations.max_open_conversations_per_agent'] ?? null;
 
-            if ($limit !== null && AssignAutomatically::limitMayFreeRoom($limit['old'], $limit['new'])) {
+            // Turning the control of pending conversations off, or giving it
+            // more tolerance, may lift blocks: the queues are offered again.
+            $block = $changes['operations.pending_block_enabled'] ?? null;
+            $tolerance = $changes['operations.pending_block_after_minutes'] ?? null;
+            $blockLifted = ($block !== null && $block['new'] === false)
+                || ($tolerance !== null && is_int($tolerance['old']) && is_int($tolerance['new']) && $tolerance['new'] > $tolerance['old']);
+
+            if (($limit !== null && AssignAutomatically::limitMayFreeRoom($limit['old'], $limit['new'])) || $blockLifted) {
                 DB::afterCommit(fn () => rescue(fn (): int => $this->assignAutomatically->distributeAllQueues()));
             }
 

@@ -93,7 +93,7 @@ test('a connection created without credentials is completed later and every valu
         ->where('connection.configuration_health.value', 'configured')
         ->where('connection.default_department_id', $support->id)
         ->where('connection.messages.welcome', ['enabled' => true, 'text' => 'Hola, gracias por escribir.'])
-        ->where('connection.messages.away', ['enabled' => true, 'text' => 'Estamos fuera de horario.'])
+        ->where('connection.messages.away', ['enabled' => true, 'text' => 'Estamos fuera de horario.', 'in_open_conversations' => false])
         ->where('connection.messages.farewell', ['enabled' => false, 'text' => 'Texto guardado aunque esté desactivado.'])
         ->where('connection.reopen_window_minutes', 60)
         ->where('connection.departments', fn ($departments) => collect($departments)->pluck('name')->all() === ['Soporte', 'Ventas']));

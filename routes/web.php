@@ -28,6 +28,7 @@ require __DIR__.'/messaging.php';
 require __DIR__.'/operations.php';
 require __DIR__.'/integrations.php';
 require __DIR__.'/personalization.php';
+require __DIR__.'/attention.php';
 
 // Provider webhooks: public and outside the "web" group (no session, cookies or CSRF).
 Route::withoutMiddleware('web')->group(__DIR__.'/webhooks.php');

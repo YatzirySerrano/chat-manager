@@ -3,6 +3,7 @@ import {
     Bot,
     CircleDot,
     EllipsisVertical,
+    Eye,
     Hand,
     Hourglass,
     MailOpen,
@@ -11,8 +12,12 @@ import {
     UserPen,
     UserRound,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
+import {
+    ACCEPT_BLOCK,
+    noAcceptBlock,
+} from '@/components/conversations/acceptBlock';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
@@ -32,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/composables/useInitials';
+import { useLongPress } from '@/composables/useLongPress';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import type { ConversationSummary } from '@/types';
@@ -49,7 +55,13 @@ import type { ConversationSummary } from '@/types';
  * Row actions live in a menu next to the row button (never nested in it):
  * open, mark as read, manage tags (when `can.tag`) and the personal alias
  * (when the parent offers it). A pending row the server lets the viewer
- * accept (`can.accept`) offers "Aceptar" without opening it first.
+ * accept (`can.accept`) offers "Aceptar" without opening it first; while
+ * the control of pending conversations blocks the viewer, it stays visible
+ * but disabled, with the reason.
+ *
+ * Holding the row on a touch screen, right clicking it or «Vista previa» in
+ * its menu shows the latest messages without opening it (`preview`): the
+ * read state does not change.
  */
 const props = withDefaults(
     defineProps<{
@@ -82,7 +94,19 @@ const emit = defineEmits<{
     manageTags: [conversation: ConversationSummary];
     markRead: [id: number];
     editAlias: [conversation: ConversationSummary];
+    preview: [conversation: ConversationSummary];
 }>();
+
+const acceptBlock = inject(ACCEPT_BLOCK, noAcceptBlock);
+const acceptBlocked = computed(() => acceptBlock.value?.blocked === true);
+
+const longPress = useLongPress(() => emit('preview', props.conversation));
+
+function open(): void {
+    if (!longPress.consumeClick()) {
+        emit('select', props.conversation.id);
+    }
+}
 
 const { getInitials } = useInitials();
 
@@ -207,7 +231,7 @@ const label = computed(() => {
     <div class="group/row relative">
         <button
             type="button"
-            class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
+            class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
             :class="[
                 selected
                     ? 'border-l-primary bg-primary-soft'
@@ -220,7 +244,8 @@ const label = computed(() => {
             :aria-current="selected ? 'true' : undefined"
             :aria-label="label"
             data-inbox-item
-            @click="emit('select', conversation.id)"
+            v-on="longPress.handlers"
+            @click="open"
         >
             <span
                 class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
@@ -440,6 +465,13 @@ const label = computed(() => {
                     Abrir
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                    data-inbox-preview
+                    @select="emit('preview', conversation)"
+                >
+                    <Eye aria-hidden="true" />
+                    Vista previa
+                </DropdownMenuItem>
+                <DropdownMenuItem
                     v-if="unread > 0"
                     @select="emit('markRead', conversation.id)"
                 >
@@ -471,9 +503,17 @@ const label = computed(() => {
                 size="sm"
                 variant="outline"
                 class="bg-background pointer-coarse:h-10"
-                :disabled="acceptingId !== null"
-                :aria-label="`Aceptar la conversación de ${displayName}`"
-                title="Hacerte responsable de esta conversación"
+                :disabled="acceptingId !== null || acceptBlocked"
+                :aria-label="
+                    acceptBlocked
+                        ? `Aceptar la conversación de ${displayName}: no disponible, tienes conversaciones pendientes de atención`
+                        : `Aceptar la conversación de ${displayName}`
+                "
+                :title="
+                    acceptBlocked
+                        ? (acceptBlock?.message ?? undefined)
+                        : 'Hacerte responsable de esta conversación'
+                "
                 data-inbox-accept
                 @click="emit('accept', conversation.id)"
             >

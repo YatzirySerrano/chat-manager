@@ -115,7 +115,12 @@ export type Connection = {
     departments: ConnectionDepartment[];
     messages: Record<
         ConnectionMessageKind,
-        { enabled: boolean; text: string | null }
+        {
+            enabled: boolean;
+            text: string | null;
+            /** Away only: also in open conversations, once per period outside hours. */
+            in_open_conversations?: boolean;
+        }
     >;
     reopen_window_minutes: number | null;
     /** Widget settings of a web chat connection (absent or null for WhatsApp). */

@@ -26,7 +26,7 @@ test('an Inertia sign out is a plain redirect that ends on the login page', func
 });
 
 test('the closed session cannot be reused to open protected pages', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->agent()->create();
 
     $this->actingAs($user)->get(route('dashboard'))->assertOk();
     $sessionId = session()->getId();

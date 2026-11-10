@@ -69,7 +69,10 @@ export type PermissionName =
     | 'history-import.view'
     | 'history-import.classify'
     | 'history-import.execute'
-    | 'history-import.archive-view';
+    | 'history-import.archive-view'
+    | 'conversations.accept-with-pending'
+    | 'attention.view'
+    | 'attention.alert';
 
 export function usePermissions() {
     const page = usePage();

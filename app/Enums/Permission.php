@@ -39,6 +39,10 @@ enum Permission: string
     case AcceptConversations = 'conversations.accept';
     case AddConversationNotes = 'conversations.notes';
     case SuperviseConversations = 'conversations.supervise';
+    case AcceptWithPendingConversations = 'conversations.accept-with-pending';
+
+    case ViewAttention = 'attention.view';
+    case SendAttentionAlerts = 'attention.alert';
 
     case ViewConnections = 'connections.view';
     case ManageConnections = 'connections.manage';
@@ -129,6 +133,9 @@ enum Permission: string
             self::AcceptConversations => 'Aceptar conversaciones pendientes de sus departamentos',
             self::AddConversationNotes => 'Agregar notas internas',
             self::SuperviseConversations => 'Supervisar conversaciones (solo lectura)',
+            self::AcceptWithPendingConversations => 'Aceptar conversaciones nuevas aunque tenga pendientes de responder',
+            self::ViewAttention => 'Ver el seguimiento de atención del equipo',
+            self::SendAttentionAlerts => 'Enviar alertas de atención a los agentes',
             self::ViewConnections => 'Ver conexiones',
             self::ManageConnections => 'Administrar conexiones y credenciales (incluye eliminar y restaurar)',
             self::ViewIntegrations => 'Ver las claves de acceso de integraciones',
@@ -206,6 +213,9 @@ enum Permission: string
             self::AcceptConversations => 'Tomar conversaciones pendientes de sus departamentos para atenderlas.',
             self::AddConversationNotes => 'Dejar notas internas en una conversación. El cliente nunca las ve.',
             self::SuperviseConversations => 'Consultar todas las conversaciones que su rol puede ver, aunque las atienda otra persona. No permite responder.',
+            self::AcceptWithPendingConversations => 'No se le aplica el control que impide aceptar conversaciones nuevas mientras tiene clientes esperando su respuesta.',
+            self::ViewAttention => 'Consultar qué atiende cada agente, qué clientes esperan respuesta y desde cuándo, dentro de la información que le corresponde.',
+            self::SendAttentionAlerts => 'Enviar recordatorios y alertas a uno, varios o todos los agentes que le corresponden, y consultar su historial.',
             self::ViewConnections => 'Consultar los canales conectados, como números de WhatsApp, y su estado.',
             self::ManageConnections => 'Conectar, configurar, eliminar y restaurar canales, incluidas sus credenciales.',
             self::ViewIntegrations => 'Consultar las claves de acceso que usan otros sistemas para conectarse.',

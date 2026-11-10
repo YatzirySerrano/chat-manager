@@ -60,6 +60,7 @@ use Illuminate\Support\Str;
  * @property bool $welcome_enabled
  * @property string|null $away_message
  * @property bool $away_enabled
+ * @property bool $away_in_open_conversations Also send the away message in open conversations, once per period outside hours.
  * @property string|null $farewell_message
  * @property bool $farewell_enabled
  * @property int|null $reopen_window_minutes Closed conversations are reopened when the customer writes within this window; null always starts a new one.
@@ -87,7 +88,7 @@ use Illuminate\Support\Str;
 #[Fillable([
     'name', 'channel', 'provider', 'display_phone_number', 'phone_number_id', 'business_account_id', 'verified_name',
     'meta_app_id', 'access_token', 'app_secret', 'webhook_verify_token', 'default_department_id',
-    'welcome_message', 'welcome_enabled', 'away_message', 'away_enabled', 'farewell_message', 'farewell_enabled',
+    'welcome_message', 'welcome_enabled', 'away_message', 'away_enabled', 'away_in_open_conversations', 'farewell_message', 'farewell_enabled',
     'reopen_window_minutes',
 ])]
 #[Hidden(['access_token', 'app_secret', 'webhook_verify_token'])]
@@ -107,6 +108,7 @@ class Connection extends Model
         'is_active' => false,
         'welcome_enabled' => false,
         'away_enabled' => false,
+        'away_in_open_conversations' => false,
         'farewell_enabled' => false,
     ];
 
@@ -139,6 +141,7 @@ class Connection extends Model
             'is_active' => 'boolean',
             'welcome_enabled' => 'boolean',
             'away_enabled' => 'boolean',
+            'away_in_open_conversations' => 'boolean',
             'farewell_enabled' => 'boolean',
             'reopen_window_minutes' => 'integer',
             'credentials_verified_at' => 'datetime',

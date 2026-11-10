@@ -3,6 +3,7 @@
 use App\Actions\Analytics\RebuildConversationMetrics;
 use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
+use App\Enums\DefaultRole;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\Permission;
@@ -22,8 +23,8 @@ test('guests are redirected to the login page', function () {
     $response->assertRedirect(route('login'));
 });
 
-test('authenticated users can visit the dashboard', function () {
-    $user = User::factory()->create();
+test('authenticated users with dashboard.view can visit the dashboard', function () {
+    $user = User::factory()->agent()->create();
     $this->actingAs($user);
 
     $response = $this->get(route('dashboard'));
@@ -73,7 +74,7 @@ test('conversation metrics only count the conversations the user can see', funct
         );
 });
 
-test('without dashboard.view no organization metric is computed nor sent', function (array $permissions) {
+test('without dashboard.view the panel is not opened and no metric is computed nor sent', function (array $permissions, string $landing) {
     $user = User::factory()
         ->withRole(Role::factory()->scope(DataScope::Global)->withPermissions($permissions)->create())
         ->create();
@@ -82,12 +83,7 @@ test('without dashboard.view no organization metric is computed nor sent', funct
 
     $this->actingAs($user)
         ->get(route('dashboard'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('Dashboard')
-            ->where('canViewMetrics', false)
-            ->where('overview', null)
-            ->missing('deferredProps'));
+        ->assertRedirect(route($landing, absolute: false));
 
     $this->actingAs($user)
         ->get(route('dashboard'), [
@@ -96,14 +92,33 @@ test('without dashboard.view no organization metric is computed nor sent', funct
             'X-Inertia-Partial-Component' => 'Dashboard',
             'X-Inertia-Partial-Data' => 'overview',
         ])
-        ->assertOk()
-        ->assertJsonPath('props.overview', null);
+        ->assertRedirect(route($landing, absolute: false));
+
+    $this->actingAs($user)->get('/')->assertRedirect('/dashboard');
 
     expect(fn () => app(DashboardMetrics::class)->overviewFor($user))->toThrow(AuthorizationException::class);
 })->with([
-    'no permission at all' => [[]],
-    'other global permissions' => [[Permission::ViewDepartments, Permission::ViewConversations, Permission::ViewUsers]],
+    'no permission at all' => [[], 'profile.edit'],
+    'internal chat only' => [[Permission::UseTeamChat], 'team-chat.index'],
+    'conversations and other global permissions' => [[Permission::ViewDepartments, Permission::ViewConversations, Permission::ViewUsers, Permission::UseTeamChat], 'conversations.index'],
 ]);
+
+test('an agent whose role loses dashboard.view stops seeing the panel in an open session, and gets it back when granted', function () {
+    $agent = User::factory()->agent()->create();
+
+    $this->actingAs($agent)->get(route('dashboard'))->assertOk();
+
+    role(DefaultRole::Agent)->revokePermissionTo(Permission::ViewDashboard->value);
+
+    $this->actingAs($agent->refresh())
+        ->get(route('conversations.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('auth.permissions', fn ($granted) => ! collect($granted)->contains('dashboard.view')));
+    $this->actingAs($agent)->get(route('dashboard'))->assertRedirect(route('conversations.index', absolute: false));
+
+    role(DefaultRole::Agent)->givePermissionTo(Permission::ViewDashboard->value);
+
+    $this->actingAs($agent->refresh())->get(route('dashboard'))->assertOk();
+});
 
 test('the dashboard figures never exceed the permissions and departments of the viewer', function () {
     $own = Department::factory()->create();

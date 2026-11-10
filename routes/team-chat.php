@@ -7,6 +7,7 @@ use App\Http\Controllers\TeamChat\TeamChatSearchController;
 use App\Http\Controllers\TeamChat\TeamMessageController;
 use App\Http\Controllers\TeamChat\TeamParticipantController;
 use App\Http\Controllers\TeamChat\TeamThreadController;
+use App\Http\Controllers\TeamChat\TeamThreadPreviewController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -30,6 +31,8 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         Route::post('unarchive', [TeamThreadController::class, 'unarchive'])->name('unarchive');
         Route::post('leave', [TeamThreadController::class, 'leave'])->name('leave');
         Route::put('mute', [TeamThreadController::class, 'mute'])->name('mute');
+        // Read-only preview from the list: never moves the read position.
+        Route::get('preview', [TeamThreadPreviewController::class, 'show'])->middleware('throttle:120,1')->name('preview');
         Route::post('read', [TeamThreadController::class, 'read'])->name('read');
         Route::post('typing', [TeamThreadController::class, 'typing'])->middleware('throttle:30,1')->name('typing');
 

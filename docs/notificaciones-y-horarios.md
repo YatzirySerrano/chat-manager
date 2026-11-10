@@ -271,12 +271,25 @@ tienen despedida propia).
 El horario evaluado es el del departamento de la conversación al momento del saludo. Un departamento eliminado o
 inactivo no aporta mensajes (se usa la conexión).
 
+**Fuera de horario en conversaciones abiertas** (opcional, por conexión: «También en conversaciones abiertas»,
+columna `connections.away_in_open_conversations`, apagado por omisión). Con el interruptor activado, un cliente que
+vuelve a escribir fuera de horario en una conversación que ya está **abierta o en espera** (mensaje añadido a una
+conversación no cerrada) recibe el mensaje fuera de horario **una sola vez por periodo continuo fuera de horario**.
+El periodo se identifica por la próxima apertura del horario de la conversación: todos los momentos del mismo
+tramo cerrado la comparten, así que varios mensajes de esa noche no repiten el aviso y el siguiente cierre empieza un
+periodo nuevo. Con el interruptor activado, tampoco se repite al reabrir una conversación dentro del mismo periodo.
+Dentro del horario no se envía nada adicional. Con el interruptor apagado el comportamiento es el de siempre (un
+saludo por ciclo). Lo encola `ReceiveInboundMessage` (solo para mensajes añadidos de esas conexiones) con el job
+`App\Jobs\SendAwayInOpenConversation` (cola `messages`).
+
 ### 3.2 Garantías
 
 `App\Actions\Automation\QueueAutomaticMessage`, disparado por `App\Listeners\Automation\SendAutomaticMessages`
 (cola `messages`) al recibir `ConversationChanged` con razón `created`, `reopened` o `closed`:
 
-- **Idempotencia**: `client_reference` es un UUID v5 de `(conversación, ranura, ciclo)`; la columna es única. La
+- **Idempotencia**: `client_reference` es un UUID v5 de `(conversación, ranura, ciclo)` (y de `(conversación,
+periodo)` para el mensaje fuera de horario en conversaciones abiertas); la columna es única. Ambos caminos
+  comprueban bajo el bloqueo de la conversación si el periodo ya tuvo su mensaje. La
   bienvenida y el mensaje fuera de horario comparten la ranura «saludo», así que un ciclo nunca recibe ambos. El
   ciclo es `reopen_count`. Webhooks repetidos, eventos re-despachados o workers en paralelo guardan un solo mensaje.
 - **Reglas de Meta**: solo texto libre dentro de la ventana de 24 h abierta, nunca plantillas, nunca fuera de la
@@ -294,9 +307,10 @@ inactivo no aporta mensajes (se usa la conexión).
 
 ### 3.3 Diagnóstico
 
-- **Regla clave**: el saludo (bienvenida o fuera de horario) se envía una vez por ciclo. Un cliente que escribe fuera
-  de horario en una conversación que **sigue abierta o pendiente** no recibe otro saludo; solo lo recibe al iniciar una
-  conversación nueva o al reabrir una cerrada (por mensaje entrante). Sin cierre automático por inactividad
+- **Regla clave**: el saludo (bienvenida o fuera de horario) se envía una vez por ciclo. Sin «También en
+  conversaciones abiertas», un cliente que escribe fuera de horario en una conversación que **sigue abierta o
+  pendiente** no recibe otro saludo; solo lo recibe al iniciar una conversación nueva o al reabrir una cerrada (por
+  mensaje entrante). Con el interruptor, lo recibe una vez por periodo fuera de horario (§3.1). Sin cierre automático por inactividad
   (`operations.auto_close_after_hours`), una conversación de pruebas puede quedar abierta indefinidamente.
 - **Sin horario aplicado** (ni horario propio del departamento ni «Aplicar horario de atención») la atención es
   continua y el mensaje fuera de horario **nunca** se envía.
@@ -307,7 +321,8 @@ inactivo no aporta mensajes (se usa la conexión).
   horario activado sin horario; sin cierre automático).
 - Cuando no se envía un mensaje automático se registra en `laravel.log` `Automatic message not sent.` con el id de la
   conversación y de la conexión, la ranura o el tipo y el motivo: `processed_late`, `welcome_not_configured`,
-  `away_not_configured` (con `schedule` e `is_open`), `not_configured` (despedida), `conversation_state_changed`,
+  `away_not_configured` (con `schedule` e `is_open`), `not_configured` (despedida), `already_sent_in_period`
+  (ranura `away_in_open_conversation` o saludo con el interruptor activado), `conversation_state_changed`,
   `connection_not_operational` o `customer_window_closed`. Nunca el texto ni el teléfono del cliente. Si se encoló y Meta
   lo rechazó, el mensaje aparece en la conversación como fallido con el error del proveedor.
 

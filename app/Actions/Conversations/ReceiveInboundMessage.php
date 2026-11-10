@@ -15,6 +15,7 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
+use App\Jobs\SendAwayInOpenConversation;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAttribution;
@@ -149,6 +150,13 @@ class ReceiveInboundMessage
         // One event per message: its real-time listener already refreshes the
         // conversation and every inbox that lists it.
         MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Inbound->value);
+
+        // A customer writing again in an open or queued conversation may get
+        // the away message once per period outside hours, only where the
+        // connection's administrator turned it on.
+        if ($outcome === InboundMessageOutcome::Appended && $connection->away_in_open_conversations) {
+            SendAwayInOpenConversation::dispatch($conversation->id, $message->id)->afterCommit();
+        }
 
         if ($attachment !== null) {
             DownloadInboundMedia::dispatch($attachment->id)->afterCommit();

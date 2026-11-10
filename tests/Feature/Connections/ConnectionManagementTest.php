@@ -446,6 +446,29 @@ test('saving a connection without effective changes writes nothing and says so',
         ->and(AuditLog::query()->exists())->toBeFalse();
 });
 
+test('the away message in open conversations is switched on from the connection and kept when a form does not send it', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $connection = Connection::factory()->create(['away_enabled' => true, 'away_message' => 'Fuera de horario.']);
+    $payload = connectionPayload([
+        'phone_number_id' => $connection->phone_number_id,
+        'away_enabled' => true,
+        'away_message' => 'Fuera de horario.',
+    ]);
+
+    $this->actingAs($admin)
+        ->put(route('connections.update', $connection), [...$payload, 'away_in_open_conversations' => true])
+        ->assertSessionHasNoErrors();
+    expect($connection->refresh()->away_in_open_conversations)->toBeTrue();
+
+    $this->actingAs($admin)->put(route('connections.update', $connection), $payload)->assertSessionHasNoErrors();
+    expect($connection->refresh()->away_in_open_conversations)->toBeTrue();
+
+    $this->actingAs($admin)
+        ->put(route('connections.update', $connection), [...$payload, 'away_in_open_conversations' => false])
+        ->assertSessionHasNoErrors();
+    expect($connection->refresh()->away_in_open_conversations)->toBeFalse();
+});
+
 test('a real change to a connection is confirmed with a success toast', function () {
     $admin = User::factory()->superAdministrator()->create();
     $connection = Connection::factory()->create(['name' => 'Ventas Sur']);

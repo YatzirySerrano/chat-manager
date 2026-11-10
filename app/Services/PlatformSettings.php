@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Cache;
  *     general: array{platform_name: string, timezone: string},
  *     appearance: array{palette: string},
  *     business_hours: array{enabled: bool, days: array<string, BusinessDay>, holidays: list<Holiday>},
- *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool},
+ *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool, pending_block_enabled: bool, pending_block_after_minutes: int},
  *     sla: array{first_response_minutes: int|null, resolution_minutes: int|null},
  * }
  */
@@ -141,6 +141,11 @@ class PlatformSettings
                 'max_open_conversations_per_agent' => null,
                 'auto_close_after_hours' => null,
                 'transfer_reason_required' => false,
+                // Control of new conversations (PendingAttention): an agent
+                // with customers waiting for their answer longer than the
+                // tolerance cannot accept another one.
+                'pending_block_enabled' => true,
+                'pending_block_after_minutes' => 10,
             ],
             // Optional service level objectives of the reports, in minutes
             // of business time; null = no objective (no compliance figure).

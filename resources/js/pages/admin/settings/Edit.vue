@@ -68,6 +68,7 @@ const validation = useFormValidation(form, {
                 integerBetween(1, 200),
             ],
             'operations.auto_close_after_hours': [integerBetween(1, 720)],
+            'operations.pending_block_after_minutes': [integerBetween(0, 1440)],
             'sla.first_response_minutes': [integerBetween(1, 43200)],
             'sla.resolution_minutes': [integerBetween(1, 43200)],
         };
@@ -497,6 +498,67 @@ const integrationConnected = computed(
                                 )
                             "
                         />
+                    </div>
+                    <div
+                        class="grid gap-2 sm:col-span-2"
+                        data-settings-pending-block
+                    >
+                        <div class="flex items-center gap-1.5">
+                            <span
+                                id="pending-block-label"
+                                class="text-sm font-medium"
+                                >Control de conversaciones pendientes</span
+                            >
+                            <FieldHelp
+                                title="Control de conversaciones pendientes"
+                                :help="{
+                                    description:
+                                        'Un agente con clientes esperando su respuesta más tiempo que la tolerancia no puede aceptar conversaciones nuevas ni recibirlas automáticamente hasta responderles.',
+                                    example:
+                                        'Con 10 minutos: si un cliente escribió hace 12 minutos y el agente no le ha respondido, «Aceptar» se desactiva para ese agente.',
+                                    warning:
+                                        'Solo cuentan los clientes que escribieron después de la última respuesta del agente; si el agente ya respondió y espera al cliente, no bloquea. Nunca limita el chat interno ni las asignaciones que hace un administrador. Los roles con el permiso «Aceptar conversaciones nuevas aunque tenga pendientes» quedan fuera del control.',
+                                }"
+                            />
+                        </div>
+                        <label
+                            class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                        >
+                            <span class="text-muted-foreground">
+                                {{
+                                    form.operations.pending_block_enabled
+                                        ? 'Activado: no se aceptan nuevas con clientes esperando'
+                                        : 'Desactivado: se pueden aceptar nuevas siempre'
+                                }}
+                            </span>
+                            <Switch
+                                v-model="form.operations.pending_block_enabled"
+                                aria-labelledby="pending-block-label"
+                            />
+                        </label>
+                        <FormField
+                            v-if="form.operations.pending_block_enabled"
+                            id="pending-block-minutes"
+                            label="Tolerancia antes de bloquear (minutos)"
+                            hint="Tiempo que un cliente puede esperar la respuesta antes de que el agente deje de poder aceptar nuevas. 0 bloquea en cuanto el cliente escribe."
+                            :error="
+                                validation.error(
+                                    'operations.pending_block_after_minutes',
+                                )
+                            "
+                        >
+                            <Input
+                                id="pending-block-minutes"
+                                v-model.number="
+                                    form.operations.pending_block_after_minutes
+                                "
+                                type="number"
+                                min="0"
+                                max="1440"
+                                inputmode="numeric"
+                                class="sm:max-w-40"
+                            />
+                        </FormField>
                     </div>
                 </div>
             </section>

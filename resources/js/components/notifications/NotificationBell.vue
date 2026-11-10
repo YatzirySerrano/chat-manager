@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import {
     AlertTriangle,
     Bell,
@@ -10,7 +10,8 @@ import {
     RotateCcw,
     Settings2,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import AttentionAlertBellItem from '@/components/attention/AttentionAlertBellItem.vue';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
@@ -25,24 +26,68 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useAttentionAlerts } from '@/composables/useAttentionAlerts';
 import { useNotificationCenter } from '@/composables/useNotificationCenter';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { index as conversationsIndex } from '@/routes/conversations';
 import { edit as editPreferences } from '@/routes/notifications/preferences';
 import type { AppNotification } from '@/types';
 
 const center = useNotificationCenter();
+/*
+ * The administrators' attention alerts, the same list (and the same
+ * «Entendido») as the floating cards: they keep their own rule (only
+ * «Entendido» acknowledges them; opening the bell or «Marcar todo leído»
+ * does not) and never touch the read state of conversations or chats.
+ */
+const attention = useAttentionAlerts();
 const open = ref(false);
 
-const badge = computed(() =>
-    center.unread.value.total > 99 ? '99+' : String(center.unread.value.total),
+const pendingAlerts = computed(() => attention.total.value);
+const urgent = computed(
+    () => center.unread.value.urgent > 0 || attention.urgent.value,
 );
+const count = computed(() => center.unread.value.total + pendingAlerts.value);
+
+const badge = computed(() => (count.value > 99 ? '99+' : String(count.value)));
+
+function alertsText(total: number): string {
+    return total === 1
+        ? '1 alerta por confirmar'
+        : `${total} alertas por confirmar`;
+}
+
+/** «3 sin leer · 1 alerta por confirmar», or «Estás al día». */
+const summary = computed(() => {
+    const parts: string[] = [];
+
+    if (center.unread.value.total > 0) {
+        parts.push(`${center.unread.value.total} sin leer`);
+    }
+
+    if (pendingAlerts.value > 0) {
+        parts.push(alertsText(pendingAlerts.value));
+    }
+
+    return parts.join(' · ');
+});
 
 const label = computed(() =>
-    center.unread.value.total === 0
+    count.value === 0
         ? 'Notificaciones, sin pendientes'
-        : `Notificaciones, ${center.unread.value.total} sin leer`,
+        : `Notificaciones, ${summary.value}`,
 );
+
+/** Alerts waiting beyond the listed page (they come as these are confirmed). */
+const moreAlerts = computed(() =>
+    Math.max(0, pendingAlerts.value - attention.alerts.value.length),
+);
+
+function viewPending(): void {
+    open.value = false;
+    router.visit(conversationsIndex({ query: { view: 'mine' } }));
+}
 
 /**
  * A ready export: opening it downloads the file (the server turns the
@@ -60,11 +105,15 @@ function select(item: AppNotification): void {
     center.open(item);
 }
 
+watch(open, (value) => (attention.bellOpen.value = value));
+onBeforeUnmount(() => (attention.bellOpen.value = false));
+
 function onOpenChange(value: boolean): void {
     open.value = value;
 
     if (value) {
         void center.load();
+        void attention.reload();
     }
 }
 </script>
@@ -88,21 +137,22 @@ function onOpenChange(value: boolean): void {
                                 :aria-label="label"
                             >
                                 <BellRing
-                                    v-if="center.unread.value.urgent > 0"
+                                    v-if="urgent"
                                     class="size-4 text-foreground"
                                 />
                                 <Bell v-else class="size-4" />
                                 <span
-                                    v-if="center.unread.value.total > 0"
+                                    v-if="count > 0"
                                     :class="
                                         cn(
                                             'absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-xs leading-none font-semibold tabular-nums',
-                                            center.unread.value.urgent > 0
+                                            urgent
                                                 ? 'bg-destructive text-destructive-foreground'
                                                 : 'bg-primary text-primary-foreground',
                                         )
                                     "
                                     aria-hidden="true"
+                                    data-notification-badge
                                 >
                                     {{ badge }}
                                 </span>
@@ -124,12 +174,12 @@ function onOpenChange(value: boolean): void {
             >
                 <div>
                     <h2 class="text-sm font-semibold">Notificaciones</h2>
-                    <p class="text-xs text-muted-foreground" aria-live="polite">
-                        {{
-                            center.unread.value.total === 0
-                                ? 'Estás al día'
-                                : `${center.unread.value.total} sin leer`
-                        }}
+                    <p
+                        class="text-xs text-muted-foreground"
+                        aria-live="polite"
+                        data-notification-summary
+                    >
+                        {{ count === 0 ? 'Estás al día' : summary }}
                     </p>
                 </div>
                 <Button
@@ -165,6 +215,49 @@ function onOpenChange(value: boolean): void {
             </div>
 
             <div class="min-h-0 flex-1 overflow-y-auto">
+                <section
+                    v-if="attention.alerts.value.length > 0"
+                    class="grid gap-2 border-b bg-muted/30 p-3"
+                    aria-labelledby="bell-attention-heading"
+                    data-bell-attention
+                >
+                    <h3
+                        id="bell-attention-heading"
+                        class="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground"
+                    >
+                        <span>Alertas de administración</span>
+                        <span class="font-normal tabular-nums">{{
+                            alertsText(pendingAlerts)
+                        }}</span>
+                    </h3>
+                    <ul class="grid gap-2">
+                        <li
+                            v-for="alert in attention.ordered.value"
+                            :key="alert.id"
+                        >
+                            <AttentionAlertBellItem
+                                :alert="alert"
+                                :acknowledging="
+                                    attention.acknowledging.value === alert.id
+                                "
+                                :busy="attention.acknowledging.value !== null"
+                                @acknowledge="attention.acknowledge(alert)"
+                                @view-pending="viewPending"
+                            />
+                        </li>
+                    </ul>
+                    <p
+                        v-if="moreAlerts > 0"
+                        class="text-center text-xs text-muted-foreground"
+                    >
+                        {{
+                            moreAlerts === 1
+                                ? '1 alerta más: aparecerá al confirmar las anteriores.'
+                                : `${moreAlerts} alertas más: aparecerán al confirmar las anteriores.`
+                        }}
+                    </p>
+                </section>
+
                 <div
                     v-if="!center.loaded.value && center.loading.value"
                     class="space-y-3 p-4"
@@ -194,6 +287,20 @@ function onOpenChange(value: boolean): void {
                         Reintentar
                     </Button>
                 </div>
+
+                <p
+                    v-else-if="
+                        center.items.value.length === 0 &&
+                        attention.alerts.value.length > 0
+                    "
+                    class="p-4 text-center text-xs text-muted-foreground"
+                >
+                    {{
+                        center.onlyUnread.value
+                            ? 'No tienes otras notificaciones sin leer.'
+                            : 'No tienes otras notificaciones.'
+                    }}
+                </p>
 
                 <div
                     v-else-if="center.items.value.length === 0"

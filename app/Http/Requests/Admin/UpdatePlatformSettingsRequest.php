@@ -33,6 +33,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.max_open_conversations_per_agent' => ['nullable', 'integer', 'min:1', 'max:200'],
             'operations.auto_close_after_hours' => ['nullable', 'integer', 'min:1', 'max:720'],
             'operations.transfer_reason_required' => ['sometimes', 'boolean'],
+            'operations.pending_block_enabled' => ['sometimes', 'boolean'],
+            'operations.pending_block_after_minutes' => ['sometimes', 'required', 'integer', 'min:0', 'max:1440'],
             'sla.first_response_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
             'sla.resolution_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
         ];
@@ -84,6 +86,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.max_open_conversations_per_agent' => 'máximo de conversaciones por agente',
             'operations.auto_close_after_hours' => 'cierre automático por inactividad',
             'operations.transfer_reason_required' => 'motivo obligatorio al transferir',
+            'operations.pending_block_enabled' => 'control de conversaciones pendientes',
+            'operations.pending_block_after_minutes' => 'tolerancia antes de bloquear',
             'sla.first_response_minutes' => 'objetivo de primera respuesta',
             'sla.resolution_minutes' => 'objetivo de resolución',
         ];
@@ -120,6 +124,9 @@ class UpdatePlatformSettingsRequest extends FormRequest
                 'max_open_conversations_per_agent' => $this->filled('operations.max_open_conversations_per_agent') ? $this->integer('operations.max_open_conversations_per_agent') : null,
                 'auto_close_after_hours' => $this->filled('operations.auto_close_after_hours') ? $this->integer('operations.auto_close_after_hours') : null,
                 'transfer_reason_required' => $this->boolean('operations.transfer_reason_required'),
+                // Only when sent: an older form that does not know them keeps them.
+                ...($this->has('operations.pending_block_enabled') ? ['pending_block_enabled' => $this->boolean('operations.pending_block_enabled')] : []),
+                ...($this->filled('operations.pending_block_after_minutes') ? ['pending_block_after_minutes' => $this->integer('operations.pending_block_after_minutes')] : []),
             ],
             'sla' => [
                 'first_response_minutes' => $this->filled('sla.first_response_minutes') ? $this->integer('sla.first_response_minutes') : null,

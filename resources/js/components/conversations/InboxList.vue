@@ -2,6 +2,7 @@
 import { Hourglass, Inbox, MailWarning, Search, X } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, nextTick, reactive, ref, watch } from 'vue';
+import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
 import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
 import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
 import { MAX_FILTER_TAGS } from '@/components/conversations/inboxFilters';
@@ -84,6 +85,7 @@ const emit = defineEmits<{
     accept: [id: number];
     markRead: [id: number];
     editAlias: [conversation: ConversationSummary];
+    preview: [conversation: ConversationSummary];
 }>();
 
 const ALL = '';
@@ -921,6 +923,8 @@ const indicatorClass =
                     Limpiar filtros
                 </button>
             </div>
+
+            <AcceptBlockNotice @select="(id) => emit('select', id)" />
         </header>
 
         <div
@@ -958,6 +962,7 @@ const indicatorClass =
                         @mark-read="(id) => emit('markRead', id)"
                         @manage-tags="manageTags"
                         @edit-alias="(row) => emit('editAlias', row)"
+                        @preview="(row) => emit('preview', row)"
                     />
                 </li>
             </ul>

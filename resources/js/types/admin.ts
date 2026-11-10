@@ -380,6 +380,10 @@ export type PlatformSettings = {
         max_open_conversations_per_agent: number | null;
         auto_close_after_hours: number | null;
         transfer_reason_required: boolean;
+        /** Control of new conversations while customers wait for the agent. */
+        pending_block_enabled: boolean;
+        /** Minutes a customer may wait before the control applies. */
+        pending_block_after_minutes: number;
     };
     /** Optional service level objectives in minutes of business time; null = no objective. */
     sla: {

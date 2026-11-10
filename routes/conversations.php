@@ -4,6 +4,7 @@ use App\Http\Controllers\Conversations\ConversationAssignmentController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
+use App\Http\Controllers\Conversations\ConversationPreviewController;
 use App\Http\Controllers\Conversations\ConversationReadController;
 use App\Http\Controllers\Conversations\ConversationStatusController;
 use App\Http\Controllers\Conversations\ConversationTagController;
@@ -41,6 +42,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('conversations/{conversation}/timeline', [ConversationTimelineController::class, 'index'])
         ->middleware('throttle:120,1')
         ->name('conversations.timeline');
+    // Read-only preview from the list: never moves the read marker.
+    Route::get('conversations/{conversation}/preview', [ConversationPreviewController::class, 'show'])
+        ->middleware('throttle:120,1')
+        ->name('conversations.preview');
     Route::post('conversations/{conversation}/read', [ConversationReadController::class, 'store'])
         ->middleware('throttle:120,1')
         ->name('conversations.read');

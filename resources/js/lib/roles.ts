@@ -1,5 +1,6 @@
 import {
     ArchiveRestore,
+    BellRing,
     Building,
     Building2,
     ChartNoAxesCombined,
@@ -122,6 +123,7 @@ const groupIcons: Record<string, LucideIcon> = {
     'scroll-text': ScrollText,
     'server-cog': ServerCog,
     history: History,
+    'bell-ring': BellRing,
 };
 
 /** Icon of a permission module, from the name the catalog sends. */

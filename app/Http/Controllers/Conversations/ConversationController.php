@@ -23,6 +23,7 @@ use App\Services\Conversations\ContactConversationHistory;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Conversations\PendingAttention;
 use App\Services\Exports\ReportExporter;
 use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
@@ -77,7 +78,7 @@ class ConversationController extends Controller
      *
      * @var list<string>
      */
-    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount'];
+    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount', 'acceptBlock'];
 
     /**
      * Props of the selected conversation (chat and details panel).
@@ -218,6 +219,12 @@ class ConversationController extends Controller
             // view, filters and status (never closed ones): what the "Unread"
             // filter would list.
             'unreadCount' => fn (): int => $inbox->handle($actor, [...$filters, 'unread' => true])->reorder()->count(),
+            // The control of pending conversations for whoever may accept
+            // (PendingAttention): why "Aceptar" is disabled and when the state
+            // changes by itself. Reloaded with the list after every signal.
+            'acceptBlock' => fn (): ?array => $actor->holdsPermission(Permission::AcceptConversations)
+                ? app(PendingAttention::class)->stateFor($actor)
+                : null,
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->withoutProtectedFor($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),

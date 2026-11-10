@@ -2,10 +2,19 @@
 import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
 import { MessagesSquare, SearchX } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
-import { computed, onBeforeUnmount, onScopeDispose, ref, watch } from 'vue';
+import {
+    computed,
+    onBeforeUnmount,
+    onScopeDispose,
+    provide,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
+import { ACCEPT_BLOCK } from '@/components/conversations/acceptBlock';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
+import ConversationPreview from '@/components/conversations/ConversationPreview.vue';
 import InboxList from '@/components/conversations/InboxList.vue';
 import { useConversationAccept } from '@/components/conversations/useConversationAccept';
 import {
@@ -36,6 +45,7 @@ import {
     read as markConversationRead,
 } from '@/routes/conversations';
 import type {
+    AcceptBlock,
     ComposerSettings,
     ConversationDetails,
     ConversationFilters,
@@ -88,6 +98,8 @@ const props = defineProps<{
     details: ConversationDetails | null;
     contactUrl: string | null;
     transferReasonRequired: boolean;
+    /** Control of new conversations for the viewer (null: they cannot accept). */
+    acceptBlock?: AcceptBlock | null;
 }>();
 
 /** Props of the list (left panel). */
@@ -97,9 +109,15 @@ const LIST_PROPS = [
     'counts',
     'inbox',
     'unreadCount',
+    'acceptBlock',
 ];
 /** Props a live change refreshes in the list. */
-const LIVE_LIST_PROPS = ['conversations', 'counts', 'unreadCount'];
+const LIVE_LIST_PROPS = [
+    'conversations',
+    'counts',
+    'unreadCount',
+    'acceptBlock',
+];
 /** Props of the selected conversation (center and right panels). */
 const SELECTION_PROPS = [
     'selectedId',
@@ -400,6 +418,66 @@ function reloadIfSignaledDuringFilter(): void {
  */
 const { acceptingId, accept: acceptConversation } = useConversationAccept();
 
+/*
+ * The control of pending conversations disables every «Aceptar» for the
+ * same reason (rows and chat header). It follows the list's reloads, and
+ * when a waiting customer is about to cross the tolerance with nothing else
+ * happening, it is read again right then.
+ */
+const acceptBlock = computed(() => props.acceptBlock ?? null);
+provide(ACCEPT_BLOCK, acceptBlock);
+
+let acceptBlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+/*
+ * Waits in steps of at most an hour (a far moment never overflows the
+ * timer) until the moment is reached, then reloads through the live list
+ * reload, which waits for the user's own visits and keeps their filters.
+ */
+function scheduleAcceptBlock(at: string | null): void {
+    if (acceptBlockTimer) {
+        clearTimeout(acceptBlockTimer);
+        acceptBlockTimer = null;
+    }
+
+    if (!at) {
+        return;
+    }
+
+    const remaining = new Date(at).getTime() - Date.now() + 1_000;
+
+    acceptBlockTimer = setTimeout(
+        () =>
+            remaining > 3_600_000
+                ? scheduleAcceptBlock(at)
+                : liveList.schedule(),
+        Math.min(Math.max(remaining, 1_000), 3_600_000),
+    );
+}
+
+watch(() => acceptBlock.value?.next_change_at ?? null, scheduleAcceptBlock, {
+    immediate: true,
+});
+
+onScopeDispose(() => acceptBlockTimer && clearTimeout(acceptBlockTimer));
+
+/*
+ * Preview from the list (long press, right click, «Vista previa»): it only
+ * reads, so the row keeps its unread counter and nothing is selected.
+ */
+const previewTarget = ref<ConversationSummary | null>(null);
+/* The row as the list has it now, so its counter keeps following live changes. */
+const previewRow = computed(
+    () =>
+        list.value.data.find((row) => row.id === previewTarget.value?.id) ??
+        previewTarget.value,
+);
+
+function openFromPreview(id: number): void {
+    previewTarget.value = null;
+    select(id);
+}
+
 function acceptFromList(id: number): void {
     acceptConversation(id, {
         onSuccess: () => {
@@ -594,6 +672,7 @@ function onAliasSaved(): void {
                 @load-more="loadMore"
                 :can-edit-alias="true"
                 @edit-alias="(row) => (aliasTarget = row)"
+                @preview="(row) => (previewTarget = row)"
             />
         </div>
 
@@ -687,6 +766,13 @@ function onAliasSaved(): void {
                 />
             </SheetContent>
         </Sheet>
+
+        <ConversationPreview
+            :conversation="previewRow"
+            :unread="previewRow?.unread_count ?? 0"
+            @close="previewTarget = null"
+            @open="openFromPreview"
+        />
 
         <AliasDialog
             v-if="aliasTarget"

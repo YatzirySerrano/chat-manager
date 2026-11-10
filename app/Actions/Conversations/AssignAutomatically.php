@@ -11,6 +11,7 @@ use App\Models\Department;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\PendingAttention;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -20,8 +21,9 @@ use Throwable;
  * to attend the department, see ConversationAccess::canAttend()) with the
  * fewest conversations in attention; ties go to whoever waited longest since
  * their last assignment. Agents at their limit (own, department or platform,
- * see ConversationAccess::attentionLimit()) or no longer eligible are
- * skipped. There is no manual availability: the users.availability column is
+ * see ConversationAccess::attentionLimit()), with customers waiting too
+ * long for their answer (PendingAttention, unless their role is exempt) or
+ * no longer eligible are skipped. There is no manual availability: the users.availability column is
  * not read; when nobody qualifies it stays pending in the queue, visible
  * to whoever manages it, and is offered again when capacity frees up
  * (distributeForAgent(), distributeQueue()). A customer message is never
@@ -36,6 +38,7 @@ class AssignAutomatically
     public function __construct(
         private ConversationAccess $access,
         private ConversationLifecycle $lifecycle,
+        private PendingAttention $pendingAttention,
     ) {}
 
     /**
@@ -76,7 +79,7 @@ class AssignAutomatically
         // used to choose, so the limit is never exceeded.
         $agent = $this->lifecycle->freshUser($agent->id);
 
-        if ($this->access->reachedLimit($agent, $department, lockingRead: true) !== null) {
+        if ($this->access->reachedLimit($agent, $department, lockingRead: true) !== null || $this->pendingAttention->blocks($agent, lockingRead: true)) {
             return null;
         }
 
@@ -103,7 +106,11 @@ class AssignAutomatically
             ->withPermission(Permission::ReplyConversations)
             ->withCount(['assignedConversations as attention_load' => fn ($query) => $query
                 ->whereIn('status', ConversationStatus::attending())])
+            ->when($this->pendingAttention->isEnabled(), fn ($query) => $query->withCount([
+                'assignedConversations as overdue_load' => fn ($conversations) => $this->pendingAttention->overdue($conversations),
+            ]))
             ->get()
+            ->reject(fn (User $user): bool => (int) $user->getAttribute('overdue_load') > 0 && $this->pendingAttention->appliesTo($user))
             ->filter(fn (User $user): bool => $this->access->canAttend($user, $department))
             ->filter(function (User $user) use ($department): bool {
                 $limit = $this->access->attentionLimit($user, $department);

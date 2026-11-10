@@ -114,6 +114,7 @@ enum AuditAction: string
     case HistoryImportCompleted = 'history_import.completed';
     case HistoryImportFailed = 'history_import.failed';
     case HistoryImportDiscarded = 'history_import.discarded';
+    case AttentionAlertSent = 'attention.alert_sent';
 
     /**
      * Human readable description of the action.
@@ -225,6 +226,7 @@ enum AuditAction: string
             self::HistoryImportCompleted => 'Importación de historial terminada',
             self::HistoryImportFailed => 'Importación de historial fallida',
             self::HistoryImportDiscarded => 'Importación de historial cancelada',
+            self::AttentionAlertSent => 'Alerta de atención enviada',
         };
     }
 

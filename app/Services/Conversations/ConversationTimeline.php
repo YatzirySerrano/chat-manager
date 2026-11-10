@@ -55,6 +55,9 @@ class ConversationTimeline
     /** Messages per page. */
     public const PAGE_SIZE = 40;
 
+    /** Messages of the inbox preview. */
+    public const PREVIEW_SIZE = 20;
+
     /** Upper bound of new items returned by one "after" request per stream. */
     public const AFTER_LIMIT = 200;
 
@@ -157,6 +160,26 @@ class ConversationTimeline
             'events' => $events === null ? [] : $this->presentEvents($events->reverse()->values(), $request),
             'has_more' => $hasMore,
             'until' => $nextUntil,
+        ];
+    }
+
+    /**
+     * The latest messages only, oldest first, for the inbox preview (a long
+     * press or right click on a row). Reading them changes nothing: no read
+     * marker, notification, counter or provider receipt is touched here or
+     * by the preview endpoint, which never goes through the chat's own
+     * requests either.
+     *
+     * @return array{messages: list<array<string, mixed>>, has_more: bool}
+     */
+    public function preview(Conversation $conversation, Request $request, int $limit = self::PREVIEW_SIZE): array
+    {
+        $messages = $this->messages($conversation)->orderByDesc('id')->limit($limit + 1)->get();
+        $hasMore = $messages->count() > $limit;
+
+        return [
+            'messages' => $this->presentMessages($conversation, $this->inWrittenOrder($messages->take($limit)->values()), $request),
+            'has_more' => $hasMore,
         ];
     }
 

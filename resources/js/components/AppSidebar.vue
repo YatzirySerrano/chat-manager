@@ -13,9 +13,8 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useNavigation } from '@/composables/useNavigation';
-import { dashboard } from '@/routes';
 
-const { sections } = useNavigation();
+const { sections, home } = useNavigation();
 </script>
 
 <template>
@@ -26,7 +25,7 @@ const { sections } = useNavigation();
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
-                        <Link :href="dashboard()">
+                        <Link :href="home">
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>

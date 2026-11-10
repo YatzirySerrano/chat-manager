@@ -181,7 +181,7 @@ test('without dashboard.view the charts are neither computed nor sent', function
         ->withRole(Role::factory()->scope(DataScope::Global)->withPermissions([Permission::ViewConversations, Permission::ViewReports])->create())
         ->create();
 
-    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+    $this->actingAs($user)->get(route('dashboard'))->assertRedirect(route('conversations.index', absolute: false));
 
     $this->actingAs($user)
         ->get(route('dashboard'), [
@@ -190,8 +190,7 @@ test('without dashboard.view the charts are neither computed nor sent', function
             'X-Inertia-Partial-Component' => 'Dashboard',
             'X-Inertia-Partial-Data' => 'charts',
         ])
-        ->assertOk()
-        ->assertJsonPath('props.charts', null);
+        ->assertRedirect(route('conversations.index', absolute: false));
 
     expect(fn () => app(DashboardMetrics::class)->chartsFor($user))->toThrow(AuthorizationException::class);
 });

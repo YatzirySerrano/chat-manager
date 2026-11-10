@@ -2,6 +2,7 @@
 import { usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppContent from '@/components/AppContent.vue';
+import AttentionAlertCenter from '@/components/attention/AttentionAlertCenter.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
@@ -70,6 +71,7 @@ const toastOptions = {
                 aria-hidden="true"
             />
         </AppContent>
+        <AttentionAlertCenter />
         <Toaster
             :offset="toastClearance.offset()"
             :mobile-offset="toastClearance.mobileOffset()"

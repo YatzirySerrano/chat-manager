@@ -1,5 +1,6 @@
 import {
     Archive,
+    BellRing,
     Building2,
     ChartNoAxesCombined,
     ContactRound,
@@ -26,9 +27,11 @@ import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as attentionIndex } from '@/routes/attention';
 import { index as historyIndex } from '@/routes/admin/history';
 import { index as historyImportIndex } from '@/routes/admin/history-import';
 import { index as personalItemsIndex } from '@/routes/admin/personal-items';
+import { edit as profileEdit } from '@/routes/profile';
 import { index as rolesIndex } from '@/routes/admin/roles';
 import { edit as platformSettings } from '@/routes/admin/settings';
 import { index as systemIndex } from '@/routes/admin/system';
@@ -60,27 +63,29 @@ export function useNavigation() {
     const teamChatUnread = useTeamChatUnread();
 
     const sections = computed<NavSection[]>(() => {
-        const result: NavSection[] = [
-            {
-                label: 'General',
-                items: [
-                    {
-                        title: 'Panel principal',
-                        description: 'Resumen de la operación',
-                        href: dashboard(),
-                        icon: LayoutGrid,
-                    },
-                ],
-            },
-        ];
+        const result: NavSection[] = [];
+        const general: NavSection['items'] = [];
+
+        if (can('dashboard.view')) {
+            general.push({
+                title: 'Panel principal',
+                description: 'Resumen de la operación',
+                href: dashboard(),
+                icon: LayoutGrid,
+            });
+        }
 
         if (can('reports.view')) {
-            result[0].items.push({
+            general.push({
                 title: 'Reportes',
                 description: 'Indicadores, tiempos y tendencias',
                 href: reportsIndex(),
                 icon: ChartNoAxesCombined,
             });
+        }
+
+        if (general.length > 0) {
+            result.push({ label: 'General', items: general });
         }
 
         // Exported files are not a module of their own: small ones download
@@ -95,6 +100,15 @@ export function useNavigation() {
                 description: 'Pendientes, atención y seguimiento',
                 href: conversationsIndex(),
                 icon: MessagesSquare,
+            });
+        }
+
+        if (can('attention.view')) {
+            attention.push({
+                title: 'Seguimiento de atención',
+                description: 'Agentes, clientes esperando y alertas',
+                href: attentionIndex(),
+                icon: BellRing,
             });
         }
 
@@ -279,5 +293,22 @@ export function useNavigation() {
         return result;
     });
 
-    return { sections };
+    /**
+     * Where the logo leads, with the same order as the server's LandingPage
+     * («/» and after signing in): the main panel when allowed, otherwise the
+     * conversations, the internal chat or, as a last resort, the profile.
+     */
+    const home = computed(() => {
+        if (can('dashboard.view')) {
+            return dashboard();
+        }
+
+        if (can('conversations.view')) {
+            return conversationsIndex();
+        }
+
+        return can('team-chat.use') ? teamChatIndex() : profileEdit();
+    });
+
+    return { sections, home };
 }

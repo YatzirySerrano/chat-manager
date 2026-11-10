@@ -62,7 +62,7 @@ class ConnectionResource extends JsonResource
             ])->values()->all()),
             'messages' => [
                 'welcome' => ['enabled' => $this->welcome_enabled, 'text' => $this->welcome_message],
-                'away' => ['enabled' => $this->away_enabled, 'text' => $this->away_message],
+                'away' => ['enabled' => $this->away_enabled, 'text' => $this->away_message, 'in_open_conversations' => $this->away_in_open_conversations],
                 'farewell' => ['enabled' => $this->farewell_enabled, 'text' => $this->farewell_message],
             ],
             'reopen_window_minutes' => $this->reopen_window_minutes,

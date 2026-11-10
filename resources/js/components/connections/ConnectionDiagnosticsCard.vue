@@ -345,10 +345,21 @@ const automation = computed(() => {
             </p>
             <p>{{ automation.greeting }}</p>
             <p class="text-muted-foreground">
-                El saludo (bienvenida o fuera de horario) se envía una vez por
-                conversación: cuando el cliente inicia una nueva o reabre una
-                cerrada, nunca en una que sigue abierta. La despedida, al
-                cerrarla, solo dentro de la ventana de 24 horas.
+                <template v-if="connection.messages.away.in_open_conversations">
+                    El saludo se envía cuando el cliente inicia una conversación
+                    nueva o reabre una cerrada. Además, fuera de horario, quien
+                    vuelve a escribir en una conversación abierta recibe el
+                    mensaje fuera de horario una sola vez por periodo. La
+                    despedida, al cerrarla, solo dentro de la ventana de 24
+                    horas.
+                </template>
+                <template v-else>
+                    El saludo (bienvenida o fuera de horario) se envía una vez
+                    por conversación: cuando el cliente inicia una nueva o
+                    reabre una cerrada, nunca en una que sigue abierta. La
+                    despedida, al cerrarla, solo dentro de la ventana de 24
+                    horas.
+                </template>
             </p>
             <p class="text-muted-foreground">{{ automation.recent }}</p>
             <p

@@ -16,6 +16,7 @@ import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
 import ThreadListItem from '@/components/team-chat/ThreadListItem.vue';
+import ThreadPreview from '@/components/team-chat/ThreadPreview.vue';
 import ThreadSettingsSheet from '@/components/team-chat/ThreadSettingsSheet.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,6 +45,7 @@ import type {
     TeamThreadDetail,
     TeamThreadFilter,
     TeamThreadList,
+    TeamThreadSummary,
 } from '@/types/team-chat';
 
 defineOptions({
@@ -118,6 +120,27 @@ function listQuery(
 }
 
 const linkQuery = computed(() => listQuery());
+
+/*
+ * Preview from the list (long press, right click, «Vista previa»): it only
+ * reads; «Abrir chat» opens it like a click on the row.
+ */
+const previewThread = ref<TeamThreadSummary | null>(null);
+/* The row as the list has it now (its counter follows live changes). */
+const previewRow = computed(
+    () =>
+        props.threads.threads.find(
+            (row) => row.id === previewThread.value?.id,
+        ) ?? previewThread.value,
+);
+
+function openFromPreview(id: number): void {
+    previewThread.value = null;
+    router.visit(showThread(id, { query: linkQuery.value }), {
+        preserveState: true,
+        preserveScroll: true,
+    });
+}
 
 function reloadList(limit?: number): void {
     router.get(currentPath(), listQuery(limit ? { limit } : {}), {
@@ -500,6 +523,7 @@ const emptyListCopy = computed(() => {
                         :thread="thread"
                         :active="activeThread?.id === thread.id"
                         :query="linkQuery"
+                        @preview="(row) => (previewThread = row)"
                     />
                 </nav>
 
@@ -627,6 +651,12 @@ const emptyListCopy = computed(() => {
                 </EmptyState>
             </div>
         </main>
+
+        <ThreadPreview
+            :thread="previewRow"
+            @close="previewThread = null"
+            @open="openFromPreview"
+        />
 
         <NewDirectDialog v-model:open="newDirectOpen" />
         <NewGroupDialog

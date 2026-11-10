@@ -115,6 +115,7 @@ class ConnectionRequest extends FormRequest
             'welcome_enabled' => ['boolean'],
             'welcome_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:welcome_enabled'],
             'away_enabled' => ['boolean'],
+            'away_in_open_conversations' => ['sometimes', 'boolean'],
             'away_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:away_enabled'],
             'farewell_enabled' => ['boolean'],
             'farewell_message' => ['nullable', 'string', 'max:'.self::MESSAGE_MAX_LENGTH, 'required_if_accepted:farewell_enabled'],
@@ -279,6 +280,8 @@ class ConnectionRequest extends FormRequest
                 'welcome_message' => $this->nullableString('welcome_message'),
                 'away_enabled' => $this->boolean('away_enabled'),
                 'away_message' => $this->nullableString('away_message'),
+                // Only when sent: a client that does not know it keeps the stored value.
+                ...($this->has('away_in_open_conversations') ? ['away_in_open_conversations' => $this->boolean('away_in_open_conversations')] : []),
                 'farewell_enabled' => $this->boolean('farewell_enabled'),
                 'farewell_message' => $this->nullableString('farewell_message'),
                 'reopen_window_minutes' => $this->filled('reopen_window_minutes') ? $this->integer('reopen_window_minutes') : null,

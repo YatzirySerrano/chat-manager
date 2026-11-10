@@ -13,6 +13,7 @@ use App\Models\Message;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\PendingAttention;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -108,11 +109,16 @@ class QueueTemplateMessage
                 throw new ConversationConflict('La referencia del mensaje ya se usó en otra conversación.');
             }
 
+            $wasOverdue = app(PendingAttention::class)->isOverdue($conversation);
+
             $conversation->forceFill([
                 'last_outbound_at' => now(),
                 'last_message_at' => $conversation->last_message_at === null || $conversation->last_message_at->lessThan(now()) ? now() : $conversation->last_message_at,
                 'first_response_at' => $conversation->first_response_at ?? now(),
             ])->save();
+
+            // Answering an overdue customer may lift the agent's block.
+            app(PendingAttention::class)->answered($conversation, $wasOverdue);
 
             DeliverOutboundMessage::dispatch($message->id)->afterCommit();
             MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);

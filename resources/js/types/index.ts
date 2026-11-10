@@ -14,3 +14,4 @@ export * from './notifications';
 export * from './team-chat';
 export * from './templates';
 export * from './personalization';
+export * from './attention';

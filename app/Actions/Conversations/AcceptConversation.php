@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\PendingAttention;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -18,14 +19,19 @@ use Illuminate\Support\Facades\Gate;
  * second one finds it already taken and receives a controlled conflict.
  *
  * Eligibility (active account and role, permission, department membership,
- * department active) and the capacity limit are read from the locked,
- * freshly read user; there is no manual availability to check.
+ * department active), the capacity limit and the control of pending
+ * conversations (PendingAttention: no new conversation while customers wait
+ * too long for this agent's answer) are read from the locked, freshly read
+ * user; there is no manual availability to check. The user row lock
+ * serializes two tabs (or retried requests) of the same agent, and the
+ * pending conversations are read with a locking read, past the snapshot.
  */
 class AcceptConversation
 {
     public function __construct(
         private ConversationAccess $access,
         private ConversationLifecycle $lifecycle,
+        private PendingAttention $pendingAttention,
     ) {}
 
     public function handle(Conversation $conversation, User $actor): Conversation
@@ -54,6 +60,10 @@ class AcceptConversation
 
             if ($limit !== null) {
                 throw new ConversationConflict("Ya atiendes el máximo de {$limit} conversaciones permitido. Cierra o libera alguna antes de aceptar otra.");
+            }
+
+            if ($this->pendingAttention->blocks($actor, lockingRead: true)) {
+                throw new ConversationConflict(PendingAttention::BLOCKED_MESSAGE);
             }
 
             $this->lifecycle->apply($conversation, ConversationStatus::Open, $this->lifecycle->attendedBy($actor));

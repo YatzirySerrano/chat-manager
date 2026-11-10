@@ -8,6 +8,8 @@ use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\DashboardMetrics;
 use App\Services\Exports\ReportExporter;
+use App\Support\LandingPage;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -27,24 +29,19 @@ class DashboardController extends Controller
      * immediately and the figures load right after; the charts are a second
      * deferred group ("charts") so they never delay the headline figures.
      *
-     * The page is every user's landing page after signing in, so it always
-     * renders; without dashboard.view no metric is computed nor sent, not even
-     * through a partial reload asking for "overview" or "charts". Invalid filters are
+     * Fortify sends everyone here after signing in, but only dashboard.view
+     * opens the panel: anyone else is redirected to the first module they
+     * may use (LandingPage), before any metric is computed, also for partial
+     * reloads asking for "overview" or "charts". Invalid filters are
      * ignored (the defaults apply) instead of breaking the landing page.
      */
-    public function __invoke(Request $request, DashboardMetrics $metrics, AnalyticsScope $scope, ReportExporter $exporter): Response
+    public function __invoke(Request $request, DashboardMetrics $metrics, AnalyticsScope $scope, ReportExporter $exporter, LandingPage $landing): Response|RedirectResponse
     {
         /** @var User $user */
         $user = $request->user();
-        $canViewMetrics = $user->holdsPermission(Permission::ViewDashboard);
 
-        if (! $canViewMetrics) {
-            return Inertia::render('Dashboard', [
-                'canViewMetrics' => false,
-                'overview' => null,
-                'charts' => null,
-                'canExport' => $exporter->allowsReport('dashboard', $user),
-            ]);
+        if (! $user->holdsPermission(Permission::ViewDashboard)) {
+            return redirect()->to($landing->urlFor($user));
         }
 
         $validator = Validator::make($request->query(), [

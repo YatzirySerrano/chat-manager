@@ -104,6 +104,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('update-settings', fn (User $user): bool => $user->holdsPermission(Permission::UpdateSettings));
         Gate::define('view-appearance', fn (User $user): bool => $user->holdsPermission(Permission::ViewAppearance));
         Gate::define('update-appearance', fn (User $user): bool => $user->holdsPermission(Permission::UpdateAppearance));
+        Gate::define('view-attention', fn (User $user): bool => $user->holdsPermission(Permission::ViewAttention));
+        Gate::define('send-attention-alerts', fn (User $user): bool => $user->holdsPermission(Permission::ViewAttention) && $user->holdsPermission(Permission::SendAttentionAlerts));
     }
 
     /**

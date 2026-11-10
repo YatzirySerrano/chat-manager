@@ -2,6 +2,7 @@
 
 use App\Enums\DataScope;
 use App\Models\ApiToken;
+use App\Models\AttentionAlert;
 use App\Models\ChatAppearance;
 use App\Models\Connection;
 use App\Models\Contact;
@@ -82,6 +83,9 @@ const SELF_SERVICE_ROUTES = [
     'notifications.preferences.edit',
     'notifications.preferences.update',
     'notifications.push-subscriptions.store',
+    // The person's own attention alerts (bound to their own rows).
+    'my-alerts.index',
+    'my-alerts.delivered',
 ];
 
 /**
@@ -193,6 +197,9 @@ beforeEach(function () {
         'file' => 1,
         'row' => 1,
         'rule' => 1,
+        // «Seguimiento de atención»: an alert of the root, a recipient row of someone else.
+        'alert' => AttentionAlert::factory()->create(['sender_id' => $root->id])->id,
+        'recipient' => 1,
     ];
 
     $this->teamParameters = [...$this->parameters, 'message' => $teamMessage->id, 'attachment' => $teamAttachment->id];

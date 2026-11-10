@@ -477,3 +477,26 @@ export type TransferOptions = {
     departments: { id: number; name: string; agents: TransferAgentOption[] }[];
     unrouted_agents: TransferAgentOption[];
 };
+
+/**
+ * Control of new conversations for the viewer (PendingAttention::stateFor):
+ * whether «Aceptar» is disabled because customers wait too long for them.
+ */
+export type AcceptBlock = {
+    applies: boolean;
+    blocked: boolean;
+    overdue: number;
+    awaiting: number;
+    oldest_waiting_since: string | null;
+    /** When the state changes by itself (a waiting customer crossing the tolerance). */
+    next_change_at: string | null;
+    tolerance_minutes: number;
+    message: string | null;
+    /** Oldest conversations waiting for the viewer's answer. */
+    conversations: {
+        id: number;
+        contact: string;
+        waiting_since: string | null;
+        overdue: boolean;
+    }[];
+};

@@ -9,8 +9,12 @@ import {
     UserPlus,
     XCircle,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+    ACCEPT_BLOCK,
+    noAcceptBlock,
+} from '@/components/conversations/acceptBlock';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import ConversationRouteDialog from '@/components/conversations/ConversationRouteDialog.vue';
 import { Button } from '@/components/ui/button';
@@ -268,16 +272,24 @@ type Action = {
     hint?: string;
 };
 
+/* Disabled with the reason while customers wait too long for the viewer. */
+const acceptBlock = inject(ACCEPT_BLOCK, noAcceptBlock);
+
 /** The main next step, shown as a button. */
 const primary = computed<Action[]>(() => {
     const actions: Action[] = [];
 
     if (can.value.accept) {
+        const blocked = acceptBlock.value?.blocked === true;
+
         actions.push({
             key: 'accept',
             label: 'Aceptar',
             icon: Hand,
-            hint: 'Hacerte responsable de esta conversación',
+            hint: blocked
+                ? (acceptBlock.value?.message ?? undefined)
+                : 'Hacerte responsable de esta conversación',
+            disabled: blocked,
             run: () => operate(accept.url(id.value)),
         });
     }

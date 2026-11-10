@@ -119,6 +119,7 @@ type ConnectionForm = {
     welcome_message: string;
     away_enabled: boolean;
     away_message: string;
+    away_in_open_conversations: boolean;
     farewell_enabled: boolean;
     farewell_message: string;
     reopen_window_minutes: number | null;
@@ -175,6 +176,8 @@ const form = useForm<ConnectionForm>({
     welcome_message: connection.value?.messages.welcome.text ?? '',
     away_enabled: connection.value?.messages.away.enabled ?? false,
     away_message: connection.value?.messages.away.text ?? '',
+    away_in_open_conversations:
+        connection.value?.messages.away.in_open_conversations ?? false,
     farewell_enabled: connection.value?.messages.farewell.enabled ?? false,
     farewell_message: connection.value?.messages.farewell.text ?? '',
     reopen_window_minutes: connection.value?.reopen_window_minutes ?? null,
@@ -1044,6 +1047,35 @@ const pageTitle = computed(() =>
                                             }}/{{ limits.message }}
                                         </span>
                                     </div>
+                                    <label
+                                        v-if="definition.kind === 'away'"
+                                        class="flex items-start justify-between gap-3 rounded-md bg-muted/40 px-3 py-2 text-sm"
+                                        data-away-in-open
+                                    >
+                                        <span class="min-w-0">
+                                            <span class="block font-medium"
+                                                >También en conversaciones
+                                                abiertas</span
+                                            >
+                                            <span
+                                                class="block text-xs text-muted-foreground"
+                                            >
+                                                Si el cliente vuelve a escribir
+                                                fuera de horario en una
+                                                conversación que ya está abierta
+                                                o en espera, recibe el mensaje
+                                                una sola vez por cada periodo
+                                                fuera de horario.
+                                            </span>
+                                        </span>
+                                        <Switch
+                                            v-model="
+                                                form.away_in_open_conversations
+                                            "
+                                            :disabled="!can.update"
+                                            aria-label="Enviar el mensaje fuera de horario también en conversaciones abiertas"
+                                        />
+                                    </label>
                                 </div>
                             </div>
 

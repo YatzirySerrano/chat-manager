@@ -103,6 +103,36 @@ class ConversationPolicy
     }
 
     /**
+     * Confirming a request as complete, or returning it to «Necesita
+     * información»: the dedicated permission over a conversation within the
+     * operational reach, while it is not closed.
+     */
+    public function confirmReadiness(User $actor, Conversation $conversation): bool
+    {
+        return $this->permits($actor, 'confirmReadiness', $conversation) && $this->state->allows($actor, 'confirmReadiness', $conversation);
+    }
+
+    /**
+     * The request category: its responsible agent, or whoever assigns
+     * conversations or confirms requests within their reach.
+     */
+    public function categorize(User $actor, Conversation $conversation): bool
+    {
+        return $this->permits($actor, 'categorize', $conversation) && $this->state->allows($actor, 'categorize', $conversation);
+    }
+
+    /**
+     * Whether the actor may justify an exception to the queue rules when
+     * taking or handing over this conversation. Never implied by a role
+     * name: only the permission, on a conversation they could take or assign.
+     */
+    public function overrideQueueRules(User $actor, Conversation $conversation): bool
+    {
+        return $actor->holdsPermission(Permission::OverrideQueueRules)
+            && ($this->permits($actor, 'accept', $conversation) || $this->permits($actor, 'assign', $conversation) || $this->permits($actor, 'transfer', $conversation));
+    }
+
+    /**
      * Only the responsible agent writes to the customer, while attending.
      */
     public function reply(User $actor, Conversation $conversation): bool
@@ -139,6 +169,11 @@ class ConversationPolicy
             'reopen' => $actor->holdsPermission(Permission::ReopenConversations) && $this->operates($actor, $conversation),
             'addNote' => $actor->holdsPermission(Permission::AddConversationNotes) && $this->operates($actor, $conversation),
             'tag' => $actor->holdsPermission(Permission::AssignTags) && $this->operates($actor, $conversation),
+            'confirmReadiness' => $actor->holdsPermission(Permission::ConfirmConversationReady) && $this->operates($actor, $conversation),
+            'categorize' => ($actor->holdsPermission(Permission::ReplyConversations)
+                || $actor->holdsPermission(Permission::AssignConversations)
+                || $actor->holdsPermission(Permission::ConfirmConversationReady))
+                && $this->attendsOrOperates($actor, $conversation),
             'reply' => $actor->holdsPermission(Permission::ReplyConversations) && $this->attendsOrOperates($actor, $conversation),
             'sendTemplate' => $actor->holdsPermission(Permission::SendTemplates) && $this->permits($actor, 'reply', $conversation)
                 && $this->channelSupportsTemplates($conversation),

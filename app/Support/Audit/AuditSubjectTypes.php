@@ -25,6 +25,7 @@ final class AuditSubjectTypes
         'message' => 'Mensaje',
         'role' => 'Rol',
         'tag' => 'Etiqueta',
+        'conversation_category' => 'Categoría de solicitud',
         'quick_reply' => 'Respuesta rápida',
         'team_thread' => 'Chat interno',
         'api_token' => 'Token de API',

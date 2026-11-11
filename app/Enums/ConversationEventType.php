@@ -23,6 +23,10 @@ enum ConversationEventType: string
     case OutboundBlocked = 'outbound_blocked';
     case MessageFailed = 'message_failed';
     case MessageRetried = 'message_retried';
+    case ReadinessConfirmed = 'readiness_confirmed';
+    case ReadinessReverted = 'readiness_reverted';
+    case CategoryChanged = 'category_changed';
+    case SlaBreached = 'sla_breached';
 
     public function label(): string
     {
@@ -42,6 +46,10 @@ enum ConversationEventType: string
             self::OutboundBlocked => 'Envío bloqueado',
             self::MessageFailed => 'Mensaje no enviado',
             self::MessageRetried => 'Reintento de envío solicitado',
+            self::ReadinessConfirmed => 'Solicitud confirmada como completa',
+            self::ReadinessReverted => 'Marcada como «Necesita información»',
+            self::CategoryChanged => 'Categoría cambiada',
+            self::SlaBreached => 'Objetivo de respuesta incumplido',
         };
     }
 }

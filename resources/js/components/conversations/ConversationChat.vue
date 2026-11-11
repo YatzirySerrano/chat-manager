@@ -12,6 +12,10 @@ import ChatComposer from '@/components/conversations/ChatComposer.vue';
 import ChatTimeline from '@/components/conversations/ChatTimeline.vue';
 import ConversationActions from '@/components/conversations/ConversationActions.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
+import SlaBadge from '@/components/sla/SlaBadge.vue';
+import CategoryBadge from '@/components/categories/CategoryBadge.vue';
+import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
+import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import TemplatePickerDialog from '@/components/conversations/TemplatePickerDialog.vue';
 import { useConversationTimeline } from '@/components/conversations/useConversationTimeline';
 import { reportMessageStatus } from '@/components/conversations/useInboxMessageStatus';
@@ -386,6 +390,34 @@ const paneStyle = computed(() => ({
                         :status="conversation.status"
                         :label="conversation.status_label"
                     />
+                    <!-- Not the interactive variant: this line lives inside
+                     the button that opens the details (which show the
+                     full SLA detail), and a button cannot hold another. -->
+                    <SlaBadge
+                        v-if="conversation.sla"
+                        :sla="conversation.sla"
+                        variant="compact"
+                        announce
+                    />
+                    <ReadinessBadge
+                        v-if="
+                            conversation.readiness &&
+                            conversation.status !== 'closed' &&
+                            (conversation.readiness.value === 'needs_info' ||
+                                (conversation.readiness.tracked &&
+                                    conversation.status === 'pending'))
+                        "
+                        class="shrink-0"
+                        :value="conversation.readiness.value"
+                        :label="conversation.readiness.label"
+                    />
+                    <CategoryBadge
+                        v-if="conversation.category"
+                        class="shrink-0 max-sm:hidden"
+                        :name="conversation.category.name"
+                        :color="conversation.category.color"
+                        :deleted="conversation.category.is_active === false"
+                    />
                     <span
                         class="inline-flex shrink-0 items-center gap-1 max-sm:sr-only"
                         :title="`Canal: ${conversation.connection.channel_label}`"
@@ -455,6 +487,14 @@ const paneStyle = computed(() => ({
                 <PanelRight v-else aria-hidden="true" />
             </Button>
         </header>
+
+        <!-- Why this pending request cannot be taken yet (describes «Aceptar»). -->
+        <AcceptanceNotice
+            v-if="conversation.status === 'pending'"
+            :id="`acceptance-chat-${conversation.id}`"
+            :conversation="conversation"
+            class="border-b bg-muted/40 px-3 py-2 sm:px-4"
+        />
 
         <ChatTimeline
             :style="chatStyle"

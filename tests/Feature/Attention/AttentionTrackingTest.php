@@ -113,10 +113,12 @@ test('people without the permission cannot open the page', function () {
     $this->actingAs($this->ana)->get(route('attention.index'))->assertForbidden();
 });
 
-test('only administrators hold the permissions by default', function () {
+test('administrators and supervisors see the tracking by default; only administrators send alerts', function () {
     expect(User::factory()->administrator()->create()->holdsPermission(Permission::ViewAttention))->toBeTrue()
         ->and(User::factory()->administrator()->create()->holdsPermission(Permission::SendAttentionAlerts))->toBeTrue()
-        ->and(User::factory()->supervisor()->create()->holdsPermission(Permission::ViewAttention))->toBeFalse()
+        // Supervisors watch the SLA of their departments (docs/reglas-de-servicio.md §7).
+        ->and(User::factory()->supervisor()->create()->holdsPermission(Permission::ViewAttention))->toBeTrue()
+        ->and(User::factory()->supervisor()->create()->holdsPermission(Permission::SendAttentionAlerts))->toBeFalse()
         ->and($this->ana->holdsPermission(Permission::ViewAttention))->toBeFalse();
 });
 

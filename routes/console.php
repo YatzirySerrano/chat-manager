@@ -31,6 +31,8 @@ Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes
 Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping();
 Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
 Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
+// Connections: asks Meta again whether credentials and webhook subscription still work (bounded; an outage of Meta raises no alarm).
+Schedule::command('whatsapp:maintenance check-connections')->everyThirtyMinutes()->withoutOverlapping(20);
 
 // Customer media whose download never finished: retried while Meta keeps it, then marked unavailable (bounded).
 Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOverlapping();
@@ -44,5 +46,11 @@ Schedule::command('webchat:prune-sessions')->dailyAt('04:20')->withoutOverlappin
 // Operations (ops module): scheduler heartbeat (system health) and critical failure alerts.
 Schedule::command('ops:heartbeat')->everyMinute();
 Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping();
+// Service rules: SLA warnings, breaches and reminders of the requests waiting for an answer (atomic claims; safe to overlap).
+Schedule::command('sla:evaluate')->everyMinute()->withoutOverlapping(5);
+
 Schedule::command('queue:prune-failed --hours=2160')->dailyAt('04:30');
 Schedule::command('queue:prune-batches --hours=168')->dailyAt('04:40');
+
+// Queue rules: offers automatic queues again when the minimum wait of a request ended (cheap when nothing waits; decided under the engine's locks).
+Schedule::command('conversations:offer-waiting-queues')->everyMinute()->withoutOverlapping(5);

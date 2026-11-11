@@ -106,6 +106,7 @@ enum AuditAction: string
     case ConnectionMetaAuthorized = 'connection.meta_authorized';
     case ConnectionMetaDisconnected = 'connection.meta_disconnected';
     case ConversationOnHoldRetired = 'conversation.on_hold_retired';
+    case ConversationSlaBreached = 'conversation.sla_breached';
     case HistoryImportCreated = 'history_import.created';
     case HistoryImportFileAdded = 'history_import.file_added';
     case HistoryImportClassified = 'history_import.classified';
@@ -115,6 +116,16 @@ enum AuditAction: string
     case HistoryImportFailed = 'history_import.failed';
     case HistoryImportDiscarded = 'history_import.discarded';
     case AttentionAlertSent = 'attention.alert_sent';
+    case DepartmentServiceRulesUpdated = 'department.service_rules_updated';
+    case ConversationCategoryCreated = 'conversation_category.created';
+    case ConversationCategoryUpdated = 'conversation_category.updated';
+    case ConversationCategoryDeleted = 'conversation_category.deleted';
+    case ConversationCategoryRestored = 'conversation_category.restored';
+    case ConversationCategoryRulesUpdated = 'conversation_category.rules_updated';
+    case ConversationReadinessConfirmed = 'conversation.readiness_confirmed';
+    case ConversationReadinessReverted = 'conversation.readiness_reverted';
+    case ConversationQueueRulesOverridden = 'conversation.queue_rules_overridden';
+    case ConversationCategoryChanged = 'conversation.category_changed';
 
     /**
      * Human readable description of the action.
@@ -218,6 +229,7 @@ enum AuditAction: string
             self::ConnectionMetaAuthorized => 'Cuenta de Meta autorizada para la conexión',
             self::ConnectionMetaDisconnected => 'Cuenta de Meta desconectada de la conexión',
             self::ConversationOnHoldRetired => 'Conversación «En espera» pasada a «Pendiente»',
+            self::ConversationSlaBreached => 'Objetivo de respuesta (SLA) incumplido',
             self::HistoryImportCreated => 'Importación de historial iniciada',
             self::HistoryImportFileAdded => 'Archivo agregado a una importación de historial',
             self::HistoryImportClassified => 'Conversaciones de una importación de historial clasificadas',
@@ -227,6 +239,16 @@ enum AuditAction: string
             self::HistoryImportFailed => 'Importación de historial fallida',
             self::HistoryImportDiscarded => 'Importación de historial cancelada',
             self::AttentionAlertSent => 'Alerta de atención enviada',
+            self::DepartmentServiceRulesUpdated => 'Reglas de servicio del departamento actualizadas',
+            self::ConversationCategoryCreated => 'Categoría de solicitud creada',
+            self::ConversationCategoryUpdated => 'Categoría de solicitud actualizada',
+            self::ConversationCategoryDeleted => 'Categoría de solicitud eliminada',
+            self::ConversationCategoryRestored => 'Categoría de solicitud restaurada',
+            self::ConversationCategoryRulesUpdated => 'Reglas de servicio de la categoría actualizadas',
+            self::ConversationReadinessConfirmed => 'Solicitud confirmada como completa',
+            self::ConversationReadinessReverted => 'Solicitud devuelta a «Necesita información»',
+            self::ConversationQueueRulesOverridden => 'Excepción a las reglas de la cola',
+            self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
         };
     }
 
@@ -243,7 +265,7 @@ enum AuditAction: string
             self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
             self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked,
             self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
-            self::HistoryImportFailed => 'danger',
+            self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
@@ -253,7 +275,9 @@ enum AuditAction: string
             self::AuthPasswordChanged, self::AuthPasswordResetByLink, self::AuthRecoveryCodesRegenerated,
             self::WebChatKeyRotated, self::WebChatIdentitySecretRotated,
             self::SupervisionPersonalItemUpdated, self::UserPersonalQuickRepliesRevoked,
-            self::HistoryImportRequested, self::HistoryImportDiscarded => 'warning',
+            self::HistoryImportRequested, self::HistoryImportDiscarded,
+            self::DepartmentServiceRulesUpdated, self::ConversationCategoryRulesUpdated,
+            self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
@@ -262,7 +286,9 @@ enum AuditAction: string
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
             self::TeamChatParticipantsAdded, self::TeamChatGroupUnarchived, self::AuthTwoFactorEnabled,
             self::ApiTokenIssued, self::ContactSaved, self::UserPersonalQuickRepliesGranted,
-            self::ConnectionMetaAuthorized, self::HistoryImportCompleted => 'success',
+            self::ConnectionMetaAuthorized, self::HistoryImportCompleted,
+            self::ConversationCategoryCreated, self::ConversationCategoryRestored,
+            self::ConversationReadinessConfirmed => 'success',
             default => 'neutral',
         };
     }

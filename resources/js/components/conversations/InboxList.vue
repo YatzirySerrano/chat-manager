@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { formatPhone } from '@/lib/phone';
 import type {
     ConnectionChannel,
+    ConversationCategoryRef,
     ConversationFilters,
     ConversationInbox,
     ConversationList,
@@ -63,6 +64,8 @@ const props = withDefaults(
             channels: { value: ConnectionChannel; label: string }[];
         };
         tags: TagOption[];
+        /** Active request categories (filter). */
+        categories?: ConversationCategoryRef[];
         canSeeUnrouted: boolean;
         /** The viewer may see closed conversations (history permission). */
         canSeeClosed: boolean;
@@ -75,7 +78,7 @@ const props = withDefaults(
         /** Rows offer "Asignar alias personal" (PERSONALIZATION). */
         canEditAlias?: boolean;
     }>(),
-    { canEditAlias: false },
+    { canEditAlias: false, categories: () => [] },
 );
 
 const emit = defineEmits<{
@@ -104,6 +107,11 @@ function fromFilters(filters: ConversationFilters): InboxFilterState {
         sort: filters.sort,
         searchIn: filters.search_in,
         unread: filters.unread,
+        category:
+            filters.category === null || filters.category === undefined
+                ? ALL
+                : String(filters.category),
+        readiness: filters.readiness ?? ALL,
     };
 }
 
@@ -343,6 +351,29 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         });
     }
 
+    if (filters.category !== ALL) {
+        const category = props.categories.find(
+            (option) => String(option.id) === filters.category,
+        );
+
+        chips.push({
+            key: 'category',
+            label: `Categoría: ${category?.name ?? 'No disponible'}`,
+            clear: () => (filters.category = ALL),
+        });
+    }
+
+    if (filters.readiness !== ALL) {
+        chips.push({
+            key: 'readiness',
+            label:
+                filters.readiness === 'needs_info'
+                    ? 'Necesita información'
+                    : 'Lista para atención',
+            clear: () => (filters.readiness = ALL),
+        });
+    }
+
     if (filters.connection !== ALL) {
         const connection = props.connections.find(
             (option) => String(option.id) === filters.connection,
@@ -442,6 +473,8 @@ function query(): Record<string, string | string[]> {
         'agent',
         'connection',
         'channel',
+        'category',
+        'readiness',
     ] as const) {
         if (state[key] !== ALL && !(key === 'agent' && props.inbox.personal)) {
             result[key] = state[key];
@@ -566,6 +599,8 @@ function clearFilters(): void {
         sort: 'recent',
         searchIn: 'contact',
         unread: false,
+        category: ALL,
+        readiness: ALL,
     } satisfies InboxFilterState);
     search.value = '';
     filtersOpen.value = false;
@@ -702,6 +737,7 @@ const indicatorClass =
                         type="button"
                         :class="[
                             indicatorClass,
+                            'max-w-full',
                             generalActive
                                 ? 'border-primary bg-primary text-primary-foreground'
                                 : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -712,9 +748,13 @@ const indicatorClass =
                         data-tour="inbox.general"
                         @click="showGeneral"
                     >
-                        {{ viewLabels[baseView] }}
+                        <!-- The longest view name («Conversaciones de mis
+                         departamentos») is wider than a 320 px phone. -->
+                        <span class="min-w-0 truncate">{{
+                            viewLabels[baseView]
+                        }}</span>
                         <span
-                            class="rounded-full px-1.5 text-xs tabular-nums"
+                            class="shrink-0 rounded-full px-1.5 text-xs tabular-nums"
                             :class="
                                 generalActive
                                     ? 'bg-primary-foreground/20'
@@ -873,6 +913,7 @@ const indicatorClass =
                         :channels="channels"
                         :connections="connections"
                         :tags="tags"
+                        :categories="categories"
                         :max-tags="MAX_FILTER_TAGS"
                         :sort-options="sortOptions"
                         :search-scopes="searchScopes"

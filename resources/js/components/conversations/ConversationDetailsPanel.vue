@@ -13,11 +13,15 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
 import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
+import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
+import CategoryBadge from '@/components/categories/CategoryBadge.vue';
+import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import AliasDialog from '@/components/personalization/AliasDialog.vue';
@@ -27,8 +31,10 @@ import { Button } from '@/components/ui/button';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { save as saveContact } from '@/routes/conversations/contact';
+import { update as updateCategory } from '@/routes/conversations/category';
 import { update as updateTags } from '@/routes/conversations/tags';
 import type {
+    ConversationCategoryRef,
     ConversationDetails,
     ConversationSummary,
     CustomerWindow,
@@ -44,7 +50,47 @@ const props = defineProps<{
     window: CustomerWindow;
     details: ConversationDetails;
     contactUrl: string | null;
+    /** Active request categories the conversation can be classified with. */
+    categories?: ConversationCategoryRef[];
 }>();
+
+/*
+ * Request category: chosen from the active catalog by whoever may
+ * (can.categorize). A deleted category the conversation still carries stays
+ * listed as history until it is changed.
+ */
+const categoryOptions = computed(() => {
+    const options = [...(props.categories ?? [])];
+    const current = props.conversation.category;
+
+    if (current && !options.some((option) => option.id === current.id)) {
+        options.unshift(current);
+    }
+
+    return options;
+});
+const savingCategory = ref(false);
+
+function changeCategory(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+
+    router.put(
+        updateCategory.url(props.conversation.id),
+        { category_id: value === '' ? null : Number(value) },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            onStart: () => (savingCategory.value = true),
+            onError: (errors) =>
+                toast.error(
+                    errors.category_id ??
+                        errors.conversation ??
+                        'No se pudo cambiar la categoría. Inténtalo de nuevo.',
+                ),
+            onFinish: () => (savingCategory.value = false),
+        },
+    );
+}
 
 const isWebChat = computed(
     () => props.conversation.connection.channel === 'web_chat',
@@ -292,6 +338,15 @@ function safeUrl(url: string | null): string | null {
                 </div>
             </section>
 
+            <section
+                v-if="conversation.sla"
+                class="grid gap-3 border-b px-4 py-4 text-sm"
+                data-sla-details
+            >
+                <h3 class="section-title">Tiempo de respuesta (SLA)</h3>
+                <SlaBadge :sla="conversation.sla" variant="detail" />
+            </section>
+
             <section class="grid gap-3 border-b px-4 py-4 text-sm">
                 <h3 class="section-title">Conversación</h3>
                 <dl
@@ -350,6 +405,66 @@ function safeUrl(url: string | null): string | null {
                     v-if="conversation.status !== 'closed' && windowApplies"
                     :window="window"
                 />
+                <div class="grid gap-1.5" data-conversation-category>
+                    <label
+                        for="conversation-category"
+                        class="text-xs text-muted-foreground"
+                        >Categoría de la solicitud</label
+                    >
+                    <select
+                        v-if="conversation.can.categorize"
+                        id="conversation-category"
+                        class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 pointer-coarse:h-11"
+                        :value="conversation.category?.id ?? ''"
+                        :disabled="savingCategory"
+                        @change="changeCategory"
+                    >
+                        <option value="">Sin categoría</option>
+                        <option
+                            v-for="category in categoryOptions"
+                            :key="category.id"
+                            :value="category.id"
+                            :disabled="category.is_active === false"
+                        >
+                            {{ category.name
+                            }}{{
+                                category.is_active === false
+                                    ? ' (eliminada)'
+                                    : ''
+                            }}
+                        </option>
+                    </select>
+                    <p v-else id="conversation-category">
+                        <CategoryBadge
+                            v-if="conversation.category"
+                            :name="conversation.category.name"
+                            :color="conversation.category.color"
+                            :deleted="conversation.category.is_active === false"
+                        />
+                        <span v-else class="text-muted-foreground"
+                            >Sin categoría</span
+                        >
+                    </p>
+                </div>
+                <div
+                    v-if="
+                        conversation.readiness &&
+                        conversation.status !== 'closed' &&
+                        (conversation.readiness.tracked ||
+                            conversation.readiness.value === 'needs_info')
+                    "
+                    class="grid gap-1.5"
+                >
+                    <p class="text-xs text-muted-foreground">
+                        Preparación de la solicitud
+                    </p>
+                    <p>
+                        <ReadinessBadge
+                            :value="conversation.readiness.value"
+                            :label="conversation.readiness.label"
+                        />
+                    </p>
+                </div>
                 <div class="grid gap-1.5">
                     <p class="text-xs text-muted-foreground">
                         Etiquetas de la conversación

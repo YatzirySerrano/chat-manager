@@ -3,6 +3,8 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Enums\ConnectionHealth;
+use App\Events\Connections\ConnectionHealthChanged;
 use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
@@ -20,6 +22,15 @@ use Illuminate\Validation\ValidationException;
  * marks the credentials invalid, while a timeout or a failure on Meta's side
  * is inconclusive and leaves the previous evidence untouched. The WhatsApp
  * Business Account ID is not validated by this call.
+ *
+ * Without an actor it is the automatic check (whatsapp:maintenance
+ * check-connections): it records the same evidence, but only writes to the
+ * audit log when the credential state actually changes, so a check that
+ * confirms what was known, or cannot reach Meta, leaves no noise.
+ *
+ * A change of the derived health is announced (ConnectionHealthChanged), so
+ * a rejection alerts the people who watch connections and a successful
+ * verification after a problem resolves that alert.
  */
 class VerifyConnectionCredentials
 {
@@ -31,7 +42,7 @@ class VerifyConnectionCredentials
     /**
      * @throws ValidationException
      */
-    public function handle(Connection $connection, User $actor): CredentialVerification
+    public function handle(Connection $connection, ?User $actor = null): CredentialVerification
     {
         $phoneNumberId = (string) $connection->phone_number_id;
         $accessToken = (string) $connection->access_token;
@@ -52,6 +63,8 @@ class VerifyConnectionCredentials
 
         return DB::transaction(function () use ($connection, $phoneNumberId, $accessToken, $profile, $actor): CredentialVerification {
             $this->lockUnchanged($connection, $phoneNumberId, $accessToken);
+            $previous = $connection->health();
+            $confirmsKnownState = $connection->credentials_verified_at !== null && blank($connection->credentials_error);
 
             $connection->forceFill([
                 'credentials_verified_at' => now(),
@@ -66,13 +79,17 @@ class VerifyConnectionCredentials
                 'platform_type' => $this->limit($profile['platform_type'], 40),
             ])->save();
             ConnectionStatusChanged::dispatch($connection->id, 'credentials');
+            $this->announceHealth($connection, $previous);
 
-            $this->audit->record(AuditAction::ConnectionCredentialsVerified, $connection, [
-                'verification_result' => CredentialVerification::VERIFIED,
-                'verified_name' => $connection->verified_name,
-                'phone_status' => $connection->phone_status,
-                'quality_rating' => $connection->quality_rating,
-            ], $actor);
+            if ($actor !== null || ! $confirmsKnownState) {
+                $this->audit->record(AuditAction::ConnectionCredentialsVerified, $connection, [
+                    'verification_result' => CredentialVerification::VERIFIED,
+                    'verified_name' => $connection->verified_name,
+                    'phone_status' => $connection->phone_status,
+                    'quality_rating' => $connection->quality_rating,
+                    ...($actor === null ? ['automatic' => true] : []),
+                ], $actor);
+            }
 
             $message = $connection->phone_status !== null && $connection->phone_status !== 'CONNECTED'
                 ? "Meta aceptó las credenciales, pero reporta el número con estado {$connection->phone_status}. Debe estar CONNECTED para enviar y recibir mensajes."
@@ -82,30 +99,42 @@ class VerifyConnectionCredentials
         });
     }
 
-    private function recordRejection(Connection $connection, string $phoneNumberId, string $accessToken, MetaGraphException $exception, User $actor): CredentialVerification
+    private function recordRejection(Connection $connection, string $phoneNumberId, string $accessToken, MetaGraphException $exception, ?User $actor): CredentialVerification
     {
         return DB::transaction(function () use ($connection, $phoneNumberId, $accessToken, $exception, $actor): CredentialVerification {
             $this->lockUnchanged($connection, $phoneNumberId, $accessToken);
+            $previous = $connection->health();
+            $alreadyRejected = filled($connection->credentials_error);
 
             $connection->forceFill([
                 'credentials_verified_at' => null,
                 'credentials_error' => Str::limit($exception->getMessage(), 500, ''),
             ])->save();
             ConnectionStatusChanged::dispatch($connection->id, 'credentials');
+            $this->announceHealth($connection, $previous);
 
-            $this->audit->record(AuditAction::ConnectionCredentialsFailed, $connection, [
-                'verification_result' => CredentialVerification::REJECTED,
-                'meta_code' => $exception->metaCode,
-                'http_status' => $exception->status,
-                'reason' => $connection->credentials_error,
-            ], $actor);
+            if ($actor !== null || ! $alreadyRejected) {
+                $this->audit->record(AuditAction::ConnectionCredentialsFailed, $connection, [
+                    'verification_result' => CredentialVerification::REJECTED,
+                    'meta_code' => $exception->metaCode,
+                    'http_status' => $exception->status,
+                    'reason' => $connection->credentials_error,
+                    ...($actor === null ? ['automatic' => true] : []),
+                ], $actor);
+            }
 
             return new CredentialVerification(CredentialVerification::REJECTED, $exception->getMessage());
         });
     }
 
-    private function recordInconclusive(Connection $connection, MetaGraphException $exception, User $actor): CredentialVerification
+    private function recordInconclusive(Connection $connection, MetaGraphException $exception, ?User $actor): CredentialVerification
     {
+        // Meta being unreachable says nothing about the credentials: the
+        // automatic check keeps it out of the audit log.
+        if ($actor === null) {
+            return new CredentialVerification(CredentialVerification::UNREACHABLE, $exception->getMessage(), $exception->kind);
+        }
+
         $this->audit->record(AuditAction::ConnectionCredentialsFailed, $connection, [
             'verification_result' => CredentialVerification::UNREACHABLE,
             'meta_code' => $exception->metaCode,
@@ -113,7 +142,7 @@ class VerifyConnectionCredentials
             'reason' => $exception->getMessage(),
         ], $actor);
 
-        return new CredentialVerification(CredentialVerification::UNREACHABLE, $exception->getMessage());
+        return new CredentialVerification(CredentialVerification::UNREACHABLE, $exception->getMessage(), $exception->kind);
     }
 
     /**
@@ -130,6 +159,15 @@ class VerifyConnectionCredentials
             throw ValidationException::withMessages([
                 'connection' => 'Las credenciales cambiaron mientras se verificaban. Vuelve a intentarlo.',
             ]);
+        }
+    }
+
+    private function announceHealth(Connection $connection, ConnectionHealth $previous): void
+    {
+        $health = $connection->health();
+
+        if ($health !== $previous) {
+            ConnectionHealthChanged::dispatch($connection->id, $health->value, $previous->value, $connection->credentials_error);
         }
     }
 

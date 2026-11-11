@@ -93,7 +93,7 @@ class RetireOnHoldConversation
                     'metadata' => $metadata,
                 ]);
             } else {
-                $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued());
+                $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued($conversation));
                 $this->lifecycle->record($conversation, ConversationEventType::Unassigned, null, [
                     'from_user_id' => $previous,
                     'from_department_id' => $conversation->department_id,

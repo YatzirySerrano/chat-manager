@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Conversations\ResponseClock;
 use App\Services\Storage\MediaDisk;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentKind;
@@ -194,6 +195,7 @@ class QueueOutboundMessage
 
                 // Answering an overdue customer may lift the agent's block.
                 app(PendingAttention::class)->answered($conversation, $wasOverdue);
+                app(ResponseClock::class)->answered($conversation, $actor);
 
                 DeliverOutboundMessage::dispatch($message->id)->afterCommit();
                 MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);

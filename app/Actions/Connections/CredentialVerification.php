@@ -15,10 +15,12 @@ final readonly class CredentialVerification
 
     /**
      * @param  'verified'|'rejected'|'unreachable'  $result
+     * @param  string|null  $failureKind  MetaGraphException kind of an inconclusive answer (e.g. rate_limited).
      */
     public function __construct(
         public string $result,
         public string $message,
+        public ?string $failureKind = null,
     ) {}
 
     public function verified(): bool

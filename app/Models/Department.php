@@ -7,6 +7,7 @@ use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\DistributionMode;
 use App\Enums\Permission;
+use App\Services\ServiceRules;
 use App\Support\AppColor;
 use Database\Factories\DepartmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -35,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $max_open_conversations_per_agent Capacity of each agent for this department's conversations; null inherits the platform limit.
  * @property bool $uses_custom_hours
  * @property array{days: array<string, array{open: bool, start: string, end: string}>}|null $business_hours Only applies while `uses_custom_hours` is true; otherwise the platform hours apply.
+ * @property array<string, int|bool>|null $service_rules Service rules the department overrides (flat map of dotted rule key → value, see App\Services\ServiceRules); an absent key inherits the platform value.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -69,7 +71,21 @@ class Department extends Model
             'max_open_conversations_per_agent' => 'integer',
             'uses_custom_hours' => 'boolean',
             'business_hours' => 'array',
+            'service_rules' => 'array',
         ];
+    }
+
+    /**
+     * The service rules memoize the overrides they resolved: any change to
+     * them (or to the deletion state) invalidates that memory.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (self $model): void {
+            if ($model->wasChanged('service_rules') || ($model->wasRecentlyCreated && $model->service_rules !== null)) {
+                app(ServiceRules::class)->flush();
+            }
+        });
     }
 
     /**

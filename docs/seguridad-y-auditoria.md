@@ -480,6 +480,25 @@ elimina con sus concesiones. **No aplicada en `chatmanager`** (pendiente de auto
 (`state_changed`, `assigned_to_other`, `closed`): perder una carrera ya no se presenta como «prohibido». Detalle en
 [bandejas §Errores](bandejas-y-asignacion.md#errores-de-las-acciones-403-404-y-409-fase-52).
 
+**Reglas de la cola (fase de reglas de servicio).** Tres rechazos más con `409` y código propio (`needs_info`,
+`min_wait`, `queue_order`), siempre después de permiso y visibilidad, así que no revelan nada a quien no ve la
+conversación. Dos permisos pasan a tener efecto ([reglas-de-servicio.md §Reglas de la cola](reglas-de-servicio.md#reglas-de-la-cola)):
+
+- `conversations.confirm-ready`: confirmar una solicitud como completa o devolverla a «Necesita información», solo
+  dentro del alcance operativo (`ConversationPolicy::confirmReadiness`); nunca en conversaciones cerradas o importadas.
+- `conversations.override-queue-rules` (sensible): justificar una excepción a esas tres reglas al aceptar, asignar o
+  transferir. Sin el permiso, el parámetro `override_reason` se ignora; no hay excepción implícita por nombre de rol
+  ni ruta que omita las reglas. Nunca omite el límite de capacidad ni el control de conversaciones pendientes.
+- La categoría de una solicitud la cambia su responsable o quien asigna o confirma (`ConversationPolicy::categorize`).
+  Como la categoría puede traer reglas de cola propias, cambiarla **no** es una vía para saltarse la cola: en una
+  solicitud que espera en una cola, una categoría que deja de exigir confirmación o acorta la espera mínima exige
+  además `conversations.override-queue-rules` (sin él, `403` y nada cambia). El permiso se lee de la fila bloqueada del
+  actor (`SetConversationCategory`).
+- Aceptar y cambiar la categoría comprueban el permiso **antes** de validar los datos: quien ve la conversación pero
+  no puede operar recibe `403`, nunca un `422` que describa el formulario.
+- `acceptance.blocking_conversation_id` (la solicitud anterior que bloquea por orden de llegada) solo se entrega a
+  quien puede tomar de esa cola o puede ver esa conversación; a los demás se les oculta el id.
+
 ## 4. Auditoría
 
 - `App\Services\AuditLogger` escribe en `audit_logs` (solo inserción; no hay ruta para editar ni borrar entradas). Guarda
@@ -493,6 +512,11 @@ elimina con sus concesiones. **No aplicada en `chatmanager`** (pendiente de auto
   `web_chat.identity_secret_rotated`; como el saneador elimina toda clave que contenga `token` o `secret`, esas
   entradas usan `public_id`, `name` y `reason`. Desde la fase 5.2, el importador de historial (`history_import.created`, `file_added`,
   `classified`, `rule_applied`, `requested`, `completed`, `failed`, `discarded`), restringido y sin contenido de mensajes.
+- Reglas de la cola: `conversation.readiness_confirmed` y `conversation.readiness_reverted` (estado anterior, nuevo y
+  motivo) y `conversation.queue_rules_overridden` (reglas omitidas, motivo, resultado y a quién se asignó). La misma
+  excepción queda en el evento de la conversación (`metadata.queue_override`), visible en su línea de tiempo.
+  Todo cambio de categoría de una solicitud deja `conversation.category_changed` (categoría anterior y nueva,
+  `queue_rules_relaxed` y `queue_eligibility_changed`).
 - **Visibilidad restringida:** ver la bitácora requiere `audit.view`; las entradas `restricted` (acciones del rol raíz o
   sobre él, y todo el importador) solo las ve el rol raíz. Exportarla requiere `audit.export`.
 - Los valores de `App\Enums\AuditAction` son permanentes: quitar un caso rompe la lectura de las filas que lo llevan. En

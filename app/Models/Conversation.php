@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ConversationOrigin;
+use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Services\Conversations\ConversationAccess;
 use Database\Factories\ConversationFactory;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -39,6 +41,12 @@ use Illuminate\Support\Carbon;
  * @property ConversationOrigin $origin live, or imported from another system (history, never operational).
  * @property Carbon|null $history_only_at Set when an imported conversation was archived as read-only history.
  * @property int|null $imported_by_transfer_id The history import batch that created it.
+ * @property int|null $category_id Request category (optional classification that may override service rules).
+ * @property ConversationReadiness $readiness Whether the request is complete; only restricts the queue where the confirmation rule applies.
+ * @property Carbon|null $readiness_changed_at
+ * @property int|null $readiness_changed_by_user_id
+ * @property Carbon|null $queued_at When it entered the queue it waits in (clock of the minimum wait and the chronological order).
+ * @property int|null $open_response_cycle_id The open response cycle; kept and read only by ResponseClock, under the row lock.
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -58,6 +66,7 @@ class Conversation extends Model
         'version' => 0,
         'reopen_count' => 0,
         'origin' => 'live',
+        'readiness' => 'ready',
     ];
 
     /**
@@ -82,6 +91,9 @@ class Conversation extends Model
             'version' => 'integer',
             'origin' => ConversationOrigin::class,
             'history_only_at' => 'datetime',
+            'readiness' => ConversationReadiness::class,
+            'readiness_changed_at' => 'datetime',
+            'queued_at' => 'datetime',
         ];
     }
 
@@ -209,6 +221,46 @@ class Conversation extends Model
     public function events(): HasMany
     {
         return $this->hasMany(ConversationEvent::class);
+    }
+
+    /**
+     * The request category, kept as history even when logically deleted.
+     *
+     * @return BelongsTo<ConversationCategory, $this>
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ConversationCategory::class, 'category_id');
+    }
+
+    /**
+     * Who last confirmed the request as complete or returned it to «necesita información».
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function readinessChangedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'readiness_changed_by_user_id');
+    }
+
+    /**
+     * The "customer wrote → team must answer" cycles, the facts of the SLA.
+     *
+     * @return HasMany<ResponseCycle, $this>
+     */
+    public function responseCycles(): HasMany
+    {
+        return $this->hasMany(ResponseCycle::class);
+    }
+
+    /**
+     * The cycle in which the customer is waiting for an answer right now.
+     *
+     * @return HasOne<ResponseCycle, $this>
+     */
+    public function openResponseCycle(): HasOne
+    {
+        return $this->hasOne(ResponseCycle::class)->where('response_cycles.active', 1);
     }
 
     /**

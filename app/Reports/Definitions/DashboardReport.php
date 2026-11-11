@@ -14,6 +14,7 @@ use App\Reports\ChartType;
 use App\Reports\Column;
 use App\Reports\ColumnTotal;
 use App\Reports\ColumnType;
+use App\Reports\Concerns\DescribesAnalytics;
 use App\Reports\Concerns\DescribesReports;
 use App\Reports\Metric;
 use App\Reports\PdfOptions;
@@ -21,6 +22,7 @@ use App\Reports\Rendering\ReportPalette;
 use App\Reports\ReportContext;
 use App\Reports\ReportDefinition;
 use App\Reports\ReportSheet;
+use App\Services\Analytics\AnalyticsDimensions;
 use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\DashboardMetrics;
@@ -45,6 +47,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class DashboardReport extends ReportDefinition
 {
+    use DescribesAnalytics;
     use DescribesReports;
 
     /**
@@ -71,6 +74,7 @@ class DashboardReport extends ReportDefinition
     public function __construct(
         private DashboardMetrics $dashboard,
         private AnalyticsScope $scope,
+        private AnalyticsDimensions $dimensions,
     ) {}
 
     public function key(): string
@@ -106,25 +110,10 @@ class DashboardReport extends ReportDefinition
     public function describeFilters(ReportContext $context): array
     {
         $filters = $this->filters($context);
-        $descriptions = [
-            'Incluye: '.match ($this->overview($context)['scope']) {
-                'all' => 'toda la organización',
-                'departments' => 'tus departamentos',
-                default => 'tus conversaciones',
-            },
-            "Periodo de tiempos y gráficas: {$filters->period->label()} ({$filters->period->timezone})",
-        ];
+        $descriptions = $this->describeAnalyticsFilters($filters->withoutStatus(), $context->actor, $this->overview($context)['scope']);
 
-        if ($filters->departmentId !== null) {
-            $descriptions[] = 'Departamento: '.Department::query()->whereKey($filters->departmentId)->value('name');
-        }
-
-        if ($filters->agentId !== null) {
-            $descriptions[] = 'Agente: '.User::query()->whereKey($filters->agentId)->withoutProtectedFor($context->actor)->value('name');
-        }
-
-        if ($filters->connectionId !== null) {
-            $descriptions[] = 'Conexión: '.Connection::query()->whereKey($filters->connectionId)->value('name');
+        if ($filters->status !== null) {
+            $descriptions[] = 'Estado actual (solo en las cifras del periodo, no en las cifras en vivo): '.(ConversationStatus::tryFrom($filters->status)?->label() ?? $filters->status);
         }
 
         return $descriptions;
@@ -189,7 +178,7 @@ class DashboardReport extends ReportDefinition
         $metrics = [
             new Metric('Pendientes', $conversations['pending'], $conversations['pending'] === null ? $unavailable : 'Esperan que alguien las acepte'.$live),
             new Metric('En atención', $conversations['active'], $conversations['active'] === null ? $unavailable : 'Con una persona responsable'.$live),
-            new Metric('Finalizadas hoy', $conversations['closed_today'], $conversations['closed_today'] === null ? $unavailable : "Desde las 00:00 ({$context->timezone})".$live),
+            new Metric('Finalizadas hoy', $conversations['closed_today'], $conversations['closed_today'] === null ? $unavailable : "Cerradas desde las 00:00 ({$context->timezone}) y que siguen cerradas".$live),
             new Metric(
                 'Primera respuesta (promedio)',
                 $average === null ? null : $this->duration($average),
@@ -199,6 +188,32 @@ class DashboardReport extends ReportDefinition
             ),
             new Metric('Recibidas en el periodo', $overview['received']['value'], $overview['received']['value'] === null ? $unavailable : 'Periodo anterior: '.number_format((int) $overview['received']['previous'])),
         ];
+
+        if ($overview['period'] !== null) {
+            $received = (int) $overview['received']['value'];
+            $resolved = (int) $overview['period']['resolved']['value'];
+            $metrics[] = new Metric('Atendidas (de las recibidas)', $overview['period']['attended']['value'], 'Aceptadas, asignadas por una persona o respondidas');
+            $metrics[] = new Metric('Finalizadas (de las recibidas)', $resolved, $received > 0 ? number_format($resolved / $received * 100, 1).' % de las recibidas en el periodo' : 'Sin solicitudes recibidas en el periodo');
+        }
+
+        $sla = $this->dashboardCharts($context)['sla'];
+
+        if ($sla !== null) {
+            $metrics[] = new Metric(
+                'Cumplimiento de SLA',
+                $this->spellRate($sla['totals']['rate']),
+                $sla['totals']['samples'] === 0
+                    ? 'Sin datos: ningún ciclo de respuesta con objetivo evaluado en el periodo'.($sla['available_since'] === null ? '' : " (registros desde {$sla['available_since']})")
+                    : number_format($sla['totals']['met']).' dentro y '.number_format($sla['totals']['breached']).' fuera del plazo (n = '.number_format($sla['totals']['samples']).')'.($sla['covers_period'] ? '' : " · disponible desde {$sla['available_since']}"),
+                ColumnType::Text,
+            );
+        }
+
+        $backlog = $this->dashboardCharts($context)['backlog'];
+
+        if ($backlog !== null) {
+            $metrics[] = new Metric('Acumuladas sin atender (ahora)', $backlog['now'], 'Sin atención humana ni cierre');
+        }
 
         if ($overview['departments'] !== null) {
             $metrics[] = new Metric('Agentes activos', $overview['agents']['active'], 'Cuentas y roles activos con permiso para atender conversaciones');
@@ -218,7 +233,7 @@ class DashboardReport extends ReportDefinition
 
         if ($charts['activity'] !== null) {
             $points = $charts['activity']['points'];
-            $unit = $this->unit($charts['activity']['granularity']);
+            $unit = $this->bucketUnit($charts['activity']['granularity']);
             $result[] = new Chart(
                 ChartType::Line,
                 'Actividad',
@@ -274,7 +289,48 @@ class DashboardReport extends ReportDefinition
                 'Tiempo de primera respuesta',
                 array_column($points, 'label'),
                 [new ChartSeries('Promedio (min)', array_map(fn (array $point): ?float => $point['first_response_seconds'] === null ? null : round($point['first_response_seconds'] / 60, 1), $points))],
-                'Promedio por '.$this->unit($charts['activity']['granularity']).' en minutos; los huecos son periodos sin respuestas medidas',
+                'Promedio por '.$this->bucketUnit($charts['activity']['granularity']).' en minutos; los huecos son periodos sin respuestas medidas',
+            );
+        }
+
+        if ($charts['sla'] !== null && $charts['sla']['totals']['samples'] > 0) {
+            $result[] = new Chart(
+                ChartType::Donut,
+                '¿Qué porcentaje cumplió el SLA?',
+                ['Dentro del plazo', 'Fuera del plazo'],
+                [new ChartSeries('Ciclos de respuesta', [$charts['sla']['totals']['met'], $charts['sla']['totals']['breached']])],
+                'Ciclos con objetivo iniciados en el periodo (n = '.number_format($charts['sla']['totals']['samples']).')',
+                [ReportPalette::status('closed'), ReportPalette::status('failed')],
+            );
+            $result[] = new Chart(
+                ChartType::Bar,
+                '¿Qué departamento acumula más retrasos?',
+                array_column($charts['sla']['by_department'], 'name'),
+                [new ChartSeries('Fuera del plazo', array_column($charts['sla']['by_department'], 'breached'))],
+                'Ciclos vencidos por el departamento que tenía la solicitud',
+            );
+        }
+
+        if ($charts['workload'] !== null && $charts['workload']['rows'] !== []) {
+            $result[] = new Chart(
+                ChartType::Bar,
+                '¿Quién tiene más solicitudes pendientes?',
+                array_column($charts['workload']['rows'], 'name'),
+                [
+                    new ChartSeries('En atención', array_column($charts['workload']['rows'], 'open')),
+                    new ChartSeries('Pendientes de aceptar', array_column($charts['workload']['rows'], 'pending')),
+                ],
+                'Asignadas ahora y sin cerrar (en vivo)',
+            );
+        }
+
+        if ($charts['categories'] !== null && $charts['categories'] !== []) {
+            $result[] = new Chart(
+                ChartType::Bar,
+                'Solicitudes por categoría',
+                array_column($charts['categories'], 'name'),
+                [new ChartSeries('Recibidas', array_column($charts['categories'], 'received'))],
+                'Recibidas en el periodo por categoría actual',
             );
         }
 
@@ -285,9 +341,9 @@ class DashboardReport extends ReportDefinition
                 array_column($charts['departments'], 'name'),
                 [
                     new ChartSeries('Recibidas', array_column($charts['departments'], 'received')),
-                    new ChartSeries('Resueltas', array_column($charts['departments'], 'resolved')),
+                    new ChartSeries('Finalizadas', array_column($charts['departments'], 'resolved')),
                 ],
-                'Recibidas y resueltas por departamento actual',
+                'Recibidas y finalizadas (de las recibidas) por departamento actual',
             );
         }
 
@@ -306,7 +362,7 @@ class DashboardReport extends ReportDefinition
             $sheets[] = new ReportSheet(
                 'Actividad',
                 [
-                    new Column('label', ucfirst($this->unit($charts['activity']['granularity'])), width: 14),
+                    new Column('label', ucfirst($this->bucketUnit($charts['activity']['granularity'])), width: 14),
                     new Column('received', 'Recibidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
                     new Column('attended', 'Atendidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
                     new Column('first_response', 'Primera respuesta (min)', ColumnType::Number, width: 18, decimals: 1),
@@ -364,13 +420,61 @@ class DashboardReport extends ReportDefinition
             );
         }
 
+        if ($charts['sla'] !== null) {
+            $sheets[] = new ReportSheet(
+                'SLA por departamento',
+                [
+                    new Column('name', 'Departamento', width: 24),
+                    new Column('met', 'Dentro del plazo', ColumnType::Number, width: 14, total: ColumnTotal::Sum),
+                    new Column('breached', 'Fuera del plazo', ColumnType::Number, width: 14, total: ColumnTotal::Sum),
+                    new Column('samples', 'Ciclos evaluados (n)', ColumnType::Number, width: 16, total: ColumnTotal::Sum),
+                    new Column('rate', 'Cumplimiento', ColumnType::Percent, width: 13),
+                ],
+                array_map(fn (array $row): array => [
+                    'name' => $row['name'],
+                    'met' => $row['met'],
+                    'breached' => $row['breached'],
+                    'samples' => $row['samples'],
+                    'rate' => $row['rate'] === null ? null : $row['rate'] / 100,
+                ], $charts['sla']['by_department']),
+                description: 'Ciclos de respuesta con objetivo iniciados en el periodo, por el departamento que tenía la solicitud.'.($charts['sla']['available_since'] === null ? ' Aún sin registros.' : " Registros desde {$charts['sla']['available_since']}."),
+            );
+        }
+
+        if ($charts['workload'] !== null) {
+            $sheets[] = new ReportSheet(
+                'Carga actual',
+                [
+                    new Column('name', 'Colaborador', width: 24),
+                    new Column('open', 'En atención', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                    new Column('pending', 'Pendientes de aceptar', ColumnType::Number, width: 16, total: ColumnTotal::Sum),
+                    new Column('overdue', 'Vencidas ahora', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                ],
+                $charts['workload']['rows'],
+                description: 'En vivo (no depende del periodo). En cola sin responsable: '.number_format($charts['workload']['unassigned']).'.',
+            );
+        }
+
+        if ($charts['categories'] !== null) {
+            $sheets[] = new ReportSheet(
+                'Por categoría',
+                [
+                    new Column('name', 'Categoría', width: 24),
+                    new Column('received', 'Recibidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                    new Column('attended', 'Atendidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                    new Column('resolved', 'Finalizadas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                ],
+                $charts['categories'],
+            );
+        }
+
         if ($charts['departments'] !== null) {
             $sheets[] = new ReportSheet(
                 'Por departamento',
                 [
                     new Column('name', 'Departamento', width: 24),
                     new Column('received', 'Recibidas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
-                    new Column('resolved', 'Resueltas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                    new Column('resolved', 'Finalizadas', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
                     new Column('first_response', 'Primera respuesta (min)', ColumnType::Number, width: 18, decimals: 1),
                 ],
                 array_map(fn (array $row): array => [
@@ -398,7 +502,9 @@ class DashboardReport extends ReportDefinition
     {
         return $query->visibleTo($actor)
             ->when($filters->agentId !== null, fn (Builder $query) => $query->where('conversations.assigned_user_id', $filters->agentId))
-            ->when($filters->connectionId !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters->connectionId));
+            ->when($filters->connectionId !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters->connectionId))
+            ->when($filters->categoryId !== null, fn (Builder $query) => $query->where('conversations.category_id', $filters->categoryId))
+            ->when($filters->channel !== null, fn (Builder $query) => $query->whereIn('conversations.connection_id', $this->dimensions->connectionsOf((string) $filters->channel)));
     }
 
     private function showsBreakdown(ReportContext $context): bool
@@ -421,18 +527,6 @@ class DashboardReport extends ReportDefinition
         }
 
         return intdiv($seconds, 3600).' h '.intdiv($seconds % 3600, 60).' min';
-    }
-
-    /**
-     * @param  'hour'|'day'|'month'  $granularity
-     */
-    private function unit(string $granularity): string
-    {
-        return match ($granularity) {
-            'hour' => 'hora',
-            'day' => 'día',
-            'month' => 'mes',
-        };
     }
 
     /**

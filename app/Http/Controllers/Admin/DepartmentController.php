@@ -26,6 +26,7 @@ use App\Services\BusinessHours;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
+use App\Services\ServiceRules;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -79,7 +80,7 @@ class DepartmentController extends Controller
      * operational configuration (welcome message, hours, connections, quick
      * replies and real conversation counts).
      */
-    public function show(Request $request, Department $department, SummarizeDepartmentConversations $summarizeConversations, PlatformSettings $settings): Response
+    public function show(Request $request, Department $department, SummarizeDepartmentConversations $summarizeConversations, PlatformSettings $settings, ServiceRules $serviceRules): Response
     {
         Gate::authorize('view', $department);
 
@@ -118,6 +119,7 @@ class DepartmentController extends Controller
             ],
             'distributionModes' => DistributionMode::options(),
             'automation' => $this->automation($department, $actor),
+            'serviceRules' => $serviceRules->describe($department, null),
             'can' => [
                 'update' => $actor->can('update', $department),
                 'delete' => $actor->can('delete', $department),

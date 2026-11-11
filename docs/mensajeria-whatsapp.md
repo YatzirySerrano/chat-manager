@@ -83,7 +83,11 @@ es único.
 - `messages` → mensajes entrantes y `statuses`; errores a nivel de cambio se registran como error de la conexión;
 - `message_template_status_update` / `message_template_quality_update` → plantillas;
 - `phone_number_quality_update`, `account_update` y otros → se guardan como avisos en `connections.provider_signals`;
-  bloqueos o restricciones de la cuenta marcan error en la conexión.
+  bloqueos o restricciones de la cuenta marcan error en la conexión, y el aviso de Meta de que la restricción terminó
+  (`phone_number_quality_update` `UNFLAGGED`, `account_update` `DISABLED_UPDATE` con `ban_info.waba_ban_state`
+  `REINSTATE`) lo resuelve (§2.9). Un cambio cuyo `field` se llame como una nota interna de la plataforma (prefijo
+  `platform.`, o `meta_authorization` / `token_refresh`) **se ignora** (`summary.ignored`): un cuerpo del proveedor
+  nunca puede escribir ni reemplazar esas notas.
 
 Al agotar los intentos el evento queda `failed` con un error saneado (sin el cuerpo ni datos SQL) y puede volver a
 encolarse con `php artisan whatsapp:maintenance retry-webhooks` (revisión manual). Si el trabajo de un evento se
@@ -157,8 +161,89 @@ Una conexión es un número de WhatsApp Business registrado en Meta (pantalla **
   responde 404. Una conexión restaurada vuelve **inactiva, con credenciales por verificar y sin la verificación del
   webhook ni la suscripción de la app** (se conserva el historial de tráfico). Al activarla sin credenciales
   verificadas el aviso es de advertencia, no de éxito.
-- Un problema de salud (`error`, `credentials_invalid`) notifica a quienes tienen permisos de conexiones
-  ([notificaciones-y-horarios.md](notificaciones-y-horarios.md)); la página Administración > Sistema permite probarla.
+- Un problema de salud (`error`, `credentials_invalid`) notifica a quienes tienen permisos de conexiones, y su
+  recuperación lo sustituye (§2.9; [notificaciones-y-horarios.md](notificaciones-y-horarios.md)); la página
+  Administración > Sistema permite probarla.
+- **Auditoría:** crear, actualizar, activar, desactivar, eliminar, restaurar, reemplazar y verificar credenciales
+  (aceptadas o rechazadas), revisar la suscripción y suscribir la app quedan en la bitácora (`connection.*`).
+
+### 2.8 Varios números en la misma app de Meta
+
+Cada conexión tiene su URL (§2.1), pero Meta admite **una** URL de devolución de llamada por app para WhatsApp. Con
+varios números hay dos configuraciones admitidas
+([ADR-META-12](decisiones.md#adr-meta-12--varios-números-bajo-la-misma-app-de-meta-reenrutar-solo-con-la-misma-app-comprobada)):
+
+| Configuración                                              | En Meta                                                                                                                                                                    | En la plataforma                                                                                                                                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Una URL para toda la app**                            | La URL de devolución de llamada de la app apunta a la URL de **una** de las conexiones (cualquiera), con el token de verificación de esa conexión.                         | Todas las conexiones de esa app guardan **el mismo App Secret**. Las entregas llegan a una sola URL y cada cambio se procesa en la conexión de su número.                                            |
+| **B. URL propia por número (anulación de la URL en Meta)** | Cada número (o cada cuenta de WhatsApp Business) tiene configurada en Meta su URL alternativa (_callback override_), con la URL y el token de verificación de su conexión. | Cada entrega llega a la URL de su conexión; no hace falta reenrutar. Si además la app conserva una URL general, el mismo cuerpo puede llegar dos veces: se guarda una sola vez (§2.4, idempotencia). |
+
+**Cómo se reparte una entrega** (`RouteWebhookChanges`, dentro del job; la petición HTTP no cambia):
+
+1. La firma se verifica con el App Secret de la conexión dueña de la URL (§2.3). Eso prueba de qué app viene.
+2. Un cambio `messages` (mensajes, estados, errores) es del número de `metadata.phone_number_id`; uno de plantillas o
+   de cuenta, de la cuenta `entry.id`.
+3. Si es de otra conexión, se procesa **en esa conexión** solo cuando comparte la app de forma comprobable: mismo App
+   Secret guardado (comparación en tiempo constante; nunca se registra ni se muestra), Meta App ID sin contradicción,
+   conexión no eliminada y misma cuenta de WhatsApp Business. Se aplican las reglas de siempre: una conexión pausada
+   guarda y no envía; una eliminada no guarda nada (§2.5).
+4. `last_webhook_at`, `last_inbound_at` y el resto de la evidencia se anotan en la conexión **dueña del número**. El
+   evento (`webhook_events`) queda en la conexión receptora, con `summary.rerouted`.
+5. Lo que no se puede atribuir (número sin conexión, conexión con otro App Secret, eliminada o con otra cuenta) **no se
+   guarda en ninguna conexión** y deja de ser silencioso: `summary.refused` y una advertencia en la conexión receptora
+   («Llegaron eventos de otro número (ID …) que no está registrado aquí»), visible en la lista y en la ficha durante
+   `whatsapp.monitoring.warning_days` (7) desde la última vez que llegó. Solo se guarda el identificador y el motivo.
+
+Si aparece esa advertencia: registra el número como conexión con el mismo App Secret (configuración A), configura su
+URL propia en Meta (B), o retira el número de la app si no debe atenderse aquí. Una app distinta siempre necesita su
+propia URL: nunca se reenruta entre apps.
+
+**Aislamiento de fallos.** Cada conexión de una entrega repartida se aplica por separado: si falla la de una (la
+receptora o una hermana), las demás y el registro de lo rechazado se procesan igual; al final el trabajo falla una vez
+para que la cola lo reintente. El reintento vuelve a aplicar el cuerpo completo sin duplicar nada: los mensajes son
+únicos por `wamid`, los estados y las plantillas no retroceden, la advertencia de lo no atribuible se guarda por
+identificador (no es un contador) y un error de conexión ya registrado desde la misma entrada no se registra de nuevo
+(no «reaparece» después de que el canal se recuperó). Lo único que se reescribe es la fecha del «último aviso» de un
+mismo aviso de cuenta o calidad.
+
+**Riesgo residual (bajo): el secreto se compara al procesar, no al recibir.** La comprobación de «misma app» usa el App
+Secret **actual** de la conexión receptora en el momento en que el trabajo procesa la entrega, no el que tenía cuando
+la firma se verificó en la petición. Solo importa si un administrador apunta una conexión a **otra** app de Meta
+(cambia su App Secret) mientras todavía hay entregas en cola firmadas con el secreto anterior: esas entregas se
+repartirían según la app nueva. **Recomendación operativa:** antes de sustituir el App Secret de una conexión, deja
+que la cola de webhooks se vacíe (Administración › Sistema: sin eventos pendientes; o pausa el webhook en Meta, espera
+y entonces cambia el secreto).
+
+### 2.9 Comprobación periódica y monitoreo
+
+`whatsapp:maintenance check-connections` corre cada 30 minutos (`routes/console.php`, sin solaparse) y vuelve a
+preguntar a Meta por las credenciales y la suscripción de las conexiones **activas y configuradas** (WhatsApp:
+`GET /{phone-number-id}` y `GET /{waba}/subscribed_apps`; Messenger e Instagram: la suscripción de la página o cuenta,
+[meta-messenger-instagram.md](meta-messenger-instagram.md)). Reglas
+([ADR-META-13](decisiones.md#adr-meta-13--comprobación-periódica-con-meta-y-evidencia-reciente-separada-de-la-histórica)):
+
+- como máximo `WHATSAPP_MONITORING_MAX_PER_RUN` (50) por corrida, primero las comprobadas hace más tiempo; un fallo en
+  una no detiene a las demás; si Meta limita las solicitudes la corrida termina y el resto espera a la siguiente;
+- **un rechazo de Meta** marca «Credenciales inválidas» y avisa una vez; **no poder comunicarse** (tiempo de espera,
+  5xx, límite de solicitudes) es «no se pudo comprobar»: no cambia credenciales, salud ni alertas;
+- **una verificación correcta solo resuelve lo que puede atestiguar**: un error de credenciales (o uno registrado sin
+  clase). Un aviso de calidad (`FLAGGED`), una restricción de la cuenta, un error a nivel de webhook o un envío
+  rechazado por Meta siguen siendo el estado actual aunque el token se acepte: se resuelven con evidencia real (un
+  envío aceptado, un mensaje recibido) o cuando Meta avisa que la restricción terminó. Lo mismo vale para la
+  verificación manual;
+- solo se audita cuando el estado cambia (actor «Sistema», `automatic: true`);
+- `--connection=ID` comprueba una sola conexión a mano.
+
+La lista de conexiones y la ficha muestran el **monitoreo consolidado** (`ConnectionMonitoring`, en
+`connection.monitoring`; nunca incluye secretos): estado de configuración, última verificación de credenciales, webhook,
+suscripción, último mensaje recibido, último envío, último error y advertencias operativas, solo con los apartados que
+aplican al canal. La **evidencia reciente** (comprobación o tráfico en los últimos `WHATSAPP_MONITORING_FRESH_MINUTES`, 90) y la **actividad histórica** se distinguen con texto e icono: «Comprobada hace 12 min» frente a «Sin comprobar desde
+hace 3 días»; lo antiguo nunca se presenta como conectado ahora. Un periodo sin mensajes es normal y no genera
+advertencias ni avisos.
+
+Cuando hay evidencia de recuperación (mensaje recibido o envío aceptado después del problema, aviso de Meta de que la
+restricción terminó, o verificación correcta si el problema era de credenciales), el aviso de problema se sustituye por «La conexión … se recuperó» (una vez por incidente, informativo) y el enlace
+lleva al diagnóstico de la conexión ([notificaciones-y-horarios.md](notificaciones-y-horarios.md)).
 
 ## 3. Mensajes entrantes
 
@@ -725,6 +810,12 @@ En la estabilización se añadieron: bloqueo por conexión al encolar, reintenta
 restaurada (`ConnectionDeletionTest`), señal `connection_changed` (`tests/Feature/Realtime/ConnectionChangeSignalTest.php`),
 orden y antigüedad de las actualizaciones de plantillas (`TemplateSyncTest`) y las ramas del simulador
 (`tests/Feature/Local/ManualValidationSimulatorTest.php`).
+
+Varias conexiones: `tests/Feature/Webhooks/SharedAppWebhookTest.php` (mensaje, estado, plantilla y aviso de cuenta de
+otro número de la misma app; la misma entrega en ambas URLs; otro App Secret, número desconocido, hermana pausada o
+eliminada; advertencia sin secretos ni contenido) y `tests/Feature/Connections/ConnectionMonitoringTest.php`
+(comprobación periódica: éxito, rechazo con un solo aviso, caída de Meta sin alarma, recuperación, límite por corrida,
+candado; monitoreo sin secretos y autorización).
 
 En la fase 5.2: `tests/Feature/Storage/*` (disco listo o no, escritura verificada, recuperación de descargas
 atascadas, consumidores del disco), `tests/Feature/Conversations/AttachmentAvailabilityTest.php` (archivo no

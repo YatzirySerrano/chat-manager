@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Log;
  * When the body arrived through a connection's own webhook URL, only the
  * messages addressed to that connection's phone number are accepted: the
  * payload's phone number id is never trusted to pick another connection.
+ * Messages of another number of the same Meta app reach this action already
+ * separated, through their own connection (RouteWebhookChanges).
  *
  * Connection policy: a deleted connection receives nothing (its history is
  * kept). A deactivated (not deleted) connection still stores customer

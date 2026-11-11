@@ -123,7 +123,12 @@ Los textos de `message` están en español y pueden cambiar: programa contra `co
 channel}`, `department {id, name} | null`, `contact {id, display_name, is_saved}` (`is_saved` es `false` mientras el cliente es un contacto provisional: alguien
 que escribió pero nadie ha guardado en el directorio de Contactos), `assigned_agent {id, name} | null` (desde la fase 5.1, una cuenta protegida del sistema llega como
 `{id: null, name: "Administración del sistema"}`: trata `id` como nullable),
+`category {id, name} | null`, `readiness` (`ready` | `needs_info`), `queued_at`,
 `last_message_at`, `created_at`, `updated_at`, `closed_at`. Nunca el teléfono, el correo ni las notas del contacto.
+
+`category`, `readiness` y `queued_at` son de **solo lectura** (reglas de la cola, [reglas-de-servicio.md](reglas-de-servicio.md#reglas-de-la-cola)):
+la categoría de la solicitud, si está «Lista para atención» o «Necesita información» y cuándo entró a la cola de listas
+(`null` mientras necesita información). La API no tiene operación para aceptar, confirmar ni clasificar conversaciones.
 
 Desde la fase 5.2 las conversaciones **importadas de Whaticket** (importadas o archivadas) nunca aparecen en la API:
 no se listan, no se incluyen en `updated_since` y pedirlas por id responde 404, igual que una conversación fuera de la
@@ -144,7 +149,9 @@ Lista: `{data: [...], meta: {next_cursor, prev_cursor, limit}}`. `limit` 1–100
 
 - **Conversaciones:** orden `updated_at` descendente, `id` descendente, con cursor opaco (`?cursor=` con
   `meta.next_cursor` o `meta.prev_cursor`). Filtros: `status` (`pending`, `open` o `closed`; `on_hold` responde 422 `validation_failed`), `connection_id`, `department_id`, `updated_since`
-  (ISO 8601, incluye ese instante). Para sincronizar, guarda el `updated_at` mayor que viste y pide
+  (ISO 8601, incluye ese instante). Con varias conexiones, cada conversación indica la suya en `connection {id, name,
+…}` y `connection_id` filtra por una; las conexiones permitidas al token salen en `GET /api/v1/me` (`connections`).
+  Para sincronizar, guarda el `updated_at` mayor que viste y pide
   `updated_since` con él. El recorrido no es una foto fija: una conversación que se actualiza mientras paginas salta
   por delante del cursor y no aparece en esa pasada, pero sí en la siguiente con `updated_since`.
 - **Conexiones eliminadas:** al eliminar una conexión de forma lógica, el token deja de alcanzar sus conversaciones y

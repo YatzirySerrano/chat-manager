@@ -2,6 +2,7 @@ import { router, useHttp, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
+import { syncServerClock } from '@/composables/useServerNow';
 import { useUserChannel } from '@/composables/useUserChannel';
 import { afterUserVisits } from '@/lib/realtime';
 import {
@@ -299,6 +300,9 @@ export function useNotificationCenter() {
             nextBeforeId.value = response.next_before_id;
             failed.value = false;
             loaded.value = true;
+            // Every page has the bell: its list keeps the shared countdown
+            // clock (SLA deadlines) anchored to the server.
+            syncServerClock(response.server_time);
 
             // A notification read elsewhere (another tab, or by the server
             // when the conversation left the user's reach) drops its toast.

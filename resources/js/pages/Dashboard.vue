@@ -3,29 +3,42 @@ import { Deferred, Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
     ArrowRight,
     Building2,
+    CheckCircle2,
     CircleCheck,
     Hourglass,
+    Inbox,
     MessageCircle,
     Timer,
     UserRoundCheck,
 } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
+import BacklogChart from '@/components/charts/BacklogChart.vue';
 import ChannelChart from '@/components/charts/ChannelChart.vue';
 import ChartCard from '@/components/charts/ChartCard.vue';
 import ChartDataTable from '@/components/charts/ChartDataTable.vue';
 import ChartLegend from '@/components/charts/ChartLegend.vue';
-import FirstResponseChart from '@/components/charts/FirstResponseChart.vue';
 import LineChart from '@/components/charts/LineChart.vue';
+import RankedBarsChart from '@/components/charts/RankedBarsChart.vue';
+import ResponseTrendChart from '@/components/charts/ResponseTrendChart.vue';
+import SlaComplianceChart from '@/components/charts/SlaComplianceChart.vue';
 import StatusChart from '@/components/charts/StatusChart.vue';
 import TeamBarsChart from '@/components/charts/TeamBarsChart.vue';
-import type { ChartTableColumn, LineSeries } from '@/components/charts/types';
+import type {
+    BarItem,
+    BarSeries,
+    ChartTableColumn,
+    LineSeries,
+} from '@/components/charts/types';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import AnalyticsFilterBar from '@/components/reports/AnalyticsFilterBar.vue';
+import GranularityToggle from '@/components/reports/GranularityToggle.vue';
+import HourHeatmap from '@/components/reports/HourHeatmap.vue';
 import KpiCard from '@/components/reports/KpiCard.vue';
 import SectionHeading from '@/components/SectionHeading.vue';
 import StatCard from '@/components/StatCard.vue';
 import StatusNote from '@/components/StatusNote.vue';
+import SurfaceCard from '@/components/SurfaceCard.vue';
 import {
     chartTokens,
     formatBucket,
@@ -35,10 +48,12 @@ import {
     granularityNoun,
 } from '@/composables/useChartTheme';
 import { usePermissions } from '@/composables/usePermissions';
+import { inboxLink } from '@/lib/analyticsLinks';
 import { dashboard } from '@/routes';
 import { index as connectionsIndex } from '@/routes/connections';
 import { index as reportsIndex } from '@/routes/reports';
 import type {
+    AnalyticsGranularity,
     AnalyticsOptions,
     AnalyticsPeriod,
     AnalyticsPreset,
@@ -108,6 +123,10 @@ function applyFilters(query: AnalyticsQuery): void {
     });
 }
 
+function changeGranularity(granularity: AnalyticsGranularity): void {
+    applyFilters({ ...props.filters, granularity });
+}
+
 const page = usePage();
 const { can } = usePermissions();
 
@@ -147,7 +166,27 @@ function plural(count: number, one: string, many: string): string {
     return `${formatNumber(count)} ${count === 1 ? one : many}`;
 }
 
-/* ---------- Activity and first response (one bucket per hour/day/month) */
+function count(value: number | null | undefined): string | null {
+    return value === null || value === undefined ? null : formatNumber(value);
+}
+
+function share(
+    part: number | null | undefined,
+    total: number | null | undefined,
+): string | undefined {
+    if (!part || !total) {
+        return undefined;
+    }
+
+    return `${formatPercent(part / total)} de las recibidas`;
+}
+
+/** Drill-down links only make sense for who can open the inbox. */
+const canOpenInbox = computed(() => can('conversations.view'));
+const statusFiltered = computed(() => props.filters?.status !== undefined);
+const comparisonLabel = computed(() => props.period?.comparison.label ?? '');
+
+/* ---------- Volume (one bucket per hour/day/week/month) */
 
 const activity = computed(() => props.charts?.activity ?? null);
 const granularity = computed(
@@ -217,22 +256,31 @@ const receivedTotal = computed(() => {
     const change = (received.value - received.previous) / received.previous;
 
     if (Math.abs(change) < 0.005) {
-        return `${text} · igual que el periodo anterior`;
+        return `${text} · igual que el periodo de comparación`;
     }
 
-    return `${text} · ${formatPercent(Math.abs(change))} ${change > 0 ? 'más' : 'menos'} que el periodo anterior`;
+    return `${text} · ${formatPercent(Math.abs(change))} ${change > 0 ? 'más' : 'menos'} que el periodo de comparación`;
 });
 
 const measuredTotal = computed(() =>
     props.overview && props.overview.first_response_samples > 0
-        ? `Medido en ${plural(props.overview.first_response_samples, 'conversación', 'conversaciones')}`
+        ? `Promedio de ${plural(props.overview.first_response_samples, 'solicitud medida', 'solicitudes medidas')} (n)`
         : undefined,
 );
 
-/* ---------- Team */
+const responseTotal = computed(() => {
+    const overview = props.overview;
 
-const agents = computed(() => props.charts?.agents ?? null);
-const departments = computed(() => props.charts?.departments ?? null);
+    if (!overview || overview.average_first_response_seconds === null) {
+        return undefined;
+    }
+
+    const current = `Promedio ${formatDuration(overview.average_first_response_seconds)} (n = ${formatNumber(overview.first_response_samples)})`;
+
+    return overview.previous_first_response_seconds === null
+        ? current
+        : `${current} · antes ${formatDuration(overview.previous_first_response_seconds)}`;
+});
 
 const lineLegend = computed(() =>
     activitySeries.value.map((series) => ({
@@ -242,6 +290,128 @@ const lineLegend = computed(() =>
         shape: 'line' as const,
     })),
 );
+
+/* ---------- Delays per department (response cycles past their deadline) */
+
+const sla = computed(() => props.charts?.sla ?? null);
+
+const delaySeries: BarSeries[] = [
+    {
+        key: 'breached',
+        name: 'Fuera del plazo',
+        color: 'var(--destructive)',
+    },
+];
+
+const delayItems = computed<BarItem[]>(() =>
+    (sla.value?.by_department ?? [])
+        .filter((row) => row.samples > 0)
+        .map((row, index) => ({
+            key: row.id === null ? `none-${index}` : String(row.id),
+            label: row.name,
+            values: [row.breached],
+            muted: row.id === null,
+        })),
+);
+
+const delayColumns: ChartTableColumn[] = [
+    { key: 'name', label: 'Departamento' },
+    { key: 'breached', label: 'Fuera del plazo', align: 'right' },
+    { key: 'met', label: 'Dentro del plazo', align: 'right' },
+    { key: 'samples', label: 'Evaluados (n)', align: 'right' },
+    {
+        key: 'rate',
+        label: 'Cumplimiento',
+        align: 'right',
+        format: (value) =>
+            typeof value === 'number'
+                ? `${formatNumber(value)} %`
+                : 'Sin datos',
+    },
+];
+
+const delayEmptyText = computed(() => {
+    if (!sla.value || sla.value.available_since === null) {
+        return 'El seguimiento de SLA comienza con esta versión: aún no hay registros.';
+    }
+
+    return sla.value.totals.samples === 0
+        ? 'Sin ciclos de respuesta evaluados en este periodo.'
+        : 'Ningún departamento tiene respuestas fuera del plazo en este periodo.';
+});
+
+/* ---------- Live workload per person */
+
+const workload = computed(() => props.charts?.workload ?? null);
+
+const workloadSeries: BarSeries[] = [
+    { key: 'open', name: 'En atención', color: chartTokens.primary },
+    {
+        key: 'pending',
+        name: 'Pendientes de aceptar',
+        color: chartTokens.secondary,
+    },
+];
+
+const workloadItems = computed<BarItem[]>(() =>
+    (workload.value?.rows ?? []).map((row, index) => ({
+        key: row.id === null ? `other-${index}` : String(row.id),
+        label: row.name,
+        values: [row.open, row.pending],
+        muted: row.id === null,
+        href:
+            canOpenInbox.value && row.id !== null
+                ? inboxLink(props.filters, { agent: row.id, status: 'active' })
+                : undefined,
+    })),
+);
+
+const workloadColumns: ChartTableColumn[] = [
+    { key: 'name', label: 'Colaborador' },
+    { key: 'open', label: 'En atención', align: 'right' },
+    { key: 'pending', label: 'Pendientes de aceptar', align: 'right' },
+    { key: 'overdue', label: 'Vencidas ahora', align: 'right' },
+];
+
+const workloadTotal = computed(() => {
+    if (!workload.value) {
+        return undefined;
+    }
+
+    const overdue =
+        workload.value.rows.reduce((sum, row) => sum + row.overdue, 0) +
+        workload.value.unassigned_overdue;
+
+    return `${plural(workload.value.unassigned, 'solicitud en cola sin responsable', 'solicitudes en cola sin responsable')} · ${plural(overdue, 'vencida ahora', 'vencidas ahora')}`;
+});
+
+/* ---------- Categories */
+
+const categorySeries: BarSeries[] = [
+    { key: 'received', name: 'Recibidas', color: chartTokens.primary },
+    { key: 'resolved', name: 'Finalizadas', color: chartTokens.secondary },
+];
+
+const categoryItems = computed<BarItem[]>(() =>
+    (props.charts?.categories ?? []).map((row) => ({
+        key: row.key,
+        label: row.name,
+        values: [row.received, row.resolved],
+        muted: row.id === null,
+    })),
+);
+
+const categoryColumns: ChartTableColumn[] = [
+    { key: 'name', label: 'Categoría' },
+    { key: 'received', label: 'Recibidas', align: 'right' },
+    { key: 'attended', label: 'Atendidas', align: 'right' },
+    { key: 'resolved', label: 'Finalizadas', align: 'right' },
+];
+
+/* ---------- Team */
+
+const agents = computed(() => props.charts?.agents ?? null);
+const departments = computed(() => props.charts?.departments ?? null);
 
 const showsTeam = computed(
     () => agents.value !== null || departments.value !== null,
@@ -256,17 +426,27 @@ const hasCharts = computed(
 );
 
 const loadingCards = [
-    { key: 'activity', title: 'Actividad', wide: true, shape: 'line' },
-    { key: 'channels', title: 'Por canal', wide: false, shape: 'bars' },
     {
-        key: 'statuses',
-        title: 'Estado de lo recibido',
+        key: 'response',
+        title: '¿Estamos respondiendo más rápido?',
+        wide: true,
+        shape: 'line',
+    },
+    {
+        key: 'sla',
+        title: '¿Qué porcentaje cumplió el SLA?',
         wide: false,
         shape: 'bars',
     },
     {
-        key: 'first-response',
-        title: 'Tiempo de primera respuesta',
+        key: 'delays',
+        title: '¿Qué departamento acumula más retrasos?',
+        wide: false,
+        shape: 'bars',
+    },
+    {
+        key: 'volume',
+        title: 'Volumen de solicitudes',
         wide: true,
         shape: 'line',
     },
@@ -318,7 +498,7 @@ const loadingCards = [
                     aria-label="Cargando indicadores"
                 >
                     <StatCard
-                        v-for="index in 4"
+                        v-for="index in 8"
                         :key="index"
                         label="Cargando…"
                         :value="null"
@@ -329,7 +509,7 @@ const loadingCards = [
 
             <div
                 v-if="overview"
-                class="flex flex-col gap-3 transition-opacity"
+                class="flex flex-col gap-(--section-gap) transition-opacity"
                 :class="{ 'opacity-60': refreshing }"
                 :aria-busy="refreshing || undefined"
             >
@@ -350,73 +530,155 @@ const loadingCards = [
                 </StatusNote>
 
                 <section
-                    aria-label="Cómo va la atención"
-                    class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                    data-tour="dashboard.kpis"
+                    aria-labelledby="live-heading"
+                    class="flex flex-col gap-3"
                 >
-                    <StatCard
-                        label="Pendientes"
-                        :icon="Hourglass"
-                        :value="overview.conversations.pending"
-                        hint="Esperan que alguien las acepte"
-                        :unavailable-label="conversationsUnavailable"
-                        data-kpi="pending"
-                    />
-                    <StatCard
-                        label="En atención"
-                        :icon="MessageCircle"
-                        :value="overview.conversations.active"
-                        hint="Con una persona responsable"
-                        :unavailable-label="conversationsUnavailable"
-                        data-kpi="active"
-                    />
-                    <StatCard
-                        label="Finalizadas hoy"
-                        :icon="CircleCheck"
-                        :value="overview.conversations.closed_today"
-                        hint="Desde las 00:00 de hoy"
-                        :unavailable-label="conversationsUnavailable"
-                        data-kpi="closed_today"
-                    />
-                    <KpiCard
-                        label="Primera respuesta (promedio)"
-                        :icon="Timer"
-                        :value="
-                            overview.average_first_response_seconds === null
-                                ? null
-                                : formatDuration(
-                                      overview.average_first_response_seconds,
-                                  )
+                    <SectionHeading
+                        id="live-heading"
+                        title="Ahora"
+                        :description="
+                            statusFiltered
+                                ? 'Estado de la bandeja en este momento. El filtro de estado no se aplica a estas cifras en vivo.'
+                                : 'Estado de la bandeja en este momento (no depende del periodo).'
                         "
-                        :current="overview.average_first_response_seconds"
-                        :previous="overview.previous_first_response_seconds"
-                        :previous-label="
-                            overview.previous_first_response_seconds === null
-                                ? null
-                                : formatDuration(
-                                      overview.previous_first_response_seconds,
-                                  )
-                        "
-                        better="lower"
-                        :hint="measuredTotal"
-                        :unavailable-label="
-                            overview.messaging_connected &&
+                    />
+                    <div
+                        class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+                        data-tour="dashboard.kpis"
+                    >
+                        <KpiCard
+                            label="Pendientes"
+                            :icon="Hourglass"
+                            :value="count(overview.conversations.pending)"
+                            live
+                            hint="Esperan que alguien las acepte"
+                            :unavailable-label="conversationsUnavailable"
+                            :href="
+                                canOpenInbox && overview.conversations.pending
+                                    ? inboxLink(filters, { status: 'pending' })
+                                    : undefined
+                            "
+                            data-kpi="pending"
+                        />
+                        <KpiCard
+                            label="En atención"
+                            :icon="MessageCircle"
+                            :value="count(overview.conversations.active)"
+                            live
+                            hint="Con una persona responsable"
+                            :unavailable-label="conversationsUnavailable"
+                            :href="
+                                canOpenInbox && overview.conversations.active
+                                    ? inboxLink(filters, { status: 'open' })
+                                    : undefined
+                            "
+                            data-kpi="active"
+                        />
+                        <KpiCard
+                            label="Finalizadas hoy"
+                            :icon="CircleCheck"
+                            :value="count(overview.conversations.closed_today)"
+                            live
+                            hint="Cerradas desde las 00:00 de hoy y que siguen cerradas"
+                            :unavailable-label="conversationsUnavailable"
+                            data-kpi="closed_today"
+                        />
+                    </div>
+                    <p
+                        v-if="
+                            overview.scope !== 'all' &&
                             overview.conversations_visible
-                                ? 'Sin respuestas medidas en el periodo'
-                                : conversationsUnavailable
                         "
-                        data-kpi="first_response"
-                    />
+                        class="text-xs text-muted-foreground"
+                    >
+                        Se cuentan las conversaciones que puedes ver en tu
+                        bandeja.
+                    </p>
                 </section>
-                <p
-                    v-if="
-                        overview.scope !== 'all' &&
-                        overview.conversations_visible
-                    "
-                    class="text-xs text-muted-foreground"
+
+                <section
+                    v-if="overview.period"
+                    aria-labelledby="period-heading"
+                    class="flex flex-col gap-3"
                 >
-                    Se cuentan las conversaciones que puedes ver en tu bandeja.
-                </p>
+                    <SectionHeading
+                        id="period-heading"
+                        title="Resultado del periodo"
+                        :description="`Solicitudes recibidas ${period?.label ?? ''}; cada una cuenta una sola vez. Comparado con ${period?.comparison.partial ? 'el mismo tramo transcurrido del periodo anterior' : 'el periodo anterior'} (${comparisonLabel}).`"
+                    />
+                    <div
+                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                        data-tour="dashboard.period-kpis"
+                    >
+                        <KpiCard
+                            label="Recibidas"
+                            :icon="Inbox"
+                            :value="count(overview.received.value)"
+                            :current="overview.received.value"
+                            :previous="overview.received.previous"
+                            hint="Solicitudes nuevas en el periodo"
+                            data-kpi="received"
+                        />
+                        <KpiCard
+                            label="Atendidas"
+                            :icon="UserRoundCheck"
+                            :value="count(overview.period.attended.value)"
+                            :current="overview.period.attended.value"
+                            :previous="overview.period.attended.previous"
+                            better="higher"
+                            :hint="
+                                share(
+                                    overview.period.attended.value,
+                                    overview.received.value,
+                                ) ??
+                                'De las recibidas: aceptadas, asignadas por una persona o respondidas'
+                            "
+                            data-kpi="attended"
+                        />
+                        <KpiCard
+                            label="Finalizadas"
+                            :icon="CheckCircle2"
+                            :value="count(overview.period.resolved.value)"
+                            :current="overview.period.resolved.value"
+                            :previous="overview.period.resolved.previous"
+                            better="higher"
+                            :hint="
+                                share(
+                                    overview.period.resolved.value,
+                                    overview.received.value,
+                                ) ??
+                                'De las recibidas: cerradas al menos una vez'
+                            "
+                            data-kpi="resolved"
+                        />
+                        <KpiCard
+                            label="Espera hasta la primera respuesta"
+                            :icon="Timer"
+                            :value="
+                                overview.average_first_response_seconds === null
+                                    ? null
+                                    : formatDuration(
+                                          overview.average_first_response_seconds,
+                                      )
+                            "
+                            :current="overview.average_first_response_seconds"
+                            :previous="overview.previous_first_response_seconds"
+                            :previous-label="
+                                overview.previous_first_response_seconds ===
+                                null
+                                    ? null
+                                    : formatDuration(
+                                          overview.previous_first_response_seconds,
+                                      )
+                            "
+                            better="lower"
+                            :hint="measuredTotal"
+                            unavailable-label="Sin datos: ninguna respuesta medida en el periodo"
+                            data-kpi="first_response"
+                        />
+                    </div>
+                </section>
+
                 <StatusNote
                     v-if="!overview.conversations_visible"
                     title="Tu rol no incluye conversaciones"
@@ -433,7 +695,7 @@ const loadingCards = [
         <Deferred v-if="canViewMetrics" data="charts">
             <template #fallback>
                 <section class="flex flex-col gap-3" aria-busy="true">
-                    <SectionHeading title="Actividad del periodo" />
+                    <SectionHeading title="Tiempos y cumplimiento" />
                     <div class="grid gap-3 lg:grid-cols-3">
                         <ChartCard
                             v-for="card in loadingCards"
@@ -448,17 +710,17 @@ const loadingCards = [
             </template>
 
             <div
+                v-if="charts && hasCharts"
                 class="flex flex-col gap-(--section-gap) transition-opacity"
                 :class="{ 'opacity-60': refreshing }"
             >
                 <section
-                    v-if="hasCharts"
-                    aria-labelledby="activity-heading"
+                    aria-labelledby="times-heading"
                     class="flex flex-col gap-3"
                 >
                     <SectionHeading
-                        id="activity-heading"
-                        title="Actividad del periodo"
+                        id="times-heading"
+                        title="Tiempos y cumplimiento"
                         :description="period?.label"
                     >
                         <template v-if="canViewReports" #actions>
@@ -474,53 +736,172 @@ const loadingCards = [
                     </SectionHeading>
 
                     <div class="grid grid-flow-dense gap-3 lg:grid-cols-3">
+                        <ResponseTrendChart
+                            v-if="charts.response_trend"
+                            class="lg:col-span-2"
+                            :trend="charts.response_trend"
+                            :total="responseTotal"
+                            :previous-label="period?.previous.label ?? ''"
+                            storage-key="dashboard.response-trend"
+                            data-tour="dashboard.response-trend"
+                        />
+                        <SlaComplianceChart
+                            v-if="sla"
+                            :sla="sla"
+                            :status-filtered="statusFiltered"
+                            storage-key="dashboard.sla"
+                            data-tour="dashboard.sla"
+                        />
+                        <RankedBarsChart
+                            v-if="sla"
+                            class="lg:col-span-3"
+                            title="¿Qué departamento acumula más retrasos?"
+                            description="Respuestas fuera del plazo en el periodo, por el departamento que tenía la solicitud"
+                            :items="delayItems"
+                            :series="delaySeries"
+                            :columns="delayColumns"
+                            :rows="sla.by_department"
+                            :empty-text="delayEmptyText"
+                            storage-key="dashboard.delays"
+                            data-chart="delays"
+                        />
+                    </div>
+                </section>
+
+                <section
+                    aria-labelledby="load-heading"
+                    class="flex flex-col gap-3"
+                >
+                    <SectionHeading
+                        id="load-heading"
+                        title="Carga de trabajo"
+                        description="Qué hay pendiente y en manos de quién."
+                    />
+                    <div class="grid gap-3 lg:grid-cols-2">
+                        <RankedBarsChart
+                            v-if="workload"
+                            title="¿Quién tiene más solicitudes pendientes?"
+                            :description="`Solicitudes asignadas ahora y sin cerrar, en vivo${statusFiltered ? ' (el filtro de estado no se aplica)' : ''}. El nombre abre su lista en la bandeja.`"
+                            :total="workloadTotal"
+                            :items="workloadItems"
+                            :series="workloadSeries"
+                            :columns="workloadColumns"
+                            :rows="workload.rows"
+                            empty-text="Nadie tiene solicitudes asignadas en este momento"
+                            storage-key="dashboard.workload"
+                            data-tour="dashboard.workload"
+                            data-chart="workload"
+                        />
+                        <BacklogChart
+                            v-if="charts.backlog"
+                            :backlog="charts.backlog"
+                            :status-filtered="statusFiltered"
+                            storage-key="dashboard.backlog"
+                        />
+                    </div>
+                </section>
+
+                <section
+                    aria-labelledby="demand-heading"
+                    class="flex flex-col gap-3"
+                >
+                    <SectionHeading
+                        id="demand-heading"
+                        title="Demanda"
+                        description="Cuánto llega y cuándo."
+                    />
+                    <div class="grid gap-3 lg:grid-cols-2">
                         <ChartCard
                             v-if="activity"
-                            class="lg:col-span-2"
-                            title="Actividad"
-                            :description="`Conversaciones recibidas y atendidas (de las recibidas) por ${noun}`"
+                            title="¿Cuántas solicitudes llegan y cuántas atendemos?"
+                            :description="`Solicitudes recibidas y atendidas (de las recibidas) por ${noun}`"
                             :total="receivedTotal"
                             :empty="activityEmpty"
-                            empty-text="Sin conversaciones recibidas en este periodo"
+                            empty-text="Sin solicitudes recibidas en este periodo"
                             storage-key="dashboard.activity"
                             data-tour="dashboard.activity"
                             data-chart="activity"
                         >
+                            <template
+                                v-if="period && granularity !== 'hour'"
+                                #actions
+                            >
+                                <GranularityToggle
+                                    :value="period.granularity"
+                                    :options="period.granularities"
+                                    @change="changeGranularity"
+                                />
+                            </template>
                             <LineChart
                                 :labels="bucketLabels"
                                 :series="activitySeries"
-                                :description="`Conversaciones recibidas y atendidas por ${noun}. ${receivedTotal ?? ''}`"
+                                :description="`Solicitudes recibidas y atendidas por ${noun}. ${receivedTotal ?? ''}`"
                             />
                             <template #legend>
                                 <ChartLegend :items="lineLegend" />
                             </template>
                             <template #table>
                                 <ChartDataTable
-                                    caption="Conversaciones recibidas y atendidas"
+                                    caption="Solicitudes recibidas y atendidas"
                                     :columns="activityColumns"
                                     :rows="bucketRows"
                                 />
                             </template>
                         </ChartCard>
 
+                        <SurfaceCard
+                            v-if="charts.heatmap"
+                            title="¿En qué horario llegan más solicitudes?"
+                            description="Solicitudes recibidas en el periodo por día de la semana y hora"
+                            body-class="p-4 sm:p-5"
+                            data-chart="heatmap"
+                        >
+                            <HourHeatmap
+                                v-if="charts.heatmap.max > 0"
+                                :cells="charts.heatmap.cells"
+                                :max="charts.heatmap.max"
+                            />
+                            <p
+                                v-else
+                                class="py-8 text-center text-sm text-muted-foreground"
+                            >
+                                Sin solicitudes recibidas en este periodo.
+                            </p>
+                        </SurfaceCard>
+                    </div>
+                </section>
+
+                <section
+                    aria-labelledby="mix-heading"
+                    class="flex flex-col gap-3"
+                >
+                    <SectionHeading
+                        id="mix-heading"
+                        title="Distribución"
+                        description="De qué tipo son las solicitudes del periodo, por dónde llegan y cómo están hoy."
+                    />
+                    <div class="grid gap-3 lg:grid-cols-3">
+                        <RankedBarsChart
+                            v-if="charts.categories"
+                            title="¿Qué piden más los clientes?"
+                            description="Solicitudes recibidas y finalizadas por categoría actual; las menos frecuentes se agrupan en «Otros»"
+                            :items="categoryItems"
+                            :series="categorySeries"
+                            :columns="categoryColumns"
+                            :rows="charts.categories"
+                            empty-text="Sin solicitudes recibidas en este periodo"
+                            storage-key="dashboard.categories"
+                            data-chart="categories"
+                        />
                         <ChannelChart
-                            v-if="charts?.channels"
+                            v-if="charts.channels"
                             :channels="charts.channels"
                             storage-key="dashboard.channels"
                         />
-
                         <StatusChart
-                            v-if="charts?.statuses"
+                            v-if="charts.statuses"
                             :statuses="charts.statuses"
                             storage-key="dashboard.statuses"
-                        />
-
-                        <FirstResponseChart
-                            v-if="activity"
-                            class="lg:col-span-2"
-                            :activity="activity"
-                            :total="measuredTotal"
-                            storage-key="dashboard.first-response"
                         />
                     </div>
                 </section>
@@ -533,14 +914,14 @@ const loadingCards = [
                     <SectionHeading
                         id="team-heading"
                         title="Equipo"
-                        description="Los que más conversaciones recibieron; el resto se agrupa en «Otros»."
+                        description="Solicitudes del periodo según su responsable y su departamento actuales; el resto se agrupa en «Otros». La productividad de cada persona está en Reportes."
                     />
                     <div class="grid gap-3 lg:grid-cols-2">
                         <TeamBarsChart
                             v-if="agents"
-                            title="Atención por agente"
-                            description="Recibidas y atendidas por agente responsable (actual o último)"
-                            dimension="Agente"
+                            title="Cartera por responsable actual"
+                            description="Recibidas y atendidas según quién es hoy (o fue al cerrar) su responsable"
+                            dimension="Responsable actual"
                             :rows="agents"
                             second="attended"
                             storage-key="dashboard.agents"
@@ -549,8 +930,8 @@ const loadingCards = [
                         />
                         <TeamBarsChart
                             v-if="departments"
-                            title="Por departamento"
-                            description="Recibidas y resueltas por departamento actual"
+                            title="Comparativo por departamento"
+                            description="Recibidas y finalizadas (de las recibidas) por departamento actual"
                             dimension="Departamento"
                             :rows="departments"
                             second="resolved"

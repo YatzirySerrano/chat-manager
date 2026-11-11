@@ -147,7 +147,7 @@ const current = () =>
                     :message="form.errors.max_open_conversations_per_agent"
                 />
             </div>
-            <div class="flex justify-end gap-2">
+            <div class="flex flex-wrap justify-end gap-2">
                 <Button
                     type="button"
                     variant="outline"

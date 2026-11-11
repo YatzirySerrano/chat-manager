@@ -385,10 +385,33 @@ export type PlatformSettings = {
         /** Minutes a customer may wait before the control applies. */
         pending_block_after_minutes: number;
     };
-    /** Optional service level objectives in minutes of business time; null = no objective. */
+    /**
+     * Platform level of the service rules (see App\\Services\\ServiceRules).
+     * Objectives in minutes; null = no objective.
+     */
     sla: {
         first_response_minutes: number | null;
         resolution_minutes: number | null;
+        /** Objective for the answer to each later customer message. */
+        response_minutes: number | null;
+        /** Share of the deadline consumed at which a request is «próxima a vencer». */
+        warning_percent: number;
+        /** Count only business time. */
+        business_hours_only: boolean;
+    };
+    /** «Solicitud completa / Lista para atención». */
+    intake: { confirmation_required: boolean };
+    /** Minimum wait in the ready queue and order of attention. */
+    queue: { min_wait_minutes: number; chronological_order: boolean };
+    /** Automatic SLA alerts (platform only). */
+    sla_alerts: {
+        agent_warning: boolean;
+        agent_breach: boolean;
+        supervisor_warning: boolean;
+        supervisor_breach: boolean;
+        /** Minutes between reminders of a breached request; null = no reminders. */
+        reminder_minutes: number | null;
+        reminder_limit: number;
     };
 };
 
@@ -411,9 +434,15 @@ export type DashboardOverview = {
     previous_first_response_seconds: number | null;
     first_response_samples: number;
     received: { value: number | null; previous: number | null };
+    /** Report definitions over the conversations received in the period (null without conversations). */
+    period: {
+        attended: { value: number | null; previous: number | null };
+        resolved: { value: number | null; previous: number | null };
+        closed_in_period: { value: number | null; previous: number | null };
+    } | null;
     trend: { label: string; received: number }[];
-    /** Per hour for a period of one day, otherwise per day or month. */
-    trend_granularity: 'hour' | 'day' | 'month';
+    /** Per hour for a period of one day, otherwise per day, week or month. */
+    trend_granularity: 'hour' | 'day' | 'week' | 'month';
     /** Active accounts with an active role able to attend (no manual availability). */
     agents: { active: number | null };
     departments: { active: number; total: number } | null;

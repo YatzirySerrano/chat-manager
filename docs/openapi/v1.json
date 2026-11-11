@@ -1112,6 +1112,9 @@
                     "department",
                     "contact",
                     "assigned_agent",
+                    "category",
+                    "readiness",
+                    "queued_at",
                     "last_message_at",
                     "created_at",
                     "updated_at",
@@ -1182,6 +1185,28 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "category": {
+                        "type": ["object", "null"],
+                        "description": "Categoría de la solicitud (solo lectura). null cuando no está clasificada.",
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "readiness": {
+                        "type": "string",
+                        "description": "Preparación de la solicitud (solo lectura): ready = lista para atención, needs_info = necesita información. Solo restringe la cola donde la regla de confirmación está activa.",
+                        "enum": ["ready", "needs_info"]
+                    },
+                    "queued_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time",
+                        "description": "Cuándo entró a la cola de solicitudes listas (solo lectura). null mientras necesita información."
                     },
                     "last_message_at": {
                         "type": ["string", "null"],

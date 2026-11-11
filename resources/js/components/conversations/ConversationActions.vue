@@ -2,9 +2,12 @@
 import { router, useHttp } from '@inertiajs/vue3';
 import {
     ArrowLeftRight,
+    CircleCheck,
+    CircleHelp,
     EllipsisVertical,
     Hand,
     RotateCcw,
+    ShieldAlert,
     Undo2,
     UserPlus,
     XCircle,
@@ -17,6 +20,11 @@ import {
 } from '@/components/conversations/acceptBlock';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import ConversationRouteDialog from '@/components/conversations/ConversationRouteDialog.vue';
+import {
+    noQueueActions,
+    QUEUE_ACTIONS,
+    useAcceptance,
+} from '@/components/conversations/queueRules';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -28,6 +36,7 @@ import {
     conversationActionErrorMessage,
     conversationActionFailure,
     conversationConflictFromErrors,
+    queueConflictFromErrors,
     withoutConflictCode,
 } from '@/lib/conversations/actionErrors';
 import {
@@ -49,6 +58,11 @@ import type { ConversationSummary, TransferOptions } from '@/types';
  * so a decision taken on stale data is rejected by the server. A refusal
  * because the conversation changed meanwhile (409, actionErrors.ts) closes
  * the dialog and shows the explanation over the fresh state.
+ *
+ * Queue rules: «Aceptar» stays disabled while the request cannot be taken
+ * (the reason is shown as text under the header, AcceptanceNotice), and the
+ * menu offers the readiness change and the justified exception to whoever
+ * may; both dialogs belong to the inbox page (QUEUE_ACTIONS).
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -72,8 +86,22 @@ function closeDialogsForConflict(message: string): void {
     toast.error(message);
 }
 
+/**
+ * A queue rule refused an assignment or transfer and the viewer may justify
+ * an exception: the route dialog asks for the reason.
+ */
+const queueException = ref<{ rule: string } | null>(null);
+
 function showFirstError(bag: Record<string, string>): void {
     const conflict = conversationConflictFromErrors(bag);
+    const queueConflict = queueConflictFromErrors(bag);
+
+    queueException.value =
+        queueConflict?.overridable && routeDialog.value !== null
+            ? { rule: queueConflict.code }
+            : queueException.value !== null && bag.override_reason
+              ? queueException.value
+              : null;
 
     if (conflict) {
         closeDialogsForConflict(conflict.message);
@@ -235,6 +263,7 @@ async function loadRouteOptions(): Promise<void> {
 
 function openRouteDialog(mode: 'assign' | 'transfer'): void {
     errors.value = {};
+    queueException.value = null;
     transferOptions.value = undefined;
     routeDialog.value = mode;
     void loadRouteOptions();
@@ -245,6 +274,7 @@ function submitRoute(payload: {
     user_id: number | null;
     reason: string;
     confirm_over_capacity: boolean;
+    override_reason?: string;
 }): void {
     if (routeDialog.value === 'assign') {
         operate(
@@ -252,6 +282,9 @@ function submitRoute(payload: {
             {
                 user_id: payload.user_id,
                 confirm_over_capacity: payload.confirm_over_capacity,
+                ...(payload.override_reason
+                    ? { override_reason: payload.override_reason }
+                    : {}),
             },
             () => (routeDialog.value = null),
         );
@@ -270,26 +303,38 @@ type Action = {
     destructive?: boolean;
     disabled?: boolean;
     hint?: string;
+    /** Id of the visible text that explains why it is disabled. */
+    describedBy?: string;
 };
 
 /* Disabled with the reason while customers wait too long for the viewer. */
 const acceptBlock = inject(ACCEPT_BLOCK, noAcceptBlock);
+const queueActions = inject(QUEUE_ACTIONS, noQueueActions);
+const acceptance = useAcceptance(() => props.conversation);
 
 /** The main next step, shown as a button. */
 const primary = computed<Action[]>(() => {
     const actions: Action[] = [];
 
     if (can.value.accept) {
-        const blocked = acceptBlock.value?.blocked === true;
+        const blocked =
+            acceptBlock.value?.blocked === true || acceptance.value.blocked;
 
         actions.push({
             key: 'accept',
             label: 'Aceptar',
             icon: Hand,
             hint: blocked
-                ? (acceptBlock.value?.message ?? undefined)
+                ? (acceptance.value.text ??
+                  acceptBlock.value?.message ??
+                  undefined)
                 : 'Hacerte responsable de esta conversación',
             disabled: blocked,
+            describedBy:
+                acceptance.value.blocked &&
+                acceptance.value.code !== 'pending_attention'
+                    ? `acceptance-chat-${id.value}`
+                    : undefined,
             run: () => operate(accept.url(id.value)),
         });
     }
@@ -329,6 +374,32 @@ const secondary = computed<Action[]>(() => {
         });
     }
 
+    if (can.value.confirm_ready && props.conversation.readiness) {
+        const needsInfo = props.conversation.readiness.value === 'needs_info';
+
+        actions.push({
+            key: 'readiness',
+            label: needsInfo
+                ? 'Confirmar solicitud completa'
+                : 'Marcar que necesita información',
+            icon: needsInfo ? CircleCheck : CircleHelp,
+            run: () =>
+                queueActions.readiness(
+                    props.conversation,
+                    needsInfo ? 'ready' : 'needs_info',
+                ),
+        });
+    }
+
+    if (can.value.accept && acceptance.value.overridable) {
+        actions.push({
+            key: 'override',
+            label: 'Aceptar con una excepción',
+            icon: ShieldAlert,
+            run: () => queueActions.override(props.conversation),
+        });
+    }
+
     if (can.value.release) {
         actions.push({
             key: 'release',
@@ -365,6 +436,8 @@ const secondary = computed<Action[]>(() => {
             size="sm"
             class="pointer-coarse:h-10"
             :disabled="processing || action.disabled"
+            :aria-describedby="action.describedBy"
+            :data-conversation-action="action.key"
             :title="action.hint"
             @click="action.run"
         >
@@ -390,6 +463,7 @@ const secondary = computed<Action[]>(() => {
                     :key="action.key"
                     :variant="action.destructive ? 'destructive' : 'default'"
                     class="pointer-coarse:min-h-11"
+                    :data-conversation-action="action.key"
                     @select="action.run"
                 >
                     <component :is="action.icon" aria-hidden="true" />
@@ -426,6 +500,7 @@ const secondary = computed<Action[]>(() => {
             :processing="processing"
             :reason-required="transferReasonRequired"
             :errors="errors"
+            :queue-exception="queueException"
             @submit="submitRoute"
         />
     </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LucideIcon } from '@lucide/vue';
 import { ArrowDownRight, ArrowUpRight, Minus } from '@lucide/vue';
+import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { formatPercent } from '@/composables/useChartTheme';
 
@@ -27,6 +28,12 @@ const props = withDefaults(
         unavailableLabel?: string;
         /** `compact` (default) for metric rows; `default` for a roomier card. */
         size?: 'compact' | 'default';
+        /** A live figure has no previous period: no comparison line at all. */
+        live?: boolean;
+        /** Drill-down: the list behind the figure (shown as a link under it). */
+        href?: string;
+        /** Text of the drill-down link. */
+        hrefLabel?: string;
     }>(),
     {
         current: null,
@@ -37,6 +44,9 @@ const props = withDefaults(
         icon: undefined,
         unavailableLabel: 'Sin datos suficientes',
         size: 'compact',
+        live: false,
+        href: undefined,
+        hrefLabel: 'Ver en la bandeja',
     },
 );
 
@@ -164,7 +174,7 @@ const previousText = computed(
             </span>
         </p>
         <p
-            v-else-if="previous === null && value !== null"
+            v-else-if="!live && previous === null && value !== null"
             class="text-xs text-muted-foreground"
         >
             Sin datos del periodo anterior
@@ -182,5 +192,13 @@ const previousText = computed(
         >
             {{ hint }}
         </p>
+        <Link
+            v-if="href"
+            :href="href"
+            class="mt-auto self-start pt-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+            data-kpi-link
+        >
+            {{ hrefLabel }}
+        </Link>
     </div>
 </template>

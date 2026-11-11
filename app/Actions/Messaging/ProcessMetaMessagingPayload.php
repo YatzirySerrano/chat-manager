@@ -144,7 +144,11 @@ class ProcessMetaMessagingPayload
         ], fn (?string $value): bool => $value !== null));
 
         if ($action === 'block') {
-            $this->monitor->failure($connection, 'Meta bloqueó el envío de mensajes de esta página por incumplir sus políticas de mensajería. Revisa el aviso en la Bandeja de entrada de Meta Business Suite.');
+            $this->monitor->failure($connection, 'Meta bloqueó el envío de mensajes de esta página por incumplir sus políticas de mensajería. Revisa el aviso en la Bandeja de entrada de Meta Business Suite.', ConnectionMonitor::ERROR_POLICY);
+        }
+
+        if ($action === 'unblock') {
+            $this->monitor->restrictionLifted($connection, ConnectionMonitor::ERROR_POLICY);
         }
 
         $summary['ignored']++;

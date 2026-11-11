@@ -236,7 +236,7 @@ test('the export contains the same figures as the screen, within the viewer reac
     $html = app(PdfRenderer::class)->html($definition, $context);
 
     expect($html)->toContain('<h1>Reporte operativo</h1>')
-        ->toContain('Desempeño por agente')
+        ->toContain('Cartera por responsable actual')
         ->not->toContain('Carla Soporte');
 });
 
@@ -343,8 +343,8 @@ test('the PDF keeps the totals with the last rows and totals every section like 
     $tails = preg_match_all('#<tbody class="table-end">(.*?)</tbody>#s', $html, $matches);
 
     expect($html)->not->toContain('<tfoot')
-        // Main table, "Por departamento" and "Por conexión".
-        ->and($tails)->toBe(3);
+        // Main table, "Por departamento", "Productividad", "Por categoría" and "Por conexión".
+        ->and($tails)->toBe(5);
 
     foreach ($matches[1] as $tail) {
         expect($tail)->toContain('<tr class="row')

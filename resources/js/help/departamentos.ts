@@ -3,12 +3,13 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Departamentos',
     objective:
-        'Organiza a los equipos y define quién atiende cada tipo de conversación: sus miembros, la forma de distribuir conversaciones, el límite de carga, el horario y los mensajes automáticos.',
+        'Organiza a los equipos y define quién atiende cada tipo de conversación: sus miembros, la forma de distribuir conversaciones, el límite de carga, el horario, los mensajes automáticos y las reglas de servicio propias.',
     mainActions: [
         'Crear, editar, eliminar y restaurar departamentos.',
         'Agregar y retirar miembros (supervisores y agentes).',
         'Elegir la distribución: bandeja compartida, asignación manual o automática.',
         'Definir el límite de conversaciones por agente, el horario de operación y los mensajes automáticos.',
+        'Personalizar las reglas de servicio del departamento: tiempos máximos de respuesta (SLA), confirmación de solicitud completa, espera mínima y orden de atención.',
         'Consultar sus métricas, la atención en este momento y las conexiones asociadas.',
     ],
     workflow: [
@@ -49,6 +50,16 @@ const help: ModuleHelp = {
                 '«Horario de la plataforma» o «Horario propio» por día, con apertura y cierre o «Cerrado».',
         },
         {
+            name: 'Reglas de servicio',
+            description:
+                'Cada regla muestra «Usa el valor general: X» o «Valor propio». «Personalizar» fija un valor solo para este departamento; «Usar el valor general» vuelve a heredar el de Configuración. Una categoría de solicitud con valor propio tiene prioridad sobre el departamento.',
+        },
+        {
+            name: 'Cuándo aplica un cambio de reglas',
+            description:
+                'Los tiempos máximos (SLA) se aplican a las solicitudes nuevas y las que están en curso conservan su plazo; la espera mínima y el orden de atención se aplican de inmediato a la cola; la confirmación de solicitud completa solo afecta a las solicitudes nuevas.',
+        },
+        {
             name: 'Mensajes automáticos',
             description:
                 'Bienvenida y Fuera de horario (hasta 1024 caracteres). Tienen prioridad sobre los de la conexión; vacíos usan los de la conexión.',
@@ -68,7 +79,7 @@ const help: ModuleHelp = {
     permissions: [
         '«Ver departamentos»: si tu rol no ve toda la organización, solo ves los departamentos a los que perteneces.',
         '«Crear departamentos» y «Eliminar y restaurar departamentos» requieren un rol que vea toda la organización.',
-        '«Editar departamentos» incluye horario, distribución y mensajes; «Administrar miembros» se otorga aparte.',
+        '«Editar departamentos» incluye horario, distribución, mensajes y reglas de servicio; «Administrar miembros» se otorga aparte.',
     ],
     commonErrors: [
         {
@@ -95,6 +106,7 @@ const help: ModuleHelp = {
     tips: [
         'Retirar a un miembro devuelve a «Pendientes» sus conversaciones abiertas en ese departamento.',
         'Cambiar la forma de distribución nunca quita conversaciones ya asignadas.',
+        'Los cambios de reglas de servicio quedan en la Auditoría con el valor anterior y el nuevo de cada regla.',
     ],
     examples: [
         'Soporte con asignación automática y límite de 8 conversaciones por agente.',

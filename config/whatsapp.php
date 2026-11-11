@@ -78,6 +78,26 @@ return [
         'reconcile_after_minutes' => (int) (env('WHATSAPP_RECONCILE_AFTER_MINUTES') ?: 15),
     ],
 
+    /*
+    | Automatic check of the active connections against Meta (credentials and
+    | webhook subscription; `whatsapp:maintenance check-connections`, every
+    | 30 minutes in routes/console.php). One or two Graph API reads per
+    | connection and run.
+    */
+    'monitoring' => [
+        // Connections checked per run at most, the ones checked longest ago first.
+        'max_per_run' => (int) (env('WHATSAPP_MONITORING_MAX_PER_RUN') ?: 50),
+
+        // A verification or traffic newer than this is "recent evidence"; older
+        // evidence is shown as history, never as the current state. Three
+        // scheduled runs: one missed run does not turn a healthy connection stale.
+        'fresh_minutes' => (int) (env('WHATSAPP_MONITORING_FRESH_MINUTES') ?: 90),
+
+        // Warnings about content of unregistered numbers are shown this long
+        // after the last time it arrived.
+        'warning_days' => 7,
+    ],
+
     'templates' => [
         'page_size' => 100,
         'max_pages' => 50,

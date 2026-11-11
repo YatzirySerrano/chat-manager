@@ -63,6 +63,7 @@ class ConversationController extends Controller
     private const RELATIONS = [
         'channelConnection:id,name,channel',
         'department:id,name',
+        'category:id,name',
         'contact:id,name,saved_at',
         'assignee:id,name',
     ];

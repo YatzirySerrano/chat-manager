@@ -20,6 +20,7 @@ const loaders = {
     contactos: () => import('./contactos'),
     importacion: () => import('./importacion'),
     etiquetas: () => import('./etiquetas'),
+    categorias: () => import('./categorias'),
     'respuestas-rapidas': () => import('./respuestas-rapidas'),
     plantillas: () => import('./plantillas'),
     conexiones: () => import('./conexiones'),
@@ -33,6 +34,7 @@ const loaders = {
     integraciones: () => import('./integraciones'),
     sistema: () => import('./sistema'),
     historial: () => import('./historial'),
+    atencion: () => import('./atencion'),
 } satisfies Record<string, () => Promise<{ default: ModuleHelp }>>;
 
 export type ModuleHelpKey = keyof typeof loaders;

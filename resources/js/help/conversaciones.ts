@@ -25,6 +25,41 @@ const help: ModuleHelp = {
     ],
     fields: [
         {
+            name: 'Indicador de SLA: En tiempo, Por vencer, Vencida',
+            description:
+                'Aparece en la lista, en el encabezado del chat y en «Detalles» mientras el cliente espera la respuesta de una persona y existe un tiempo máximo de respuesta. Muestra cuánto falta o cuánto se excedió; al pasar el cursor o enfocarlo verás el tiempo transcurrido, la fecha límite, el objetivo que aplica y si solo cuenta el horario de atención. El plazo se fija cuando el cliente escribe y no cambia aunque la conversación se reasigne o cambien las reglas. Solo la respuesta de una persona lo detiene: los mensajes automáticos, las notas y marcar como leído no cuentan.',
+        },
+        {
+            name: 'Necesita información / Lista para atención',
+            description:
+                'Preparación de la solicitud, independiente de su estado. Donde el departamento o la categoría exige confirmar la solicitud como completa, una conversación nueva nace como «Necesita información» y no puede tomarse hasta que alguien con el permiso la confirma («Confirmar solicitud completa», en el menú de la fila o en «Más acciones»). «Marcar que necesita información» la devuelve, indicando qué falta. El cliente puede seguir escribiendo y no se pierde nada del historial.',
+        },
+        {
+            name: 'Disponible para atención en 02:35',
+            description:
+                'Tiempo mínimo de espera en la cola: la cuenta regresiva indica cuándo podrás aceptar la solicitud. «Aceptar» se habilita solo al llegar a cero. El tiempo cuenta desde que la solicitud entró a la cola de listas (al llegar, al confirmarse como completa o al volver a «Pendientes»).',
+        },
+        {
+            name: 'Orden de llegada',
+            description:
+                'Si tu departamento atiende en orden de llegada, solo puedes aceptar la primera solicitud lista de su cola. En las demás verás «Existe una solicitud anterior que debe atenderse primero.» y el botón «Ir a la solicitud que puedes tomar». Las solicitudes de otros departamentos, las que necesitan información y las que siguen en su tiempo de espera no cuentan.',
+        },
+        {
+            name: 'Hacer una excepción',
+            description:
+                'Solo para quien tiene el permiso de hacer excepciones a las reglas de la cola: permite aceptar una solicitud saltándose la confirmación, el tiempo de espera o el orden, siempre con un motivo. Queda en el historial de la conversación y en la auditoría. No omite tu límite de conversaciones ni el control de conversaciones pendientes de atención.',
+        },
+        {
+            name: 'Categoría de la solicitud',
+            description:
+                'Tipo de solicitud (por ejemplo «Facturación»). Se muestra en la fila y se elige en «Detalles»; puede cambiarla el responsable de la conversación o quien asigna o confirma solicitudes. Una categoría puede tener sus propias reglas de servicio. Filtra la bandeja por categoría o por preparación desde «Filtros».',
+        },
+        {
+            name: 'Vista previa',
+            description:
+                'Mantén presionada una fila, haz clic derecho o elige «Vista previa» en su menú: verás el mensaje inicial, los mensajes recientes, cuándo se recibió, su área y categoría, si es nueva, pendiente, en proceso o finalizada, sus archivos y si está disponible para atención. No marca nada como leído ni cambia la conversación.',
+        },
+        {
             name: 'Bandeja general',
             description:
                 'Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.',

@@ -17,7 +17,10 @@ use Illuminate\Support\Facades\Cache;
  *     appearance: array{palette: string},
  *     business_hours: array{enabled: bool, days: array<string, BusinessDay>, holidays: list<Holiday>},
  *     operations: array{default_department_id: int|null, max_open_conversations_per_agent: int|null, auto_close_after_hours: int|null, transfer_reason_required: bool, pending_block_enabled: bool, pending_block_after_minutes: int},
- *     sla: array{first_response_minutes: int|null, resolution_minutes: int|null},
+ *     sla: array{first_response_minutes: int|null, resolution_minutes: int|null, response_minutes: int|null, warning_percent: int, business_hours_only: bool},
+ *     intake: array{confirmation_required: bool},
+ *     queue: array{min_wait_minutes: int, chronological_order: bool},
+ *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  * }
  */
 class PlatformSettings
@@ -104,6 +107,11 @@ class PlatformSettings
 
         if ($changes !== []) {
             Cache::forget(self::CACHE_KEY);
+
+            // The service rules memoize the platform values they resolved.
+            if (app()->resolved(ServiceRules::class)) {
+                app(ServiceRules::class)->flush();
+            }
         }
 
         return $changes;
@@ -147,11 +155,35 @@ class PlatformSettings
                 'pending_block_enabled' => true,
                 'pending_block_after_minutes' => 10,
             ],
-            // Optional service level objectives of the reports, in minutes
-            // of business time; null = no objective (no compliance figure).
+            // Platform level of the service rules (App\Services\ServiceRules is
+            // the single reader: departments and categories may override
+            // them). Objectives are in minutes; null = no objective (no
+            // deadline and no compliance figure).
             'sla' => [
                 'first_response_minutes' => null,
                 'resolution_minutes' => null,
+                'response_minutes' => null,
+                'warning_percent' => 80,
+                'business_hours_only' => true,
+            ],
+            // «Solicitud completa / Lista para atención».
+            'intake' => [
+                'confirmation_required' => false,
+            ],
+            // Minimum wait in the ready queue and order of attention.
+            'queue' => [
+                'min_wait_minutes' => 0,
+                'chronological_order' => false,
+            ],
+            // Automatic SLA alerts (platform only): who is notified, and the
+            // reminders of breached requests (null = no reminders).
+            'sla_alerts' => [
+                'agent_warning' => true,
+                'agent_breach' => true,
+                'supervisor_warning' => false,
+                'supervisor_breach' => true,
+                'reminder_minutes' => null,
+                'reminder_limit' => 3,
             ],
         ];
     }

@@ -156,6 +156,15 @@ cuerpos de mensaje, teléfonos, texto de notas ni nombres de archivo.
 | `team-chat.threads.{id}`                          | `.typing`                              | `{user_id}` (lo pone el servidor)                               | `POST team-chat/threads/{id}/typing`: única señal síncrona, emitida en la propia petición y protegida con `rescue`             |
 | `presence-team`, `presence-team.departments.{id}` | presencia (`here`/`joining`/`leaving`) | `{id}`                                                          | Canales de presencia del chat interno (ver [chat-interno.md](chat-interno.md#tiempo-real))                                     |
 
+**SLA.** Un incumplimiento registra el evento `sla_breached` de la conversación y viaja como cualquier otro cambio
+(`ConversationChanged` → `.conversation.changed` y `.inbox.changed` con `reason: sla_breached`), de modo que las
+bandejas y el «Monitoreo de SLA» de «Seguimiento de atención» se refrescan solos. Esa página escucha `.inbox.changed`
+en los canales de bandeja del usuario con `useLiveReload` (respaldo cada 30 s) además de su sondeo de siempre. Los
+contadores de tiempo (semáforo de SLA) **no usan señales ni peticiones**: avanzan en el navegador con el reloj
+compartido `useServerNow()`, anclado a la hora del servidor que entregan la bandeja, «Seguimiento de atención»
+(`serverTime`) y la lista de notificaciones (`server_time`). El paso a «Por vencer» no emite señal: el navegador lo
+deduce de `warn_at`. Ver [reglas-de-servicio.md «SLA y alertas»](reglas-de-servicio.md#sla-y-alertas).
+
 La señal `connection_changed` se emite al activar, desactivar, eliminar, restaurar, verificar o reemplazar las
 credenciales de una conexión y cuando cambia su salud; el chat abierto recarga su estado y el compositor se bloquea o
 desbloquea sin recargar la página.

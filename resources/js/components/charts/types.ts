@@ -45,6 +45,8 @@ export type BarItem = {
     color?: string;
     /** Rendered muted (e.g. «Sin agente», «Otros»). */
     muted?: boolean;
+    /** Drill-down: where the list behind this bar can be opened (its label becomes a link). */
+    href?: string;
 };
 
 export type BarSeries = { key: string; name: string; color?: string };

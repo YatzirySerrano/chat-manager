@@ -448,6 +448,57 @@ env E2E_PORT=8130 TEST_DB_LOCK_WAIT=3600 php tests/e2e/run.php chat-interno-apar
   `php.ini` (2M/8M), `chat-interno-avisos` 14/14 y `chat-interno-apariencia` 25/25.
 - Solo Chromium (Playwright): Safari, Firefox y móviles reales no se verificaron.
 
+### 6.7 Escenarios de reglas de servicio, SLA e indicadores
+
+Comprueban en el navegador lo descrito en [reglas-de-servicio.md](reglas-de-servicio.md),
+[bandejas-y-asignacion.md](bandejas-y-asignacion.md) y [reportes-y-exportaciones.md](reportes-y-exportaciones.md).
+Las reglas se activan **desde la interfaz** (Configuración, ficha del departamento, Categorías); los clientes escriben
+por el webhook simulado y cada paso se contrasta con la base (`*-seed.php state|figures`).
+
+| Escenario                  | Qué comprueba                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `categorias-y-reglas.mjs`  | Catálogo de categorías (vacío, crear, nombre obligatorio, duplicado sin distinguir mayúsculas, editar, eliminar con confirmación, filtro «Eliminados», restaurar), reglas propias de una categoría y de un departamento («Usa el valor general: …» frente a «Valor propio», validación de rango, «Descartar», volver a heredar), los cuatro bloques de Configuración con su validación, auditoría de cada cambio y agente sin permiso (sin menú, 403 en páginas y en la escritura directa). Semilla de solo lectura `categorias-y-reglas-seed.php`                                                                                |
+| `reglas-cola.mjs`          | Con E2E Ana (agente) y E2E Sofía (supervisora): orden de llegada (la posterior se rechaza con motivo visible y `409 queue_order`, «Ir a la solicitud que puedes tomar»), excepción con motivo obligatorio (evento, auditoría y pantalla de Auditoría), espera mínima con cuenta regresiva que habilita «Aceptar» sin recargar, «Solicitud completa» (insignia, bloqueo, confirmar y devolver con motivo), categoría desde el panel de detalles y filtro por categoría, y la vista previa (mensaje inicial, fecha, departamento, categoría, estado, archivos, disponibilidad; no marca como leído). Semilla `reglas-cola-seed.php` |
+| `sla.mjs`                  | Objetivo configurado en la interfaz → mensaje del cliente → «En tiempo» en la fila, el encabezado y el panel de detalles → «Por vencer» por sí solo → `sla:evaluate` → campana «SLA automático» → «Vencida» (evento y auditoría) → campanas de agente y supervisión → «Monitoreo de SLA» (contadores, fila, filtros en la URL, historial de incumplimientos, glosario) → la respuesta del agente lo resuelve. El paso del tiempo se simula moviendo el ciclo de respuesta (`reglas-cola-seed.php sla-age`)                                                                                                                        |
+| `reportes-indicadores.mjs` | Panel y Reportes **sin datos** (estados vacíos, sin «NaN», «undefined», «Invalid Date» ni «null») y con seis solicitudes creadas con las acciones reales: cifras iguales a las del servidor, filtros de categoría y estado, pestañas (ratón y flechas, `#hash`), granularidad día/semana/mes, cumplimiento de SLA, botón de exportar según la pestaña, descarga de `.xlsx` y PDF no vacíos y agente de alcance personal que solo ve su fila. Semilla `reportes-indicadores-seed.php`                                                                                                                                              |
+| `conexiones-monitoreo.mjs` | Bloque de monitoreo de Conexiones: «Comprobada hace…» frente a «Sin comprobar desde…», «Con un problema sin resolver», «Sin evidencia todavía», número de advertencias, el nivel mostrado igual al de `ConnectionMonitoring::for()`, lista en teléfono, ancla `#diagnostico` con las advertencias escritas y agente sin acceso. Semilla `conexiones-monitoreo-seed.php` (evidencia registrada con la fábrica; nada se consulta a Meta)                                                                                                                                                                                            |
+
+```bash
+env E2E_PORT=8172 TEST_DB_LOCK_WAIT=7200 php tests/e2e/run.php categorias-y-reglas.mjs
+env E2E_PORT=8174 WHATSAPP_TRANSPORT=simulated TEST_DB_LOCK_WAIT=7200 php tests/e2e/run.php reglas-cola.mjs
+env E2E_PORT=8176 WHATSAPP_TRANSPORT=simulated QUEUE_CONNECTION=sync TEST_DB_LOCK_WAIT=7200 \
+  php tests/e2e/run.php sla.mjs
+env E2E_PORT=8178 WHATSAPP_TRANSPORT=simulated QUEUE_CONNECTION=sync TEST_DB_LOCK_WAIT=7200 \
+  php tests/e2e/run.php reportes-indicadores.mjs
+env E2E_PORT=8180 TEST_DB_LOCK_WAIT=7200 php tests/e2e/run.php conexiones-monitoreo.mjs
+```
+
+- Ninguno necesita Reverb: las actualizaciones se leen al recargar. Las alertas de SLA en vivo siguen cubiertas por
+  Pest (`tests/Feature/Sla`).
+- Comprobaciones comunes (`lib.mjs`): `clean()` hace fallar un paso con cualquier error de consola, excepción o promesa
+  rechazada sin capturar o respuesta 5xx; `domGarbage()` busca valores rotos en el texto y en los textos accesibles;
+  `dialogKeyboard()` recorre un diálogo con Tab y Mayús+Tab (foco atrapado), lo cierra con Escape y exige que el foco
+  vuelva a su botón; `notColorAlone()` exige texto e ícono en cada estado; `layoutSweep()` mide cada pantalla nueva de
+  320 a 1440 px en claro y oscuro con `layoutMatrix` (las tablas de datos pueden desplazarse dentro de su caja,
+  `allowTableScroll`); `savePlatformRules()` cambia las reglas generales con los controles reales.
+- Escenarios anteriores ajustados a la interfaz reorganizada, sin relajar sus comprobaciones: `graficas.mjs` mide el
+  hueco de la primera respuesta en «¿Estamos respondiendo más rápido?» (`response-trend`, «Sin datos» en la tabla) y
+  abre la pestaña «Desgloses» de Reportes para los canales y el desglose por agente; `diseno.mjs` recorre también
+  «Seguimiento de atención», «Monitoreo de SLA» y «Categorías de solicitud» (27 páginas).
+- Resultados (2026-11-10, en serie con el candado, contra el servidor de Vite en marcha): `categorias-y-reglas` 40/40,
+  `reglas-cola` 45/45, `sla` 34/34, `reportes-indicadores` 37/37 y `conexiones-monitoreo` 27/27. Regresión: `atencion`
+  25/25, `bandeja-general` 10/10, `filtros` 44/44, `graficas` 39/39, `tours` 32/32, `supervision` 12/12,
+  `estabilizacion` 17/17, `toast-oscuro` 12/12, `chat-interno-avisos` 16/16 (una primera pasada dio 15/16: el aviso
+  de pertenencia al grupo llegó durante el paso que cuenta la campana; no se repitió) y `diseno` 24/24.
+- Defectos de interfaz que encontraron y se corrigieron: Mayús+Tab sobre el ícono de ayuda de un campo sacaba el foco
+  de un diálogo modal (`FieldHelp.vue`); la insignia de SLA del encabezado del chat era un botón dentro de otro botón
+  y no se veía a 320 px (ahora es la variante de texto, con el detalle en el panel); el evento «Objetivo de respuesta
+  incumplido» se leía como un traslado («Ana → Pendientes»); los filtros de «Monitoreo de SLA» se desbordaban a
+  1024 px; las pestañas de Reportes quedaban fuera de pantalla en teléfonos; la lista de Conexiones no mostraba la
+  evidencia en teléfonos; y dos desbordes a 320 px (vista «Conversaciones de mis departamentos» y botones de
+  «Distribución» del departamento).
+- Solo Chromium (Playwright): Safari, Firefox y móviles reales no se verificaron.
+
 ## 7. Carga y resistencia
 
 La batería `tests/load/run.php` (Apache + PHP-FPM o servidor integrado, workers con la distribución de Supervisor,

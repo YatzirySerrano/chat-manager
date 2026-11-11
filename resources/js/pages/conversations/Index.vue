@@ -16,6 +16,12 @@ import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import ConversationPreview from '@/components/conversations/ConversationPreview.vue';
 import InboxList from '@/components/conversations/InboxList.vue';
+import QueueOverrideDialog from '@/components/conversations/QueueOverrideDialog.vue';
+import {
+    nextAvailability,
+    QUEUE_ACTIONS,
+} from '@/components/conversations/queueRules';
+import ReadinessDialog from '@/components/conversations/ReadinessDialog.vue';
 import { useConversationAccept } from '@/components/conversations/useConversationAccept';
 import {
     forgetSettledStatuses,
@@ -33,6 +39,7 @@ import {
 import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
+import { syncServerClock, useServerNow } from '@/composables/useServerNow';
 import {
     inboxChannelNames,
     userChannelName,
@@ -50,8 +57,10 @@ import type {
     ConversationDetails,
     ConversationFilters,
     ConnectionChannel,
+    ConversationCategoryRef,
     ConversationInbox,
     ConversationList,
+    ConversationReadinessValue,
     ConversationStatusValue,
     ConversationSummary,
     ConversationTimelinePage,
@@ -100,6 +109,10 @@ const props = defineProps<{
     transferReasonRequired: boolean;
     /** Control of new conversations for the viewer (null: they cannot accept). */
     acceptBlock?: AcceptBlock | null;
+    /** The server's clock when the list was read: anchors every countdown. */
+    serverTime?: string | null;
+    /** Active request categories (filter and details panel). */
+    categories?: ConversationCategoryRef[];
 }>();
 
 /** Props of the list (left panel). */
@@ -110,6 +123,7 @@ const LIST_PROPS = [
     'inbox',
     'unreadCount',
     'acceptBlock',
+    'serverTime',
 ];
 /** Props a live change refreshes in the list. */
 const LIVE_LIST_PROPS = [
@@ -117,6 +131,7 @@ const LIVE_LIST_PROPS = [
     'counts',
     'unreadCount',
     'acceptBlock',
+    'serverTime',
 ];
 /** Props of the selected conversation (center and right panels). */
 const SELECTION_PROPS = [
@@ -462,6 +477,101 @@ watch(() => acceptBlock.value?.next_change_at ?? null, scheduleAcceptBlock, {
 onScopeDispose(() => acceptBlockTimer && clearTimeout(acceptBlockTimer));
 
 /*
+ * One clock for the countdowns (minimum wait, SLA): the server's, which
+ * arrives with every read of the list (the first page and "load more").
+ */
+watch(() => props.serverTime, syncServerClock, { immediate: true });
+watch(
+    () => more.value?.server_time,
+    (time) => syncServerClock(time),
+);
+
+/*
+ * Minimum wait: rows count down by themselves; when the next one becomes
+ * available the list is read once more (same pattern as the control of
+ * pending conversations), so «Aceptar» follows what the server says
+ * without polling.
+ */
+const serverNow = useServerNow();
+let availabilityTimer: ReturnType<typeof setTimeout> | null = null;
+let availabilityAt: string | null = null;
+
+function scheduleAvailability(at: string | null): void {
+    if (at === availabilityAt && availabilityTimer !== null) {
+        return;
+    }
+
+    if (availabilityTimer) {
+        clearTimeout(availabilityTimer);
+        availabilityTimer = null;
+    }
+
+    availabilityAt = at;
+
+    if (!at) {
+        return;
+    }
+
+    const remaining = new Date(at).getTime() - serverNow.value + 1_000;
+
+    availabilityTimer = setTimeout(
+        () => {
+            availabilityTimer = null;
+
+            if (remaining > 3_600_000) {
+                scheduleAvailability(at);
+
+                return;
+            }
+
+            availabilityAt = null;
+            liveList.schedule();
+
+            // The open conversation shows the same countdown in its header.
+            if (
+                props.conversation?.acceptance?.available_at &&
+                props.conversation.status === 'pending'
+            ) {
+                router.reload({ only: ['conversation'] });
+            }
+        },
+        Math.min(Math.max(remaining, 1_000), 3_600_000),
+    );
+}
+
+watch(
+    () =>
+        nextAvailability(
+            props.conversation
+                ? [...list.value.data, props.conversation]
+                : list.value.data,
+            // Read when the rows change; the timer does the waiting.
+            0,
+        ),
+    scheduleAvailability,
+    { immediate: true },
+);
+
+onScopeDispose(() => availabilityTimer && clearTimeout(availabilityTimer));
+
+/*
+ * Queue rules: the dialogs of the justified exception and of the readiness
+ * change live here, once, and every row and the chat header open them.
+ */
+const overrideTarget = ref<ConversationSummary | null>(null);
+const readinessTarget = ref<{
+    conversation: ConversationSummary;
+    readiness: ConversationReadinessValue;
+} | null>(null);
+
+provide(QUEUE_ACTIONS, {
+    override: (conversation) => (overrideTarget.value = conversation),
+    readiness: (conversation, readiness) =>
+        (readinessTarget.value = { conversation, readiness }),
+    open: (id) => select(id),
+});
+
+/*
  * Preview from the list (long press, right click, «Vista previa»): it only
  * reads, so the row keeps its unread counter and nothing is selected.
  */
@@ -658,6 +768,7 @@ function onAliasSaved(): void {
                 :unread-count="unreadCount"
                 :filter-options="filterOptions"
                 :tags="tags"
+                :categories="categories ?? []"
                 :can-see-unrouted="canSeeUnrouted"
                 :can-see-closed="canSeeClosed"
                 :can-export="canExport"
@@ -731,6 +842,7 @@ function onAliasSaved(): void {
                 :conversation="conversation"
                 :window="window"
                 :details="details"
+                :categories="categories ?? []"
                 :contact-url="contactUrl"
                 @close="toggleDetails"
                 @select="select"
@@ -755,6 +867,7 @@ function onAliasSaved(): void {
                     :conversation="conversation"
                     :window="window"
                     :details="details"
+                    :categories="categories ?? []"
                     :contact-url="contactUrl"
                     @close="sheetDetailsOpen = false"
                     @select="
@@ -772,6 +885,17 @@ function onAliasSaved(): void {
             :unread="previewRow?.unread_count ?? 0"
             @close="previewTarget = null"
             @open="openFromPreview"
+        />
+
+        <QueueOverrideDialog
+            :conversation="overrideTarget"
+            @close="overrideTarget = null"
+            @accepted="mobilePane = 'chat'"
+        />
+
+        <ReadinessDialog
+            :target="readinessTarget"
+            @close="readinessTarget = null"
         />
 
         <AliasDialog

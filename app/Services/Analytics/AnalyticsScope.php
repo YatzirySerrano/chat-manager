@@ -2,12 +2,15 @@
 
 namespace App\Services\Analytics;
 
+use App\Enums\ConnectionChannel;
 use App\Enums\DataScope;
 use App\Enums\Permission;
 use App\Models\Connection;
+use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\User;
 use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
+use Illuminate\Contracts\Database\Query\Expression;
 
 /**
  * Which operational figures a user may aggregate, by the data scope of the
@@ -28,9 +31,10 @@ class AnalyticsScope
      * @template TBuilder of QueryBuilder
      *
      * @param  TBuilder  $query
+     * @param  string|Expression  $agentColumn  Column (or expression) naming the person the row belongs to.
      * @return TBuilder
      */
-    public function apply(QueryBuilder $query, User $user, string $agentColumn, string $departmentColumn): QueryBuilder
+    public function apply(QueryBuilder $query, User $user, string|Expression $agentColumn, string $departmentColumn): QueryBuilder
     {
         match ($user->dataScope()) {
             DataScope::Global => null,
@@ -142,5 +146,41 @@ class AnalyticsScope
             ->get(['id', 'name'])
             ->map(fn (Connection $connection): array => ['id' => $connection->id, 'name' => $connection->name])
             ->all());
+    }
+
+    /**
+     * Request categories anyone may filter by: the catalog is not
+     * restricted by reach (deleted ones stay, they still classify history).
+     *
+     * @return list<array{id: int, name: string}>
+     */
+    public function categoryOptions(): array
+    {
+        return array_values(ConversationCategory::query()
+            ->orderByDesc('is_active')
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get(['id', 'name', 'is_active'])
+            ->map(fn (ConversationCategory $category): array => [
+                'id' => $category->id,
+                'name' => $category->is_active ? $category->name : "{$category->name} (eliminada)",
+            ])
+            ->all());
+    }
+
+    /**
+     * Channels the user may filter by: the ones of the connections within
+     * reach.
+     *
+     * @return list<array{id: string, name: string}>
+     */
+    public function channelOptions(User $user): array
+    {
+        $channels = Connection::query()->visibleTo($user)->toBase()->distinct()->pluck('channel')->all();
+
+        return array_values(array_map(
+            fn (ConnectionChannel $channel): array => ['id' => $channel->value, 'name' => $channel->label()],
+            array_filter(ConnectionChannel::cases(), fn (ConnectionChannel $channel): bool => in_array($channel->value, $channels, true)),
+        ));
     }
 }

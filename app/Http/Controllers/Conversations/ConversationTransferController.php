@@ -45,7 +45,7 @@ class ConversationTransferController extends ConversationOperationController
             ? $this->destinationAgent($request->integer('user_id'), $request->user(), $department ?? $conversation->department)
             : null;
 
-        $transfer->handle($conversation, $department, $agent, $request->user(), $request->reason(), $request->version(), $request->confirmsOverCapacity());
+        $transfer->handle($conversation, $department, $agent, $request->user(), $request->reason(), $request->version(), $request->confirmsOverCapacity(), $request->overrideReason());
 
         $destination = $agent->name ?? "«Pendientes» de {$department?->name}";
 

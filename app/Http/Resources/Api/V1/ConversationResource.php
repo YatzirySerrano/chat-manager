@@ -46,6 +46,14 @@ class ConversationResource extends JsonResource
             'assigned_agent' => $this->assignee === null ? null : (app(ProtectedAccounts::class)->hides($this->assignee, null)
                 ? ['id' => null, 'name' => ProtectedAccounts::SYSTEM_NAME]
                 : ['id' => $this->assignee->id, 'name' => $this->assignee->name]),
+            // Read-only: the request type and its preparation for the queue
+            // (docs/reglas-de-servicio.md). The API has no accept operation.
+            'category' => $this->category === null ? null : [
+                'id' => $this->category->id,
+                'name' => $this->category->name,
+            ],
+            'readiness' => $this->readiness->value,
+            'queued_at' => $this->queued_at?->toIso8601String(),
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

@@ -25,11 +25,23 @@ final readonly class AnalyticsPeriod
      */
     public const DAILY_LIMIT_DAYS = 92;
 
+    /**
+     * Granularities a viewer may ask for (ISO weeks, Monday first).
+     */
+    public const GRANULARITIES = ['day', 'week', 'month'];
+
+    /**
+     * @param  CarbonImmutable|null  $asOf  Moment the period was resolved at; while it falls inside the
+     *                                      period, the period is still in progress (see comparison()).
+     * @param  string|null  $grain  Granularity asked by the viewer (null = automatic).
+     */
     public function __construct(
         public string $preset,
         public CarbonImmutable $from,
         public CarbonImmutable $to,
         public string $timezone,
+        public ?CarbonImmutable $asOf = null,
+        public ?string $grain = null,
     ) {}
 
     /**
@@ -51,7 +63,43 @@ final readonly class AnalyticsPeriod
             default => [$today->subDays(29), $today->addDay()],
         };
 
-        return new self(in_array($preset, self::PRESETS, true) ? $preset : self::DEFAULT_PRESET, $start, $end, $timezone);
+        return new self(in_array($preset, self::PRESETS, true) ? $preset : self::DEFAULT_PRESET, $start, $end, $timezone, $now);
+    }
+
+    /**
+     * The same period charted with another granularity.
+     */
+    public function withGrain(?string $grain): self
+    {
+        return new self($this->preset, $this->from, $this->to, $this->timezone, $this->asOf, in_array($grain, self::GRANULARITIES, true) ? $grain : null);
+    }
+
+    /**
+     * Whether the period has not finished yet at the moment it was resolved.
+     */
+    public function inProgress(): bool
+    {
+        return $this->asOf !== null && $this->asOf->greaterThan($this->from) && $this->asOf->lessThan($this->to);
+    }
+
+    /**
+     * The period the figures are compared against. A finished period is
+     * compared with the whole previous one; a period still in progress is
+     * compared with the same elapsed portion of the previous one (like
+     * with like), never with a complete period.
+     */
+    public function comparison(): self
+    {
+        $previous = $this->previous();
+
+        if (! $this->inProgress() || $this->asOf === null) {
+            return $previous;
+        }
+
+        $elapsed = (int) $this->from->diffInSeconds($this->asOf, false);
+        $end = $previous->from->addSeconds($elapsed);
+
+        return new self($this->preset, $previous->from, $end->greaterThan($previous->to) ? $previous->to : $end, $this->timezone);
     }
 
     /**
@@ -106,11 +154,88 @@ final readonly class AnalyticsPeriod
     }
 
     /**
-     * @return 'day'|'month'
+     * Granularity of the charts: the one asked by the viewer when the
+     * period allows it (days only up to DAILY_LIMIT_DAYS, so the payload
+     * stays bounded), otherwise per day for short ranges and per month for
+     * long ones.
+     *
+     * @return 'day'|'week'|'month'
      */
     public function granularity(): string
     {
-        return $this->days() <= self::DAILY_LIMIT_DAYS ? 'day' : 'month';
+        $daily = $this->days() <= self::DAILY_LIMIT_DAYS;
+
+        return match ($this->grain) {
+            'day' => $daily ? 'day' : 'week',
+            'week' => 'week',
+            'month' => 'month',
+            default => $daily ? 'day' : 'month',
+        };
+    }
+
+    /**
+     * Granularities the viewer may choose for this period.
+     *
+     * @return list<'day'|'week'|'month'>
+     */
+    public function granularities(): array
+    {
+        return $this->days() <= self::DAILY_LIMIT_DAYS ? ['day', 'week', 'month'] : ['week', 'month'];
+    }
+
+    /**
+     * Keys and labels of the buckets of the period, in order: local days
+     * ("2026-10-21"), ISO weeks starting on Monday ("2026-W43", labelled by
+     * the first day of the week inside the period) or months ("2026-10").
+     *
+     * @param  'day'|'week'|'month'  $granularity
+     * @return list<array{0: string, 1: string}>
+     */
+    public function buckets(string $granularity): array
+    {
+        $months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        $buckets = [];
+        $cursor = match ($granularity) {
+            'day' => $this->from,
+            'week' => $this->from->startOfWeek(CarbonImmutable::MONDAY),
+            'month' => $this->from->startOfMonth(),
+        };
+
+        while ($cursor < $this->to) {
+            $buckets[] = match ($granularity) {
+                'day' => [$cursor->toDateString(), $cursor->day.' '.$months[$cursor->month - 1]],
+                'week' => [$cursor->format('o-\\WW'), 'sem '.$cursor->day.' '.$months[$cursor->month - 1]],
+                'month' => [$cursor->format('Y-m'), $months[$cursor->month - 1].' '.$cursor->format('y')],
+            };
+            $cursor = match ($granularity) {
+                'day' => $cursor->addDay(),
+                'week' => $cursor->addWeek(),
+                'month' => $cursor->addMonthNoOverflow(),
+            };
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * SQL expression of the bucket key of a local time expression, matching
+     * the keys of buckets().
+     *
+     * @param  literal-string  $local
+     * @param  'hour'|'day'|'week'|'month'  $granularity
+     * @return literal-string
+     */
+    public static function bucketSql(string $local, string $granularity): string
+    {
+        $format = match ($granularity) {
+            'hour' => '%Y-%m-%dT%H:00',
+            'day' => '%Y-%m-%d',
+            // ISO 8601: year of the week and week number, Monday first.
+            'week' => '%x-W%v',
+            'month' => '%Y-%m',
+        };
+
+        return "DATE_FORMAT({$local}, '{$format}')";
     }
 
     /**
@@ -119,7 +244,7 @@ final readonly class AnalyticsPeriod
      * saving changes inside the period included), plus its bindings. It
      * needs no time zone tables in the database: the offsets come from PHP.
      *
-     * @param  'received_at'|'resolved_at'  $column
+     * @param  literal-string  $column
      * @return array{0: literal-string, 1: list<int|string>}
      */
     public function localTimeSql(string $column): array
@@ -175,11 +300,13 @@ final readonly class AnalyticsPeriod
     }
 
     /**
-     * @return array{preset: string, from: string, to: string, label: string, timezone: string, granularity: 'day'|'month', previous: array{from: string, to: string, label: string}}
+     * @return array{preset: string, from: string, to: string, label: string, timezone: string, granularity: 'day'|'week'|'month', granularities: list<'day'|'week'|'month'>, previous: array{from: string, to: string, label: string}, comparison: array{label: string, partial: bool, until: string|null}}
      */
     public function toArray(): array
     {
         $previous = $this->previous();
+        $comparison = $this->comparison();
+        $partial = $this->inProgress();
 
         return [
             'preset' => $this->preset,
@@ -188,10 +315,19 @@ final readonly class AnalyticsPeriod
             'label' => $this->label(),
             'timezone' => $this->timezone,
             'granularity' => $this->granularity(),
+            'granularities' => $this->granularities(),
             'previous' => [
                 'from' => $previous->from->toDateString(),
                 'to' => $previous->lastDay(),
                 'label' => $previous->label(),
+            ],
+            // What the figures are really compared against (see comparison()).
+            'comparison' => [
+                'label' => $partial
+                    ? self::localDate($comparison->from).' – '.self::localDate($comparison->to).', '.$comparison->to->format('H:i')
+                    : $previous->label(),
+                'partial' => $partial,
+                'until' => $partial ? $comparison->to->format('H:i') : null,
             ],
         ];
     }

@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\UpdatePlatformSettingsRequest;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Services\PlatformSettings;
+use App\Services\ServiceRules;
 use App\Support\SaveToast;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -19,12 +20,13 @@ use Inertia\Response;
 
 class PlatformSettingsController extends Controller
 {
-    public function edit(Request $request, PlatformSettings $settings): Response
+    public function edit(Request $request, PlatformSettings $settings, ServiceRules $serviceRules): Response
     {
         Gate::authorize('view-settings');
 
         return Inertia::render('admin/settings/Edit', [
             'settings' => $settings->all(),
+            'serviceRules' => $serviceRules->describe(null, null),
             'timezones' => DateTimeZone::listIdentifiers(),
             'weekdays' => PlatformSettings::WEEKDAYS,
             'departments' => Department::query()

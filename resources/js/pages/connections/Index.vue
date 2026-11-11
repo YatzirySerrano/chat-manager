@@ -20,6 +20,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChannelPicker from '@/components/connections/ChannelPicker.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
+import ConnectionEvidenceLabel from '@/components/connections/ConnectionEvidenceLabel.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
@@ -556,8 +557,9 @@ function phoneLabel(connection: Connection): string {
                             />
                         </template>
                         <ConnectionChecklist
-                            v-if="connection.channel.value === 'whatsapp'"
                             :checks="connection.checks"
+                            :monitoring="connection.monitoring"
+                            :channel="connection.channel.value"
                             compact
                         />
                         <template #meta>
@@ -653,6 +655,12 @@ function phoneLabel(connection: Connection): string {
                                     :health="connection.health"
                                 />
                             </div>
+                            <!-- The status column is hidden on phones. -->
+                            <ConnectionEvidenceLabel
+                                class="mt-1 sm:hidden"
+                                :monitoring="connection.monitoring"
+                                with-warnings
+                            />
                         </TableCell>
                         <TableCell class="hidden sm:table-cell">
                             <div class="flex flex-wrap gap-1">
@@ -664,6 +672,11 @@ function phoneLabel(connection: Connection): string {
                                     :health="connection.health"
                                 />
                             </div>
+                            <ConnectionEvidenceLabel
+                                class="mt-1"
+                                :monitoring="connection.monitoring"
+                                with-warnings
+                            />
                         </TableCell>
                         <TableCell class="hidden text-sm lg:table-cell">
                             <span

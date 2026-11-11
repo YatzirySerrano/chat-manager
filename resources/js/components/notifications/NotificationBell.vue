@@ -9,6 +9,7 @@ import {
     Lock,
     RotateCcw,
     Settings2,
+    Timer,
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import AttentionAlertBellItem from '@/components/attention/AttentionAlertBellItem.vue';
@@ -386,6 +387,17 @@ function onOpenChange(value: boolean): void {
                                             aria-hidden="true"
                                         />
                                         Descargar
+                                    </span>
+                                    <span
+                                        v-if="item.kind.startsWith('sla.')"
+                                        class="inline-flex items-center gap-1 font-medium"
+                                        data-notification-sla
+                                    >
+                                        <Timer
+                                            class="size-3.5"
+                                            aria-hidden="true"
+                                        />
+                                        SLA automático
                                     </span>
                                     <span
                                         v-if="item.level === 'urgent'"

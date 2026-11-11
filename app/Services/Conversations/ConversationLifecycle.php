@@ -195,6 +195,43 @@ class ConversationLifecycle
     }
 
     /**
+     * Step 3 of the lock order for an operation that hands a conversation
+     * to an agent: the agent row, and the actor row too when the actor's
+     * permission to make an exception to the queue rules is about to be
+     * used (`$lockActor`), so one revoked meanwhile is honored.
+     *
+     * No new deadlock path: both rows are taken at the step every operation
+     * takes user rows in (after the conversation and the department), and
+     * two rows are always taken in ascending id order, so two operations
+     * that need the same pair (A assigning to B while B assigns to A) queue
+     * up instead of waiting for each other. Every other operation locks a
+     * single user row at this step, which cannot close a cycle with a pair
+     * taken in a fixed order.
+     *
+     * @return array{0: User, 1: User} The agent (locked) and the actor (locked when asked, as given otherwise).
+     */
+    public function freshAgentAndActor(int $agentId, User $actor, bool $lockActor): array
+    {
+        if (! $lockActor) {
+            return [$this->freshUser($agentId), $actor];
+        }
+
+        if ($agentId === $actor->id) {
+            $agent = $this->freshUser($agentId);
+
+            return [$agent, $agent];
+        }
+
+        $locked = [];
+
+        foreach ([min($agentId, $actor->id), max($agentId, $actor->id)] as $userId) {
+            $locked[$userId] = $this->freshUser($userId);
+        }
+
+        return [$locked[$agentId], $locked[$actor->id]];
+    }
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     public function apply(Conversation $conversation, ConversationStatus $target, array $attributes = []): void
@@ -226,17 +263,21 @@ class ConversationLifecycle
     }
 
     /**
-     * Attributes of a conversation waiting in its queue.
+     * Attributes of a conversation waiting in its queue. Given the
+     * conversation that enters the queue (and its destination department
+     * when it changes), it also restarts `queued_at`, the clock of the
+     * minimum wait and of the chronological order (QueueRules::entering()).
      *
      * @return array<string, mixed>
      */
-    public function queued(): array
+    public function queued(?Conversation $entering = null, int|false|null $departmentId = false): array
     {
         return [
             'assigned_user_id' => null,
             'assigned_at' => null,
             'on_hold_at' => null,
             'on_hold_reason' => null,
+            ...($entering === null ? [] : app(QueueRules::class)->entering($entering, $departmentId)),
         ];
     }
 
@@ -251,6 +292,9 @@ class ConversationLifecycle
             'actor_user_id' => $actor?->id,
             'created_at' => now(),
         ]);
+
+        // Response cycle: a close ends it, anything else keeps its responsibility in sync.
+        app(ResponseClock::class)->afterEvent($conversation, $type);
 
         ConversationChanged::dispatch($conversation->id, $type->value, $actor?->id, $event->id);
 

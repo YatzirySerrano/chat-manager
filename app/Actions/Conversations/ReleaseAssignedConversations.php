@@ -71,7 +71,7 @@ class ReleaseAssignedConversations
                     continue;
                 }
 
-                $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued());
+                $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued($conversation));
                 $this->lifecycle->record($conversation, ConversationEventType::Unassigned, $actor, [
                     'from_user_id' => $agent->id,
                     'from_department_id' => $conversation->department_id,

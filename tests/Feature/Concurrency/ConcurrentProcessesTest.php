@@ -15,8 +15,10 @@
 
 use App\Actions\Conversations\ConversationInboxQuery;
 use App\Enums\ConversationEventType;
+use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
+use App\Enums\DistributionMode;
 use App\Enums\ExportFormat;
 use App\Enums\InboundMessageOutcome;
 use App\Enums\MessageStatus;
@@ -43,6 +45,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -1051,4 +1054,218 @@ test('the same customer writing to two numbers at once gets one contact and one 
         ->and($conversations->pluck('contact_id')->unique())->toHaveCount(1)
         ->and(committed(fn () => Message::query()->whereLike('whatsapp_message_id', 'wamid.two.sales.%')->pluck('conversation_id')->unique()->all()))->toBe([$conversations[$sales->id]->id])
         ->and(committed(fn () => Message::query()->whereLike('whatsapp_message_id', 'wamid.two.support.%')->pluck('conversation_id')->unique()->all()))->toBe([$conversations[$support->id]->id]);
+});
+
+/*
+| Queue rules under real concurrency (docs/reglas-de-servicio.md §Reglas de
+| la cola): with the chronological order on, agents racing for a queue end
+| up with different conversations or a clean conflict; nobody is assigned a
+| conversation twice and nobody skips the head of the queue unnoticed.
+*/
+
+/**
+ * A department whose queue must be attended in order, its agents and its
+ * pending requests, oldest first (one minute apart).
+ *
+ * @param  array<string, int|bool>  $rules
+ * @return array{0: Department, 1: Collection<int, User>, 2: Collection<int, Conversation>}
+ */
+function orderedQueue(int $agents = 2, int $requests = 3, array $rules = ['queue.chronological_order' => true]): array
+{
+    return committed(function () use ($agents, $requests, $rules): array {
+        $department = Department::factory()->create(['service_rules' => $rules]);
+        $base = now()->subHour()->startOfMinute();
+
+        return [
+            $department,
+            User::factory()->agent()->available()->inDepartments($department)->count($agents)->create(),
+            collect(range(0, $requests - 1))->map(fn (int $position) => Conversation::factory()->inDepartment($department)->create([
+                'created_at' => $base->addMinutes($position),
+                'queued_at' => $base->addMinutes($position),
+            ])),
+        ];
+    });
+}
+
+function webAccept(User $agent, Conversation $conversation): ConcurrentProcess
+{
+    return ConcurrentProcess::start('http-json', ['user_id' => $agent->id, 'uri' => route('conversations.accept', $conversation->id, false), 'method' => 'POST']);
+}
+
+/**
+ * @return array<int, int|null> Responsible agent of every conversation, by conversation id.
+ */
+function queueAssignees(): array
+{
+    return committed(fn () => Conversation::query()->orderBy('id')->pluck('assigned_user_id', 'id')->all());
+}
+
+test('two agents racing for the head of an ordered queue: one takes it, the other gets a clean conflict', function () {
+    [, $agents, $requests] = orderedQueue();
+
+    $results = ConcurrentProcess::race([webAccept($agents[0], $requests[0]), webAccept($agents[1], $requests[0])]);
+
+    expect(failures($results))->toBe([])
+        ->and(collect($results)->pluck('value.status')->sort()->values()->all())->toBe([302, 409])
+        ->and(collect($results)->firstWhere('value.status', 409)['value']['json']['code'])->toBe('assigned_to_other')
+        ->and(array_values(array_filter(queueAssignees())))->toHaveCount(1)
+        ->and(committed(fn () => ConversationEvent::query()->where('type', ConversationEventType::Accepted)->count()))->toBe(1);
+});
+
+test('one agent takes the head while another takes the second: never the same conversation, never past a head still waiting', function () {
+    [, $agents, $requests] = orderedQueue();
+
+    $results = ConcurrentProcess::race([webAccept($agents[0], $requests[0]), webAccept($agents[1], $requests[1])]);
+    $assignees = queueAssignees();
+    $second = $results[1]['value'];
+
+    expect(failures($results))->toBe([])
+        // Nobody is ahead of the head: it is always taken.
+        ->and($results[0]['value']['status'])->toBe(302)
+        ->and($assignees[$requests[0]->id])->toBe($agents[0]->id);
+
+    // The second either waited for the head to be taken (and got in) or
+    // decided while the head was still waiting (and was told so).
+    if ($second['status'] === 302) {
+        expect($assignees[$requests[1]->id])->toBe($agents[1]->id);
+    } else {
+        expect($second['status'])->toBe(409)
+            ->and($second['json'])->toMatchArray(['code' => 'queue_order', 'blocking_conversation_id' => $requests[0]->id])
+            ->and($assignees[$requests[1]->id])->toBeNull();
+    }
+
+    expect($assignees[$requests[2]->id])->toBeNull();
+});
+
+test('taking the second request waits for an accept of the head in flight and follows its outcome', function (string $head, int $status, ?string $code) {
+    [, $agents, $requests] = orderedQueue();
+
+    // The head has been accepted but its request has not finished yet...
+    $first = ConcurrentProcess::start($head, ['conversation_id' => $requests[0]->id, 'user_id' => $agents[0]->id]);
+    $first->waitFor('READY');
+    $first->tell('GO');
+    $first->waitFor('HOLDING');
+
+    // ...when a colleague goes for the second one: it must wait, not decide on stale data.
+    $second = webAccept($agents[1], $requests[1]);
+    $second->waitFor('READY');
+    $second->tell('GO');
+    $race = waitUntilBlockedOrFinished($second);
+    $first->tell('COMMIT');
+    $first->result();
+    $result = $second->result();
+    $assignees = queueAssignees();
+
+    expect($race)->toBe('blocked')
+        ->and($result['ok'])->toBeTrue()
+        ->and($result['value']['status'])->toBe($status)
+        ->and($result['value']['json']['code'] ?? null)->toBe($code)
+        ->and($assignees[$requests[0]->id])->toBe($status === 302 ? $agents[0]->id : null)
+        ->and($assignees[$requests[1]->id])->toBe($status === 302 ? $agents[1]->id : null);
+})->with([
+    'the head is taken: the second becomes the head and is accepted' => ['accept-and-hold', 302, null],
+    'the accept of the head fails: the second is still behind it' => ['accept-and-abort', 409, 'queue_order'],
+]);
+
+test('two agents trying to skip the head at once are both refused', function () {
+    [, $agents, $requests] = orderedQueue();
+
+    $results = ConcurrentProcess::race([webAccept($agents[0], $requests[1]), webAccept($agents[1], $requests[2])]);
+
+    expect(failures($results))->toBe([])
+        ->and(collect($results)->pluck('value.status')->all())->toBe([409, 409])
+        ->and(collect($results)->pluck('value.json.code')->all())->toBe(['queue_order', 'queue_order'])
+        ->and(collect($results)->pluck('value.json.blocking_conversation_id')->all())->toBe([$requests[0]->id, $requests[0]->id])
+        ->and(array_filter(queueAssignees()))->toBe([]);
+});
+
+test('two tabs of the same agent, or a retried request, accept a conversation once', function () {
+    [, $agents, $requests] = orderedQueue(agents: 1);
+
+    $results = ConcurrentProcess::race([webAccept($agents[0], $requests[0]), webAccept($agents[0], $requests[0]), webAccept($agents[0], $requests[0])]);
+    // And the same request sent again once everything settled.
+    $retry = ConcurrentProcess::race([webAccept($agents[0], $requests[0])]);
+
+    expect(failures([...$results, ...$retry]))->toBe([])
+        ->and(collect([...$results, ...$retry])->pluck('value.status')->unique()->values()->all())->toBe([302])
+        ->and(queueAssignees()[$requests[0]->id])->toBe($agents[0]->id)
+        ->and(committed(fn () => ConversationEvent::query()->where('type', ConversationEventType::Accepted)->count()))->toBe(1)
+        ->and(committed(fn () => Conversation::query()->findOrFail($requests[0]->id)->version))->toBe(1);
+});
+
+test('two tabs of an agent with room for one conversation, on the head and on the second: only one is taken, without deadlock', function () {
+    [, $agents, $requests] = orderedQueue(agents: 1);
+    committed(fn () => $agents[0]->forceFill(['max_open_conversations' => 1])->save());
+
+    $results = ConcurrentProcess::race([webAccept($agents[0], $requests[0]), webAccept($agents[0], $requests[1])]);
+    $assignees = queueAssignees();
+
+    expect(failures($results))->toBe([])
+        ->and($results[0]['value']['status'])->toBe(302)
+        ->and($results[1]['value']['status'])->toBe(409)
+        // Refused by the order (decided first) or by the limit (decided after the head was taken).
+        ->and($results[1]['value']['json']['code'])->toBeIn(['queue_order', 'conflict'])
+        ->and($assignees[$requests[0]->id])->toBe($agents[0]->id)
+        ->and($assignees[$requests[1]->id])->toBeNull();
+});
+
+test('an accept racing with the request being returned to needs information is either complete or refused', function () {
+    [, $agents, $requests] = orderedQueue(rules: ['intake.confirmation_required' => true, 'queue.chronological_order' => true]);
+    $supervisor = committed(fn () => User::factory()->administrator()->create());
+
+    $results = ConcurrentProcess::race([
+        webAccept($agents[0], $requests[0]),
+        ConcurrentProcess::start('set-readiness', ['conversation_id' => $requests[0]->id, 'user_id' => $supervisor->id, 'readiness' => 'needs_info', 'reason' => 'Falta el número de pedido']),
+    ]);
+    $stored = committed(fn () => Conversation::query()->findOrFail($requests[0]->id));
+
+    expect(failures($results))->toBe([])
+        ->and($stored->readiness)->toBe(ConversationReadiness::NeedsInfo);
+
+    if ($results[0]['value']['status'] === 302) {
+        // The accept came first: the agent keeps it, now marked as incomplete.
+        expect($stored->assigned_user_id)->toBe($agents[0]->id)->and($stored->status)->toBe(ConversationStatus::Open);
+    } else {
+        expect($results[0]['value']['json']['code'])->toBe('needs_info')
+            ->and($stored->assigned_user_id)->toBeNull()
+            ->and($stored->queued_at)->toBeNull();
+    }
+
+    // Either way the head no longer blocks: the next request can be taken.
+    $next = ConcurrentProcess::race([webAccept($agents[1], $requests[1])]);
+
+    expect($next[0]['value']['status'])->toBe(302);
+});
+
+test('an accept racing with the automatic distribution assigns the conversation exactly once', function () {
+    [$department, $agents, $requests] = orderedQueue(agents: 2, requests: 1, rules: []);
+    committed(function () use ($department, $agents): void {
+        $department->forceFill(['distribution_mode' => DistributionMode::Automatic])->save();
+        // Only the first agent may receive it automatically; the second accepts by hand.
+        $agents[0]->forceFill(['max_open_conversations' => 5])->save();
+        $agents[1]->forceFill(['max_open_conversations' => 5, 'last_assigned_at' => now()])->save();
+    });
+
+    $results = ConcurrentProcess::race([
+        ConcurrentProcess::start('distribute-queue', ['department_id' => $department->id]),
+        webAccept($agents[1], $requests[0]),
+    ]);
+    $stored = committed(fn () => Conversation::query()->findOrFail($requests[0]->id));
+    $events = committed(fn () => ConversationEvent::query()->whereIn('type', [ConversationEventType::Accepted, ConversationEventType::AutoAssigned])->pluck('type')->all());
+
+    expect(failures($results))->toBe([])
+        ->and($stored->status)->toBe(ConversationStatus::Open)
+        ->and($stored->version)->toBe(1)
+        ->and($events)->toHaveCount(1)
+        ->and($stored->assigned_user_id)->toBeIn([$agents[0]->id, $agents[1]->id]);
+
+    if ($events[0] === ConversationEventType::AutoAssigned) {
+        // Distributed first: the accept found it taken (or already theirs).
+        expect($results[0]['value'])->toBe(1)
+            ->and($results[1]['value']['status'])->toBe($stored->assigned_user_id === $agents[1]->id ? 302 : 409);
+    } else {
+        expect($results[0]['value'])->toBe(0)
+            ->and($results[1]['value']['status'])->toBe(302)
+            ->and($stored->assigned_user_id)->toBe($agents[1]->id);
+    }
 });

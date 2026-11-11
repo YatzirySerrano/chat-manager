@@ -18,6 +18,7 @@ require __DIR__.'/contacts.php';
 require __DIR__.'/exports.php';
 require __DIR__.'/conversations.php';
 require __DIR__.'/tags.php';
+require __DIR__.'/categories.php';
 require __DIR__.'/quick-replies.php';
 require __DIR__.'/settings.php';
 require __DIR__.'/reports.php';

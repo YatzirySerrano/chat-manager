@@ -4,6 +4,7 @@ namespace App\Actions\Conversations;
 
 use App\Actions\Contacts\ContactSearch;
 use App\Enums\ConnectionChannel;
+use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Enums\MessageDirection;
 use App\Models\Connection;
@@ -65,13 +66,17 @@ use Illuminate\Validation\ValidationException;
  * (conversation_id, tag_id) index), applied inside visibleTo, so a tag never
  * reveals a conversation outside the actor's reach.
  *
+ * `category=<id>` narrows to one request category and
+ * `readiness=ready|needs_info` to the preparation state of the request;
+ * like every common filter they apply to the list and to its counters.
+ *
  * Unread messages are personal (unreadMessages()): the customer messages
  * after the viewer's read marker. Without a marker, only the ones nobody
  * answered yet count (after the latest reply of a person), and closed
  * conversations never count, so whoever never opened a conversation does
  * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, channel?: string|null}
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, channel?: string|null, category?: int|null, readiness?: string|null}
  * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
@@ -170,6 +175,8 @@ class ConversationInboxQuery
             'tag_match' => ['nullable', Rule::in([self::TAG_MATCH_ANY, self::TAG_MATCH_ALL])],
             'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
             'unread' => ['nullable', 'boolean'],
+            'category' => ['nullable', 'integer', 'min:1'],
+            'readiness' => ['nullable', Rule::enum(ConversationReadiness::class)],
         ];
     }
 
@@ -225,6 +232,10 @@ class ConversationInboxQuery
             'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_RECENT,
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
+            'category' => is_numeric($validated['category'] ?? null) ? (int) $validated['category'] : null,
+            'readiness' => ($readiness = $validated['readiness'] ?? null) instanceof ConversationReadiness
+                ? $readiness->value
+                : (is_string($readiness) && ConversationReadiness::tryFrom($readiness) !== null ? $readiness : null),
         ];
     }
 
@@ -358,6 +369,9 @@ class ConversationInboxQuery
             // Uncorrelated: the connections of the channel are read once,
             // deleted ones included (their history keeps its channel).
             ->when($channel !== null, fn (Builder $query) => $query->whereIn('conversations.connection_id', Connection::query()->select('connections.id')->where('connections.channel', $channel)))
+            // Request type and preparation state (`category`, `readiness`).
+            ->when(($filters['category'] ?? null) !== null, fn (Builder $query) => $query->where('conversations.category_id', $filters['category'] ?? null))
+            ->when(($filters['readiness'] ?? null) !== null, fn (Builder $query) => $query->where('conversations.readiness', $filters['readiness'] ?? null))
             ->when(($filters['tags'] ?? []) !== [], fn (Builder $query) => $this->constrainToTags($query, $filters['tags'] ?? [], $filters['tag_match'] ?? self::TAG_MATCH_ANY))
             ->when($search !== '', fn (Builder $query) => $this->constrainToSearch($query, $actor, $search, $filters['search_in'] ?? self::SEARCH_CONTACT))
             ->when($filters['unread'] ?? false, fn (Builder $query) => $query

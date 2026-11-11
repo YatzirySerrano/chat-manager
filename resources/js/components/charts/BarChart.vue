@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import { onClickOutside } from '@vueuse/core';
 import { computed, ref, useTemplateRef } from 'vue';
 import {
@@ -16,6 +17,8 @@ import type { BarItem, BarSeries, ChartTooltipRow, ValueFormat } from './types';
  * are the shares of each series. Every bar carries its value as a direct
  * label; a value above 0 never disappears (2 px minimum) and a 0 has no bar
  * but still reads «0». Pointer and keyboard (↑/↓ or ←/→) show a readout.
+ * An item with `href` is a drill-down: its label is a real link (reachable
+ * with Tab) to the list behind the bar.
  */
 const props = withDefaults(
     defineProps<{
@@ -30,6 +33,8 @@ const props = withDefaults(
 );
 
 const root = useTemplateRef<HTMLElement>('root');
+
+const hasLinks = computed(() => props.items.some((item) => item.href));
 
 function seriesColor(
     series: BarSeries | undefined,
@@ -239,7 +244,7 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
     <div ref="root" class="relative" data-bar-chart>
         <div
             class="rounded-lg focus-visible:outline-offset-4"
-            role="img"
+            :role="hasLinks ? 'group' : 'img'"
             :aria-label="description"
             tabindex="0"
             @keydown="onKeydown"
@@ -247,7 +252,11 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
             @blur="clear"
             @pointerleave="onPointerLeave"
         >
-            <ul v-if="!stacked" class="flex flex-col gap-1" aria-hidden="true">
+            <ul
+                v-if="!stacked"
+                class="flex flex-col gap-1"
+                :aria-hidden="hasLinks ? undefined : 'true'"
+            >
                 <li
                     v-for="(item, itemIndex) in items"
                     :key="item.key"
@@ -258,7 +267,17 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                     @pointerenter="hover(itemIndex)"
                     @pointerdown="hover(itemIndex)"
                 >
+                    <Link
+                        v-if="item.href"
+                        :href="item.href"
+                        class="truncate rounded-sm text-sm text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
+                        :title="`${item.label}: ver el detalle`"
+                        data-bar-link
+                    >
+                        {{ item.label }}
+                    </Link>
                     <span
+                        v-else
                         class="truncate text-sm"
                         :class="
                             item.muted

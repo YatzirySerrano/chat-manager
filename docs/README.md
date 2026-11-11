@@ -23,6 +23,7 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | [chat-interno.md](chat-interno.md)                                 | Chat entre empleados: privacidad, grupos, menciones, reacciones, «escribiendo…», presencia, adjuntos                      |
 | [notificaciones-y-horarios.md](notificaciones-y-horarios.md)       | Notificaciones, Web Push, horario de atención, días no laborables, mensajes automáticos                                   |
 | [reportes-y-exportaciones.md](reportes-y-exportaciones.md)         | Métricas, tiempo hábil y objetivos, reportes, panel principal, motor de exportaciones XLSX/PDF                            |
+| [reglas-de-servicio.md](reglas-de-servicio.md)                     | Reglas de servicio: jerarquía categoría › departamento › plataforma, SLA, solicitud completa, cola, categorías, permisos  |
 | [migracion-whaticket.md](migracion-whaticket.md)                   | Importación de contactos e importador de historial de Whaticket (fase 5.2): formatos, destinos, permisos, requisitos      |
 | [seguridad-y-auditoria.md](seguridad-y-auditoria.md)               | Modelo de amenazas, controles, permisos por rol, bitácora, privacidad, hallazgos, riesgos y dependencias                  |
 | [pruebas.md](pruebas.md)                                           | Pest sobre MariaDB, análisis estático, E2E, concurrencia, carga, real frente a simulado                                   |

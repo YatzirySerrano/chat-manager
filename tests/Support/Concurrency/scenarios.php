@@ -10,14 +10,17 @@
 
 use App\Actions\Connections\DeleteConnection;
 use App\Actions\Conversations\AcceptConversation;
+use App\Actions\Conversations\AssignAutomatically;
 use App\Actions\Conversations\ProcessInboundMessages;
 use App\Actions\Conversations\QueueOutboundMessage;
+use App\Actions\Conversations\SetConversationReadiness;
 use App\Actions\Conversations\TransferConversation;
 use App\Actions\Messaging\ProcessWebhookPayload;
 use App\Actions\Messaging\StoreWebhookDelivery;
 use App\Actions\Users\AssessRoleChange;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\UpdateUser;
+use App\Enums\ConversationReadiness;
 use App\Events\Broadcasts\RealtimeSignal;
 use App\Events\WebChat\VisitorSessionSignal;
 use App\Jobs\DeliverOutboundMessage;
@@ -226,6 +229,43 @@ return [
 
             return $conversation->assigned_user_id;
         });
+    },
+
+    /*
+     * An accept that was applied and then fails before committing (its
+     * request is rolled back when told to go on).
+     */
+    'accept-and-abort' => function (array $arguments, Closure $say, Closure $await): never {
+        DB::transaction(function () use ($arguments, $say, $await): never {
+            app(AcceptConversation::class)->handle(
+                Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+                User::query()->findOrFail((int) $arguments['user_id']),
+            );
+
+            $say('HOLDING');
+            $await('COMMIT');
+
+            throw new RuntimeException('Aborted on purpose.');
+        });
+    },
+
+    /*
+     * Someone confirms a request as complete or returns it to «Necesita información».
+     */
+    'set-readiness' => function (array $arguments): string {
+        return app(SetConversationReadiness::class)->handle(
+            Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+            ConversationReadiness::from((string) $arguments['readiness']),
+            User::query()->findOrFail((int) $arguments['user_id']),
+            $arguments['reason'] ?? null,
+        )->readiness->value;
+    },
+
+    /*
+     * The queue of an automatic department offered again (capacity freed, a wait ended…).
+     */
+    'distribute-queue' => function (array $arguments): int {
+        return app(AssignAutomatically::class)->distributeQueue(Department::query()->findOrFail((int) $arguments['department_id']));
     },
 
     /*

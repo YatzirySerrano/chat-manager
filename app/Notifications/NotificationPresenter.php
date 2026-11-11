@@ -5,11 +5,14 @@ namespace App\Notifications;
 use App\Enums\ConnectionHealth;
 use App\Enums\DataTransferStatus;
 use App\Enums\Permission;
+use App\Enums\ResponseCycleKind;
 use App\Enums\TeamChat\TeamAttachmentKind;
+use App\Listeners\Notifications\NotifyConnectionProblem;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\DataTransfer;
 use App\Models\Department;
+use App\Models\ResponseCycle;
 use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
@@ -55,7 +58,7 @@ class NotificationPresenter
      * Records referenced by the page being presented, loaded once per page
      * (one query per kind, never one per notification).
      *
-     * @var array{departments: array<int, Department>, transfers: array<int, DataTransfer>, connections: array<int, Connection>, threads: array<int, true>, team_messages: array<int, TeamMessage>}|null
+     * @var array{departments: array<int, Department>, transfers: array<int, DataTransfer>, connections: array<int, Connection>, threads: array<int, true>, team_messages: array<int, TeamMessage>, cycles: array<int, ResponseCycle>}|null
      */
     private ?array $related = null;
 
@@ -92,6 +95,8 @@ class NotificationPresenter
         $kind = NotificationKind::tryFrom((string) $notification->getAttribute('kind'));
         $occurrences = (int) ($notification->getAttribute('occurrences') ?? 1);
 
+        $settled = false;
+
         [$title, $body, $url, $accessible] = match ($kind) {
             NotificationKind::ConversationPending => $this->pending($data, $viewer, $occurrences),
             NotificationKind::ConversationAssigned => $this->assigned($data, $viewer),
@@ -100,6 +105,7 @@ class NotificationPresenter
             NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage => $this->teamChat($kind, $data, $viewer, $occurrences),
             NotificationKind::ExportFinished, NotificationKind::ImportFinished => $this->transfer($kind, $data, $viewer),
             NotificationKind::ConnectionProblem => $this->connection($data, $viewer),
+            NotificationKind::SlaWarning, NotificationKind::SlaBreach => $this->sla($kind, $data, $viewer, $settled),
             NotificationKind::AccessChanged => ['Tu acceso cambió', 'Un administrador actualizó tu rol, permisos, departamentos o el estado de tu cuenta. Algunas secciones o conversaciones pueden haber cambiado.', $this->routeOrNull('dashboard'), true],
             null => ['Notificación', null, null, false],
         };
@@ -107,7 +113,8 @@ class NotificationPresenter
         return [
             'id' => (string) $notification->id,
             'kind' => $kind !== null ? $kind->value : (string) $notification->getAttribute('kind'),
-            'level' => (string) $notification->getAttribute('level'),
+            // An SLA alert whose request was already answered or closed no longer asks for an action.
+            'level' => $settled ? NotificationLevel::Informative->value : (string) $notification->getAttribute('level'),
             'title' => $title,
             'body' => $body,
             'url' => $url,
@@ -131,10 +138,17 @@ class NotificationPresenter
         $userIds = [];
         $related = ['department_id' => [], 'transfer_id' => [], 'connection_id' => [], 'thread_id' => []];
         $teamMessageIds = [];
+        $cycleIds = [];
 
         foreach ($notifications as $notification) {
             /** @var array<string, mixed> $data */
             $data = $notification->data;
+
+            foreach ((array) ($data['cycle_ids'] ?? []) as $id) {
+                if (is_int($id)) {
+                    $cycleIds[] = $id;
+                }
+            }
 
             foreach ([$data['conversation_id'] ?? null, ...((array) ($data['conversation_ids'] ?? []))] as $id) {
                 if (is_int($id)) {
@@ -174,7 +188,12 @@ class NotificationPresenter
                 ->pluck('team_thread_id')
                 ->all()), true),
             'team_messages' => $teamMessageIds === [] ? [] : $this->teamMessages($teamMessageIds),
+            'cycles' => $this->cycles($cycleIds),
         ];
+
+        foreach ($this->related['cycles'] as $cycle) {
+            array_push($userIds, ...array_filter([$cycle->assigned_user_id, $cycle->responder_user_id]));
+        }
 
         $this->conversations = Conversation::query()
             ->with(['contact:id,name,profile_name', 'department:id,name'])
@@ -496,13 +515,147 @@ class NotificationPresenter
 
         $reported = ConnectionHealth::tryFrom((string) ($data['health'] ?? ''));
         $current = $connection->health();
+        $url = $this->routeOrNull('connections.show', $connection);
+        // Straight to the diagnostics of the connection.
+        $url = $url === null ? null : $url.'#diagnostico';
+
+        // The text follows what the connection is today, so a problem that
+        // was solved is never presented as current.
+        if (in_array($current, NotifyConnectionProblem::PROBLEM_STATES, true)) {
+            return [
+                "Problema en la conexión {$connection->name}",
+                'Estado reportado: '.($reported !== null && in_array($reported, NotifyConnectionProblem::PROBLEM_STATES, true) ? $reported->label() : $current->label()).'. Estado actual: '.$current->label().'. Abre el diagnóstico para ver qué hacer.',
+                $url,
+                true,
+            ];
+        }
+
+        if (($data['recovered'] ?? false) === true) {
+            return [
+                "La conexión {$connection->name} se recuperó",
+                'Hay evidencia de que volvió a funcionar. Estado actual: '.$current->label().'.',
+                $url,
+                true,
+            ];
+        }
 
         return [
-            "Problema en la conexión {$connection->name}",
-            'Estado reportado: '.($reported?->label() ?? 'error').'. Estado actual: '.$current->label().'.',
-            $this->routeOrNull('connections.show', $connection),
+            "Aviso anterior de la conexión {$connection->name}",
+            'Se reportó: '.($reported?->label() ?? 'error').'. Ya no está en ese estado; estado actual: '.$current->label().'.',
+            $url,
             true,
         ];
+    }
+
+    /**
+     * Automatic SLA alert («por vencer» or «vencida»). The text follows what
+     * the request is like today: one that was answered or closed since is
+     * presented as resolved (`$settled`), never as still waiting. An
+     * aggregated notification (supervision) counts the requests it gathers
+     * and how many still wait.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{string, string|null, string|null, bool}
+     */
+    private function sla(NotificationKind $kind, array $data, User $viewer, bool &$settled): array
+    {
+        $breach = $kind === NotificationKind::SlaBreach;
+        $generic = $breach ? 'Solicitud vencida (SLA)' : 'Solicitud por vencer (SLA)';
+        $cycleIds = array_values(array_filter((array) ($data['cycle_ids'] ?? [$data['cycle_id'] ?? null]), 'is_int'));
+        $loaded = $this->related === null ? $this->cycles($cycleIds) : $this->related['cycles'];
+
+        /** @var list<array{ResponseCycle, Conversation}> $visible */
+        $visible = [];
+
+        foreach ($cycleIds as $cycleId) {
+            $cycle = $loaded[$cycleId] ?? null;
+            $conversation = $cycle === null ? null : $this->visibleConversation($cycle->conversation_id, $viewer);
+
+            if ($cycle !== null && $conversation !== null) {
+                $visible[] = [$cycle, $conversation];
+            }
+        }
+
+        if ($visible === []) {
+            $settled = true;
+
+            return [$generic, 'Ya no tienes acceso a esta conversación.', null, false];
+        }
+
+        $waiting = array_values(array_filter($visible, fn (array $pair): bool => $pair[0]->isActive()));
+        $settled = $waiting === [];
+        $supervisor = ($data['supervisor'] ?? false) === true;
+
+        if (count($visible) > 1) {
+            $department = is_int($data['department_id'] ?? null) ? ($this->related['departments'][$data['department_id']] ?? Department::query()->find($data['department_id'])) : null;
+            $where = $department !== null ? " en {$department->name}" : '';
+            $total = count($visible);
+            $pending = count($waiting);
+
+            return [
+                $breach ? "{$total} solicitudes vencieron{$where}" : "{$total} solicitudes por vencer{$where}",
+                $pending === 0
+                    ? 'Aviso automático de SLA. Ya fueron respondidas o cerradas.'
+                    : 'Aviso automático de SLA. '.($pending === 1 ? '1 sigue' : "{$pending} siguen").' sin respuesta. Revisa el monitoreo de SLA.',
+                $this->routeOrNull('attention.index', ['tab' => 'sla', 'sla_state' => $breach ? 'breached' : 'warning']),
+                true,
+            ];
+        }
+
+        [$cycle, $conversation] = $visible[0];
+        $name = $this->contactName($conversation);
+        $objective = $cycle->kind === ResponseCycleKind::FirstResponse ? 'la primera respuesta' : 'la respuesta';
+        $url = $this->routeOrNull('conversations.show', $conversation);
+        $reminder = $breach && is_int($data['reminder'] ?? null) && $data['reminder'] > 0 ? "Recordatorio {$data['reminder']}. " : '';
+
+        if ($cycle->outcome === ResponseCycle::OUTCOME_ANSWERED) {
+            $responder = $this->userName($cycle->responder_user_id, $viewer);
+            $late = $cycle->breached_at !== null;
+
+            return [
+                ($late ? 'Solicitud vencida ya respondida: ' : 'Solicitud respondida a tiempo: ').$name,
+                'Aviso automático de SLA. '.($responder !== null ? "{$responder} respondió" : 'Ya se respondió').($late ? ' después del plazo.' : ' antes de que venciera el plazo.'),
+                $url,
+                true,
+            ];
+        }
+
+        if (! $cycle->isActive()) {
+            return [
+                ($cycle->breached_at !== null ? 'Solicitud vencida ya cerrada: ' : 'Solicitud cerrada: ').$name,
+                'Aviso automático de SLA. La conversación se cerró sin respuesta'.($cycle->breached_at !== null ? ' después del plazo.' : '.'),
+                $url,
+                true,
+            ];
+        }
+
+        $responsible = $this->userName($cycle->assigned_user_id, $viewer);
+        $who = $supervisor ? ($responsible !== null ? " Responsable: {$responsible}." : ' Está en la cola, sin responsable.') : '';
+
+        if ($cycle->breached_at !== null) {
+            return [
+                "Solicitud vencida: {$name}",
+                "{$reminder}Aviso automático de SLA. Se agotó el tiempo máximo para {$objective} y el cliente sigue esperando.{$who}",
+                $url,
+                true,
+            ];
+        }
+
+        return [
+            "Solicitud por vencer: {$name}",
+            "Aviso automático de SLA. Está por agotarse el tiempo máximo para {$objective}.{$who}",
+            $url,
+            true,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return array<int, ResponseCycle>
+     */
+    private function cycles(array $ids): array
+    {
+        return $ids === [] ? [] : ResponseCycle::query()->whereKey(array_values(array_unique($ids)))->get()->keyBy('id')->all();
     }
 
     /**

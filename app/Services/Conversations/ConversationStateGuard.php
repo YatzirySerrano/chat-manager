@@ -62,6 +62,13 @@ class ConversationStateGuard
             'tag' => $this->manages($actor) || $this->isResponsible($actor, $conversation)
                 ? null
                 : $this->responsibleConflict($actor, $conversation),
+            // Readiness is a preparation state of a request still to be
+            // attended or in attention; a closed one has nothing to confirm.
+            'confirmReadiness' => $closed ? ConversationConflict::Closed : null,
+            // Like tags, the category classifies closed conversations too.
+            'categorize' => $this->managesRequests($actor) || $this->isResponsible($actor, $conversation)
+                ? null
+                : $this->responsibleConflict($actor, $conversation),
             default => null,
         };
     }
@@ -122,6 +129,7 @@ class ConversationStateGuard
         return match ($ability) {
             'reply', 'sendTemplate' => true,
             'transfer', 'close', 'release', 'tag' => ! $this->manages($actor),
+            'categorize' => ! $this->managesRequests($actor),
             default => false,
         };
     }
@@ -158,5 +166,14 @@ class ConversationStateGuard
     private function manages(User $actor): bool
     {
         return $actor->holdsPermission(Permission::AssignConversations);
+    }
+
+    /**
+     * Users who classify requests they are not responsible for: whoever
+     * assigns conversations or confirms requests as complete.
+     */
+    private function managesRequests(User $actor): bool
+    {
+        return $this->manages($actor) || $actor->holdsPermission(Permission::ConfirmConversationReady);
     }
 }

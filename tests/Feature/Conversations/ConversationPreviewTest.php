@@ -3,15 +3,20 @@
 use App\Enums\ChatAppearancePreset;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
+use App\Enums\MessageType;
 use App\Events\Broadcasts\RealtimeSignal;
 use App\Events\Conversations\ConversationChanged;
 use App\Models\ChatAppearance;
 use App\Models\Conversation;
+use App\Models\ConversationCategory;
+use App\Models\ConversationEvent;
 use App\Models\ConversationRead;
 use App\Models\Department;
 use App\Models\Message;
+use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Notifications\ConversationMessageNotification;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 
@@ -168,4 +173,89 @@ test('previewing with personal colors creates no appearance and moves no read ma
         ->and(ChatAppearance::query()->sole()->is($default))->toBeTrue()
         ->and(ConversationRead::query()->count())->toBe(0)
         ->and(previewedUnread($this, $this->agent, $this->conversation))->toBe(2);
+});
+
+test('the preview tells what the request is: stage, received time, area, category, files and availability', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-11-10 16:00:00', 'UTC'));
+    $category = ConversationCategory::factory()->create(['name' => 'Facturación']);
+    $this->department->forceFill(['name' => 'Soporte', 'service_rules' => ['queue.min_wait_minutes' => 5]])->save();
+    $pending = Conversation::factory()->inDepartment($this->department)->create([
+        'category_id' => $category->id,
+        'queued_at' => CarbonImmutable::parse('2026-11-10 15:58:00', 'UTC'),
+    ]);
+    $first = Message::factory()->create([
+        'conversation_id' => $pending->id,
+        'body' => 'Necesito mi factura',
+        'sent_at' => CarbonImmutable::parse('2026-11-10 15:57:30', 'UTC'),
+    ]);
+    $photo = Message::factory()->create(['conversation_id' => $pending->id, 'type' => MessageType::Image, 'body' => null]);
+    (new MessageAttachment(['disk' => 'local', 'path' => 'media/2026/11/foto', 'mime_type' => 'image/jpeg', 'file_name' => 'foto.jpg', 'size_bytes' => 10]))
+        ->forceFill(['message_id' => $photo->id])->save();
+
+    $this->actingAs($this->agent)->getJson(route('conversations.preview', $pending))
+        ->assertOk()
+        ->assertJsonPath('first_message', null)
+        ->assertJsonPath('messages.0.id', $first->id)
+        ->assertJsonPath('conversation.stage', ['value' => 'new', 'label' => 'Nueva'])
+        ->assertJsonPath('conversation.status', 'pending')
+        ->assertJsonPath('conversation.received_at', CarbonImmutable::parse('2026-11-10 15:57:30', 'UTC')->toIso8601String())
+        ->assertJsonPath('conversation.department.name', 'Soporte')
+        ->assertJsonPath('conversation.category.name', 'Facturación')
+        ->assertJsonPath('conversation.readiness.value', 'ready')
+        ->assertJsonPath('conversation.attachments', ['total' => 1, 'by_type' => ['image' => 1]])
+        ->assertJsonPath('conversation.acceptance.allowed', false)
+        ->assertJsonPath('conversation.acceptance.code', 'min_wait')
+        ->assertJsonPath('conversation.acceptance.available_at', CarbonImmutable::parse('2026-11-10 16:03:00', 'UTC')->toIso8601String());
+});
+
+test('the preview names the stage of the conversation', function (string $state, string $stage) {
+    $conversation = match ($state) {
+        'attended' => $this->conversation,
+        'returned to the queue' => Conversation::factory()->inDepartment($this->department)->create(['first_response_at' => now()]),
+        'closed' => Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->closed()->create(),
+    };
+
+    $this->actingAs($this->agent)->getJson(route('conversations.preview', $conversation))
+        ->assertOk()
+        ->assertJsonPath('conversation.stage.value', $stage)
+        ->assertJsonPath('conversation.acceptance', $state === 'returned to the queue'
+            ? ['allowed' => true, 'available' => true, 'code' => null, 'message' => null, 'available_at' => null, 'blocking_conversation_id' => null, 'overridable' => false]
+            : null);
+})->with([
+    'attended' => ['attended', 'in_progress'],
+    'returned to the queue' => ['returned to the queue', 'pending'],
+    'closed' => ['closed', 'finished'],
+]);
+
+test('a long conversation shows the message it started with apart from the latest ones', function () {
+    $first = Message::factory()->create(['conversation_id' => $this->conversation->id, 'body' => 'Mi pedido llegó incompleto']);
+    Message::factory()->count(22)->create(['conversation_id' => $this->conversation->id]);
+
+    $this->actingAs($this->agent)->getJson(route('conversations.preview', $this->conversation))
+        ->assertOk()
+        ->assertJsonCount(20, 'messages')
+        ->assertJsonPath('first_message.id', $first->id)
+        ->assertJsonPath('first_message.body', 'Mi pedido llegó incompleto');
+});
+
+test('previewing a request restrained by every queue rule still writes nothing and keeps its place in the queue', function () {
+    $this->department->forceFill(['service_rules' => ['intake.confirmation_required' => true, 'queue.min_wait_minutes' => 5, 'queue.chronological_order' => true]])->save();
+    $head = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now()->subHour()]);
+    $pending = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now()->subMinutes(30)]);
+    Message::factory()->count(25)->create(['conversation_id' => $pending->id]);
+    $before = $pending->fresh()->getAttributes();
+    Event::fake([ConversationChanged::class, RealtimeSignal::class]);
+
+    $writes = databaseWritesDuring(fn () => $this->actingAs($this->agent)
+        ->getJson(route('conversations.preview', $pending))
+        ->assertOk()
+        ->assertJsonPath('conversation.acceptance.code', 'queue_order')
+        ->assertJsonPath('conversation.acceptance.blocking_conversation_id', $head->id));
+
+    expect($writes)->toBe([])
+        ->and($pending->fresh()->getAttributes())->toEqual($before)
+        ->and(ConversationRead::query()->count())->toBe(0)
+        ->and(ConversationEvent::query()->count())->toBe(0);
+    Event::assertNotDispatched(ConversationChanged::class);
+    Event::assertNotDispatched(RealtimeSignal::class);
 });

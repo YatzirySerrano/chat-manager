@@ -8,7 +8,9 @@
  *   dashboard-activity-keyboard ←/→/Inicio/Fin move the readout, values = server
  *   dashboard-activity-pointer  hovering shows the same readout
  *   dashboard-first-response-gap the day without responses is a gap (two
- *                               pieces of line, «—» in the table, never 0 s)
+ *                               pieces of line, «Sin datos» in the table,
+ *                               never 0 s) in «¿Estamos respondiendo más
+ *                               rápido?»
  *   dashboard-channels          one bar per channel with data, values = server
  *   dashboard-statuses          legend counts = server
  *   dashboard-team              agent and department bars = server
@@ -166,30 +168,28 @@ await step('dashboard-activity-pointer', 'hover', async () => {
 });
 
 await step('dashboard-first-response-gap', 'null = gap', async () => {
-    const points = charts.activity.points;
+    // Since the reorganized dashboard the first response is the chart
+    // «¿Estamos respondiendo más rápido?» (response-trend): this period
+    // against the previous one, from chartsFor().response_trend.
+    const points = charts.response_trend.points;
     const gapIndex = points.findIndex(
         (point, index) =>
-            point.first_response_seconds === null &&
+            point.seconds === null &&
             index > 0 &&
-            points
-                .slice(0, index)
-                .some((p) => p.first_response_seconds !== null) &&
-            points
-                .slice(index + 1)
-                .some((p) => p.first_response_seconds !== null),
+            points.slice(0, index).some((p) => p.seconds !== null) &&
+            points.slice(index + 1).some((p) => p.seconds !== null),
     );
-    const d = await card(admin, 'first-response')
-        .locator('path[data-series="first_response"]')
+    const d = await card(admin, 'response-trend')
+        .locator('path[data-series="current"]')
         .getAttribute('d');
     const pieces = (d.match(/M/g) ?? []).length;
-    const rows = await tableRows(admin, 'first-response');
+    const rows = await tableRows(admin, 'response-trend');
     const zeroDrawn = rows.some((row) => row[1] === '0 s');
     const gapRow = rows[gapIndex];
     const measuredMatch = points.every(
-        (point, index) =>
-            rows[index]?.[2] === number(point.first_response_samples),
+        (point, index) => rows[index]?.[2] === number(point.samples),
     );
-    const svg = card(admin, 'first-response').locator('svg[role="img"]');
+    const svg = card(admin, 'response-trend').locator('svg[role="img"]');
     await svg.focus();
     await admin.keyboard.press('Home');
 
@@ -197,16 +197,16 @@ await step('dashboard-first-response-gap', 'null = gap', async () => {
         await admin.keyboard.press('ArrowRight');
     }
 
-    const text = await tooltipText(admin, 'first-response');
+    const text = await tooltipText(admin, 'response-trend');
     await admin.keyboard.press('Tab');
 
     return [
         gapIndex > 0 &&
             pieces >= 2 &&
-            gapRow?.[1] === '—' &&
+            gapRow?.[1] === 'Sin datos' &&
             !zeroDrawn &&
             measuredMatch &&
-            text.includes('Sin respuestas medidas'),
+            text.includes('Sin datos'),
         `gapIndex=${gapIndex} pieces=${pieces} gapRow=${JSON.stringify(gapRow)} zero=${zeroDrawn} tooltip="${text}"`,
     ];
 });
@@ -364,6 +364,9 @@ await step('reports-trend', 'table = compute()', async () => {
 });
 
 await step('reports-channels', 'by_channel', async () => {
+    // Reportes is split in tabs: channels and breakdowns live in «Desgloses».
+    await admin.locator('[data-reports-tabs] [data-view="desgloses"]').click();
+    await admin.locator('#reports-panel-desgloses').waitFor();
     const values = await card(admin, 'channels')
         .locator('[data-bar-row] [data-bar-value]')
         .allInnerTexts();
@@ -393,6 +396,9 @@ await step('reports-breakdown', 'agent bars', async () => {
     const expected = analytics.by_agent
         .slice(0, 10)
         .map((row) => [number(row.received), number(row.attended)]);
+    // The KPI and trend anchors belong to the «Resumen» tab.
+    await admin.locator('[data-reports-tabs] [data-view="resumen"]').click();
+    await admin.locator('#reports-panel-resumen').waitFor();
     const anchors = await Promise.all(
         [
             'reports.filters',

@@ -141,6 +141,8 @@ export type Connection = {
         last_outbound_at: string | null;
         last_error: { at: string; message: string | null } | null;
     };
+    /** Recent evidence vs. history, per channel, and operational warnings. */
+    monitoring: ConnectionMonitoring;
     meta: {
         phone_status: string | null;
         quality_rating: string | null;
@@ -180,6 +182,59 @@ export type ConnectionStats = {
 export type ConnectionOption = { value: string; label: string };
 
 /** Activation checklist of a connection (evidence only, never secrets). */
+/** An operational warning about a connection, in plain language. */
+export type ConnectionWarning = {
+    code: string;
+    message: string;
+    at: string | null;
+};
+
+/**
+ * What is known about a connection right now. Blocks that do not apply to
+ * its channel are null (a web chat has no credentials; only WhatsApp has a
+ * webhook of its own). `fresh` means verified within `fresh_minutes`.
+ */
+export type ConnectionMonitoring = {
+    configuration: { complete: boolean; label: string };
+    credentials: {
+        state: ConnectionCredentialState;
+        checked_at: string | null;
+        fresh: boolean;
+        error: string | null;
+        /** Whether the scheduler re-checks this connection by itself. */
+        automatic: boolean;
+        last_attempt: {
+            at: string;
+            outcome: 'verified' | 'rejected' | 'unreachable' | 'rate_limited';
+        } | null;
+    } | null;
+    webhook: {
+        verified_at: string | null;
+        last_received_at: string | null;
+        fresh: boolean;
+    } | null;
+    subscription: {
+        state: 'subscribed' | 'not_subscribed' | 'unknown';
+        checked_at: string | null;
+        fresh: boolean;
+    } | null;
+    last_inbound_at: string | null;
+    last_outbound_at: string | null;
+    last_error: {
+        at: string;
+        message: string | null;
+        /** Nothing has worked since (current) or it is history. */
+        current: boolean;
+    } | null;
+    evidence: {
+        level: 'problem' | 'recent' | 'historical' | 'none';
+        source: 'check' | 'traffic' | null;
+        at: string | null;
+    };
+    warnings: ConnectionWarning[];
+    fresh_minutes: number;
+};
+
 export type ConnectionDiagnostics = {
     transport: {
         mode: 'meta' | 'simulated' | 'unavailable';
@@ -242,6 +297,7 @@ export type ConnectionDiagnostics = {
             at: string | null;
         } | null;
     };
+    warnings: ConnectionWarning[];
     signals: { field: string; at: string | null; event: string | null }[];
 };
 

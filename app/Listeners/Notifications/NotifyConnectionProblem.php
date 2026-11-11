@@ -13,8 +13,11 @@ use Illuminate\Support\Facades\Notification;
 
 /**
  * A connection that degrades (provider error, rejected credentials) alerts
- * the people who watch connections. Recoveries and configuration steps are
- * not notified: they are visible on the connection itself.
+ * the people who watch connections, and when there is evidence that it works
+ * again (a successful verification, a message received or accepted after the
+ * error) the same people are told once: the recovery folds into the unread
+ * problem notification, so the bell never keeps a solved problem as current.
+ * Configuration steps are not notified: they are visible on the connection.
  */
 class NotifyConnectionProblem implements ShouldQueue
 {
@@ -25,6 +28,9 @@ class NotifyConnectionProblem implements ShouldQueue
 
     /** States worth interrupting an administrator for. */
     public const PROBLEM_STATES = [ConnectionHealth::Error, ConnectionHealth::CredentialsInvalid];
+
+    /** States that prove a connection left a problem behind (not merely edited or paused). */
+    public const RECOVERED_STATES = [ConnectionHealth::CredentialsVerified, ConnectionHealth::Receiving, ConnectionHealth::Operational];
 
     public function __construct(private NotificationRecipients $recipients) {}
 
@@ -37,7 +43,15 @@ class NotifyConnectionProblem implements ShouldQueue
     {
         $health = ConnectionHealth::tryFrom($event->health);
 
-        if (! in_array($health, self::PROBLEM_STATES, true) || $event->previousHealth === $event->health) {
+        if ($event->previousHealth === $event->health) {
+            return;
+        }
+
+        $problem = in_array($health, self::PROBLEM_STATES, true);
+        $recovered = in_array($health, self::RECOVERED_STATES, true)
+            && in_array(ConnectionHealth::tryFrom((string) $event->previousHealth), self::PROBLEM_STATES, true);
+
+        if (! $problem && ! $recovered) {
             return;
         }
 
@@ -53,6 +67,7 @@ class NotifyConnectionProblem implements ShouldQueue
                 $event->health,
                 $event->previousHealth,
                 now()->format('YmdH'),
+                $recovered,
             ));
         }
     }

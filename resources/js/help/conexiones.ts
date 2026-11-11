@@ -12,6 +12,7 @@ const help: ModuleHelp = {
         'Configurar el widget de Chat web y copiar el fragmento de código para el sitio.',
         'Conectar una página de Facebook o una cuenta de Instagram con «Autorizar acceso», volver a autorizarla o desconectarla.',
         'Activar, desactivar, eliminar y restaurar conexiones.',
+        'Vigilar varias conexiones a la vez: cada una indica si su evidencia es reciente («Comprobada hace 12 minutos») o histórica («Sin comprobar desde hace 3 días») y sus advertencias.',
     ],
     workflow: [
         'Pulsa «Nueva conexión» y elige «WhatsApp Cloud API», «Chat web», «Facebook Messenger» o «Instagram».',
@@ -48,6 +49,16 @@ const help: ModuleHelp = {
             name: 'Mensajes automáticos',
             description:
                 'Bienvenida, Fuera de horario y Despedida (hasta 1024 caracteres). Se envían como texto dentro de la ventana de 24 horas; los mensajes del departamento tienen prioridad.',
+        },
+        {
+            name: 'Monitoreo de la conexión',
+            description:
+                'Estado de configuración, última verificación de credenciales, aviso de mensajes nuevos (webhook), suscripción de la app, último mensaje recibido, último envío, último error y advertencias. Solo aparecen los apartados que aplican al canal. La plataforma vuelve a comprobar con Meta las conexiones activas cada 30 minutos.',
+        },
+        {
+            name: 'Evidencia reciente / actividad histórica',
+            description:
+                'Reciente (palomita): Meta respondió o hubo mensajes en la última hora y media. Histórica (reloj con flecha): funcionó entonces, pero no confirma el estado de hoy. Pasar un tiempo sin mensajes es normal y no es un problema.',
         },
         {
             name: 'Ventana de reapertura',
@@ -148,6 +159,24 @@ const help: ModuleHelp = {
                 'La app necesita pages_manage_metadata (Messenger) o instagram_business_manage_messages (Instagram) y debes administrar la página. Vuelve a autorizar.',
         },
         {
+            problem:
+                '«Llegaron eventos de otro número (ID …) que no está registrado aquí.»',
+            solution:
+                'Tu app de Meta tiene otro número que envía sus avisos a la dirección de esta conexión. Si debe atenderse aquí, crea su conexión con el mismo App secret (sus mensajes entrarán solos); si no, retira ese número de la app o dale su propia dirección en Meta. Esos mensajes no se guardaron.',
+        },
+        {
+            problem:
+                '«Llegaron eventos de otro número (ID …) registrado en una conexión con un App Secret distinto…»',
+            solution:
+                'Las dos conexiones deben guardar el mismo App secret para comprobar que son de la misma app de Meta. Reemplaza el App secret en la conexión que lo tenga distinto. Si son apps diferentes, cada una necesita su propia dirección en Meta.',
+        },
+        {
+            problem:
+                '«El último intento automático no pudo comprobarse con Meta…»',
+            solution:
+                'Meta no respondió o limitó las solicitudes. No es un fallo de tus credenciales: se reintenta solo. Si persiste varias horas, pulsa «Verificar credenciales».',
+        },
+        {
             problem: '«Demasiados intentos de verificación…»',
             solution:
                 'Espera los segundos indicados antes de verificar otra vez.',
@@ -157,6 +186,8 @@ const help: ModuleHelp = {
         'Messenger e Instagram usan la autorización oficial de Meta. Para atender a clientes reales la app de Meta debe estar publicada y aprobada en App Review (acceso avanzado); antes solo llegan mensajes de personas con un rol en la app.',
         'Messenger e Instagram solo permiten responder dentro de las 24 horas posteriores al último mensaje del cliente.',
         'Desactivar o eliminar una conexión conserva sus conversaciones e historial.',
+        'Varios números en la misma app de Meta: guarda el mismo App secret en todas sus conexiones. Meta puede enviar los avisos de todos a una sola dirección y cada mensaje llega a la conexión de su número.',
+        'Cuando una conexión con problema vuelve a funcionar, la notificación cambia a «La conexión … se recuperó»; al abrirla llegas a su diagnóstico.',
         'Si rotas la clave pública del Chat web, reemplaza el fragmento en tu sitio: el anterior deja de funcionar.',
     ],
     examples: [

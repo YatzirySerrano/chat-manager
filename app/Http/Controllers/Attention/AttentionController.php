@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Attention;
 use App\Enums\AttentionAlertPriority;
 use App\Enums\AttentionAlertSound;
 use App\Enums\ColorSwatch;
+use App\Enums\Permission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Attention\StoreAttentionAlertRequest;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\Attention\AttentionOverview;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Sla\SlaMonitor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -18,20 +20,22 @@ use Inertia\Response;
 
 /**
  * «Seguimiento de atención»: what each agent within the viewer's reach is
- * attending, which customers are waiting for an answer and since when, and
- * (with attention.alert) the alerts sent to the team. Authorized on the
+ * attending, which customers are waiting for an answer and since when,
+ * (with attention.alert) the alerts sent to the team, and the «Monitoreo de
+ * SLA» (SlaMonitor: open response cycles and breach history). Authorized on the
  * server for every request (gate view-attention); every prop is lazy, so
  * the page's periodic and real-time refreshes reload only what changed.
  */
 class AttentionController extends Controller
 {
-    public function index(Request $request, AttentionOverview $overview, PendingAttention $pending): Response
+    public function index(Request $request, AttentionOverview $overview, PendingAttention $pending, SlaMonitor $sla): Response
     {
         Gate::authorize('view-attention');
 
         /** @var User $viewer */
         $viewer = $request->user();
         $canSend = $viewer->can('send-attention-alerts');
+        $slaFilters = $sla->filters($request->validate(SlaMonitor::rules()));
 
         return Inertia::render('attention/Index', [
             'agents' => fn (): array => $overview->agents($viewer),
@@ -44,9 +48,19 @@ class AttentionController extends Controller
                 'enabled' => $pending->isEnabled(),
                 'tolerance_minutes' => $pending->toleranceMinutes(),
             ],
+            // «Monitoreo de SLA»: open response cycles and breach history of the viewer's reach.
+            'tab' => fn (): string => $request->query('tab') === 'sla' ? 'sla' : 'attention',
+            'sla' => Inertia::defer(fn (): array => $sla->open($viewer, $slaFilters), 'sla'),
+            'slaBreaches' => Inertia::defer(fn (): array => $sla->breaches($viewer, $slaFilters), 'sla-history'),
+            'slaFilters' => fn (): array => $slaFilters,
+            'slaOptions' => fn (): array => $sla->options($viewer),
+            // Anchor of the shared countdown clock (useServerNow).
+            'serverTime' => fn (): string => now()->toIso8601String(),
             'can' => [
                 'send' => $canSend,
+                'settings' => $viewer->holdsPermission(Permission::UpdateSettings),
             ],
+            'settingsUrl' => fn (): ?string => $viewer->holdsPermission(Permission::UpdateSettings) ? route('admin.settings.edit') : null,
             'options' => [
                 'priorities' => AttentionAlertPriority::options(),
                 'sounds' => AttentionAlertSound::options(),

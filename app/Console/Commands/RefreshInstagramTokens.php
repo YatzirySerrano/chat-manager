@@ -68,7 +68,8 @@ class RefreshInstagramTokens extends Command
                 if ($exception->kind === MetaGraphException::TOKEN_INVALID) {
                     $this->expire($connection, $exception->getMessage());
                 } else {
-                    $monitor->failure($connection, 'No fue posible renovar el token de Instagram: '.$exception->getMessage());
+                    // About the token itself: the next accepted verification attests it still works.
+                    $monitor->failure($connection, 'No fue posible renovar el token de Instagram: '.$exception->getMessage(), ConnectionMonitor::ERROR_CREDENTIALS);
                 }
 
                 $failed++;

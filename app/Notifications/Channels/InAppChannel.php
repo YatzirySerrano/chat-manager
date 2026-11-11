@@ -57,7 +57,7 @@ class InAppChannel
                 'id' => (string) Str::uuid(),
                 'type' => $notification::class,
                 'kind' => $notification->kind()->value,
-                'level' => $notification->kind()->level()->value,
+                'level' => $notification->level()->value,
                 'aggregate_key' => null,
                 'data' => $notification->payload(),
                 'read_at' => null,
@@ -92,7 +92,7 @@ class InAppChannel
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->id,
             'kind' => $notification->kind()->value,
-            'level' => $notification->kind()->level()->value,
+            'level' => $notification->level()->value,
             'aggregate_key' => $aggregateKey,
             'occurrences' => 1,
             'data' => json_encode($notification->payload(), JSON_THROW_ON_ERROR),
@@ -101,6 +101,9 @@ class InAppChannel
             'updated_at' => $now,
         ], ['notifiable_type', 'notifiable_id', 'unread_aggregate_key'], [
             'occurrences' => DB::raw('occurrences + 1'),
+            // The newest occurrence decides the level (same for every kind
+            // except a connection problem that turned into its recovery).
+            'level',
             'updated_at',
         ]);
 

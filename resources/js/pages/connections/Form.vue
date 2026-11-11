@@ -490,13 +490,6 @@ const metaDetails = computed(() => {
     ].filter((detail) => detail.value);
 });
 
-const phoneNotConnected = computed(
-    () =>
-        connection.value?.checks.credentials.state === 'verified' &&
-        connection.value.meta.phone_status !== null &&
-        connection.value.meta.phone_status !== 'CONNECTED',
-);
-
 const pageTitle = computed(() =>
     connection.value ? connection.value.name : 'Nueva conexión',
 );
@@ -1169,7 +1162,8 @@ const pageTitle = computed(() =>
                 </fieldset>
 
                 <aside
-                    class="grid min-w-0 grid-cols-1 gap-6"
+                    id="diagnostico"
+                    class="grid min-w-0 scroll-mt-4 grid-cols-1 gap-6"
                     :class="!isWebChat && 'lg:sticky lg:top-4'"
                 >
                     <SurfaceCard body-class="grid gap-4 p-5">
@@ -1205,27 +1199,10 @@ const pageTitle = computed(() =>
                             </div>
 
                             <ConnectionChecklist
-                                v-if="isWhatsapp"
                                 :checks="connection.checks"
+                                :monitoring="connection.monitoring"
+                                :channel="connection.channel.value"
                             />
-
-                            <div
-                                v-if="phoneNotConnected"
-                                class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
-                            >
-                                <TriangleAlert
-                                    class="mt-0.5 size-4 shrink-0 text-warning"
-                                    aria-hidden="true"
-                                />
-                                <p>
-                                    Meta reporta el número con estado
-                                    <strong>{{
-                                        connection.meta.phone_status
-                                    }}</strong
-                                    >. Debe estar CONNECTED para enviar y
-                                    recibir mensajes.
-                                </p>
-                            </div>
 
                             <dl
                                 v-if="metaDetails.length > 0"

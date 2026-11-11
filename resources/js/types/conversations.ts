@@ -2,6 +2,7 @@ import type { AppColor } from './admin';
 import type { ConnectionChannel } from './connections';
 import type { ContactAttribution, ConversationOriginInfo } from './contacts';
 import type { ViewerChatAppearance } from './personalization';
+import type { ConversationReadinessValue } from './service-rules';
 import type { TagOption } from './tags';
 
 /**
@@ -32,6 +33,56 @@ export type ConversationAbilities = {
     supervise: boolean;
     /** May send WhatsApp templates (reply + administrative templates.send). */
     send_templates: boolean;
+    /** May confirm the request as complete or return it to «Necesita información». */
+    confirm_ready: boolean;
+    /** May justify an exception to the queue rules (needs_info, min_wait, queue_order). */
+    override_queue_rules: boolean;
+    /** May set or clear the request category. */
+    categorize: boolean;
+};
+
+/** Request category (type). `is_active` false: deleted, kept as history. */
+export type ConversationCategoryRef = {
+    id: number;
+    name: string;
+    color: AppColor;
+    is_active?: boolean;
+};
+
+/**
+ * Why a pending request cannot be taken, by stable code:
+ * - queue rules (the request's own reason, reported first, in this order):
+ *   `needs_info`, `min_wait`, `queue_order`;
+ * - the viewer's own reason: `capacity`, `pending_attention`, or
+ *   `not_permitted` (the viewer may not accept from that queue).
+ */
+export type AcceptanceCode =
+    | 'needs_info'
+    | 'min_wait'
+    | 'queue_order'
+    | 'capacity'
+    | 'pending_attention'
+    | 'not_permitted';
+
+/**
+ * Whether the viewer can take a pending request right now (pending,
+ * unassigned rows only; the server decides again under lock on every
+ * accept). The countdown of `min_wait` is rendered from `available_at`
+ * against the server clock (useServerNow), never from `message`.
+ */
+export type ConversationAcceptance = {
+    /** The viewer can accept it now. */
+    allowed: boolean;
+    /** The request itself is available (queue rules pass), whoever looks. */
+    available: boolean;
+    code: AcceptanceCode | null;
+    message: string | null;
+    /** `min_wait`: the exact moment it becomes available (ISO 8601). */
+    available_at: string | null;
+    /** `queue_order`: the earlier request that must be taken first. */
+    blocking_conversation_id: number | null;
+    /** The viewer may justify an exception to this rule (queue rules only). */
+    overridable: boolean;
 };
 
 export type ConversationSummary = {
@@ -66,12 +117,26 @@ export type ConversationSummary = {
     closed_at: string | null;
     reopen_count: number;
     created_at: string | null;
+    /** Request type; shown to every viewer. */
+    category?: ConversationCategoryRef | null;
+    readiness?: {
+        value: ConversationReadinessValue;
+        label: string;
+        /** The confirmation rule applies to it right now. */
+        tracked: boolean;
+    };
+    /** When it entered the ready queue (clock of the minimum wait and the order). */
+    queued_at?: string | null;
+    /** Pending, unassigned rows only; null otherwise. */
+    acceptance?: ConversationAcceptance | null;
     tags?: TagOption[];
     /** Customer messages after the viewer's read marker (list rows only). */
     unread_count?: number;
     last_message?: ConversationMessagePreview | null;
     /** The customer wrote last and nobody answered yet. */
     awaiting_reply: boolean;
+    /** Open response cycle with an objective (SLA badge); null when nobody waits or no objective applies. */
+    sla?: ConversationSla | null;
     can: ConversationAbilities;
     /** The viewer's own chat colors (open conversation only). */
     appearance?: ViewerChatAppearance;
@@ -117,6 +182,8 @@ export type ConversationSort = 'priority' | 'recent' | 'oldest';
  */
 export type ConversationList = {
     data: ConversationSummary[];
+    /** Server time when the rows were read (ISO 8601): anchors the countdowns. */
+    server_time?: string;
     has_more: boolean;
     next_cursor: string | null;
 };
@@ -188,6 +255,10 @@ export type ConversationFilters = {
     sort: ConversationSort;
     /** Only conversations with messages unread for the viewer. */
     unread: boolean;
+    /** Request category id (`category=<id>`), or null for every one. */
+    category: number | null;
+    /** Preparation state (`readiness=ready|needs_info`), or null for both. */
+    readiness: ConversationReadinessValue | null;
 };
 
 export type MessageDirection = 'inbound' | 'outbound';
@@ -322,6 +393,10 @@ export type ConversationEvent = {
     message_id: number | null;
     /** Error code of a failed or blocked message (e.g. delivery_unknown). */
     reason: string | null;
+    /** A justified exception to the queue rules made with this operation. */
+    queue_override?: { rules: string[]; reason: string | null } | null;
+    /** Category change: names as they were when it happened. */
+    category?: { from: string | null; to: string | null } | null;
     created_at: string;
 };
 
@@ -499,4 +574,23 @@ export type AcceptBlock = {
         waiting_since: string | null;
         overdue: boolean;
     }[];
+};
+
+/**
+ * SLA of the request in course: the open response cycle of a conversation,
+ * with the objective frozen when the customer started waiting. The state
+ * («En tiempo», «Por vencer», «Vencida») is classified in the browser from
+ * `warn_at` / `due_at` against the shared server clock (useServerNow).
+ */
+export type ConversationSla = {
+    kind: 'first_response' | 'response';
+    kind_label: string;
+    started_at: string;
+    warn_at: string | null;
+    due_at: string | null;
+    target_seconds: number;
+    /** The objective counts only the business hours of the department. */
+    business_hours_only: boolean;
+    /** The evaluator already recorded the breach. */
+    breached: boolean;
 };

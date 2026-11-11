@@ -98,6 +98,84 @@ class BusinessHoursCalendar
         return $seconds;
     }
 
+    /**
+     * The instant at which that many seconds of attention time have elapsed
+     * since `$from`: the exact inverse of businessSecondsBetween(), so
+     * businessSecondsBetween($from, addBusinessSeconds($from, $s), $d) === $s.
+     * It is the earliest such instant (a deadline that falls exactly on a
+     * closing time is that closing time, not the next opening).
+     *
+     * With continuous attention (no schedule applies) it is a plain
+     * addition. A start outside the hours begins counting at the next
+     * opening. Zero or negative seconds return `$from` itself.
+     *
+     * A schedule that never opens, or a deadline further than MAX_DAYS
+     * away, cannot be measured in attention time: the walk stops and the
+     * result degrades to calendar time instead of looping forever.
+     */
+    public function addBusinessSeconds(CarbonInterface $from, int $seconds, ?Department $department): CarbonImmutable
+    {
+        $start = CarbonImmutable::instance($from);
+
+        if ($seconds <= 0) {
+            return $start;
+        }
+
+        $schedule = $this->hours->scheduleFor($department);
+        $calendar = CarbonImmutable::createFromTimestamp($start->getTimestamp() + $seconds, $start->getTimezone());
+
+        if ($schedule === null || ! $this->opensSomeDay($schedule)) {
+            return $calendar;
+        }
+
+        $remaining = $seconds;
+        $day = $start->setTimezone($this->hours->timezone())->startOfDay();
+
+        // Same day walk as businessSecondsBetween(): by local date, normalized
+        // every iteration so daylight saving changes never skip a day.
+        for ($walked = 0; $walked <= self::MAX_DAYS; $walked++, $day = $day->addDay()->startOfDay()) {
+            $hours = $schedule[strtolower($day->englishDayOfWeek)] ?? null;
+
+            if (! is_array($hours) || ! $hours['open'] || $hours['end'] <= $hours['start'] || $this->hours->holidayOn($day) !== null) {
+                continue;
+            }
+
+            $opening = $this->at($day, $hours['start']);
+            $closing = $this->at($day, $hours['end']);
+            $countFrom = $opening->greaterThan($start) ? $opening : $start;
+
+            if ($closing <= $countFrom) {
+                continue;
+            }
+
+            $available = (int) $countFrom->diffInSeconds($closing);
+
+            if ($remaining <= $available) {
+                return CarbonImmutable::createFromTimestamp($countFrom->getTimestamp() + $remaining, $start->getTimezone());
+            }
+
+            $remaining -= $available;
+        }
+
+        return $calendar;
+    }
+
+    /**
+     * Whether the weekly schedule has at least one day with a valid range.
+     *
+     * @param  array<string, mixed>  $schedule
+     */
+    private function opensSomeDay(array $schedule): bool
+    {
+        foreach ($schedule as $hours) {
+            if (is_array($hours) && ($hours['open'] ?? false) && ($hours['end'] ?? '') > ($hours['start'] ?? '')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function at(CarbonImmutable $localDay, string $time): CarbonImmutable
     {
         [$hour, $minute] = array_map('intval', explode(':', $time));

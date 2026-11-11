@@ -178,6 +178,49 @@ function ignoreTriggerInteraction(event: Event): void {
     }
 }
 
+/**
+ * Inside a modal dialog the open explanation pauses the dialog's focus trap
+ * (the popover is a focus scope of its own), so Tab on the icon at an edge
+ * of the dialog would leave it for the page behind. The wrap-around the
+ * trap would have done is done here.
+ */
+function onTriggerTab(event: KeyboardEvent): void {
+    const icon = trigger.value;
+    const dialog = icon?.closest<HTMLElement>(
+        '[role="dialog"], [role="alertdialog"]',
+    );
+
+    if (
+        !open.value ||
+        !icon ||
+        !dialog ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+    ) {
+        return;
+    }
+
+    const tabbable = [
+        ...dialog.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+    ].filter((element) => element.getClientRects().length > 0);
+    const first = tabbable[0];
+    const last = tabbable[tabbable.length - 1];
+    const target =
+        event.shiftKey && first === icon
+            ? last
+            : !event.shiftKey && last === icon
+              ? first
+              : null;
+
+    if (target) {
+        event.preventDefault();
+        target.focus();
+    }
+}
+
 onBeforeUnmount(clearTimers);
 </script>
 
@@ -200,6 +243,7 @@ onBeforeUnmount(clearTimers);
                 @pointerleave="onTriggerPointerLeave"
                 @focus="onTriggerFocus"
                 @blur="onTriggerBlur"
+                @keydown.tab="onTriggerTab"
                 @keydown.enter.stop.prevent="toggleFromKeyboard"
                 @keydown.space.stop.prevent="toggleFromKeyboard"
                 @keyup.space.stop.prevent

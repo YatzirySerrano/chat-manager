@@ -22,6 +22,7 @@ import DepartmentDistributionCard from '@/components/departments/DepartmentDistr
 import DepartmentMetricsCard from '@/components/departments/DepartmentMetricsCard.vue';
 import DepartmentQuickRepliesCard from '@/components/departments/DepartmentQuickRepliesCard.vue';
 import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWelcomeMessageCard.vue';
+import DepartmentServiceRulesCard from '@/components/service-rules/DepartmentServiceRulesCard.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
@@ -59,6 +60,7 @@ import type {
     DistributionModeValue,
     MemberCandidate,
     PlatformSettings,
+    ServiceRuleSet,
     Weekday,
 } from '@/types';
 
@@ -81,6 +83,8 @@ const props = defineProps<{
         description: string;
     }[];
     automation: DepartmentAutomation;
+    /** Service rules of the department with what it inherits (ServiceRules::describe()). */
+    serviceRules: ServiceRuleSet;
     can: {
         update: boolean;
         delete: boolean;
@@ -268,6 +272,13 @@ function confirmRemoval(): void {
                 :manage-url="links.quickReplies"
             />
         </div>
+
+        <DepartmentServiceRulesCard
+            data-tour="department.service-rules"
+            :department="department"
+            :rules="serviceRules"
+            :can-update="can.update"
+        />
 
         <h2 class="-mb-2 text-base font-semibold">Miembros</h2>
 

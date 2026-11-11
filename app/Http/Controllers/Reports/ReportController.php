@@ -65,9 +65,14 @@ class ReportController extends Controller
                 'departments' => $scope->departmentOptions($user),
                 'agents' => $scope->agentOptions($user),
                 'connections' => $scope->connectionOptions($user),
+                'categories' => $scope->categoryOptions(),
+                'channels' => $scope->channelOptions($user),
+                'statuses' => AnalyticsFilters::statusOptions(),
             ],
             'analytics' => Inertia::defer(fn () => $analytics->report($user, $filters)),
             'canExport' => $exporter->allowsReport('analytics', $user),
+            'canExportProductivity' => $exporter->allowsReport('agent-productivity', $user),
+            'canExportSla' => $exporter->allowsReport('sla-compliance', $user),
         ]);
     }
 }

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Conversations\QueueRules;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -29,16 +30,27 @@ use Throwable;
  * (distributeForAgent(), distributeQueue()). A customer message is never
  * rejected for lack of capacity.
  *
+ * Queue rules (QueueRules): a request that still needs information or whose
+ * minimum wait has not elapsed is never distributed; it stays in the queue
+ * and is offered again when it is confirmed, when its wait ends
+ * (conversations:offer-waiting-queues) or when capacity frees up. A queue is
+ * walked in the order of its clock (`queued_at`, then id), skipping the
+ * requests that are not eligible yet.
+ *
  * The department row is locked while choosing, so simultaneous arrivals in
  * the same department are distributed one after the other with up to date
  * loads and never land twice on the same free slot.
  */
 class AssignAutomatically
 {
+    /** Conversations offered at most in one pass over a department's queue. */
+    public const QUEUE_PASS = 100;
+
     public function __construct(
         private ConversationAccess $access,
         private ConversationLifecycle $lifecycle,
         private PendingAttention $pendingAttention,
+        private QueueRules $queueRules,
     ) {}
 
     /**
@@ -49,6 +61,11 @@ class AssignAutomatically
     public function handle(Conversation $conversation, array $excludedUserIds = []): ?User
     {
         if ($conversation->status !== ConversationStatus::Pending || $conversation->department_id === null) {
+            return null;
+        }
+
+        // Incomplete or still inside its minimum wait: it waits in the queue.
+        if (! $this->queueRules->isEligible($conversation)) {
             return null;
         }
 
@@ -180,9 +197,34 @@ class AssignAutomatically
     }
 
     /**
+     * distributeQueue() for the department once the current transaction
+     * commits (right away outside one), e.g. when one of its requests was
+     * confirmed as complete. Failures are reported, never rethrown.
+     */
+    public function distributeDepartmentAfterCommit(?int $departmentId): void
+    {
+        if ($departmentId === null) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($departmentId): void {
+            try {
+                $department = Department::query()->find($departmentId);
+
+                if ($department !== null) {
+                    $this->distributeQueue($department);
+                }
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        });
+    }
+
+    /**
      * Offer the queues of every active automatic department again, e.g. when
-     * the platform-wide limit was raised or removed. Must be called outside
-     * any transaction; each department is bounded like distributeQueue().
+     * the platform-wide limit was raised or removed or a queue rule changed.
+     * Must be called outside any transaction; each department is bounded
+     * like distributeQueue() and costs one read when nothing is eligible.
      */
     public function distributeAllQueues(): int
     {
@@ -193,6 +235,28 @@ class AssignAutomatically
         }
 
         return $assigned;
+    }
+
+    /**
+     * distributeAllQueues() once the current transaction commits (right
+     * away outside one), e.g. when a service rule that decides who can be
+     * taken changed. Failures are reported, never rethrown.
+     */
+    public function distributeAllQueuesAfterCommit(): void
+    {
+        DB::afterCommit(fn () => rescue(fn (): int => $this->distributeAllQueues()));
+    }
+
+    /**
+     * Whether a change of service rules (ServiceRules::diff(), or the
+     * changes of the platform settings) touches a rule that decides which
+     * requests are eligible, so the automatic queues must be offered again.
+     *
+     * @param  array<string, mixed>  $changes
+     */
+    public static function rulesMayFreeRequests(array $changes): bool
+    {
+        return array_key_exists('intake.confirmation_required', $changes) || array_key_exists('queue.min_wait_minutes', $changes);
     }
 
     /**
@@ -217,9 +281,15 @@ class AssignAutomatically
 
     /**
      * Offer the department's waiting conversations to its eligible agents,
-     * oldest first. Bounded: at most 100 conversations per call, each one in
-     * its own short transaction (no lock over the whole queue), stopping at
-     * the first one nobody can take.
+     * in the order they entered the ready queue (their clock, `queued_at` or
+     * else `created_at`, then id: QueueRules::eligible(), the same read the
+     * order rule uses). Bounded: at most QUEUE_PASS conversations per call,
+     * each one in its own short transaction (no lock over the whole queue).
+     * Only eligible requests are read, so a backlog of incomplete or still
+     * waiting ones never keeps the pass from the ones that can be taken;
+     * each is judged again under its row lock (taken or changed meanwhile:
+     * skipped). The pass stops at the first eligible one nobody can take
+     * (no capacity left).
      *
      * @param  list<int>  $excludedConversationIds  Conversations left waiting in this pass.
      */
@@ -231,22 +301,23 @@ class AssignAutomatically
 
         $assigned = 0;
 
-        $pending = Conversation::query()
-            ->where('department_id', $department->id)
-            ->where('status', ConversationStatus::Pending)
-            ->whereNull('assigned_user_id')
-            ->whereNotIn('id', $excludedConversationIds)
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->limit(100)
-            ->get(['id']);
+        $pending = $this->queueRules->eligible($department->id, self::QUEUE_PASS, exceptIds: $excludedConversationIds);
 
         foreach ($pending as $candidate) {
-            $agent = DB::transaction(function () use ($candidate): ?User {
+            /** @var User|false|null $agent False: skipped, not eligible. */
+            $agent = DB::transaction(function () use ($candidate): User|false|null {
                 $conversation = Conversation::query()->lockForUpdate()->find($candidate->id);
 
-                return $conversation === null ? null : $this->handle($conversation);
+                if ($conversation === null || ! $this->queueRules->isEligible($conversation)) {
+                    return false;
+                }
+
+                return $this->handle($conversation);
             });
+
+            if ($agent === false) {
+                continue;
+            }
 
             if ($agent === null) {
                 break;

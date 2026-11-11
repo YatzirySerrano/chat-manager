@@ -32,9 +32,11 @@ use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\Department;
 use App\Models\Message;
+use App\Models\ResponseCycle;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\ResponseClock;
 use App\Services\PlatformSettings;
 use App\Support\InboundSender;
 use Carbon\CarbonImmutable;
@@ -767,4 +769,95 @@ test('an accept and an automatic assignment for the same agent at once never exc
     expect(throughConnection('second', $distribute))->toBeNull()
         ->and(throughConnection('second', fn () => Conversation::query()->where('assigned_user_id', $agent->id)->count()))->toBe(1)
         ->and(throughConnection('second', fn () => Conversation::query()->findOrFail($arrived->id)->status))->toBe(ConversationStatus::Pending);
+});
+
+/**
+ * The customer of the conversation writes: the engine opens its response
+ * cycle inside the transaction that locks the conversation, and commits.
+ */
+function concurrentCustomerWrites(int $conversationId): ResponseCycle
+{
+    return DB::transaction(fn () => app(ResponseClock::class)->customerWrote(Conversation::query()->lockForUpdate()->findOrFail($conversationId), CarbonImmutable::now()));
+}
+
+test('a release decided on a snapshot older than the customer message still takes the agent off the open cycle', function () {
+    concurrentConnection('first');
+    $second = concurrentConnection('second');
+
+    [$agent, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->create();
+        $agent = User::factory()->agent()->inDepartments($department)->create();
+
+        return [$agent, Conversation::factory()->inDepartment($department)->assignedTo($agent)->create()];
+    });
+
+    // A user or role update is already running: its snapshot has no cycle yet.
+    $second->beginTransaction();
+    expect(throughConnection('second', fn () => ResponseCycle::query()->count()))->toBe(0);
+
+    // Meanwhile the customer writes and the cycle, assigned to the agent, is committed.
+    $cycle = throughConnection('first', fn () => concurrentCustomerWrites($conversation->id));
+    expect($cycle->assigned_user_id)->toBe($agent->id);
+
+    // The snapshot still does not show the cycle, yet the release must reach it.
+    expect(throughConnection('second', fn () => ResponseCycle::query()->count()))->toBe(0)
+        ->and(throughConnection('second', fn () => app(ReleaseAssignedConversations::class)->handle($agent)))->toBe(1);
+    $second->commit();
+
+    expect(throughConnection('first', fn () => ResponseCycle::query()->findOrFail($cycle->id)))
+        ->active->toBe(1)
+        // Nobody is responsible any more: a later breach is not attributed to the agent who lost it.
+        ->assigned_user_id->toBeNull();
+});
+
+test('a close decided on a snapshot older than the customer message never leaves an open cycle behind', function () {
+    concurrentConnection('first');
+    $second = concurrentConnection('second');
+
+    [$admin, $conversation] = throughConnection('first', function () {
+        $department = Department::factory()->create();
+        $agent = User::factory()->agent()->inDepartments($department)->create();
+
+        return [User::factory()->administrator()->create(), Conversation::factory()->inDepartment($department)->assignedTo($agent)->create()];
+    });
+
+    $second->beginTransaction();
+    expect(throughConnection('second', fn () => ResponseCycle::query()->count()))->toBe(0);
+
+    $cycle = throughConnection('first', fn () => concurrentCustomerWrites($conversation->id));
+
+    throughConnection('second', fn () => app(CloseConversation::class)->handle(Conversation::query()->findOrFail($conversation->id), User::query()->findOrFail($admin->id), 'Resuelto', 0));
+    $second->commit();
+
+    expect(throughConnection('first', fn () => ResponseCycle::query()->findOrFail($cycle->id)))
+        ->active->toBeNull()
+        ->outcome->toBe(ResponseCycle::OUTCOME_CLOSED)
+        ->and(throughConnection('first', fn () => DB::table('conversations')->where('id', $conversation->id)->value('open_response_cycle_id')))->toBeNull();
+});
+
+test('looking for the open cycle of a conversation that has none never holds back the cycles of other conversations', function () {
+    $first = concurrentConnection('first');
+    concurrentConnection('second');
+
+    [$quiet, $other] = throughConnection('first', function () {
+        $department = Department::factory()->create();
+
+        // The later conversation is the one whose customer writes: its cycle
+        // falls in the index gap right after the conversation without cycles.
+        return [Conversation::factory()->inDepartment($department)->create(), Conversation::factory()->inDepartment($department)->create()];
+    });
+
+    // An operation on a conversation without cycles is in flight (its lifecycle events sync the clock).
+    $first->beginTransaction();
+    throughConnection('first', function () use ($quiet) {
+        $clock = app(ResponseClock::class);
+        $locked = Conversation::query()->lockForUpdate()->findOrFail($quiet->id);
+        $clock->sync($locked);
+        expect($clock->closed($locked))->toBeNull();
+    });
+
+    // No gap lock was left on (conversation_id, active): the other customer is received at once.
+    expect(throughConnection('second', fn () => concurrentCustomerWrites($other->id)))->active->toBe(1);
+
+    $first->commit();
 });

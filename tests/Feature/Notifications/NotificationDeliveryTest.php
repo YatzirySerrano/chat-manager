@@ -286,12 +286,50 @@ test('connection problems notify only people who watch connections, once per tra
 
     ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Error->value, ConnectionHealth::Operational->value, 'timeout');
     ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Error->value, ConnectionHealth::Operational->value, 'timeout');
-    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Operational->value, ConnectionHealth::Error->value);
+    // Steps that are neither a problem nor a recovery from one are not news.
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Receiving->value, ConnectionHealth::CredentialsVerified->value);
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::NotConfigured->value, ConnectionHealth::Error->value);
 
     expect(notificationsOf($admin, NotificationKind::ConnectionProblem)->sole())
         ->occurrences->toBe(1)
+        ->level->toBe('urgent')
         ->data->toBe(['connection_id' => $this->connection->id, 'health' => 'error'])
         ->and(notificationsOf($this->agent, NotificationKind::ConnectionProblem))->toBeEmpty();
+});
+
+test('a recovery replaces the unread problem instead of leaving it as current, once per incident', function () {
+    $admin = User::factory()->administrator()->create();
+
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Error->value, ConnectionHealth::Operational->value, 'timeout');
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Operational->value, ConnectionHealth::Error->value);
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Operational->value, ConnectionHealth::Error->value);
+
+    expect(notificationsOf($admin, NotificationKind::ConnectionProblem)->sole())
+        ->read_at->toBeNull()
+        ->level->toBe('informative')
+        ->data->toBe(['connection_id' => $this->connection->id, 'health' => 'operational', 'recovered' => true])
+        ->and(notificationsOf($this->agent, NotificationKind::ConnectionProblem))->toBeEmpty();
+});
+
+test('someone who already read the problem is told about the recovery once, and a new problem is urgent again', function () {
+    $admin = User::factory()->administrator()->create();
+
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::CredentialsInvalid->value, ConnectionHealth::Operational->value);
+    notificationsOf($admin)->sole()->markAsRead();
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::CredentialsVerified->value, ConnectionHealth::CredentialsInvalid->value);
+
+    $unread = notificationsOf($admin, NotificationKind::ConnectionProblem)->whereNull('read_at');
+
+    expect(notificationsOf($admin, NotificationKind::ConnectionProblem))->toHaveCount(2)
+        ->and($unread->sole()->data)->toMatchArray(['recovered' => true])
+        ->and($unread->sole()->level)->toBe('informative');
+
+    $this->travel(2)->hours();
+    ConnectionHealthChanged::dispatch($this->connection->id, ConnectionHealth::Error->value, ConnectionHealth::CredentialsVerified->value, 'timeout');
+
+    expect(notificationsOf($admin, NotificationKind::ConnectionProblem)->whereNull('read_at')->sole())
+        ->level->toBe('urgent')
+        ->data->toBe(['connection_id' => $this->connection->id, 'health' => 'error']);
 });
 
 test('access changes notify the affected active users without details', function () {

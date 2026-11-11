@@ -9,10 +9,13 @@ use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\Analytics\AgentProductivity;
 use App\Services\Analytics\AnalyticsCache;
+use App\Services\Analytics\AnalyticsDimensions;
 use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\Analytics\OperationalAnalytics;
+use App\Services\Analytics\ServiceLevelAnalytics;
 use App\Support\ProtectedAccounts;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -29,7 +32,10 @@ use Illuminate\Support\Facades\Cache;
  *
  * Two reaches on purpose, labelled apart in the interface:
  * - live figures (in attention, pending, finished today) count the
- *   conversations the user can see in the inbox (Conversation::visibleTo);
+ *   conversations the user can see in the inbox (Conversation::visibleTo).
+ *   "Finished today" is a live inbox figure (closed today and still
+ *   closed); the reports' "finalizadas" follow the definitions of
+ *   OperationalAnalytics and are shown apart (`period`);
  * - period figures (received, first human response, trend and every chart)
  *   come from the per-conversation metrics within the user's analytics
  *   reach (App\Services\Analytics\AnalyticsScope).
@@ -46,8 +52,9 @@ use Illuminate\Support\Facades\Cache;
  *     previous_first_response_seconds: int|null,
  *     first_response_samples: int,
  *     received: array{value: int|null, previous: int|null},
+ *     period: array{attended: array{value: int|null, previous: int|null}, resolved: array{value: int|null, previous: int|null}, closed_in_period: array{value: int|null, previous: int|null}}|null,
  *     trend: list<array{label: string, received: int}>,
- *     trend_granularity: 'hour'|'day'|'month',
+ *     trend_granularity: 'hour'|'day'|'week'|'month',
  *     agents: array{active: int|null},
  *     departments: array{active: int, total: int}|null,
  * }
@@ -64,6 +71,12 @@ use Illuminate\Support\Facades\Cache;
  *     statuses: list<array{status: string, label: string, count: int}>|null,
  *     agents: list<AgentBar>|null,
  *     departments: list<DepartmentBar>|null,
+ *     response_trend: array<string, mixed>|null,
+ *     sla: array<string, mixed>|null,
+ *     workload: array<string, mixed>|null,
+ *     heatmap: array{max: int, cells: list<list<int>>}|null,
+ *     categories: list<array{key: string, id: int|null, name: string, received: int, attended: int, resolved: int}>|null,
+ *     backlog: array<string, mixed>|null,
  * }
  */
 class DashboardMetrics
@@ -83,6 +96,9 @@ class DashboardMetrics
         private OperationalAnalytics $analytics,
         private AnalyticsScope $scope,
         private AnalyticsCache $cache,
+        private ServiceLevelAnalytics $serviceLevels,
+        private AgentProductivity $productivity,
+        private AnalyticsDimensions $dimensions,
     ) {}
 
     /**
@@ -157,7 +173,7 @@ class DashboardMetrics
     private function computeCharts(User $user, AnalyticsFilters $filters): array
     {
         if (! $this->messagingConnected() || ! $user->holdsPermission(Permission::ViewConversations)) {
-            return ['activity' => null, 'channels' => null, 'statuses' => null, 'agents' => null, 'departments' => null];
+            return ['activity' => null, 'channels' => null, 'statuses' => null, 'agents' => null, 'departments' => null, 'response_trend' => null, 'sla' => null, 'workload' => null, 'heatmap' => null, 'categories' => null, 'backlog' => null];
         }
 
         $personal = $this->scope->isPersonal($user);
@@ -192,7 +208,79 @@ class DashboardMetrics
                     'first_response_samples' => $bar['first_response_samples'],
                 ], $this->top($this->analytics->breakdown($user, $filters, 'department_id')))
                 : null,
+            'response_trend' => $this->analytics->responseTrend($user, $filters, $this->activity($user, $filters)),
+            'sla' => $this->sla($user, $filters),
+            // Who has what right now: the same audience as the per-agent chart, or one's own load.
+            'workload' => $showsAgents || $personal ? $this->workload($user, $filters) : null,
+            'heatmap' => $this->analytics->heatmap($user, $filters),
+            'categories' => array_map(fn (array $bar): array => [
+                'key' => $bar['key'],
+                'id' => $bar['id'],
+                'name' => $bar['name'],
+                'received' => $bar['received'],
+                'attended' => $bar['attended'],
+                'resolved' => $bar['resolved'],
+            ], $this->top($this->analytics->breakdown($user, $filters, 'category_id'))),
+            'backlog' => $this->analytics->backlog($user, $filters),
         ];
+    }
+
+    /**
+     * Compliance of the period with its departments bounded to the
+     * CHART_TOP with most breaches (the rest summed as "Otros").
+     *
+     * @return array<string, mixed>
+     */
+    private function sla(User $user, AnalyticsFilters $filters): array
+    {
+        $sla = $this->serviceLevels->compliance($user, $filters);
+        $rest = array_slice($sla['by_department'], self::CHART_TOP);
+        $departments = array_slice($sla['by_department'], 0, self::CHART_TOP);
+
+        if ($rest !== []) {
+            $met = (int) array_sum(array_column($rest, 'met'));
+            $breached = (int) array_sum(array_column($rest, 'breached'));
+            $departments[] = [
+                'id' => null,
+                'name' => 'Otros',
+                'met' => $met,
+                'breached' => $breached,
+                'in_progress' => (int) array_sum(array_column($rest, 'in_progress')),
+                'samples' => $met + $breached,
+                'rate' => $met + $breached > 0 ? round($met / ($met + $breached) * 100, 1) : null,
+                'exceeded_business_seconds' => null,
+                'exceeded_calendar_seconds' => null,
+            ];
+        }
+
+        unset($sla['by_category']);
+
+        return [...$sla, 'by_department' => $departments];
+    }
+
+    /**
+     * Live load per person bounded to the CHART_TOP most loaded (the rest
+     * summed as "Otros").
+     *
+     * @return array<string, mixed>
+     */
+    private function workload(User $user, AnalyticsFilters $filters): array
+    {
+        $workload = $this->productivity->workload($user, $filters);
+        $rest = array_slice($workload['rows'], self::CHART_TOP);
+        $rows = array_slice($workload['rows'], 0, self::CHART_TOP);
+
+        if ($rest !== []) {
+            $rows[] = [
+                'id' => null,
+                'name' => 'Otros',
+                'open' => (int) array_sum(array_column($rest, 'open')),
+                'pending' => (int) array_sum(array_column($rest, 'pending')),
+                'overdue' => (int) array_sum(array_column($rest, 'overdue')),
+            ];
+        }
+
+        return [...$workload, 'rows' => $rows];
     }
 
     /**
@@ -293,6 +381,12 @@ class DashboardMetrics
                 'value' => $summary === null ? null : (int) $summary['received']['value'],
                 'previous' => $summary === null ? null : (int) $summary['received']['previous'],
             ],
+            // Report definitions (cohort of the period), apart from the live inbox figures above.
+            'period' => $summary === null ? null : [
+                'attended' => ['value' => (int) $summary['attended']['value'], 'previous' => (int) $summary['attended']['previous']],
+                'resolved' => ['value' => (int) $summary['resolved']['value'], 'previous' => (int) $summary['resolved']['previous']],
+                'closed_in_period' => ['value' => (int) $summary['closed_in_period']['value'], 'previous' => (int) $summary['closed_in_period']['previous']],
+            ],
             // Per hour for a period of one day (a single daily point is no trend).
             'trend' => $activity === null ? [] : array_map(
                 fn (array $point): array => ['label' => $point['label'], 'received' => $point['received']],
@@ -301,7 +395,7 @@ class DashboardMetrics
             'trend_granularity' => $this->analytics->activityGranularity($filters->period),
             'agents' => [
                 // Active accounts with an active role that can attend (no manual availability).
-                'active' => $canSeeTeam ? $this->agents($user, $filters)->count() : null,
+                'active' => $canSeeTeam ? $this->analytics->activeAgents($user, $filters) : null,
             ],
             'departments' => $canSeeTeam ? $this->departmentCounts($user) : null,
         ];
@@ -334,6 +428,8 @@ class DashboardMetrics
             ->when($filters->departmentId !== null, fn (Builder $query) => $query->where('conversations.department_id', $filters->departmentId))
             ->when($filters->agentId !== null, fn (Builder $query) => $query->where('conversations.assigned_user_id', $filters->agentId))
             ->when($filters->connectionId !== null, fn (Builder $query) => $query->where('conversations.connection_id', $filters->connectionId))
+            ->when($filters->categoryId !== null, fn (Builder $query) => $query->where('conversations.category_id', $filters->categoryId))
+            ->when($filters->channel !== null, fn (Builder $query) => $query->whereIn('conversations.connection_id', $this->dimensions->connectionsOf((string) $filters->channel)))
             ->toBase()
             ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS active', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()))
             ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending', [ConversationStatus::Pending->value])
@@ -345,32 +441,6 @@ class DashboardMetrics
             'pending' => (int) $counts->pending,
             'closed_today' => (int) $counts->closed_today,
         ];
-    }
-
-    /**
-     * Active users whose role lets them attend conversations, within the
-     * viewer's scope and the department/agent filters.
-     *
-     * @return Builder<User>
-     */
-    private function agents(User $user, AnalyticsFilters $filters): Builder
-    {
-        return User::query()
-            ->withoutProtectedFor($user)
-            ->active()
-            ->withPermission(Permission::ReplyConversations)
-            ->when(
-                $user->dataScope() !== DataScope::Global,
-                fn (Builder $query) => $query->whereHas(
-                    'departments',
-                    fn (Builder $departments) => $departments->whereKey($user->departmentIds()),
-                ),
-            )
-            ->when($filters->departmentId !== null, fn (Builder $query) => $query->whereHas(
-                'departments',
-                fn (Builder $departments) => $departments->whereKey($filters->departmentId),
-            ))
-            ->when($filters->agentId !== null, fn (Builder $query) => $query->whereKey($filters->agentId));
     }
 
     /**

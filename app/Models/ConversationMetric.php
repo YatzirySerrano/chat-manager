@@ -18,12 +18,14 @@ use Illuminate\Support\Carbon;
  * @property int $connection_id
  * @property int|null $department_id Current department of the conversation.
  * @property int|null $agent_id Current (or last, once closed) responsible agent.
+ * @property int|null $category_id Current request category of the conversation.
  * @property ConversationStatus $status
  * @property Carbon $received_at When the conversation was created.
  * @property Carbon|null $first_assigned_at First human attention: acceptance, manual assignment, transfer to an agent or first human reply (automatic distribution excluded).
  * @property Carbon|null $first_human_response_at First agent message accepted by the provider (automatic and failed ones excluded).
  * @property Carbon|null $resolved_at First closing.
  * @property Carbon|null $last_closed_at
+ * @property Carbon|null $left_backlog_at First human attention or first closing, whichever came first (null while unattended).
  * @property int|null $seconds_to_first_attention
  * @property int|null $seconds_to_first_human_response
  * @property int|null $seconds_to_resolution
@@ -55,6 +57,7 @@ class ConversationMetric extends Model
             'first_human_response_at' => 'datetime',
             'resolved_at' => 'datetime',
             'last_closed_at' => 'datetime',
+            'left_backlog_at' => 'datetime',
             'computed_at' => 'datetime',
             'out_of_hours' => 'boolean',
         ];

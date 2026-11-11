@@ -33,6 +33,9 @@ const state = reactive({
     department: props.query.department ?? '',
     agent: props.query.agent ?? '',
     connection: props.query.connection ?? '',
+    category: props.query.category ?? '',
+    status: (props.query.status ?? '') as AnalyticsQuery['status'] | '',
+    channel: props.query.channel ?? '',
 });
 
 watch(
@@ -44,6 +47,9 @@ watch(
         state.department = query.department ?? '';
         state.agent = query.agent ?? '';
         state.connection = query.connection ?? '';
+        state.category = query.category ?? '';
+        state.status = query.status ?? '';
+        state.channel = query.channel ?? '';
     },
 );
 
@@ -72,6 +78,23 @@ function build(): AnalyticsQuery {
 
     if (state.connection !== '') {
         query.connection = Number(state.connection);
+    }
+
+    if (state.category !== '') {
+        query.category = Number(state.category);
+    }
+
+    if (state.status !== '') {
+        query.status = state.status;
+    }
+
+    if (state.channel !== '') {
+        query.channel = state.channel;
+    }
+
+    // The chart granularity is not a control of this bar: it is kept as is.
+    if (props.query.granularity) {
+        query.granularity = props.query.granularity;
     }
 
     return query;
@@ -136,7 +159,7 @@ const rangeInvalid = () =>
                 v-if="options.agents.length > 0"
                 class="space-y-1 text-xs font-medium text-muted-foreground"
             >
-                <span>Agente</span>
+                <span>Agente responsable</span>
                 <select
                     v-model="state.agent"
                     :class="selectClass"
@@ -174,6 +197,72 @@ const rangeInvalid = () =>
                     </option>
                 </select>
             </label>
+            <label
+                v-if="(options.channels?.length ?? 0) > 1"
+                class="space-y-1 text-xs font-medium text-muted-foreground"
+            >
+                <span>Canal</span>
+                <select
+                    v-model="state.channel"
+                    :class="selectClass"
+                    class="text-foreground"
+                    data-filter="channel"
+                    @change="apply"
+                >
+                    <option value="">Todos</option>
+                    <option
+                        v-for="channel in options.channels"
+                        :key="channel.id"
+                        :value="channel.id"
+                    >
+                        {{ channel.name }}
+                    </option>
+                </select>
+            </label>
+            <label
+                v-if="(options.categories?.length ?? 0) > 0"
+                class="space-y-1 text-xs font-medium text-muted-foreground"
+            >
+                <span>Categoría</span>
+                <select
+                    v-model="state.category"
+                    :class="selectClass"
+                    class="text-foreground"
+                    data-filter="category"
+                    @change="apply"
+                >
+                    <option value="">Todas</option>
+                    <option
+                        v-for="category in options.categories"
+                        :key="category.id"
+                        :value="category.id"
+                    >
+                        {{ category.name }}
+                    </option>
+                </select>
+            </label>
+            <label
+                v-if="(options.statuses?.length ?? 0) > 0"
+                class="space-y-1 text-xs font-medium text-muted-foreground"
+            >
+                <span>Estado actual</span>
+                <select
+                    v-model="state.status"
+                    :class="selectClass"
+                    class="text-foreground"
+                    data-filter="status"
+                    @change="apply"
+                >
+                    <option value="">Todos</option>
+                    <option
+                        v-for="status in options.statuses"
+                        :key="status.id"
+                        :value="status.id"
+                    >
+                        {{ status.name }}
+                    </option>
+                </select>
+            </label>
         </div>
 
         <form
@@ -208,7 +297,12 @@ const rangeInvalid = () =>
         </form>
 
         <p class="text-xs text-muted-foreground">
-            {{ period.label }} · comparado con {{ period.previous.label }} ·
+            {{ period.label }} · comparado con
+            <template v-if="period.comparison.partial"
+                >el mismo tramo transcurrido del periodo anterior ({{
+                    period.comparison.label
+                }})</template
+            ><template v-else>{{ period.comparison.label }}</template> ·
             {{ zoneLabel(period.timezone) }}
         </p>
     </div>

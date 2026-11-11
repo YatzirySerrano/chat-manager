@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Conversations\QueueRules;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -25,6 +26,23 @@ use Illuminate\Support\Facades\Gate;
  * user; there is no manual availability to check. The user row lock
  * serializes two tabs (or retried requests) of the same agent, and the
  * pending conversations are read with a locking read, past the snapshot.
+ *
+ * Validation order, once permission (403) and state (409) passed, each
+ * refusal with its own explanation and code:
+ *
+ * 1. completeness, 2. minimum wait, 3. chronological order (QueueRules,
+ *    codes needs_info, min_wait and queue_order);
+ * 4. the capacity limit; 5. the control of pending conversations.
+ *
+ * Whoever holds conversations.override-queue-rules may justify an exception
+ * to rules 1 to 3 only (`$overrideReason`): the bypassed rules and the
+ * reason are recorded in the event and in the audit log. Capacity and
+ * pending conversations are never bypassed here.
+ *
+ * The queue rules are evaluated right after the conversation is locked and
+ * before the department and agent locks: the earlier requests the order
+ * rule reads under lock are conversation rows, the first step of the
+ * engine's lock order (QueueRules::earlierEligible()).
  */
 class AcceptConversation
 {
@@ -32,11 +50,12 @@ class AcceptConversation
         private ConversationAccess $access,
         private ConversationLifecycle $lifecycle,
         private PendingAttention $pendingAttention,
+        private QueueRules $queueRules,
     ) {}
 
-    public function handle(Conversation $conversation, User $actor): Conversation
+    public function handle(Conversation $conversation, User $actor, ?string $overrideReason = null): Conversation
     {
-        return DB::transaction(function () use ($conversation, $actor): Conversation {
+        return DB::transaction(function () use ($conversation, $actor, $overrideReason): Conversation {
             $conversation = $this->lifecycle->lock($conversation);
 
             if ($conversation->status === ConversationStatus::Open && $conversation->assigned_user_id === $actor->id) {
@@ -48,6 +67,8 @@ class AcceptConversation
             // lock order below is kept.
             $this->lifecycle->authorize($actor, 'accept', $conversation);
 
+            $violations = $this->queueRules->violations($conversation, lockingRead: true);
+
             $department = $this->lifecycle->lockDepartment($conversation->department_id);
             $actor = $this->lifecycle->freshUser($actor->id);
 
@@ -56,10 +77,14 @@ class AcceptConversation
                 throw ConversationLifecycle::forbidden($conversation);
             }
 
+            // With the actor row locked, so an exception permission revoked
+            // meanwhile is honored too.
+            $override = $this->queueRules->enforce($violations, $actor, $overrideReason);
+
             $limit = $this->access->reachedLimit($actor, $department, lockingRead: true);
 
             if ($limit !== null) {
-                throw new ConversationConflict("Ya atiendes el máximo de {$limit} conversaciones permitido. Cierra o libera alguna antes de aceptar otra.");
+                throw new ConversationConflict(QueueRules::capacityMessage($limit));
             }
 
             if ($this->pendingAttention->blocks($actor, lockingRead: true)) {
@@ -71,7 +96,12 @@ class AcceptConversation
             $this->lifecycle->record($conversation, ConversationEventType::Accepted, $actor, [
                 'to_user_id' => $actor->id,
                 'to_department_id' => $conversation->department_id,
+                'metadata' => $override === null ? null : ['queue_override' => $override],
             ]);
+
+            if ($override !== null) {
+                $this->queueRules->recordOverride($conversation, $actor, $override, 'accepted');
+            }
 
             return $conversation;
         });

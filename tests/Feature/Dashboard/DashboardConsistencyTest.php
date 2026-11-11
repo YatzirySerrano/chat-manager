@@ -153,7 +153,8 @@ test('the dashboard computes the activity buckets once for the overview and the 
     $metrics = app(DashboardMetrics::class);
     $buckets = 0;
     DB::listen(function ($query) use (&$buckets) {
-        if (str_contains($query->sql, 'DATE_FORMAT(')) {
+        // The activity query (other charts bucket other tables or columns).
+        if (str_contains($query->sql, 'DATE_FORMAT(') && str_contains($query->sql, 'first_response_samples')) {
             $buckets++;
         }
     });
@@ -161,7 +162,8 @@ test('the dashboard computes the activity buckets once for the overview and the 
     $overview = $metrics->overviewFor($admin);
     $charts = $metrics->chartsFor($admin);
 
-    expect($buckets)->toBe(1)
+    // Once for the period (shared by the overview, the activity and the response trend) and once for the previous period of the response trend.
+    expect($buckets)->toBe(2)
         ->and($overview['trend'])->toBe(array_map(fn (array $point): array => ['label' => $point['label'], 'received' => $point['received']], $charts['activity']['points']));
 });
 

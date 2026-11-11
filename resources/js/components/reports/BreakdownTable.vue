@@ -48,7 +48,7 @@ function percent(part: number, total: number): string {
                     <TableHead class="pl-5">{{ dimension }}</TableHead>
                     <TableHead class="text-right">Recibidas</TableHead>
                     <TableHead class="text-right">Atendidas</TableHead>
-                    <TableHead class="text-right">Resueltas</TableHead>
+                    <TableHead class="text-right">Finalizadas</TableHead>
                     <TableHead class="text-right">1ª respuesta</TableHead>
                     <TableHead class="hidden text-right lg:table-cell"
                         >Resolución</TableHead

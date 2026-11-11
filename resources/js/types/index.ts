@@ -15,3 +15,5 @@ export * from './team-chat';
 export * from './templates';
 export * from './personalization';
 export * from './attention';
+export * from './service-rules';
+export * from './sla';

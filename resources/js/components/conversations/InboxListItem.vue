@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import SlaBadge from '@/components/sla/SlaBadge.vue';
 import {
     Bot,
+    CircleCheck,
     CircleDot,
+    CircleHelp,
     EllipsisVertical,
     Eye,
     Hand,
@@ -13,13 +16,21 @@ import {
     UserRound,
 } from '@lucide/vue';
 import { computed, inject } from 'vue';
+import CategoryBadge from '@/components/categories/CategoryBadge.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import {
     ACCEPT_BLOCK,
     noAcceptBlock,
 } from '@/components/conversations/acceptBlock';
+import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
+import {
+    noQueueActions,
+    QUEUE_ACTIONS,
+    useAcceptance,
+} from '@/components/conversations/queueRules';
+import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import {
     listTime,
     previewText,
@@ -58,6 +69,13 @@ import type { ConversationSummary } from '@/types';
  * accept (`can.accept`) offers "Aceptar" without opening it first; while
  * the control of pending conversations blocks the viewer, it stays visible
  * but disabled, with the reason.
+ *
+ * Queue rules: every viewer sees the request category and, where it
+ * matters, its readiness («Necesita información» / «Lista para atención»).
+ * A pending row that cannot be taken yet says why below it, in text
+ * (AcceptanceNotice: countdown of the minimum wait, the earlier request to
+ * take first, what can be done), and that text describes the disabled
+ * «Aceptar». The readiness actions live in the row menu for whoever may.
  *
  * Holding the row on a touch screen, right clicking it or «Vista previa» in
  * its menu shows the latest messages without opening it (`preview`): the
@@ -98,7 +116,29 @@ const emit = defineEmits<{
 }>();
 
 const acceptBlock = inject(ACCEPT_BLOCK, noAcceptBlock);
-const acceptBlocked = computed(() => acceptBlock.value?.blocked === true);
+const queueActions = inject(QUEUE_ACTIONS, noQueueActions);
+
+/* Queue rules and the viewer's own limits, counted down on the server clock. */
+const acceptance = useAcceptance(() => props.conversation);
+const acceptBlocked = computed(
+    () => acceptBlock.value?.blocked === true || acceptance.value.blocked,
+);
+const acceptanceId = computed(() => `acceptance-${props.conversation.id}`);
+const readiness = computed(() => props.conversation.readiness ?? null);
+/* «Lista» only where the confirmation rule applies; «Necesita información» always. */
+const showReadiness = computed(
+    () =>
+        readiness.value !== null &&
+        props.conversation.status !== 'closed' &&
+        (readiness.value.value === 'needs_info' ||
+            (readiness.value.tracked &&
+                props.conversation.status === 'pending')),
+);
+const acceptBlockedReason = computed(
+    () =>
+        acceptance.value.text ??
+        (acceptBlock.value?.blocked ? acceptBlock.value.message : null),
+);
 
 const longPress = useLongPress(() => emit('preview', props.conversation));
 
@@ -188,6 +228,14 @@ const label = computed(() => {
         parts.push('esperando respuesta');
     }
 
+    if (showReadiness.value && readiness.value) {
+        parts.push(readiness.value.label.toLowerCase());
+    }
+
+    if (props.conversation.category) {
+        parts.push(`categoría ${props.conversation.category.name}`);
+    }
+
     if (props.showOperational && props.conversation.department) {
         parts.push(`departamento ${props.conversation.department.name}`);
     }
@@ -228,299 +276,368 @@ const label = computed(() => {
 </script>
 
 <template>
-    <div class="group/row relative">
-        <button
-            type="button"
-            class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
-            :class="[
-                selected
-                    ? 'border-l-primary bg-primary-soft'
-                    : pending
-                      ? 'border-l-warning hover:bg-accent/60'
-                      : unread > 0
-                        ? 'border-l-primary/40 hover:bg-accent/60'
-                        : 'border-l-transparent hover:bg-accent/60',
-            ]"
-            :aria-current="selected ? 'true' : undefined"
-            :aria-label="label"
-            data-inbox-item
-            v-on="longPress.handlers"
-            @click="open"
-        >
-            <span
-                class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+    <div class="group/row" :data-readiness="readiness?.value">
+        <div class="relative">
+            <button
+                type="button"
+                class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
                 :class="[
-                    pending
-                        ? 'bg-warning/15 text-foreground'
-                        : 'bg-primary-soft text-primary-soft-foreground',
-                    conversation.status === 'closed' && 'opacity-70',
+                    selected
+                        ? 'border-l-primary bg-primary-soft'
+                        : pending
+                          ? 'border-l-warning hover:bg-accent/60'
+                          : unread > 0
+                            ? 'border-l-primary/40 hover:bg-accent/60'
+                            : 'border-l-transparent hover:bg-accent/60',
                 ]"
-                aria-hidden="true"
+                :aria-current="selected ? 'true' : undefined"
+                :aria-label="label"
+                data-inbox-item
+                v-on="longPress.handlers"
+                @click="open"
             >
-                {{ getInitials(displayName) }}
-                <Hourglass
-                    v-if="pending"
-                    class="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-background p-0.5 text-warning"
-                />
-            </span>
-
-            <span class="min-w-0 flex-1">
-                <span class="flex items-baseline justify-between gap-2">
-                    <span class="flex min-w-0 items-center gap-1.5">
-                        <span
-                            class="truncate text-sm font-semibold"
-                            :class="
-                                unread > 0
-                                    ? 'text-foreground'
-                                    : 'text-foreground/90'
-                            "
-                            :title="displayName"
-                            >{{ displayName }}</span
-                        >
-                        <span
-                            v-if="hasAlias"
-                            class="inline-flex shrink-0 items-center gap-0.5 rounded border px-1 text-xs leading-4 text-muted-foreground"
-                            :title="aliasTitle"
-                            data-inbox-alias
-                        >
-                            <UserPen class="size-3" aria-hidden="true" />
-                            alias
-                        </span>
-                    </span>
-                    <time
-                        v-if="conversation.last_message_at"
-                        class="shrink-0 text-xs tabular-nums"
-                        :class="
-                            unread > 0
-                                ? 'font-semibold text-primary'
-                                : 'text-muted-foreground'
-                        "
-                        :datetime="conversation.last_message_at"
-                        :title="formatDateTime(conversation.last_message_at)"
-                        >{{ listTime(conversation.last_message_at) }}</time
-                    >
+                <span
+                    class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+                    :class="[
+                        pending
+                            ? 'bg-warning/15 text-foreground'
+                            : 'bg-primary-soft text-primary-soft-foreground',
+                        conversation.status === 'closed' && 'opacity-70',
+                    ]"
+                    aria-hidden="true"
+                >
+                    {{ getInitials(displayName) }}
+                    <Hourglass
+                        v-if="pending"
+                        class="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-background p-0.5 text-warning"
+                    />
                 </span>
 
-                <span class="mt-1 flex items-center gap-1.5">
+                <span class="min-w-0 flex-1">
+                    <span class="flex items-baseline justify-between gap-2">
+                        <span class="flex min-w-0 items-center gap-1.5">
+                            <span
+                                class="truncate text-sm font-semibold"
+                                :class="
+                                    unread > 0
+                                        ? 'text-foreground'
+                                        : 'text-foreground/90'
+                                "
+                                :title="displayName"
+                                >{{ displayName }}</span
+                            >
+                            <span
+                                v-if="hasAlias"
+                                class="inline-flex shrink-0 items-center gap-0.5 rounded border px-1 text-xs leading-4 text-muted-foreground"
+                                :title="aliasTitle"
+                                data-inbox-alias
+                            >
+                                <UserPen class="size-3" aria-hidden="true" />
+                                alias
+                            </span>
+                        </span>
+                        <time
+                            v-if="conversation.last_message_at"
+                            class="shrink-0 text-xs tabular-nums"
+                            :class="
+                                unread > 0
+                                    ? 'font-semibold text-primary'
+                                    : 'text-muted-foreground'
+                            "
+                            :datetime="conversation.last_message_at"
+                            :title="
+                                formatDateTime(conversation.last_message_at)
+                            "
+                            >{{ listTime(conversation.last_message_at) }}</time
+                        >
+                    </span>
+
+                    <span class="mt-1 flex items-center gap-1.5">
+                        <span
+                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-sm"
+                            :class="
+                                unread > 0
+                                    ? 'font-medium text-foreground'
+                                    : 'text-muted-foreground'
+                            "
+                        >
+                            <template v-if="conversation.last_message">
+                                <MessageStatusIndicator
+                                    v-if="
+                                        conversation.last_message.direction ===
+                                        'outbound'
+                                    "
+                                    :status="conversation.last_message.status"
+                                    :error-code="
+                                        conversation.last_message.error_code
+                                    "
+                                />
+                                <Bot
+                                    v-if="conversation.last_message.automatic"
+                                    class="size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate">{{ preview }}</span>
+                            </template>
+                            <span v-else class="truncate">{{
+                                contact.phone_e164
+                                    ? formatPhone(contact.phone_e164)
+                                    : 'Sin mensajes'
+                            }}</span>
+                        </span>
+                        <CircleDot
+                            v-if="conversation.awaiting_reply && unread === 0"
+                            class="size-3.5 shrink-0 text-warning"
+                            aria-hidden="true"
+                        />
+                        <span
+                            v-if="unread > 0"
+                            class="min-w-5 shrink-0 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground tabular-nums"
+                            aria-hidden="true"
+                            >{{ unread > 99 ? '99+' : unread }}</span
+                        >
+                    </span>
+
+                    <!-- Response objective (SLA) of the request in course. -->
+                    <span v-if="conversation.sla" class="mt-1.5 flex">
+                        <SlaBadge :sla="conversation.sla" variant="compact" />
+                    </span>
+
                     <span
-                        class="flex min-w-0 flex-1 items-center gap-1 truncate text-sm"
-                        :class="
-                            unread > 0
-                                ? 'font-medium text-foreground'
-                                : 'text-muted-foreground'
+                        v-if="
+                            pending ||
+                            showOperational ||
+                            conversation.status === 'closed' ||
+                            showReadiness ||
+                            conversation.category ||
+                            visibleTags.length > 0
                         "
+                        class="mt-1.5 flex flex-wrap items-center gap-1"
                     >
-                        <template v-if="conversation.last_message">
-                            <MessageStatusIndicator
-                                v-if="
-                                    conversation.last_message.direction ===
-                                    'outbound'
-                                "
-                                :status="conversation.last_message.status"
-                                :error-code="
-                                    conversation.last_message.error_code
-                                "
+                        <!-- Pending: text and icon on the soft warning pair
+                         (≥4.5:1 in both themes), never color alone. -->
+                        <span
+                            v-if="pending"
+                            class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-warning-soft-foreground"
+                            data-inbox-pending
+                        >
+                            <Hourglass
+                                class="size-3 shrink-0"
+                                aria-hidden="true"
                             />
-                            <Bot
-                                v-if="conversation.last_message.automatic"
+                            {{ conversation.status_label }}
+                        </span>
+                        <ConversationStatusBadge
+                            v-else-if="
+                                showOperational ||
+                                conversation.status === 'closed'
+                            "
+                            :status="conversation.status"
+                            :label="conversation.status_label"
+                        />
+                        <ReadinessBadge
+                            v-if="showReadiness && readiness"
+                            :value="readiness.value"
+                            :label="readiness.label"
+                        />
+                        <CategoryBadge
+                            v-if="conversation.category"
+                            :name="conversation.category.name"
+                            :color="conversation.category.color"
+                            :deleted="conversation.category.is_active === false"
+                        />
+                        <DepartmentTag
+                            v-if="showOperational && conversation.department"
+                            :name="conversation.department.name"
+                            :color="conversation.department.color"
+                            :muted="!conversation.department.is_active"
+                            data-inbox-department
+                        />
+                        <span
+                            v-if="showAssignee && conversation.assignee"
+                            class="inline-flex max-w-36 min-w-0 items-center gap-1 text-xs text-muted-foreground"
+                            :title="`Responsable: ${conversation.assignee.name}`"
+                        >
+                            <UserRound
                                 class="size-3.5 shrink-0"
                                 aria-hidden="true"
                             />
-                            <span class="truncate">{{ preview }}</span>
-                        </template>
-                        <span v-else class="truncate">{{
-                            contact.phone_e164
-                                ? formatPhone(contact.phone_e164)
-                                : 'Sin mensajes'
-                        }}</span>
+                            <span class="truncate">{{
+                                conversation.assignee.name
+                            }}</span>
+                        </span>
+                        <TagBadge
+                            v-for="tag in visibleTags"
+                            :key="tag.id"
+                            :name="tag.name"
+                            :color="tag.color"
+                            :deleted="!tag.is_active"
+                        />
+                        <span
+                            v-if="hiddenTags > 0"
+                            class="rounded-sm bg-surface-sunken px-1 text-xs text-muted-foreground tabular-nums"
+                            :title="`${hiddenTags} etiquetas más`"
+                            >+{{ hiddenTags }}</span
+                        >
                     </span>
-                    <CircleDot
-                        v-if="conversation.awaiting_reply && unread === 0"
-                        class="size-3.5 shrink-0 text-warning"
-                        aria-hidden="true"
-                    />
-                    <span
-                        v-if="unread > 0"
-                        class="min-w-5 shrink-0 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground tabular-nums"
-                        aria-hidden="true"
-                        >{{ unread > 99 ? '99+' : unread }}</span
-                    >
-                </span>
 
-                <span
-                    v-if="
-                        pending ||
-                        showOperational ||
-                        conversation.status === 'closed' ||
-                        visibleTags.length > 0
-                    "
-                    class="mt-1.5 flex flex-wrap items-center gap-1"
-                >
-                    <!-- Pending: text and icon on the soft warning pair
-                         (≥4.5:1 in both themes), never color alone. -->
                     <span
-                        v-if="pending"
-                        class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-warning-soft-foreground"
-                        data-inbox-pending
+                        v-if="showOperational || showChannel"
+                        class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+                        :class="[
+                            canAccept &&
+                                'min-h-8 pr-24 pointer-coarse:min-h-10',
+                            conversation.connection.state !== 'active' &&
+                                'italic',
+                        ]"
+                        :title="connectionTitle"
                     >
-                        <Hourglass class="size-3 shrink-0" aria-hidden="true" />
-                        {{ conversation.status_label }}
-                    </span>
-                    <ConversationStatusBadge
-                        v-else-if="
-                            showOperational || conversation.status === 'closed'
-                        "
-                        :status="conversation.status"
-                        :label="conversation.status_label"
-                    />
-                    <DepartmentTag
-                        v-if="showOperational && conversation.department"
-                        :name="conversation.department.name"
-                        :color="conversation.department.color"
-                        :muted="!conversation.department.is_active"
-                        data-inbox-department
-                    />
-                    <span
-                        v-if="showAssignee && conversation.assignee"
-                        class="inline-flex max-w-36 min-w-0 items-center gap-1 text-xs text-muted-foreground"
-                        :title="`Responsable: ${conversation.assignee.name}`"
-                    >
-                        <UserRound
+                        <ChannelIcon
+                            :channel="conversation.connection.channel"
                             class="size-3.5 shrink-0"
                             aria-hidden="true"
                         />
-                        <span class="truncate">{{
-                            conversation.assignee.name
-                        }}</span>
+                        <span
+                            v-if="showChannel"
+                            class="shrink-0 rounded border px-1 leading-4 text-foreground"
+                            data-inbox-channel
+                            >{{ conversation.connection.channel_label }}</span
+                        >
+                        <template v-if="showOperational">
+                            <span class="truncate">{{
+                                conversation.connection.name
+                            }}</span>
+                            <span
+                                v-if="connectionPhone"
+                                class="shrink-0 tabular-nums"
+                                >· {{ connectionPhone }}</span
+                            >
+                        </template>
                     </span>
-                    <TagBadge
-                        v-for="tag in visibleTags"
-                        :key="tag.id"
-                        :name="tag.name"
-                        :color="tag.color"
-                        :deleted="!tag.is_active"
-                    />
                     <span
-                        v-if="hiddenTags > 0"
-                        class="rounded-sm bg-surface-sunken px-1 text-xs text-muted-foreground tabular-nums"
-                        :title="`${hiddenTags} etiquetas más`"
-                        >+{{ hiddenTags }}</span
-                    >
-                </span>
-
-                <span
-                    v-if="showOperational || showChannel"
-                    class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
-                    :class="[
-                        canAccept && 'min-h-8 pr-24 pointer-coarse:min-h-10',
-                        conversation.connection.state !== 'active' && 'italic',
-                    ]"
-                    :title="connectionTitle"
-                >
-                    <ChannelIcon
-                        :channel="conversation.connection.channel"
-                        class="size-3.5 shrink-0"
+                        v-else-if="canAccept"
+                        class="block min-h-8 pointer-coarse:min-h-10"
                         aria-hidden="true"
                     />
-                    <span
-                        v-if="showChannel"
-                        class="shrink-0 rounded border px-1 leading-4 text-foreground"
-                        data-inbox-channel
-                        >{{ conversation.connection.channel_label }}</span
-                    >
-                    <template v-if="showOperational">
-                        <span class="truncate">{{
-                            conversation.connection.name
-                        }}</span>
-                        <span
-                            v-if="connectionPhone"
-                            class="shrink-0 tabular-nums"
-                            >· {{ connectionPhone }}</span
-                        >
-                    </template>
                 </span>
-                <span
-                    v-else-if="canAccept"
-                    class="block min-h-8 pointer-coarse:min-h-10"
-                    aria-hidden="true"
-                />
-            </span>
-        </button>
+            </button>
 
-        <DropdownMenu>
-            <DropdownMenuTrigger as-child>
+            <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="absolute top-2 right-1.5 text-muted-foreground opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 pointer-coarse:opacity-100"
+                        :aria-label="`Acciones de la conversación con ${displayName}`"
+                        data-inbox-row-menu
+                    >
+                        <EllipsisVertical aria-hidden="true" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-56">
+                    <DropdownMenuItem @select="emit('select', conversation.id)">
+                        <MessageSquareText aria-hidden="true" />
+                        Abrir
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        data-inbox-preview
+                        @select="emit('preview', conversation)"
+                    >
+                        <Eye aria-hidden="true" />
+                        Vista previa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        v-if="unread > 0"
+                        @select="emit('markRead', conversation.id)"
+                    >
+                        <MailOpen aria-hidden="true" />
+                        Marcar como leída
+                    </DropdownMenuItem>
+                    <template
+                        v-if="conversation.can.confirm_ready && readiness"
+                    >
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            v-if="readiness.value === 'needs_info'"
+                            data-readiness-confirm
+                            @select="
+                                queueActions.readiness(conversation, 'ready')
+                            "
+                        >
+                            <CircleCheck aria-hidden="true" />
+                            Confirmar solicitud completa
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-else
+                            data-readiness-revert
+                            @select="
+                                queueActions.readiness(
+                                    conversation,
+                                    'needs_info',
+                                )
+                            "
+                        >
+                            <CircleHelp aria-hidden="true" />
+                            Marcar que necesita información
+                        </DropdownMenuItem>
+                    </template>
+                    <template v-if="conversation.can.tag || canEditAlias">
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            v-if="conversation.can.tag"
+                            @select="emit('manageTags', conversation)"
+                        >
+                            <Tags aria-hidden="true" />
+                            Administrar etiquetas
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="canEditAlias"
+                            @select="emit('editAlias', conversation)"
+                        >
+                            <UserPen aria-hidden="true" />
+                            Asignar alias personal
+                        </DropdownMenuItem>
+                    </template>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <span v-if="canAccept" class="absolute right-3 bottom-3">
                 <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="absolute top-2 right-1.5 text-muted-foreground opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 pointer-coarse:opacity-100"
-                    :aria-label="`Acciones de la conversación con ${displayName}`"
-                    data-inbox-row-menu
+                    size="sm"
+                    variant="outline"
+                    class="bg-background pointer-coarse:h-10"
+                    :disabled="acceptingId !== null || acceptBlocked"
+                    :aria-label="
+                        acceptBlocked
+                            ? `Aceptar la conversación de ${displayName}: no disponible. ${acceptBlockedReason ?? ''}`
+                            : `Aceptar la conversación de ${displayName}`
+                    "
+                    :aria-describedby="
+                        acceptance.blocked &&
+                        acceptance.code !== 'pending_attention'
+                            ? acceptanceId
+                            : undefined
+                    "
+                    :title="
+                        acceptBlocked
+                            ? (acceptBlockedReason ?? undefined)
+                            : 'Hacerte responsable de esta conversación'
+                    "
+                    data-inbox-accept
+                    @click="emit('accept', conversation.id)"
                 >
-                    <EllipsisVertical aria-hidden="true" />
+                    <Spinner v-if="accepting" />
+                    <Hand v-else aria-hidden="true" />
+                    Aceptar
                 </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-56">
-                <DropdownMenuItem @select="emit('select', conversation.id)">
-                    <MessageSquareText aria-hidden="true" />
-                    Abrir
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    data-inbox-preview
-                    @select="emit('preview', conversation)"
-                >
-                    <Eye aria-hidden="true" />
-                    Vista previa
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    v-if="unread > 0"
-                    @select="emit('markRead', conversation.id)"
-                >
-                    <MailOpen aria-hidden="true" />
-                    Marcar como leída
-                </DropdownMenuItem>
-                <template v-if="conversation.can.tag || canEditAlias">
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                        v-if="conversation.can.tag"
-                        @select="emit('manageTags', conversation)"
-                    >
-                        <Tags aria-hidden="true" />
-                        Administrar etiquetas
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        v-if="canEditAlias"
-                        @select="emit('editAlias', conversation)"
-                    >
-                        <UserPen aria-hidden="true" />
-                        Asignar alias personal
-                    </DropdownMenuItem>
-                </template>
-            </DropdownMenuContent>
-        </DropdownMenu>
-
-        <span v-if="canAccept" class="absolute right-3 bottom-3">
-            <Button
-                size="sm"
-                variant="outline"
-                class="bg-background pointer-coarse:h-10"
-                :disabled="acceptingId !== null || acceptBlocked"
-                :aria-label="
-                    acceptBlocked
-                        ? `Aceptar la conversación de ${displayName}: no disponible, tienes conversaciones pendientes de atención`
-                        : `Aceptar la conversación de ${displayName}`
-                "
-                :title="
-                    acceptBlocked
-                        ? (acceptBlock?.message ?? undefined)
-                        : 'Hacerte responsable de esta conversación'
-                "
-                data-inbox-accept
-                @click="emit('accept', conversation.id)"
-            >
-                <Spinner v-if="accepting" />
-                <Hand v-else aria-hidden="true" />
-                Aceptar
-            </Button>
-        </span>
+            </span>
+        </div>
+        <!-- Why it cannot be taken yet, in text (describes «Aceptar»). -->
+        <AcceptanceNotice
+            v-if="pending"
+            :id="acceptanceId"
+            :conversation="conversation"
+            class="-mt-1 pr-3 pb-3 pl-[4.25rem]"
+        />
     </div>
 </template>

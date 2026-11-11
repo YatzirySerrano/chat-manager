@@ -3,13 +3,16 @@
 namespace App\Services\Analytics;
 
 use App\Enums\ConnectionChannel;
+use App\Enums\ConversationOrigin;
 use App\Enums\ConversationStatus;
 use App\Enums\Permission;
 use App\Models\Connection;
+use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\PlatformSettings;
 use App\Support\ProtectedAccounts;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -30,18 +33,34 @@ use Illuminate\Support\Facades\DB;
  * the inbox visibility (Conversation::visibleTo) the dashboard uses for its
  * live counts. Both are kept on purpose and labelled apart in the interface.
  *
+ * Definitions shared by the dashboard, the reports and the exports (each one
+ * is computed here once):
+ * - received: conversations created in the period;
+ * - attended / responded / resolved ("finalizadas de las recibidas"): of the
+ *   received ones, those with human attention / a human reply / at least
+ *   one closing;
+ * - closed in the period ("finalizadas en el periodo"): conversations whose
+ *   FIRST closing happened in the period, whenever they arrived. It is the
+ *   only figure bucketed by closing date (the trend line and the backlog);
+ * - backlog ("acumuladas sin atender"): conversations received and not yet
+ *   attended nor closed at a given moment (`left_backlog_at`);
+ * - comparisons use AnalyticsFilters::comparison(): the previous period,
+ *   cut to the elapsed portion while the current one is in progress.
+ *
  * @phpstan-type Comparable array{value: int|float|null, previous: int|float|null}
  * @phpstan-type Duration array{value: int|null, previous: int|null, samples: int}
  * @phpstan-type BreakdownRow array{id: int|null, name: string, received: int, attended: int, responded: int, resolved: int, first_attention_seconds: int|null, first_response_seconds: int|null, first_response_samples: int, resolution_seconds: int|null, transfers: int, reopened: int, messages_in: int, messages_out: int, failed_out: int, out_of_hours: int, current_load: int|null}
  * @phpstan-type SourcedBreakdownRow array{id: int|null, name: string, received: int, attended: int, responded: int, resolved: int, first_attention_seconds: int|null, first_response_seconds: int|null, first_response_samples: int, resolution_seconds: int|null, transfers: int, reopened: int, messages_in: int, messages_out: int, failed_out: int, out_of_hours: int, current_load: int|null, source_id: int|null}
  * @phpstan-type Sla array{target_seconds: int, met: int, samples: int, rate: float|null, previous_rate: float|null}
- * @phpstan-type Summary array{received: Comparable, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, first_response_business_seconds: Duration, resolution_business_seconds: Duration, first_response_sla: Sla|null, resolution_sla: Sla|null, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
+ * @phpstan-type Range array{min: int|null, max: int|null}
+ * @phpstan-type Backlog array{now: int, start: int, end: int|null, granularity: 'day'|'week'|'month', points: list<array{key: string, label: string, received: int, left: int, backlog: int|null}>}
+ * @phpstan-type Summary array{received: Comparable, closed_in_period: Comparable, first_response_range: Range, resolution_range: Range, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, first_response_business_seconds: Duration, resolution_business_seconds: Duration, first_response_sla: Sla|null, resolution_sla: Sla|null, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
  * @phpstan-type Snapshot array{pending: int, open: int, agents: int|null}
  * @phpstan-type TrendPoint array{key: string, label: string, received: int, resolved: int, previous_received: int}
  * @phpstan-type ActivityPoint array{key: string, label: string, received: int, attended: int, first_response_seconds: int|null, first_response_samples: int}
- * @phpstan-type Activity array{granularity: 'hour'|'day'|'month', points: list<ActivityPoint>}
+ * @phpstan-type Activity array{granularity: 'hour'|'day'|'week'|'month', points: list<ActivityPoint>}
  * @phpstan-type ChannelRow array{channel: string|null, label: string, received: int, attended: int}
- * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'month', points: list<TrendPoint>}, activity: Activity, heatmap: array{max: int, cells: list<list<int>>}, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>, by_channel: list<ChannelRow>}
+ * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'week'|'month', points: list<TrendPoint>}, activity: Activity, heatmap: array{max: int, cells: list<list<int>>}, backlog: Backlog, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>, by_category: list<BreakdownRow>, by_channel: list<ChannelRow>, response_trend: array<string, mixed>, sla: array<string, mixed>, productivity: array<string, mixed>}
  */
 class OperationalAnalytics
 {
@@ -55,6 +74,9 @@ class OperationalAnalytics
         private AnalyticsCache $cache,
         private PlatformSettings $settings,
         private ProtectedAccounts $protectedAccounts,
+        private ServiceLevelAnalytics $serviceLevels,
+        private AgentProductivity $productivity,
+        private AnalyticsDimensions $dimensionFilters,
     ) {}
 
     /**
@@ -89,10 +111,15 @@ class OperationalAnalytics
             'trend' => $this->trend($viewer, $filters),
             'activity' => $this->activity($viewer, $filters),
             'heatmap' => $this->heatmap($viewer, $filters),
+            'backlog' => $this->backlog($viewer, $filters),
             'by_agent' => $this->breakdown($viewer, $filters, 'agent_id'),
             'by_department' => $this->scope->isPersonal($viewer) ? [] : $this->breakdown($viewer, $filters, 'department_id'),
             'by_connection' => $byConnection,
+            'by_category' => $this->breakdown($viewer, $filters, 'category_id'),
             'by_channel' => $this->channelsOf($byConnection),
+            'response_trend' => $this->responseTrend($viewer, $filters),
+            'sla' => $this->serviceLevels->compliance($viewer, $filters),
+            'productivity' => $this->productivity->report($viewer, $filters),
         ];
     }
 
@@ -105,7 +132,9 @@ class OperationalAnalytics
     {
         [$responseTarget, $resolutionTarget] = $this->slaTargets();
         $current = $this->totals($this->cohort($viewer, $filters), $responseTarget, $resolutionTarget);
-        $previous = $this->totals($this->cohort($viewer, $filters->previous()), $responseTarget, $resolutionTarget);
+        // Like with like: an unfinished period is compared with the same elapsed portion of the previous one.
+        $comparison = $filters->comparison();
+        $previous = $this->totals($this->cohort($viewer, $comparison), $responseTarget, $resolutionTarget);
 
         $comparable = fn (string $key): array => ['value' => $current[$key], 'previous' => $previous[$key]];
         $duration = fn (string $key): array => [
@@ -116,6 +145,12 @@ class OperationalAnalytics
 
         return [
             'received' => $comparable('received'),
+            'closed_in_period' => [
+                'value' => $this->closedBetween($viewer, $filters),
+                'previous' => $this->closedBetween($viewer, $comparison),
+            ],
+            'first_response_range' => ['min' => $current['first_response_min'], 'max' => $current['first_response_max']],
+            'resolution_range' => ['min' => $current['resolution_min'], 'max' => $current['resolution_max']],
             'attended' => $comparable('attended'),
             'responded' => $comparable('responded'),
             'resolved' => $comparable('resolved'),
@@ -150,9 +185,12 @@ class OperationalAnalytics
      */
     public function snapshot(User $viewer, AnalyticsFilters $filters): array
     {
-        $query = DB::table('conversations')->where('status', '!=', ConversationStatus::Closed->value);
+        // Live figures: imported history is not current activity, and the status filter cannot apply to "now".
+        $query = DB::table('conversations')
+            ->where('origin', ConversationOrigin::Live->value)
+            ->where('status', '!=', ConversationStatus::Closed->value);
         $this->scope->apply($query, $viewer, 'assigned_user_id', 'department_id');
-        $this->dimensions($query, $filters, 'assigned_user_id');
+        $this->dimensions($query, $filters->withoutStatus(), 'assigned_user_id');
 
         $counts = $query->selectRaw('status, COUNT(*) AS total')->groupBy('status')->pluck('total', 'status');
 
@@ -188,14 +226,14 @@ class OperationalAnalytics
      * Conversations received and resolved per local day (or month), with
      * the received ones of the aligned bucket of the previous period.
      *
-     * @return array{granularity: 'day'|'month', points: list<TrendPoint>}
+     * @return array{granularity: 'day'|'week'|'month', points: list<TrendPoint>}
      */
     public function trend(User $viewer, AnalyticsFilters $filters): array
     {
         $period = $filters->period;
         $granularity = $period->granularity();
-        $buckets = $this->buckets($period, $granularity);
-        $previousBuckets = $this->buckets($filters->previous()->period, $granularity);
+        $buckets = $period->buckets($granularity);
+        $previousBuckets = $filters->previous()->period->buckets($granularity);
 
         $received = $this->bucketCounts($this->cohort($viewer, $filters), 'received_at', $period, $granularity);
         $resolved = $this->bucketCounts($this->scoped($viewer, $filters)->where('resolved_at', '>=', $period->fromUtc())->where('resolved_at', '<', $period->toUtc()), 'resolved_at', $period, $granularity);
@@ -234,14 +272,10 @@ class OperationalAnalytics
         $period = $filters->period;
         $granularity = $this->activityGranularity($period);
         [$local, $bindings] = $period->localTimeSql('received_at');
-        $format = match ($granularity) {
-            'hour' => '%Y-%m-%dT%H:00',
-            'day' => '%Y-%m-%d',
-            'month' => '%Y-%m',
-        };
+        $bucket = AnalyticsPeriod::bucketSql($local, $granularity);
 
         $rows = $this->cohort($viewer, $filters)
-            ->selectRaw("DATE_FORMAT({$local}, '{$format}') AS bucket", $bindings)
+            ->selectRaw("{$bucket} AS bucket", $bindings)
             ->selectRaw('COUNT(*) AS received')
             ->selectRaw('SUM(CASE WHEN first_assigned_at IS NOT NULL THEN 1 ELSE 0 END) AS attended')
             ->selectRaw('AVG(seconds_to_first_human_response) AS first_response_avg, COUNT(seconds_to_first_human_response) AS first_response_samples')
@@ -268,9 +302,37 @@ class OperationalAnalytics
     }
 
     /**
+     * Average first human response per bucket of the period next to the
+     * aligned bucket of the whole previous period ("are we answering
+     * faster?"). A bucket without measured responses is null on its side.
+     *
+     * @param  Activity|null  $current  Activity of the period when the caller already has it.
+     * @return array{granularity: 'hour'|'day'|'week'|'month', points: list<array{key: string, label: string, seconds: int|null, samples: int, previous_seconds: int|null, previous_samples: int}>}
+     */
+    public function responseTrend(User $viewer, AnalyticsFilters $filters, ?array $current = null): array
+    {
+        $current ??= $this->activity($viewer, $filters);
+        $previous = $this->activity($viewer, $filters->previous())['points'];
+        $points = [];
+
+        foreach ($current['points'] as $index => $point) {
+            $points[] = [
+                'key' => $point['key'],
+                'label' => $point['label'],
+                'seconds' => $point['first_response_seconds'],
+                'samples' => $point['first_response_samples'],
+                'previous_seconds' => $previous[$index]['first_response_seconds'] ?? null,
+                'previous_samples' => $previous[$index]['first_response_samples'] ?? 0,
+            ];
+        }
+
+        return ['granularity' => $current['granularity'], 'points' => $points];
+    }
+
+    /**
      * Charted per hour when the period lasts one day or less.
      *
-     * @return 'hour'|'day'|'month'
+     * @return 'hour'|'day'|'week'|'month'
      */
     public function activityGranularity(AnalyticsPeriod $period): string
     {
@@ -354,7 +416,7 @@ class OperationalAnalytics
      * null id. Exports that must tell the rows apart ask for `source_id`
      * (the real id), which never reaches the screen.
      *
-     * @param  'agent_id'|'department_id'|'connection_id'  $column
+     * @param  'agent_id'|'department_id'|'connection_id'|'category_id'  $column
      * @return ($withSourceIds is true ? list<SourcedBreakdownRow> : list<BreakdownRow>)
      */
     public function breakdown(User $viewer, AnalyticsFilters $filters, string $column, bool $withSourceIds = false): array
@@ -377,12 +439,14 @@ class OperationalAnalytics
             'agent_id' => User::query()->whereKey($ids)->pluck('name', 'id'),
             'department_id' => Department::query()->whereKey($ids)->pluck('name', 'id'),
             'connection_id' => Connection::query()->whereKey($ids)->pluck('name', 'id'),
+            'category_id' => ConversationCategory::query()->whereKey($ids)->pluck('name', 'id'),
         };
-        $loads = $column === 'connection_id' ? null : $this->currentLoads($viewer, $filters, $column === 'agent_id' ? 'assigned_user_id' : 'department_id');
+        $loads = in_array($column, ['connection_id', 'category_id'], true) ? null : $this->currentLoads($viewer, $filters, $column === 'agent_id' ? 'assigned_user_id' : 'department_id');
         $empty = match ($column) {
             'agent_id' => 'Sin agente',
             'department_id' => 'Sin departamento',
             'connection_id' => 'Conexión no disponible',
+            'category_id' => 'Sin categoría',
         };
 
         $result = [];
@@ -444,10 +508,99 @@ class OperationalAnalytics
 
     private function dimensions(Builder $query, AnalyticsFilters $filters, string $agentColumn): void
     {
-        $query
-            ->when($filters->departmentId !== null, fn (Builder $q) => $q->where('department_id', $filters->departmentId))
-            ->when($filters->agentId !== null, fn (Builder $q) => $q->where($agentColumn, $filters->agentId))
-            ->when($filters->connectionId !== null, fn (Builder $q) => $q->where('connection_id', $filters->connectionId));
+        $this->dimensionFilters->apply($query, $filters, $agentColumn);
+    }
+
+    /**
+     * Conversations whose first closing happened in the filters' period
+     * (whenever they arrived), within the reach and the filters.
+     */
+    public function closedBetween(User $viewer, AnalyticsFilters $filters): int
+    {
+        return $this->scoped($viewer, $filters)
+            ->where('resolved_at', '>=', $filters->period->fromUtc())
+            ->where('resolved_at', '<', $filters->period->toUtc())
+            ->count();
+    }
+
+    /**
+     * Unattended conversations accumulated at the end of each bucket of the
+     * period: received before that moment and, by then, neither attended by
+     * a person nor closed. It starts from the backlog at the beginning of
+     * the period and adds what arrived and subtracts what left in each
+     * bucket, so it only reads indexed ranges (never the whole history).
+     * Buckets that have not finished yet have no value (null).
+     *
+     * The status filter is not applied: the backlog is about the past
+     * state of each conversation, not its status today.
+     *
+     * @return Backlog
+     */
+    public function backlog(User $viewer, AnalyticsFilters $filters): array
+    {
+        $filters = $filters->withoutStatus();
+        $period = $filters->period;
+        $granularity = $period->granularity();
+        $from = $period->fromUtc();
+
+        $start = $this->scoped($viewer, $filters)->whereNull('left_backlog_at')->where('received_at', '<', $from)->count()
+            + $this->scoped($viewer, $filters)->where('left_backlog_at', '>=', $from)->where('received_at', '<', $from)->count();
+
+        $received = $this->bucketCounts($this->cohort($viewer, $filters), 'received_at', $period, $granularity);
+        $left = $this->bucketCounts(
+            $this->scoped($viewer, $filters)->where('left_backlog_at', '>=', $from)->where('left_backlog_at', '<', $period->toUtc()),
+            'left_backlog_at',
+            $period,
+            $granularity,
+        );
+
+        $buckets = $period->buckets($granularity);
+        $ends = array_slice(array_column($buckets, 0), 1);
+        $now = $period->asOf ?? CarbonImmutable::now();
+        $running = $start;
+        $points = [];
+        $end = null;
+
+        foreach ($buckets as $index => [$key, $label]) {
+            $running += ($received[$key] ?? 0) - ($left[$key] ?? 0);
+            // A bucket is finished when the next one already started (the last one, when the period ended).
+            $finished = isset($ends[$index])
+                ? $this->bucketStart($period, $granularity, $ends[$index])->lessThanOrEqualTo($now)
+                : $period->to->lessThanOrEqualTo($now);
+            $points[] = [
+                'key' => $key,
+                'label' => $label,
+                'received' => (int) ($received[$key] ?? 0),
+                'left' => (int) ($left[$key] ?? 0),
+                'backlog' => $finished ? max(0, $running) : null,
+            ];
+
+            if ($finished) {
+                $end = max(0, $running);
+            }
+        }
+
+        return [
+            'now' => $this->scoped($viewer, $filters)->whereNull('left_backlog_at')->count(),
+            'start' => $start,
+            'end' => $end,
+            'granularity' => $granularity,
+            'points' => $points,
+        ];
+    }
+
+    /**
+     * Local start of a bucket from its key.
+     *
+     * @param  'day'|'week'|'month'  $granularity
+     */
+    private function bucketStart(AnalyticsPeriod $period, string $granularity, string $key): CarbonImmutable
+    {
+        return match ($granularity) {
+            'day' => CarbonImmutable::createFromFormat('!Y-m-d', $key, $period->timezone),
+            'week' => CarbonImmutable::now($period->timezone)->setISODate((int) substr($key, 0, 4), (int) substr($key, 6))->startOfDay(),
+            'month' => CarbonImmutable::createFromFormat('!Y-m', $key, $period->timezone),
+        } ?: $period->to;
     }
 
     private function aggregate(Builder $query, ?int $responseTarget = null, ?int $resolutionTarget = null): Builder
@@ -472,7 +625,9 @@ class OperationalAnalytics
             ->selectRaw('SUM(CASE WHEN out_of_hours IS NOT NULL THEN 1 ELSE 0 END) AS out_of_hours_measurable')
             ->selectRaw('AVG(seconds_to_first_attention) AS first_attention_avg, COUNT(seconds_to_first_attention) AS first_attention_samples')
             ->selectRaw('AVG(seconds_to_first_human_response) AS first_response_avg, COUNT(seconds_to_first_human_response) AS first_response_samples')
+            ->selectRaw('MIN(seconds_to_first_human_response) AS first_response_min, MAX(seconds_to_first_human_response) AS first_response_max')
             ->selectRaw('AVG(seconds_to_resolution) AS resolution_avg, COUNT(seconds_to_resolution) AS resolution_samples')
+            ->selectRaw('MIN(seconds_to_resolution) AS resolution_min, MAX(seconds_to_resolution) AS resolution_max')
             ->selectRaw('AVG(business_seconds_to_first_human_response) AS first_response_business_avg, COUNT(business_seconds_to_first_human_response) AS first_response_business_samples')
             ->selectRaw('AVG(business_seconds_to_resolution) AS resolution_business_avg, COUNT(business_seconds_to_resolution) AS resolution_business_samples')
             ->selectRaw('SUM(messages_in) AS messages_in, SUM(messages_out) AS messages_out, SUM(failed_out) AS failed_out');
@@ -542,7 +697,7 @@ class OperationalAnalytics
             $result[$key] = (int) ($values[$key] ?? 0);
         }
 
-        foreach (['first_attention_avg', 'first_response_avg', 'resolution_avg', 'first_response_business_avg', 'resolution_business_avg'] as $key) {
+        foreach (['first_attention_avg', 'first_response_avg', 'resolution_avg', 'first_response_business_avg', 'resolution_business_avg', 'first_response_min', 'first_response_max', 'resolution_min', 'resolution_max'] as $key) {
             $value = $values[$key] ?? null;
             $result[$key] = $value === null ? null : (int) round((float) $value);
         }
@@ -562,9 +717,11 @@ class OperationalAnalytics
      */
     private function currentLoads(User $viewer, AnalyticsFilters $filters, string $column): array
     {
-        $query = DB::table('conversations')->whereIn('status', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()));
+        $query = DB::table('conversations')
+            ->where('origin', ConversationOrigin::Live->value)
+            ->whereIn('status', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()));
         $this->scope->apply($query, $viewer, 'assigned_user_id', 'department_id');
-        $this->dimensions($query, $filters, 'assigned_user_id');
+        $this->dimensions($query, $filters->withoutStatus(), 'assigned_user_id');
 
         $loads = [];
 
@@ -580,9 +737,10 @@ class OperationalAnalytics
     /**
      * Active agents (active account and role able to reply) within the
      * reach; a personal reach does not see colleagues (null). There is no
-     * manual availability any more.
+     * manual availability any more. The single definition of "agentes
+     * activos": the dashboard reads it from here too.
      */
-    private function activeAgents(User $viewer, AnalyticsFilters $filters): ?int
+    public function activeAgents(User $viewer, AnalyticsFilters $filters): ?int
     {
         if ($this->scope->isPersonal($viewer)) {
             return null;
@@ -605,28 +763,12 @@ class OperationalAnalytics
     /**
      * Keys and labels of the buckets of a period, in order.
      *
-     * @param  'hour'|'day'|'month'  $granularity
+     * @param  'hour'|'day'|'week'|'month'  $granularity
      * @return list<array{0: string, 1: string}>
      */
     private function buckets(AnalyticsPeriod $period, string $granularity): array
     {
-        if ($granularity === 'hour') {
-            return $this->hourBuckets($period);
-        }
-
-        $months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-        $buckets = [];
-        $cursor = $granularity === 'day' ? $period->from : $period->from->startOfMonth();
-
-        while ($cursor < $period->to) {
-            $label = $granularity === 'day'
-                ? $cursor->day.' '.$months[$cursor->month - 1]
-                : $months[$cursor->month - 1].' '.$cursor->format('y');
-            $buckets[] = [$granularity === 'day' ? $cursor->toDateString() : $cursor->format('Y-m'), $label];
-            $cursor = $granularity === 'day' ? $cursor->addDay() : $cursor->addMonthNoOverflow();
-        }
-
-        return $buckets;
+        return $granularity === 'hour' ? $this->hourBuckets($period) : $period->buckets($granularity);
     }
 
     /**
@@ -651,14 +793,14 @@ class OperationalAnalytics
     }
 
     /**
-     * @param  'received_at'|'resolved_at'  $column
-     * @param  'day'|'month'  $granularity
+     * @param  'received_at'|'resolved_at'|'left_backlog_at'  $column
+     * @param  'day'|'week'|'month'  $granularity
      * @return array<string, int>
      */
     private function bucketCounts(Builder $query, string $column, AnalyticsPeriod $period, string $granularity): array
     {
         [$local, $bindings] = $period->localTimeSql($column);
-        $bucket = $granularity === 'day' ? "DATE_FORMAT({$local}, '%Y-%m-%d')" : "DATE_FORMAT({$local}, '%Y-%m')";
+        $bucket = AnalyticsPeriod::bucketSql($local, $granularity);
 
         return $query
             ->selectRaw("{$bucket} AS bucket, COUNT(*) AS total", $bindings)

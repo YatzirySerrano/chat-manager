@@ -9,6 +9,7 @@ use App\Models\Contact;
 use App\Models\ContactAlias;
 use App\Models\ContactReviewCase;
 use App\Models\Conversation;
+use App\Models\ConversationCategory;
 use App\Models\ConversationNote;
 use App\Models\DataTransfer;
 use App\Models\Department;
@@ -178,6 +179,7 @@ beforeEach(function () {
         'department' => $department->id,
         'quickReply' => QuickReply::factory()->create()->id,
         'tag' => Tag::factory()->create()->id,
+        'category' => ConversationCategory::factory()->create()->id,
         'thread' => $thread->id,
         'template' => $template->id,
         'uuid' => (string) Str::uuid(),
@@ -212,6 +214,23 @@ function parametersFor(Route $route, object $test): array
 {
     return str_starts_with((string) $route->getName(), 'team-chat.') ? $test->teamParameters : $test->parameters;
 }
+
+test('the sweep reaches the routes of the service rules with real records', function () {
+    $swept = collect(applicationRoutes())->keyBy(fn (Route $route): string => (string) $route->getName());
+
+    foreach ([
+        'categories.index', 'categories.store', 'categories.update', 'categories.destroy', 'categories.restore', 'categories.rules.update',
+        'conversations.readiness.update', 'conversations.category.update', 'departments.service-rules.update',
+    ] as $name) {
+        expect($swept->has($name))->toBeTrue("The sweep does not reach [{$name}].")
+            ->and(in_array($name, [...PUBLIC_ROUTES, ...SELF_SERVICE_ROUTES], true))->toBeFalse();
+
+        // Every parameter resolves to a record that exists (no 404 for a missing model).
+        expect(sweepUri($swept[$name], parametersFor($swept[$name], $this)))->not->toContain('{');
+    }
+
+    expect(ConversationCategory::query()->whereKey($this->parameters['category'])->exists())->toBeTrue();
+});
 
 test('every application route asks a guest to sign in', function () {
     $failures = [];

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { History } from '@lucide/vue';
 import { computed } from 'vue';
+import { QUEUE_RULE_LABELS } from '@/components/conversations/queueRules';
 import {
     DELIVERY_UNKNOWN,
     deliveryUnknownLabel,
@@ -34,7 +35,15 @@ const detail = computed(() => {
     const parts: string[] = [];
     const event = props.event;
 
-    if (event.from_user || event.to_user) {
+    if (event.type === 'sla_breached') {
+        // Nobody moved the conversation: the event only records who was
+        // responsible when the deadline passed (nobody = it was in a queue).
+        parts.push(
+            event.from_user
+                ? `responsable: ${event.from_user}`
+                : 'sin responsable (en cola)',
+        );
+    } else if (event.from_user || event.to_user) {
         parts.push(
             [event.from_user, event.to_user]
                 .map((name) => name ?? 'Pendientes')
@@ -52,6 +61,23 @@ const detail = computed(() => {
 
     if (event.trigger && triggers[event.trigger]) {
         parts.push(triggers[event.trigger]);
+    }
+
+    if (event.category) {
+        parts.push(
+            `${event.category.from ?? 'Sin categoría'} → ${event.category.to ?? 'Sin categoría'}`,
+        );
+    }
+
+    // A justified exception to the queue rules made with this operation.
+    if (event.queue_override) {
+        const rules = event.queue_override.rules
+            .map((rule) => QUEUE_RULE_LABELS[rule]?.toLowerCase() ?? rule)
+            .join(', ');
+
+        parts.push(
+            `excepción a las reglas de la cola (${rules})${event.queue_override.reason ? `: «${event.queue_override.reason}»` : ''}`,
+        );
     }
 
     return parts.join(' · ');

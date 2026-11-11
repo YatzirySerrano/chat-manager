@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Conversations;
 
 use App\Concerns\AuthorizesVisibleConversation;
+use App\Services\Conversations\QueueRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -36,12 +37,32 @@ class ConversationOperationRequest extends FormRequest
         return [
             'version' => 'versión',
             'reason' => 'motivo',
+            'override_reason' => 'motivo de la excepción',
         ];
     }
 
     public function version(): int
     {
         return $this->integer('version');
+    }
+
+    /**
+     * Rule of the justification of an exception to the queue rules, for the
+     * operations that take a request from its queue (accept, assign,
+     * transfer to an agent). The engine ignores it without the permission.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function overrideReasonRules(): array
+    {
+        return ['override_reason' => ['nullable', 'string', 'min:'.QueueRules::OVERRIDE_REASON_MIN, 'max:'.self::REASON_MAX_LENGTH]];
+    }
+
+    public function overrideReason(): ?string
+    {
+        $reason = $this->string('override_reason')->squish()->value();
+
+        return $reason === '' ? null : $reason;
     }
 
     public function reason(): ?string

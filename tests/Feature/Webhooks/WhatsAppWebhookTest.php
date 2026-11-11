@@ -172,13 +172,21 @@ test('deliveries are rate limited per webhook URL', function () {
     WhatsAppFixtures::post($this, $other, $payload($other))->assertOk();
 });
 
-test('messages addressed to another phone number are not attached to the webhook connection', function () {
+test('messages addressed to a phone number that does not share the Meta app are attached to no connection and reported', function () {
+    // Another connection with its own app secret: the signature of this
+    // delivery proves nothing about it (see SharedAppWebhookTest for siblings).
     $other = Connection::factory()->create();
 
     WhatsAppFixtures::post($this, $this->connection, whatsappWebhook($other, [whatsappTextMessage('5215512345678', 'Hola', id: 'wamid.misrouted')]))->assertOk();
 
+    $event = WebhookEvent::query()->sole();
+
     expect(Message::query()->where('whatsapp_message_id', 'wamid.misrouted')->exists())->toBeFalse()
-        ->and(WebhookEvent::query()->sole()->status)->toBe(WebhookEventStatus::Processed);
+        ->and($event->status)->toBe(WebhookEventStatus::Processed)
+        ->and($event->summary)->toMatchArray(['messages' => 0, 'refused' => 1])
+        ->and($other->refresh()->last_inbound_at)->toBeNull()
+        // No longer silent: the receiving connection keeps a warning with the number's ID only.
+        ->and(array_keys($this->connection->refresh()->provider_signals['platform.unattributed']['value']))->toBe(["phone_number:{$other->phone_number_id}"]);
 });
 
 test('changes of another business account are ignored', function () {

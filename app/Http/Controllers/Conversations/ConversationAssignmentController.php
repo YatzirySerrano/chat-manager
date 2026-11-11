@@ -6,6 +6,7 @@ use App\Actions\Conversations\AcceptConversation;
 use App\Actions\Conversations\AssignConversation;
 use App\Actions\Conversations\ReleaseConversation;
 use App\Enums\ConversationConflict as ConversationConflictReason;
+use App\Enums\ConversationStatus;
 use App\Exceptions\ConversationStateConflict;
 use App\Http\Requests\Conversations\AssignConversationRequest;
 use App\Http\Requests\Conversations\ConversationOperationRequest;
@@ -32,7 +33,19 @@ class ConversationAssignmentController extends ConversationOperationController
             throw ConversationStateConflict::because($state->conflict($request->user(), 'accept', $conversation) ?? ConversationConflictReason::StateChanged);
         }
 
-        $accept->handle($conversation, $request->user());
+        // Permission before validation: someone who sees the conversation but
+        // may not take it gets 403 whatever they sent, never a 422. Taking
+        // again a conversation that is already theirs stays idempotent.
+        if (! ($conversation->status === ConversationStatus::Open && $conversation->assigned_user_id === $request->user()->id)) {
+            $this->ensurePermitted($request->user(), 'accept', $conversation);
+        }
+
+        // A justified exception to the queue rules (only honored for holders
+        // of conversations.override-queue-rules, checked by the engine).
+        $validated = $request->validate(ConversationOperationRequest::overrideReasonRules(), attributes: ['override_reason' => 'motivo de la excepción']);
+        $overrideReason = is_string($validated['override_reason'] ?? null) ? trim($validated['override_reason']) : null;
+
+        $accept->handle($conversation, $request->user(), $overrideReason === '' ? null : $overrideReason);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Aceptaste la conversación. Ahora eres responsable de atenderla.']);
 
@@ -52,7 +65,7 @@ class ConversationAssignmentController extends ConversationOperationController
 
         $agent = $this->destinationAgent($request->integer('user_id'), $request->user(), $conversation->department);
 
-        $assign->handle($conversation, $agent, $request->user(), $request->version(), $request->confirmsOverCapacity());
+        $assign->handle($conversation, $agent, $request->user(), $request->version(), $request->confirmsOverCapacity(), $request->overrideReason());
 
         return $this->done($conversation, $request->user(), "Conversación asignada a {$agent->name}.");
     }

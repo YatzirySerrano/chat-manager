@@ -2,11 +2,14 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Conversations\QueueRules;
+use App\Services\Sla\SlaSnapshot;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -82,6 +85,24 @@ class ConversationResource extends JsonResource
             'closed_at' => $this->closed_at?->toIso8601String(),
             'reopen_count' => $this->reopen_count,
             'created_at' => $this->created_at?->toIso8601String(),
+            // Request type (kept as history when the category was deleted).
+            'category' => $this->whenLoaded('category', fn (): ?array => $this->category === null ? null : [
+                'id' => $this->category->id,
+                'name' => $this->category->name,
+                'color' => $this->category->color->value,
+                'is_active' => $this->category->is_active,
+            ]),
+            // Preparation state, independent of the status: it only restrains the queue where the confirmation rule applies.
+            // `tracked`: the confirmation rule applies to it right now (otherwise the state is only informative).
+            'readiness' => [
+                'value' => ($readiness = $this->readiness ?? ConversationReadiness::Ready)->value,
+                'label' => $readiness->label(),
+                'tracked' => app(QueueRules::class)->rulesFor($this->resource)->confirmationRequired(),
+            ],
+            // When it entered the ready queue: clock of the minimum wait and of the chronological order.
+            'queued_at' => $this->queued_at?->toIso8601String(),
+            // Pending rows only: whether the viewer can take it now and, if not, why (QueueRules::acceptance()).
+            'acceptance' => app(QueueRules::class)->acceptance($this->resource, $viewer, $viewer?->can('accept', $this->resource) ?? false),
             'messages_count' => $this->whenCounted('messages'),
             'tags' => $this->whenLoaded('tags', fn (): array => $this->tags->map(fn (Tag $tag): array => [
                 'id' => $tag->id,
@@ -95,6 +116,8 @@ class ConversationResource extends JsonResource
             'awaiting_reply' => $this->status !== ConversationStatus::Closed
                 && $this->last_inbound_at !== null
                 && ($this->last_outbound_at === null || $this->last_inbound_at->greaterThan($this->last_outbound_at)),
+            // Open response cycle with an objective (SLA badge), or null. Lists load it for the page in one query (SlaSnapshot::load()).
+            'sla' => SlaSnapshot::of($this->resource),
             'can' => $viewer === null ? [] : [
                 'view' => $viewer->can('view', $this->resource),
                 'accept' => $viewer->can('accept', $this->resource),
@@ -110,6 +133,9 @@ class ConversationResource extends JsonResource
                 // Read-only supervision of the viewer's reach (never grants operations).
                 'supervise' => $viewer->can('supervise', $this->resource),
                 'send_templates' => $viewer->can('sendTemplate', $this->resource),
+                'confirm_ready' => $viewer->can('confirmReadiness', $this->resource),
+                'override_queue_rules' => $viewer->can('overrideQueueRules', $this->resource),
+                'categorize' => $viewer->can('categorize', $this->resource),
             ],
         ];
     }

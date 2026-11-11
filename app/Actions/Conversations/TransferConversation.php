@@ -11,6 +11,7 @@ use App\Models\Department;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationLifecycle;
+use App\Services\Conversations\QueueRules;
 use App\Services\PlatformSettings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -31,6 +32,13 @@ use Illuminate\Validation\ValidationException;
  * agent's limit. Transferring to a
  * queue is never blocked by capacity.
  *
+ * Handing a PENDING conversation directly to an agent takes it from its
+ * queue, so the queue rules apply as in AssignConversation: completeness
+ * always, minimum wait and chronological order only when the actor hands it
+ * to themselves; exceptions need conversations.override-queue-rules and a
+ * reason, and are recorded. Going to a queue restarts its queue clock
+ * (`queued_at`) under the destination's rules.
+ *
  * Locks: the conversation, then the destination department, then the
  * receiving agent (ConversationLifecycle). Once committed, the queue of the
  * previous responsible's automatic departments is offered again, since they
@@ -43,6 +51,7 @@ class TransferConversation
         private ConversationLifecycle $lifecycle,
         private AssignAutomatically $assignAutomatically,
         private PlatformSettings $settings,
+        private QueueRules $queueRules,
     ) {}
 
     /**
@@ -52,7 +61,7 @@ class TransferConversation
      *
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $confirmOverCapacity = false): Conversation
+    public function handle(Conversation $conversation, ?Department $department, ?User $agent, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $confirmOverCapacity = false, ?string $overrideReason = null): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
@@ -60,9 +69,14 @@ class TransferConversation
             throw ValidationException::withMessages(['reason' => 'Indica el motivo de la transferencia.']);
         }
 
-        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmOverCapacity): Conversation {
+        return DB::transaction(function () use ($conversation, $department, $agent, $actor, $reason, $expectedVersion, $confirmOverCapacity, $overrideReason): Conversation {
             $conversation = $this->lifecycle->lock($conversation);
             $actor = $this->lifecycle->authorize($actor, 'transfer', $conversation, $expectedVersion);
+
+            // Before the department and agent locks (QueueRules::earlierEligible()).
+            $violations = $agent !== null && $this->queueRules->inQueue($conversation)
+                ? $this->queueRules->violations($conversation, taking: $agent->id === $actor->id, lockingRead: true)
+                : [];
 
             // Both departments are referenced by the event, so both are locked
             // before the receiving agent, in id order; the destination
@@ -85,7 +99,9 @@ class TransferConversation
             }
 
             if ($agent !== null) {
-                $agent = $this->lifecycle->freshUser($agent->id);
+                // With violations, the actor's exception permission decides: it
+                // is read from their locked row (ascending ids with the agent's).
+                [$agent, $actor] = $this->lifecycle->freshAgentAndActor($agent->id, $actor, lockActor: $violations !== []);
                 $refusal = $this->access->attendRefusal($agent, $destination);
 
                 if ($refusal !== null) {
@@ -101,6 +117,8 @@ class TransferConversation
                 throw new ConversationConflict('Elige un destino distinto al actual.');
             }
 
+            $override = $this->queueRules->enforce($violations, $actor, $overrideReason);
+
             $limit = $agent === null || $agent->id === $fromUser ? null : $this->access->reachedLimit($agent, $destination, lockingRead: true);
 
             if ($limit !== null && ! $actor->holdsPermission(Permission::AssignConversations)) {
@@ -114,13 +132,14 @@ class TransferConversation
             $exceptions = array_filter([
                 'assigned_over_limit' => $limit !== null,
                 'limit' => $limit,
+                'queue_override' => $override,
             ]);
 
             $this->lifecycle->apply(
                 $conversation,
                 $agent === null ? ConversationStatus::Pending : ConversationStatus::Open,
                 [
-                    ...($agent === null ? $this->lifecycle->queued() : $this->lifecycle->attendedBy($agent)),
+                    ...($agent === null ? $this->lifecycle->queued($conversation, $destination?->id) : $this->lifecycle->attendedBy($agent)),
                     'department_id' => $destination?->id,
                 ],
             );
@@ -137,6 +156,10 @@ class TransferConversation
                 'note' => $reason,
                 'metadata' => $exceptions === [] ? null : $exceptions,
             ]);
+
+            if ($override !== null) {
+                $this->queueRules->recordOverride($conversation, $actor, $override, 'transferred', $agent);
+            }
 
             if ($agent === null) {
                 $this->assignAutomatically->handle($conversation, $fromUser === null ? [] : [$fromUser]);

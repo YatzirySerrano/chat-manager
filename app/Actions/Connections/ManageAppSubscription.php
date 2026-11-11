@@ -19,6 +19,9 @@ use Illuminate\Validation\ValidationException;
  *
  * When the connection stores its Meta App ID, only that app counts as
  * subscribed; otherwise any subscribed app is reported, with that caveat.
+ *
+ * Checked without an actor (automatic check), the answer is recorded the
+ * same way but only audited when the subscription state changed.
  */
 class ManageAppSubscription
 {
@@ -33,7 +36,7 @@ class ManageAppSubscription
      *
      * @throws ValidationException|MetaGraphException
      */
-    public function check(Connection $connection, User $actor): array
+    public function check(Connection $connection, ?User $actor = null): array
     {
         $this->ensureConfigured($connection);
 
@@ -58,12 +61,16 @@ class ManageAppSubscription
         $appId = (string) $connection->meta_app_id;
         $subscribed = $appId !== '' ? array_key_exists($appId, $apps) : $apps !== [];
 
+        $changed = $connection->app_subscribed !== $subscribed;
         $connection->forceFill(['app_subscribed' => $subscribed, 'subscription_checked_at' => now()])->save();
 
-        $this->audit->record(AuditAction::ConnectionSubscriptionChecked, $connection, [
-            'subscribed' => $subscribed,
-            'apps' => array_values($apps),
-        ], $actor);
+        if ($actor !== null || $changed) {
+            $this->audit->record(AuditAction::ConnectionSubscriptionChecked, $connection, [
+                'subscribed' => $subscribed,
+                'apps' => array_values($apps),
+                ...($actor === null ? ['automatic' => true] : []),
+            ], $actor);
+        }
 
         $message = match (true) {
             $subscribed && $appId !== '' => 'La app de Meta está suscrita a los webhooks de la cuenta de WhatsApp Business.',

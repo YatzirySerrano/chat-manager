@@ -34,6 +34,16 @@ abstract class InAppNotification extends Notification
     abstract public function payload(): array;
 
     /**
+     * Level stored with the notification: the one of its kind, unless this
+     * occurrence is not the news the kind usually is (a connection that
+     * recovered is not urgent).
+     */
+    public function level(): NotificationLevel
+    {
+        return $this->kind()->level();
+    }
+
+    /**
      * Key under which bursts fold into a single unread notification, or null
      * to always create a new one.
      */

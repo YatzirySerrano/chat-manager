@@ -955,6 +955,449 @@ export async function calibrateLayout(page, css, options = {}) {
     return { clean, broken, ok: clean === '' && broken !== '' };
 }
 
+/* ------------------------------------------------------------------ */
+/* Checks shared by the service rules / SLA / indicators scenarios.    */
+/* ------------------------------------------------------------------ */
+
+/** Where the collected browser problems stand now (see problemsSince). */
+export function problemMark() {
+    return {
+        console: problems.console.length,
+        pageerror: problems.pageerror.length,
+        server: problems.server.length,
+    };
+}
+
+/** Console errors, uncaught exceptions / rejections and 5xx since the mark. */
+export function problemsSince(mark) {
+    return [
+        ...problems.console.slice(mark.console),
+        ...problems.pageerror.slice(mark.pageerror),
+        ...problems.server.slice(mark.server),
+    ];
+}
+
+/**
+ * Wraps the scenario of a step: it also fails when the browser logged a
+ * console error, an uncaught exception, an unhandled promise rejection
+ * (Chromium reports both as "pageerror") or a 5xx while it ran.
+ *
+ *   await step('id', 'input', clean(async () => [ok, note]));
+ */
+export function clean(scenario) {
+    return async () => {
+        const mark = problemMark();
+        const [ok, note] = await scenario();
+        const fresh = problemsSince(mark);
+
+        return [
+            ok && fresh.length === 0,
+            fresh.length === 0
+                ? note
+                : `${note} | browser errors: ${JSON.stringify(fresh).slice(0, 500)}`,
+        ];
+    };
+}
+
+/**
+ * Broken values shown to the person: «NaN», «undefined», «Invalid Date»,
+ * «[object Object]», «Infinity» or a bare «null», in visible text or in
+ * the accessible texts (aria-label, title, alt, placeholder, datetime).
+ * Returns up to ten findings ("where: text").
+ */
+export function domGarbage(page) {
+    return page.evaluate(() => {
+        const pattern =
+            /\bNaN\b|\bundefined\b|Invalid Date|\[object Object\]|\bInfinity\b|(^|[\s:(])null($|[\s).,%])/;
+        const found = [];
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+        );
+
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const element = node.parentElement;
+            const text = node.textContent.replace(/\s+/g, ' ').trim();
+
+            if (
+                text &&
+                element &&
+                !element.closest('script, style, [data-e2e-ignore]') &&
+                pattern.test(text)
+            ) {
+                found.push(`text: ${text.slice(0, 80)}`);
+            }
+        }
+
+        for (const element of document.body.querySelectorAll('*')) {
+            for (const name of [
+                'aria-label',
+                'title',
+                'alt',
+                'placeholder',
+                'datetime',
+                'aria-valuetext',
+            ]) {
+                const value = element.getAttribute(name);
+
+                if (value && pattern.test(value)) {
+                    found.push(`${name}: ${value.slice(0, 80)}`);
+                }
+            }
+        }
+
+        return [...new Set(found)].slice(0, 10);
+    });
+}
+
+/**
+ * Keyboard behaviour of a modal dialog, with the real keyboard:
+ *
+ *   - `open(page)` opens it (focus the trigger and press Enter/Space, or
+ *     click it); the focus must land inside the dialog;
+ *   - Tab and Shift+Tab, as many times as it has focusable elements plus
+ *     two, never leave it (focus trapped);
+ *   - Escape closes it and the focus returns to `returnsTo` (a locator).
+ *     When the focus is on a field help icon its explanation is open (a
+ *     layer of its own): the first Escape closes that layer and the second
+ *     one the dialog, which is counted and reported.
+ *
+ * Keys are pressed at a person's pace (100 ms apart). Returns [ok, note].
+ */
+export async function dialogKeyboard(page, options) {
+    const selector = options.dialog ?? '[role="dialog"], [role="alertdialog"]';
+    const inside = () =>
+        page.evaluate((sel) => {
+            const dialogs = [...document.querySelectorAll(sel)];
+            const active = document.activeElement;
+
+            return {
+                inside: dialogs.some((dialog) => dialog.contains(active)),
+                active: active
+                    ? `${active.tagName.toLowerCase()}${active.id ? `#${active.id}` : ''} "${(active.getAttribute('aria-label') ?? active.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 30)}"`
+                    : 'none',
+            };
+        }, selector);
+
+    await options.open(page);
+    const dialog = page.locator(selector).last();
+    await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+    await page.waitForTimeout(250);
+    const landed = await inside();
+    const focusables = await dialog
+        .locator(
+            'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )
+        .count();
+    const escaped = [];
+
+    const presses = Math.min(focusables, 24) + 2;
+
+    for (const key of ['Tab', 'Shift+Tab']) {
+        for (let index = 0; index < presses; index++) {
+            await page.keyboard.press(key);
+            await page.waitForTimeout(100);
+            const state = await inside();
+
+            if (!state.inside) {
+                escaped.push(`${key}#${index + 1} -> ${state.active}`);
+            }
+        }
+    }
+
+    const target = await dialog.elementHandle();
+    const gone = () =>
+        page
+            .waitForFunction((element) => !element.isConnected, target, {
+                timeout: 1_500,
+            })
+            .then(() => true)
+            .catch(() => false);
+    const layers = () => page.locator(selector).count();
+    let escapes = 0;
+    let closed = false;
+
+    while (!closed && escapes < 2) {
+        const before = await layers();
+        await page.keyboard.press('Escape');
+        escapes++;
+        closed = await gone();
+
+        // A second Escape only when the first one closed an inner layer.
+        if (!closed && (await layers()) >= before) {
+            break;
+        }
+    }
+
+    await page.waitForTimeout(250);
+    const returned = options.returnsTo
+        ? await options.returnsTo
+              .first()
+              .evaluate((element) => element === document.activeElement)
+              .catch(() => false)
+        : null;
+    const after = await inside();
+
+    return [
+        landed.inside &&
+            focusables > 0 &&
+            escaped.length === 0 &&
+            closed &&
+            returned !== false,
+        `focus on open=${landed.active} (inside=${landed.inside}), focusables=${focusables}, left the dialog=${JSON.stringify(escaped.slice(0, 3))}, Escape closed=${closed} (${escapes} press${escapes === 1 ? '' : 'es'}), focus after=${after.active}${returned === null ? '' : ` (returned to trigger=${returned})`}`,
+    ];
+}
+
+/**
+ * Whether every matched status element says its state with words and an
+ * icon, not with color alone: each needs visible text of its own and an
+ * <svg> (the icon). Returns [ok, note]; matching nothing fails.
+ */
+export async function notColorAlone(page, selector) {
+    const items = await page.locator(selector).evaluateAll((elements) =>
+        elements
+            .filter((element) => element.getBoundingClientRect().width > 0)
+            .map((element) => ({
+                text: (element.innerText ?? element.textContent ?? '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 40),
+                icon: element.querySelector('svg') !== null,
+            })),
+    );
+    const bad = items.filter((item) => item.text === '' || !item.icon);
+
+    return [
+        items.length > 0 && bad.length === 0,
+        `${selector}: ${items.length} visible, ${bad.length} without text or icon ${JSON.stringify(bad.slice(0, 3))}; e.g. ${JSON.stringify(items[0] ?? null)}`,
+    ];
+}
+
+/**
+ * Data tables that scroll sideways inside their own box on purpose (a
+ * wrapper with overflow-x auto around a <table>) are not page overflow:
+ * the wrapper is marked [data-e2e-ignore] so layoutReport skips its cells,
+ * and it is returned when the wrapper ITSELF sticks out of the viewport.
+ */
+export function allowTableScroll(page) {
+    return page.evaluate(() => {
+        const out = [];
+
+        for (const table of document.querySelectorAll('table')) {
+            for (
+                let node = table.parentElement;
+                node && node !== document.body;
+                node = node.parentElement
+            ) {
+                const style = getComputedStyle(node);
+
+                if (['auto', 'scroll'].includes(style.overflowX)) {
+                    const rect = node.getBoundingClientRect();
+                    node.setAttribute('data-e2e-ignore', '');
+
+                    if (
+                        rect.width > 0 &&
+                        (rect.right >
+                            document.documentElement.clientWidth + 1 ||
+                            rect.left < -1)
+                    ) {
+                        out.push(
+                            `table wrapper off screen by ${Math.round(rect.right - document.documentElement.clientWidth)}`,
+                        );
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return out;
+    });
+}
+
+/**
+ * The layout matrix of some screens: one step per width (WIDTHS, 320 to
+ * 1440 px) and color scheme (light, dark), each in its own signed-in
+ * context. `states` are layoutMatrix states ({name, prepare, cleanup,
+ * options}); a state with `tables: true` lets its data tables scroll inside
+ * their box (allowTableScroll), and `ignore` lists selectors of parts of
+ * the page that are not under test in that state (marked
+ * [data-e2e-ignore]; name them in the scenario). Every state must have no horizontal
+ * overflow and the theme must match the scheme. Screenshots are kept per
+ * state at 320, 768 and 1440 px.
+ */
+export async function layoutSweep(browser, options) {
+    const widths = options.widths ?? WIDTHS;
+
+    for (const scheme of options.schemes ?? ['light', 'dark']) {
+        for (const width of widths) {
+            await step(
+                `layout-${options.id}-${width}-${scheme}`,
+                `${width}px ${scheme}, ${options.states.length} states`,
+                async () => {
+                    const phone = width <= 430;
+                    const page = await openPage(browser, {
+                        context: {
+                            viewport: { width, height: phone ? 844 : 900 },
+                            colorScheme: scheme,
+                            hasTouch: phone,
+                            isMobile: phone,
+                            storageState: options.storageState,
+                        },
+                        prefix: `[${options.id} ${width}${scheme}] `,
+                    });
+                    const mark = problemMark();
+                    const notes = [];
+
+                    try {
+                        const measured = await layoutMatrix(
+                            page,
+                            options.states.map((state) => ({
+                                ...state,
+                                prepare: async (target) => {
+                                    await state.prepare(target);
+
+                                    if (state.ignore) {
+                                        await target.evaluate((selectors) => {
+                                            for (const selector of selectors) {
+                                                for (const element of document.querySelectorAll(
+                                                    selector,
+                                                )) {
+                                                    element.setAttribute(
+                                                        'data-e2e-ignore',
+                                                        '',
+                                                    );
+                                                }
+                                            }
+                                        }, state.ignore);
+                                    }
+
+                                    if (state.tables) {
+                                        notes.push(
+                                            ...(
+                                                await allowTableScroll(target)
+                                            ).map(
+                                                (note) =>
+                                                    `${state.name}: ${note}`,
+                                            ),
+                                        );
+                                    }
+
+                                    const dark = await target.evaluate(() =>
+                                        document.documentElement.classList.contains(
+                                            'dark',
+                                        ),
+                                    );
+
+                                    if (dark !== (scheme === 'dark')) {
+                                        notes.push(
+                                            `${state.name}: dark=${dark}`,
+                                        );
+                                    }
+
+                                    if ([320, 768, 1440].includes(width)) {
+                                        await shot(
+                                            target,
+                                            `${options.id}-${state.name}-${width}-${scheme}`,
+                                            { fullPage: false },
+                                        );
+                                    }
+                                },
+                            })),
+                        );
+
+                        for (const state of measured) {
+                            if (state.problems) {
+                                notes.push(`${state.name}: ${state.problems}`);
+                            }
+                        }
+                    } finally {
+                        await page.context().close();
+                    }
+
+                    const fresh = problemsSince(mark);
+
+                    if (fresh.length > 0) {
+                        notes.push(
+                            `browser errors: ${JSON.stringify(fresh).slice(0, 300)}`,
+                        );
+                    }
+
+                    return [
+                        notes.length === 0,
+                        notes.join(' | ').slice(0, 900) ||
+                            `${options.states.length} states without overflow`,
+                    ];
+                },
+            );
+        }
+    }
+}
+
+/**
+ * Sets general service rules in Configuración › Objetivos de servicio with
+ * the real controls (a switch or a number field per rule, by its dotted
+ * key) and saves. `alerts` does the same for the switches of «Alertas
+ * automáticas de SLA» (by their visible label). Returns the HTTP status of
+ * the save and whether the page ended without unsaved changes.
+ */
+export async function savePlatformRules(page, rules, alerts = {}) {
+    await page.goto(`${BASE}/admin/settings`);
+    await page.waitForLoadState('networkidle');
+
+    for (const [key, value] of Object.entries(rules)) {
+        const row = page.locator(
+            `[data-settings-service-rules] [data-service-rule="${key}"]`,
+        );
+        await row.scrollIntoViewIfNeeded();
+
+        if (typeof value === 'boolean') {
+            const toggle = row.getByRole('switch');
+
+            if ((await toggle.getAttribute('aria-checked')) !== String(value)) {
+                await toggle.click();
+            }
+        } else {
+            await row
+                .locator('input[type="number"]')
+                .fill(value === null ? '' : String(value));
+        }
+    }
+
+    for (const [label, value] of Object.entries(alerts)) {
+        const toggle = page
+            .locator('[data-settings-sla-alerts]')
+            .getByRole('switch', { name: label, exact: true });
+        await toggle.scrollIntoViewIfNeeded();
+
+        if ((await toggle.getAttribute('aria-checked')) !== String(value)) {
+            await toggle.click();
+        }
+    }
+
+    const save = page.getByRole('button', { name: 'Guardar configuración' });
+
+    if (await save.isDisabled()) {
+        return { status: null, clean: true, unchanged: true };
+    }
+
+    const answered = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'PUT' &&
+            new URL(response.url()).pathname === '/admin/settings',
+    );
+    await save.click();
+    const status = (await answered).status();
+    const clean = await page
+        .getByText('Sin cambios por guardar')
+        .waitFor({ timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false);
+
+    return { status, clean, unchanged: false };
+}
+
 export const listRow = (page, name) =>
     page.locator('[data-inbox-item]', { hasText: name }).first();
 

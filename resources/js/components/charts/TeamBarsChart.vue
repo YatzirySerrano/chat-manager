@@ -33,7 +33,7 @@ const props = defineProps<{
 }>();
 
 const secondLabel = computed(() =>
-    props.second === 'attended' ? 'Atendidas' : 'Resueltas',
+    props.second === 'attended' ? 'Atendidas' : 'Finalizadas',
 );
 
 const series = computed<BarSeries[]>(() => [

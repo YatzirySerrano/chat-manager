@@ -15,6 +15,7 @@ import {
     PlugZap,
     ScrollText,
     ServerCog,
+    FolderTree,
     Settings,
     ShieldCheck,
     Tags,
@@ -44,6 +45,7 @@ import { index as integrationTokensIndex } from '@/routes/integrations/tokens';
 import { index as quickRepliesIndex } from '@/routes/quick-replies';
 import { index as reportsIndex } from '@/routes/reports';
 import { index as tagsIndex } from '@/routes/tags';
+import { index as categoriesIndex } from '@/routes/categories';
 import { index as teamChatIndex } from '@/routes/team-chat';
 import { index as templatesIndex } from '@/routes/templates';
 import type { NavItem } from '@/types';
@@ -265,6 +267,15 @@ export function useNavigation() {
                 description: 'Estado técnico y tareas con error',
                 href: systemIndex(),
                 icon: ServerCog,
+            });
+        }
+
+        if (can('categories.manage')) {
+            admin.push({
+                title: 'Categorías de solicitud',
+                description: 'Tipos de solicitud y sus reglas de servicio',
+                href: categoriesIndex(),
+                icon: FolderTree,
             });
         }
 

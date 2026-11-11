@@ -1,4 +1,10 @@
 import type { ConnectionChannel } from './connections';
+import type {
+    AgentWorkload,
+    AnalyticsBacklog,
+    ResponseTrend,
+    SlaCompliance,
+} from './reports';
 
 /**
  * Chart data of the dashboard (`charts` deferred prop, group "charts") and
@@ -7,10 +13,10 @@ import type { ConnectionChannel } from './connections';
  * the client only draws it.
  */
 
-export type ActivityGranularity = 'hour' | 'day' | 'month';
+export type ActivityGranularity = 'hour' | 'day' | 'week' | 'month';
 
 export type ActivityPoint = {
-    /** "2026-10-21T09:00" (hour), "2026-10-21" (day) or "2026-10" (month), platform time zone. */
+    /** "2026-10-21T09:00" (hour), "2026-10-21" (day), "2026-W43" (ISO week) or "2026-10" (month), platform time zone. */
     key: string;
     /** "09:00", "21 oct" or "oct 26". */
     label: string;
@@ -74,4 +80,21 @@ export type DashboardCharts = {
     statuses: StatusChartRow[] | null;
     agents: AgentChartRow[] | null;
     departments: DepartmentChartRow[] | null;
+    response_trend: ResponseTrend | null;
+    sla: SlaCompliance | null;
+    /** Live load per person (top 8 + «Otros»); null when the viewer may not see the team. */
+    workload: AgentWorkload | null;
+    heatmap: { max: number; cells: number[][] } | null;
+    categories: CategoryChartRow[] | null;
+    backlog: AnalyticsBacklog | null;
+};
+
+/** Category bar: top 8 by received + one «Otros» row (key "others"). */
+export type CategoryChartRow = {
+    key: string;
+    id: number | null;
+    name: string;
+    received: number;
+    attended: number;
+    resolved: number;
 };

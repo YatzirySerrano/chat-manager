@@ -170,16 +170,22 @@ class ConversationTimeline
      * by the preview endpoint, which never goes through the chat's own
      * requests either.
      *
-     * @return array{messages: list<array<string, mixed>>, has_more: bool}
+     * `first_message` is the message the conversation started with, only
+     * when it is not already among the latest ones (so the initial request
+     * is always in sight, even in a long conversation).
+     *
+     * @return array{messages: list<array<string, mixed>>, has_more: bool, first_message: array<string, mixed>|null}
      */
     public function preview(Conversation $conversation, Request $request, int $limit = self::PREVIEW_SIZE): array
     {
         $messages = $this->messages($conversation)->orderByDesc('id')->limit($limit + 1)->get();
         $hasMore = $messages->count() > $limit;
+        $first = $hasMore ? $this->messages($conversation)->orderBy('id')->first() : null;
 
         return [
             'messages' => $this->presentMessages($conversation, $this->inWrittenOrder($messages->take($limit)->values()), $request),
             'has_more' => $hasMore,
+            'first_message' => $first === null ? null : ($this->presentMessages($conversation, new Collection([$first]), $request)[0] ?? null),
         ];
     }
 

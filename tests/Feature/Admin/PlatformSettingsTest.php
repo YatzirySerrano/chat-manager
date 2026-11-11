@@ -120,7 +120,7 @@ test('service level objectives are optional whole minutes and can be removed', f
         ->put(route('admin.settings.update'), validSettingsPayload(['sla' => ['first_response_minutes' => 15]]))
         ->assertSessionHasNoErrors();
 
-    expect(app(PlatformSettings::class)->get('sla'))->toBe(['first_response_minutes' => 15, 'resolution_minutes' => null]);
+    expect(app(PlatformSettings::class)->get('sla'))->toMatchArray(['first_response_minutes' => 15, 'resolution_minutes' => null]);
 
     $this->actingAs($admin)
         ->put(route('admin.settings.update'), validSettingsPayload(['sla' => ['first_response_minutes' => '']]))

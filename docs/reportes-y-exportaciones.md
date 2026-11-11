@@ -12,11 +12,11 @@ Relacionados: [bandejas-y-asignacion.md](bandejas-y-asignacion.md) (ciclo de vid
 
 ## 1. Qué ofrece
 
-| Pantalla            | Ruta                                  | Permiso                           | Contenido                                                                                                                                                                    |
-| ------------------- | ------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reportes operativos | `GET /reports` (`reports.index`)      | `reports.view`                    | Indicadores con comparación contra el periodo anterior, tendencia, estado actual, mapa de calor por hora, tablas por agente, departamento y conexión, exportación XLSX/PDF.  |
-| Panel principal     | `GET /dashboard`                      | `dashboard.view`                  | En vivo: en atención, pendientes, cerradas hoy, agentes disponibles ahora. Del periodo: primera respuesta humana con comparación y recibidas con tendencia. Filtros ligeros. |
-| Exportación         | `POST /exports/analytics/{xlsx\|pdf}` | `reports.view` + `reports.export` | El mismo reporte, con los mismos filtros aplicados en el servidor (formulario con token CSRF; un GET responde 405).                                                          |
+| Pantalla            | Ruta                                                                                   | Permiso                                                               | Contenido                                                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reportes operativos | `GET /reports` (`reports.index`)                                                       | `reports.view`                                                        | Cuatro vistas: **Resumen** (volumen, evolución, tiempos, demanda), **Productividad** (por colaborador), **Cumplimiento de SLA** y **Desgloses** (departamento, categoría, conexión, canal, responsable actual). |
+| Panel principal     | `GET /dashboard`                                                                       | `dashboard.view`                                                      | Ejecutivo, por preguntas: «Ahora» (en vivo), «Resultado del periodo», «Tiempos y cumplimiento», «Carga de trabajo», «Demanda», «Distribución» y «Equipo».                                                       |
+| Exportación         | `POST /exports/{analytics\|agent-productivity\|sla-compliance\|dashboard}/{xlsx\|pdf}` | `reports.view` + `reports.export` (`dashboard.view` para `dashboard`) | Los mismos indicadores, con los mismos filtros aplicados en el servidor (formulario con token CSRF; un GET responde 405).                                                                                       |
 
 `reports.view` existía en el catálogo como permiso "futuro"; desde este incremento está **disponible** (se otorga desde
 Roles). El rol _Supervisor_ ya lo tenía; _Agente_ no (un rol de alcance "Solo lo asignado" con `reports.view` ve solo
@@ -32,12 +32,106 @@ sus propias métricas). Administrador y Superadministrador lo tienen por ser glo
 | Sus departamentos    | Conversaciones cuyo departamento **actual** es suyo, más las que atiende personalmente.                                                                                      |
 | Solo lo asignado     | Solo las conversaciones de las que es (o fue, si se cerraron) responsable. No ve disponibilidad de compañeros, ni filtros de departamento/agente, ni tabla por departamento. |
 
-Los filtros (`department`, `agent`, `connection`) se **validan contra las opciones del usuario**: un ID fuera de su
+Las cifras por colaborador (`conversation_agent_metrics`) y los ciclos de respuesta (`response_cycles`) siguen el mismo
+criterio sobre sus propias columnas: global, todo; departamentos, las filas de sus departamentos más las propias;
+asignado, **solo las filas de la propia persona** (nunca cifras de compañeros: prueba «a personal reach receives nothing
+about colleagues through the page props»).
+
+Los filtros (`department`, `agent`, `connection`, `channel`, `category`, `status`) se **validan contra las opciones del usuario**: un ID fuera de su
 alcance se descarta (no se aplica, no se devuelve en `filters`, no se revela su nombre), lo que evita IDOR y
 enumeración por conteos. Las exportaciones usan la misma clase con el usuario solicitante, y el trabajo en cola vuelve
 a autorizar al ejecutarse (comportamiento del motor de exportación).
 
 ## 3. Definición de cada métrica
+
+> **Glosario vigente (fase de reportes e indicadores).** Cada indicador se define **una sola vez** en
+> `App\Services\Analytics` y el panel, los reportes y las exportaciones leen esa misma definición. La tabla de §3.0
+> manda sobre la tabla histórica que le sigue cuando difieran los nombres («Resueltas» ahora se llama «Finalizadas»).
+
+### 3.0 Glosario de indicadores
+
+Unidad de conteo: la **solicitud** (una conversación). Cuenta **una vez** sin importar reasignaciones, cambios de estado
+o número de mensajes. Los conteos de **mensajes** se rotulan siempre como mensajes y nunca se suman con solicitudes.
+
+| Indicador                                       | Definición exacta                                                                                                                                                                                                                                                                                       | Fuente                                                                  | Excluye / notas                                                                                                                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Recibidas                                       | Solicitudes creadas en el periodo (zona horaria de la plataforma).                                                                                                                                                                                                                                      | `conversation_metrics.received_at`                                      | Historial importado. Una reapertura no es una recibida nueva.                                                                                                            |
+| Atendidas                                       | De las recibidas, las que tuvieron atención humana: aceptación, asignación manual, transferencia a un agente o respuesta humana.                                                                                                                                                                        | `first_assigned_at`                                                     | La distribución automática sola no es atención.                                                                                                                          |
+| Pendientes ahora                                | Solicitudes en estado _Pendiente_ en este momento.                                                                                                                                                                                                                                                      | `conversations` en vivo                                                 | No depende del periodo ni del filtro de estado; sin historial importado.                                                                                                 |
+| En atención ahora                               | Estado `open` (y el heredado `on_hold`) en este momento.                                                                                                                                                                                                                                                | `conversations` en vivo                                                 | Ídem.                                                                                                                                                                    |
+| Finalizadas (de las recibidas)                  | De las recibidas en el periodo, las cerradas al menos una vez. **% resueltas** = finalizadas / recibidas.                                                                                                                                                                                               | `resolved_at` no nulo en la cohorte                                     | Una reapertura posterior no la quita (se cuenta en Reabiertas).                                                                                                          |
+| Finalizadas en el periodo                       | Solicitudes cuyo **primer cierre** ocurrió en el periodo, sin importar cuándo llegaron. Es la única cifra agrupada por fecha de cierre (línea «Finalizadas» de la gráfica de volumen).                                                                                                                  | `resolved_at` en el rango                                               | Un recierre tras reapertura no vuelve a contarla.                                                                                                                        |
+| Finalizadas hoy (panel, en vivo)                | Cerradas desde las 00:00 de hoy y que **siguen cerradas**, entre las que la persona ve en su bandeja.                                                                                                                                                                                                   | `conversations.closed_at`                                               | Cifra de bandeja en vivo, rotulada aparte de las dos anteriores.                                                                                                         |
+| Acumuladas sin atender (backlog)                | Solicitudes recibidas que, en un momento dado, no tenían atención humana ni cierre. Tendencia: valor al cierre de cada día/semana/mes; los periodos sin terminar quedan vacíos.                                                                                                                         | `left_backlog_at` (= lo primero entre primera atención y primer cierre) | No aplica el filtro de estado.                                                                                                                                           |
+| (a) Espera hasta la primera respuesta           | Creación → primer mensaje saliente escrito por una persona, no automático, aceptado por el proveedor. Promedio, **mínimo y máximo**, n.                                                                                                                                                                 | `seconds_to_first_human_response`                                       | Automáticos, fallidos y en cola. Sin respuesta = sin dato (no 0).                                                                                                        |
+| (b) Tiempo de respuesta por mensaje del cliente | Por ciclo de respuesta: mensaje del cliente que espera → respuesta humana. Promedio, mínimo, máximo, n.                                                                                                                                                                                                 | `response_cycles.response_seconds` (ciclos `answered`)                  | Solo existe desde esta versión (§3.3).                                                                                                                                   |
+| (c) Duración total hasta la resolución          | Creación → primer cierre. Promedio, mínimo, máximo, n.                                                                                                                                                                                                                                                  | `seconds_to_resolution`                                                 | Sin cierre = sin dato.                                                                                                                                                   |
+| (d) Tiempo de atención por colaborador          | Suma de los tramos en que la persona fue responsable de la solicitud; promedio por solicitud sobre los tramos **concluidos**.                                                                                                                                                                           | `conversation_agent_metrics.handling_seconds`                           | Un tramo en curso (`open_since`) no se promedia ni se congela.                                                                                                           |
+| Espera hasta la primera atención                | Creación → primera atención humana.                                                                                                                                                                                                                                                                     | `seconds_to_first_attention`                                            | Solo calendario.                                                                                                                                                         |
+| Tiempo hábil                                    | (a) y (c) contando solo el horario del departamento receptor (§3.1).                                                                                                                                                                                                                                    | `business_seconds_*`                                                    | Congelado al calcularse.                                                                                                                                                 |
+| Cumplimiento de SLA                             | Ciclos de respuesta **iniciados en el periodo** con objetivo: cumplido = respondido con `responded_at ≤ due_at`; incumplido = venció (`breached_at`, respondido tarde, o abierto con `due_at` ya pasado). **% = cumplidos / (cumplidos + incumplidos)**, siempre con n.                                 | `response_cycles`                                                       | Sin objetivo (`target_seconds` nulo), en curso dentro del plazo y cerrados sin respuesta antes del plazo: no se evalúan. Sin ciclos evaluados: «Sin datos», nunca 100 %. |
+| Retrasos por departamento / categoría           | Ciclos incumplidos por el departamento / categoría **congelados en el ciclo**.                                                                                                                                                                                                                          | `response_cycles`                                                       | —                                                                                                                                                                        |
+| Vencidas ahora                                  | Ciclos abiertos ahora con el plazo vencido, por persona asignada (o en cola).                                                                                                                                                                                                                           | `response_cycles` (`active = 1`)                                        | En vivo.                                                                                                                                                                 |
+| Atendidas por colaborador                       | Solicitudes de la cohorte en las que la persona participó con atención humana (aceptó, recibió por asignación manual o transferencia, o respondió).                                                                                                                                                     | `conversation_agent_metrics.attended_at`                                | **Una solicitud atendida por dos personas cuenta para ambas**: la suma puede superar el total; se muestra además el total de solicitudes distintas.                      |
+| Asignadas por colaborador                       | Solicitudes de las que fue responsable en algún momento (incluye distribución automática).                                                                                                                                                                                                              | `was_responsible`                                                       | —                                                                                                                                                                        |
+| Finalizadas por colaborador                     | Cierres ocurridos mientras la persona era responsable; reabierta y recerrada cuenta cada cierre real, para quien era responsable entonces.                                                                                                                                                              | `closes_count`                                                          | —                                                                                                                                                                        |
+| Respuestas enviadas (mensajes)                  | Mensajes humanos aceptados por el proveedor escritos por la persona.                                                                                                                                                                                                                                    | `replies_count`                                                         | Automáticos y fallidos. Son mensajes, no solicitudes.                                                                                                                    |
+| Pendientes actuales por colaborador             | Solicitudes asignadas ahora y sin cerrar.                                                                                                                                                                                                                                                               | `conversations` en vivo                                                 | No depende del periodo.                                                                                                                                                  |
+| SLA por colaborador                             | Cumplidos → quien respondió (`responder_user_id`); incumplidos → responsable al vencer (`breach_user_id`; nulo = en cola, no se atribuye a nadie). «Respondió tarde» es informativo.                                                                                                                    | `response_cycles`                                                       | Cada ciclo evaluado cuenta para una sola persona como máximo.                                                                                                            |
+| Cartera por responsable actual                  | Cifras por conversación agrupadas por el responsable actual o último (`agent_id`).                                                                                                                                                                                                                      | `conversation_metrics`                                                  | **No mide trabajo individual** (para eso, Productividad). Sus mensajes salientes incluyen automáticos y se rotulan así.                                                  |
+| Agentes activos                                 | Cuentas activas con permiso de responder dentro del alcance. Una sola definición (`OperationalAnalytics::activeAgents()`), usada por panel y reportes.                                                                                                                                                  | `users`                                                                 | Alcance personal: no se muestra.                                                                                                                                         |
+| Horarios de mayor demanda                       | Recibidas por día de la semana y hora local.                                                                                                                                                                                                                                                            | `received_at`                                                           | —                                                                                                                                                                        |
+| Semana                                          | Semana ISO 8601 (lunes a domingo) en la zona horaria de la plataforma; clave `2026-W43`.                                                                                                                                                                                                                | `AnalyticsPeriod::buckets()` / `bucketSql()`                            | Respeta cambios de horario de verano.                                                                                                                                    |
+| Comparación                                     | Periodo anterior de igual duración. **Si el periodo actual no ha terminado, se compara contra el mismo tramo transcurrido del anterior** (`AnalyticsPeriod::comparison()`), y la interfaz lo dice. La línea «periodo anterior» de las gráficas usa el periodo anterior completo, alineado por posición. | —                                                                       | —                                                                                                                                                                        |
+
+**Qué significa cada filtro** (idéntico en pantalla, gráficas y exportaciones; `AnalyticsDimensions`): departamento,
+categoría y estado son los **actuales** de la solicitud; agente es el responsable actual o último en las cifras por
+conversación y la fila de la propia persona en Productividad; conexión/canal es por donde llegó. El **estado no aplica**
+a las cifras en vivo, al acumulado ni a los ciclos de respuesta, y cada panel afectado lo indica. En los ciclos, las
+dimensiones son las congeladas al iniciar el ciclo y «agente» es a quién pertenece el ciclo (ver SLA por colaborador).
+
+### 3.2 Metodología de atribución por colaborador
+
+`App\Services\Analytics\AgentAttributionCalculator` reconstruye, por conversación, una fila por persona en
+`conversation_agent_metrics` a partir de `conversation_events` (solo se agregan, nunca se editan) y de
+`messages.sender_user_id`. Lo invoca el mismo `ConversationMetricsCalculator::recompute()` (mismo job, mismo
+`analytics:rebuild`), reemplaza las filas completas y es idempotente.
+
+- **Línea de responsabilidad** (eventos en orden de creación e id): `accepted`, `assigned`, `auto_assigned` y `reopened`
+  con `to_user_id` → esa persona pasa a ser responsable; `transferred` → el agente destino (nadie si va a un
+  departamento), con transferencia de salida para el origen y de entrada para el destino; `unassigned` → nadie;
+  `closed` → termina el tramo y el cierre se acredita a `from_user_id` (responsable en ese instante).
+- **Tiempo de atención**: suma de tramos concluidos. El tiempo en que la conversación estuvo cerrada no es de nadie.
+  Un tramo en curso se guarda como `open_since` solo si la conversación lo confirma (no cerrada y asignada a esa
+  persona) y nunca se congela como duración.
+- **Atención**: aceptar, recibir por asignación manual o transferencia, o responder. La distribución automática hace
+  responsable pero no es atención (ADR-REP-4).
+- **Supervisión sin asignación**: quien responde sin ser responsable cuenta por sus respuestas (fila sin tramos).
+- **Primera respuesta**: se acredita, con su demora, al autor del primer mensaje humano aceptado.
+- **Historial que no explica al responsable actual** (datos anteriores a la bitácora de eventos o creados fuera de las
+  acciones normales): la persona asignada recibe su fila (`was_responsible`, `responsible_now`) **sin tramos**: el
+  tiempo es desconocido y queda fuera de todo promedio en lugar de inventarse.
+- `conversation_metrics.agent_id` conserva su significado (responsable actual o último) para el alcance, el filtro y la
+  «Cartera por responsable actual»; ningún consumidor lo usa ya como medida de trabajo individual.
+
+### 3.3 SLA por ciclos de respuesta y por qué no se reconstruye el historial
+
+`App\Services\Analytics\ServiceLevelAnalytics` lee `response_cycles` (la escribe el módulo de SLA; aquí solo se
+lee). El objetivo queda **congelado en la fila** al iniciar el ciclo, así que cambiar un objetivo no reescribe el
+cumplimiento pasado, y una solicitud sin responder que superó su plazo **cuenta como incumplida** (antes era invisible).
+
+Los ciclos existen **solo desde esta versión**. No se reconstruyen hacia atrás porque el objetivo vigente en cada
+momento pasado, la categoría y el responsable al vencer no quedaron registrados: recalcularlos con la configuración de
+hoy produciría cifras falsas. Por eso `available_since` (fecha del primer ciclo) viaja con las cifras y la interfaz
+muestra «Disponible desde <fecha>» cuando el periodo empieza antes, o «Sin datos» cuando no hay ciclos evaluados —
+nunca ceros presentados como hechos.
+
+El cálculo anterior (objetivo general vigente hoy sobre las conversaciones ya respondidas o resueltas,
+`summary.first_response_sla` / `resolution_sla`) se conserva solo como **referencia** rotulada así («Referencia con el
+objetivo general de hoy»), con sus dos sesgos indicados en la propia tarjeta: usa el objetivo actual y no cuenta las
+que siguen sin respuesta o sin cierre. La resolución no tiene ciclos propios: su única cifra es esa referencia.
+
+### Tabla histórica (incremento F)
 
 Cada duración existe en **tiempo calendario** (segundos reales, columnas `seconds_to_*`) y, para la primera respuesta
 humana y la resolución, también en **tiempo hábil** (columnas `business_seconds_to_*`, ver §3.1). La interfaz y las
@@ -156,11 +250,46 @@ RefreshMetricsOnActivity (listener) ◄── ConversationChanged / MessageRecor
   Segura de interrumpir y repetir. Programada a diario a las 03:30 con `--days=2` para reconciliar recálculos perdidos
   (p. ej. un worker caído). Nunca se recalcula por solicitud de la pantalla: los reportes solo agregan filas ya
   calculadas.
-  **Tras aplicar las migraciones hay que ejecutar `php artisan analytics:rebuild` una vez** (puebla el histórico, la
-  nueva definición de primera atención y el tiempo hábil de las filas existentes).
+  **Tras aplicar las migraciones es obligatorio ejecutar `php artisan analytics:rebuild` completo, una vez** (sin
+  `--days`: la reconciliación diaria `--days=2` solo recorre lo reciente y nunca poblaría el histórico). Puebla las
+  filas por colaborador (`conversation_agent_metrics`) y `category_id` de todo el histórico. Costo esperado: recorre
+  **todas** las conversaciones no importadas en bloques de 500, con unas pocas consultas indexadas y escrituras por
+  conversación; medido en 16,9 s para 10 000 conversaciones antes de añadir las filas por colaborador
+  ([rendimiento-y-carga.md](rendimiento-y-carga.md)), es decir, del orden de minutos por cada 100 000. No bloquea
+  tablas, puede ejecutarse con la aplicación en servicio, y puede interrumpirse y repetirse.
+  **Entre `migrate` y el final de esa reconstrucción:** el acumulado sin atender ya es correcto (la migración
+  `2026_11_10_201846` rellena `left_backlog_at` de las filas existentes con la misma definición del calculador: el
+  primero entre `first_assigned_at` y `resolved_at`); la **productividad** del histórico aún no existe, y la pantalla
+  y las exportaciones lo dicen en vez de mostrar ceros (`productivity.complete = false`: aviso «Productividad sin
+  calcular para parte del periodo», «Sin datos» en lugar de cero y totales sin cifra); el desglose por categoría del
+  histórico queda en «Sin categoría» (las categorías no existían).
   La reconciliación filtra por `conversations.updated_at` (sin índice dedicado: recorrido diario de la tabla de
   conversaciones; revisar si crece a decenas de millones) y por `messages.updated_at` (índice
   `messages_updated_conversation_index`, migración `2026_10_22_165048`).
+- **`conversation_agent_metrics`** (migración `2026_11_10_201845`): una fila por (conversación, persona). Justificación:
+  atribuir el trabajo a quien lo hizo sin recorrer eventos y mensajes en cada consulta. Copias de dimensiones
+  (conexión, departamento, categoría, estado, `received_at`) sin llaves foráneas; índices `(conversation_id, user_id)`
+  único, `(user_id, received_at)`, `received_at` y `(department_id, received_at)`.
+- **Columnas nuevas en `conversation_metrics`** (migración `2026_11_10_201846`): `category_id` (desglose y filtro por
+  categoría) y `left_backlog_at` (acumulado sin atender sin recorrer el historial), con índices
+  `(category_id, received_at)`, `(status, received_at)` y `left_backlog_at`. Ambas son dato derivado.
+  `left_backlog_at` se **rellena en la propia migración** para las filas existentes (una sentencia sobre columnas que
+  ya existían; prueba `tests/Feature/Database/ReportingDimensionsMigrationTest.php`, que la compara con el
+  calculador), de modo que el acumulado nunca cuenta el histórico entero como sin atender. `category_id` y la
+  productividad histórica sí requieren el `php artisan analytics:rebuild` completo descrito arriba.
+- **`productivity.complete`** (`AgentProductivity::complete()`): falso mientras alguna conversación del periodo con
+  responsable o con respuesta humana no tenga todavía filas en `conversation_agent_metrics` (una consulta de
+  anti-unión acotada al periodo, que se detiene en la primera que encuentra). Describe el estado del dato derivado,
+  no lo que ve cada persona: no aplica alcance ni filtros y solo expone un sí o un no.
+- **Planes medidos** (EXPLAIN con 300 000 filas por tabla repartidas en 2 años, MariaDB, periodo de 30 días): cohorte
+  → `range` sobre `received_at` (≈ 25 000 filas, `Using index`); con filtro de estado → `(status, received_at)`
+  (≈ 1 000); con agente → `(agent_id, received_at)` (≈ 300); alcance por departamentos → `index_merge` de
+  `(agent_id, received_at)` y `(department_id, received_at)`; acumulado → `ref`/`range` sobre `left_backlog_at`;
+  finalizadas en el periodo → `range` sobre `resolved_at`; filas por colaborador → `range` sobre `received_at` o
+  `(user_id, received_at)`; ciclos → `range` sobre `started_at`; vencidas ahora → `ref` sobre `active` (prefijo de `(active, breached_at, due_at)`);
+  primer ciclo → resuelto desde el índice. Ningún recorrido completo. El reporte entero: 30 días ≈ 0,8 s sin caché;
+  365 días ≈ 4,4 s sin caché (después, 120 s en caché). Con filtro de categoría o canal se usa el rango por fecha y se
+  filtra (no hay índice compuesto por canal). Prueba permanente: `tests/Feature/Performance/AnalyticsQueriesTest.php`.
 - **Sin tabla de acumulados diarios (`analytics_daily`).** Se evaluó y no se creó: los reportes agregan sobre
   conversaciones (no sobre mensajes) con índices compuestos por fecha de recepción y caché corta. Si el volumen lo
   exigiera, puede construirse a partir de `conversation_metrics` sin cambiar las definiciones.
@@ -201,6 +330,29 @@ RefreshMetricsOnActivity (listener) ◄── ConversationChanged / MessageRecor
   con `reports.view`.
 - Navegación: entrada "Reportes" en General cuando el usuario tiene `reports.view`.
 
+### 5.1 Panel y reportes de esta fase
+
+- **Filtros** (`AnalyticsFilterBar`, estado en la URL, validados en el servidor y limitados al alcance): periodo,
+  departamento, agente responsable, conexión, canal, categoría y estado actual. `granularity=day|week|month` (interruptor
+  en la gráfica de volumen; por día solo hasta 92 días).
+- **Panel** (`Dashboard.vue`): «Ahora» (Pendientes y En atención con enlace a la bandeja; Finalizadas hoy), «Resultado
+  del periodo» (Recibidas, Atendidas, Finalizadas, Espera hasta la primera respuesta, con variación), «Tiempos y
+  cumplimiento» (¿Estamos respondiendo más rápido? · ¿Qué porcentaje cumplió el SLA? · ¿Qué departamento acumula más
+  retrasos?), «Carga de trabajo» (¿Quién tiene más solicitudes pendientes?, en vivo · ¿Se nos están acumulando
+  solicitudes?), «Demanda» (volumen con día/semana/mes · ¿En qué horario llegan más solicitudes?), «Distribución»
+  (categoría, canal, estado; 8 primeras + «Otros») y «Equipo». Se conservan todos los indicadores anteriores; la
+  gráfica de primera respuesta ahora incluye el periodo anterior.
+- **Reportes** (`pages/reports/Index.vue`): pestañas Resumen / Productividad / Cumplimiento de SLA / Desgloses (la
+  pestaña vive en el `#hash`); el botón de exportar corresponde a la pestaña abierta.
+- **Componentes nuevos** (SVG propio, mismos tooltips, leyendas, teclado y «Ver como tabla»):
+  `charts/SlaComplianceChart`, `RankedBarsChart`, `ResponseTrendChart`, `BacklogChart`;
+  `reports/ProductivityTable` (ordenable, `aria-sort`), `AgentEvolutionChart`, `GranularityToggle`.
+- **Navegación al detalle**: `BarItem.href` (el nombre de la barra es un enlace real) y `KpiCard.href`. Solo se
+  ofrece donde la bandeja puede filtrar de verdad: cifras **en vivo** (pendientes, en atención, carga por persona),
+  con `view=all` y `status`, `agent`, `connection`, `channel`, `category` (`lib/analyticsLinks.ts`). Las cifras de un
+  periodo no enlazan a la bandeja porque esta no filtra por fecha de recepción.
+- **Paneles que no aplican un filtro lo dicen**: estado en cifras en vivo, acumulado y SLA.
+
 ## 6. Exportaciones (motor existente)
 
 No hay infraestructura paralela: se usa el motor de `app/Reports`.
@@ -229,6 +381,20 @@ No hay infraestructura paralela: se usa el motor de `app/Reports`.
       (`compute()`), dentro de la instantánea REPEATABLE READ de la exportación: filas, totales y tarjetas leen los
       mismos datos y nunca aparece una fila "Sin datos". El orden de la tabla es el de la pantalla (más recibidas
       primero; empate por ID). La pantalla puede mostrar cifras hasta 120 s más antiguas que el archivo.
+- **Fase de indicadores.** `AnalyticsReport` añade las métricas «Finalizadas (de las recibidas)», «Finalizadas en el
+  periodo», «Acumuladas sin atender», mínimo/máximo, «Cumplimiento de SLA» (ciclos) y «Tiempo de respuesta por mensaje
+  del cliente»; las hojas «Productividad», «Por categoría», «SLA por departamento» y «Acumulado sin atender»; y la
+  tabla principal pasa a llamarse «Cartera por responsable actual». Dos definiciones nuevas, registradas en
+  `config/exports.php`:
+    - **`AgentProductivityReport`** (`agent-productivity`, horizontal): una fila por colaborador con las columnas de
+      la pantalla (duraciones en minutos como número, cumplimiento como porcentaje real), gráficas de atendidas y
+      finalizadas y de pendientes actuales, y hoja «Evolución».
+    - **`SlaComplianceReport`** (`sla-compliance`, horizontal): tarjetas de cumplimiento con n, gráficas (evaluados,
+      tendencia, retrasos por departamento), hojas «Por tipo», «Por departamento», «Por categoría», «Por colaborador»
+      y «Tendencia», y como tabla principal el **detalle de incumplimientos** (una fila por ciclo vencido, con fechas
+      reales de Excel en la zona de la plataforma, objetivo y exceso en minutos y situación).
+      Los filtros aplicados (incluidos canal, categoría y estado, y el tramo de comparación) se describen en el encabezado
+      con `App\Reports\Concerns\DescribesAnalytics`.
 - **`DashboardReport`** (clave `dashboard`) acepta los mismos filtros que el panel. Desde la fase 5.1 exporta las mismas
   gráficas y cifras que muestra la pantalla, desde el mismo `chartsFor()` (una hoja de datos por gráfica), con los
   mismos nombres («En atención», «Pendientes», «Finalizadas hoy», «Primera respuesta (promedio)»). Antes exportaba
@@ -338,15 +504,38 @@ descripción ≥ 5,5:1 e iconos ≥ 4,5:1 en claro y oscuro; el botón de cerrar
 - `tests/Feature/DashboardTest.php`: se actualizó una aserción ("agentes disponibles" es ahora un conteo real, 0, en
   lugar de `null`) y se agregaron pruebas de disponibilidad, filtros y primera respuesta humana.
 
+- Fase de indicadores: `tests/Feature/Analytics/AgentAttributionTest.php` (transferencia entre dos agentes, respuesta
+  de supervisión sin asignación, reapertura y recierre, distribución automática, responsable sin eventos,
+  reconstrucción idempotente e igual a la incremental, alcance), `ServiceLevelAnalyticsTest.php` (un ciclo de cada
+  tipo, sin respuesta vencida = incumplida, sin objetivo y cerrada sin respuesta excluidas, «Sin datos» sin 100 %,
+  disponibilidad, objetivo congelado, pertenencia por colaborador, alcance y filtros),
+  `tests/Feature/Reports/AnalyticsIndicatorsTest.php` (semanas ISO y horario de verano, comparación del mismo tramo,
+  promedios sin nulos con mínimo y máximo, finalizadas de las recibidas frente a finalizadas en el periodo,
+  acumulado, filtros de categoría/estado/canal, cifras en vivo sin importados, agentes activos, panel = reportes =
+  exportaciones, fuga de alcance por props, libros XLSX releídos con tipos y PDF reales con Chrome) y
+  `tests/Feature/Performance/AnalyticsQueriesTest.php`.
+
 ## 8. Limitaciones conocidas
+
+- El SLA por ciclo y el tiempo de respuesta por mensaje del cliente existen **desde esta versión**; no hay ciclos
+  históricos. El cumplimiento de resolución solo existe como referencia con el objetivo general de hoy.
+- La productividad depende de `conversation_events`: una conversación cuyo responsable no está explicado por sus
+  eventos aporta «asignada» pero no tiempo de atención.
+- Las cifras de un periodo no enlazan a la bandeja (esta no filtra por fecha de recepción); solo las cifras en vivo.
+- «Finalizadas hoy» del panel es una cifra de bandeja en vivo, distinta por definición de «Finalizadas» de reportes.
+- Cambiar la categoría de una solicitud se refleja en las métricas con el siguiente recálculo de esa conversación o,
+  a más tardar, en la reconciliación nocturna.
+- La comparación del mismo tramo transcurrido aplica a los indicadores; la línea «periodo anterior» de las gráficas
+  muestra el periodo anterior completo.
 
 - Tiempo hábil solo para primera respuesta humana y resolución (la primera atención es solo calendario). Horarios de un
   tramo por día, sin turnos que crucen medianoche, sin festivos por departamento y con una sola zona horaria de
   plataforma (§3.1). Objetivos de servicio globales (sin objetivo por departamento); las conversaciones aún sin
-  respuesta o sin cierre no se califican aunque ya hayan superado el objetivo.
+  respuesta o sin cierre no se califican en la **referencia** con el objetivo general (sí en el SLA por ciclos, §3.3).
 - "Fuera de horario" usa el horario y los días no laborables vigentes al calcular (reconstruir tras editar horarios
   reclasifica el histórico); el tiempo hábil, en cambio, queda congelado (§3.1).
-- Agente y departamento son los actuales/últimos de la conversación, no el historial de quién la tuvo en cada momento.
+- En las cifras por conversación, agente y departamento son los actuales/últimos; el historial de quién la tuvo está
+  en Productividad (§3.2).
 - Volumen de mensajes y errores de envío se atribuyen a la cohorte de conversaciones recibidas, no a la fecha de cada
   mensaje.
 - Las métricas se actualizan de forma asíncrona: con los workers detenidos, los reportes quedan desactualizados hasta

@@ -141,7 +141,7 @@ test('team charts require their permissions', function () {
 
 test('without traffic on any channel or without conversations.view no chart is drawn', function () {
     $this->connection->forceFill(['is_active' => false])->save();
-    $none = ['activity' => null, 'channels' => null, 'statuses' => null, 'agents' => null, 'departments' => null];
+    $none = ['activity' => null, 'channels' => null, 'statuses' => null, 'agents' => null, 'departments' => null, 'response_trend' => null, 'sla' => null, 'workload' => null, 'heatmap' => null, 'categories' => null, 'backlog' => null];
 
     expect(dashboardCharts(User::factory()->administrator()->create()))->toBe($none);
 
@@ -211,7 +211,11 @@ test('the dashboard export draws the same charts as the screen', function () {
     $charts = collect($definition->charts($context))->keyBy('title');
     $sheets = collect($definition->extraSheets($context))->keyBy('title');
 
-    expect($charts->keys()->all())->toBe(['Actividad', 'Por canal', 'Estado de lo recibido', 'Atención por agente', 'Tiempo de primera respuesta', 'Por departamento'])
+    // The service level charts only exist with judged response cycles (none here).
+    expect($charts->keys()->all())->toBe(['Actividad', 'Por canal', 'Estado de lo recibido', 'Atención por agente', 'Tiempo de primera respuesta', '¿Quién tiene más solicitudes pendientes?', 'Solicitudes por categoría', 'Por departamento'])
+        ->and($charts['¿Quién tiene más solicitudes pendientes?']->labels)->toBe(array_column($screen['workload']['rows'], 'name'))
+        ->and($charts['¿Quién tiene más solicitudes pendientes?']->series[0]->values)->toBe(array_column($screen['workload']['rows'], 'open'))
+        ->and($charts['Solicitudes por categoría']->series[0]->values)->toBe(array_column($screen['categories'], 'received'))
         ->and($charts['Actividad']->labels)->toBe(array_column($screen['activity']['points'], 'label'))
         ->and($charts['Actividad']->series[0]->values)->toBe(array_column($screen['activity']['points'], 'received'))
         ->and($charts['Actividad']->series[1]->values)->toBe(array_column($screen['activity']['points'], 'attended'))

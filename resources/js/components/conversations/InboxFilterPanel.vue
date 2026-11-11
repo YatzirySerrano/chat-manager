@@ -39,6 +39,8 @@ const props = defineProps<{
     showAgents: boolean;
     agents: { id: number; name: string; is_active: boolean }[];
     channels: { value: ConnectionChannel; label: string }[];
+    /** Active request categories. */
+    categories: { id: number; name: string }[];
     connections: {
         id: number;
         name: string;
@@ -288,6 +290,51 @@ const optionClass =
                     >
                         {{ channel.label }}
                     </option>
+                </select>
+            </div>
+
+            <div v-if="categories.length > 0" class="grid gap-1.5">
+                <Label for="inbox-category" :class="fieldLabelClass"
+                    >Categoría de la solicitud</Label
+                >
+                <select
+                    id="inbox-category"
+                    :value="state.category"
+                    :class="selectClass"
+                    data-inbox-filter-category
+                    @change="
+                        (event) =>
+                            emit('change', { category: selectValue(event) })
+                    "
+                >
+                    <option :value="ALL">Todas las categorías</option>
+                    <option
+                        v-for="category in categories"
+                        :key="category.id"
+                        :value="String(category.id)"
+                    >
+                        {{ category.name }}
+                    </option>
+                </select>
+            </div>
+
+            <div class="grid gap-1.5">
+                <Label for="inbox-readiness" :class="fieldLabelClass"
+                    >Preparación de la solicitud</Label
+                >
+                <select
+                    id="inbox-readiness"
+                    :value="state.readiness"
+                    :class="selectClass"
+                    data-inbox-filter-readiness
+                    @change="
+                        (event) =>
+                            emit('change', { readiness: selectValue(event) })
+                    "
+                >
+                    <option :value="ALL">Todas</option>
+                    <option value="needs_info">Necesita información</option>
+                    <option value="ready">Lista para atención</option>
                 </select>
             </div>
         </fieldset>

@@ -28,7 +28,12 @@ use Illuminate\Support\Facades\DB;
  *   person (sender set, not flagged `metadata.automatic`) that the provider
  *   accepted (accepted, sent, delivered or read). Failed or still queued
  *   messages do not count;
- * - resolution: creation → first closing.
+ * - resolution: creation → first closing;
+ * - left the backlog: first human attention or first closing, whichever
+ *   comes first (null while the conversation is still unattended).
+ *
+ * The per-person rows (conversation_agent_metrics) are rebuilt in the same
+ * call by AgentAttributionCalculator.
  *
  * Business time (`business_seconds_*`): the same spans counted only inside
  * the attention hours of the department that received the conversation
@@ -47,7 +52,10 @@ class ConversationMetricsCalculator
      */
     public const ACCEPTED_STATUSES = ['accepted', 'sent', 'delivered', 'read'];
 
-    public function __construct(private BusinessHoursCalendar $calendar) {}
+    public function __construct(
+        private BusinessHoursCalendar $calendar,
+        private AgentAttributionCalculator $attribution,
+    ) {}
 
     /**
      * Recompute and store the row; returns null (and removes any stale row)
@@ -60,6 +68,7 @@ class ConversationMetricsCalculator
         // Imported history (Whaticket) is outside every metric: any row is removed.
         if ($conversation === null || $conversation->created_at === null || $conversation->isImported()) {
             ConversationMetric::query()->where('conversation_id', $conversationId)->delete();
+            $this->attribution->forget($conversationId);
 
             return null;
         }
@@ -71,6 +80,9 @@ class ConversationMetricsCalculator
             ['conversation_id'],
             array_keys($attributes),
         );
+
+        // Same source, same moment: the per-person rows never drift from the conversation row.
+        $this->attribution->recompute($conversation);
 
         return ConversationMetric::query()->where('conversation_id', $conversation->id)->first();
     }
@@ -94,12 +106,15 @@ class ConversationMetricsCalculator
             'connection_id' => $conversation->connection_id,
             'department_id' => $conversation->department_id,
             'agent_id' => $conversation->assigned_user_id,
+            'category_id' => $conversation->category_id,
             'status' => $conversation->status->value,
             'received_at' => $receivedAt,
             'first_assigned_at' => $firstAttentionAt,
             'first_human_response_at' => $messages['first_human_response_at'],
             'resolved_at' => $events['resolved_at'],
             'last_closed_at' => $events['last_closed_at'],
+            // Unattended until the first human attention or the first closing, whichever comes first.
+            'left_backlog_at' => $this->earliest($firstAttentionAt, $events['resolved_at']),
             'seconds_to_first_attention' => $this->secondsBetween($receivedAt, $firstAttentionAt),
             'seconds_to_first_human_response' => $this->secondsBetween($receivedAt, $messages['first_human_response_at']),
             'seconds_to_resolution' => $this->secondsBetween($receivedAt, $events['resolved_at']),

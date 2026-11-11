@@ -3,6 +3,7 @@
 namespace App\Enums;
 
 use App\Models\Connection;
+use App\Services\Meta\ConnectionMonitor;
 use Carbon\CarbonInterface;
 
 /**
@@ -14,6 +15,15 @@ use Carbon\CarbonInterface;
  * credentials, error newer than the last success, operational (only with
  * verified credentials), receiving, verified credentials, configured. A web
  * chat connection skips the credential states (see resolveWebChat).
+ *
+ * What counts as "success after an error" depends on what the error was
+ * about (ADR-META-13). Traffic (an inbound message, a send accepted by the
+ * provider), the verification of the webhook and Meta saying that the
+ * restriction was lifted resolve any error. A verification of the
+ * credentials, automatic or by an administrator, only resolves the errors
+ * it can attest: those about the credentials themselves (and those recorded
+ * without their class). It is no evidence that a quality or account
+ * restriction, a webhook-level error or a rejected send is over.
  */
 enum ConnectionHealth: string
 {
@@ -67,10 +77,11 @@ enum ConnectionHealth: string
         }
 
         $lastSuccess = self::latest(
-            $connection->credentials_verified_at,
+            ConnectionMonitor::verificationAttests($connection) ? $connection->credentials_verified_at : null,
             $connection->webhook_verified_at,
             $connection->last_inbound_at,
             $connection->last_outbound_at,
+            ConnectionMonitor::restrictionLiftedAt($connection),
         );
 
         if ($connection->last_error_at !== null && ($lastSuccess === null || $connection->last_error_at->greaterThan($lastSuccess))) {

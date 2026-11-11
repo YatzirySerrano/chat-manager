@@ -41,8 +41,11 @@ class UpdatePlatformSettings
             $blockLifted = ($block !== null && $block['new'] === false)
                 || ($tolerance !== null && is_int($tolerance['old']) && is_int($tolerance['new']) && $tolerance['new'] > $tolerance['old']);
 
-            if (($limit !== null && AssignAutomatically::limitMayFreeRoom($limit['old'], $limit['new'])) || $blockLifted) {
-                DB::afterCommit(fn () => rescue(fn (): int => $this->assignAutomatically->distributeAllQueues()));
+            // A queue rule of the platform (confirmation, minimum wait) decides
+            // which requests can be taken: the ones it stopped holding are
+            // offered right away instead of waiting for the next scheduled pass.
+            if (($limit !== null && AssignAutomatically::limitMayFreeRoom($limit['old'], $limit['new'])) || $blockLifted || AssignAutomatically::rulesMayFreeRequests($changes)) {
+                $this->assignAutomatically->distributeAllQueuesAfterCommit();
             }
 
             return $changes;

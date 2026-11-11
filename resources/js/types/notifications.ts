@@ -10,7 +10,9 @@ export type NotificationKindValue =
     | 'export.finished'
     | 'import.finished'
     | 'connection.problem'
-    | 'account.access-changed';
+    | 'account.access-changed'
+    | 'sla.warning'
+    | 'sla.breach';
 
 /** How the user wants to receive one kind of notification. */
 export type NotificationPreference = {

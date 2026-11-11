@@ -23,6 +23,10 @@ export type InboxFilterState = {
     sort: ConversationSort;
     searchIn: ConversationSearchScope;
     unread: boolean;
+    /** Request category id, as a string (`category`). */
+    category: string;
+    /** `ready`, `needs_info` or empty for both (`readiness`). */
+    readiness: string;
 };
 
 /** Tags one filter may combine (ConversationInboxQuery::MAX_TAGS). */

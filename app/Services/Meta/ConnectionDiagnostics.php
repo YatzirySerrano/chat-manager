@@ -118,7 +118,11 @@ class ConnectionDiagnostics
                 'unknown_conversations' => $viewer === null ? [] : $this->unknownConversations($unknown, $viewer),
             ],
             'automation' => $this->automation($connection),
+            // Content of other numbers that could not be attributed, and the like.
+            'warnings' => ConnectionMonitoring::warnings($connection),
             'signals' => collect($connection->provider_signals ?? [])
+                // Notes of this platform are not notices from Meta.
+                ->reject(fn (mixed $signal, string $field): bool => str_starts_with($field, ConnectionMonitor::PLATFORM_SIGNAL_PREFIX))
                 ->map(fn (mixed $signal, string $field): array => [
                     'field' => $field,
                     'at' => is_array($signal) ? ($signal['at'] ?? null) : null,

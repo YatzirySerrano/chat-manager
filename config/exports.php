@@ -1,5 +1,6 @@
 <?php
 
+use App\Reports\Definitions\AgentProductivityReport;
 use App\Reports\Definitions\AnalyticsReport;
 use App\Reports\Definitions\AuditReport;
 use App\Reports\Definitions\ConnectionsReport;
@@ -11,6 +12,7 @@ use App\Reports\Definitions\DepartmentsReport;
 use App\Reports\Definitions\MessageTemplatesReport;
 use App\Reports\Definitions\QuickRepliesReport;
 use App\Reports\Definitions\RolesReport;
+use App\Reports\Definitions\SlaComplianceReport;
 use App\Reports\Definitions\TagsReport;
 use App\Reports\Definitions\UsersReport;
 
@@ -41,6 +43,8 @@ return [
         'audit' => AuditReport::class,
         'message-templates' => MessageTemplatesReport::class,
         'analytics' => AnalyticsReport::class,
+        'agent-productivity' => AgentProductivityReport::class,
+        'sla-compliance' => SlaComplianceReport::class,
     ],
 
     /*

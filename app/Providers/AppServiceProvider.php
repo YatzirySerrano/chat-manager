@@ -11,6 +11,7 @@ use App\Models\ContactAlias;
 use App\Models\ContactAttribution;
 use App\Models\ContactNote;
 use App\Models\Conversation;
+use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\QuickReply;
@@ -213,6 +214,7 @@ class AppServiceProvider extends ServiceProvider
             'message' => Message::class,
             'role' => Role::class,
             'tag' => Tag::class,
+            'conversation_category' => ConversationCategory::class,
             'quick_reply' => QuickReply::class,
             'team_thread' => TeamThread::class,
             'api_token' => ApiToken::class,

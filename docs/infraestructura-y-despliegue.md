@@ -44,6 +44,9 @@ Documentos relacionados: [tiempo-real.md](tiempo-real.md) (Reverb en detalle), [
 | `meta:refresh-instagram-tokens`             | diaria 03:50 | Instagram: renueva tokens antes de vencer                  |
 | `attachments:recover-stale`                 | cada 15 min  | adjuntos: reintenta o vence descargas atascadas (fase 5.2) |
 | `history-import:prune`                      | diaria 04:50 | importador de historial: retención de lotes (fase 5.2)     |
+| `sla:evaluate`                              | cada minuto  | SLA: «por vencer», «vencida», alertas y recordatorios      |
+| `conversations:offer-waiting-queues`        | cada minuto  | cola: ofrece lo que ya puede tomarse y nadie tomó          |
+| `whatsapp:maintenance check-connections`    | cada 30 min  | conexiones: credenciales y suscripción con Meta            |
 
 `php artisan schedule:list` las muestra; el preflight verifica que todos los comandos programados existan.
 
@@ -856,6 +859,63 @@ quien administre integraciones. Las migraciones de la fase (`web_chat_widgets`,
    intento, por debajo del `--timeout=150` del grupo `critical`.
 6. **Verificar:** Administración → Sistema y `php artisan app:preflight` muestran «Límites de subida: Correcto»; la
    [guía §32](guia-pruebas-manuales.md#32-fase-521).
+
+### Despliegue de esta fase
+
+Lista técnica para la fase de reglas de servicio, SLA, reglas de la cola, analítica por colaborador y monitoreo de
+conexiones. Mismo esquema que las fases anteriores: respaldo verificado antes de empezar (§17: en producción la
+reversión es restaurar el respaldo, nunca `migrate:rollback`).
+
+1. **Migraciones** (`php artisan migrate --force`, lo hace `deploy.sh`): las siete de `2026_11_10_*`.
+
+    | Migración                                                                  | Qué hace                                                                                                                                                                             |
+    | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | `2026_11_10_193951_create_conversation_categories_table`                   | Catálogo de categorías de solicitud                                                                                                                                                  |
+    | `2026_11_10_193952_add_service_rules_to_departments_table`                 | `departments.service_rules` (reglas propias del departamento)                                                                                                                        |
+    | `2026_11_10_193954_add_service_readiness_to_conversations_table`           | En `conversations`: `category_id` y `readiness_changed_by_user_id` (**dos llaves foráneas**), `readiness`, `readiness_changed_at`, `queued_at`, `open_response_cycle_id` y un índice |
+    | `2026_11_10_193955_create_response_cycles_table`                           | Ciclos de respuesta (SLA)                                                                                                                                                            |
+    | `2026_11_10_193956_add_service_rules_permissions`                          | Permisos nuevos                                                                                                                                                                      |
+    | `2026_11_10_201845_create_conversation_agent_metrics_table`                | Filas de analítica por colaborador                                                                                                                                                   |
+    | `2026_11_10_201846_add_reporting_dimensions_to_conversation_metrics_table` | `category_id` y `left_backlog_at` en `conversation_metrics`, con el relleno de `left_backlog_at` de las filas existentes (una sentencia)                                             |
+    - **Añadir las dos llaves foráneas a `conversations` reconstruye y bloquea esa tabla en MariaDB** mientras dura
+      el cambio (además rellena `queued_at` de las solicitudes pendientes). Es la tabla más activa: aplicar en una
+      **ventana de bajo tráfico** y **ensayar antes sobre una copia de tamaño de producción** para conocer la duración
+      real. Durante la ventana el sitio está en mantenimiento (ver «Webhooks durante la ventana de mantenimiento»).
+    - El relleno de `left_backlog_at` recorre `conversation_metrics` una vez en una sola sentencia; inclúyelo en el
+      ensayo.
+
+2. **Permisos:** `php artisan app:sync-permissions` (lo hace `deploy.sh`; idempotente, no toca roles). Para que los
+   roles predeterminados reciban los permisos nuevos de su definición:
+   `php artisan app:sync-permissions --upgrade-default-roles` (vista previa, no escribe), revisarla y después añadir
+   `--apply`. Los permisos sensibles solo se conceden con `--include-sensitive`:
+   `php artisan app:sync-permissions --upgrade-default-roles [--include-sensitive] --apply`.
+3. **Analítica: `php artisan analytics:rebuild` completo, obligatorio, una vez** (sin `--days`; la tarea diaria
+   `--days=2` no lo sustituye). Construye las filas por colaborador y la categoría de todo el histórico. Recorre todas
+   las conversaciones no importadas en bloques de 500; no bloquea tablas, puede ejecutarse con la aplicación en
+   servicio y puede interrumpirse y repetirse. Referencia medida: 16,9 s por 10 000 conversaciones antes de añadir las
+   filas por colaborador ([rendimiento-y-carga.md](rendimiento-y-carga.md)); cuenta con minutos por cada 100 000 y
+   mídelo en el ensayo. Hasta que termina, Productividad avisa que las cifras por persona son parciales («Sin datos»,
+   no ceros); el acumulado sin atender ya es correcto desde la migración
+   ([reportes §4](reportes-y-exportaciones.md)).
+4. **Programador en marcha** (§11): sin él no hay vencimientos, alertas ni comprobación de conexiones. Verificar con
+   `php artisan schedule:list` que aparecen `sla:evaluate` (cada minuto), `conversations:offer-waiting-queues` (cada
+   minuto) y `whatsapp:maintenance check-connections` (cada 30 min), y que el latido del programador está al día en
+   Administración › Sistema.
+5. **Workers:** `php artisan queue:restart` (lo hace `deploy.sh`) para que tomen las clases nuevas.
+6. **Assets:** `npm ci && npm run build` (lo hace `deploy.sh`).
+7. **Colas de webhooks antes de cambiar un App Secret:** si en el despliegue se va a apuntar una conexión a otra app
+   de Meta, deja primero que la cola de webhooks se vacíe
+   ([mensajería §2.8](mensajeria-whatsapp.md#28-varios-números-en-la-misma-app-de-meta)).
+8. **Los controles nuevos llegan desactivados.** Confirmación «Lista para atención», espera mínima y orden
+   cronológico de la cola: apagados. Recordatorios de SLA: sin frecuencia. Objetivos de respuesta posterior y reglas
+   propias por departamento o categoría: vacíos. Categorías: ninguna. Nada de eso restringe ni avisa hasta que un
+   administrador lo configure. **Una salvedad que conviene revisar antes de desplegar:** si la plataforma ya tenía
+   guardado un objetivo de primera respuesta (antes solo era una cifra de Reportes), desde el despliegue se mide por
+   ciclo y genera alertas de vencimiento al agente y a supervisión (activadas por defecto en
+   Configuración › Objetivos de servicio); para evitarlo, desactiva esas alertas o vacía el objetivo antes de
+   desplegar ([reglas de servicio](reglas-de-servicio.md)).
+9. **Verificar:** `php artisan app:preflight`; en Reportes › Productividad no aparece el aviso de cifras parciales;
+   en Conexiones, cada conexión activa muestra su última comprobación.
 
 ### Webhooks durante la ventana de mantenimiento
 

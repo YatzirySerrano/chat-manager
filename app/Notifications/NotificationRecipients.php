@@ -62,7 +62,34 @@ class NotificationRecipients
     }
 
     /**
-     * Users responsible for watching the WhatsApp connections.
+     * Supervisors of a conversation for the automatic SLA alerts: active
+     * users holding attention.view who can see it under the same visibility
+     * rule as the screens (global scope, or members of its department that
+     * ConversationAccess::canView() admits). Never the excluded user (the
+     * responsible agent, who is notified as such).
+     *
+     * @return Collection<int, User>
+     */
+    public function slaSupervisors(Conversation $conversation, ?int $exceptUserId = null): Collection
+    {
+        return User::query()
+            ->active()
+            ->withPermission(Permission::ViewAttention)
+            ->when($exceptUserId !== null, fn (Builder $query) => $query->whereKeyNot($exceptUserId))
+            ->where(fn (Builder $reach) => $reach
+                ->whereHas('roles', fn (Builder $roles) => $roles->where('scope', DataScope::Global->value))
+                ->when($conversation->department_id !== null, fn (Builder $query) => $query
+                    ->orWhereHas('departments', fn (Builder $departments) => $departments->whereKey($conversation->department_id))))
+            ->with(['roles.permissions', 'departments:id'])
+            ->orderBy('id')
+            ->limit(self::MAX_QUEUE_RECIPIENTS)
+            ->get()
+            ->filter(fn (User $user): bool => $this->access->canView($user, $conversation))
+            ->values();
+    }
+
+    /**
+     * Users responsible for watching the connections (every channel).
      *
      * @return Collection<int, User>
      */

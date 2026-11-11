@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { QUEUE_RULE_LABELS } from '@/components/conversations/queueRules';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { conversationConflictFromErrors } from '@/lib/conversations/actionErrors';
 import { maxLength, required, when } from '@/lib/validation';
@@ -47,6 +48,12 @@ const props = defineProps<{
     processing: boolean;
     reasonRequired: boolean;
     errors: Record<string, string | undefined>;
+    /**
+     * A queue rule refused the last attempt and the viewer may justify an
+     * exception (conversations.override-queue-rules): the dialog then asks
+     * for the reason and sends it with the next attempt.
+     */
+    queueException?: { rule: string } | null;
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
@@ -58,6 +65,7 @@ const emit = defineEmits<{
             user_id: number | null;
             reason: string;
             confirm_over_capacity: boolean;
+            override_reason?: string;
         },
     ];
 }>();
@@ -78,6 +86,8 @@ const generalError = computed(() =>
 const departmentId = ref<string>('');
 const userId = ref<string>(NO_AGENT);
 const confirmOverCapacity = ref(false);
+/** Justification of an exception to the queue rules (only when offered). */
+const overrideReason = ref('');
 
 /** Local draft of the reason: the parent sends the request. */
 const reasonForm = useForm({ reason: '' });
@@ -222,6 +232,9 @@ function submit(): void {
         reason: reasonForm.reason.trim(),
         confirm_over_capacity:
             selectedIsAtCapacity.value && confirmOverCapacity.value,
+        ...(props.queueException && overrideReason.value.trim() !== ''
+            ? { override_reason: overrideReason.value.trim() }
+            : {}),
     });
 }
 
@@ -412,6 +425,37 @@ function agentLabel(agent: TransferAgentOption): string {
                 </template>
 
                 <InputError :message="generalError" />
+
+                <div
+                    v-if="queueException"
+                    class="grid gap-2 rounded-lg border border-warning/50 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
+                    data-queue-override
+                >
+                    <p class="font-medium">
+                        Puedes hacer una excepción a la regla «{{
+                            QUEUE_RULE_LABELS[queueException.rule] ??
+                            'de la cola'
+                        }}».
+                    </p>
+                    <p class="text-xs">
+                        Tu nombre, el motivo y las reglas omitidas quedan en el
+                        historial de la conversación y en la auditoría.
+                    </p>
+                    <FormField
+                        id="route-override-reason"
+                        label="Motivo de la excepción"
+                        :error="errors.override_reason"
+                        hint="Al menos 10 caracteres. El cliente no lo ve."
+                    >
+                        <Textarea
+                            id="route-override-reason"
+                            v-model="overrideReason"
+                            class="bg-background text-foreground"
+                            rows="2"
+                            maxlength="255"
+                        />
+                    </FormField>
+                </div>
 
                 <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                     <Button

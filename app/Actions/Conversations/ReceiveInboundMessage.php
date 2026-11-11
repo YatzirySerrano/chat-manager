@@ -26,6 +26,8 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\ConversationRouter;
+use App\Services\Conversations\QueueRules;
+use App\Services\Conversations\ResponseClock;
 use App\Services\Meta\MediaFileName;
 use App\Support\InboundContactRegistration;
 use App\Support\InboundMessage;
@@ -142,6 +144,9 @@ class ReceiveInboundMessage
         ])->save();
 
         $this->linkReferral($registration->attribution, $conversation);
+
+        // The customer waits for a human answer from now on (response cycle).
+        app(ResponseClock::class)->customerWrote($conversation, $sentAt);
 
         if ($outcome === InboundMessageOutcome::Created) {
             $this->assignAutomatically->handle($conversation);
@@ -309,7 +314,9 @@ class ReceiveInboundMessage
             'contact_id' => $contact->id,
             'department_id' => $department?->id,
         ]);
-        $conversation->save();
+        // Born «Necesita información» only where the confirmation rule is on
+        // right now; otherwise ready, with its queue clock started (QueueRules).
+        $conversation->forceFill(app(QueueRules::class)->born($department?->id))->save();
 
         $this->lifecycle->record($conversation, ConversationEventType::Created, null, [
             'to_department_id' => $department?->id,

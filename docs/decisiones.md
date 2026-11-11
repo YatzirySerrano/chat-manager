@@ -122,6 +122,9 @@ dentro de cada prefijo.
 - [ADR-SEC-11 — Cierre de sesión sin `Clear-Site-Data`](#adr-sec-11--cierre-de-sesión-sin-clear-site-data)
 - [ADR-UX-2 — Recorridos guiados propios como ayuda principal](#adr-ux-2--recorridos-guiados-propios-como-ayuda-principal)
 - [ADR-REP-5 — Gráficas SVG propias, sin librería de gráficas](#adr-rep-5--gráficas-svg-propias-sin-librería-de-gráficas)
+- [ADR-REP-6 — Atribución por colaborador en una tabla derivada](#adr-rep-6--atribución-por-colaborador-en-una-tabla-derivada)
+- [ADR-REP-7 — Cumplimiento de SLA desde los ciclos de respuesta, sin reconstruir historial](#adr-rep-7--cumplimiento-de-sla-desde-los-ciclos-de-respuesta-sin-reconstruir-historial)
+- [ADR-REP-8 — Comparar lo comparable y nombrar distinto lo distinto](#adr-rep-8--comparar-lo-comparable-y-nombrar-distinto-lo-distinto)
 
 **Fase 5.2: multimedia, almacenamiento, errores 409 e historial de Whaticket** ([migracion-whaticket.md](migracion-whaticket.md), [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md)):
 
@@ -144,6 +147,11 @@ dentro de cada prefijo.
 - [ADR-OPS-9 — Tiempos encadenados: subida, job, worker y `retry_after`](#adr-ops-9--tiempos-encadenados-subida-job-worker-y-retry_after)
 - [ADR-AUT-6 — Avisos del chat interno sobre el centro de notificaciones, coordinados entre pestañas](#adr-aut-6--avisos-del-chat-interno-sobre-el-centro-de-notificaciones-coordinados-entre-pestañas)
 - [ADR-TC-6 — Colores del chat interno en `chat_appearances` con una columna aditiva](#adr-tc-6--colores-del-chat-interno-en-chat_appearances-con-una-columna-aditiva)
+
+**Varias conexiones: números bajo la misma app y monitoreo** ([mensajeria-whatsapp.md §2.8](mensajeria-whatsapp.md#28-varios-números-en-la-misma-app-de-meta)):
+
+- [ADR-META-12 — Varios números bajo la misma app de Meta: reenrutar solo con la misma app comprobada](#adr-meta-12--varios-números-bajo-la-misma-app-de-meta-reenrutar-solo-con-la-misma-app-comprobada)
+- [ADR-META-13 — Comprobación periódica con Meta y evidencia reciente separada de la histórica](#adr-meta-13--comprobación-periódica-con-meta-y-evidencia-reciente-separada-de-la-histórica)
 
 **Documentación** ([README.md](README.md)):
 
@@ -944,3 +952,141 @@ clientes y chat interno, el servicio `ChatAppearances`, el editor y la supervisi
 reutilizan, y las filas existentes no cambian de significado. La supervisión nombra el hilo solo por su folio («Chat
 interno #id») para no revelar quién habla con quién. El CHECK «conversación o hilo, nunca ambos» solo se crea en
 MariaDB (MySQL no admite CHECK sobre columnas de FK con acciones referenciales); en otro motor lo garantiza el servicio.
+
+## ADR-META-12 — Varios números bajo la misma app de Meta: reenrutar solo con la misma app comprobada
+
+**Contexto.** Cada conexión tiene su URL de webhook, pero Meta configura normalmente **una** URL de devolución de
+llamada por app para WhatsApp. Con dos números bajo la misma app, las entregas del número B llegan a la URL de la
+conexión A. Antes ese contenido se descartaba y el evento quedaba «procesado» con solo una línea de log: mensajes
+perdidos en silencio.
+
+**Decisión.** Tras verificar la firma con el secreto de la app de la conexión receptora, `RouteWebhookChanges` reparte
+cada cambio del cuerpo:
+
+- un cambio `messages` (mensajes, estados y errores a nivel de cambio) pertenece a la conexión de WhatsApp cuyo
+  `phone_number_id` coincide con `metadata.phone_number_id`; un cambio de plantillas o de cuenta, a la cuenta de
+  WhatsApp Business de su `entry.id`;
+- se procesa para otra conexión (la «hermana») **solo si se comprueba que es de la misma app**: ambas tienen secreto de
+  app y los valores descifrados son iguales (`hash_equals`; nunca se registran ni se muestran), sus Meta App ID no se
+  contradicen, la hermana no está eliminada y el `entry.id` es la cuenta guardada en ella;
+- la hermana se procesa con las mismas reglas que una entrega propia (`ProcessWebhookPayload::apply`): pausada guarda
+  y no envía, eliminada no guarda nada, y la evidencia (`last_webhook_at`, `last_inbound_at`…) se anota en la conexión
+  dueña del número, no en la que recibió la entrega;
+- todo lo demás (número sin conexión, conexión con otro secreto, eliminada o con otra cuenta) se **rechaza** como
+  antes, pero deja una advertencia visible en la conexión receptora (`provider_signals['platform.unattributed']`:
+  identificador y motivo, sin contenido ni secretos, como máximo 10 y una escritura por minuto e identificador).
+
+**Por qué es seguro.** La firma HMAC solo prueba que el cuerpo viene de la app cuyo secreto guarda la conexión
+receptora. Si la hermana guarda **el mismo** secreto, una entrega firmada con él habría sido aceptada también en la URL
+de la hermana: reenrutar no concede nada que el remitente no pudiera hacer ya. Con secretos distintos esa prueba no
+existe y no se reenruta: quien conociera el secreto de la app A no puede inyectar mensajes en un número de la app B.
+El `phone_number_id` del cuerpo nunca elige conexión por sí solo.
+
+**Idempotencia.** `webhook_events` sigue deduplicando por (conexión receptora, huella del cuerpo). Si la misma entrega
+llega además a la URL de la hermana (anulación por número mal combinada con la URL de la app), son dos eventos pero un
+solo mensaje: `whatsapp_message_id` es único, los estados no retroceden y las plantillas no vuelven atrás.
+
+**Aislamiento entre conexiones.** Las conexiones de una entrega repartida se aplican una por una y el fallo de una no
+omite a las demás ni el registro de lo rechazado; el primer fallo se relanza al final (el trabajo se reintenta) y los
+siguientes se reportan. El reintento reaplica todo el cuerpo: es seguro por la idempotencia anterior, y un error de
+conexión registrado desde una entrada (`provider_signals['platform.error']` guarda su origen y la hora de la entrada)
+no se registra otra vez, así que un reintento nunca hace «reaparecer» un error ya superado.
+
+**Nombres reservados.** El `field` de un cambio se guarda como clave de `provider_signals`. Los nombres que usa la
+propia aplicación (prefijo `platform.`, `meta_authorization`, `token_refresh`) se ignoran si vienen en un cuerpo: el
+proveedor no puede sobrescribir las notas internas.
+
+**Riesgo residual aceptado.** La comprobación de «misma app» compara el App Secret **vigente al procesar** la entrega,
+no el vigente cuando se verificó su firma. Entre ambos momentos solo cambia si un administrador apunta la conexión
+receptora a otra app de Meta con entregas todavía en cola; en ese caso esas entregas se repartirían según la app
+nueva. Probabilidad baja (requiere un administrador y una cola con retraso) y sin vía externa de explotación. No se
+guarda una huella del secreto por evento para no añadir material derivado de un secreto a `webhook_events`; la
+medida es operativa: dejar que la cola de webhooks se vacíe antes de sustituir un App Secret
+([mensajería §2.8](mensajeria-whatsapp.md#28-varios-números-en-la-misma-app-de-meta)).
+
+**Consecuencias.** Con una sola conexión, o cuando todo el cuerpo es de la conexión receptora, el cuerpo se procesa
+sin cambios (un cambio de cuenta cuesta una consulta más). Las plantillas se aplican una vez por cuenta (ya se guardan
+por cuenta); los avisos de cuenta llegan a todas las conexiones de esa cuenta bajo la misma app, y un aviso de calidad
+de número solo a la conexión de ese número. Alternativas descartadas: una URL única por app (rompe las URLs ya
+configuradas en Meta y el aislamiento por conexión) y confiar en el Meta App ID (es un dato editable, no una prueba).
+No se ha validado contra Meta real ([limitaciones.md §4.1](limitaciones.md#41-meta-real)).
+
+## ADR-META-13 — Comprobación periódica con Meta y evidencia reciente separada de la histórica
+
+**Contexto.** La salud de una conexión se deriva de evidencia, pero esa evidencia podía tener días: «Operativa» no
+distinguía «funcionó el lunes» de «se acaba de comprobar». Y el aviso de problema no tenía cierre: la campana seguía
+mostrando un problema ya resuelto.
+
+**Decisión.**
+
+- `whatsapp:maintenance check-connections` (cada 30 min, sin solaparse, con candado propio, como máximo
+  `whatsapp.monitoring.max_per_run` conexiones por corrida, primero las comprobadas hace más tiempo) vuelve a verificar
+  credenciales y suscripción de las conexiones activas y configuradas de WhatsApp, Messenger e Instagram
+  (`CheckConnectionWithMeta`, que reutiliza `VerifyConnectionCredentials` y `ManageAppSubscription`).
+- **Solo una respuesta de Meta cambia lo registrado.** Tiempo de espera, 5xx o límite de solicitudes es «no se pudo
+  comprobar»: no toca credenciales, salud ni alertas; solo se anota el resultado del intento
+  (`provider_signals['platform.check']`). Ante un límite de solicitudes la corrida termina. Un fallo en una conexión
+  no detiene a las demás.
+- La comprobación automática solo escribe en la bitácora cuando el estado **cambia** (rechazo nuevo, recuperación,
+  cambio de suscripción), como «Sistema» y con `automatic: true`; confirmar lo ya sabido no genera ruido.
+- No hay columnas nuevas: se reutilizan `credentials_verified_at`, `subscription_checked_at` y `provider_signals`.
+- **Una verificación solo resuelve lo que puede atestiguar.** Cada error de conexión se registra con su clase
+  (`provider_signals['platform.error']`: origen, instante del error al que se refiere y, si procede, la entrada del
+  webhook): `credentials` (token rechazado, token que no pudo renovarse), `quality` (calidad `FLAGGED`), `account`
+  (restricción, inhabilitación o eliminación de la cuenta), `policy` (bloqueo de mensajería de la página), `send`
+  (envío rechazado por un motivo que afecta a toda la conexión) y `provider` (errores a nivel de webhook).
+  `ConnectionHealth` cuenta `credentials_verified_at` como «éxito posterior al error» **solo** si el error vigente es
+  de clase `credentials` o no tiene clase (errores anteriores a esta regla o escritos por un flujo de suscripción,
+  que conservan el comportamiento previo; la nota va ligada al instante del error, así que un error posterior sin
+  nota nunca hereda la clase del anterior). Para las demás clases, un token aceptado no prueba que la restricción o
+  el rechazo hayan terminado: el error sigue vigente, sin aviso de «se recuperó», hasta que haya **evidencia real**
+  —un envío aceptado por Meta, un mensaje recibido, la verificación del webhook— o **Meta avise que la restricción
+  terminó** (`phone_number_quality_update` `UNFLAGGED`; `account_update` `DISABLED_UPDATE` con
+  `ban_info.waba_ban_state = REINSTATE`; `messaging_policy_enforcement` `unblock`), que resuelve únicamente el error
+  del mismo origen (`ConnectionMonitor::restrictionLifted()`).
+- **La verificación manual sigue la misma regla.** Usa la misma lectura de Graph y la misma columna, y tenía el mismo
+  defecto: que un administrador pulse «Verificar» tampoco es evidencia de que un aviso de calidad terminó. Sigue
+  resolviendo los errores de credenciales y registrando el resultado en la bitácora.
+- `ConnectionMonitoring` separa **evidencia reciente** (comprobación o tráfico dentro de
+  `whatsapp.monitoring.fresh_minutes`, 90 por defecto) de **actividad histórica**, con texto e icono distintos
+  («Comprobada hace 12 min» frente a «Sin comprobar desde hace 3 días»). Un periodo sin tráfico es normal y nunca es
+  advertencia. Una suscripción ausente es advertencia visible, no un cambio de salud (la siguiente verificación de
+  credenciales la habría «recuperado» en falso).
+- **Ciclo del aviso.** `ConnectionHealthChanged` hacia un estado sano (`credentials_verified`, `receiving`,
+  `operational`) desde `error` o `credentials_invalid` envía la recuperación con la misma clave de agrupación: reemplaza
+  el aviso sin leer (pasa a informativo) o, si ya se leyó, crea uno solo. La verificación manual también anuncia el
+  cambio de salud. Además el texto se arma al leer contra el estado actual, así que un problema resuelto nunca se
+  presenta como vigente.
+
+**Consecuencias.** Hasta dos lecturas de Graph por conexión de WhatsApp cada 30 minutos. Una conexión con un aviso de
+calidad o una restricción y sin tráfico permanece «Con error» hasta el siguiente envío aceptado, mensaje recibido o
+aviso de Meta: es deliberado (antes una comprobación automática la daba por recuperada en menos de 30 minutos y
+enviaba «se recuperó» sin evidencia). Un mensaje recibido sigue contando como éxito posterior a cualquier error
+(regla previa, sin cambios). Los eventos `UNFLAGGED`, `REINSTATE` y `unblock` se tomaron de la documentación de Meta y
+no se han validado con Meta real ([limitaciones.md §4.1](limitaciones.md#41-meta-real)).
+
+## ADR-REP-6 — Atribución por colaborador en una tabla derivada
+
+Las cifras por agente salían de `conversation_metrics.agent_id` (responsable actual o último), que acreditaba al
+último responsable todo lo hecho por otros. Ahora `conversation_agent_metrics` guarda una fila por (conversación,
+persona), reconstruida completa desde `conversation_events` y `messages.sender_user_id` por el mismo calculador, job y
+`analytics:rebuild` que `conversation_metrics`. «Atendidas por colaborador» cuenta participaciones: una solicitud
+atendida por dos personas cuenta para ambas y la interfaz lo dice, en lugar de forzar un reparto engañoso. `agent_id`
+conserva su significado para alcance, filtro y «Cartera por responsable actual». Lo que el historial no permite saber
+(tramos de un responsable sin eventos) queda sin dato. Ver [reportes-y-exportaciones.md](reportes-y-exportaciones.md) §3.2.
+
+## ADR-REP-7 — Cumplimiento de SLA desde los ciclos de respuesta, sin reconstruir historial
+
+El cumplimiento se calculaba al consultar, con el objetivo global vigente y solo sobre conversaciones ya respondidas
+(las que seguían sin respuesta tras vencer no existían para el indicador, y cambiar el objetivo reescribía el pasado).
+Ahora sale de `response_cycles`: objetivo congelado por ciclo, vencidos contados aunque nadie haya respondido, y
+porcentaje = cumplidos / (cumplidos + incumplidos) con su n; sin ciclos evaluados es «Sin datos». Los ciclos no se
+reconstruyen hacia atrás (no quedó registrado qué objetivo aplicaba ni quién era responsable al vencer): la interfaz
+muestra «Disponible desde <fecha>». El cálculo anterior se conserva solo como referencia rotulada.
+
+## ADR-REP-8 — Comparar lo comparable y nombrar distinto lo distinto
+
+Un periodo en curso se compara con el mismo tramo transcurrido del anterior (`AnalyticsPeriod::comparison()`), no con
+un periodo completo. «Finalizadas (de las recibidas)» (cohorte) y «Finalizadas en el periodo» (primer cierre en el
+rango) son dos indicadores con nombres distintos; «Finalizadas hoy» del panel es una cifra de bandeja en vivo y se
+rotula así. Se añadió la semana ISO como granularidad, y mínimo y máximo junto a los promedios.

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import { CircleDashed, Lock, PlugZap } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import PlatformHolidaysCard from '@/components/automation/PlatformHolidaysCard.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import ServiceRulesCard from '@/components/service-rules/ServiceRulesCard.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,14 @@ import { formatTimeZone } from '@/lib/format';
 import { integerBetween, maxLength, required } from '@/lib/validation';
 import type { FieldRules } from '@/lib/validation';
 import { edit, update } from '@/routes/admin/settings';
-import type { PlatformSettings, Weekday } from '@/types';
+import { flattenServiceRules, writeServiceRule } from '@/lib/serviceRules';
+import type {
+    PlatformSettings,
+    ServiceRuleKey,
+    ServiceRuleSet,
+    ServiceRuleValue,
+    Weekday,
+} from '@/types';
 
 defineOptions({
     layout: {
@@ -27,6 +35,8 @@ defineOptions({
 
 const props = defineProps<{
     settings: PlatformSettings;
+    /** Platform level of the service rules (names, units and bounds). */
+    serviceRules: ServiceRuleSet;
     timezones: string[];
     weekdays: Weekday[];
     departments: { id: number; name: string }[];
@@ -69,9 +79,24 @@ const validation = useFormValidation(form, {
             ],
             'operations.auto_close_after_hours': [integerBetween(1, 720)],
             'operations.pending_block_after_minutes': [integerBetween(0, 1440)],
-            'sla.first_response_minutes': [integerBetween(1, 43200)],
-            'sla.resolution_minutes': [integerBetween(1, 43200)],
+            'sla_alerts.reminder_minutes': [integerBetween(5, 1440)],
+            'sla_alerts.reminder_limit': [
+                required('Escribe el máximo de recordatorios.'),
+                integerBetween(1, 10),
+            ],
         };
+
+        // Service rules: bounds come from the server definition.
+        for (const key of Object.keys(props.serviceRules) as ServiceRuleKey[]) {
+            const rule = props.serviceRules[key];
+
+            if (rule.type === 'integer') {
+                rules[key] = [
+                    ...(rule.nullable ? [] : [required('Escribe un valor.')]),
+                    integerBetween(rule.min ?? 0, rule.max ?? 0),
+                ];
+            }
+        }
 
         for (const day of props.weekdays) {
             rules[`business_hours.days.${day}.end`] = [
@@ -113,6 +138,64 @@ function toNullableNumber(value: string | number): number | null {
 
     return Number.isFinite(parsed) ? parsed : null;
 }
+
+/** The service rules of the form as the flat map the card edits. */
+const ruleValues = computed(() =>
+    flattenServiceRules(props.serviceRules, form),
+);
+
+const ruleErrors = computed(() => {
+    const errors: Partial<Record<ServiceRuleKey, string>> = {};
+
+    for (const key of Object.keys(props.serviceRules) as ServiceRuleKey[]) {
+        errors[key] = validation.error(key);
+    }
+
+    return errors;
+});
+
+/** Bumped when the form is discarded, to remount the rules card. */
+const rulesRevision = ref(0);
+
+function setRule(key: ServiceRuleKey, value: ServiceRuleValue): void {
+    writeServiceRule(form, key, value);
+}
+
+function discard(): void {
+    form.reset();
+    rulesRevision.value++;
+}
+
+const slaAlertSwitches: {
+    key:
+        | 'agent_warning'
+        | 'agent_breach'
+        | 'supervisor_warning'
+        | 'supervisor_breach';
+    label: string;
+    on: string;
+}[] = [
+    {
+        key: 'agent_warning',
+        label: 'Al agente: solicitud próxima a vencer',
+        on: 'Se avisa al agente responsable antes de que venza',
+    },
+    {
+        key: 'agent_breach',
+        label: 'Al agente: solicitud vencida',
+        on: 'Se avisa al agente responsable cuando vence',
+    },
+    {
+        key: 'supervisor_warning',
+        label: 'A supervisión: solicitud próxima a vencer',
+        on: 'Se avisa a quienes supervisan el departamento antes de que venza',
+    },
+    {
+        key: 'supervisor_breach',
+        label: 'A supervisión: solicitud vencida',
+        on: 'Se avisa a quienes supervisan el departamento cuando vence',
+    },
+];
 
 function submit(): void {
     if (!validation.validate()) {
@@ -572,81 +655,165 @@ const integrationConnected = computed(
                         Objetivos de servicio
                     </h2>
                     <p class="text-sm text-muted-foreground">
-                        Opcionales. Con un objetivo, Reportes muestra el
-                        porcentaje de conversaciones que lo cumplieron (contando
-                        solo el horario de atención); sin objetivo, solo se
-                        muestran los tiempos.
+                        Reglas generales de atención, en tres grupos que no
+                        deben confundirse: el tiempo máximo de respuesta, la
+                        confirmación de solicitud completa y la espera mínima
+                        con el orden de atención.
+                    </p>
+                    <p class="mt-2 text-sm text-muted-foreground">
+                        Son los valores generales: cada departamento y cada
+                        categoría de solicitud puede tener valores propios, que
+                        tienen prioridad (categoría, después departamento,
+                        después estos). Con un objetivo, Reportes muestra además
+                        el porcentaje de cumplimiento.
                     </p>
                 </div>
                 <div
-                    class="grid gap-5 rounded-xl border bg-card p-5 shadow-card sm:grid-cols-2"
+                    class="rounded-xl border bg-card p-4 shadow-card sm:p-5"
+                    data-settings-service-rules
                 >
-                    <FormField
-                        id="sla-first-response"
-                        label="Objetivo de primera respuesta (minutos)"
-                        hint="Déjalo vacío para no medir cumplimiento."
-                        :help="{
-                            description:
-                                'Tiempo máximo, en horario de atención, desde que llega la conversación hasta que una persona del equipo responde y WhatsApp acepta el mensaje.',
-                            example: '15',
-                            warning:
-                                'Solo cuentan las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
-                        }"
-                        :error="validation.error('sla.first_response_minutes')"
-                    >
-                        <Input
-                            id="sla-first-response"
-                            v-bind="
-                                validation.field(
-                                    'sla.first_response_minutes',
-                                    'sla-first-response',
-                                )
+                    <ServiceRulesCard
+                        :key="rulesRevision"
+                        level="platform"
+                        :rules="serviceRules"
+                        :values="ruleValues"
+                        :errors="ruleErrors"
+                        :readonly="false"
+                        id-prefix="platform-rule"
+                        @update="setRule"
+                    />
+                </div>
+            </section>
+
+            <section
+                class="grid gap-6 lg:grid-cols-[16rem_1fr]"
+                aria-labelledby="sla-alerts-heading"
+            >
+                <div data-tour="settings.sla-alerts">
+                    <h2 id="sla-alerts-heading" class="text-base font-semibold">
+                        Alertas automáticas de SLA
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Avisos que la plataforma envía sola cuando una solicitud
+                        se acerca a su tiempo máximo de respuesta o lo supera.
+                    </p>
+                    <p class="mt-2 text-sm text-muted-foreground">
+                        No son las alertas que un administrador envía a mano
+                        desde «Seguimiento de atención»: aquellas las escribe
+                        una persona; estas dependen solo de los plazos.
+                    </p>
+                </div>
+                <div
+                    class="grid gap-5 rounded-xl border bg-card p-5 shadow-card"
+                    data-settings-sla-alerts
+                >
+                    <fieldset class="grid gap-2">
+                        <legend
+                            class="mb-2 flex items-center gap-1.5 text-sm font-medium"
+                        >
+                            A quién se avisa y cuándo
+                            <FieldHelp
+                                title="A quién se avisa y cuándo"
+                                :help="{
+                                    description:
+                                        '«Próxima a vencer» se avisa al consumirse el porcentaje del plazo definido arriba; «vencida», al superarse el plazo. El agente es quien tiene asignada la solicitud; supervisión son las personas que supervisan su departamento.',
+                                    example:
+                                        'Con plazo de 15 minutos y aviso al 80 %: aviso de próxima a vencer a los 12 minutos y de vencida a los 15.',
+                                    warning:
+                                        'Sin un tiempo máximo configurado no hay plazo y, por lo tanto, no se envía ninguna alerta. Cada persona puede silenciar sus notificaciones desde sus preferencias.',
+                                }"
+                            />
+                        </legend>
+                        <label
+                            v-for="alert in slaAlertSwitches"
+                            :key="alert.key"
+                            class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                        >
+                            <span>
+                                <span class="block font-medium">{{
+                                    alert.label
+                                }}</span>
+                                <span class="block text-muted-foreground">{{
+                                    form.sla_alerts[alert.key]
+                                        ? alert.on
+                                        : 'No se avisa'
+                                }}</span>
+                            </span>
+                            <Switch
+                                v-model="form.sla_alerts[alert.key]"
+                                :aria-label="alert.label"
+                            />
+                        </label>
+                    </fieldset>
+                    <div class="grid gap-5 sm:grid-cols-2">
+                        <FormField
+                            id="sla-reminder-minutes"
+                            label="Recordar las solicitudes vencidas cada (minutos)"
+                            hint="De 5 a 1440. Déjalo vacío para no enviar recordatorios."
+                            :help="{
+                                description:
+                                    'Mientras una solicitud vencida siga sin respuesta, se vuelve a avisar a las mismas personas con esta frecuencia.',
+                                example:
+                                    '30: una solicitud que venció a las 10:00 se recuerda a las 10:30, 11:00…',
+                                warning:
+                                    'Los recordatorios se detienen cuando el equipo responde, cuando la solicitud se cierra o al llegar al máximo de recordatorios.',
+                            }"
+                            :error="
+                                validation.error('sla_alerts.reminder_minutes')
                             "
-                            :model-value="form.sla.first_response_minutes ?? ''"
-                            @update:model-value="
-                                (value) =>
-                                    (form.sla.first_response_minutes =
-                                        toNullableNumber(value))
+                        >
+                            <Input
+                                id="sla-reminder-minutes"
+                                v-bind="
+                                    validation.field(
+                                        'sla_alerts.reminder_minutes',
+                                        'sla-reminder-minutes',
+                                    )
+                                "
+                                :model-value="
+                                    form.sla_alerts.reminder_minutes ?? ''
+                                "
+                                @update:model-value="
+                                    (value) =>
+                                        (form.sla_alerts.reminder_minutes =
+                                            toNullableNumber(value))
+                                "
+                                type="number"
+                                min="5"
+                                max="1440"
+                                inputmode="numeric"
+                            />
+                        </FormField>
+                        <FormField
+                            v-if="form.sla_alerts.reminder_minutes !== null"
+                            id="sla-reminder-limit"
+                            label="Máximo de recordatorios por solicitud"
+                            hint="De 1 a 10."
+                            :help="{
+                                description:
+                                    'Cuántas veces, como máximo, se recuerda una misma solicitud vencida. Evita avisos sin fin cuando nadie puede atenderla.',
+                                example: '3',
+                            }"
+                            :error="
+                                validation.error('sla_alerts.reminder_limit')
                             "
-                            type="number"
-                            min="1"
-                            max="43200"
-                            inputmode="numeric"
-                        />
-                    </FormField>
-                    <FormField
-                        id="sla-resolution"
-                        label="Objetivo de resolución (minutos)"
-                        hint="Déjalo vacío para no medir cumplimiento."
-                        :help="{
-                            description:
-                                'Tiempo máximo, en horario de atención, desde que llega la conversación hasta que se cierra por primera vez.',
-                            example: '480',
-                            warning:
-                                'Solo cuentan las horas de atención del departamento que recibió la conversación (o todas, si no hay horario configurado).',
-                        }"
-                        :error="validation.error('sla.resolution_minutes')"
-                    >
-                        <Input
-                            id="sla-resolution"
-                            v-bind="
-                                validation.field(
-                                    'sla.resolution_minutes',
-                                    'sla-resolution',
-                                )
-                            "
-                            :model-value="form.sla.resolution_minutes ?? ''"
-                            @update:model-value="
-                                (value) =>
-                                    (form.sla.resolution_minutes =
-                                        toNullableNumber(value))
-                            "
-                            type="number"
-                            min="1"
-                            max="43200"
-                            inputmode="numeric"
-                        />
-                    </FormField>
+                        >
+                            <Input
+                                id="sla-reminder-limit"
+                                v-bind="
+                                    validation.field(
+                                        'sla_alerts.reminder_limit',
+                                        'sla-reminder-limit',
+                                    )
+                                "
+                                v-model.number="form.sla_alerts.reminder_limit"
+                                type="number"
+                                min="1"
+                                max="10"
+                                inputmode="numeric"
+                            />
+                        </FormField>
+                    </div>
                 </div>
             </section>
 
@@ -731,7 +898,7 @@ const integrationConnected = computed(
                 type="button"
                 variant="outline"
                 :disabled="!validation.hasChanges || form.processing"
-                @click="form.reset()"
+                @click="discard()"
             >
                 Descartar
             </Button>

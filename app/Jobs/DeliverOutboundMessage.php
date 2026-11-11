@@ -477,7 +477,7 @@ class DeliverOutboundMessage implements ShouldQueue
             if ($exception->kind === MetaGraphException::TOKEN_INVALID) {
                 $monitor->credentialsRejected($connection, $exception->getMessage());
             } elseif ($exception->kind === MetaGraphException::PERMISSION || in_array($exception->metaCode, [368, 131031, 131042, 131045, 131057, 133010], true)) {
-                $monitor->failure($connection, $exception->getMessage());
+                $monitor->failure($connection, $exception->getMessage(), ConnectionMonitor::ERROR_SEND);
             }
         }
 

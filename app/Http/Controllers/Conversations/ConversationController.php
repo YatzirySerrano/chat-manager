@@ -15,6 +15,7 @@ use App\Http\Resources\ConversationResource;
 use App\Models\Connection;
 use App\Models\ContactNote;
 use App\Models\Conversation;
+use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\Tag;
@@ -24,9 +25,11 @@ use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\PendingAttention;
+use App\Services\Conversations\QueueRules;
 use App\Services\Exports\ReportExporter;
 use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
+use App\Services\Sla\SlaSnapshot;
 use App\Support\Attachments\ChannelAttachmentPolicy;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
@@ -78,7 +81,7 @@ class ConversationController extends Controller
      *
      * @var list<string>
      */
-    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount', 'acceptBlock'];
+    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount', 'acceptBlock', 'serverTime'];
 
     /**
      * Props of the selected conversation (chat and details panel).
@@ -176,7 +179,7 @@ class ConversationController extends Controller
                 $resolved = true;
                 $candidate = isset($validated['c']) ? Conversation::query()->find((int) $validated['c']) : null;
                 $cached = $candidate !== null && $actor->can('view', $candidate) ? $candidate : null;
-                $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
+                $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'category:id,name,color,is_active', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
                 if ($cached !== null) {
                     // The viewer's private alias of the contact (PERSONALIZATION).
                     ViewerAlias::load($cached, $actor);
@@ -202,6 +205,8 @@ class ConversationController extends Controller
                 'tag_match' => $filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY,
                 'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT,
                 'unread' => $filters['unread'] ?? false,
+                'category' => $filters['category'] ?? null,
+                'readiness' => $filters['readiness'] ?? null,
             ],
             // Counters of every chip in one aggregate query, with the same
             // filters as the list and always within the actor's reach.
@@ -225,6 +230,11 @@ class ConversationController extends Controller
             'acceptBlock' => fn (): ?array => $actor->holdsPermission(Permission::AcceptConversations)
                 ? app(PendingAttention::class)->stateFor($actor)
                 : null,
+            // The server's clock, delivered with the list: countdowns (minimum
+            // wait, SLA) count from it, never from the device's clock.
+            'serverTime' => fn (): string => now()->toIso8601String(),
+            // Active request categories: the filter and the details panel.
+            'categories' => fn (): array => ConversationCategory::options(),
             'statuses' => fn (): array => ConversationStatus::options(),
             'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->withoutProtectedFor($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
@@ -367,7 +377,7 @@ class ConversationController extends Controller
      *
      * @param  InboxFilters  $filters
      * @param  InboxCursor|null  $after
-     * @return array{data: list<array<string, mixed>>, has_more: bool, next_cursor: string|null}
+     * @return array{data: list<array<string, mixed>>, server_time: string, has_more: bool, next_cursor: string|null}
      */
     private function list(ConversationInboxQuery $inbox, User $actor, array $filters, Request $request, ?array $after = null, int $limit = self::LIST_PAGE): array
     {
@@ -385,6 +395,7 @@ class ConversationController extends Controller
                 'channelConnection.webChatWidget',
                 'department',
                 'assignee',
+                'category:id,name,color,is_active',
                 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name'),
             ])
             ->limit($limit + 1)
@@ -397,19 +408,26 @@ class ConversationController extends Controller
         $this->attachLastMessages($rows);
         // The viewer's private aliases of the page's contacts, in one query (PERSONALIZATION).
         ViewerAlias::load($rows, $actor);
+        // The open response cycle (SLA badge) of every row, in one query.
+        SlaSnapshot::load($rows);
         // Rows visible only through the supervisor's departments history:
         // their passage resolved with one query for the page.
         $this->access->rememberPassages($actor, $rows);
 
         // The abilities of every row ask which departments the actor may
         // accept from: computed once for the whole page (INB-03).
+        // The `acceptance` of the pending rows shares one "head of the queue"
+        // lookup per department on the page and one read of the viewer's load.
         $data = $this->access->rememberingAcceptableDepartments(
             $actor,
-            fn (): array => array_values(ConversationResource::collection($rows)->resolve($request)),
+            fn (): array => app(QueueRules::class)->describing(
+                fn (): array => array_values(ConversationResource::collection($rows)->resolve($request)),
+            ),
         );
 
         return [
             'data' => $data,
+            'server_time' => now()->toIso8601String(),
             'has_more' => $hasMore,
             'next_cursor' => $last === null ? null : ConversationInboxQuery::encodeCursor($inbox->cursorFor($last)),
         ];

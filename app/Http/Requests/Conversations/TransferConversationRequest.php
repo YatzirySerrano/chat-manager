@@ -16,6 +16,7 @@ class TransferConversationRequest extends ConversationOperationRequest
             'department_id' => ['nullable', 'integer', 'required_without:user_id'],
             'user_id' => ['nullable', 'integer', 'required_without:department_id'],
             'confirm_over_capacity' => ['sometimes', 'boolean'],
+            ...self::overrideReasonRules(),
         ];
     }
 

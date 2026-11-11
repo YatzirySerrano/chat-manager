@@ -15,6 +15,7 @@ class AssignConversationRequest extends ConversationOperationRequest
             ...parent::rules(),
             'user_id' => ['required', 'integer'],
             'confirm_over_capacity' => ['sometimes', 'boolean'],
+            ...self::overrideReasonRules(),
         ];
     }
 

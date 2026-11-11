@@ -155,6 +155,10 @@ export function formatBucket(
     key: string,
     granularity: ActivityGranularity,
 ): BucketLabel {
+    if (granularity === 'week') {
+        return formatWeek(key);
+    }
+
     const [datePart, timePart] = key.split('T');
     const [year, month = 1, day = 1] = (datePart ?? '').split('-').map(Number);
 
@@ -195,6 +199,37 @@ export function formatBucket(
 }
 
 /**
+ * Labels of an ISO week key («2026-W43»): the week is named by its Monday.
+ */
+function formatWeek(key: string): BucketLabel {
+    const match = /^(\d{4})-W(\d{2})$/.exec(key);
+
+    if (!match) {
+        return { short: key, long: key };
+    }
+
+    const year = Number(match[1]);
+    const week = Number(match[2]);
+    // ISO 8601: week 1 contains January 4th; weeks start on Monday.
+    const fourth = new Date(Date.UTC(year, 0, 4));
+    const monday = new Date(fourth);
+    monday.setUTCDate(
+        fourth.getUTCDate() - ((fourth.getUTCDay() + 6) % 7) + (week - 1) * 7,
+    );
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate() + 6);
+    const format = (date: Date, options: Intl.DateTimeFormatOptions): string =>
+        new Intl.DateTimeFormat('es-MX', { ...options, timeZone: 'UTC' })
+            .format(date)
+            .replace(/\./g, '');
+
+    return {
+        short: `sem ${format(monday, { day: 'numeric', month: 'short' })}`,
+        long: `Semana ${week}: del ${format(monday, { day: 'numeric', month: 'long' })} al ${format(sunday, { day: 'numeric', month: 'long', year: 'numeric' })}`,
+    };
+}
+
+/**
  * The platform time zone in plain words, shown once next to the period
  * («hora de Ciudad de México (UTC−6)»), never the raw IANA name.
  */
@@ -203,7 +238,9 @@ export function zoneLabel(zone: string): string {
 }
 
 export function granularityNoun(granularity: ActivityGranularity): string {
-    return { hour: 'hora', day: 'día', month: 'mes' }[granularity];
+    return { hour: 'hora', day: 'día', week: 'semana', month: 'mes' }[
+        granularity
+    ];
 }
 
 export function useChartTheme(): {

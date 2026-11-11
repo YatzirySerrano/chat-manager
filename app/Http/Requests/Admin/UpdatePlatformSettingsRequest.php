@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Models\Department;
 use App\Services\PlatformSettings;
+use App\Services\ServiceRules;
 use DateTimeZone;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -35,8 +36,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.transfer_reason_required' => ['sometimes', 'boolean'],
             'operations.pending_block_enabled' => ['sometimes', 'boolean'],
             'operations.pending_block_after_minutes' => ['sometimes', 'required', 'integer', 'min:0', 'max:1440'],
-            'sla.first_response_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
-            'sla.resolution_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
+            // Service rules and automatic SLA alerts: bounds come from their definition.
+            ...app(ServiceRules::class)->validationRules(ServiceRules::LEVEL_PLATFORM),
         ];
 
         foreach (PlatformSettings::WEEKDAYS as $day) {
@@ -88,6 +89,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.transfer_reason_required' => 'motivo obligatorio al transferir',
             'operations.pending_block_enabled' => 'control de conversaciones pendientes',
             'operations.pending_block_after_minutes' => 'tolerancia antes de bloquear',
+            ...app(ServiceRules::class)->validationAttributes(ServiceRules::LEVEL_PLATFORM),
             'sla.first_response_minutes' => 'objetivo de primera respuesta',
             'sla.resolution_minutes' => 'objetivo de resolución',
         ];
@@ -111,6 +113,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
         }
 
         return [
+            ...$this->serviceRuleGroups(),
             'general' => [
                 'platform_name' => $this->string('general.platform_name')->trim()->value(),
                 'timezone' => (string) $this->input('general.timezone'),
@@ -131,7 +134,61 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'sla' => [
                 'first_response_minutes' => $this->filled('sla.first_response_minutes') ? $this->integer('sla.first_response_minutes') : null,
                 'resolution_minutes' => $this->filled('sla.resolution_minutes') ? $this->integer('sla.resolution_minutes') : null,
+                ...$this->sentRules('sla', ['sla.first_response_minutes', 'sla.resolution_minutes']),
             ],
         ];
+    }
+
+    /**
+     * The groups that only hold service rules or alert settings (`intake`,
+     * `queue`, `sla_alerts`), with the keys the form sent.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function serviceRuleGroups(): array
+    {
+        $groups = [];
+
+        foreach (['intake', 'queue', 'sla_alerts'] as $group) {
+            $values = $this->sentRules($group);
+
+            if ($values !== []) {
+                $groups[$group] = $values;
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Values of the service rules of a settings group that the form sent.
+     * Only when sent: an older form that does not know a rule keeps it. An
+     * empty nullable rule means "no objective"; an empty required one is
+     * left as it is.
+     *
+     * @param  list<string>  $except  Keys the caller already normalizes.
+     * @return array<string, int|bool|null>
+     */
+    private function sentRules(string $group, array $except = []): array
+    {
+        $values = [];
+
+        foreach ([...ServiceRules::KEYS, ...ServiceRules::ALERT_KEYS] as $key => $definition) {
+            if (! str_starts_with($key, "{$group}.") || in_array($key, $except, true) || ! $this->has($key)) {
+                continue;
+            }
+
+            $name = substr($key, strlen($group) + 1);
+
+            if ($definition['type'] === 'boolean') {
+                $values[$name] = $this->boolean($key);
+            } elseif ($this->filled($key)) {
+                $values[$name] = $this->integer($key);
+            } elseif ($definition['nullable']) {
+                $values[$name] = null;
+            }
+        }
+
+        return $values;
     }
 }

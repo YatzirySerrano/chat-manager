@@ -40,6 +40,8 @@ enum Permission: string
     case AddConversationNotes = 'conversations.notes';
     case SuperviseConversations = 'conversations.supervise';
     case AcceptWithPendingConversations = 'conversations.accept-with-pending';
+    case ConfirmConversationReady = 'conversations.confirm-ready';
+    case OverrideQueueRules = 'conversations.override-queue-rules';
 
     case ViewAttention = 'attention.view';
     case SendAttentionAlerts = 'attention.alert';
@@ -65,6 +67,8 @@ enum Permission: string
     case ViewTags = 'tags.view';
     case ManageTags = 'tags.manage';
     case AssignTags = 'tags.assign';
+
+    case ManageCategories = 'categories.manage';
 
     case UseQuickReplies = 'quick-replies.use';
     case ManageQuickReplies = 'quick-replies.manage';
@@ -134,6 +138,8 @@ enum Permission: string
             self::AddConversationNotes => 'Agregar notas internas',
             self::SuperviseConversations => 'Supervisar conversaciones (solo lectura)',
             self::AcceptWithPendingConversations => 'Aceptar conversaciones nuevas aunque tenga pendientes de responder',
+            self::ConfirmConversationReady => 'Confirmar que una solicitud está completa',
+            self::OverrideQueueRules => 'Hacer excepciones a las reglas de la cola',
             self::ViewAttention => 'Ver el seguimiento de atención del equipo',
             self::SendAttentionAlerts => 'Enviar alertas de atención a los agentes',
             self::ViewConnections => 'Ver conexiones',
@@ -153,6 +159,7 @@ enum Permission: string
             self::ViewTags => 'Ver etiquetas',
             self::ManageTags => 'Administrar etiquetas (crear, editar, eliminar y restaurar)',
             self::AssignTags => 'Asignar etiquetas a contactos y conversaciones',
+            self::ManageCategories => 'Administrar categorías de solicitud (crear, editar, eliminar y restaurar)',
             self::UseQuickReplies => 'Usar respuestas rápidas',
             self::ManageQuickReplies => 'Administrar respuestas rápidas (crear, editar, eliminar y restaurar)',
             self::CreatePersonalQuickReplies => 'Crear y administrar sus respuestas rápidas personales',
@@ -214,6 +221,8 @@ enum Permission: string
             self::AddConversationNotes => 'Dejar notas internas en una conversación. El cliente nunca las ve.',
             self::SuperviseConversations => 'Consultar todas las conversaciones que su rol puede ver, aunque las atienda otra persona. No permite responder.',
             self::AcceptWithPendingConversations => 'No se le aplica el control que impide aceptar conversaciones nuevas mientras tiene clientes esperando su respuesta.',
+            self::ConfirmConversationReady => 'Marcar una solicitud como «Lista para atención» cuando ya tiene todo lo necesario, o devolverla a «Necesita información».',
+            self::OverrideQueueRules => 'Tomar o entregar una solicitud saltándose el tiempo mínimo de espera o el orden de llegada, siempre con un motivo que queda registrado.',
             self::ViewAttention => 'Consultar qué atiende cada agente, qué clientes esperan respuesta y desde cuándo, dentro de la información que le corresponde.',
             self::SendAttentionAlerts => 'Enviar recordatorios y alertas a uno, varios o todos los agentes que le corresponden, y consultar su historial.',
             self::ViewConnections => 'Consultar los canales conectados, como números de WhatsApp, y su estado.',
@@ -233,6 +242,7 @@ enum Permission: string
             self::ViewTags => 'Consultar las etiquetas disponibles.',
             self::ManageTags => 'Crear, editar, eliminar y restaurar etiquetas para todo el equipo.',
             self::AssignTags => 'Poner o quitar etiquetas en clientes y en las conversaciones que atiende.',
+            self::ManageCategories => 'Crear, editar, eliminar y restaurar las categorías de solicitud y las reglas de servicio propias de cada una.',
             self::UseQuickReplies => 'Insertar respuestas guardadas al escribir a un cliente.',
             self::ManageQuickReplies => 'Crear, editar, eliminar y restaurar las respuestas rápidas compartidas.',
             self::CreatePersonalQuickReplies => 'Guardar sus propias respuestas rápidas, que solo usa esa persona.',
@@ -301,6 +311,7 @@ enum Permission: string
             self::UpdateAppearance,
             self::ManageConnections,
             self::ManageIntegrations,
+            self::OverrideQueueRules,
             self::ViewSystem,
             self::ManageSystem,
             self::ViewHistoryImports,
@@ -333,6 +344,7 @@ enum Permission: string
             self::ManageTemplates,
             self::SendTemplates,
             self::ManageTags,
+            self::ManageCategories,
             self::ClassifyContactOrigin,
             self::ImportContacts,
             self::ViewSystem,

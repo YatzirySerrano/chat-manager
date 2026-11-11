@@ -22,6 +22,8 @@ enum NotificationKind: string
     case ImportFinished = 'import.finished';
     case ConnectionProblem = 'connection.problem';
     case AccessChanged = 'account.access-changed';
+    case SlaWarning = 'sla.warning';
+    case SlaBreach = 'sla.breach';
 
     public function label(): string
     {
@@ -34,8 +36,10 @@ enum NotificationKind: string
             self::TeamChatMessage => 'Mensajes del chat interno',
             self::ExportFinished => 'Archivos preparados',
             self::ImportFinished => 'Importaciones terminadas',
-            self::ConnectionProblem => 'Problemas en conexiones de WhatsApp',
+            self::ConnectionProblem => 'Problemas y recuperación de conexiones',
             self::AccessChanged => 'Cambios en mi rol, permisos o departamentos',
+            self::SlaWarning => 'Alertas automáticas de SLA: solicitudes por vencer',
+            self::SlaBreach => 'Alertas automáticas de SLA: solicitudes vencidas',
         };
     }
 
@@ -50,8 +54,10 @@ enum NotificationKind: string
             self::TeamChatMessage => 'Cuando un compañero te escribe en un chat interno que no silenciaste. Verás quién escribió y un fragmento breve; si tienes ese chat abierto a la vista, no aparece el aviso ni suena.',
             self::ExportFinished => 'Cuando un archivo que pediste generar en segundo plano está listo o falló.',
             self::ImportFinished => 'Cuando termina o falla una importación de contactos que iniciaste.',
-            self::ConnectionProblem => 'Cuando una conexión de WhatsApp deja de funcionar o Meta rechaza sus credenciales.',
+            self::ConnectionProblem => 'Cuando una conexión (WhatsApp, Messenger, Instagram o chat web) deja de funcionar o Meta rechaza sus credenciales, y cuando vuelve a funcionar.',
             self::AccessChanged => 'Cuando un administrador cambia tu rol, tus permisos o tus departamentos.',
+            self::SlaWarning => 'Aviso automático del sistema cuando una solicitud a tu cargo (o, si supervisas, de tu equipo) está por agotar su tiempo máximo de respuesta. No lo envía ninguna persona: es distinto de los recordatorios que escriben los administradores.',
+            self::SlaBreach => 'Aviso automático del sistema cuando una solicitud a tu cargo (o, si supervisas, de tu equipo) superó su tiempo máximo de respuesta, y sus recordatorios mientras siga sin respuesta. Si supervisas, recibes un solo aviso por departamento.',
         };
     }
 
@@ -62,6 +68,7 @@ enum NotificationKind: string
             self::ConversationAssigned,
             self::ConversationTransferred,
             self::TeamChatMention,
+            self::SlaBreach,
             self::ConnectionProblem => NotificationLevel::Urgent,
             default => NotificationLevel::Informative,
         };
@@ -79,7 +86,8 @@ enum NotificationKind: string
     {
         return $this->level() === NotificationLevel::Urgent
             || $this === self::ConversationMessage
-            || $this === self::TeamChatMessage;
+            || $this === self::TeamChatMessage
+            || $this === self::SlaWarning;
     }
 
     /**
@@ -117,6 +125,9 @@ enum NotificationKind: string
             self::ImportFinished => $user->holdsPermission(Permission::ImportContacts),
             self::ConnectionProblem => $user->holdsPermission(Permission::ViewConnections) || $user->holdsPermission(Permission::ManageConnections),
             self::AccessChanged => true,
+            self::SlaWarning,
+            self::SlaBreach => $user->holdsPermission(Permission::ViewAttention)
+                || ($user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations)),
         };
     }
 }

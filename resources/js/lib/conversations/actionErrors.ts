@@ -40,6 +40,28 @@ export const CONVERSATION_CONFLICT_MESSAGES: Record<
     closed: 'Esta conversación está cerrada. Revisa las opciones disponibles.',
 };
 
+/**
+ * Queue rules (QueueRules on the server): a request that cannot be taken
+ * yet. Also a 409, with its own code and what explains it: JSON carries
+ * `available_at`, `blocking_conversation_id` and `overridable`; Inertia
+ * visits carry them under `errors.conversation_available_at`,
+ * `errors.conversation_blocking_id` and `errors.conversation_overridable`.
+ */
+export type QueueConflictCode = 'needs_info' | 'min_wait' | 'queue_order';
+
+const QUEUE_CONFLICT_CODES: QueueConflictCode[] = [
+    'needs_info',
+    'min_wait',
+    'queue_order',
+];
+
+/** Error bag keys that describe a queue conflict (never messages). */
+const QUEUE_CONFLICT_DETAIL_KEYS = [
+    'conversation_available_at',
+    'conversation_blocking_id',
+    'conversation_overridable',
+];
+
 /** Error bag key with the conflict code on Inertia visits. */
 export const CONVERSATION_CONFLICT_ERROR_KEY = 'conversation_conflict';
 
@@ -153,6 +175,38 @@ export function conversationConflictFromErrors(
 }
 
 /**
+ * The queue rule that refused an Inertia visit, if its errors carry one.
+ */
+export function queueConflictFromErrors(
+    errors: Record<string, string | undefined>,
+): {
+    code: QueueConflictCode;
+    message: string;
+    availableAt: string | null;
+    blockingConversationId: number | null;
+    overridable: boolean;
+} | null {
+    const code = errors[CONVERSATION_CONFLICT_ERROR_KEY] as
+        | QueueConflictCode
+        | undefined;
+
+    if (!code || !QUEUE_CONFLICT_CODES.includes(code)) {
+        return null;
+    }
+
+    const blocking = Number(errors.conversation_blocking_id);
+
+    return {
+        code,
+        message: errors.conversation ?? GENERIC_MESSAGE,
+        availableAt: errors.conversation_available_at ?? null,
+        blockingConversationId:
+            Number.isInteger(blocking) && blocking > 0 ? blocking : null,
+        overridable: errors.conversation_overridable === '1',
+    };
+}
+
+/**
  * The errors to display, without the conflict code (not a message).
  */
 export function withoutConflictCode(
@@ -160,7 +214,9 @@ export function withoutConflictCode(
 ): Record<string, string | undefined> {
     return Object.fromEntries(
         Object.entries(errors).filter(
-            ([key]) => key !== CONVERSATION_CONFLICT_ERROR_KEY,
+            ([key]) =>
+                key !== CONVERSATION_CONFLICT_ERROR_KEY &&
+                !QUEUE_CONFLICT_DETAIL_KEYS.includes(key),
         ),
     );
 }

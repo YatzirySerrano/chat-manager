@@ -14,6 +14,7 @@ enum PermissionGroup: string
     case Templates = 'templates';
     case Contacts = 'contacts';
     case Tags = 'tags';
+    case Categories = 'categories';
     case QuickReplies = 'quick-replies';
     case TeamChat = 'team-chat';
     case Reports = 'reports';
@@ -39,6 +40,7 @@ enum PermissionGroup: string
             self::Templates => 'Plantillas de WhatsApp',
             self::Contacts => 'Contactos',
             self::Tags => 'Etiquetas',
+            self::Categories => 'Categorías de solicitud',
             self::QuickReplies => 'Respuestas rápidas',
             self::TeamChat => 'Chat interno',
             self::Reports => 'Reportes',
@@ -69,6 +71,7 @@ enum PermissionGroup: string
             self::Templates => 'Mensajes aprobados por WhatsApp para iniciar o retomar el contacto.',
             self::Contacts => 'Directorio de clientes y su información.',
             self::Tags => 'Etiquetas para clasificar clientes y conversaciones.',
+            self::Categories => 'Tipos de solicitud de los clientes y las reglas de servicio propias de cada uno.',
             self::QuickReplies => 'Textos guardados para responder más rápido.',
             self::TeamChat => 'Mensajes entre las personas del equipo.',
             self::Reports => 'Indicadores de la atención y descarga de información.',
@@ -99,6 +102,7 @@ enum PermissionGroup: string
             self::Templates => 'file-text',
             self::Contacts => 'contact-round',
             self::Tags => 'tags',
+            self::Categories => 'folder-tree',
             self::QuickReplies => 'message-square-text',
             self::TeamChat => 'message-circle',
             self::Reports => 'chart-no-axes-combined',

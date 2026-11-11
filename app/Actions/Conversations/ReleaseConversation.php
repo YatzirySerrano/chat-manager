@@ -33,7 +33,7 @@ class ReleaseConversation
             // distributing the queue below must not upgrade that lock.
             $this->lifecycle->lockDepartment($conversation->department_id, exclusive: true);
 
-            $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued());
+            $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued($conversation));
             $this->lifecycle->record($conversation, ConversationEventType::Unassigned, $actor, [
                 'from_user_id' => $previous,
                 'from_department_id' => $conversation->department_id,

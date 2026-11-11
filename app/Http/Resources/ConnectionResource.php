@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\WebChatWidget;
+use App\Services\Meta\ConnectionMonitoring;
 use App\Services\Meta\MetaApp;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -93,6 +94,8 @@ class ConnectionResource extends JsonResource
                     'message' => $this->last_error_message,
                 ],
             ],
+            // Recent evidence vs. history, per channel, and operational warnings.
+            'monitoring' => ConnectionMonitoring::for($this->resource),
             'meta' => [
                 'phone_status' => $this->phone_status,
                 'quality_rating' => $this->quality_rating,

@@ -12,6 +12,7 @@ use App\Enums\ContactOriginType;
 use App\Enums\ContactReviewReason;
 use App\Enums\ContactReviewResolution;
 use App\Enums\ContactSource;
+use App\Enums\ConversationReadiness;
 use App\Enums\ConversationStatus;
 use App\Enums\DistributionMode;
 use App\Enums\ExportFormat;
@@ -150,6 +151,28 @@ final class AuditValueFormatter
     ];
 
     /**
+     * Queue rules bypassed by a justified exception (QueueRules codes).
+     *
+     * @var array<string, string>
+     */
+    private const QUEUE_RULES = [
+        'needs_info' => 'Solicitud completa (necesitaba información)',
+        'min_wait' => 'Tiempo mínimo de espera',
+        'queue_order' => 'Orden de llegada',
+    ];
+
+    /**
+     * What an exception to the queue rules resulted in.
+     *
+     * @var array<string, string>
+     */
+    private const QUEUE_OVERRIDE_RESULTS = [
+        'accepted' => 'Conversación aceptada',
+        'assigned' => 'Conversación asignada',
+        'transferred' => 'Conversación transferida',
+    ];
+
+    /**
      * Kind of personal item an administrator changed (supervision.personal_item_*).
      *
      * @var array<string, string>
@@ -185,6 +208,8 @@ final class AuditValueFormatter
         'permissions' => Permission::class,
         'lost_permissions' => Permission::class,
         'gained_permissions' => Permission::class,
+        'previous_readiness' => ConversationReadiness::class,
+        'new_readiness' => ConversationReadiness::class,
     ];
 
     public function __construct(private string $timezone) {}
@@ -247,6 +272,8 @@ final class AuditValueFormatter
             'previous_error', 'error_code' => self::MESSAGE_ERRORS,
             'via' => self::SAVED_VIA,
             'item_type' => self::PERSONAL_ITEM_TYPES,
+            'bypassed_rules' => self::QUEUE_RULES,
+            'override_result' => self::QUEUE_OVERRIDE_RESULTS,
             'decision' => ContactImporter::DECISIONS,
             default => null,
         };

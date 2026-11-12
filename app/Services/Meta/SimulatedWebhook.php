@@ -103,7 +103,7 @@ final class SimulatedWebhook
      */
     public static function attachLocalFile(MessageAttachment $attachment, string $path, MediaStorage $storage): MessageAttachment
     {
-        $stored = $storage->store($path, $attachment->message->type->value);
+        $stored = $storage->store($path, $attachment->message->type->value, null, $attachment);
 
         $attachment->forceFill([
             ...$stored,

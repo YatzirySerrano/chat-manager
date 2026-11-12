@@ -139,7 +139,7 @@ class DownloadInboundMedia implements ShouldQueue
                 $graph->download($token, $media['url'], $temporary, $storage->rules($kind, $channel)['max_bytes']);
             }
 
-            $stored = $storage->store($temporary, $kind, $channel);
+            $stored = $storage->store($temporary, $kind, $channel, $attachment);
         } catch (MediaRejected $exception) {
             if (is_file($temporary) && filesize($temporary) > 0) {
                 $this->diagnostics += ['received_size' => (int) filesize($temporary), 'detected_mime' => $storage->detect($temporary)];

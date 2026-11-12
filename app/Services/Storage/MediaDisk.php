@@ -6,7 +6,9 @@ use App\Enums\AttachmentStatus;
 use App\Exceptions\StorageUnavailable;
 use App\Models\MessageAttachment;
 use App\Models\TeamChat\TeamAttachment;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -207,6 +209,54 @@ class MediaDisk
     }
 
     /**
+     * Copies a local file to {directory}/{stem}.{extension} and verifies it.
+     * The name is never overwritten: when it is taken, a readable counter is
+     * added ("… (2).jpg"). Choosing the name and writing happen under a
+     * short lock per directory, so two files of the same second do not race.
+     *
+     * @return array{disk: string, path: string}
+     *
+     * @throws StorageUnavailable
+     */
+    public function putNamedFile(string $localPath, string $directory, string $stem, string $extension = ''): array
+    {
+        $this->assertReady();
+
+        $disk = $this->name();
+        $directory = trim($directory, '/');
+        $suffix = $extension !== '' ? '.'.$extension : '';
+
+        $write = function () use ($localPath, $directory, $stem, $suffix, $disk): array {
+            $filesystem = Storage::disk($disk);
+
+            for ($order = 1; $order <= 999; $order++) {
+                $name = $stem.($order === 1 ? '' : " ({$order})").$suffix;
+
+                try {
+                    $taken = $filesystem->exists($directory.'/'.$name);
+                } catch (Throwable $exception) {
+                    $this->logFailure('write_failed', $disk, $exception);
+
+                    throw new StorageUnavailable('write_failed', $disk);
+                }
+
+                if (! $taken) {
+                    return $this->putFile($localPath, $directory, $name);
+                }
+            }
+
+            throw new StorageUnavailable('write_failed', $disk);
+        };
+
+        try {
+            return Cache::lock('media-name:'.sha1($disk.'|'.mb_strtolower($directory)), 60)->block(8, $write);
+        } catch (LockTimeoutException) {
+            // A stuck lock must not stop a file from being kept.
+            return $write();
+        }
+    }
+
+    /**
      * Best-effort removal of a file nothing references (a rolled back or
      * duplicated upload). Never throws.
      */
@@ -217,7 +267,7 @@ class MediaDisk
         }
 
         try {
-            // The image preview kept next to the original, if any (MediaThumbnails).
+            // The preview of the image, if any (MediaThumbnails keeps it in its own folder).
             Storage::disk($disk)->delete([$path, ...MediaThumbnails::pathsFor($path)]);
         } catch (Throwable $exception) {
             $this->logFailure('delete_failed', $disk, $exception);
@@ -416,7 +466,7 @@ class MediaDisk
 
             $hash = hash_final($context);
 
-            // UUID names never collide; a file already there is never replaced.
+            // A file already there is never replaced (putNamedFile picks a free name first).
             if (file_exists($final) || ! @rename($temporary, $final)) {
                 throw new StorageUnavailable('write_failed', $disk);
             }

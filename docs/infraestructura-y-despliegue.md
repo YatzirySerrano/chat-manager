@@ -122,6 +122,68 @@ el disco `local` **nunca se elimina** aunque se pase a S3.
 | `s3`                  | Bucket privado de AWS S3 o de un servicio compatible con S3 | Paquete `league/flysystem-aws-s3-v3` (instalado en la fase 5.2 con aprobación del usuario) y las variables `AWS_*` de abajo            |
 | `nas` (opcional)      | Carpeta compartida de un NAS montada en el VPS (CIFS/SMB 3) | Montaje verificado y variables `MEDIA_MOUNT_*` ([NAS montado](#nas-físico-montado-por-cifssmb-sobre-tailscale-media_disknas-opcional)) |
 
+#### Carpetas y nombres de los archivos (`App\Services\Storage\MediaPaths`)
+
+Los archivos se guardan con carpetas y nombres que una persona entiende al abrir el NAS, sin identificadores internos,
+UUID, _hashes_ ni sufijos aleatorios:
+
+```
+WhatsApp/Juan Perez (+52 55 1234 5678)/2026-11 Noviembre/2026-11-12 14.30.15 Foto recibida.jpg
+WhatsApp/Juan Perez (+52 55 1234 5678)/2026-11 Noviembre/2026-11-12 14.31.02 Documento enviado - contrato.pdf
+Messenger/Maria Lopez (Messenger)/2026-11 Noviembre/2026-11-12 16.02.48 Nota de voz recibida.ogg
+Chat interno/Ana Lopez y Beto Ruiz/2026-11 Noviembre/2026-11-12 09.05.40 Video de Ana Lopez.mp4
+Chat web/Imagenes del widget/Soporte web 2026-11-12 10.00.00.png
+Miniaturas del sistema/…        (vistas previas en JPEG que genera la plataforma; se pueden borrar, se regeneran)
+```
+
+- **Canal:** `WhatsApp` (Cloud API y WhatsApp Web QR), `Messenger`, `Instagram`, `Chat web`, `Chat interno`.
+- **Contacto:** `Nombre (teléfono)`; solo el teléfono si no tiene nombre; `Nombre (Messenger)` si no tiene teléfono; si
+  dos personas distintas quedarían con la misma carpeta, la segunda lleva un número de orden (`Maria Lopez 2 (Messenger)`).
+  La carpeta se asigna con el primer archivo y se guarda en `contacts.media_folder` (única): **renombrar el contacto
+  después no mueve ni divide sus archivos**. Lo recibido y lo enviado a una persona van a la misma carpeta, sea cual
+  sea la conexión.
+- **Chat interno:** el nombre del grupo o las dos personas del chat privado (`team_threads.media_folder`).
+- **Mes:** `2026-11 Noviembre`.
+- **Archivo:** fecha y hora en la zona horaria de la plataforma, el tipo con su palabra completa (`Foto`, `Video`,
+  `Audio`, `Nota de voz`, `Documento`, `Sticker`) y `recibida/recibido` o `enviada/enviado`; en el chat interno,
+  `de {quien lo envió}`. Los documentos añaden su nombre original (`- contrato`). Dos archivos del mismo segundo llevan
+  un contador legible: `… Foto recibida (2).jpg`.
+- **Formato:** el original se guarda **tal como se envió** (JPG, PNG, MP4, PDF…); la extensión sale del contenido real
+  del archivo, no de lo que diga quien lo envía. La plataforma no convierte nada a WebP. La única excepción aparente son
+  los _stickers_ de WhatsApp, que **llegan** en WebP y se conservan en su formato.
+- **Vistas previas:** las miniaturas de las fotos son JPEG y viven aparte, en `Miniaturas del sistema/` (un espejo de
+  la ruta del original). Nunca se escriben junto a los originales.
+- **Saneado:** cada carpeta y cada nombre se reduce a letras sin acentos, números, espacios y `. - , ' ( ) & +`, sin
+  separadores, sin `..`, sin puntos ni espacios al final y sin nombres reservados de Windows, con longitud acotada. Un
+  nombre de contacto vacío, hecho de emojis o malicioso no puede escribir fuera de la raíz ni dejar una carpeta sin
+  nombre.
+
+**Archivos guardados antes de este esquema.** Conservan su ruta (`media/{aaaa}/{mm}/{uuid}`,
+`team-chat/{aaaa}/{mm}/{uuid}`): la ruta se guarda por adjunto, así que se siguen viendo y descargando igual. Para
+pasarlos a las carpetas legibles:
+
+```bash
+php artisan storage:reorganize-media                 # SIMULACIÓN: lista origen → destino, no escribe nada
+php artisan storage:reorganize-media -v              # igual, mostrando todos los archivos
+php artisan storage:reorganize-media --apply --limit=200   # una primera tanda real
+php artisan storage:reorganize-media --apply         # todo lo que falte
+```
+
+Con `--apply` cada archivo se copia al destino, se verifica (tamaño y SHA-256), se actualiza su ruta en la base, se
+anota en un registro y solo entonces se borra del origen, junto con las miniaturas `.thumb.webp` que una versión
+anterior dejó al lado. Un archivo que falla se queda donde estaba y sigue funcionando. Se puede interrumpir y repetir:
+lo ya movido no se vuelve a tocar. Si el NAS no responde, se detiene con un aviso sin mover nada más. No toca archivos
+que no pertenezcan a un adjunto conocido. Opciones: `--contact=<teléfono o id>`, `--only=conversations|team-chat`,
+`--limit=N`. El registro queda en `storage/app/private/reorganizacion-de-archivos/` y permite deshacer:
+`php artisan storage:reorganize-media --undo="<ruta del registro>"`.
+
+Los archivos de un historial importado se guardan primero en `media/history/…` (el contacto aún no existe en ese paso):
+después de importar un historial con archivos, ejecuta el comando para llevarlos a la carpeta de cada contacto.
+
+Requiere la migración `2026_11_12_230000_add_media_folder_to_contacts_and_team_threads` (dos columnas nuevas, sin
+tocar datos). Respaldos: las carpetas de canal (`WhatsApp/`, `Messenger/`, `Instagram/`, `Chat web/`, `Chat interno/`)
+junto con las antiguas `media/` y `team-chat/` mientras existan.
+
 **Comportamiento explícito, sin respaldos silenciosos** (`App\Services\Storage\MediaDisk`):
 
 - Un disco externo incompleto (falta el adaptador, `AWS_BUCKET` o `AWS_DEFAULT_REGION`, o solo una de las dos claves)

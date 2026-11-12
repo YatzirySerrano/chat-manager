@@ -24,7 +24,7 @@ function teamPdfUpload(string $name = 'Reporte de turno.pdf'): UploadedFile
     return UploadedFile::fake()->createWithContent($name, "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n");
 }
 
-test('allowed files are stored privately under a random name and described without exposing the path', function () {
+test('allowed files are stored privately under a readable name and described without exposing the path', function () {
     $response = $this->actingAs($this->ana)
         ->post(route('team-chat.threads.messages.store', $this->thread), [
             'attachments' => [teamPdfUpload('../../Reporte "final".pdf'), UploadedFile::fake()->image('foto.png', 20, 20)],
@@ -40,7 +40,7 @@ test('allowed files are stored privately under a random name and described witho
     $attachments = TeamAttachment::query()->orderBy('id')->get();
 
     expect($attachments)->toHaveCount(2)
-        ->and($attachments[0]->path)->toMatch('#^team-chat/\d{4}/\d{2}/[0-9a-f-]{36}$#')
+        ->and($attachments[0]->path)->toMatch('#^Chat interno/[^/]+ y [^/]+/\d{4}-\d{2} [A-Z][a-z]+/\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2} Documento de [^/]+ - Reporte final\.pdf$#')
         ->and($attachments[0]->disk)->toBe('local')
         ->and($attachments[0]->sha256)->toHaveLength(64);
 
@@ -152,7 +152,7 @@ test('new files are stored on the media disk, which each attachment records', fu
     $attachment = TeamAttachment::query()->sole();
 
     expect($attachment->disk)->toBe('team_media')
-        ->and($attachment->path)->toMatch('#^team-chat/\d{4}/\d{2}/[0-9a-f-]{36}$#')
+        ->and($attachment->path)->toMatch('#^Chat interno/[^/]+/\d{4}-\d{2} [A-Z][a-z]+/\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2} Documento de [^/]+\.pdf$#')
         ->and(Storage::disk('local')->allFiles())->toBe([]);
     Storage::disk('team_media')->assertExists($attachment->path);
 

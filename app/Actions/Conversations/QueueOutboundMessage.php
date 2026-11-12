@@ -22,6 +22,7 @@ use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Conversations\PendingAttention;
 use App\Services\Conversations\ResponseClock;
 use App\Services\Storage\MediaDisk;
+use App\Services\Storage\MediaPaths;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentKind;
 use App\Support\Attachments\ChannelAttachmentPolicy;
@@ -73,6 +74,7 @@ class QueueOutboundMessage
         private ChannelAttachmentPolicy $attachments,
         private MediaDisk $mediaDisk,
         private ServerUploadLimits $serverLimits,
+        private MediaPaths $mediaPaths,
     ) {}
 
     public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null): Message
@@ -105,7 +107,7 @@ class QueueOutboundMessage
         // conversation is locked, so a slow external disk never holds the
         // lock; it is removed again if the message is not recorded.
         if ($inspected !== null && $attachment !== null) {
-            $stored = $this->store($attachment);
+            $stored = $this->store($attachment, $conversation, $inspected);
         }
 
         try {
@@ -401,13 +403,15 @@ class QueueOutboundMessage
     }
 
     /**
-     * The verified persistent copy on the media disk (media/{yyyy}/{mm}/{uuid}).
+     * The verified persistent copy on the media disk, in the readable folder
+     * of the contact (MediaPaths): the same folder its received files use.
      *
+     * @param  array{MessageType, array<string, mixed>}  $inspected
      * @return array{disk: string, path: string}
      *
      * @throws StorageUnavailable
      */
-    private function store(UploadedFile $attachment): array
+    private function store(UploadedFile $attachment, Conversation $conversation, array $inspected): array
     {
         $path = $attachment->getRealPath();
 
@@ -415,7 +419,27 @@ class QueueOutboundMessage
             throw new StorageUnavailable('read_failed', $this->mediaDisk->name(), 'No se pudo leer el archivo adjunto. Adjúntalo de nuevo.');
         }
 
-        return $this->mediaDisk->putFile($path, 'media/'.now()->format('Y/m'));
+        [$type, $details] = $inspected;
+        $contact = $conversation->contact()->first();
+
+        if ($contact === null) {
+            return $this->mediaDisk->putNamedFile($path, 'WhatsApp/Sin contacto/'.$this->mediaPaths->monthFolder(now()), now()->format('Y-m-d H.i.s').' Archivo enviado', $this->mediaPaths->extensionFor((string) $details['mime'], (string) $details['name']));
+        }
+
+        $mime = (string) $details['mime'];
+        $placement = $this->mediaPaths->conversationFile(
+            $contact,
+            $conversation->channelConnection()->first()?->channel,
+            MessageDirection::Outbound,
+            $type->value,
+            $mime,
+            now(),
+            is_string($details['name'] ?? null) ? $details['name'] : null,
+            // An OGG/Opus audio leaves as a voice note, like the one recorded in the composer.
+            $type === MessageType::Audio && str_starts_with($mime, 'audio/ogg'),
+        );
+
+        return $this->mediaDisk->putNamedFile($path, $placement['directory'], $placement['stem'], $placement['extension']);
     }
 
     /**

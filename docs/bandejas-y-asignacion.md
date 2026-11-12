@@ -377,7 +377,7 @@ el motor). El orden es fijo:
 - El audio de WhatsApp no admite texto; el texto de un archivo admite hasta 1024 caracteres.
 - Se guardan en el disco privado `filesystems.media_disk` (`MEDIA_DISK`: `local`, es decir `storage/app/private`, o un
   bucket S3 privado; [infraestructura §Almacenamiento de adjuntos](infraestructura-y-despliegue.md#almacenamiento-de-adjuntos-fase-52))
-  en `media/{aaaa}/{mm}/{uuid}`, sin extensión ni nombre original en la ruta. El nombre visible se limpia de rutas y caracteres reservados. Se guarda el SHA-256. Cada escritura se verifica antes de registrar el archivo.
+  en la carpeta legible del contacto (`WhatsApp/Juan Perez (+52 55 1234 5678)/2026-11 Noviembre/2026-11-12 14.30.15 Foto recibida.jpg`; ver [carpetas y nombres](infraestructura-y-despliegue.md#carpetas-y-nombres-de-los-archivos-appservicesstoragemediapaths)). El nombre visible se limpia de rutas y caracteres reservados. Se guarda el SHA-256. Cada escritura se verifica antes de registrar el archivo.
 - Si el envío se rechaza después de guardar el archivo, el archivo se borra. Un reintento con la misma `client_reference` no guarda otro archivo.
 - Se sirven **siempre a través de la aplicación** (también desde S3: se transmiten por la ruta autorizada, nunca con una URL prefirmada) con `X-Content-Type-Options: nosniff`, `Content-Disposition` (en línea solo para tipos seguros; el resto se descarga como `application/octet-stream`), `Cache-Control: private` y una CSP con `sandbox` (salvo PDF, para que el visor del navegador funcione).
 - Si el archivo falta en disco, la respuesta es 404 y la interfaz muestra «ya no está disponible».

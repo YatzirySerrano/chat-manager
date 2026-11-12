@@ -153,7 +153,7 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 ## Adjuntos
 
 - **Almacenamiento (desde 2026-11-11):** los archivos nuevos se guardan con `MediaDisk`, en el mismo disco privado que
-  los adjuntos de WhatsApp (`MEDIA_DISK`), ruta `team-chat/{aaaa}/{mm}/{uuid}` sin extensión ni nombre original. Cada
+  los adjuntos de WhatsApp (`MEDIA_DISK`), en la carpeta legible del chat (`Chat interno/Ana Lopez y Beto Ruiz/2026-11 Noviembre/2026-11-12 09.05.40 Video de Ana Lopez.mp4`; los anteriores conservan `team-chat/{aaaa}/{mm}/{uuid}` hasta ejecutar `storage:reorganize-media`). Cada
   escritura se verifica (resultado, existencia y tamaño) y el disco queda registrado en `team_attachments.disk`. Si el
   almacenamiento no está listo (disco externo incompleto, `MEDIA_DISK_REQUIRED` con disco local, disco público) o la
   escritura falla, el mensaje **no se guarda** y la respuesta es 503 `{code: "storage_unavailable"}` con «No fue
@@ -194,7 +194,7 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - Si el archivo falta en disco, la descarga responde 404 y se registra una advertencia (sin datos del archivo).
 - Al eliminar el mensaje el archivo se borra del disco que registra el adjunto (después del commit; un fallo del
   almacenamiento se registra y no deshace la eliminación) y el adjunto queda con `purged_at`.
-- Respaldo: incluir `team-chat/` del disco de medios (bucket o `storage/app/private`) y, si hay archivos anteriores,
+- Respaldo: incluir `Chat interno/` (y `team-chat/` mientras existan archivos anteriores) del disco de medios (bucket o `storage/app/private`) y, si hay archivos anteriores,
   el disco `TEAM_CHAT_DISK`, junto con la base de datos.
 
 ## Rutas (todas bajo `auth` + `verified`)

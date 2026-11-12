@@ -79,7 +79,7 @@ test('an image is stored privately and sent as an image message with its caption
 
     $attachment = MessageAttachment::query()->sole();
 
-    expect($attachment->path)->toStartWith('media/'.now()->format('Y/m').'/')
+    expect($attachment->path)->toMatch('#^WhatsApp/[^/]+/\d{4}-\d{2} [A-Z][a-z]+/\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2} [A-Z][^/]* enviad[oa][^/]*$#')
         ->and($attachment->path)->not->toContain('foto')
         ->and($attachment->sha256)->toHaveLength(64)
         ->and($response->json('data.attachments.0.url'))->toBe(route('conversations.messages.attachments.show', [$this->conversation, $attachment->message_id, $attachment]));

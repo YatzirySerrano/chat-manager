@@ -8,11 +8,11 @@ use App\Models\User;
 use App\Models\WebChatWidget;
 use App\Services\AuditLogger;
 use App\Services\Storage\MediaDisk;
+use App\Services\Storage\MediaPaths;
 use BackedEnum;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -48,7 +48,14 @@ class UpdateWidgetSettings
             };
 
             try {
-                $stored = $this->mediaDisk->putFile((string) $data['avatar']->getRealPath(), 'web-chat/avatars', $widget->id.'-'.Str::random(16).'.'.$extension);
+                // Readable name on the media disk: the connection it belongs to and when it was set.
+                $owner = MediaPaths::clean($widget->connection()->first()?->name, 60);
+                $stored = $this->mediaDisk->putNamedFile(
+                    (string) $data['avatar']->getRealPath(),
+                    'Chat web/Imagenes del widget',
+                    ($owner !== '' ? $owner : 'Widget').' '.now()->format('Y-m-d H.i.s'),
+                    $extension,
+                );
                 $storedAvatar = $stored['disk'] === 'local' ? $stored['path'] : $stored['disk'].':'.$stored['path'];
             } catch (StorageUnavailable $exception) {
                 $exception->report();

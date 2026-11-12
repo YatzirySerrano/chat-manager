@@ -86,7 +86,7 @@ test('the file is downloaded from Meta with the token in the header and stored p
         ->size_bytes->toBe(strlen(pngBytes()))
         ->sha256->toBe(hash('sha256', pngBytes()))
         ->disk->toBe('local')
-        ->path->toMatch('#^media/\d{4}/\d{2}/[0-9a-f-]{36}$#')
+        ->path->toMatch('#^WhatsApp/[^/]+/\d{4}-\d{2} [A-Z][a-z]+/\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2} [A-Z][^/]* recibid[oa][^/]*$#')
         ->downloaded_at->not->toBeNull()
         ->and(Storage::disk('local')->get($attachment->path))->toBe(pngBytes())
         ->and(glob(sys_get_temp_dir().'/wa-media-*') ?: [])->toBe($temporaryBefore);

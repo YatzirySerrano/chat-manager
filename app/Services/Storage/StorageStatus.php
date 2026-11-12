@@ -434,7 +434,7 @@ class StorageStatus
             ->limit(self::RECENT_FILES)
             ->toBase()
             ->get([
-                'message_attachments.id', 'message_attachments.mime_type', 'message_attachments.file_name',
+                'message_attachments.id', 'message_attachments.mime_type', 'message_attachments.file_name', 'message_attachments.path',
                 'message_attachments.size_bytes', 'message_attachments.created_at', 'messages.direction',
             ]);
 
@@ -442,7 +442,7 @@ class StorageStatus
             $files[] = [
                 'key' => 'm-'.$row->id,
                 'kind' => $this->fileKind((string) $row->mime_type),
-                'name' => $this->maskedName($row->file_name, (string) $row->mime_type),
+                'name' => $this->storedName($row->path) ?? $this->maskedName($row->file_name, (string) $row->mime_type),
                 'size_bytes' => $row->size_bytes !== null ? (int) $row->size_bytes : null,
                 'saved_at' => $this->iso($row->created_at),
                 'source' => match ((string) $row->direction) {
@@ -460,13 +460,13 @@ class StorageStatus
             ->orderByDesc('id')
             ->limit(self::RECENT_FILES)
             ->toBase()
-            ->get(['id', 'mime_type', 'original_name', 'size_bytes', 'created_at']);
+            ->get(['id', 'mime_type', 'original_name', 'path', 'size_bytes', 'created_at']);
 
         foreach ($team as $row) {
             $files[] = [
                 'key' => 't-'.$row->id,
                 'kind' => $this->fileKind((string) $row->mime_type),
-                'name' => $this->maskedName($row->original_name, (string) $row->mime_type),
+                'name' => $this->storedName($row->path) ?? $this->maskedName($row->original_name, (string) $row->mime_type),
                 'size_bytes' => (int) $row->size_bytes,
                 'saved_at' => $this->iso($row->created_at),
                 'source' => 'Chat interno',
@@ -526,6 +526,23 @@ class StorageStatus
             str_starts_with($mime, 'audio/') => 'audio',
             default => 'document',
         };
+    }
+
+    /**
+     * The readable name the file has on the disk ("2026-11-12 14.30.15 Foto
+     * recibida.jpg"), without the folder of the contact and without the
+     * original name a document carries after " - " (it may hold a customer's
+     * name or a folio). Null for files stored before the readable layout.
+     */
+    private function storedName(mixed $path): ?string
+    {
+        if (! is_string($path) || $path === '' || MediaPaths::isLegacy($path)) {
+            return null;
+        }
+
+        $name = basename($path);
+
+        return (string) preg_replace('/ - .*?(\.[A-Za-z0-9]{1,5})?$/', '$1', $name);
     }
 
     /**

@@ -4,11 +4,14 @@ namespace App\Services\Meta;
 
 use App\Enums\ConnectionChannel;
 use App\Exceptions\StorageUnavailable;
+use App\Models\MessageAttachment;
 use App\Services\Storage\MediaDisk;
+use App\Services\Storage\MediaPaths;
 
 /**
  * Validates a customer media file and stores it on the private media disk
- * (config filesystems.media_disk) under media/{yyyy}/{mm}/{uuid}. The type
+ * (config filesystems.media_disk), in the readable folder of its contact
+ * (MediaPaths: channel / contact / month / dated name). The type
  * is detected from the content (finfo), never trusted from Meta or the
  * file name. Sizes and types follow config/whatsapp.php for WhatsApp and
  * the channel's own limits for Messenger and Instagram (self::META_INBOUND):
@@ -21,7 +24,7 @@ use App\Services\Storage\MediaDisk;
  */
 class MediaStorage
 {
-    public function __construct(private MediaDisk $disk) {}
+    public function __construct(private MediaDisk $disk, private MediaPaths $paths) {}
 
     /**
      * Detected types that are aliases of an accepted one.
@@ -88,7 +91,7 @@ class MediaStorage
      * @throws MediaRejected
      * @throws StorageUnavailable The media disk is not ready or the write could not be verified; nothing was kept.
      */
-    public function store(string $localPath, string $kind, ?ConnectionChannel $channel = null): array
+    public function store(string $localPath, string $kind, ?ConnectionChannel $channel = null, ?MessageAttachment $for = null): array
     {
         $size = is_file($localPath) ? (int) filesize($localPath) : 0;
 
@@ -100,7 +103,17 @@ class MediaStorage
         $mime = $this->detect($localPath);
         $this->assertType($kind, $mime, $channel);
 
-        $stored = $this->disk->putFile($localPath, 'media/'.now()->format('Y').'/'.now()->format('m'));
+        // Filed under the contact with a readable name (MediaPaths). Without
+        // a message to file it under, it goes to a dated folder of its own.
+        $message = $for?->message()->first();
+        $placement = $for !== null && $message !== null ? $this->paths->forMessage($message, $mime, $for->file_name, $kind) : null;
+        $placement ??= [
+            'directory' => $this->paths->channelFolder($channel).'/Sin contacto/'.$this->paths->monthFolder(now()),
+            'stem' => now()->format('Y-m-d H.i.s').' Archivo recibido',
+            'extension' => $this->paths->extensionFor($mime, $for?->file_name),
+        ];
+
+        $stored = $this->disk->putNamedFile($localPath, $placement['directory'], $placement['stem'], $placement['extension']);
 
         return [
             'disk' => $stored['disk'],

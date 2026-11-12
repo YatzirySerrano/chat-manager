@@ -96,7 +96,7 @@ class DownloadWhatsAppWebMedia implements ShouldQueue
         try {
             // The limit is enforced while streaming, whatever size was announced.
             $client->downloadMedia($connection->id, $descriptor, $temporary, $storage->rules($kind, ConnectionChannel::Whatsapp)['max_bytes']);
-            $stored = $storage->store($temporary, $kind, ConnectionChannel::Whatsapp);
+            $stored = $storage->store($temporary, $kind, ConnectionChannel::Whatsapp, $attachment);
         } catch (MediaRejected $exception) {
             $this->markUnavailable($attachment, $exception->reason);
 

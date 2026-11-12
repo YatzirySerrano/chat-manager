@@ -287,7 +287,7 @@ test('an inbound file is downloaded from the service, validated and stored on th
     expect($attachment->status)->toBe(AttachmentStatus::Available)
         // The real type wins over the declared one.
         ->and($attachment->mime_type)->toBe('image/png')
-        ->and($attachment->path)->toStartWith('media/')
+        ->and($attachment->path)->toStartWith('WhatsApp/')->toEndWith(' Foto recibida.png')
         ->and($attachment->provider_reference)->toBeNull();
 
     Storage::disk('local')->assertExists($attachment->path);

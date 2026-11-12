@@ -9,6 +9,7 @@ use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\Storage\MediaDisk;
+use App\Services\Storage\MediaPaths;
 use App\Services\TeamChat\TeamAttachmentInspector;
 use App\Services\TeamChat\TeamThreadActivity;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -48,6 +49,7 @@ class PostTeamMessage
         private TeamThreadActivity $activity,
         private TeamAttachmentInspector $inspector,
         private MediaDisk $mediaDisk,
+        private MediaPaths $mediaPaths,
     ) {}
 
     /**
@@ -80,14 +82,18 @@ class PostTeamMessage
                     throw new RuntimeException('An attachment that was not validated reached PostTeamMessage.');
                 }
 
-                $location = $this->mediaDisk->putFile($localPath, 'team-chat/'.now()->format('Y/m'));
+                $originalName = $this->inspector->safeName($file);
+                $kind = $this->inspector->kindOf($mime);
+                // Readable folder of the chat and dated name (MediaPaths).
+                $placement = $this->mediaPaths->teamFile($thread, $author, $kind->value, $mime, now(), $originalName);
+                $location = $this->mediaDisk->putNamedFile($localPath, $placement['directory'], $placement['stem'], $placement['extension']);
 
                 $stored[] = [
                     'disk' => $location['disk'],
                     'path' => $location['path'],
-                    'original_name' => $this->inspector->safeName($file),
+                    'original_name' => $originalName,
                     'mime_type' => $mime,
-                    'kind' => $this->inspector->kindOf($mime),
+                    'kind' => $kind,
                     'size_bytes' => (int) $file->getSize(),
                     'sha256' => (string) hash_file('sha256', $localPath),
                 ];

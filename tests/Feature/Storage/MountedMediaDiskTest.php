@@ -391,7 +391,7 @@ test('the widget avatar records its disk and keeps resolving from it after MEDIA
     $first = (string) $widget->refresh()->avatar_path;
     [$disk, $path] = UpdateWidgetSettings::avatarLocation($first);
 
-    expect($first)->toStartWith('nas:web-chat/avatars/')
+    expect($first)->toStartWith('nas:Chat web/Imagenes del widget/')
         ->and($disk)->toBe('nas')
         ->and(is_file($this->root.'/'.$path))->toBeTrue();
 

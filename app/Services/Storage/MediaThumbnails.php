@@ -12,8 +12,11 @@ use Throwable;
  * download every original (several megabytes for a camera photo) just to
  * paint a bubble. The original is only fetched when it is opened.
  *
- * A preview is made the first time it is asked for and kept next to the
- * original on the same private disk ("{path}.thumb.webp"), so it is served and
+ * A preview is made the first time it is asked for and kept on the same
+ * private disk, in the system folder that mirrors the path of the original
+ * (MediaPaths::thumbnailFor: "Miniaturas del sistema/{path}.jpg"), never
+ * next to it: the folders of the contacts only hold what people sent, in
+ * the format they sent it. Previews are always JPEG. They are served and
  * authorized exactly like the original and MediaDisk::discard() removes
  * both. Nothing here is required: without GD, with an unusual image or with
  * a disk that does not answer, the caller falls back to the original.
@@ -24,12 +27,13 @@ class MediaThumbnails
     public const EDGE = 640;
 
     /**
-     * Suffix of the preview next to its original, by the type it was written
-     * in (WebP where GD has it, JPEG otherwise).
+     * Previews written next to the original by an earlier version (WebP
+     * where GD had it). They are no longer made or served; they are only
+     * listed so they are removed together with their original.
      *
-     * @var array<string, string>
+     * @var list<string>
      */
-    private const SUFFIXES = ['image/webp' => '.thumb.webp', 'image/jpeg' => '.thumb.jpg'];
+    private const LEGACY_SUFFIXES = ['.thumb.webp', '.thumb.jpg'];
 
     /** Originals above this size are not decoded. */
     private const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
@@ -41,12 +45,13 @@ class MediaThumbnails
     private const SMALL_ENOUGH_BYTES = 60 * 1024;
 
     /**
-     * Animated formats (GIF, stickers) are never reduced: a still frame
-     * would change what the message shows.
+     * Animated formats (GIF) and WebP (stickers, usually transparent) are
+     * never reduced: a still frame or a white background would change what
+     * the message shows. A PNG with transparency keeps its original too.
      *
      * @var list<string>
      */
-    private const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const TYPES = ['image/jpeg', 'image/png'];
 
     /**
      * Every place a preview of the file may be (to remove them with it).
@@ -55,7 +60,17 @@ class MediaThumbnails
      */
     public static function pathsFor(string $path): array
     {
-        return array_map(fn (string $suffix): string => $path.$suffix, array_values(self::SUFFIXES));
+        return [MediaPaths::thumbnailFor($path), ...self::legacyPathsFor($path)];
+    }
+
+    /**
+     * Previews an earlier version left next to the original.
+     *
+     * @return list<string>
+     */
+    public static function legacyPathsFor(string $path): array
+    {
+        return array_map(fn (string $suffix): string => $path.$suffix, self::LEGACY_SUFFIXES);
     }
 
     public function supports(string $mime, ?int $sizeBytes): bool
@@ -77,8 +92,8 @@ class MediaThumbnails
             return null;
         }
 
-        $type = function_exists('imagewebp') ? 'image/webp' : 'image/jpeg';
-        $target = $path.self::SUFFIXES[$type];
+        $type = 'image/jpeg';
+        $target = MediaPaths::thumbnailFor($path);
         $temporary = null;
 
         try {
@@ -95,7 +110,7 @@ class MediaThumbnails
                 return null;
             }
 
-            $made = $this->make($source, strtolower($mime), $type === 'image/webp');
+            $made = $this->make($source, strtolower($mime));
 
             if ($made === null) {
                 return null;
@@ -122,7 +137,7 @@ class MediaThumbnails
     /**
      * @return array{string, int, int}|null Preview bytes and the size of the ORIGINAL in pixels (upright).
      */
-    private function make(string $source, string $mime, bool $webp): ?array
+    private function make(string $source, string $mime): ?array
     {
         $info = @getimagesize($source);
 
@@ -141,11 +156,14 @@ class MediaThumbnails
             return null;
         }
 
+        // Colour type of the PNG header: 4 and 6 carry an alpha channel.
+        if ($mime === 'image/png' && in_array(ord((string) @file_get_contents($source, false, null, 25, 1)), [4, 6], true)) {
+            return null;
+        }
+
         $image = match ($mime) {
             'image/jpeg' => @imagecreatefromjpeg($source),
             'image/png' => @imagecreatefrompng($source),
-            // False for an animated WebP: it keeps its original.
-            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($source) : false,
             default => false,
         };
 
@@ -162,25 +180,15 @@ class MediaThumbnails
             return null;
         }
 
-        if ($webp) {
-            imagealphablending($canvas, false);
-            imagesavealpha($canvas, true);
-            imagefill($canvas, 0, 0, (int) imagecolorallocatealpha($canvas, 0, 0, 0, 127));
-        } else {
-            // JPEG has no transparency: flatten on white.
-            imagefill($canvas, 0, 0, (int) imagecolorallocate($canvas, 255, 255, 255));
-        }
+        // JPEG has no transparency: flatten on white.
+        imagefill($canvas, 0, 0, (int) imagecolorallocate($canvas, 255, 255, 255));
 
         imagecopyresampled($canvas, $image, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
 
         $canvas = $this->upright($canvas, $orientation);
 
-        if ($webp) {
-            imagesavealpha($canvas, true);
-        }
-
         ob_start();
-        $written = $webp ? imagewebp($canvas, null, 78) : imagejpeg($canvas, null, 80);
+        $written = imagejpeg($canvas, null, 80);
         $bytes = (string) ob_get_clean();
 
         if (! $written || $bytes === '') {

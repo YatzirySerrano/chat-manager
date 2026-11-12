@@ -16,7 +16,7 @@ import {
     Timer,
     UserRoundCheck,
 } from '@lucide/vue';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import BacklogChart from '@/components/charts/BacklogChart.vue';
 import BarChart from '@/components/charts/BarChart.vue';
 import ChannelChart from '@/components/charts/ChannelChart.vue';
@@ -54,6 +54,7 @@ import {
     granularityNoun,
 } from '@/composables/useChartTheme';
 import { useFeatures } from '@/composables/useFeatures';
+import { useSlidingIndicator } from '@/composables/useSlidingIndicator';
 import { usePermissions } from '@/composables/usePermissions';
 import { inboxLink } from '@/lib/analyticsLinks';
 import { formatDuration } from '@/lib/format';
@@ -146,6 +147,16 @@ const views = computed(() =>
 );
 
 const view = ref<ViewKey>('resumen');
+
+/** The underline slides to the open view. */
+const tabList = ref<HTMLElement | null>(null);
+const {
+    style: tabIndicator,
+    animated: tabAnimated,
+    update: updateTabIndicator,
+} = useSlidingIndicator(tabList, '[aria-selected=true]');
+
+watch([view, views], updateTabIndicator, { flush: 'post' });
 
 function selectView(key: ViewKey): void {
     view.value = key;
@@ -681,7 +692,8 @@ const loadingCards = [
         </StatusNote>
 
         <div
-            class="flex flex-wrap gap-1 rounded-lg border bg-card p-1"
+            ref="tabList"
+            class="relative flex max-w-full gap-1 overflow-x-auto border-b"
             role="tablist"
             aria-label="Vistas del reporte"
             data-reports-tabs
@@ -692,10 +704,10 @@ const loadingCards = [
                 :key="item.key"
                 type="button"
                 role="tab"
-                class="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                class="inline-flex h-11 shrink-0 items-center rounded-t-md px-3 text-sm font-medium whitespace-nowrap outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 :class="
                     view === item.key
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                 "
                 :aria-selected="view === item.key"
@@ -707,13 +719,22 @@ const loadingCards = [
             >
                 {{ item.label }}
             </button>
+            <span
+                aria-hidden="true"
+                class="pointer-events-none absolute top-0 left-0 border-b-2 border-primary"
+                :class="
+                    tabAnimated &&
+                    'transition-[transform,width,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'
+                "
+                :style="tabIndicator"
+            />
         </div>
 
         <Deferred data="analytics">
             <template #fallback>
                 <div class="flex flex-col gap-(--section-gap)" aria-busy="true">
                     <div
-                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 min-[112rem]:grid-cols-6"
                         aria-label="Cargando reportes"
                     >
                         <StatCard
@@ -757,7 +778,7 @@ const loadingCards = [
                             :description="`Solicitudes recibidas ${period.label}; cada una cuenta una sola vez, sin importar reasignaciones ni mensajes. Comparado con ${comparisonText}.`"
                         />
                         <div
-                            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                            class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 min-[112rem]:grid-cols-6"
                             data-tour="reports.kpis"
                         >
                             <KpiCard
@@ -920,9 +941,7 @@ const loadingCards = [
                             <h3 class="text-sm font-semibold">
                                 Tiempo real (todas las horas)
                             </h3>
-                            <div
-                                class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                            >
+                            <div class="auto-grid [--col-min:17rem]">
                                 <KpiCard
                                     v-for="card in calendarTimes"
                                     :key="card.key"
@@ -977,9 +996,7 @@ const loadingCards = [
                                     y coincide con el tiempo real.
                                 </p>
                             </div>
-                            <div
-                                class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                            >
+                            <div class="auto-grid [--col-min:17rem]">
                                 <KpiCard
                                     v-for="card in businessTimes"
                                     :key="card.key"
@@ -1007,9 +1024,7 @@ const loadingCards = [
                             id="quality-heading"
                             title="Seguimiento y calidad"
                         />
-                        <div
-                            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                        >
+                        <div class="auto-grid [--col-min:15rem]">
                             <KpiCard
                                 label="Reabiertas"
                                 :icon="RotateCcw"
@@ -1230,7 +1245,7 @@ const loadingCards = [
                         "
                         title="Referencia con el objetivo general de hoy"
                         description="Cálculo anterior a los ciclos de respuesta, útil para periodos sin registro por ciclo. No es el cumplimiento oficial."
-                        body-class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5"
+                        body-class="auto-grid p-4 [--col-min:17rem] sm:p-5"
                         data-sla-reference
                     >
                         <KpiCard

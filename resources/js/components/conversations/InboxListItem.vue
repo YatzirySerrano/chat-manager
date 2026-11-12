@@ -46,7 +46,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Spinner } from '@/components/ui/spinner';
 import { useInitials } from '@/composables/useInitials';
 import { useLongPress } from '@/composables/useLongPress';
 import { formatDateTime } from '@/lib/format';
@@ -280,15 +279,15 @@ const label = computed(() => {
         <div class="relative">
             <button
                 type="button"
-                class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:transition-colors"
+                class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left transition-[background-color,border-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 :class="[
                     selected
                         ? 'border-l-primary bg-primary-soft'
                         : pending
                           ? 'border-l-warning hover:bg-accent/60'
                           : unread > 0
-                            ? 'border-l-primary/40 hover:bg-accent/60'
-                            : 'border-l-transparent hover:bg-accent/60',
+                            ? 'border-l-primary/50 hover:border-l-primary hover:bg-accent/60'
+                            : 'border-l-transparent hover:border-l-primary/50 hover:bg-accent/60',
                 ]"
                 :aria-current="selected ? 'true' : undefined"
                 :aria-label="label"
@@ -297,8 +296,9 @@ const label = computed(() => {
                 @click="open"
             >
                 <span
-                    class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+                    class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:scale-105"
                     :class="[
+                        selected && 'ring-2 ring-primary/40',
                         pending
                             ? 'bg-warning/15 text-foreground'
                             : 'bg-primary-soft text-primary-soft-foreground',
@@ -317,7 +317,7 @@ const label = computed(() => {
                     <span class="flex items-baseline justify-between gap-2">
                         <span class="flex min-w-0 items-center gap-1.5">
                             <span
-                                class="truncate text-sm font-semibold"
+                                class="truncate font-display text-[0.975rem] font-semibold"
                                 :class="
                                     unread > 0
                                         ? 'text-foreground'
@@ -625,9 +625,9 @@ const label = computed(() => {
                     "
                     data-inbox-accept
                     @click="emit('accept', conversation.id)"
+                    :loading="accepting"
                 >
-                    <Spinner v-if="accepting" />
-                    <Hand v-else aria-hidden="true" />
+                    <Hand aria-hidden="true" />
                     Aceptar
                 </Button>
             </span>

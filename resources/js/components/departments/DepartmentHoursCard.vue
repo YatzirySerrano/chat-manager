@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
+import { CalendarClock, Globe } from '@lucide/vue';
 import { computed, watch } from 'vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import InputError from '@/components/InputError.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { RadioCards } from '@/components/ui/radio-cards';
+import { TimePicker } from '@/components/ui/time-picker';
 import { Switch } from '@/components/ui/switch';
 import { update } from '@/routes/departments/hours';
 import type {
@@ -90,6 +91,21 @@ const helpContent = {
         'Volver al horario de la plataforma no borra el horario propio guardado; solo deja de aplicarse.',
 };
 
+const hoursModes = [
+    {
+        value: false,
+        label: 'Horario de la plataforma',
+        description: 'Sigue el horario general de la configuración.',
+        icon: Globe,
+    },
+    {
+        value: true,
+        label: 'Horario propio',
+        description: 'Apertura y cierre definidos por día.',
+        icon: CalendarClock,
+    },
+];
+
 function submit(): void {
     form.submit(update(props.department.id), {
         preserveScroll: true,
@@ -102,62 +118,28 @@ function submit(): void {
 </script>
 
 <template>
-    <SurfaceCard body-class="divide-y">
-        <div class="flex items-center gap-1.5 px-5 py-4">
-            <h2 class="text-sm font-semibold">Horario de operación</h2>
+    <SurfaceCard title="Horario de operación" body-class="divide-y">
+        <template #actions>
             <FieldHelp title="Horario de operación" :help="helpContent" />
-        </div>
+        </template>
 
         <form v-if="canUpdate" class="flex flex-col" @submit.prevent="submit">
-            <fieldset class="grid gap-2 p-5 sm:grid-cols-2">
-                <legend class="sr-only">Tipo de horario</legend>
-                <label
-                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary-soft/40"
-                >
-                    <input
-                        v-model="form.uses_custom_hours"
-                        type="radio"
-                        name="hours-mode"
-                        :value="false"
-                        class="mt-0.5 accent-primary"
-                    />
-                    <span>
-                        <span class="block font-medium"
-                            >Horario de la plataforma</span
-                        >
-                        <span class="block text-muted-foreground"
-                            >Sigue el horario general de la configuración.</span
-                        >
-                    </span>
-                </label>
-                <label
-                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary-soft/40"
-                >
-                    <input
-                        v-model="form.uses_custom_hours"
-                        type="radio"
-                        name="hours-mode"
-                        :value="true"
-                        class="mt-0.5 accent-primary"
-                    />
-                    <span>
-                        <span class="block font-medium">Horario propio</span>
-                        <span class="block text-muted-foreground"
-                            >Apertura y cierre definidos por día.</span
-                        >
-                    </span>
-                </label>
-                <InputError
-                    class="sm:col-span-2"
-                    :message="errors.uses_custom_hours"
+            <div class="grid gap-2 p-5">
+                <RadioCards
+                    v-model="form.uses_custom_hours"
+                    :options="hoursModes"
+                    name="hours-mode"
+                    aria-label="Tipo de horario"
+                    :invalid="!!errors.uses_custom_hours"
                 />
-            </fieldset>
+                <InputError :message="errors.uses_custom_hours" />
+            </div>
 
             <ul v-if="form.uses_custom_hours" class="divide-y border-t">
                 <li
                     v-for="day in weekdays"
                     :key="day"
-                    class="grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 sm:grid-cols-[8rem_auto_1fr]"
+                    class="row-accent grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 sm:grid-cols-[8rem_auto_1fr]"
                 >
                     <span class="text-sm font-medium">{{
                         weekdayLabels[day]
@@ -170,17 +152,19 @@ function submit(): void {
                         class="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end"
                     >
                         <template v-if="form.business_hours.days[day].open">
-                            <Input
+                            <TimePicker
                                 v-model="form.business_hours.days[day].start"
-                                type="time"
-                                class="w-36"
+                                required
+                                :minute-step="5"
+                                class="w-32"
                                 :aria-label="`Apertura ${weekdayLabels[day]}`"
                             />
                             <span class="text-sm text-muted-foreground">a</span>
-                            <Input
+                            <TimePicker
                                 v-model="form.business_hours.days[day].end"
-                                type="time"
-                                class="w-36"
+                                required
+                                :minute-step="5"
+                                class="w-32"
                                 :aria-label="`Cierre ${weekdayLabels[day]}`"
                             />
                         </template>
@@ -230,9 +214,9 @@ function submit(): void {
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!form.isDirty"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar horario
                 </Button>
             </div>

@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Conversations;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Storage\MediaThumbnails;
+use App\Support\Attachments\RangedStream;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -40,7 +43,7 @@ class MessageAttachmentController extends ConversationOperationController
         'video/mp4', 'video/3gpp',
     ];
 
-    public function show(Request $request, Conversation $conversation, Message $message, MessageAttachment $attachment): Response
+    public function show(Request $request, Conversation $conversation, Message $message, MessageAttachment $attachment, MediaThumbnails $thumbnails): Response
     {
         $this->ensureVisible($conversation);
 
@@ -50,10 +53,29 @@ class MessageAttachmentController extends ConversationOperationController
         // Each file is read from the disk it was saved on (a row on "local"
         // keeps working after MEDIA_DISK changes).
         $disk = Storage::disk($attachment->disk);
+        $path = $attachment->path;
+        $mime = strtolower($attachment->mime_type);
+        $variant = 'original';
+
+        // `?thumb=1`: the small preview the chat bubble shows (MediaThumbnails).
+        // Same authorization, headers and revalidation as the original, and
+        // the original itself whenever no preview can be made.
+        if ($request->boolean('thumb') && ! $request->boolean('download')) {
+            $thumbnail = $thumbnails->ensure($attachment->disk, $path, $mime, $attachment->size_bytes);
+
+            if ($thumbnail !== null) {
+                $path = $thumbnail['path'];
+                $mime = $thumbnail['mime'];
+                $variant = 'thumb';
+                $this->rememberDimensions($attachment, $thumbnail['width'], $thumbnail['height']);
+            }
+        }
 
         try {
-            $exists = $disk->exists($attachment->path);
-            $modifiedAt = $exists ? $disk->lastModified($attachment->path) : 0;
+            $exists = $disk->exists($path);
+            $modifiedAt = $exists ? $disk->lastModified($path) : 0;
+            $local = config("filesystems.disks.{$attachment->disk}.driver") === 'local';
+            $size = $exists && ! $local ? (int) $disk->size($path) : 0;
         } catch (Throwable $exception) {
             Log::warning('Media storage unavailable while serving an attachment.', ['attachment_id' => $attachment->getKey(), 'disk' => $attachment->disk, 'exception' => $exception::class]);
 
@@ -62,12 +84,11 @@ class MessageAttachmentController extends ConversationOperationController
 
         abort_unless($exists, 404, 'El archivo ya no está disponible.');
 
-        $mime = strtolower($attachment->mime_type);
         $inline = in_array($mime, self::INLINE, true) && ! $request->boolean('download');
         $name = $attachment->file_name ?? 'archivo';
 
         $lastModified = Date::createFromTimestamp($modifiedAt);
-        $etag = sha1(implode('|', [$attachment->getKey(), $attachment->path, $lastModified->getTimestamp(), $mime, $inline ? 'inline' : 'attachment']));
+        $etag = sha1(implode('|', [$attachment->getKey(), $path, $lastModified->getTimestamp(), $mime, $inline ? 'inline' : 'attachment', $variant]));
 
         $headers = [
             'Content-Type' => $inline ? $mime : 'application/octet-stream',
@@ -90,11 +111,32 @@ class MessageAttachmentController extends ConversationOperationController
             return $notModified;
         }
 
-        $response = config("filesystems.disks.{$attachment->disk}.driver") === 'local'
-            ? response()->file($disk->path($attachment->path), $headers)
-            : $disk->response($attachment->path, $name, $headers, $inline ? 'inline' : 'attachment');
+        // A local file answers byte ranges by itself; a remote one is streamed
+        // through RangedStream, so a video can be sought (and plays in Safari,
+        // which only accepts ranged answers) without holding it in memory.
+        $response = $local
+            ? response()->file($disk->path($path), $headers)
+            : RangedStream::response($request, fn () => $disk->readStream($path), $size, $headers);
 
         return $this->revalidated($response, $etag, $lastModified);
+    }
+
+    /**
+     * Keeps the size of an image the first time it is measured, so the chat
+     * reserves its box before the file loads.
+     */
+    private function rememberDimensions(MessageAttachment $attachment, ?int $width, ?int $height): void
+    {
+        if ($width === null || $height === null || $attachment->getAttribute('width') !== null) {
+            return;
+        }
+
+        try {
+            // Not an edit of the attachment: its timestamps stay as they are.
+            DB::table('message_attachments')->where('id', $attachment->getKey())->whereNull('width')->update(['width' => $width, 'height' => $height]);
+        } catch (Throwable) {
+            // Only a layout hint: never a reason to fail the file.
+        }
     }
 
     /**

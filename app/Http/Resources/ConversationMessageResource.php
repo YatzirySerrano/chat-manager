@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Policies\HistoryImportPolicy;
+use App\Services\Storage\MediaThumbnails;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -197,6 +198,11 @@ class ConversationMessageResource extends JsonResource
             'error_code' => $attachment->getAttribute('error_code'),
             'url' => $url,
             'download_url' => $url.'?download=1',
+            // Small preview for the bubble (the original only loads when opened); null when the file is its own preview.
+            'thumb_url' => app(MediaThumbnails::class)->supports($attachment->mime_type, $attachment->size_bytes) ? $url.'?thumb=1' : null,
+            // Pixels of an image once measured, so its box is reserved before it loads.
+            'width' => $attachment->getAttribute('width'),
+            'height' => $attachment->getAttribute('height'),
             // "link": the customer received a secure download link that works until link_expires_at.
             'delivery_method' => $delivery->value,
             'link_expires_at' => $delivery === AttachmentDeliveryMethod::Link ? AttachmentDownloadLink::expiresAt($this->resource)?->toIso8601String() : null,

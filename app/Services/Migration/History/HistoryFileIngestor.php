@@ -38,7 +38,10 @@ use Throwable;
  *   report says (contact, agent, department, connection, tags, dates);
  * - messages CSV: streamed into history_import_messages in batches, grouped
  *   by conversation id (or by contact number and connection when the file
- *   has no conversation id);
+ *   has no conversation id). The authentic Whaticket export has no message
+ *   id: every row then gets a stable fingerprint ("fp:…", see
+ *   messageFingerprint()) so the same message of two overlapping exports
+ *   is kept once, in this batch and in later ones;
  * - media ZIP: entries checked (SafeZip) and indexed by name; a Chat.txt
  *   inside (or uploaded alone as .txt) becomes its own conversation;
  * - contacts CSV (WhaticketContactsAdapter mapping): names for the numbers
@@ -50,6 +53,9 @@ use Throwable;
  */
 class HistoryFileIngestor
 {
+    /** Format label of a messages CSV with the header of the authentic Whaticket export. */
+    public const FORMAT_MESSAGES_VERIFIED = 'whaticket-messages-csv:verificado';
+
     /**
      * MIME types finfo may report for each accepted extension.
      *
@@ -142,7 +148,7 @@ class HistoryFileIngestor
                     'path' => $stored,
                     'size_bytes' => (int) $upload->getSize(),
                     'sha256' => $hash,
-                    'format_version' => $this->formatVersion($kind, $extension),
+                    'format_version' => $this->formatVersion($kind, $extension, $headers),
                     'headers' => $headers,
                     'column_mapping' => $mapping,
                     'unknown_headers' => $headers === null ? null : $this->columns->unknownHeaders($mapping, $headers),
@@ -334,6 +340,9 @@ class HistoryFileIngestor
         $inserted = 0;
         $now = now();
         $size = max(100, (int) config('history-import.parse_batch_size', 1000));
+        $hasMessageId = isset($mapping['message_id']);
+        /** @var array<int, int> $repetitions Times each identical message was seen (see messageFingerprint()). */
+        $repetitions = [];
 
         foreach ($this->reader->rows($path, $file->extension) as $line => $cells) {
             $total++;
@@ -352,9 +361,31 @@ class HistoryFileIngestor
                 continue;
             }
 
-            $body = $this->values->body($cell($cells, 'body'));
+            $rawBody = $cell($cells, 'body');
+            $rawType = $cell($cells, 'media_type');
             $mediaName = $this->values->mediaName($cell($cells, 'media_name'));
-            $type = $this->values->type($cell($cells, 'media_type'), $mediaName);
+            $type = $this->values->type($rawType, $mediaName);
+            $details = [];
+
+            // A place or shared people written as JSON in the text: kept as
+            // structured content (shown like a live message) plus a readable text.
+            $structured = match ($type) {
+                MessageType::Location => $this->values->location($rawBody),
+                MessageType::Contacts => $this->values->sharedContacts($rawBody),
+                default => null,
+            };
+
+            if ($structured !== null) {
+                $details['content'] = $structured['content'];
+                $rawBody = $structured['text'];
+            }
+
+            $body = $this->values->body($rawBody);
+
+            if ($this->values->isMissedCall($rawType) && $mediaName === null) {
+                $details['event'] = 'missed_call';
+                $body = $body['text'] === null ? ['text' => 'Llamada perdida', 'truncated' => false] : $body;
+            }
 
             if ($body['text'] === null && $mediaName === null && $type === MessageType::Text) {
                 $issues->add('empty_message', $line);
@@ -378,12 +409,32 @@ class HistoryFileIngestor
             }
 
             $fromMe = $this->values->flag($cell($cells, 'from_me'));
+            $campaign = $this->values->identifier($cell($cells, 'campaign_id'));
+
+            if ($campaign !== null) {
+                $details['campaign_id'] = Str::limit($campaign, 64, '');
+            }
+
+            $sourceId = $hasMessageId ? $this->values->identifier($cell($cells, 'message_id')) : null;
+
+            if ($sourceId === null) {
+                $identity = hash('sha256', implode('|', [
+                    $key,
+                    // Wall time as written in the file: the same whatever the time zone of the batch.
+                    $occurredAt->setTimezone($timezone)->format('Y-m-d H:i:s'),
+                    $fromMe === null ? 'n' : (int) $fromMe,
+                    $type->value,
+                    hash('sha256', (string) $body['text']),
+                    (string) $mediaName,
+                ]), true);
+                $sourceId = self::messageFingerprint($identity, $repetitions);
+            }
 
             $buffer[] = [
                 'data_transfer_id' => $batch->id,
                 'history_import_file_id' => $file->id,
                 'conversation_key' => $key,
-                'source_message_id' => $this->values->identifier($cell($cells, 'message_id')),
+                'source_message_id' => $sourceId,
                 'line' => $line,
                 'occurred_at' => $occurredAt,
                 'from_me' => $fromMe,
@@ -401,6 +452,7 @@ class HistoryFileIngestor
                 'source_agent' => $this->values->label($cell($cells, 'user')),
                 'source_department' => $this->values->label($cell($cells, 'department')),
                 'source_connection' => $connection,
+                'details' => $details === [] ? null : json_encode($details, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION),
                 'created_at' => $now,
             ];
             $accepted++;
@@ -412,7 +464,34 @@ class HistoryFileIngestor
 
         $inserted += $this->flush($buffer, $issues);
 
-        return ['total' => $total, 'accepted' => $inserted, 'rejected' => $total - $inserted, 'issues' => $issues->toArray(), 'format' => 'whaticket-messages-csv:no-verificado'];
+        return ['total' => $total, 'accepted' => $inserted, 'rejected' => $total - $inserted, 'issues' => $issues->toArray(), 'format' => $this->formatVersion(HistoryImportFileKind::Messages, $file->extension, array_map('strval', $file->headers ?? []))];
+    }
+
+    /**
+     * Stable identifier of a message whose export has no message id (the
+     * authentic Whaticket messages CSV): a fingerprint of the conversation,
+     * the time as written, the direction, the type and the content, plus how
+     * many times that exact message was already seen in the file. Two
+     * identical messages in the same minute (a bot greeting sent twice, two
+     * photos without caption) are therefore two messages, while the same
+     * row of an overlapping export (in this batch or a later one) is the
+     * same message. It never depends on the line number, and it is not
+     * reversible to the content.
+     *
+     * $repetitions is keyed by 8 bytes of the identity as an integer: about
+     * 20 MB for the 460,000 rows a file may have, instead of one string key
+     * per row.
+     *
+     * @param  string  $identity  Raw SHA-256 of what identifies the message.
+     * @param  array<int, int>  $repetitions
+     */
+    public static function messageFingerprint(string $identity, array &$repetitions): string
+    {
+        /** @var array{1: int} $slot */
+        $slot = unpack('J', $identity);
+        $ordinal = $repetitions[$slot[1]] = ($repetitions[$slot[1]] ?? 0) + 1;
+
+        return 'fp:'.substr(hash('sha256', $identity.'#'.$ordinal), 0, 40);
     }
 
     /**
@@ -766,11 +845,17 @@ class HistoryFileIngestor
         return $this->columns->missingFields($kind, $mapping);
     }
 
-    private function formatVersion(HistoryImportFileKind $kind, string $extension): string
+    /**
+     * @param  list<string>|null  $headers
+     */
+    private function formatVersion(HistoryImportFileKind $kind, string $extension, ?array $headers = null): string
     {
         return match ($kind) {
             HistoryImportFileKind::Chats => 'whaticket-chats-report:no-verificado',
-            HistoryImportFileKind::Messages => 'whaticket-messages-csv:no-verificado',
+            // Only the exact header of the authentic export is "verificado".
+            HistoryImportFileKind::Messages => $headers !== null && $this->columns->isVerifiedMessagesExport($headers)
+                ? self::FORMAT_MESSAGES_VERIFIED
+                : 'whaticket-messages-csv:no-verificado',
             HistoryImportFileKind::Contacts => 'whaticket-contacts-csv:no-verificado',
             HistoryImportFileKind::Media => $extension === 'txt' ? 'chat-txt:no-verificado' : 'zip:media',
         };

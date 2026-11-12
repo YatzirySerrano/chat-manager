@@ -90,7 +90,7 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
                 </component>
             </li>
         </ul>
-        <div v-else class="px-5 py-8 text-center">
+        <div v-else class="px-5 py-6">
             <p class="text-sm font-medium">Sin conexiones asociadas</p>
             <p class="text-sm text-muted-foreground">
                 Ninguna conexión envía conversaciones a este departamento.

@@ -4,14 +4,13 @@ import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { store } from '@/routes/password/confirm';
 
 defineOptions({
     layout: {
         title: 'Confirmar contraseña',
         description:
-            'This is a secure area of the application. Please confirm your password before continuing.',
+            'Es una zona protegida. Confirma tu contraseña para continuar.',
     },
 });
 </script>
@@ -41,11 +40,11 @@ defineOptions({
 
             <div class="flex items-center">
                 <Button
+                    size="lg"
                     class="w-full"
-                    :disabled="processing"
+                    :loading="processing"
                     data-test="confirm-password-button"
                 >
-                    <Spinner v-if="processing" />
                     Confirmar contraseña
                 </Button>
             </div>

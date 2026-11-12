@@ -724,7 +724,7 @@ class Preflight
         foreach (app(Schedule::class)->events() as $event) {
             $command = (string) $event->command;
 
-            if (preg_match("/artisan'?\s+([\w:.-]+)/", $command, $matches) !== 1) {
+            if (preg_match('/artisan[\'"]?\s+([\w:.-]+)/', $command, $matches) !== 1) {
                 continue;
             }
 

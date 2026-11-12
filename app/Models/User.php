@@ -6,6 +6,7 @@ use App\Concerns\DeletesLogically;
 use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
 use App\Enums\Permission;
+use App\Support\Authorization\PermissionMemo;
 use App\Support\Features;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -54,7 +55,18 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use DeletesLogically, HasFactory, HasRoles, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use DeletesLogically, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    use HasRoles {
+        checkPermissionTo as private uncachedCheckPermissionTo;
+    }
+
+    /**
+     * Last answer of authority() with the stored values it was read from.
+     *
+     * @var array{list<mixed>, array{?DataScope, bool}}|null
+     */
+    private ?array $authorityMemo = null;
 
     /**
      * The model's default values for attributes.
@@ -263,7 +275,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      */
     public function dataScope(): ?DataScope
     {
-        return $this->is_active ? $this->activeRole()?->scope : null;
+        return $this->authority()[0];
     }
 
     /**
@@ -271,7 +283,31 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      */
     public function hasRootAuthority(): bool
     {
-        return $this->is_active && ($this->activeRole()->is_root ?? false);
+        return $this->authority()[1];
+    }
+
+    /**
+     * Scope and root authority, read through the casts only when the stored
+     * values they come from change: every permission check asks for them, so
+     * a list page reads them thousands of times.
+     *
+     * @return array{?DataScope, bool}
+     */
+    private function authority(): array
+    {
+        $role = $this->role();
+        $stored = $role?->getAttributes() ?? [];
+        $state = [$role, $this->attributes['is_active'] ?? null, $stored['is_active'] ?? null, $stored['scope'] ?? null, $stored['is_root'] ?? null];
+
+        if ($this->authorityMemo !== null && $this->authorityMemo[0] === $state) {
+            return $this->authorityMemo[1];
+        }
+
+        $active = $this->is_active ? $this->activeRole() : null;
+        $authority = [$active?->scope, (bool) ($active->is_root ?? false)];
+        $this->authorityMemo = [$state, $authority];
+
+        return $authority;
     }
 
     /**
@@ -309,6 +345,25 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         }
 
         return $this->checkPermissionTo($permission->value);
+    }
+
+    /**
+     * The package check (also behind its Gate::before hook, which tries every
+     * ability as a permission name), answered once per user and permission
+     * while the roles, direct permissions and registrar it was read from stay
+     * the same objects (PermissionMemo). A page asks it hundreds of times.
+     *
+     * @param  string|int|\Spatie\Permission\Contracts\Permission|\BackedEnum  $permission
+     */
+    public function checkPermissionTo($permission, ?string $guardName = null): bool
+    {
+        $name = $permission instanceof \BackedEnum ? $permission->value : $permission;
+
+        if (! is_string($name) || $guardName !== null) {
+            return $this->uncachedCheckPermissionTo($permission, $guardName);
+        }
+
+        return PermissionMemo::check($this, $name, fn (): bool => $this->uncachedCheckPermissionTo($name));
     }
 
     /**

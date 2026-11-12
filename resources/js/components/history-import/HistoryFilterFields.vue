@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker, DateRangePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -103,6 +104,24 @@ function setText(key: keyof HistoryFilters, value: string | number): void {
     filters.value = next as HistoryFilters;
 }
 
+/** Both ends of the activity range at once (one update of the model). */
+function setRange(range: { from: string | null; to: string | null }): void {
+    const next = { ...filters.value } as Record<string, unknown>;
+
+    for (const [key, value] of [
+        ['date_from', range.from],
+        ['date_to', range.to],
+    ] as const) {
+        if (value) {
+            next[key] = value;
+        } else {
+            delete next[key];
+        }
+    }
+
+    filters.value = next as HistoryFilters;
+}
+
 function setFlag(key: string, checked: boolean | 'indeterminate'): void {
     const next = { ...filters.value } as Record<string, unknown>;
 
@@ -129,14 +148,14 @@ function inputValue(key: keyof HistoryFilters): string {
 </script>
 
 <template>
-    <div :class="cn('grid gap-3', props.class)">
+    <div :class="cn('@container grid gap-3', props.class)">
         <div
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            class="grid grid-cols-1 gap-3 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4"
         >
             <label
                 v-if="withSearch"
                 :for="`${idPrefix}-search`"
-                class="grid gap-1.5 text-sm font-medium sm:col-span-2"
+                class="grid gap-1.5 text-sm font-medium @lg:col-span-2"
             >
                 Buscar contacto
                 <Input
@@ -178,37 +197,19 @@ function inputValue(key: keyof HistoryFilters): string {
                     </SelectContent>
                 </Select>
             </div>
-            <fieldset class="grid gap-1.5 sm:col-span-2">
+            <fieldset class="grid gap-1.5 @lg:col-span-2">
                 <legend class="text-sm font-medium">
                     Última actividad entre
                 </legend>
-                <div
-                    class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2"
-                >
-                    <Input
-                        :id="`${idPrefix}-from`"
-                        type="date"
-                        aria-label="Última actividad desde el"
-                        :aria-describedby="`${idPrefix}-dates-hint`"
-                        :model-value="inputValue('date_from')"
-                        :max="inputValue('date_to') || undefined"
-                        @update:model-value="setText('date_from', $event)"
-                    />
-                    <span
-                        class="text-sm text-muted-foreground"
-                        aria-hidden="true"
-                        >y</span
-                    >
-                    <Input
-                        :id="`${idPrefix}-to`"
-                        type="date"
-                        aria-label="Última actividad hasta el"
-                        :aria-describedby="`${idPrefix}-dates-hint`"
-                        :model-value="inputValue('date_to')"
-                        :min="inputValue('date_from') || undefined"
-                        @update:model-value="setText('date_to', $event)"
-                    />
-                </div>
+                <DateRangePicker
+                    :id="`${idPrefix}-from`"
+                    :from="inputValue('date_from')"
+                    :to="inputValue('date_to')"
+                    placeholder="Cualquier fecha"
+                    aria-label="Última actividad entre"
+                    :aria-describedby="`${idPrefix}-dates-hint`"
+                    @change="setRange"
+                />
                 <p
                     :id="`${idPrefix}-dates-hint`"
                     class="text-xs text-muted-foreground"
@@ -222,12 +223,14 @@ function inputValue(key: keyof HistoryFilters): string {
                 class="grid content-start gap-1.5 text-sm font-medium"
             >
                 Sin actividad a partir del
-                <Input
+                <DatePicker
                     :id="`${idPrefix}-inactive`"
-                    type="date"
+                    placeholder="Cualquier fecha"
                     :aria-describedby="`${idPrefix}-inactive-hint`"
                     :model-value="inputValue('inactive_since')"
-                    @update:model-value="setText('inactive_since', $event)"
+                    @update:model-value="
+                        setText('inactive_since', $event ?? '')
+                    "
                 />
                 <span
                     :id="`${idPrefix}-inactive-hint`"

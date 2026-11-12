@@ -19,8 +19,9 @@ use Illuminate\Validation\ValidationException;
  * time, a selection or a whole filter at once, or a reviewable rule
  * (previewed with counts before it is applied). Every change is allowed
  * until the batch is confirmed. A destination a conversation does not
- * allow (import for a group chat, anything but "No importar" for an empty
- * one) is never set: bulk actions and rules skip it and say how many.
+ * allow (import for a group chat or for a conversation without an
+ * identifiable contact, anything but "No importar" for an empty one) is
+ * never set: bulk actions and rules skip it and say how many.
  * Recommendations are only shown; the admin always decides.
  *
  * @phpstan-import-type InventoryFilters from HistoryInventory
@@ -286,7 +287,8 @@ class HistoryClassifier
     private function allowing(Builder $scope, ?HistoryImportDecision $decision): Builder
     {
         return match ($decision) {
-            HistoryImportDecision::Import => $scope->where('message_count', '>', 0)->where('is_group', false),
+            HistoryImportDecision::Import => $scope->where('message_count', '>', 0)->where('is_group', false)
+                ->where(fn (Builder $contact) => $contact->where('source_kind', HistoryImportConversation::KIND_CHAT_TEXT)->orWhereNotNull('contact_phone')->orWhereNotNull('contact_name')->orWhereNotNull('contact_identifier')),
             HistoryImportDecision::Archive => $scope->where('message_count', '>', 0),
             HistoryImportDecision::Exclude, null => $scope,
         };
@@ -297,6 +299,7 @@ class HistoryClassifier
         return match (true) {
             $row->message_count === 0 => 'Esta conversación no tiene mensajes en los archivos: solo puede quedar como «No importar».',
             $row->is_group => 'Un chat de grupo solo puede archivarse como historial o quedar como «No importar».',
+            ! $row->hasIdentifiableContact() => 'Los archivos no indican de qué contacto es esta conversación: solo puede archivarse como historial o quedar como «No importar».',
             default => 'Ese destino no está permitido para esta conversación.',
         };
     }

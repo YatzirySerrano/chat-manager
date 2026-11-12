@@ -45,7 +45,7 @@ const tooLong = computed(
         >
             <div class="flex justify-end">
                 <div
-                    class="relative max-w-[85%] rounded-2xl rounded-tr-sm bg-primary-soft px-3 py-2 text-sm text-foreground shadow-sm"
+                    class="relative max-w-[85%] rounded-2xl rounded-tr-sm bg-primary-soft px-3 py-2 text-sm text-foreground"
                 >
                     <WhatsAppText v-if="text.trim() !== ''" :text="text" />
                     <span v-else class="text-muted-foreground italic">

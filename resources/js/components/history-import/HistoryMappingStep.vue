@@ -14,7 +14,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
 import { mappings as mappingsRoute } from '@/routes/admin/history-import';
 import type {
     HistoryMappingRows,
@@ -396,9 +395,9 @@ const optionalGroups = computed(
                 :disabled="saving || !dirty"
                 data-tour="history-import.save-mappings"
                 @click="save"
+                :loading="saving"
             >
-                <Spinner v-if="saving" />
-                <Save v-else />
+                <Save v-if="!saving" />
                 Guardar correspondencias
             </Button>
         </div>

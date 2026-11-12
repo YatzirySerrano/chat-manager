@@ -88,7 +88,7 @@ function describe(day: number, hour: number, count: number): string {
                         <td
                             v-for="(count, hour) in row"
                             :key="hour"
-                            class="relative h-5 rounded-sm bg-muted/60"
+                            class="relative h-6 rounded-sm bg-muted/60 transition-[scale,box-shadow] duration-(--duration-fast) ease-(--ease-standard) hover:z-10 hover:scale-[1.3] hover:ring-2 hover:ring-ring"
                             :title="describe(day, hour, count)"
                         >
                             <span

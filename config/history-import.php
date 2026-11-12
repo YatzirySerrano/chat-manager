@@ -17,9 +17,19 @@ return [
 
     'directory' => env('HISTORY_IMPORT_DIRECTORY', 'history-imports'),
 
-    // Maximum upload size in kilobytes (Whaticket exports up to 450,000
-    // messages per CSV; media ZIPs may be large).
-    'max_kilobytes' => (int) env('HISTORY_IMPORT_MAX_KILOBYTES', 512000),
+    // Maximum upload size in kilobytes through the browser. 100 MB: the
+    // limit of the web server and PHP templates of this repository
+    // (deploy/nginx client_max_body_size 110m, deploy/php-fpm
+    // upload_max_filesize 100M / post_max_size 110M), so the application
+    // explains the limit itself instead of the web server answering 413.
+    // The authentic Whaticket messages export of 447,429 rows is 67 MB.
+    // Raise it together with those three values, or add larger files from
+    // the server with "php artisan history-import:add-file".
+    'max_kilobytes' => (int) env('HISTORY_IMPORT_MAX_KILOBYTES', 102400),
+
+    // Maximum size in kilobytes of a file added from the server with
+    // "history-import:add-file" (no web server limit applies): 2 GB.
+    'max_cli_kilobytes' => (int) env('HISTORY_IMPORT_MAX_CLI_KILOBYTES', 2097152),
 
     // Rows of one CSV / spreadsheet (header not counted). Whaticket splits
     // message exports above 450,000 rows into several files.

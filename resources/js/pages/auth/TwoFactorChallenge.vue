@@ -60,10 +60,8 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                 #default="{ errors, processing, clearErrors }"
             >
                 <input type="hidden" name="code" :value="code" />
-                <div
-                    class="flex flex-col items-center justify-center space-y-3 text-center"
-                >
-                    <div class="flex w-full items-center justify-center">
+                <div class="flex flex-col items-start space-y-3">
+                    <div class="flex w-full items-center">
                         <InputOTP
                             id="otp"
                             v-model="code"
@@ -82,10 +80,14 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                     </div>
                     <InputError :message="errors.code" />
                 </div>
-                <Button type="submit" class="w-full" :disabled="processing"
+                <Button
+                    type="submit"
+                    size="lg"
+                    class="w-full"
+                    :loading="processing"
                     >Continuar</Button
                 >
-                <div class="text-center text-sm text-muted-foreground">
+                <div class="text-sm text-muted-foreground">
                     <span>o puedes </span>
                     <button
                         type="button"
@@ -113,11 +115,15 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
                     required
                 />
                 <InputError :message="errors.recovery_code" />
-                <Button type="submit" class="w-full" :disabled="processing"
+                <Button
+                    type="submit"
+                    size="lg"
+                    class="w-full"
+                    :loading="processing"
                     >Continuar</Button
                 >
 
-                <div class="text-center text-sm text-muted-foreground">
+                <div class="text-sm text-muted-foreground">
                     <span>o puedes </span>
                     <button
                         type="button"

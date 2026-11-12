@@ -5,9 +5,7 @@ import { computed } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { index as connectionsIndex } from '@/routes/connections';
 import { connect, show as metaAuthorization } from '@/routes/connections/meta';
 import type { ConnectionChannel, MetaAccountCandidate } from '@/types';
@@ -54,10 +52,9 @@ function actionLabel(account: MetaAccountCandidate): string {
 <template>
     <Head :title="`Elegir ${noun} de ${channel.label}`" />
 
-    <div class="page-shell [--page-max:48rem]">
+    <div class="page-shell">
         <PageHeader
             help="conexiones"
-            show-title
             :title="`Elige ${noun} que quieres conectar`"
             :description="`Meta autorizó el acceso. Elige ${noun} cuyos mensajes llegarán a Chat Manager; quedará inactiva hasta que la actives.`"
         >
@@ -73,11 +70,11 @@ function actionLabel(account: MetaAccountCandidate): string {
 
         <InputError :message="form.errors.account_id" />
 
-        <SurfaceCard body-class="divide-y">
+        <div class="auto-grid reveal-stagger [--col-min:24rem]">
             <div
                 v-for="account in accounts"
                 :key="account.id"
-                class="flex flex-wrap items-center gap-4 p-4"
+                class="spotlight flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4 sm:p-5"
             >
                 <img
                     v-if="account.picture"
@@ -97,7 +94,9 @@ function actionLabel(account: MetaAccountCandidate): string {
                     />
                 </span>
                 <div class="min-w-0 flex-1 basis-48 space-y-0.5">
-                    <p class="truncate font-semibold">{{ account.name }}</p>
+                    <p class="truncate font-display text-base font-semibold">
+                        {{ account.name }}
+                    </p>
                     <p class="text-xs text-muted-foreground">
                         <span v-if="account.username"
                             >@{{ account.username }} ·
@@ -123,18 +122,16 @@ function actionLabel(account: MetaAccountCandidate): string {
                     type="button"
                     :variant="account.existing ? 'outline' : 'default'"
                     :disabled="
-                        form.processing ||
+                        (form.processing && form.account_id !== account.id) ||
                         !account.can_message ||
                         account.existing?.is_deleted === true
                     "
+                    :loading="form.processing && form.account_id === account.id"
                     @click="choose(account)"
                 >
-                    <Spinner
-                        v-if="form.processing && form.account_id === account.id"
-                    />
                     {{ actionLabel(account) }}
                 </Button>
             </div>
-        </SurfaceCard>
+        </div>
     </div>
 </template>

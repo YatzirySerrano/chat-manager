@@ -85,7 +85,7 @@ const barWidths = [92, 76, 64, 48, 36, 22];
 
 <template>
     <section
-        class="@container flex min-w-0 flex-col gap-4 rounded-xl border bg-surface-raised p-4 shadow-card sm:p-5"
+        class="@container flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4 sm:p-5"
         :aria-labelledby="titleId"
         :aria-busy="loading || undefined"
         data-chart-card
@@ -93,8 +93,11 @@ const barWidths = [92, 76, 64, 48, 36, 22];
         <header
             class="flex flex-wrap items-start justify-between gap-x-3 gap-y-2"
         >
-            <div class="min-w-0 flex-1 space-y-0.5">
-                <h3 :id="titleId" class="text-base font-semibold">
+            <div class="min-w-0 flex-1 basis-64 space-y-0.5">
+                <h3
+                    :id="titleId"
+                    class="font-display text-lg leading-6 font-semibold"
+                >
                     {{ title }}
                 </h3>
                 <p
@@ -105,7 +108,7 @@ const barWidths = [92, 76, 64, 48, 36, 22];
                 </p>
                 <p
                     v-if="total && ready"
-                    class="pt-1 text-sm font-medium text-foreground"
+                    class="pt-1.5 font-display text-base font-semibold text-foreground tabular-nums"
                     data-chart-total
                 >
                     {{ total }}
@@ -164,7 +167,7 @@ const barWidths = [92, 76, 64, 48, 36, 22];
 
         <div
             v-else-if="empty"
-            class="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center"
+            class="flex min-h-[180px] flex-col justify-end gap-2 rounded-lg border border-dashed bg-surface-sunken/60 p-4"
             data-chart-empty
         >
             <ChartNoAxesCombined

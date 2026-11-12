@@ -513,7 +513,7 @@ const loadingCards = [
         <Deferred v-if="canViewMetrics" data="overview">
             <template #fallback>
                 <div
-                    class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                    class="auto-grid reveal-stagger [--col-min:14rem]"
                     aria-busy="true"
                     aria-label="Cargando indicadores"
                 >
@@ -563,7 +563,7 @@ const loadingCards = [
                         "
                     />
                     <div
-                        class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+                        class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-3"
                         data-tour="dashboard.kpis"
                     >
                         <KpiCard
@@ -627,7 +627,7 @@ const loadingCards = [
                         :description="`Solicitudes recibidas ${period?.label ?? ''}; cada una cuenta una sola vez. Comparado con ${period?.comparison.partial ? 'el mismo tramo transcurrido del periodo anterior' : 'el periodo anterior'} (${comparisonLabel}).`"
                     />
                     <div
-                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                        class="auto-grid reveal-stagger [--col-min:14rem]"
                         data-tour="dashboard.period-kpis"
                     >
                         <KpiCard
@@ -758,7 +758,7 @@ const loadingCards = [
                     <div class="grid grid-flow-dense gap-3 lg:grid-cols-3">
                         <ResponseTrendChart
                             v-if="charts.response_trend"
-                            class="lg:col-span-2"
+                            :class="sla ? 'lg:col-span-2' : 'lg:col-span-3'"
                             :trend="charts.response_trend"
                             :total="responseTotal"
                             :previous-label="period?.previous.label ?? ''"
@@ -883,7 +883,7 @@ const loadingCards = [
                             />
                             <p
                                 v-else
-                                class="py-8 text-center text-sm text-muted-foreground"
+                                class="py-8 text-sm text-muted-foreground"
                             >
                                 Sin solicitudes recibidas en este periodo.
                             </p>
@@ -966,7 +966,7 @@ const loadingCards = [
         <section
             v-if="overview && overview.departments !== null"
             aria-label="Equipo disponible"
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            class="auto-grid reveal-stagger [--col-min:14rem]"
         >
             <StatCard
                 label="Agentes activos"

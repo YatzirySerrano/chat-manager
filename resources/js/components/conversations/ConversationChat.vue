@@ -23,6 +23,7 @@ import DepartmentTag from '@/components/DepartmentTag.vue';
 import ChatAppearanceDialog from '@/components/personalization/ChatAppearanceDialog.vue';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/composables/useChannel';
+import { useInitials } from '@/composables/useInitials';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 import { CUSTOM_CHAT_COLORS, chatColorVariables } from '@/lib/chatAppearance';
 import { afterUserVisits, onReconnect } from '@/lib/realtime';
@@ -178,6 +179,7 @@ useChannel(
 );
 
 /* Without real-time, refresh the open chat periodically. */
+const { getInitials } = useInitials();
 const { state: realtimeState } = useRealtimeStatus();
 const visibility = useDocumentVisibility();
 const FALLBACK_MS = 20_000;
@@ -345,7 +347,7 @@ const paneStyle = computed(() => ({
     >
         <header
             ref="header"
-            class="flex items-center gap-2 border-b px-2 py-2 sm:px-4 [@media(max-height:32rem)]:py-0.5"
+            class="flex items-center gap-2 border-b px-2 py-2 sm:gap-3 sm:px-5 sm:py-2.5 [@media(max-height:32rem)]:py-0.5"
         >
             <Button
                 variant="ghost"
@@ -357,9 +359,14 @@ const paneStyle = computed(() => ({
             >
                 <ArrowLeft aria-hidden="true" />
             </Button>
+            <span
+                class="hidden size-10 shrink-0 place-items-center rounded-full bg-primary-soft text-sm font-semibold text-primary-soft-foreground sm:grid [@media(max-height:32rem)]:hidden!"
+                aria-hidden="true"
+                >{{ getInitials(conversation.contact.display_name) }}</span
+            >
             <button
                 type="button"
-                class="min-w-0 flex-1 rounded-md px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                class="min-w-0 flex-1 rounded-lg px-1.5 py-0.5 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
                 :title="
                     detailsOpen
                         ? 'Ocultar detalles'
@@ -368,7 +375,7 @@ const paneStyle = computed(() => ({
                 @click="emit('toggleDetails')"
             >
                 <h2
-                    class="flex min-w-0 items-center gap-2 text-base font-semibold"
+                    class="flex min-w-0 items-center gap-2 font-display text-lg leading-snug font-semibold"
                 >
                     <!-- On phones the channel shows here, next to the name. -->
                     <ChannelIcon

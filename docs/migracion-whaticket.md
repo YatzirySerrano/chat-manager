@@ -6,8 +6,11 @@ Chat Manager tiene dos importadores para migrar desde Whaticket:
   (secciones siguientes). El adaptador es una heurística marcada como **pendiente de validación** hasta revisar una
   exportación real de la instalación de la empresa.
 - **Conversaciones y mensajes históricos** (fase 5.2): el importador de historial, con tres destinos (importar,
-  archivar, no importar), inventario, reglas, confirmación y ejecución en cola. Sus formatos **no están verificados**
-  con exportaciones auténticas. Ver [Importador de historial](#importador-de-historial-de-whaticket-fase-52).
+  archivar, no importar), inventario, reglas, confirmación y ejecución en cola. El CSV de «Exportar mensajes» está
+  **verificado con una exportación auténtica** (2026-11-12, 447 429 mensajes) y se importa sin mapeo manual; el
+  reporte de chats, el CSV de contactos y los `Chat.txt` siguen sin verificar. Ver
+  [Importador de historial](#importador-de-historial-de-whaticket-fase-52) y, para importar tu archivo,
+  [Procedimiento paso a paso](#procedimiento-paso-a-paso-para-importar-la-exportación-real).
 
 ## Importador de contactos: qué incluye
 
@@ -130,14 +133,148 @@ Desde la fase 5.2 existe un importador de **conversaciones y mensajes histórico
 importador de contactos. Está en Administración → «Importar de Whaticket» (`/admin/history-import`) y la
 consulta de lo archivado en Administración → «Historial importado» (`/admin/history`).
 
-> **Formatos no verificados.** Ninguna regla del importador se ha contrastado con una exportación auténtica de
-> Whaticket. Las columnas se reconocen por nombre (alias), cada archivo muestra la insignia «Sin verificar» y
-> la página muestra la nota «Formato no verificado con una exportación auténtica de Whaticket…», y el mapeo de columnas de cada archivo
-> se puede corregir. Las pruebas usan solo archivos sintéticos (`tests/fixtures/whaticket`). Antes de la primera
-> migración real hay que validar los formatos (ver [Requisitos previos](#requisitos-previos-para-la-primera-migración)).
+> **Qué está verificado.** El CSV de **«Exportar mensajes»** se contrastó el 2026-11-12 con una exportación
+> auténtica (447 429 mensajes, 67 MB): se lee sin mapeo manual, el archivo muestra la insignia «Formato verificado» y
+> la corrida completa (lectura, inventario, ejecución e idempotencia) está medida más abajo. **Siguen sin verificar**
+> el reporte de chats, el CSV de contactos y los `Chat.txt`: sus columnas se reconocen por nombre (alias), muestran
+> «Sin verificar» y su mapeo se puede corregir. Las pruebas usan solo archivos con datos ficticios
+> (`tests/fixtures/whaticket`); `messages-export.csv` reproduce el formato real exacto.
 >
-> **Las migraciones del importador no están aplicadas en la base principal `chatmanager`.** Ver
-> [Migraciones](#migraciones-del-importador-pendientes-de-autorización).
+> **Migraciones.** Las de la fase 5.2 ya están aplicadas en la base local `chatmanager`. Falta aplicar **una**
+> migración nueva y aditiva (`2026_11_12_180000_add_details_to_history_import_messages_table`). Ver
+> [Migraciones](#migraciones-del-importador).
+
+### Exportación real de mensajes (verificada el 2026-11-12)
+
+Archivo: `whaticket_messages_<desde>_<hasta>.csv`, de Configuración → Exportación → «Exportar mensajes». UTF-8 sin
+BOM, separado por comas, textos multilínea entre comillas. La exportación revisada tiene 447 429 mensajes (justo
+debajo del tope de 450 mil por archivo de Whaticket), 1 926 tickets y 67 MB. **Contiene datos personales: nunca se
+versiona** (`docs/export/` está en `.gitignore`) y no se copia a `tests/`.
+
+```
+ticketId,contact_name,contact_number,createdAt,fromMe,body,mediaType,mediaUrl,campaignId
+```
+
+| Columna          | Qué trae                                                                                                     | Cómo se importa                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ticketId`       | UUID del ticket                                                                                              | Una conversación por ticket (`ticket:<uuid>`)                                                                                                                                                                                                                |
+| `contact_name`   | Nombre del contacto, **solo en los mensajes del cliente**                                                    | El contacto de la conversación se toma de las filas hermanas del mismo ticket (las filas enviadas por la empresa vienen sin nombre ni número)                                                                                                                |
+| `contact_number` | Número sin `+`, **solo en los mensajes del cliente**: 13 dígitos (`521…`), 12 (`52…`) o 10                   | E.164: `521XXXXXXXXXX`, `52XXXXXXXXXX` y los 10 dígitos nacionales son el mismo `+52XXXXXXXXXX`, el que usará la conexión real de WhatsApp. Un número que no se puede normalizar (9 dígitos, por ejemplo) se conserva como viene, sin relacionarlo con nadie |
+| `createdAt`      | `dd/mm/aaaa HH:MM`, sin segundos ni zona                                                                     | Hora local de la zona del lote (por defecto la de la plataforma), guardada en UTC. Dentro del mismo minuto el orden es **el del archivo**                                                                                                                    |
+| `fromMe`         | `true` (empresa, bot o campaña) / `false` (cliente)                                                          | Saliente «Enviado» / entrante «Recibido», nunca «Entregado» ni «Leído»                                                                                                                                                                                       |
+| `body`           | Texto; JSON en `location` y `contact`; vacío en la mayoría de los archivos                                   | Texto plano. `location` (`{"degreesLatitude":…,"degreesLongitude":…}`) se muestra como ubicación con enlace al mapa; `contact` (`[{"name":…,"number":…}]`) como contacto compartido con nombre y número                                                      |
+| `mediaType`      | vacío, `chat`, `image`, `video`, `audio`, `application`, `document`, `file`, `location`, `contact`, `missed` | Vacío y `chat` → texto; `application`/`document`/`file` → documento; `missed` → mensaje «Llamada perdida»                                                                                                                                                    |
+| `mediaUrl`       | Casi siempre vacío; a veces un enlace firmado de Facebook (ya vencido)                                       | **Nunca se descarga ni se guarda el enlace**: solo queda el nombre del archivo. La política de contenido de producción (`img-src 'self'`) tampoco permitiría mostrarlo                                                                                       |
+| `campaignId`     | UUID de la campaña que envió el mensaje (pocas filas)                                                        | Se conserva como dato del mensaje (`metadata.import.campaign_id`)                                                                                                                                                                                            |
+
+Lo que **no** trae esta exportación y por tanto no se puede recuperar de ella:
+
+- **Los archivos** (fotos, audios, videos, documentos). Cada uno queda como mensaje con su tipo y su fecha y el aviso
+  «Archivo histórico no disponible» (adjunto `unavailable`, `historical_missing`): no es un error. En la exportación
+  revisada son 66 619 de 447 429 mensajes. Para recuperar archivos hay que subir además los ZIP
+  `Whaticket-medias.zip` de los chats que interesen.
+- **Identificador de mensaje.** La idempotencia usa una huella por fila (abajo).
+- **Agente, departamento, conexión, etiquetas y estado.** Todo el historial queda sin agente ni departamento y bajo
+  una sola conexión (la que elijas o la «Conexión histórica sin envío»). Si se sube también el reporte de chats
+  (sin verificar), aporta esos datos por ticket.
+- **El teléfono de quien escribió por Messenger, Instagram o Facebook**: solo trae su nombre.
+
+#### Huella de cada mensaje (idempotencia)
+
+Como no hay identificador, cada fila recibe una huella estable (`HistoryFileIngestor::messageFingerprint`): ticket +
+fecha y hora tal como vienen + dirección + tipo + contenido + **cuántas veces se repitió ya esa misma fila en el
+archivo**. Así dos mensajes idénticos en el mismo minuto (el saludo del bot enviado dos veces, dos fotos sin texto;
+en la exportación revisada hay 6 027 grupos así, hasta 30 iguales) son dos mensajes, y la misma fila de otra
+exportación que se traslapa es el mismo mensaje. No depende del número de línea ni de la zona horaria del lote, y no
+permite reconstruir el contenido. Consecuencias:
+
+- **Volver a subir el mismo archivo** (en otro lote) no crea nada: todas las conversaciones terminan «Ya importada
+  antes».
+- **Una exportación posterior o traslapada** solo agrega lo nuevo: los tickets nuevos se crean y los ya importados se
+  **amplían** con los mensajes que no tenían (antes un ticket repetido se omitía entero).
+- **Dos archivos traslapados en el mismo lote** cuentan cada mensaje una vez (aviso «Mensajes que ya venían en otro
+  archivo de esta importación»).
+- Hay que usar siempre el **mismo identificador de instalación** (`whaticket` por defecto) en todos los lotes del
+  mismo Whaticket: es parte de la clave.
+
+#### Tickets sin teléfono y tickets sin contacto
+
+| Grupo (en la exportación revisada)                                                    | Qué se sabe                | Destinos permitidos             | Recomendación mostrada | Contacto que se crea                                                                                        |
+| ------------------------------------------------------------------------------------- | -------------------------- | ------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Con número (916 tickets, 888 números distintos)                                       | Nombre y teléfono          | Importar, archivar, no importar | —                      | El contacto activo con ese número si existe; si no, uno provisional (fuera del directorio) por número       |
+| Con nombre y sin número (506: Messenger/Instagram/Facebook) o con número inválido (2) | Nombre (y número tal cual) | Importar, archivar, no importar | Archivar               | Un contacto provisional **por ticket**, con su nombre y sin teléfono. Nunca se fusiona por nombre           |
+| Sin nombre ni número (502; casi todos solo con mensajes de la empresa)                | Nada                       | **Solo** archivar o no importar | Archivar               | Un único contacto provisional compartido, «Contacto no identificado (Whaticket)», por instalación de origen |
+
+Nada falla y no se inventa ningún teléfono. El inventario tiene los filtros **«Con número de teléfono»** y **«Sin
+número de teléfono»** para decidir cada grupo de una vez (o con una regla).
+
+#### Resultados medidos con el archivo real
+
+Corrida completa del 2026-11-12 en una base MariaDB 11.4 aparte (`chatmanager_import_check`, creada y eliminada para
+la prueba; la base `chatmanager` no se tocó), en el equipo de desarrollo (Windows, PHP 8.4 sin Xdebug, un solo
+proceso, cola `sync`):
+
+| Paso                                           | Resultado                                                                                                                                                                      | Tiempo        | Memoria pico |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------ |
+| Subida, lectura e inventario                   | 447 429 filas leídas, **447 429 aceptadas, 0 rechazadas**, 0 columnas desconocidas, 0 campos faltantes, 447 429 huellas distintas; 1 926 conversaciones                        | 87,5 s        | 80 MB        |
+| Clasificación (2 acciones masivas) y resumen   | 916 «Importar» (con número) y 1 010 «Archivar» (sin número); 0 bloqueos                                                                                                        | < 1 s         | —            |
+| Ejecución                                      | 1 926 conversaciones (916 operativas, 1 010 archivadas), 447 429 mensajes (176 931 entrantes, 270 498 salientes), 1 397 contactos provisionales (888 con teléfono), 0 fallidas | 447 s         | 50 MB        |
+| Segunda corrida del mismo archivo (lote nuevo) | Las 1 926 conversaciones detectadas como ya importadas; **0 mensajes, 0 conversaciones, 0 contactos y 0 claves nuevas** (1 926 «Ya importada antes»)                           | 120 s + 205 s | 76 MB        |
+
+Por tipo: 360 806 textos (343 de ellos «Llamada perdida»), 27 154 imágenes, 21 439 videos, 19 979 ubicaciones, 17 397
+documentos, 629 audios y 25 contactos compartidos; 66 619 archivos «no disponibles»; 113 mensajes con campaña. La
+lectura es por _streaming_ (el archivo nunca se carga en memoria) y cabe con margen en el tope de 600 s del trabajo
+de lectura; la ejecución se reparte sola en trabajos de 240 s (2 en esta corrida) y es reanudable por conversación.
+El ticket más grande tiene 11 607 mensajes y se escribe en una sola transacción.
+
+### Procedimiento paso a paso para importar la exportación real
+
+Lo hace una cuenta raíz (permisos `history-import.*`). Nada se importa hasta confirmar el resumen.
+
+1. **Antes de empezar.**
+    - Respaldo verificado de la base ([recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)): es la única forma
+      de deshacer una importación (ver «Cómo revertir» abajo).
+    - `php artisan migrate` (aplica `2026_11_12_180000_add_details_to_history_import_messages_table`) y workers de la
+      cola `exports` en marcha.
+    - **Límite de subida.** Por el navegador el máximo es el menor entre `HISTORY_IMPORT_MAX_KILOBYTES` (100 MB por
+      defecto) y lo que acepte PHP (`upload_max_filesize`, `post_max_size`) y el servidor web
+      (`client_max_body_size`). Las plantillas de `deploy/` traen 100M / 110M / 110m y el archivo real (67 MB) entra;
+      un PHP con los valores de fábrica (`upload_max_filesize = 2M`, `post_max_size = 8M`, como el WAMP local) lo
+      rechaza y la pantalla lo dice antes de subir. Dos salidas: subir esos tres valores, o copiar el archivo al
+      servidor y agregarlo por consola (paso 3).
+    - Zona horaria de la plataforma correcta (Administración → Ajustes): las fechas del archivo no traen zona.
+2. **Crear el lote** en Administración → «Importar de Whaticket»: deja el identificador de instalación por defecto
+   (`whaticket`) —**usa siempre el mismo** en lotes futuros— y la zona horaria en la que se usaba Whaticket.
+3. **Subir el CSV** como «Mensajes (CSV)». Si es demasiado grande para el navegador:
+   `php artisan history-import:add-file <número de lote> /ruta/al/archivo.csv --kind=messages` (mismos controles,
+   misma copia privada y misma lectura en cola; el original no se mueve: bórralo al terminar). La lectura tarda entre
+   uno y dos minutos por cada 450 mil mensajes; al terminar el archivo debe mostrar «Formato verificado», todas las
+   filas aceptadas y ninguna columna desconocida.
+4. **Asignar la conexión.** El archivo no dice por qué conexión entró cada chat: en «Asignaciones», a «sin conexión
+   indicada» asígnale la conexión real del número (si ya existe) o «Conexión histórica sin envío». Lo importado es
+   solo lectura en ambos casos y nunca envía nada.
+5. **Clasificar.** Lo habitual: filtro «Con número de teléfono» → «Importar» (queda en la bandeja, filtro
+   «Cerradas», y en la ficha del contacto); filtro «Sin número de teléfono» → «Archivar» (solo en «Historial
+   importado») o «No importar». Marca «Guardar contacto» solo en los que quieras en el directorio; el resto queda
+   como contacto provisional.
+6. **Revisar el resumen y confirmar.** Debe decir 0 bloqueos; los «archivos faltantes» son los que la exportación
+   no incluye.
+7. **Esperar la ejecución** (unos 8 minutos por 450 mil mensajes en la medición; se puede cerrar la pantalla). Si se
+   interrumpe, «Continuar» sigue sin duplicar.
+8. **Comprobar el resultado**: importadas + archivadas = conversaciones clasificadas, 0 fallidas, y abrir dos o tres
+   conversaciones (una con ubicación, una con archivos) para ver fechas y orden.
+9. **Siguientes archivos** (periodos posteriores o traslapados): lote nuevo con el mismo identificador de
+   instalación y los mismos pasos. Los tickets ya importados aparecen con el aviso «solo se agregarán los mensajes
+   que todavía no tiene».
+
+**Cuando escriba un cliente del historial por la conexión real**, su conversación en vivo se liga al mismo contacto
+(mismo `+52…`) y su historial importado aparece en su ficha. Las conversaciones importadas nunca se reabren.
+
+**Cómo revertir.** No hay reversión por lote: lo importado es historial de solo lectura que no afecta métricas,
+ventanas de 24 h ni asignaciones, así que lo normal es no necesitarla. Para deshacer una importación completa se
+restaura el respaldo tomado en el paso 1. Para probar sin riesgo, haz antes un lote piloto con un archivo pequeño (o
+la misma exportación en una copia de la base) y archiva en vez de importar lo dudoso: lo archivado no aparece en la
+operación diaria.
 
 ### Fuentes oficiales y qué se sabe de cada formato
 
@@ -146,7 +283,7 @@ consulta de lo archivado en Administración → «Historial importado» (`/admin
 | Exportación de Whaticket          | Cómo se obtiene                                                                                           | Formato y límites documentados                                                                                                                                                                                                                                                            | Fuente                                                                                                          |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Reporte de chats                  | Informes → gráfico «Chats creados»/«Chats resueltos» → Exportar (permisos «Ver» y «Exportar» de Informes) | XLSX o CSV, una fila por chat, máximo 90 días por exportación, respeta los filtros. Columnas documentadas: `contactName`, `contactNumber`, `user`, `department`, `connection`, `createdAt`, `resolvedAt`, `conversationId`, `chatId`, `chatLink`, `tags`, `conversationTags`, entre otras | [artículo 20776](https://help.whaticket.com/es/articles/20776-como-obtener-datos-personalizados-en-whaticket)   |
-| Mensajes por periodo              | Configuración → Exportación → «Exportar mensajes» (permiso «Exportar mensajes» de Chats)                  | CSV, una fila por mensaje, hasta 450 mil mensajes por archivo (si hay más, se descarga por partes). **Las columnas no están documentadas**, ni si incluye multimedia                                                                                                                      | [artículo 20655](https://help.whaticket.com/es/articles/20655-como-exportar-o-transferir-los-mensajes-enviados) |
+| Mensajes por periodo              | Configuración → Exportación → «Exportar mensajes» (permiso «Exportar mensajes» de Chats)                  | CSV, una fila por mensaje, hasta 450 mil mensajes por archivo (si hay más, se descarga por partes). Las columnas no están documentadas por Whaticket; **verificadas con una exportación auténtica** (ver arriba): no incluye multimedia                                                   | [artículo 20655](https://help.whaticket.com/es/articles/20655-como-exportar-o-transferir-los-mensajes-enviados) |
 | Mensajes seleccionados de un chat | En el chat: «Seleccione mensajes» → Descargar                                                             | ZIP `Whaticket-medias.zip` con los archivos multimedia y `Chat.txt` (texto, fecha, hora y remitente). **El formato de las líneas de `Chat.txt` no está documentado**                                                                                                                      | [artículo 20655](https://help.whaticket.com/es/articles/20655-como-exportar-o-transferir-los-mensajes-enviados) |
 | Contactos                         | Contactos → Exportar (permiso Exportar en Contactos)                                                      | CSV con number, name, nickname, email, fecha de creación, etiquetas y campos personalizados                                                                                                                                                                                               | [artículo 20889](https://help.whaticket.com/es/articles/20889-como-exportar-e-importar-el-archivo-de-la-lista)  |
 
@@ -172,11 +309,13 @@ faltantes, filas rechazadas con su número de línea y sin contenido) y deja que
 
 Controles de carga (`HistoryFileIngestor`, `SafeZip`, `TabularFileReader`): tipo real con `finfo` y extensión por tipo
 de archivo («Para «Mensajes (CSV)» solo se aceptan archivos .csv.»), huella SHA-256 (el mismo archivo no se agrega
-dos veces al lote), tamaño máximo `HISTORY_IMPORT_MAX_KILOBYTES` (512 000 KB en la aplicación; **el límite efectivo
-en producción es 100 MB por archivo**, porque la carga pasa antes por Nginx `client_max_body_size 110m` y PHP-FPM
+dos veces al lote), tamaño máximo por el navegador `HISTORY_IMPORT_MAX_KILOBYTES` (**102 400 KB = 100 MB por
+defecto**, igual que las plantillas del servidor: Nginx `client_max_body_size 110m` y PHP-FPM
 `upload_max_filesize = 100M` / `post_max_size = 110M`, ver `deploy/nginx/chat-manager.conf` y
-`deploy/php-fpm/chat-manager.conf`: un archivo mayor lo rechaza el servidor con 413 antes de llegar a la validación;
-exporta por periodos o divide los ZIP en partes de menos de 100 MB), filas (`HISTORY_IMPORT_MAX_ROWS`,
+`deploy/php-fpm/chat-manager.conf`; si el PHP que atiende la petición acepta menos, la pantalla y la validación usan
+ese valor menor, `HistoryImportFileRequest::maxKilobytes()`. Un archivo mayor se agrega desde el servidor con
+`php artisan history-import:add-file <lote> <ruta> --kind=chats|messages|contacts|media`, hasta
+`HISTORY_IMPORT_MAX_CLI_KILOBYTES`, 2 GB, con los mismos controles de contenido), filas (`HISTORY_IMPORT_MAX_ROWS`,
 460 000), columnas (80), un registro de CSV de como máximo 1 MB (`HISTORY_IMPORT_MAX_RECORD_BYTES`; uno mayor se
 rechaza en vez de leerse entero), texto por mensaje (10 000 caracteres; los más largos se cortan y se señalan) y fechas
 entre 1971 y 2037 (fuera de ese rango se tratan como inválidas). Los `.xlsx` se leen en _streaming_ con `XMLReader`,
@@ -196,8 +335,11 @@ venían de él desaparecen). Uno que falló al leerse (o cuya lectura se interru
 
 ### Mapeo de columnas
 
-`App\Services\Migration\History\HistoryColumns` define los campos lógicos y sus alias (en minúsculas y sin acentos).
-Cada campo toma la primera columna cuyo nombre coincide con un alias; una columna sirve a un solo campo.
+`App\Services\Migration\History\HistoryColumns` define los campos lógicos y sus alias (en minúsculas, sin acentos y
+con `_`, `-` y `.` leídos como espacio: `contact_name` es «contact name»). Cada campo toma la primera columna cuyo
+nombre coincide con un alias; una columna sirve a un solo campo. El encabezado exacto de la exportación auténtica
+(`HistoryColumns::VERIFIED_MESSAGES_HEADER`) se etiqueta `whaticket-messages-csv:verificado`; cualquier otro,
+`…:no-verificado`.
 
 - **Reporte de chats.** Obligatorio al menos uno de: número del contacto, identificador de conversación o
   identificador del chat. Campos: `conversation_id` (`conversationId`, `ticketId`, `protocolo`…), `chat_id`,
@@ -207,8 +349,9 @@ Cada campo toma la primera columna cuyo nombre coincide con un alias; una column
   contacto. Campos: `message_id`, `conversation_id`, `contact_number`, `contact_name`, `from_me` («Enviado por la
   empresa»), `sender`, `user`, `body`, `media_type`, `media_name` (`mediaUrl`, `filename`…; solo se usa el nombre del
   archivo para buscarlo en los ZIP, **nunca se descarga una URL**), `created_at`, `time` (si la hora viene aparte),
-  `quoted_id`, `connection`, `department`, `is_deleted`. Los alias de este archivo son **suposiciones razonables**
-  (campos del Whaticket de código abierto y variantes en español, portugués e inglés), no un formato documentado.
+  `quoted_id`, `connection`, `department`, `is_deleted`, `campaign_id`. Salvo el encabezado verificado, los alias de
+  este archivo son **suposiciones razonables** (campos del Whaticket de código abierto y variantes en español,
+  portugués e inglés), no un formato documentado.
 - **`Chat.txt`** (`ChatTextParser`, tolerante): Android `dd/mm/aa, hh:mm - Nombre: texto` (también «p. m.»/«PM», con
   o sin coma, «-» o «–»), iOS `[dd/mm/aa, hh:mm:ss] Nombre: texto`; día o mes primero (se decide con todo el archivo;
   día primero por defecto); años de 2 o 4 dígitos; líneas sin encabezado continúan el mensaje anterior; las líneas de
@@ -250,8 +393,10 @@ Cada campo toma la primera columna cuyo nombre coincide con un alias; una column
    grupos y avisos): por conversación, por selección (hasta 5000), sobre todo un filtro o con **reglas** que se
    previsualizan con conteos antes de aplicarse («Coinciden N; cambiarían M») y que nunca pisan una decisión manual
    salvo que se marque «sobrescribir». Borrar una regla devuelve sus decisiones a «sin decidir». Las
-   **recomendaciones** son solo sugerencias: «No importar» para conversaciones sin mensajes o ya importadas, «Archivar»
-   para chats de grupo.
+   **recomendaciones** son solo sugerencias: «No importar» para conversaciones sin mensajes o ya importadas sin clave
+   por mensaje, «Archivar» para chats de grupo, para contactos sin número y para tickets sin contacto identificable
+   (estos últimos no admiten «Importar»). Filtros añadidos con la exportación real: «Con número de teléfono» y «Sin
+   número de teléfono».
 5. **Resumen y confirmación** (`history-import.execute`): totales por destino, contactos (existentes, nuevos, a
    guardar), mensajes, archivos recuperables y faltantes con tamaño estimado, duplicados, grupos y bloqueos
    (archivos sin leer, conversaciones sin decidir, avisos bloqueantes, conexiones sin mapear y **asignaciones
@@ -335,6 +480,9 @@ Reglas comunes de lo importado (`HistoryImportExecutor`):
 Varios contactos activos con el número, o solo uno eliminado, detienen esa conversación con un motivo en vez de
 adivinar. Nunca se crea una identidad de WhatsApp ni se toca un `wa_id`: el primer mensaje real del cliente la liga
 por el flujo normal. Un número que no se puede normalizar se conserva tal cual, sin relacionarlo con otro contacto.
+Un contacto con nombre y sin número (Messenger, Instagram) es un contacto provisional por ticket, y los tickets que
+no identifican a nadie comparten un único contacto provisional «Contacto no identificado (Whaticket)» y solo pueden
+archivarse ([detalle](#tickets-sin-teléfono-y-tickets-sin-contacto)).
 
 ### Duplicados e idempotencia
 
@@ -343,14 +491,17 @@ por el flujo normal. Un número que no se puede normalizar se conserva tal cual,
   (`ticket:<id>`, `contact:<número>|<conexión>` o, para un `Chat.txt`, `chattxt:` más un hash del contenido
   normalizado: el mismo chat subido con otro nombre de archivo es el mismo).
 - **Entre lotes:** la tabla `import_source_keys` (única por sistema, instalación, tipo e identificador de origen) se
-  escribe en la misma transacción que la conversación o el contacto. Una conversación ya importada aparece como
-  duplicada en el inventario («Ya se importó en una importación anterior; se omitirá para no duplicarla») y la
-  ejecución la cuenta como duplicada sin crear nada. Reanudar un lote o volver a importar la misma exportación no
-  duplica.
-- **Conversaciones por contacto** (exportaciones sin identificador de conversación): si un lote anterior ya la
-  importó, no se duplica ni se omite entera: se **amplía** con los mensajes que no tenía, gracias a una clave de origen
-  por mensaje. En el inventario, `already_imported` en esas filas significa «solo se agregarán los mensajes nuevos» y
-  no hay recomendación de excluirlas.
+  escribe en la misma transacción que la conversación o el contacto. Reanudar un lote o volver a importar la misma
+  exportación no duplica.
+- **Tickets del CSV de mensajes y conversaciones por contacto:** cada mensaje lleva su clave de origen (su
+  identificador de Whaticket o, en la exportación real, que no lo trae, su
+  [huella](#huella-de-cada-mensaje-idempotencia)) y la clave de la conversación lo anota (`details.message_keys`). Si
+  un lote anterior ya la importó, no se duplica ni se omite entera: se **amplía** con los mensajes que no tenía. En el
+  inventario, `already_imported` en esas filas significa «solo se agregarán los mensajes que todavía no tiene» y no
+  hay recomendación de excluirlas; si no había nada nuevo, la fila termina `duplicate`.
+- **Lo demás** (un `Chat.txt`, o un ticket importado por una versión anterior, sin clave por mensaje) aparece como
+  duplicado («Ya se importó en una importación anterior; se omitirá para no duplicarla») y la ejecución lo cuenta
+  como duplicado sin crear nada.
 
 ### Archivos históricos
 
@@ -423,8 +574,11 @@ demás transferencias (24 h), el lote de historial tiene su propia retención po
 
 ### Limitaciones
 
-- Formatos **no verificados** con exportaciones auténticas (columnas del CSV de mensajes y líneas de `Chat.txt`
-  inferidas).
+- Verificado solo el CSV de «Exportar mensajes». Siguen **sin verificar** con exportaciones auténticas el reporte de
+  chats, el CSV de contactos y las líneas de `Chat.txt` (inferidos).
+- La exportación de mensajes no trae los archivos, ni agente, departamento, conexión o etiquetas, ni el teléfono de
+  los contactos de Messenger/Instagram ([detalle](#exportación-real-de-mensajes-verificada-el-2026-11-12)).
+- Un texto que parece HTML (`<b>…</b>`) se guarda sin sus etiquetas (1 mensaje de 447 429 en la exportación real).
 - Sin reversión por lote (a diferencia del importador de contactos): lo importado es historial de solo lectura; para
   deshacer una importación real hay que restaurar el respaldo tomado antes.
 - Sin descarga de URLs de multimedia: solo se recuperan archivos incluidos en los ZIP subidos.
@@ -439,8 +593,11 @@ demás transferencias (24 h), el lote de historial tiene su propia retención po
 - Si el worker muere justo después de copiar un archivo al disco de adjuntos y antes de anotarlo en el mensaje de
   preparación, la siguiente corrida lo copia de nuevo y el primero queda huérfano en el disco (pendiente: anotar la
   intención antes de copiar).
-- No se ha medido con volúmenes reales (cientos de miles de mensajes); los límites por archivo siguen los de Whaticket
-  (450 mil mensajes por CSV).
+- Medido con un archivo real de 447 429 mensajes en el equipo de desarrollo
+  ([resultados](#resultados-medidos-con-el-archivo-real)); no se ha medido en el servidor de producción ni con varios
+  archivos de ese tamaño en el mismo lote. Los límites por archivo siguen los de Whaticket (450 mil mensajes por CSV).
+- La corrida real se hizo con los servicios del importador y cola `sync`; la subida por el navegador de un archivo de
+  67 MB y la lectura en un worker real de la cola `exports` no se ejercitaron.
 
 ### Requisitos previos para la primera migración
 
@@ -448,31 +605,35 @@ demás transferencias (24 h), el lote de historial tiene su propia retención po
    archivos ([recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)).
 2. **Almacenamiento de adjuntos decidido** (disco local o S3 privado) y `php artisan app:preflight` sin bloqueantes en
    `storage.media`: los archivos históricos se copian ahí.
-3. **Exportaciones de prueba auténticas y anonimizadas** de la instalación a migrar (reporte de chats, CSV de
-   mensajes, contactos, un `Whaticket-medias.zip` con `Chat.txt`), revisadas en un **entorno que no sea de
-   producción** (copia restaurada de la base): comparar encabezados con `HistoryColumns`, revisar fechas, zona
-   horaria, dirección («Enviado por la empresa») y nombres de archivo; ajustar alias y añadir una prueba con la
-   muestra antes de importar en producción.
+3. El CSV de mensajes ya está verificado. Para los **demás archivos** (reporte de chats, contactos, un
+   `Whaticket-medias.zip` con `Chat.txt`) siguen haciendo falta muestras auténticas y anonimizadas, revisadas en un
+   **entorno que no sea de producción** (copia restaurada de la base): comparar encabezados con `HistoryColumns`,
+   revisar fechas, zona horaria, dirección («Enviado por la empresa») y nombres de archivo; ajustar alias y añadir
+   una prueba con la muestra antes de usarlos en producción.
 4. **Conexiones, departamentos, agentes y etiquetas** creados en Chat Manager si se quieren mapear.
 5. **Reglas de clasificación** acordadas con el responsable (qué se importa, qué se archiva, qué no).
 6. Workers de la cola `exports` y programador en marcha.
 7. Un lote piloto pequeño, revisado (inventario, resumen, resultado y reporte) antes del lote completo.
 
-### Migraciones del importador (pendientes de autorización)
+### Migraciones del importador
 
-Las siete migraciones son aditivas y reversibles; se probaron en `chatmanager_testing` y **no se han aplicado en
-`chatmanager`**. Procedimiento en
+Las ocho migraciones son aditivas y reversibles. Las siete de la fase 5.2 **ya figuran como aplicadas** en la base
+local `chatmanager` (`php artisan migrate:status`, 2026-11-12); la octava,
+`2026_11_12_180000_add_details_to_history_import_messages_table`, **está pendiente** en `chatmanager` y en cualquier
+servidor: se aplica con `php artisan migrate` (una columna JSON nula en una tabla de preparación, instantánea).
+Procedimiento general en
 [infraestructura §16 «Procedimiento de la fase 5.2»](infraestructura-y-despliegue.md#procedimiento-de-la-fase-52).
 
-| Migración                                                     | Para qué                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `2026_10_25_210000_add_history_origin_to_conversations_table` | `conversations.origin` (`live` por defecto: toda fila existente queda en vivo), `history_only_at`, `imported_by_transfer_id` e índices `(origin, history_only_at, last_message_at)` y `(imported_by_transfer_id)`. **Sin clave foránea a propósito:** añadir una FK a una tabla InnoDB existente usa `ALGORITHM=COPY`, reconstruiría `conversations` y bloquearía la recepción y las respuestas mientras dura; columnas con valor por defecto o nulas (instantáneas en MariaDB) e índices en línea, así que **no hay copia de la tabla**. Solo el importador escribe la columna (validada en código) |
-| `2026_10_25_210001_create_import_source_keys_table`           | Idempotencia global de migraciones desde otros sistemas (clave única por origen); guarda identificadores de origen, nunca contenido                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `2026_10_25_210002_create_history_import_files_table`         | Archivos del lote: huella, formato detectado, encabezados, mapeo, desconocidas, faltantes, índice del ZIP (nombres y tamaños) y conteos                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `2026_10_25_210003_create_history_import_rules_table`         | Reglas de clasificación (filtro + destino + sobrescribir), con conteos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `2026_10_25_210004_create_history_import_conversations_table` | Inventario: una fila por conversación detectada, con datos de origen, avisos, recomendación, decisión y resultado; sin contenido de mensajes                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `2026_10_25_210005_create_history_import_messages_table`      | Mensajes de preparación (texto plano) agrupados por conversación; se purgan al terminar, fallar o vencer el lote                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `2026_10_25_210006_add_history_import_permissions`            | Crea los 4 permisos `history-import.*`, los concede a los roles raíz y concede `archive-view` al rol Administrador por defecto                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Migración                                                        | Para qué                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `2026_10_25_210000_add_history_origin_to_conversations_table`    | `conversations.origin` (`live` por defecto: toda fila existente queda en vivo), `history_only_at`, `imported_by_transfer_id` e índices `(origin, history_only_at, last_message_at)` y `(imported_by_transfer_id)`. **Sin clave foránea a propósito:** añadir una FK a una tabla InnoDB existente usa `ALGORITHM=COPY`, reconstruiría `conversations` y bloquearía la recepción y las respuestas mientras dura; columnas con valor por defecto o nulas (instantáneas en MariaDB) e índices en línea, así que **no hay copia de la tabla**. Solo el importador escribe la columna (validada en código) |
+| `2026_10_25_210001_create_import_source_keys_table`              | Idempotencia global de migraciones desde otros sistemas (clave única por origen); guarda identificadores de origen, nunca contenido                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `2026_10_25_210002_create_history_import_files_table`            | Archivos del lote: huella, formato detectado, encabezados, mapeo, desconocidas, faltantes, índice del ZIP (nombres y tamaños) y conteos                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `2026_10_25_210003_create_history_import_rules_table`            | Reglas de clasificación (filtro + destino + sobrescribir), con conteos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `2026_10_25_210004_create_history_import_conversations_table`    | Inventario: una fila por conversación detectada, con datos de origen, avisos, recomendación, decisión y resultado; sin contenido de mensajes                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `2026_10_25_210005_create_history_import_messages_table`         | Mensajes de preparación (texto plano) agrupados por conversación; se purgan al terminar, fallar o vencer el lote                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `2026_10_25_210006_add_history_import_permissions`               | Crea los 4 permisos `history-import.*`, los concede a los roles raíz y concede `archive-view` al rol Administrador por defecto                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `2026_11_12_180000_add_details_to_history_import_messages_table` | `history_import_messages.details` (JSON nulo): ubicación, contactos compartidos, llamada perdida y campaña de cada mensaje de preparación de la exportación real                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## Archivos
 

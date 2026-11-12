@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { Check, Pipette } from '@lucide/vue';
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
+import HexColorPanel from '@/components/personalization/HexColorPanel.vue';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import {
     colorPresentations,
     isHexColor,
@@ -13,12 +19,12 @@ import type { AppColor, ColorSwatch, HexColor } from '@/types';
 /**
  * Color of a department or tag: the platform swatches (which already
  * guarantee readable contrast in light and dark themes) plus a last
- * "Color personalizado" circle that opens the native color picker and stores
- * a "#rrggbb" value.
+ * "Color personalizado" circle that opens the platform's own picker
+ * (HexColorPanel, in a popover) and stores a "#rrggbb" value.
  *
  * It follows the radio group keyboard pattern: one Tab stop on the checked
  * circle, arrows move and select. Enter/Space or a click on the custom circle
- * opens the native picker.
+ * opens the picker.
  */
 const props = withDefaults(
     defineProps<{
@@ -37,7 +43,7 @@ const model = defineModel<AppColor>({ required: true });
 
 const DEFAULT_CUSTOM: HexColor = '#6366f1';
 
-const nativeInput = useTemplateRef<HTMLInputElement>('nativeInput');
+const pickerOpen = ref(false);
 
 /** Last custom color, kept while a palette swatch is selected. */
 const customColor = ref<HexColor>(
@@ -80,29 +86,32 @@ function select(index: number): void {
         index === props.colors.length ? customColor.value : props.colors[index];
 }
 
-function openNativePicker(): void {
+/** Choosing the custom circle selects the last custom color. */
+function selectCustom(): void {
     model.value = customColor.value;
-
-    const input = nativeInput.value;
-
-    if (!input) {
-        return;
-    }
-
-    try {
-        input.showPicker();
-    } catch {
-        input.click();
-    }
 }
 
-function onNativeInput(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
+const pickerColor = computed({
+    get: () => customColor.value as string,
+    set: (value: string) => {
+        if (isHexColor(value)) {
+            model.value = normalizeHex(value);
+        }
+    },
+});
 
-    if (isHexColor(value)) {
-        model.value = normalizeHex(value);
-    }
-}
+const CUSTOM_SWATCHES = [
+    '#ef4444',
+    '#f97316',
+    '#eab308',
+    '#22c55e',
+    '#14b8a6',
+    '#0ea5e9',
+    '#6366f1',
+    '#a855f7',
+    '#ec4899',
+    '#64748b',
+];
 
 function moveSelection(event: KeyboardEvent, index: number): void {
     const last = radioCount.value - 1;
@@ -161,64 +170,63 @@ function moveSelection(event: KeyboardEvent, index: number): void {
                 />
             </button>
 
-            <span class="relative inline-flex">
-                <button
-                    type="button"
-                    role="radio"
-                    :aria-checked="isCustomSelected"
-                    :tabindex="tabIndexFor(colors.length)"
-                    :aria-label="
-                        isCustomSelected
-                            ? `Color personalizado ${customColor}`
-                            : 'Color personalizado'
-                    "
-                    :title="
-                        isCustomSelected
-                            ? `Color personalizado ${customColor}`
-                            : 'Color personalizado'
-                    "
-                    data-test="custom-color"
-                    class="flex size-8 items-center justify-center rounded-full border ring-offset-2 ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="[
-                        isCustomSelected
-                            ? 'ring-2 ring-foreground/60'
-                            : 'bg-[conic-gradient(from_90deg,#ef4444,#f59e0b,#22c55e,#06b6d4,#6366f1,#d946ef,#ef4444)]',
-                    ]"
-                    :style="
-                        isCustomSelected
-                            ? { backgroundColor: customColor }
-                            : undefined
-                    "
-                    @click="openNativePicker"
-                    @keydown="moveSelection($event, colors.length)"
-                >
-                    <Check
-                        v-if="isCustomSelected"
-                        class="size-4"
-                        :class="
-                            solidForeground(customColor) === 'white'
-                                ? 'text-white'
-                                : 'text-black'
+            <Popover v-model:open="pickerOpen">
+                <PopoverTrigger as-child>
+                    <button
+                        type="button"
+                        role="radio"
+                        :aria-checked="isCustomSelected"
+                        :tabindex="tabIndexFor(colors.length)"
+                        :aria-label="
+                            isCustomSelected
+                                ? `Color personalizado ${customColor}`
+                                : 'Color personalizado'
                         "
-                        aria-hidden="true"
+                        :title="
+                            isCustomSelected
+                                ? `Color personalizado ${customColor}`
+                                : 'Color personalizado'
+                        "
+                        data-test="custom-color"
+                        class="flex size-8 items-center justify-center rounded-full border ring-offset-2 ring-offset-background transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        :class="[
+                            isCustomSelected
+                                ? 'ring-2 ring-foreground/60'
+                                : 'bg-[conic-gradient(from_90deg,#ef4444,#f59e0b,#22c55e,#06b6d4,#6366f1,#d946ef,#ef4444)]',
+                        ]"
+                        :style="
+                            isCustomSelected
+                                ? { backgroundColor: customColor }
+                                : undefined
+                        "
+                        @click="selectCustom"
+                        @keydown="moveSelection($event, colors.length)"
+                    >
+                        <Check
+                            v-if="isCustomSelected"
+                            class="size-4"
+                            :class="
+                                solidForeground(customColor) === 'white'
+                                    ? 'text-white'
+                                    : 'text-black'
+                            "
+                            aria-hidden="true"
+                        />
+                        <Pipette
+                            v-else
+                            class="size-3.5 text-white drop-shadow"
+                            aria-hidden="true"
+                        />
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" class="w-64 p-3">
+                    <HexColorPanel
+                        v-model="pickerColor"
+                        label="Color personalizado"
+                        :swatches="CUSTOM_SWATCHES"
                     />
-                    <Pipette
-                        v-else
-                        class="size-3.5 text-white drop-shadow"
-                        aria-hidden="true"
-                    />
-                </button>
-                <input
-                    ref="nativeInput"
-                    type="color"
-                    class="sr-only"
-                    tabindex="-1"
-                    aria-label="Elegir color personalizado"
-                    :value="customColor"
-                    @input="onNativeInput"
-                    @change="onNativeInput"
-                />
-            </span>
+                </PopoverContent>
+            </Popover>
 
             <span
                 v-if="isCustomSelected"

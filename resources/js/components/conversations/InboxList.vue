@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Hourglass, Inbox, MailWarning, Search, X } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
 import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
 import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
@@ -14,7 +14,6 @@ import ExportMenu from '@/components/ExportMenu.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { formatPhone } from '@/lib/phone';
 import type {
     ConnectionChannel,
@@ -608,7 +607,16 @@ function clearFilters(): void {
     void announceFilters();
 }
 
-defineExpose({ query });
+/* Shortcuts of the empty chat pane (pages/conversations/Index). */
+function showPending(): void {
+    change({ view: baseView.value, status: 'pending' });
+}
+
+function showUnread(): void {
+    change({ unread: true });
+}
+
+defineExpose({ query, showPending, showUnread });
 
 /*
  * "Filtros": a popover on wide screens, a bottom sheet on phones and on
@@ -702,7 +710,15 @@ function onScroll(event: Event): void {
 }
 
 const indicatorClass =
-    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 motion-safe:transition-colors pointer-coarse:h-10';
+    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium whitespace-nowrap outline-none press focus-visible:ring-[3px] focus-visible:ring-primary/25 pointer-coarse:h-10';
+
+/*
+ * The rows slide in once, when the inbox opens; later changes (filters,
+ * pages, live updates) never animate.
+ */
+const firstPaint = ref(true);
+
+onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
 </script>
 
 <template>
@@ -715,7 +731,7 @@ const indicatorClass =
         >
             <div class="flex items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-1">
-                    <h1 class="truncate text-base font-semibold tracking-tight">
+                    <h1 class="truncate font-display text-xl font-semibold">
                         Conversaciones
                     </h1>
                 </div>
@@ -941,7 +957,7 @@ const indicatorClass =
                 <span
                     v-for="chip in appliedChips"
                     :key="chip.key"
-                    class="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded-full border bg-muted/50 py-0.5 pr-0.5 pl-2.5 text-xs"
+                    class="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded-full border border-primary/30 bg-primary-soft py-0.5 pr-0.5 pl-2.5 text-xs text-primary-soft-foreground"
                     data-inbox-applied
                 >
                     <span class="truncate">{{ chip.label }}</span>
@@ -977,7 +993,10 @@ const indicatorClass =
                 v-if="conversations.data.length > 0"
                 ref="listElement"
                 class="divide-y motion-safe:transition-opacity"
-                :class="loading && 'opacity-60'"
+                :class="[
+                    loading && 'opacity-60',
+                    firstPaint && 'reveal-stagger',
+                ]"
                 @keydown="onListKeydown"
             >
                 <li
@@ -1065,12 +1084,13 @@ const indicatorClass =
                 class="flex justify-center border-t p-3"
             >
                 <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
+                    class="rounded-full"
                     :disabled="loading"
                     @click="emit('loadMore')"
+                    :loading="loading"
                 >
-                    <Spinner v-if="loading" />
                     Cargar más conversaciones
                 </Button>
             </div>

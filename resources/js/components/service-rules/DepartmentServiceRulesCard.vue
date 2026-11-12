@@ -3,7 +3,6 @@ import InputError from '@/components/InputError.vue';
 import ServiceRulesCard from '@/components/service-rules/ServiceRulesCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { useServiceRulesForm } from '@/composables/useServiceRulesForm';
 import { update } from '@/routes/departments/service-rules';
 import type { DepartmentSummary, ServiceRuleSet } from '@/types';
@@ -60,9 +59,9 @@ function save(): void {
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!form.isDirty"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar reglas
                 </Button>
             </div>

@@ -465,7 +465,7 @@ function submit(): void {
                             </li>
                             <li
                                 v-if="matches.length === 0"
-                                class="px-2 py-3 text-center text-sm text-muted-foreground"
+                                class="px-2 py-3 text-sm text-muted-foreground"
                             >
                                 Ningún agente coincide con la búsqueda.
                             </li>

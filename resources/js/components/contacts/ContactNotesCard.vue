@@ -5,7 +5,6 @@ import EmptyState from '@/components/EmptyState.vue';
 import InputError from '@/components/InputError.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { formatDateTime, formatRelative } from '@/lib/format';
@@ -63,14 +62,14 @@ function submit(): void {
                     class="flex items-center gap-1 text-xs text-muted-foreground"
                 >
                     <Lock class="size-3" aria-hidden="true" />
-                    Texto plano · {{ form.body.length }} / {{ MAX_LENGTH }}
+                    Texto plano, {{ form.body.length }} / {{ MAX_LENGTH }}
                 </span>
                 <Button
                     type="submit"
                     size="sm"
-                    :disabled="form.processing || form.body.trim() === ''"
+                    :disabled="form.body.trim() === ''"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Agregar nota
                 </Button>
             </div>

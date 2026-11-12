@@ -261,15 +261,12 @@ defineExpose({
             </template>
         </ul>
 
-        <p
-            v-else-if="failed"
-            class="px-3 py-4 text-center text-sm text-destructive"
-        >
+        <p v-else-if="failed" class="px-3 py-4 text-sm text-destructive">
             No se pudieron cargar las respuestas rápidas.
         </p>
         <p
             v-else-if="loaded && !http.processing"
-            class="px-3 py-4 text-center text-sm text-muted-foreground"
+            class="px-3 py-4 text-sm text-muted-foreground"
         >
             {{
                 query

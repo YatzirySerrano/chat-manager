@@ -3,7 +3,6 @@ import { ListChecks } from '@lucide/vue';
 import { computed } from 'vue';
 import { ALERT_SURFACE, PRIORITY_LOOK } from '@/components/attention/priority';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AttentionAlertPriority, ColorSwatch } from '@/types';
@@ -104,8 +103,8 @@ const surface = computed(
                 :disabled="preview || acknowledging"
                 data-attention-alert-acknowledge
                 @click="emit('acknowledge')"
+                :loading="acknowledging"
             >
-                <Spinner v-if="acknowledging" />
                 Entendido
             </Button>
         </footer>

@@ -10,7 +10,8 @@ import {
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import EmptyState from '@/components/EmptyState.vue';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
@@ -373,6 +374,11 @@ const emptyListCopy = computed(() => {
         },
     }[filter.value];
 });
+
+/* The chat list slides in once, when the screen opens. */
+const firstPaint = ref(true);
+
+onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
 </script>
 
 <template>
@@ -390,7 +396,7 @@ const emptyListCopy = computed(() => {
         <aside
             :class="
                 cn(
-                    'min-h-0 w-full shrink-0 flex-col border-r bg-background lg:flex lg:w-80 xl:w-96',
+                    'min-h-0 w-full shrink-0 flex-col border-r bg-background lg:flex lg:w-80 xl:w-96 2xl:w-[26rem]',
                     activeThread ? 'hidden' : 'flex',
                 )
             "
@@ -399,8 +405,10 @@ const emptyListCopy = computed(() => {
             <div class="grid gap-3 border-b p-3">
                 <div class="flex items-center justify-between gap-2">
                     <div class="min-w-0">
-                        <h1 class="sr-only">Chat interno</h1>
-                        <p class="text-sm text-muted-foreground">
+                        <h1 class="truncate font-display text-xl font-semibold">
+                            Chat interno
+                        </h1>
+                        <p class="truncate text-xs text-muted-foreground">
                             {{
                                 unreadTotal > 0
                                     ? `${unreadTotal} sin leer`
@@ -474,10 +482,10 @@ const emptyListCopy = computed(() => {
                         :aria-pressed="filter === option.value"
                         :class="
                             cn(
-                                'shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                                'shrink-0 press rounded-full border px-3 py-1 text-xs font-medium focus-visible:ring-[3px] focus-visible:ring-primary/25 focus-visible:outline-none pointer-coarse:min-h-9',
                                 filter === option.value
-                                    ? 'border-primary bg-primary text-primary-foreground'
-                                    : 'bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+                                    ? 'border-primary bg-primary-soft font-semibold text-primary-soft-foreground'
+                                    : 'bg-card text-muted-foreground hover:border-border-strong hover:bg-accent hover:text-foreground',
                             )
                         "
                         @click="chooseFilter(option.value)"
@@ -516,6 +524,7 @@ const emptyListCopy = computed(() => {
                     aria-label="Lista de chats"
                     data-tour="team-chat.threads"
                     class="grid grid-cols-1 gap-0.5"
+                    :class="firstPaint && 'reveal-stagger'"
                 >
                     <ThreadListItem
                         v-for="thread in threads.threads"
@@ -529,7 +538,7 @@ const emptyListCopy = computed(() => {
 
                 <p
                     v-if="reachedListLimit"
-                    class="px-3 py-2 text-center text-xs text-muted-foreground"
+                    class="px-3 py-2 text-xs text-muted-foreground"
                 >
                     Se muestran los {{ limits.maxThreads }} chats más recientes.
                     Usa la búsqueda o los filtros para encontrar otros.
@@ -539,9 +548,10 @@ const emptyListCopy = computed(() => {
                     class="flex justify-center py-2"
                 >
                     <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        :disabled="loadingList"
+                        class="rounded-full"
+                        :loading="loadingList"
                         @click="loadMoreThreads"
                     >
                         Ver más chats
@@ -618,7 +628,7 @@ const emptyListCopy = computed(() => {
         <main
             :class="
                 cn(
-                    'min-h-0 min-w-0 flex-1 flex-col bg-muted/20',
+                    'min-h-0 min-w-0 flex-1 flex-col',
                     activeThread ? 'flex' : 'hidden lg:flex',
                 )
             "
@@ -638,17 +648,44 @@ const emptyListCopy = computed(() => {
                     :thread="activeThread"
                 />
             </template>
-            <div v-else class="flex flex-1 items-center justify-center p-6">
-                <EmptyState
-                    :icon="MessageCircle"
-                    title="Elige un chat"
-                    description="Los mensajes internos son privados entre sus participantes y nunca se envían a WhatsApp ni se mezclan con las conversaciones de clientes."
-                    class="max-w-md"
-                >
-                    <Button variant="outline" @click="newDirectOpen = true">
-                        <Plus /> Nuevo chat privado
-                    </Button>
-                </EmptyState>
+            <!-- Nothing open: stated at the top-left corner of the pane. -->
+            <div
+                v-else
+                class="flex-1 overflow-y-auto p-6 sm:p-10"
+                :class="CHAT_CANVAS"
+            >
+                <div class="grid reveal justify-items-start gap-2">
+                    <span
+                        class="mb-2 grid size-12 place-items-center rounded-xl border bg-card text-primary"
+                        aria-hidden="true"
+                    >
+                        <MessageCircle class="size-6" />
+                    </span>
+                    <h2
+                        class="font-display text-3xl font-semibold text-balance"
+                    >
+                        Elige un chat
+                    </h2>
+                    <p
+                        class="max-w-prose text-base text-pretty text-muted-foreground"
+                    >
+                        Los mensajes internos son privados entre sus
+                        participantes y nunca se envían a WhatsApp ni se mezclan
+                        con las conversaciones de clientes.
+                    </p>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <Button @click="newDirectOpen = true">
+                            <Plus /> Nuevo chat privado
+                        </Button>
+                        <Button
+                            v-if="can.createGroup"
+                            variant="outline"
+                            @click="newGroupOpen = true"
+                        >
+                            <UsersRound /> Nuevo grupo
+                        </Button>
+                    </div>
+                </div>
             </div>
         </main>
 

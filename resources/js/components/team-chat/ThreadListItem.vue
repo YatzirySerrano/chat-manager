@@ -71,8 +71,9 @@ const unreadLabel = computed(() =>
             :aria-current="active ? 'page' : undefined"
             :class="
                 cn(
-                    'flex items-center gap-3 rounded-lg py-2.5 pr-10 pl-3 transition-colors select-none [-webkit-touch-callout:none] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none pointer-coarse:pr-12',
-                    active && 'bg-primary-soft hover:bg-primary-soft',
+                    'flex items-center gap-3 rounded-lg py-2.5 pr-10 pl-3 transition-[background-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) select-none [-webkit-touch-callout:none] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none pointer-coarse:pr-12',
+                    active &&
+                        'bg-primary-soft shadow-[inset_3px_0_0_var(--primary)] hover:bg-primary-soft',
                 )
             "
             v-on="longPress.handlers"
@@ -89,7 +90,7 @@ const unreadLabel = computed(() =>
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate text-sm',
+                                'min-w-0 flex-1 truncate font-display text-[0.975rem]',
                                 thread.unread > 0
                                     ? 'font-semibold'
                                     : 'font-medium',

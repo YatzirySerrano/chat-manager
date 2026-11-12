@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  * Also the filtered query of the classification screen, its filter
  * options, and the JSON shape of a row.
  *
- * @phpstan-type InventoryFilters array{search?: string|null, date_from?: string|null, date_to?: string|null, inactive_since?: string|null, agent?: string|null, department?: string|null, connection?: string|null, status?: string|null, tag?: string|null, decision?: string|null, kind?: string|null, state?: string|null, duplicates?: bool|null, empty?: bool|null, with_attachments?: bool|null, missing_attachments?: bool|null, group?: bool|null, has_issues?: bool|null}
+ * @phpstan-type InventoryFilters array{search?: string|null, date_from?: string|null, date_to?: string|null, inactive_since?: string|null, agent?: string|null, department?: string|null, connection?: string|null, status?: string|null, tag?: string|null, decision?: string|null, kind?: string|null, state?: string|null, duplicates?: bool|null, empty?: bool|null, with_attachments?: bool|null, missing_attachments?: bool|null, group?: bool|null, has_issues?: bool|null, with_phone?: bool|null, without_phone?: bool|null}
  */
 class HistoryInventory
 {
@@ -119,7 +119,11 @@ class HistoryInventory
             ->when($flag('with_attachments'), fn (Builder $query) => $query->where('attachments_total', '>', 0))
             ->when($flag('missing_attachments'), fn (Builder $query) => $query->whereColumn('attachments_available', '<', 'attachments_total'))
             ->when($flag('group'), fn (Builder $query) => $query->where('is_group', true))
-            ->when($flag('has_issues'), fn (Builder $query) => $query->whereNotNull('issues'));
+            ->when($flag('has_issues'), fn (Builder $query) => $query->whereNotNull('issues'))
+            // The authentic export mixes WhatsApp tickets (with a number) and
+            // Messenger / Instagram or company-only tickets (without one).
+            ->when($flag('with_phone'), fn (Builder $query) => $query->whereNotNull('contact_phone'))
+            ->when($flag('without_phone'), fn (Builder $query) => $query->whereNull('contact_phone'));
     }
 
     /**
@@ -544,10 +548,37 @@ class HistoryInventory
     }
 
     /**
+     * Source keys (of the given ones) whose earlier import can be extended
+     * with the messages it does not have yet instead of being skipped: the
+     * conversations keyed by contact, and the tickets imported with a key
+     * per message (HistoryImportSourceKey::extendable()).
+     *
+     * @param  array<int, string>  $sourceKeys
+     * @return array<string, true>
+     */
+    private function extendable(string $instance, array $sourceKeys): array
+    {
+        if ($sourceKeys === []) {
+            return [];
+        }
+
+        return HistoryImportSourceKey::query()
+            ->where('source_system', HistoryImportSourceKey::SYSTEM_WHATICKET)
+            ->where('source_instance', $instance)
+            ->where('source_kind', HistoryImportSourceKey::KIND_CONVERSATION)
+            ->whereIn('source_id', $sourceKeys)
+            ->get(['source_id', 'source_kind', 'details'])
+            ->filter(fn (HistoryImportSourceKey $key): bool => $key->extendable())
+            ->mapWithKeys(fn (HistoryImportSourceKey $key): array => [$key->source_id => true])
+            ->all();
+    }
+
+    /**
      * Issues, recommendation and allowed decision of every row.
      */
     private function evaluate(DataTransfer $batch): void
     {
+        $instance = HistoryImportBatches::sourceInstance($batch);
         $unknown = DB::table('history_import_messages')
             ->where('data_transfer_id', $batch->id)
             ->whereNull('from_me')
@@ -566,14 +597,19 @@ class HistoryInventory
         HistoryImportConversation::query()
             ->where('data_transfer_id', $batch->id)
             ->where('state', HistoryImportRowState::Pending)
-            ->chunkById(500, function (Collection $rows) use ($unknown, $ambiguous): void {
+            ->chunkById(500, function (Collection $rows) use ($unknown, $ambiguous, $instance): void {
+                $extendable = $this->extendable($instance, $rows->where('already_imported', true)->pluck('source_key')->map(fn (mixed $key): string => (string) $key)->values()->all());
+
                 foreach ($rows as $row) {
-                    $issues = $this->issuesOf($row, (int) ($unknown[$row->id] ?? 0), (int) ($ambiguous[$row->id] ?? 0));
+                    $extends = $row->already_imported && ($row->source_kind === HistoryImportConversation::KIND_CONTACT || isset($extendable[$row->source_key]));
+                    $issues = $this->issuesOf($row, (int) ($unknown[$row->id] ?? 0), (int) ($ambiguous[$row->id] ?? 0), $extends);
                     $row->issues = $issues === [] ? null : $issues;
                     [$row->recommendation, $row->recommendation_reason] = match (true) {
                         $row->message_count === 0 => [HistoryImportDecision::Exclude->value, 'Sin mensajes en los archivos.'],
-                        $row->already_imported && $row->source_kind !== HistoryImportConversation::KIND_CONTACT => [HistoryImportDecision::Exclude->value, 'Ya se importó en una importación anterior.'],
+                        $row->already_imported && ! $extends => [HistoryImportDecision::Exclude->value, 'Ya se importó en una importación anterior.'],
                         $row->is_group => [HistoryImportDecision::Archive->value, 'Chat de grupo: solo puede archivarse.'],
+                        ! $row->hasIdentifiableContact() => [HistoryImportDecision::Archive->value, 'Sin contacto identificable: solo puede archivarse o no importarse.'],
+                        $row->contact_phone === null && $row->contact_identifier === null && $row->source_kind !== HistoryImportConversation::KIND_CHAT_TEXT => [HistoryImportDecision::Archive->value, 'Contacto sin número: no podrá relacionarse con sus conversaciones nuevas.'],
                         default => [null, null],
                     };
 
@@ -591,7 +627,7 @@ class HistoryInventory
     /**
      * @return list<array{code: string, severity: string, message: string}>
      */
-    private function issuesOf(HistoryImportConversation $row, int $unknownDirection, int $ambiguous): array
+    private function issuesOf(HistoryImportConversation $row, int $unknownDirection, int $ambiguous, bool $extends = false): array
     {
         $issues = [];
         $add = function (string $code, string $severity, string $message) use (&$issues): void {
@@ -612,14 +648,18 @@ class HistoryInventory
             $add('group', 'warning', 'Chat de grupo: solo puede archivarse como historial o quedar como «No importar».');
         }
 
-        if ($row->contact_phone === null && $row->contact_name === null) {
+        if (! $row->hasIdentifiableContact() && ! $row->is_group) {
+            $add('no_contact', 'warning', 'Los archivos no indican el nombre ni el número del contacto (por ejemplo, un ticket con solo mensajes de la empresa): solo puede archivarse como historial o quedar como «No importar».');
+        } elseif ($row->contact_phone === null && $row->contact_name === null) {
             $add('no_contact', 'warning', 'No se conoce el nombre ni el número del contacto.');
         } elseif ($row->contact_phone === null && $row->contact_identifier !== null && ! $row->is_group) {
             $add('phone_invalid', 'warning', 'El número no se pudo normalizar; se conservará tal como viene, sin relacionarlo con otro contacto.');
+        } elseif ($row->contact_phone === null && ! $row->is_group && $row->source_kind !== HistoryImportConversation::KIND_CHAT_TEXT) {
+            $add('no_phone', 'warning', 'El contacto no tiene número de teléfono (por ejemplo, escribió por Messenger o Instagram): se conservará con su nombre, sin relacionarlo con otro contacto ni con sus conversaciones nuevas.');
         }
 
         if ($row->already_imported) {
-            $row->source_kind === HistoryImportConversation::KIND_CONTACT
+            $extends
                 ? $add('already_imported', 'warning', 'Ya se importó en una importación anterior; solo se agregarán los mensajes que todavía no tiene.')
                 : $add('already_imported', 'warning', 'Ya se importó en una importación anterior; se omitirá para no duplicarla.');
         }
@@ -629,7 +669,7 @@ class HistoryInventory
         }
 
         if ($row->attachmentsMissing() > 0) {
-            $add('attachments_missing', 'warning', $row->attachmentsMissing().' archivo(s) no vienen en los ZIP; quedarán como «Archivo histórico no disponible».');
+            $add('attachments_missing', 'warning', $row->attachmentsMissing().' archivo(s) no vienen en la exportación ni en los ZIP; quedarán como «Archivo histórico no disponible», con su tipo y su fecha.');
         }
 
         return $issues;

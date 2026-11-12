@@ -220,6 +220,13 @@ function show(next: Step): void {
     void nextTick(() => stepContent.value?.focus({ preventScroll: true }));
 }
 
+/** How far along the steps the open one is (bar under the stepper). */
+const stepProgress = computed(() => {
+    const position = steps.value.findIndex((item) => item.key === step.value);
+
+    return ((Math.max(0, position) + 1) / steps.value.length) * 100;
+});
+
 const currentStepLabel = computed(
     () => steps.value.find((item) => item.key === step.value)?.label ?? '',
 );
@@ -441,7 +448,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
             </template>
         </PageHeader>
 
-        <StatusNote tone="warning" title="Formato aún no verificado">
+        <StatusNote tone="info" title="Formatos de Whaticket">
             <p>{{ FORMAT_DISCLAIMER }}</p>
             <p class="mt-1">{{ formatNote }}</p>
         </StatusNote>
@@ -455,7 +462,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
             data-tour="history-import.steps"
         >
             <ol
-                class="grid gap-2"
+                class="grid gap-1 rounded-xl border bg-card p-1.5"
                 :class="
                     steps.length === 4
                         ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
@@ -468,10 +475,10 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                         :aria-current="item.key === step ? 'step' : undefined"
                         :class="
                             cn(
-                                'flex h-full w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11',
+                                'group/step flex h-full w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11',
                                 item.key === step
-                                    ? 'border-primary bg-primary-soft text-primary-soft-foreground'
-                                    : 'text-muted-foreground hover:bg-muted/40',
+                                    ? 'bg-primary-soft text-primary-soft-foreground'
+                                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                             )
                         "
                         :data-step="item.key"
@@ -480,7 +487,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                         <span
                             :class="
                                 cn(
-                                    'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums',
+                                    'grid size-7 shrink-0 place-items-center rounded-full border font-display text-sm font-semibold tabular-nums transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/step:scale-110',
                                     item.key === step &&
                                         'border-primary bg-primary text-primary-foreground',
                                     item.key !== step &&
@@ -513,6 +520,15 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                     </button>
                 </li>
             </ol>
+            <div
+                class="mx-1.5 mt-2 h-1 overflow-hidden rounded-full bg-muted"
+                aria-hidden="true"
+            >
+                <div
+                    class="h-full rounded-full bg-primary transition-[width] duration-(--duration-panel) ease-(--ease-out-quint)"
+                    :style="{ width: `${stepProgress}%` }"
+                />
+            </div>
         </nav>
 
         <h2 ref="stepContent" tabindex="-1" class="sr-only" data-step-heading>
@@ -547,7 +563,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
             @saved="onMappingsSaved"
         />
 
-        <div v-else-if="step === 'classify'" class="grid gap-6">
+        <div v-else-if="step === 'classify'" class="grid min-w-0 gap-6">
             <StatusNote
                 v-if="isDraft && (reading || rebuildWaitPolls > 0)"
                 tone="info"
@@ -582,25 +598,29 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                     </Button>
                 </template>
             </StatusNote>
-            <HistoryInventory
-                v-model:filters="inventoryFilters"
-                :batch-id="batch.id"
-                :facets="facets"
-                :editable="editable"
-                :per-page="limits.per_page"
-                :refresh-key="inventoryRefresh"
-                @summary="onSummary"
-                @rebuilding="onRebuilding"
-            />
-            <HistoryRulesPanel
-                v-if="isDraft"
-                :batch-id="batch.id"
-                :rules="rules"
-                :facets="facets"
-                :editable="editable"
-                :current-filters="inventoryFilters"
-                @changed="onRulesChanged"
-            />
+            <div
+                class="grid min-w-0 gap-6 min-[112rem]:grid-cols-[minmax(0,1fr)_28rem] min-[112rem]:items-start [&>*]:min-w-0"
+            >
+                <HistoryInventory
+                    v-model:filters="inventoryFilters"
+                    :batch-id="batch.id"
+                    :facets="facets"
+                    :editable="editable"
+                    :per-page="limits.per_page"
+                    :refresh-key="inventoryRefresh"
+                    @summary="onSummary"
+                    @rebuilding="onRebuilding"
+                />
+                <HistoryRulesPanel
+                    v-if="isDraft"
+                    :batch-id="batch.id"
+                    :rules="rules"
+                    :facets="facets"
+                    :editable="editable"
+                    :current-filters="inventoryFilters"
+                    @changed="onRulesChanged"
+                />
+            </div>
         </div>
 
         <HistorySummaryStep

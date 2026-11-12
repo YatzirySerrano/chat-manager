@@ -171,7 +171,7 @@ function onEditKeydown(event: KeyboardEvent): void {
         class="flex justify-center px-4 py-1"
     >
         <p
-            class="max-w-md rounded-full bg-muted px-3 py-1 text-center text-xs text-muted-foreground"
+            class="max-w-md rounded-full border bg-background/85 px-3 py-1 text-center text-xs text-muted-foreground backdrop-blur-sm"
             :title="fullDate"
         >
             {{ message.system_text }}
@@ -191,7 +191,7 @@ function onEditKeydown(event: KeyboardEvent): void {
         <div
             :class="
                 cn(
-                    'flex max-w-[85%] items-start gap-1 sm:max-w-[70%]',
+                    'flex max-w-[85%] items-start gap-1 sm:max-w-[min(70%,46rem)]',
                     message.is_mine && 'flex-row-reverse',
                 )
             "
@@ -199,7 +199,7 @@ function onEditKeydown(event: KeyboardEvent): void {
             <div
                 :class="
                     cn(
-                        'min-w-0 rounded-2xl px-3 py-2 text-sm shadow-xs transition-colors',
+                        'min-w-0 rounded-2xl px-3.5 py-2 text-sm transition-[background-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) group-hover:shadow-hover',
                         message.is_mine
                             ? [
                                   'rounded-br-md',
@@ -208,7 +208,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                                       : 'bg-primary text-primary-foreground',
                               ]
                             : [
-                                  'rounded-bl-md border',
+                                  'rounded-bl-md border border-border-strong/70',
                                   custom
                                       ? CUSTOM_BUBBLE_CLASSES.received
                                       : 'bg-card text-card-foreground',
@@ -279,7 +279,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                             </Button>
                             <Button
                                 size="sm"
-                                :disabled="saving"
+                                :loading="saving"
                                 @click="saveEdit"
                             >
                                 Guardar
@@ -329,6 +329,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                                 :src="image.preview_url ?? ''"
                                 :alt="image.name"
                                 loading="lazy"
+                                decoding="async"
                                 class="max-h-60 w-full object-cover"
                             />
                         </a>

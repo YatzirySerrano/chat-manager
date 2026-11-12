@@ -12,9 +12,7 @@ import {
 import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import {
     check as checkSubscription,
@@ -181,11 +179,11 @@ const automation = computed(() => {
 </script>
 
 <template>
-    <SurfaceCard
-        title="Integración con WhatsApp Cloud API"
-        description="Pasos para activar la conexión, confirmados con Meta."
-        body-class="grid grid-cols-1 gap-4 p-5 text-sm"
-    >
+    <!--
+      Body of the "Integración con WhatsApp Cloud API" section of the
+      connection page (the page gives it its title and panel).
+    -->
+    <div class="grid grid-cols-1 gap-5 text-sm" data-slot="diagnostics">
         <div
             v-if="diagnostics.transport.mode !== 'meta'"
             class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
@@ -232,7 +230,7 @@ const automation = computed(() => {
             </p>
             <div class="flex gap-2">
                 <code
-                    class="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-2 py-1.5 text-xs"
+                    class="min-w-0 flex-1 truncate rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs"
                     :title="diagnostics.webhook.url ?? ''"
                     >{{ diagnostics.webhook.url ?? 'No disponible' }}</code
                 >
@@ -261,7 +259,7 @@ const automation = computed(() => {
             </p>
         </div>
 
-        <ul class="grid gap-3">
+        <ul class="auto-grid [--col-min:17rem] [--grid-gap:1rem]">
             <li v-for="item in checks" :key="item.key" class="flex gap-2">
                 <component
                     :is="icon[item.state]"
@@ -404,11 +402,11 @@ const automation = computed(() => {
                 v-if="can.verify"
                 variant="outline"
                 size="sm"
-                :disabled="busy !== null"
+                :disabled="busy !== null && busy !== 'check'"
+                :loading="busy === 'check'"
                 @click="post('check')"
             >
-                <Spinner v-if="busy === 'check'" />
-                <RefreshCw v-else />
+                <RefreshCw />
                 Revisar suscripción
             </Button>
             <Button
@@ -417,21 +415,21 @@ const automation = computed(() => {
                     diagnostics.subscription.state !== 'subscribed'
                 "
                 size="sm"
-                :disabled="busy !== null"
+                :disabled="busy !== null && busy !== 'subscribe'"
+                :loading="busy === 'subscribe'"
                 @click="post('subscribe')"
             >
-                <Spinner v-if="busy === 'subscribe'" />
                 Suscribir app
             </Button>
             <Button
                 v-if="can.syncTemplates"
                 variant="outline"
                 size="sm"
-                :disabled="busy !== null"
+                :disabled="busy !== null && busy !== 'sync'"
+                :loading="busy === 'sync'"
                 @click="post('sync')"
             >
-                <Spinner v-if="busy === 'sync'" />
-                <RefreshCw v-else />
+                <RefreshCw />
                 Actualizar plantillas desde Meta
             </Button>
         </div>
@@ -450,5 +448,5 @@ const automation = computed(() => {
                 >Ver plantillas</Link
             >
         </p>
-    </SurfaceCard>
+    </div>
 </template>

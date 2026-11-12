@@ -22,7 +22,7 @@ const names: Record<AnalyticsGranularity, string> = {
 
 <template>
     <div
-        class="inline-flex rounded-md border p-0.5"
+        class="inline-flex rounded-lg border bg-surface-sunken p-0.5"
         role="group"
         aria-label="Agrupar por"
         data-granularity-toggle
@@ -31,10 +31,10 @@ const names: Record<AnalyticsGranularity, string> = {
             v-for="option in options"
             :key="option"
             type="button"
-            class="rounded-[5px] px-2 py-1 text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            class="rounded-md px-2.5 py-1 text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             :class="
                 option === value
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-card text-foreground shadow-(--shadow-control)'
                     : 'text-muted-foreground hover:text-foreground'
             "
             :aria-pressed="option === value"

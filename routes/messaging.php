@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Messaging\AttachmentLinkRevocationController;
+use App\Http\Controllers\Messaging\ConnectionRegistrationController;
 use App\Http\Controllers\Messaging\ConnectionSubscriptionController;
 use App\Http\Controllers\Messaging\ConversationTemplateController;
 use App\Http\Controllers\Messaging\MessageRetryController;
@@ -33,4 +34,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('connections/{connection}/subscription/check', [ConnectionSubscriptionController::class, 'check'])->middleware('throttle:10,1')->name('connections.subscription.check');
     Route::post('connections/{connection}/subscription', [ConnectionSubscriptionController::class, 'store'])->middleware('throttle:10,1')->name('connections.subscription.store');
+    Route::post('connections/{connection}/register', [ConnectionRegistrationController::class, 'store'])->middleware('throttle:10,1')->name('connections.register');
 });

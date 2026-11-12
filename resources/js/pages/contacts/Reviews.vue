@@ -10,6 +10,7 @@ import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { index as contactsIndex, show } from '@/routes/contacts';
@@ -150,24 +151,13 @@ function phone(summary: ContactReviewSummary): string {
             description="Contactos que podrían estar repetidos. El sistema no los une solo para no mezclar a personas distintas; decide tú si son la misma persona."
         />
 
-        <div
-            class="flex flex-wrap gap-2"
-            role="group"
+        <Segmented
+            :model-value="filters.status"
+            :options="statuses"
             aria-label="Estado de los casos"
-        >
-            <Button
-                v-for="status in statuses"
-                :key="status.value"
-                size="sm"
-                :variant="
-                    filters.status === status.value ? 'default' : 'outline'
-                "
-                :aria-pressed="filters.status === status.value"
-                @click="filterBy(status.value)"
-            >
-                {{ status.label }}
-            </Button>
-        </div>
+            class="w-fit"
+            @change="filterBy"
+        />
 
         <EmptyState
             v-if="props.cases.data.length === 0"
@@ -180,144 +170,154 @@ function phone(summary: ContactReviewSummary): string {
             description="Aparecen aquí cuando alguien escribe por WhatsApp y se parece a varios contactos, o cuando se agrega a mano un teléfono o correo que ya usa otro contacto."
         />
 
-        <SurfaceCard
-            v-for="reviewCase in props.cases.data"
-            :key="reviewCase.id"
-            class="grid gap-4 p-4"
+        <div
+            v-if="props.cases.data.length > 0"
+            class="auto-grid reveal-stagger items-start [--col-min:34rem] [--grid-gap:1rem]"
         >
-            <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="min-w-0">
-                    <p class="font-medium">{{ reviewCase.reason_label }}</p>
-                    <p class="text-xs text-muted-foreground">
-                        Detectado {{ formatDateTime(reviewCase.created_at) }}
-                    </p>
-                </div>
-                <p
-                    v-if="reviewCase.status === 'resolved'"
-                    class="text-sm text-muted-foreground"
-                >
-                    <CheckCheck
-                        class="mr-1 inline size-4 text-success"
-                        aria-hidden="true"
-                    />{{ reviewCase.resolution_label }}
-                    <template v-if="reviewCase.resolved_by">
-                        · {{ reviewCase.resolved_by }}</template
+            <SurfaceCard
+                v-for="reviewCase in props.cases.data"
+                :key="reviewCase.id"
+                class="grid gap-4 p-4"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="font-medium">{{ reviewCase.reason_label }}</p>
+                        <p class="text-xs text-muted-foreground">
+                            Detectado
+                            {{ formatDateTime(reviewCase.created_at) }}
+                        </p>
+                    </div>
+                    <p
+                        v-if="reviewCase.status === 'resolved'"
+                        class="text-sm text-muted-foreground"
                     >
-                    · {{ formatDateTime(reviewCase.resolved_at) }}
-                </p>
-                <Button
-                    v-else
-                    size="sm"
-                    variant="outline"
-                    @click="decide(reviewCase, 'distinct_people')"
-                >
-                    <UserCheck />
-                    Son personas distintas
-                </Button>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-                <section
-                    class="grid content-start gap-1 rounded-lg border p-3"
-                    aria-label="Contacto en revisión"
-                >
-                    <p class="text-xs font-medium text-muted-foreground">
-                        En revisión
-                    </p>
-                    <Link
-                        :href="show(reviewCase.contact.id)"
-                        class="truncate font-medium hover:underline"
-                        >{{ reviewCase.contact.name }}</Link
-                    >
-                    <p class="text-sm text-muted-foreground">
-                        {{ phone(reviewCase.contact) }}
-                        <template v-if="reviewCase.contact.email">
-                            · {{ reviewCase.contact.email }}</template
+                        <CheckCheck
+                            class="mr-1 inline size-4 text-success"
+                            aria-hidden="true"
+                        />{{ reviewCase.resolution_label }}
+                        <template v-if="reviewCase.resolved_by">
+                            · {{ reviewCase.resolved_by }}</template
                         >
+                        · {{ formatDateTime(reviewCase.resolved_at) }}
                     </p>
-                    <p class="text-xs text-muted-foreground">
-                        {{ reviewCase.contact.source_label }}
-                        <template v-if="reviewCase.contact.whatsapp_ids.length">
-                            · WhatsApp
-                            {{ reviewCase.contact.whatsapp_ids.join(', ') }}
-                        </template>
-                    </p>
-                    <StatusBadge
-                        :active="reviewCase.contact.status === 'active'"
-                        active-label="Activo"
-                        inactive-label="Eliminado"
-                        class="justify-self-start"
-                    />
-                </section>
+                    <Button
+                        v-else
+                        size="sm"
+                        variant="outline"
+                        @click="decide(reviewCase, 'distinct_people')"
+                    >
+                        <UserCheck />
+                        Son personas distintas
+                    </Button>
+                </div>
 
-                <div class="grid content-start gap-3">
+                <div class="grid gap-3 md:grid-cols-2">
                     <section
-                        v-for="candidate in reviewCase.candidates"
-                        :key="candidate.id"
-                        class="grid gap-1 rounded-lg border border-dashed p-3"
-                        :aria-label="`Coincidencia: ${candidate.name}`"
+                        class="grid content-start gap-1 rounded-lg border p-3"
+                        aria-label="Contacto en revisión"
                     >
                         <p class="text-xs font-medium text-muted-foreground">
-                            Coincide con
+                            En revisión
                         </p>
                         <Link
-                            :href="show(candidate.id)"
+                            :href="show(reviewCase.contact.id)"
                             class="truncate font-medium hover:underline"
-                            >{{ candidate.name }}</Link
+                            >{{ reviewCase.contact.name }}</Link
                         >
                         <p class="text-sm text-muted-foreground">
-                            {{ phone(candidate) }}
-                            <template v-if="candidate.email">
-                                · {{ candidate.email }}</template
+                            {{ phone(reviewCase.contact) }}
+                            <template v-if="reviewCase.contact.email">
+                                · {{ reviewCase.contact.email }}</template
                             >
                         </p>
                         <p class="text-xs text-muted-foreground">
-                            {{ candidate.source_label }}
-                            <template v-if="candidate.whatsapp_ids.length">
+                            {{ reviewCase.contact.source_label }}
+                            <template
+                                v-if="reviewCase.contact.whatsapp_ids.length"
+                            >
                                 · WhatsApp
-                                {{ candidate.whatsapp_ids.join(', ') }}
+                                {{ reviewCase.contact.whatsapp_ids.join(', ') }}
                             </template>
                         </p>
-                        <div
-                            v-if="reviewCase.status === 'open'"
-                            class="mt-1 flex flex-wrap gap-2"
-                        >
-                            <Button
-                                v-if="
-                                    reviewCase.reason ===
-                                    'ambiguous_identity_match'
-                                "
-                                size="sm"
-                                @click="
-                                    decide(
-                                        reviewCase,
-                                        'identity_linked',
-                                        candidate,
-                                    )
-                                "
-                            >
-                                <GitMerge />
-                                Vincular WhatsApp a esta ficha
-                            </Button>
-                            <Button
-                                v-else
-                                size="sm"
-                                variant="outline"
-                                @click="
-                                    decide(
-                                        reviewCase,
-                                        'duplicate_archived',
-                                        candidate,
-                                    )
-                                "
-                            >
-                                Eliminar el registro en revisión
-                            </Button>
-                        </div>
+                        <StatusBadge
+                            :active="reviewCase.contact.status === 'active'"
+                            active-label="Activo"
+                            inactive-label="Eliminado"
+                            class="justify-self-start"
+                        />
                     </section>
+
+                    <div class="grid content-start gap-3">
+                        <section
+                            v-for="candidate in reviewCase.candidates"
+                            :key="candidate.id"
+                            class="grid gap-1 rounded-lg border border-dashed p-3"
+                            :aria-label="`Coincidencia: ${candidate.name}`"
+                        >
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                Coincide con
+                            </p>
+                            <Link
+                                :href="show(candidate.id)"
+                                class="truncate font-medium hover:underline"
+                                >{{ candidate.name }}</Link
+                            >
+                            <p class="text-sm text-muted-foreground">
+                                {{ phone(candidate) }}
+                                <template v-if="candidate.email">
+                                    · {{ candidate.email }}</template
+                                >
+                            </p>
+                            <p class="text-xs text-muted-foreground">
+                                {{ candidate.source_label }}
+                                <template v-if="candidate.whatsapp_ids.length">
+                                    · WhatsApp
+                                    {{ candidate.whatsapp_ids.join(', ') }}
+                                </template>
+                            </p>
+                            <div
+                                v-if="reviewCase.status === 'open'"
+                                class="mt-1 flex flex-wrap gap-2"
+                            >
+                                <Button
+                                    v-if="
+                                        reviewCase.reason ===
+                                        'ambiguous_identity_match'
+                                    "
+                                    size="sm"
+                                    @click="
+                                        decide(
+                                            reviewCase,
+                                            'identity_linked',
+                                            candidate,
+                                        )
+                                    "
+                                >
+                                    <GitMerge />
+                                    Vincular WhatsApp a esta ficha
+                                </Button>
+                                <Button
+                                    v-else
+                                    size="sm"
+                                    variant="outline"
+                                    @click="
+                                        decide(
+                                            reviewCase,
+                                            'duplicate_archived',
+                                            candidate,
+                                        )
+                                    "
+                                >
+                                    Eliminar el registro en revisión
+                                </Button>
+                            </div>
+                        </section>
+                    </div>
                 </div>
-            </div>
-        </SurfaceCard>
+            </SurfaceCard>
+        </div>
 
         <DataPagination
             v-if="props.cases.data.length > 0"

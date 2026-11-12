@@ -14,7 +14,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import { getInitials } from '@/composables/useInitials';
 import { store as storeMember } from '@/routes/departments/members';
 import type { DepartmentSummary, MemberCandidate } from '@/types';
@@ -120,20 +119,20 @@ function addMember(candidate: MemberCandidate): void {
                     <Button
                         size="sm"
                         variant="outline"
-                        :disabled="addingUserId !== null"
+                        :disabled="
+                            addingUserId !== null &&
+                            addingUserId !== candidate.id
+                        "
+                        :loading="addingUserId === candidate.id"
                         :aria-label="`Agregar a ${candidate.name}`"
                         @click="addMember(candidate)"
                     >
-                        <Spinner v-if="addingUserId === candidate.id" />
-                        <UserPlus v-else />
+                        <UserPlus />
                         Agregar
                     </Button>
                 </li>
             </ul>
-            <p
-                v-else
-                class="px-5 py-10 text-center text-sm text-muted-foreground"
-            >
+            <p v-else class="px-5 py-10 text-sm text-muted-foreground">
                 {{
                     candidates.length === 0
                         ? 'No hay usuarios disponibles para agregar.'

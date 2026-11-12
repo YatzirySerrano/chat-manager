@@ -176,11 +176,11 @@ async function confirm(): Promise<void> {
                         aria-label="Actualizando"
                     />
                 </h2>
-                <div class="grid gap-3 md:grid-cols-3">
+                <div class="grid reveal-stagger gap-3 md:grid-cols-3">
                     <article
                         v-for="decision in DECISION_ORDER"
                         :key="decision"
-                        class="grid content-start gap-2 rounded-xl border bg-card p-4 shadow-card"
+                        class="spotlight grid content-start gap-2 rounded-xl border bg-card p-4"
                         :data-summary-destination="decision"
                     >
                         <p
@@ -194,7 +194,7 @@ async function confirm(): Promise<void> {
                             {{ DECISIONS[decision].label }}
                         </p>
                         <p
-                            class="text-2xl font-semibold tabular-nums"
+                            class="font-display text-3xl leading-9 font-semibold tabular-nums"
                             data-summary-count
                         >
                             {{ formatNumber(summary.totals[decision]) }}
@@ -236,9 +236,7 @@ async function confirm(): Promise<void> {
                 <h2 id="summary-details" class="text-base font-semibold">
                     Detalle
                 </h2>
-                <div
-                    class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                >
+                <div class="auto-grid [--col-min:15rem]">
                     <StatCard
                         label="Contactos involucrados"
                         :value="formatNumber(summary.contacts.involved)"
@@ -394,9 +392,9 @@ async function confirm(): Promise<void> {
                             !summary.ready || !reviewed || executing || loading
                         "
                         @click="confirm"
+                        :loading="executing"
                     >
-                        <Spinner v-if="executing" />
-                        <ShieldCheck v-else />
+                        <ShieldCheck v-if="!executing" />
                         Confirmar e importar
                     </Button>
                 </div>

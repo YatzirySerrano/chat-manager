@@ -6,7 +6,6 @@ import PasswordInput from '@/components/PasswordInput.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { update } from '@/routes/password';
 
 defineOptions({
@@ -80,11 +79,11 @@ const inputEmail = ref(props.email);
 
             <Button
                 type="submit"
+                size="lg"
                 class="mt-4 w-full"
-                :disabled="processing"
+                :loading="processing"
                 data-test="reset-password-button"
             >
-                <Spinner v-if="processing" />
                 Restablecer contraseña
             </Button>
         </div>

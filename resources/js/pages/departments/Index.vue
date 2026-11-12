@@ -20,6 +20,7 @@ import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
 import RecordStateFilter from '@/components/RecordStateFilter.vue';
+import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,6 +68,19 @@ const props = defineProps<{
 }>();
 
 const { mode: viewMode } = useViewMode('departments');
+
+/* What needs attention across the departments on screen. */
+const overview = computed(() => ({
+    withoutLeader: props.departments.filter(
+        (department) => (department.leaders ?? []).length === 0,
+    ).length,
+    withoutMembers: props.departments.filter(
+        (department) => (department.members_count ?? 0) === 0,
+    ).length,
+    withoutConnection: props.departments.filter(
+        (department) => (department.connections_count ?? 0) === 0,
+    ).length,
+}));
 
 const formOpen = ref(false);
 const editingDepartment = ref<DepartmentSummary | null>(null);
@@ -160,7 +174,39 @@ function leadersLabel(department: DepartmentSummary): string {
             </template>
         </PageHeader>
 
-        <SurfaceCard v-if="departments.length > 0 || record !== 'active'">
+        <div
+            v-if="departments.length > 0 && record === 'active'"
+            class="grid reveal-stagger gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        >
+            <StatCard
+                label="Departamentos"
+                :value="departments.length"
+                :icon="Building2"
+            />
+            <StatCard
+                label="Sin responsable"
+                :value="overview.withoutLeader"
+                :icon="UserRound"
+                hint="Nadie supervisa sus conversaciones."
+            />
+            <StatCard
+                label="Sin miembros"
+                :value="overview.withoutMembers"
+                :icon="Users"
+                hint="No tienen quién atienda."
+            />
+            <StatCard
+                label="Sin conexión asociada"
+                :value="overview.withoutConnection"
+                :icon="Plug"
+                hint="Ningún canal les envía conversaciones."
+            />
+        </div>
+
+        <SurfaceCard
+            v-if="departments.length > 0 || record !== 'active'"
+            class="reveal [--i:4]"
+        >
             <div
                 class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
             >

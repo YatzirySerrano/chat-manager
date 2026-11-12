@@ -11,7 +11,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { maxLength, required, when } from '@/lib/validation';
@@ -120,8 +119,8 @@ function submit(): void {
                         type="submit"
                         :variant="destructive ? 'destructive' : 'default'"
                         :disabled="processing"
+                        :loading="processing"
                     >
-                        <Spinner v-if="processing" />
                         {{ confirmLabel }}
                     </Button>
                 </DialogFooter>

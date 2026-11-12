@@ -5,6 +5,7 @@ import {
     FileText,
     FileWarning,
     ImageOff,
+    Play,
 } from '@lucide/vue';
 import { computed, inject, ref } from 'vue';
 import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
@@ -31,6 +32,46 @@ const props = withDefaults(
 );
 
 const broken = ref(false);
+
+/**
+ * What the bubble paints: the small preview when the server offers one (a
+ * sticker is always its own file, so an animated one keeps moving). The
+ * original only travels when the image is opened. If the preview fails, the
+ * original is tried once before giving up.
+ */
+const previewFailed = ref(false);
+const loaded = ref(false);
+const imageSource = computed(() =>
+    props.sticker || previewFailed.value || !props.attachment.thumb_url
+        ? props.attachment.url
+        : props.attachment.thumb_url,
+);
+
+function onImageError(): void {
+    if (imageSource.value !== props.attachment.url) {
+        previewFailed.value = true;
+
+        return;
+    }
+
+    broken.value = true;
+}
+
+/**
+ * Size of the box, known before the file arrives when the image was already
+ * measured: the timeline does not jump while pictures load.
+ */
+const intrinsic = computed(() => {
+    const { width, height } = props.attachment;
+
+    return !props.sticker && width && height ? { width, height } : null;
+});
+
+/**
+ * A video downloads nothing until someone asks to play it: not even its
+ * metadata, which for a long timeline meant one request per video.
+ */
+const playing = ref(false);
 const stickerLabel = computed(() =>
     props.sticker?.animated ? 'Sticker animado' : 'Sticker',
 );
@@ -201,14 +242,25 @@ const opensInline = computed(
                 "
             >
                 <img
-                    :src="attachment.url"
+                    :src="imageSource"
                     :alt="sticker ? stickerLabel : name"
                     loading="lazy"
-                    :class="
+                    decoding="async"
+                    :width="intrinsic?.width"
+                    :height="intrinsic?.height"
+                    :class="[
                         sticker
                             ? 'size-32 object-contain sm:size-40'
-                            : 'max-h-72 w-auto max-w-full rounded-lg object-contain'
+                            : 'max-h-72 w-auto max-w-full rounded-lg object-contain',
+                        intrinsic ? 'h-auto' : '',
+                        !sticker && !loaded
+                            ? 'min-h-24 min-w-32 bg-current/10'
+                            : '',
+                    ]"
+                    :data-preview="
+                        imageSource === attachment.url ? 'original' : 'thumb'
                     "
+                    @load="loaded = true"
                     :data-sticker="
                         sticker
                             ? sticker.animated
@@ -216,7 +268,7 @@ const opensInline = computed(
                                 : 'static'
                             : undefined
                     "
-                    @error="broken = true"
+                    @error="onImageError"
                 />
             </a>
             <p
@@ -238,14 +290,38 @@ const opensInline = computed(
             :aria-label="`Audio ${name}`"
         />
 
-        <video
-            v-else-if="kind === 'video'"
-            :src="attachment.url"
-            controls
-            preload="metadata"
-            class="max-h-72 max-w-full rounded-lg"
-            :aria-label="`Video ${name}`"
-        />
+        <template v-else-if="kind === 'video'">
+            <video
+                v-if="playing"
+                :src="attachment.url"
+                controls
+                autoplay
+                playsinline
+                preload="auto"
+                class="max-h-72 max-w-full rounded-lg"
+                :aria-label="`Video ${name}`"
+            />
+            <button
+                v-else
+                type="button"
+                class="flex aspect-video w-64 max-w-full flex-col items-center justify-center gap-2 rounded-lg bg-current/10 px-3 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-video-placeholder
+                :aria-label="`Reproducir video ${name}`"
+                @click="playing = true"
+            >
+                <span
+                    class="flex size-11 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm"
+                >
+                    <Play class="size-5 translate-x-px" aria-hidden="true" />
+                </span>
+                <span class="max-w-full truncate text-xs" :class="mutedText">
+                    {{ name }}
+                </span>
+                <span v-if="size" class="text-xs" :class="mutedText">
+                    {{ size }}
+                </span>
+            </button>
+        </template>
 
         <div
             v-else

@@ -20,9 +20,9 @@ import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TemplateStatusBadge from '@/components/templates/TemplateStatusBadge.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -75,9 +75,6 @@ const props = defineProps<{
     canExport?: boolean;
 }>();
 
-const selectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30';
-
 const filterState = reactive({
     search: props.filters.search ?? '',
     connection: props.filters.connection
@@ -88,6 +85,32 @@ const filterState = reactive({
     language: props.filters.language ?? '',
     record: props.filters.record,
 });
+
+const connectionOptions = computed(() => [
+    { value: '', label: 'Todas las conexiones' },
+    ...props.connections.map((connection) => ({
+        value: String(connection.id),
+        label: connection.name,
+    })),
+]);
+const statusOptions = computed(() => [
+    { value: '', label: 'Todos los estados' },
+    ...props.statuses.map((status) => ({
+        value: status.value as string,
+        label: status.label,
+    })),
+]);
+const categoryOptions = computed(() => [
+    { value: '', label: 'Todas las categorías' },
+    ...props.categories,
+]);
+const languageOptions = computed(() => [
+    { value: '', label: 'Todos los idiomas' },
+    ...props.languages.map((language) => ({
+        value: language,
+        label: formatLocale(language),
+    })),
+]);
 
 const hasFilters = computed(
     () =>
@@ -175,7 +198,7 @@ function sync(connection: TemplateConnectionOption): void {
         </PageHeader>
 
         <div
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            class="grid reveal-stagger gap-3 sm:grid-cols-2 xl:grid-cols-4"
             data-tour="templates.stats"
         >
             <StatCard
@@ -201,244 +224,232 @@ function sync(connection: TemplateConnectionOption): void {
             />
         </div>
 
-        <SurfaceCard
-            v-if="syncable.length > 0"
-            data-tour="templates.sync"
-            title="Actualizar desde Meta"
-            description="Trae de Meta las plantillas de cada conexión y su estado actual. También se actualizan solas cada 6 horas y cuando Meta avisa un cambio."
-            body-class="grid gap-2 p-4"
+        <div
+            :class="
+                syncable.length > 0 ? 'split-layout [--aside-w:24rem]' : 'grid'
+            "
         >
-            <div
-                v-for="connection in syncable"
-                :key="connection.id"
-                class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
-            >
-                <div class="min-w-0">
-                    <p class="truncate text-sm font-medium">
-                        {{ connection.name }}
-                    </p>
-                    <p class="text-xs text-muted-foreground">
-                        {{
-                            connection.last_synced_at
-                                ? `Actualizada desde Meta ${formatRelative(connection.last_synced_at)}`
-                                : 'Aún no se ha actualizado desde Meta'
-                        }}
-                    </p>
-                </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    :disabled="syncing !== null"
-                    @click="sync(connection)"
+            <SurfaceCard>
+                <div
+                    class="flex flex-col gap-2 border-b p-4"
+                    role="search"
+                    data-tour="templates.search"
                 >
-                    <Spinner v-if="syncing === connection.id" />
-                    <RefreshCw v-else />
-                    Actualizar desde Meta
-                </Button>
-            </div>
-        </SurfaceCard>
+                    <div class="relative min-w-0">
+                        <Search
+                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <Input
+                            v-model="filterState.search"
+                            type="search"
+                            placeholder="Buscar por nombre"
+                            class="pl-9"
+                            aria-label="Buscar plantillas"
+                        />
+                    </div>
+                    <div
+                        class="auto-grid items-center [--col-min:11rem] [--grid-gap:0.5rem]"
+                    >
+                        <AppSelect
+                            v-model="filterState.connection"
+                            :options="connectionOptions"
+                            aria-label="Conexión"
+                            data-filter="connection"
+                            @change="applyFilters"
+                        />
+                        <AppSelect
+                            v-model="filterState.status"
+                            :options="statusOptions"
+                            aria-label="Estado"
+                            data-filter="status"
+                            @change="applyFilters"
+                        />
+                        <AppSelect
+                            v-model="filterState.category"
+                            :options="categoryOptions"
+                            aria-label="Categoría"
+                            data-filter="category"
+                            @change="applyFilters"
+                        />
+                        <AppSelect
+                            v-model="filterState.language"
+                            :options="languageOptions"
+                            aria-label="Idioma"
+                            data-filter="language"
+                            @change="applyFilters"
+                        />
+                        <RecordStateFilter
+                            v-if="recordStates.length > 1"
+                            v-model="filterState.record"
+                            :options="recordStates"
+                            @change="applyFilters"
+                        />
+                        <Button
+                            v-if="hasFilters"
+                            variant="ghost"
+                            class="justify-self-start"
+                            @click="clearFilters"
+                        >
+                            <X />
+                            Limpiar
+                        </Button>
+                    </div>
+                </div>
 
-        <SurfaceCard>
-            <div
-                class="grid gap-2 border-b p-4 sm:grid-cols-2 lg:grid-cols-6"
-                role="search"
-                data-tour="templates.search"
-            >
-                <div class="relative min-w-0 lg:col-span-2">
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <Input
-                        v-model="filterState.search"
-                        type="search"
-                        placeholder="Buscar por nombre"
-                        class="pl-9"
-                        aria-label="Buscar plantillas"
-                    />
-                </div>
-                <select
-                    v-model="filterState.connection"
-                    :class="selectClass"
-                    aria-label="Conexión"
-                    @change="applyFilters"
+                <Table
+                    v-if="templates.data.length > 0"
+                    data-tour="templates.table"
                 >
-                    <option value="">Todas las conexiones</option>
-                    <option
-                        v-for="connection in connections"
-                        :key="connection.id"
-                        :value="String(connection.id)"
-                    >
-                        {{ connection.name }}
-                    </option>
-                </select>
-                <select
-                    v-model="filterState.status"
-                    :class="selectClass"
-                    aria-label="Estado"
-                    @change="applyFilters"
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Plantilla</TableHead>
+                            <TableHead class="hidden md:table-cell">
+                                Conexión
+                            </TableHead>
+                            <TableHead class="hidden sm:table-cell">
+                                Categoría
+                            </TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead class="hidden lg:table-cell">
+                                Contenido
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow
+                            v-for="template in templates.data"
+                            :key="template.id"
+                            :class="
+                                template.is_deleted && 'text-muted-foreground'
+                            "
+                        >
+                            <TableCell class="py-3 pl-5">
+                                <Link
+                                    :href="showTemplate(template.id)"
+                                    prefetch
+                                    class="font-medium underline-offset-4 hover:text-primary hover:underline"
+                                >
+                                    {{ template.name }}
+                                </Link>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ formatLocale(template.language) }}
+                                </p>
+                            </TableCell>
+                            <TableCell class="hidden md:table-cell">
+                                {{ template.connection?.name }}
+                            </TableCell>
+                            <TableCell class="hidden sm:table-cell">
+                                {{ template.category.label ?? '—' }}
+                            </TableCell>
+                            <TableCell>
+                                <div
+                                    class="flex flex-wrap items-center gap-1.5"
+                                >
+                                    <DeletedBadge
+                                        v-if="template.is_deleted"
+                                        feminine
+                                    />
+                                    <TemplateStatusBadge
+                                        v-else
+                                        :status="template.status"
+                                    />
+                                    <span
+                                        v-if="template.quality_score"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        Calidad
+                                        {{
+                                            formatTemplateQuality(
+                                                template.quality_score,
+                                            )
+                                        }}
+                                    </span>
+                                </div>
+                            </TableCell>
+                            <TableCell class="hidden w-2/5 lg:table-cell">
+                                <p
+                                    class="line-clamp-2 text-xs whitespace-normal text-muted-foreground"
+                                >
+                                    {{ template.structure.body }}
+                                </p>
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+
+                <EmptyState
+                    v-else
+                    class="m-4 border-none"
+                    :icon="FileText"
+                    :title="
+                        hasFilters
+                            ? 'Ninguna plantilla coincide con los filtros'
+                            : 'Aún no se han traído plantillas de Meta'
+                    "
+                    :description="
+                        hasFilters
+                            ? 'Prueba con otros criterios de búsqueda.'
+                            : 'Crea las plantillas en WhatsApp Manager y sincronízalas con la conexión correspondiente.'
+                    "
                 >
-                    <option value="">Todos los estados</option>
-                    <option
-                        v-for="status in statuses"
-                        :key="status.value"
-                        :value="status.value"
-                    >
-                        {{ status.label }}
-                    </option>
-                </select>
-                <select
-                    v-model="filterState.category"
-                    :class="selectClass"
-                    aria-label="Categoría"
-                    @change="applyFilters"
-                >
-                    <option value="">Todas las categorías</option>
-                    <option
-                        v-for="category in categories"
-                        :key="category.value"
-                        :value="category.value"
-                    >
-                        {{ category.label }}
-                    </option>
-                </select>
-                <select
-                    v-model="filterState.language"
-                    :class="selectClass"
-                    aria-label="Idioma"
-                    @change="applyFilters"
-                >
-                    <option value="">Todos los idiomas</option>
-                    <option
-                        v-for="language in languages"
-                        :key="language"
-                        :value="language"
-                    >
-                        {{ formatLocale(language) }}
-                    </option>
-                </select>
-                <div class="flex gap-2 lg:col-span-6">
-                    <RecordStateFilter
-                        v-if="recordStates.length > 1"
-                        v-model="filterState.record"
-                        :options="recordStates"
-                        class="sm:w-36"
-                        @change="applyFilters"
-                    />
                     <Button
                         v-if="hasFilters"
-                        variant="ghost"
+                        variant="outline"
                         @click="clearFilters"
                     >
-                        <X />
-                        Limpiar
+                        Limpiar filtros
+                    </Button>
+                </EmptyState>
+
+                <div
+                    v-if="
+                        templates.meta.last_page > 1 ||
+                        templates.data.length > 0
+                    "
+                    class="border-t px-4 py-3"
+                >
+                    <DataPagination :meta="templates.meta" noun="plantillas" />
+                </div>
+            </SurfaceCard>
+
+            <SurfaceCard
+                v-if="syncable.length > 0"
+                data-tour="templates.sync"
+                title="Actualizar desde Meta"
+                description="Trae de Meta las plantillas de cada conexión y su estado actual. También se actualizan solas cada 6 horas y cuando Meta avisa un cambio."
+                body-class="divide-y"
+            >
+                <div
+                    v-for="connection in syncable"
+                    :key="connection.id"
+                    class="row-accent flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
+                >
+                    <div class="min-w-0">
+                        <p class="truncate text-sm font-medium">
+                            {{ connection.name }}
+                        </p>
+                        <p class="text-xs text-muted-foreground">
+                            {{
+                                connection.last_synced_at
+                                    ? `Actualizada ${formatRelative(connection.last_synced_at)}`
+                                    : 'Aún no se ha actualizado desde Meta'
+                            }}
+                        </p>
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        :disabled="syncing !== null"
+                        :loading="syncing === connection.id"
+                        :aria-label="`Actualizar desde Meta ${connection.name}`"
+                        @click="sync(connection)"
+                    >
+                        <RefreshCw v-if="syncing !== connection.id" />
+                        Actualizar
                     </Button>
                 </div>
-            </div>
-
-            <Table v-if="templates.data.length > 0" data-tour="templates.table">
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead class="pl-5">Plantilla</TableHead>
-                        <TableHead class="hidden md:table-cell">
-                            Conexión
-                        </TableHead>
-                        <TableHead class="hidden sm:table-cell">
-                            Categoría
-                        </TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead class="hidden lg:table-cell">
-                            Contenido
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow
-                        v-for="template in templates.data"
-                        :key="template.id"
-                        :class="template.is_deleted && 'text-muted-foreground'"
-                    >
-                        <TableCell class="py-3 pl-5">
-                            <Link
-                                :href="showTemplate(template.id)"
-                                class="font-medium hover:underline"
-                            >
-                                {{ template.name }}
-                            </Link>
-                            <p class="text-xs text-muted-foreground">
-                                {{ formatLocale(template.language) }}
-                            </p>
-                        </TableCell>
-                        <TableCell class="hidden md:table-cell">
-                            {{ template.connection?.name }}
-                        </TableCell>
-                        <TableCell class="hidden sm:table-cell">
-                            {{ template.category.label ?? '—' }}
-                        </TableCell>
-                        <TableCell>
-                            <div class="flex flex-wrap items-center gap-1.5">
-                                <DeletedBadge
-                                    v-if="template.is_deleted"
-                                    feminine
-                                />
-                                <TemplateStatusBadge
-                                    v-else
-                                    :status="template.status"
-                                />
-                                <span
-                                    v-if="template.quality_score"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    Calidad
-                                    {{
-                                        formatTemplateQuality(
-                                            template.quality_score,
-                                        )
-                                    }}
-                                </span>
-                            </div>
-                        </TableCell>
-                        <TableCell class="hidden max-w-sm lg:table-cell">
-                            <p
-                                class="line-clamp-2 text-xs whitespace-normal text-muted-foreground"
-                            >
-                                {{ template.structure.body }}
-                            </p>
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
-
-            <EmptyState
-                v-else
-                class="m-4 border-none"
-                :icon="FileText"
-                :title="
-                    hasFilters
-                        ? 'Ninguna plantilla coincide con los filtros'
-                        : 'Aún no se han traído plantillas de Meta'
-                "
-                :description="
-                    hasFilters
-                        ? 'Prueba con otros criterios de búsqueda.'
-                        : 'Crea las plantillas en WhatsApp Manager y sincronízalas con la conexión correspondiente.'
-                "
-            >
-                <Button
-                    v-if="hasFilters"
-                    variant="outline"
-                    @click="clearFilters"
-                >
-                    Limpiar filtros
-                </Button>
-            </EmptyState>
-
-            <div
-                v-if="templates.meta.last_page > 1 || templates.data.length > 0"
-                class="border-t px-4 py-3"
-            >
-                <DataPagination :meta="templates.meta" noun="plantillas" />
-            </div>
-        </SurfaceCard>
+            </SurfaceCard>
+        </div>
     </div>
 </template>

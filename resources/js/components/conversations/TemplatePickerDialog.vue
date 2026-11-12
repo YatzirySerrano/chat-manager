@@ -309,7 +309,7 @@ async function send(): Promise<void> {
 
             <div
                 v-if="loading"
-                class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
+                class="flex items-center gap-2 py-10 text-sm text-muted-foreground"
             >
                 <Spinner /> Cargando plantillas…
             </div>
@@ -322,7 +322,7 @@ async function send(): Promise<void> {
             </div>
             <div
                 v-else-if="templates.length === 0"
-                class="grid justify-items-center gap-2 py-8 text-center text-sm text-muted-foreground"
+                class="grid justify-items-start gap-2 py-8 text-sm text-muted-foreground"
             >
                 <LayoutTemplate class="size-8" aria-hidden="true" />
                 <p>
@@ -382,7 +382,7 @@ async function send(): Promise<void> {
                         </li>
                         <li
                             v-if="filtered.length === 0"
-                            class="px-2 py-4 text-center text-xs text-muted-foreground"
+                            class="px-2 py-4 text-xs text-muted-foreground"
                         >
                             Ninguna plantilla coincide.
                         </li>
@@ -491,8 +491,11 @@ async function send(): Promise<void> {
                 <Button variant="outline" @click="open = false"
                     >Cancelar</Button
                 >
-                <Button :disabled="!canSend" @click="send">
-                    <Spinner v-if="sendHttp.processing" />
+                <Button
+                    :disabled="!canSend"
+                    @click="send"
+                    :loading="sendHttp.processing"
+                >
                     Enviar plantilla
                 </Button>
             </DialogFooter>

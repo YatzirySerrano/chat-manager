@@ -1,0 +1,34 @@
+ticketId,contact_name,contact_number,createdAt,fromMe,body,mediaType,mediaUrl,campaignId
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:18,false,Hola (mensaje ficticio),chat,,
+00000000-0000-4000-8000-000000000001,,,13/10/2024 01:18,true,"Bienvenido a *EMPRESA FICTICIA* ❗
+
+🔔 *Indica una opción* (selecciona 1 o 2):
+
+*1* - Opción uno
+*2* - Opción dos",,,
+00000000-0000-4000-8000-000000000001,,,13/10/2024 01:18,true,"Bienvenido a *EMPRESA FICTICIA* ❗
+
+🔔 *Indica una opción* (selecciona 1 o 2):
+
+*1* - Opción uno
+*2* - Opción dos",,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:19,false,"{""degreesLatitude"":19.4326077,""degreesLongitude"":-99.133208}",location,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:20,false,"[{""name"":""Contacto Ficticio"",""number"":""+52 55 0000 0099""}]",contact,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:21,false,,missed,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:22,false,,image,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:22,false,,image,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:23,false,Documento ficticio,application,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:24,false,*Solicitud ficticia*,video,,
+00000000-0000-4000-8000-000000000001,Cliente Ficticio Uno ,5215500000001,13/10/2024 01:25,false,,audio,,
+00000000-0000-4000-8000-000000000001,,,13/10/2024 01:26,true,Estado de cuenta ficticio,document,,
+00000000-0000-4000-8000-000000000001,,,14/10/2024 09:00,true,Promoción ficticia,,,00000000-0000-4000-9000-0000000000c1
+00000000-0000-4000-8000-000000000002,Cliente Ficticio Dos,5500000002,15/10/2024 10:00,false,Buen día (mensaje ficticio),chat,,
+00000000-0000-4000-8000-000000000002,,,15/10/2024 10:01,true,Con gusto,,,
+00000000-0000-4000-8000-000000000003,Cliente Ficticio Tres,,16/10/2024 11:00,false,Cotizar (mensaje ficticio),,,
+00000000-0000-4000-8000-000000000003,Cliente Ficticio Tres,,16/10/2024 11:01,false,,image,https://scontent.example.invalid/v/t39.30808-6/000000000_000000000000000_n.jpg?stp=dst-jpg&oh=00_FICTICIO&oe=00000000,
+00000000-0000-4000-8000-000000000003,,,16/10/2024 11:02,true,Gracias por escribir,,,
+00000000-0000-4000-8000-000000000003,Cliente Ficticio Tres,,16/10/2024 11:03,false,,file,https://cdn.example.invalid/v/t59.2708-21/000000000_documento-ficticio.pdf?oh=00_FICTICIO,
+00000000-0000-4000-8000-000000000004,,,17/10/2024 12:00,true,Campaña ficticia,,,00000000-0000-4000-9000-0000000000c1
+00000000-0000-4000-8000-000000000004,,,17/10/2024 12:00,true,Campaña ficticia,,,00000000-0000-4000-9000-0000000000c1
+00000000-0000-4000-8000-000000000005,Cliente Ficticio Cinco,550000005,18/10/2024 13:00,false,Número corto (mensaje ficticio),chat,,
+00000000-0000-4000-8000-000000000006,Cliente Ficticio Uno ,525500000001,19/10/2024 08:00,false,Otra vez yo (mensaje ficticio),chat,,

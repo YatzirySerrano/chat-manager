@@ -310,7 +310,7 @@ function clearSelection(): void {
 
         <p
             v-if="groups.length === 0"
-            class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+            class="rounded-xl border border-dashed p-6 text-sm text-muted-foreground"
         >
             Ningún permiso coincide con «{{ search }}».
         </p>

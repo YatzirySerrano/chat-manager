@@ -154,9 +154,22 @@ class HistoryImportConversation extends Model
     }
 
     /**
-     * Destinations the admin may choose for this row: a group chat or a
-     * conversation whose participants are still unidentified can only be
-     * archived or excluded, an empty one only excluded.
+     * Whether the files say who the customer is: a number, a name or at
+     * least an identifier. The authentic Whaticket export has tickets with
+     * none of them (rows sent by the company only, without contact columns).
+     */
+    public function hasIdentifiableContact(): bool
+    {
+        // A Chat.txt names its contact once the admin marks who is the company.
+        return $this->source_kind === self::KIND_CHAT_TEXT
+            || $this->contact_phone !== null || $this->contact_name !== null || $this->contact_identifier !== null;
+    }
+
+    /**
+     * Destinations the admin may choose for this row: a group chat, or a
+     * conversation whose contact the files do not identify, can only be
+     * archived or excluded (never an operational conversation of nobody);
+     * an empty one only excluded.
      *
      * @return list<HistoryImportDecision>
      */
@@ -166,7 +179,7 @@ class HistoryImportConversation extends Model
             return [HistoryImportDecision::Exclude];
         }
 
-        if ($this->is_group) {
+        if ($this->is_group || ! $this->hasIdentifiableContact()) {
             return [HistoryImportDecision::Archive, HistoryImportDecision::Exclude];
         }
 

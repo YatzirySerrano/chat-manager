@@ -5,7 +5,6 @@ import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/routes';
 import { email } from '@/routes/password';
 
@@ -27,7 +26,7 @@ defineProps<{
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
     >
         {{ status }}
     </div>
@@ -49,17 +48,17 @@ defineProps<{
 
             <div class="my-6 flex items-center justify-start">
                 <Button
+                    size="lg"
                     class="w-full"
-                    :disabled="processing"
+                    :loading="processing"
                     data-test="email-password-reset-link-button"
                 >
-                    <Spinner v-if="processing" />
                     Enviar enlace de restablecimiento
                 </Button>
             </div>
         </Form>
 
-        <div class="space-x-1 text-center text-sm text-muted-foreground">
+        <div class="space-x-1 text-sm text-muted-foreground">
             <span>O vuelve a</span>
             <TextLink :href="login()">iniciar sesión</TextLink>
         </div>

@@ -21,7 +21,6 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Tooltip,
     TooltipContent,
@@ -249,7 +248,7 @@ function onOpenChange(value: boolean): void {
                     </ul>
                     <p
                         v-if="moreAlerts > 0"
-                        class="text-center text-xs text-muted-foreground"
+                        class="text-xs text-muted-foreground"
                     >
                         {{
                             moreAlerts === 1
@@ -274,7 +273,7 @@ function onOpenChange(value: boolean): void {
                     v-else-if="
                         center.failed.value && center.items.value.length === 0
                     "
-                    class="flex flex-col items-center gap-3 p-6 text-center text-sm"
+                    class="flex flex-col items-start gap-3 p-6 text-sm"
                 >
                     <AlertTriangle
                         class="size-5 text-warning"
@@ -294,7 +293,7 @@ function onOpenChange(value: boolean): void {
                         center.items.value.length === 0 &&
                         attention.alerts.value.length > 0
                     "
-                    class="p-4 text-center text-xs text-muted-foreground"
+                    class="p-4 text-xs text-muted-foreground"
                 >
                     {{
                         center.onlyUnread.value
@@ -305,7 +304,7 @@ function onOpenChange(value: boolean): void {
 
                 <div
                     v-else-if="center.items.value.length === 0"
-                    class="flex flex-col items-center gap-2 p-8 text-center"
+                    class="flex flex-col items-start gap-2 p-8"
                 >
                     <Bell
                         class="size-5 text-muted-foreground"
@@ -426,8 +425,8 @@ function onOpenChange(value: boolean): void {
                         size="sm"
                         :disabled="center.loading.value"
                         @click="center.loadMore()"
+                        :loading="center.loading.value"
                     >
-                        <Spinner v-if="center.loading.value" />
                         Ver anteriores
                     </Button>
                 </div>

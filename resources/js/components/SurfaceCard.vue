@@ -3,8 +3,9 @@ import type { HTMLAttributes } from 'vue';
 import { cn } from '@/lib/utils';
 
 /**
- * Card surface used by every module for tables, lists and settings
- * sections. Wide tables scroll inside it, never the page.
+ * Panel used by every module for tables, lists and settings sections: a
+ * flat surface on a hairline (no resting shadow) that spans the width it is
+ * given. Wide tables scroll inside it, never the page.
  *
  * Slots: `actions` (header, right side), default (body) and `footer`
  * (separated by a top border, e.g. the section's save button).
@@ -30,24 +31,23 @@ const props = withDefaults(
 <template>
     <component
         :is="props.as"
-        :class="
-            cn(
-                'overflow-hidden rounded-xl border bg-card shadow-card',
-                props.class,
-            )
-        "
+        data-slot="surface-card"
+        :class="cn('overflow-hidden rounded-xl border bg-card', props.class)"
     >
         <header
             v-if="title || $slots.actions"
             class="flex flex-col gap-3 border-b px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4"
         >
             <div class="min-w-0 space-y-0.5">
-                <h2 v-if="title" class="text-base font-semibold">
+                <h2
+                    v-if="title"
+                    class="font-display text-lg leading-snug font-semibold"
+                >
                     {{ title }}
                 </h2>
                 <p
                     v-if="description"
-                    class="text-sm text-pretty text-muted-foreground"
+                    class="max-w-prose text-sm text-pretty text-muted-foreground"
                 >
                     {{ description }}
                 </p>
@@ -64,7 +64,7 @@ const props = withDefaults(
         </div>
         <footer
             v-if="$slots.footer"
-            class="flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3 sm:px-5"
+            class="flex flex-wrap items-center justify-end gap-2 border-t bg-surface-sunken/50 px-4 py-3 sm:px-5"
         >
             <slot name="footer" />
         </footer>

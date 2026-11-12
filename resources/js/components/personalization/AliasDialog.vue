@@ -13,7 +13,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import {
     destroy as destroyAlias,
     update as updateAlias,
@@ -177,8 +176,11 @@ async function remove(): Promise<void> {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="processing || unchanged">
-                        <Spinner v-if="processing" />
+                    <Button
+                        type="submit"
+                        :disabled="unchanged"
+                        :loading="processing"
+                    >
                         Guardar alias
                     </Button>
                 </DialogFooter>

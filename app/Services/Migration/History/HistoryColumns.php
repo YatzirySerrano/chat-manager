@@ -8,22 +8,41 @@ use App\Services\Migration\HeaderMatching;
 /**
  * Extensible column mapping of the Whaticket exports.
  *
- * NO VERIFICADO CON EXPORTACIÓN AUTÉNTICA. The chats report columns come
- * from Whaticket's help center (help.whaticket.com, article 20776: contactName,
- * contactNumber, user, department, connection, createdAt, resolvedAt,
- * conversationId, chatId, chatLink, tags, conversationTags...). The columns
- * of the messages CSV are NOT documented publicly: the aliases below are
- * the names an export is likely to use (the open-source Whaticket message
- * fields — id, body, fromMe, mediaType, mediaUrl, ticketId, createdAt,
- * quotedMsgId — and their Spanish/Portuguese/English variants). Nothing is
- * invented: a header that matches no alias is reported as unknown, a
- * required logical field without a column is reported as missing, and the
- * admin can always override the mapping of a file (stored per file).
- * New aliases go in self::FIELDS once an authentic export is reviewed.
+ * MESSAGES CSV: VERIFIED with an authentic export (2026-11-12, 447,429
+ * messages of «Configuración → Exportación → Exportar mensajes»). Its
+ * header is exactly self::VERIFIED_MESSAGES_HEADER:
+ *
+ *   ticketId, contact_name, contact_number, createdAt, fromMe, body,
+ *   mediaType, mediaUrl, campaignId
+ *
+ * (camelCase and snake_case mixed, no message id, no agent, department or
+ * connection). A file with that header is read without any manual mapping
+ * and is labelled "verificado"; any other header is still recognized by
+ * alias and labelled "no verificado".
+ *
+ * NOT VERIFIED: the chats report columns come from Whaticket's help center
+ * (help.whaticket.com, article 20776: contactName, contactNumber, user,
+ * department, connection, createdAt, resolvedAt, conversationId, chatId,
+ * chatLink, tags, conversationTags...); the other aliases of the messages
+ * CSV are the names another export is likely to use (the open-source
+ * Whaticket message fields — id, body, fromMe, mediaType, mediaUrl,
+ * ticketId, createdAt, quotedMsgId — and their Spanish/Portuguese/English
+ * variants). Nothing is invented: a header that matches no alias is
+ * reported as unknown, a required logical field without a column is
+ * reported as missing, and the admin can always override the mapping of a
+ * file (stored per file).
  */
 class HistoryColumns
 {
     use HeaderMatching;
+
+    /**
+     * Header of the authentic Whaticket messages export, as normalized by
+     * self::normalize() (order is not significant).
+     *
+     * @var list<string>
+     */
+    public const VERIFIED_MESSAGES_HEADER = ['ticketid', 'contact name', 'contact number', 'createdat', 'fromme', 'body', 'mediatype', 'mediaurl', 'campaignid'];
 
     /**
      * Logical fields per kind of file: label and the header aliases
@@ -64,6 +83,7 @@ class HistoryColumns
             'connection' => ['label' => 'Conexión', 'aliases' => ['connection', 'conexion', 'whatsapp', 'whatsappname', 'connectionname', 'connection name']],
             'department' => ['label' => 'Departamento', 'aliases' => ['department', 'departamento', 'queue', 'fila', 'cola', 'queuename']],
             'is_deleted' => ['label' => 'Eliminado', 'aliases' => ['isdeleted', 'is deleted', 'deleted', 'eliminado']],
+            'campaign_id' => ['label' => 'Campaña', 'aliases' => ['campaignid', 'campaign id', 'campaign', 'campana', 'id de campana', 'id campana']],
         ],
     ];
 
@@ -111,7 +131,7 @@ class HistoryColumns
      */
     public function suggest(HistoryImportFileKind $kind, array $headers): array
     {
-        $normalized = array_map(fn (string $header): string => self::normalizeHeader($header), $headers);
+        $normalized = array_map(fn (string $header): string => self::normalize($header), $headers);
         $mapping = [];
         $taken = [];
 
@@ -132,6 +152,32 @@ class HistoryColumns
         }
 
         return $mapping;
+    }
+
+    /**
+     * A header as the aliases are written: lowercase, without accents and
+     * with "_", "-" and "." read as spaces ("contact_name" is "contact
+     * name"; "createdAt" is "createdat").
+     */
+    public static function normalize(string $header): string
+    {
+        return self::normalizeHeader(str_replace(['_', '-', '.'], ' ', $header));
+    }
+
+    /**
+     * Whether the headers are exactly the ones of the authentic Whaticket
+     * messages export this importer was verified with.
+     *
+     * @param  list<string>  $headers
+     */
+    public function isVerifiedMessagesExport(array $headers): bool
+    {
+        $normalized = array_map(fn (string $header): string => self::normalize($header), $headers);
+        sort($normalized);
+        $expected = self::VERIFIED_MESSAGES_HEADER;
+        sort($expected);
+
+        return $normalized === $expected;
     }
 
     /**

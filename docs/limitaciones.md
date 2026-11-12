@@ -151,12 +151,16 @@ reales requieren claves VAPID y una prueba manual (HTTPS o `localhost`;
 
 - El adaptador `whaticket-contacts` es heurístico y está marcado **pendiente de validación** hasta revisar una
   exportación auténtica ([migracion-whaticket.md](migracion-whaticket.md#validar-el-adaptador-con-una-exportación-real)).
-- El **importador de historial** (fase 5.2) está implementado y probado con archivos sintéticos, pero sus formatos
-  **no están verificados** con exportaciones auténticas: las columnas del CSV de mensajes y las líneas de `Chat.txt`
-  no están documentadas por Whaticket ni por WhatsApp y se infirieron. Requiere muestras reales anonimizadas en un
-  entorno que no sea de producción antes de la primera migración
-  ([requisitos previos](migracion-whaticket.md#requisitos-previos-para-la-primera-migración)). Sus 7 migraciones
-  **no están aplicadas** en `chatmanager`.
+- El **importador de historial** (fase 5.2): el CSV de «Exportar mensajes» está **verificado con una exportación
+  auténtica** (2026-11-12): 447 429 mensajes leídos sin rechazos ni mapeo manual e importados de punta a punta en una
+  base aparte, con una segunda corrida sin duplicados
+  ([resultados](migracion-whaticket.md#resultados-medidos-con-el-archivo-real)). Esa exportación **no incluye los
+  archivos** (quedan como «Archivo histórico no disponible»), ni agente, departamento o conexión, ni el teléfono de
+  los contactos de Messenger/Instagram. Siguen **sin verificar** el reporte de chats, el CSV de contactos y los
+  `Chat.txt` (inferidos), y falta medir en el servidor de producción y subir un archivo de ese tamaño por el
+  navegador con un worker real. Sus 7 migraciones de la fase 5.2 figuran aplicadas en la base local `chatmanager`;
+  queda pendiente `2026_11_12_180000_add_details_to_history_import_messages_table`
+  ([procedimiento](migracion-whaticket.md#procedimiento-paso-a-paso-para-importar-la-exportación-real)).
 
 ### 4.3.1 Almacenamiento externo
 
@@ -308,6 +312,9 @@ y [rendimiento-y-carga.md](rendimiento-y-carga.md).
   autocompletado de menciones); los cubren el backend, `vue-tsc`, los E2E y la prueba manual.
 
 ## 8. Antes de producción
+
+El procedimiento ordenado y ejecutable está en [puesta-en-produccion.md](puesta-en-produccion.md); esta lista conserva
+las decisiones y pendientes de cada fase.
 
 1. Decidir si el Administrador recibe `system.view` / `system.manage` y, en instalaciones existentes, también
    `integrations.view` / `integrations.manage` (fase 5.1: `--upgrade-default-roles --include-sensitive`, vista previa y

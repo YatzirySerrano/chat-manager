@@ -10,7 +10,6 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
-import { Spinner } from '@/components/ui/spinner';
 import { useUploadProgress } from '@/composables/useUploadProgress';
 import { formatFileSize } from '@/lib/format';
 import { UPLOAD_CODE_FIELD, serverLimitNotice } from '@/lib/uploads';
@@ -553,7 +552,7 @@ async function send(): Promise<void> {
 
 <template>
     <div
-        class="border-t bg-background p-2 sm:p-3"
+        class="border-t bg-background p-2 sm:px-5 sm:py-3"
         data-tour="team-chat.composer"
     >
         <div
@@ -644,7 +643,10 @@ async function send(): Promise<void> {
             </Button>
         </div>
 
-        <div class="flex items-end gap-1.5">
+        <div
+            class="flex items-end gap-1 rounded-xl border bg-card p-1.5 transition-[border-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20 hover:border-border-strong"
+            data-composer-surface
+        >
             <input
                 ref="fileInput"
                 type="file"
@@ -706,7 +708,7 @@ async function send(): Promise<void> {
                     :id="`${textareaId}-mentions`"
                     role="listbox"
                     aria-label="Mencionar a"
-                    class="absolute bottom-full left-0 z-10 mb-1 grid w-64 max-w-full gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+                    class="absolute bottom-full left-0 z-10 mb-2 grid w-64 max-w-full gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-popover"
                 >
                     <li
                         v-for="(person, index) in suggestions"
@@ -732,7 +734,7 @@ async function send(): Promise<void> {
                     ref="textarea"
                     v-model="http.body"
                     rows="1"
-                    class="max-h-[200px] min-h-10 flex-1 resize-none rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                    class="max-h-[200px] min-h-9 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2 text-base outline-none placeholder:text-muted-foreground md:text-sm"
                     placeholder="Escribe un mensaje interno…"
                     :aria-invalid="errors.length > 0"
                     :aria-expanded="suggestions.length > 0"
@@ -754,14 +756,14 @@ async function send(): Promise<void> {
             </div>
             <Button
                 size="icon"
-                class="shrink-0 rounded-xl"
+                class="shrink-0 rounded-lg"
                 :disabled="!canSend"
                 aria-label="Enviar mensaje"
                 title="Enviar (Enter). Nueva línea: Shift + Enter"
                 @click="send"
+                :loading="http.processing"
             >
-                <Spinner v-if="http.processing" />
-                <SendHorizontal v-else />
+                <SendHorizontal />
             </Button>
         </div>
         <div class="mt-1 flex items-start justify-between gap-2 px-1">

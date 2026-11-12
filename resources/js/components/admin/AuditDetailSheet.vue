@@ -27,8 +27,7 @@ const open = defineModel<boolean>('open', { required: true });
 const resultClasses = {
     success:
         'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-    warning:
-        'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    warning: 'border-transparent bg-warning-soft text-warning-soft-foreground',
     danger: 'border-destructive/30 bg-destructive/10 text-destructive',
 } as const;
 

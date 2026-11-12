@@ -240,7 +240,13 @@ function confirmRemoval(): void {
             :members-count="department.members_count ?? members.length"
         />
 
-        <div class="grid gap-6 lg:grid-cols-2">
+        <!--
+          Settings cards have very different heights: columns pack them
+          without the empty halves a two-column grid leaves.
+        -->
+        <div
+            class="gap-6 lg:columns-2 2xl:columns-3 [&>*]:mb-6 [&>*]:break-inside-avoid"
+        >
             <DepartmentDistributionCard
                 data-tour="department.distribution"
                 :department="department"
@@ -281,7 +287,7 @@ function confirmRemoval(): void {
             :can-update="can.update"
         />
 
-        <h2 class="-mb-2 text-base font-semibold">Miembros</h2>
+        <h2 class="-mb-2 font-display text-xl font-semibold">Miembros</h2>
 
         <EmptyState
             v-if="members.length === 0"
@@ -320,7 +326,7 @@ function confirmRemoval(): void {
 
                 <div
                     v-if="group.members.length > 0"
-                    class="overflow-hidden rounded-xl border bg-card shadow-card"
+                    class="overflow-hidden rounded-xl border bg-card"
                 >
                     <Table>
                         <TableHeader>

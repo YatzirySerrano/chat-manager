@@ -31,7 +31,11 @@ class HistoryImportSourceKey extends Model
 
     public const KIND_CONTACT = 'contact';
 
-    /** A message of a contact-keyed conversation (later exports only add the missing ones). */
+    /**
+     * A message of a conversation imported with a key per message: every
+     * conversation keyed by contact, and the tickets of the messages CSV
+     * (later exports only add the messages it does not have yet).
+     */
     public const KIND_MESSAGE = 'message';
 
     protected $table = 'import_source_keys';
@@ -45,5 +49,15 @@ class HistoryImportSourceKey extends Model
             'target_id' => 'integer',
             'details' => 'array',
         ];
+    }
+
+    /**
+     * Whether the conversation of this key was imported with a key per
+     * message, so a later export of the same ticket adds only what is new
+     * instead of being skipped as a duplicate.
+     */
+    public function extendable(): bool
+    {
+        return $this->source_kind === self::KIND_CONVERSATION && ($this->details['message_keys'] ?? false) === true;
     }
 }

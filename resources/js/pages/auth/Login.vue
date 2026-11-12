@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
@@ -29,7 +28,7 @@ defineProps<{
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
     >
         {{ status }}
     </div>
@@ -80,7 +79,10 @@ defineProps<{
             </div>
 
             <div class="flex items-center justify-between">
-                <Label for="remember" class="flex items-center space-x-3">
+                <Label
+                    for="remember"
+                    class="flex cursor-pointer items-center gap-2.5"
+                >
                     <Checkbox id="remember" name="remember" :tabindex="3" />
                     <span>Mantener la sesión iniciada</span>
                 </Label>
@@ -88,12 +90,12 @@ defineProps<{
 
             <Button
                 type="submit"
-                class="mt-4 w-full"
+                size="lg"
+                class="mt-2 w-full"
                 :tabindex="4"
-                :disabled="processing"
+                :loading="processing"
                 data-test="login-button"
             >
-                <Spinner v-if="processing" />
                 Iniciar sesión
             </Button>
         </div>

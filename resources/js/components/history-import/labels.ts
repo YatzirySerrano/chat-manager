@@ -15,9 +15,9 @@ import type {
  * consequences, states and how a rule's criteria read.
  */
 
-/** Shown wherever the files are read: the format is not verified yet. */
+/** Shown wherever the files are read: which formats are verified. */
 export const FORMAT_DISCLAIMER =
-    'Formato basado en la documentación pública de Whaticket; aún no verificado con una exportación real.';
+    'El CSV de «Exportar mensajes» de Whaticket está verificado con una exportación real. Esa exportación no incluye las fotos, audios, videos ni documentos: quedan como «Archivo histórico no disponible» con su tipo y su fecha.';
 
 export type DecisionCopy = {
     label: string;
@@ -138,6 +138,8 @@ export const FLAG_LABELS: Record<string, string> = {
     missing_attachments: 'Con archivos faltantes',
     group: 'Grupos',
     has_issues: 'Con avisos o errores',
+    with_phone: 'Con número de teléfono',
+    without_phone: 'Sin número de teléfono',
 };
 
 /** A value of a "sin dato" facet filter. */

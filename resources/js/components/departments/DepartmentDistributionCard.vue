@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import { Hand, Inbox, Shuffle } from '@lucide/vue';
+import type { LucideIcon } from '@lucide/vue';
+import { computed, watch } from 'vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import InputError from '@/components/InputError.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
+import { RadioCards } from '@/components/ui/radio-cards';
 import { update } from '@/routes/departments/distribution';
 import type { DepartmentSummary, DistributionModeValue } from '@/types';
 
@@ -64,6 +66,21 @@ function submit(): void {
     });
 }
 
+const modeIcons: Record<string, LucideIcon> = {
+    shared: Inbox,
+    manual: Hand,
+    automatic: Shuffle,
+};
+
+const modeCards = computed(() =>
+    props.modes.map((mode) => ({
+        value: mode.value,
+        label: mode.label,
+        description: mode.description,
+        icon: modeIcons[mode.value],
+    })),
+);
+
 const current = () =>
     props.modes.find(
         (mode) => mode.value === props.department.distribution_mode,
@@ -77,10 +94,8 @@ const current = () =>
         body-class="p-5"
     >
         <form v-if="canUpdate" class="space-y-4" @submit.prevent="submit">
-            <fieldset class="grid gap-2">
-                <legend
-                    class="mb-2 flex items-center gap-1.5 text-sm font-medium"
-                >
+            <div class="grid gap-2">
+                <p class="flex items-center gap-1.5 text-sm font-medium">
                     Forma de distribución
                     <FieldHelp
                         title="Forma de distribución"
@@ -92,30 +107,17 @@ const current = () =>
                                 'Cambiar la forma de distribución nunca quita conversaciones ya asignadas.',
                         }"
                     />
-                </legend>
-                <label
-                    v-for="mode in modes"
-                    :key="mode.value"
-                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary-soft/60"
-                >
-                    <input
-                        v-model="form.distribution_mode"
-                        type="radio"
-                        name="distribution_mode"
-                        :value="mode.value"
-                        class="mt-1 accent-primary"
-                    />
-                    <span class="grid gap-0.5">
-                        <span class="text-sm font-medium">{{
-                            mode.label
-                        }}</span>
-                        <span class="text-xs text-muted-foreground">{{
-                            mode.description
-                        }}</span>
-                    </span>
-                </label>
+                </p>
+                <RadioCards
+                    v-model="form.distribution_mode"
+                    :options="modeCards"
+                    name="distribution_mode"
+                    aria-label="Forma de distribución"
+                    :invalid="!!form.errors.distribution_mode"
+                    class="grid-cols-1"
+                />
                 <InputError :message="form.errors.distribution_mode" />
-            </fieldset>
+            </div>
             <div class="grid gap-2">
                 <Label
                     for="department-agent-limit"
@@ -141,7 +143,7 @@ const current = () =>
                     max="200"
                     inputmode="numeric"
                     placeholder="Usa el límite de la plataforma"
-                    class="max-w-56"
+                    class="sm:w-64"
                 />
                 <InputError
                     :message="form.errors.max_open_conversations_per_agent"
@@ -158,9 +160,9 @@ const current = () =>
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!form.isDirty"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar distribución
                 </Button>
             </div>

@@ -53,7 +53,7 @@ defineProps<{
                 <DeletedBadge v-if="!reply.is_active" feminine />
             </li>
         </ul>
-        <div v-else class="px-5 py-8 text-center">
+        <div v-else class="px-5 py-6">
             <p class="text-sm font-medium">
                 Sin respuestas exclusivas del departamento
             </p>

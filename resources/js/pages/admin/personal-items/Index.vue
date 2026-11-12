@@ -24,7 +24,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -597,8 +596,11 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="aliasForm.processing">
-                        <Spinner v-if="aliasForm.processing" />
+                    <Button
+                        type="submit"
+                        :disabled="aliasForm.processing"
+                        :loading="aliasForm.processing"
+                    >
                         Guardar
                     </Button>
                 </DialogFooter>
@@ -647,8 +649,11 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="appearanceForm.processing">
-                        <Spinner v-if="appearanceForm.processing" />
+                    <Button
+                        type="submit"
+                        :disabled="appearanceForm.processing"
+                        :loading="appearanceForm.processing"
+                    >
                         Guardar
                     </Button>
                 </DialogFooter>

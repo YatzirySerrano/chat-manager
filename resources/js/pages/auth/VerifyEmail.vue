@@ -3,7 +3,6 @@ import { Form, Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import LogoutConfirmDialog from '@/components/LogoutConfirmDialog.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { send } from '@/routes/verification';
 
 defineOptions({
@@ -26,24 +25,19 @@ const logoutDialogOpen = ref(false);
 
     <div
         v-if="status === 'verification-link-sent'"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
     >
         Enviamos un nuevo enlace de verificación al correo registrado.
     </div>
 
-    <Form
-        v-bind="send.form()"
-        class="space-y-6 text-center"
-        v-slot="{ processing }"
-    >
-        <Button :disabled="processing" variant="secondary">
-            <Spinner v-if="processing" />
+    <Form v-bind="send.form()" class="space-y-6" v-slot="{ processing }">
+        <Button :loading="processing" variant="secondary">
             Reenviar correo de verificación
         </Button>
 
         <button
             type="button"
-            class="mx-auto block cursor-pointer text-sm text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
+            class="block cursor-pointer text-sm text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
             data-test="logout-button"
             @click="logoutDialogOpen = true"
         >

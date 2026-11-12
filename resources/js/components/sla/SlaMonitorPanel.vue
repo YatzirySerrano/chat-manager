@@ -15,7 +15,7 @@ import SlaBadge from '@/components/sla/SlaBadge.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DateRangePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -251,7 +251,7 @@ function aftermath(row: SlaBreachRow): string {
 <template>
     <div class="grid gap-4" data-sla-monitor>
         <div
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            class="auto-grid [--col-min:13rem]"
             :aria-busy="data === undefined"
         >
             <StatCard
@@ -571,46 +571,22 @@ function aftermath(row: SlaBreachRow): string {
             description="Solicitudes que superaron su plazo en el periodo elegido, con quién era responsable en ese momento y qué pasó después. Aplican los mismos filtros de departamento, categoría, agente y conexión."
         >
             <div class="grid gap-3 px-5 pb-5">
-                <form
-                    class="flex flex-col gap-2 sm:flex-row sm:items-end"
-                    @submit.prevent="applyRange"
-                >
-                    <div class="grid gap-1">
-                        <Label
-                            for="sla-history-from"
-                            class="text-xs text-muted-foreground"
-                            >Desde</Label
-                        >
-                        <Input
-                            id="sla-history-from"
-                            v-model="from"
-                            type="date"
-                            :max="to"
-                            required
-                        />
-                    </div>
-                    <div class="grid gap-1">
-                        <Label
-                            for="sla-history-to"
-                            class="text-xs text-muted-foreground"
-                            >Hasta</Label
-                        >
-                        <Input
-                            id="sla-history-to"
-                            v-model="to"
-                            type="date"
-                            :min="from"
-                            required
-                        />
-                    </div>
-                    <Button
-                        type="submit"
-                        variant="outline"
-                        size="sm"
-                        :disabled="loading"
-                        >Aplicar periodo</Button
+                <div class="grid gap-1 sm:max-w-sm">
+                    <Label
+                        for="sla-history-range"
+                        class="text-xs text-muted-foreground"
+                        >Periodo</Label
                     >
-                </form>
+                    <DateRangePicker
+                        id="sla-history-range"
+                        v-model:from="from"
+                        v-model:to="to"
+                        required
+                        :disabled="loading"
+                        aria-label="Periodo del historial de incumplimientos"
+                        @change="applyRange"
+                    />
+                </div>
 
                 <div
                     v-if="history === undefined"

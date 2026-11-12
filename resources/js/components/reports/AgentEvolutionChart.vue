@@ -11,6 +11,7 @@ import {
     formatNumber,
     granularityNoun,
 } from '@/composables/useChartTheme';
+import { AppSelect } from '@/components/ui/app-select';
 import type { AgentProductivity } from '@/types';
 
 /**
@@ -32,6 +33,13 @@ watch(
             selected.value = 0;
         }
     },
+);
+
+const agentOptions = computed(() =>
+    props.evolution.agents.map((option, index) => ({
+        value: index,
+        label: option.name,
+    })),
 );
 
 const agent = computed(() => props.evolution.agents[selected.value] ?? null);
@@ -115,24 +123,15 @@ const columns: ChartTableColumn[] = [
         data-chart="agent-evolution"
     >
         <template v-if="evolution.agents.length > 1" #actions>
-            <label
-                class="flex items-center gap-2 text-xs text-muted-foreground"
-            >
-                <span class="sr-only sm:not-sr-only">Colaborador</span>
-                <select
-                    v-model.number="selected"
-                    class="h-8 max-w-44 rounded-md border border-input bg-transparent px-2 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
-                    data-evolution-agent
-                >
-                    <option
-                        v-for="(option, index) in evolution.agents"
-                        :key="index"
-                        :value="index"
-                    >
-                        {{ option.name }}
-                    </option>
-                </select>
-            </label>
+            <AppSelect
+                v-model="selected"
+                :options="agentOptions"
+                size="sm"
+                align="end"
+                class="w-44"
+                aria-label="Colaborador"
+                data-evolution-agent
+            />
         </template>
         <LineChart
             :labels="labels"

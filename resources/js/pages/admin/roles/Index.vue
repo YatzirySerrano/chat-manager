@@ -95,6 +95,24 @@ const availableTotal = computed(
             .filter((permission) => permission.available).length,
 );
 
+/** Active accounts per role, widest first (aside of the list). */
+const distribution = computed(() => {
+    const rows = props.roles
+        .filter((role) => !role.is_deleted)
+        .map((role) => ({
+            id: role.id,
+            label: role.label,
+            count: role.active_users_count,
+        }))
+        .sort((a, b) => b.count - a.count);
+    const top = Math.max(1, ...rows.map((row) => row.count));
+
+    return rows.map((row) => ({
+        ...row,
+        share: row.count === 0 ? 0 : Math.max(4, (row.count / top) * 100),
+    }));
+});
+
 const formOpen = ref(false);
 const formReadonly = ref(false);
 const editingRole = ref<ManagedRole | null>(null);
@@ -209,194 +227,285 @@ function roleDescription(role: ManagedRole): string {
             </template>
         </PageHeader>
 
-        <SurfaceCard v-if="roles.length > 0 || record !== 'active'">
-            <div
-                class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
-            >
-                <p class="text-sm text-muted-foreground">
-                    {{ roles.length }}
-                    {{ roles.length === 1 ? 'rol' : 'roles' }} ·
-                    {{ availableTotal }} permisos disponibles
-                </p>
-                <div class="flex items-center gap-2" data-tour="roles.toolbar">
-                    <RecordStateFilter
-                        v-model="record"
-                        :options="recordStates"
-                        @change="applyRecordState"
-                    />
-                    <ViewModeToggle v-model="viewMode" />
+        <div
+            v-if="roles.length > 0 || record !== 'active'"
+            class="grid reveal items-start gap-(--section-gap) min-[112rem]:grid-cols-[minmax(0,1fr)_22rem] [&>*]:min-w-0"
+        >
+            <SurfaceCard>
+                <div
+                    class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+                >
+                    <p class="text-sm text-muted-foreground">
+                        {{ roles.length }}
+                        {{ roles.length === 1 ? 'rol' : 'roles' }} ·
+                        {{ availableTotal }} permisos disponibles
+                    </p>
+                    <div
+                        class="flex items-center gap-2"
+                        data-tour="roles.toolbar"
+                    >
+                        <RecordStateFilter
+                            v-model="record"
+                            :options="recordStates"
+                            @change="applyRecordState"
+                        />
+                        <ViewModeToggle v-model="viewMode" />
+                    </div>
                 </div>
-            </div>
 
-            <EmptyState
-                v-if="roles.length === 0"
-                class="m-4 border-none"
-                :icon="ShieldCheck"
-                title="Ningún rol en este estado"
-                description="Cambia el filtro (Activos, Eliminados o Todos)."
-            />
+                <EmptyState
+                    v-if="roles.length === 0"
+                    class="m-4 border-none"
+                    :icon="ShieldCheck"
+                    title="Ningún rol en este estado"
+                    description="Cambia el filtro (Activos, Eliminados o Todos)."
+                />
 
-            <Table v-else-if="viewMode === 'table'">
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead class="pl-5">Rol</TableHead>
-                        <TableHead class="hidden lg:table-cell"
-                            >Alcance</TableHead
+                <Table v-else-if="viewMode === 'table'">
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Rol</TableHead>
+                            <TableHead class="hidden lg:table-cell"
+                                >Alcance</TableHead
+                            >
+                            <TableHead class="hidden lg:table-cell"
+                                >Permisos</TableHead
+                            >
+                            <TableHead class="hidden xl:table-cell"
+                                >Usuarios</TableHead
+                            >
+                            <TableHead class="hidden sm:table-cell"
+                                >Estado</TableHead
+                            >
+                            <TableHead class="pr-5 text-right">
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow
+                            v-for="(role, position) in roles"
+                            :key="role.id"
+                            :data-tour="
+                                position === 0 ? 'roles.card' : undefined
+                            "
+                            class="transition-colors duration-(--duration-panel)"
+                            :class="[
+                                role.is_deleted && 'text-muted-foreground',
+                                highlightedId === role.id &&
+                                    'bg-primary-soft/70',
+                            ]"
                         >
-                        <TableHead class="hidden lg:table-cell"
-                            >Permisos</TableHead
-                        >
-                        <TableHead class="hidden xl:table-cell"
-                            >Usuarios</TableHead
-                        >
-                        <TableHead class="hidden sm:table-cell"
-                            >Estado</TableHead
-                        >
-                        <TableHead class="pr-5 text-right">
-                            <span class="sr-only">Acciones</span>
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow
+                            <TableCell class="w-full max-w-0 py-3 pl-5">
+                                <div class="flex min-w-0 items-center gap-3">
+                                    <span
+                                        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                                        aria-hidden="true"
+                                    >
+                                        <component
+                                            :is="
+                                                role.is_root
+                                                    ? ShieldEllipsis
+                                                    : ShieldCheck
+                                            "
+                                            class="size-4"
+                                        />
+                                    </span>
+                                    <div class="min-w-0 overflow-hidden">
+                                        <p
+                                            class="flex flex-wrap items-center gap-1.5 font-medium text-foreground"
+                                        >
+                                            <span class="truncate">{{
+                                                role.label
+                                            }}</span>
+                                            <Badge
+                                                v-if="role.is_current_user_role"
+                                                variant="outline"
+                                                class="font-normal"
+                                                >Tu rol</Badge
+                                            >
+                                        </p>
+                                        <p
+                                            class="truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ roleDescription(role) }}
+                                        </p>
+                                        <DeletedBadge
+                                            v-if="role.is_deleted"
+                                            class="mt-1 sm:hidden"
+                                        />
+                                        <p
+                                            class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs text-muted-foreground lg:hidden"
+                                        >
+                                            <span
+                                                class="inline-flex items-center gap-1"
+                                            >
+                                                <component
+                                                    :is="scopeIcon(role.scope)"
+                                                    class="size-3.5"
+                                                    aria-hidden="true"
+                                                />
+                                                {{ role.scope_label }}
+                                            </span>
+                                            <span class="tabular-nums"
+                                                >{{ summaryOf(role).enabled }}
+                                                habilitados ·
+                                                {{ summaryOf(role).areas }}
+                                                {{
+                                                    summaryOf(role).areas === 1
+                                                        ? 'área'
+                                                        : 'áreas'
+                                                }}</span
+                                            >
+                                        </p>
+                                    </div>
+                                </div>
+                            </TableCell>
+                            <TableCell class="hidden text-sm lg:table-cell">
+                                <span
+                                    class="inline-flex items-center gap-1.5 whitespace-nowrap"
+                                >
+                                    <component
+                                        :is="scopeIcon(role.scope)"
+                                        class="size-4 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                    {{ role.scope_label }}
+                                </span>
+                            </TableCell>
+                            <TableCell
+                                class="hidden text-sm whitespace-nowrap tabular-nums lg:table-cell"
+                                :title="areaCountLabel(summaryOf(role).areas)"
+                            >
+                                {{ summaryOf(role).enabled }} habilitados ·
+                                {{ summaryOf(role).areas }}
+                                {{
+                                    summaryOf(role).areas === 1
+                                        ? 'área'
+                                        : 'áreas'
+                                }}
+                            </TableCell>
+                            <TableCell class="hidden xl:table-cell">
+                                <Link
+                                    :href="
+                                        usersIndex({ query: { role: role.id } })
+                                    "
+                                    class="text-sm hover:underline"
+                                    :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
+                                >
+                                    {{ usersLabel(role) }}
+                                </Link>
+                            </TableCell>
+                            <TableCell class="hidden sm:table-cell">
+                                <DeletedBadge v-if="role.is_deleted" />
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >Activo</span
+                                >
+                            </TableCell>
+                            <TableCell class="w-px pr-5 text-right">
+                                <RecordActions
+                                    :actions="actionsFor(role)"
+                                    :record="`el rol ${role.label}`"
+                                    :busy="deletion.processingId === role.id"
+                                />
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+
+                <RecordGrid v-else>
+                    <li
                         v-for="(role, position) in roles"
                         :key="role.id"
                         :data-tour="position === 0 ? 'roles.card' : undefined"
-                        class="transition-colors duration-(--duration-panel)"
-                        :class="[
-                            role.is_deleted && 'text-muted-foreground',
-                            highlightedId === role.id && 'bg-primary-soft/70',
-                        ]"
                     >
-                        <TableCell class="w-full max-w-0 py-3 pl-5">
-                            <div class="flex min-w-0 items-center gap-3">
-                                <span
-                                    class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
-                                    aria-hidden="true"
-                                >
-                                    <component
-                                        :is="
-                                            role.is_root
-                                                ? ShieldEllipsis
-                                                : ShieldCheck
-                                        "
-                                        class="size-4"
-                                    />
-                                </span>
-                                <div class="min-w-0 overflow-hidden">
-                                    <p
-                                        class="flex flex-wrap items-center gap-1.5 font-medium text-foreground"
-                                    >
-                                        <span class="truncate">{{
-                                            role.label
-                                        }}</span>
-                                        <Badge
-                                            v-if="role.is_current_user_role"
-                                            variant="outline"
-                                            class="font-normal"
-                                            >Tu rol</Badge
-                                        >
-                                    </p>
-                                    <p
-                                        class="truncate text-xs text-muted-foreground"
-                                    >
-                                        {{ roleDescription(role) }}
-                                    </p>
-                                    <DeletedBadge
-                                        v-if="role.is_deleted"
-                                        class="mt-1 sm:hidden"
-                                    />
-                                    <p
-                                        class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs text-muted-foreground lg:hidden"
-                                    >
-                                        <span
-                                            class="inline-flex items-center gap-1"
-                                        >
-                                            <component
-                                                :is="scopeIcon(role.scope)"
-                                                class="size-3.5"
-                                                aria-hidden="true"
-                                            />
-                                            {{ role.scope_label }}
-                                        </span>
-                                        <span class="tabular-nums"
-                                            >{{ summaryOf(role).enabled }}
-                                            habilitados ·
-                                            {{ summaryOf(role).areas }}
-                                            {{
-                                                summaryOf(role).areas === 1
-                                                    ? 'área'
-                                                    : 'áreas'
-                                            }}</span
-                                        >
-                                    </p>
-                                </div>
-                            </div>
-                        </TableCell>
-                        <TableCell class="hidden text-sm lg:table-cell">
-                            <span
-                                class="inline-flex items-center gap-1.5 whitespace-nowrap"
-                            >
-                                <component
-                                    :is="scopeIcon(role.scope)"
-                                    class="size-4 text-muted-foreground"
-                                    aria-hidden="true"
-                                />
-                                {{ role.scope_label }}
-                            </span>
-                        </TableCell>
-                        <TableCell
-                            class="hidden text-sm whitespace-nowrap tabular-nums lg:table-cell"
-                            :title="areaCountLabel(summaryOf(role).areas)"
-                        >
-                            {{ summaryOf(role).enabled }} habilitados ·
-                            {{ summaryOf(role).areas }}
-                            {{ summaryOf(role).areas === 1 ? 'área' : 'áreas' }}
-                        </TableCell>
-                        <TableCell class="hidden xl:table-cell">
-                            <Link
-                                :href="usersIndex({ query: { role: role.id } })"
-                                class="text-sm hover:underline"
-                                :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
-                            >
-                                {{ usersLabel(role) }}
-                            </Link>
-                        </TableCell>
-                        <TableCell class="hidden sm:table-cell">
-                            <DeletedBadge v-if="role.is_deleted" />
-                            <span v-else class="text-xs text-muted-foreground"
-                                >Activo</span
-                            >
-                        </TableCell>
-                        <TableCell class="w-px pr-5 text-right">
-                            <RecordActions
-                                :actions="actionsFor(role)"
-                                :record="`el rol ${role.label}`"
-                                :busy="deletion.processingId === role.id"
-                            />
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+                        <RoleSummaryCard
+                            :role="role"
+                            :summary="summaryOf(role)"
+                            :actions="deletion.actionsFor(role)"
+                            :highlighted="highlightedId === role.id"
+                            :busy="deletion.processingId === role.id"
+                            @view-permissions="viewPermissions(role)"
+                            @edit="openRole(role, false)"
+                        />
+                    </li>
+                </RecordGrid>
+            </SurfaceCard>
 
-            <RecordGrid v-else>
-                <li
-                    v-for="(role, position) in roles"
-                    :key="role.id"
-                    :data-tour="position === 0 ? 'roles.card' : undefined"
+            <aside
+                class="grid items-start gap-(--section-gap) md:grid-cols-2 min-[112rem]:grid-cols-1"
+                aria-label="Resumen de roles"
+            >
+                <SurfaceCard
+                    v-if="distribution.length > 0"
+                    title="Personas por rol"
+                    description="Cuentas activas que tienen cada rol."
+                    body-class="grid gap-3 p-4 sm:p-5"
                 >
-                    <RoleSummaryCard
-                        :role="role"
-                        :summary="summaryOf(role)"
-                        :actions="deletion.actionsFor(role)"
-                        :highlighted="highlightedId === role.id"
-                        :busy="deletion.processingId === role.id"
-                        @view-permissions="viewPermissions(role)"
-                        @edit="openRole(role, false)"
-                    />
-                </li>
-            </RecordGrid>
-        </SurfaceCard>
+                    <div
+                        v-for="(item, position) in distribution"
+                        :key="item.id"
+                        class="grid gap-1.5"
+                    >
+                        <div
+                            class="flex items-baseline justify-between gap-3 text-sm"
+                        >
+                            <span class="min-w-0 truncate font-medium">{{
+                                item.label
+                            }}</span>
+                            <span
+                                class="font-display font-semibold tabular-nums"
+                                >{{ item.count }}</span
+                            >
+                        </div>
+                        <div
+                            class="h-1.5 overflow-hidden rounded-full bg-muted"
+                            aria-hidden="true"
+                        >
+                            <div
+                                class="role-bar h-full rounded-full bg-primary"
+                                :style="{
+                                    width: `${item.share}%`,
+                                    '--i': position,
+                                }"
+                            />
+                        </div>
+                    </div>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="Alcances"
+                    description="Qué información ve una persona según su rol."
+                    body-class="grid gap-4 p-4 sm:p-5"
+                >
+                    <div
+                        v-for="scope in scopes"
+                        :key="scope.value"
+                        class="flex items-start gap-3"
+                    >
+                        <span
+                            class="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                        >
+                            <component
+                                :is="scopeIcon(scope.value)"
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </span>
+                        <div class="min-w-0 space-y-0.5">
+                            <p class="text-sm font-medium">{{ scope.label }}</p>
+                            <p
+                                class="text-xs text-pretty text-muted-foreground"
+                            >
+                                {{ scope.description }}
+                            </p>
+                        </div>
+                    </div>
+                </SurfaceCard>
+            </aside>
+        </div>
 
         <EmptyState
             v-else
@@ -431,3 +540,18 @@ function roleDescription(role: ManagedRole): string {
         />
     </div>
 </template>
+
+<style scoped>
+/* The bars grow once, on mount; app.css skips it with reduced motion. */
+.role-bar {
+    transform-origin: left center;
+    animation: role-bar var(--duration-panel) var(--ease-out-quint) backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+@keyframes role-bar {
+    from {
+        transform: scaleX(0);
+    }
+}
+</style>

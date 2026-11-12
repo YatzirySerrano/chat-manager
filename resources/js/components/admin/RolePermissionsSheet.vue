@@ -287,7 +287,7 @@ function edit(): void {
             >
                 <p
                     v-if="groups.length === 0"
-                    class="py-8 text-center text-sm text-pretty text-muted-foreground"
+                    class="py-8 text-sm text-pretty text-muted-foreground"
                 >
                     {{
                         search.trim() !== ''

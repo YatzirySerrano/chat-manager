@@ -18,7 +18,6 @@ import {
 } from '@/components/conversations/messageFormat';
 import QuickReplyPicker from '@/components/quick-replies/QuickReplyPicker.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { usePermissions } from '@/composables/usePermissions';
 import { useLiveCustomerWindow } from '@/composables/useLiveCustomerWindow';
@@ -755,14 +754,14 @@ defineExpose({ focus });
         short labels («Responder» / «Nota») and stays on one row.
     -->
     <div
-        class="@container border-t bg-background px-3 pt-2 pb-3 sm:px-4 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
-        :class="mode === 'note' && 'bg-warning/5'"
+        class="@container border-t bg-background px-3 pt-2.5 pb-3 transition-colors duration-(--duration-base) sm:px-5 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
+        :class="mode === 'note' && 'bg-warning-soft/40'"
     >
         <div
             class="mb-2 flex flex-wrap items-center justify-between gap-2 [@media(max-height:32rem)]:mb-1 [@media(max-height:32rem)]:flex-nowrap"
         >
             <div
-                class="inline-flex shrink-0 rounded-lg border bg-muted/40 p-0.5 text-sm"
+                class="inline-flex shrink-0 rounded-lg bg-surface-sunken p-0.5 text-sm ring-1 ring-border ring-inset"
                 role="group"
                 aria-label="Tipo de mensaje"
             >
@@ -774,7 +773,7 @@ defineExpose({ focus });
                     class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'reply'
-                            ? 'bg-background text-foreground shadow-xs'
+                            ? 'bg-card text-foreground shadow-(--shadow-control)'
                             : 'text-muted-foreground hover:text-foreground'
                     "
                     @click="mode = 'reply'"
@@ -795,7 +794,7 @@ defineExpose({ focus });
                     class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'note'
-                            ? 'bg-warning/20 text-foreground shadow-xs'
+                            ? 'bg-warning-soft text-warning-soft-foreground shadow-(--shadow-control)'
                             : 'text-muted-foreground hover:text-foreground'
                     "
                     @click="mode = 'note'"
@@ -919,116 +918,130 @@ defineExpose({ focus });
                 @undo-link="linkConfirmed = false"
             />
 
-            <div class="relative">
-                <label for="chat-composer" class="sr-only">{{
-                    mode === 'reply'
-                        ? `Mensaje para ${conversation.contact.name}`
-                        : 'Nota interna para el equipo'
-                }}</label>
-                <textarea
-                    id="chat-composer"
-                    ref="textarea"
-                    v-model="text"
-                    rows="2"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    :aria-expanded="trigger !== null"
-                    :aria-controls="
-                        trigger !== null ? picker?.listId : undefined
-                    "
-                    :aria-activedescendant="
-                        trigger !== null ? picker?.activeOptionId : undefined
-                    "
-                    :aria-describedby="
-                        error ? 'chat-composer-error' : 'chat-composer-hint'
-                    "
-                    :aria-invalid="tooLong || error !== null"
-                    :placeholder="placeholder"
-                    class="flex field-sizing-content max-h-48 min-h-11 w-full resize-y rounded-lg border bg-background px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 [@media(max-height:32rem)]:max-h-20 [@media(max-height:32rem)]:min-h-9 [@media(max-height:32rem)]:py-1.5"
-                    :class="
-                        mode === 'note' &&
-                        'border-warning/60 bg-warning/5 focus-visible:border-warning focus-visible:ring-warning/30'
-                    "
-                    @input="updateTrigger"
-                    @click="updateTrigger"
-                    @keyup="
-                        (event) =>
-                            ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
-                                event.key,
-                            ) && updateTrigger()
-                    "
-                    @keydown="onKeydown"
-                    @blur="trigger = null"
-                />
-                <div
-                    v-if="trigger"
-                    class="absolute inset-x-0 bottom-full z-20 mb-1"
-                >
-                    <QuickReplyPicker
-                        ref="picker"
-                        :query="trigger.query"
-                        :contact-id="conversation.contact.id"
-                        :department-id="conversation.department?.id ?? null"
-                        @select="insertQuickReply"
-                        @close="closePicker"
+            <!--
+                One surface for the text and its tools: the ring follows the
+                focus of the text field.
+            -->
+            <div
+                class="rounded-xl border bg-card transition-[border-color,box-shadow,background-color] duration-(--duration-fast) ease-(--ease-standard) hover:border-border-strong"
+                :class="
+                    mode === 'note'
+                        ? 'border-warning/60 bg-warning-soft/60 focus-within:border-warning focus-within:ring-[3px] focus-within:ring-warning/25'
+                        : 'focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20'
+                "
+                data-composer-surface
+            >
+                <div class="relative">
+                    <label for="chat-composer" class="sr-only">{{
+                        mode === 'reply'
+                            ? `Mensaje para ${conversation.contact.name}`
+                            : 'Nota interna para el equipo'
+                    }}</label>
+                    <textarea
+                        id="chat-composer"
+                        ref="textarea"
+                        v-model="text"
+                        rows="2"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        :aria-expanded="trigger !== null"
+                        :aria-controls="
+                            trigger !== null ? picker?.listId : undefined
+                        "
+                        :aria-activedescendant="
+                            trigger !== null
+                                ? picker?.activeOptionId
+                                : undefined
+                        "
+                        :aria-describedby="
+                            error ? 'chat-composer-error' : 'chat-composer-hint'
+                        "
+                        :aria-invalid="tooLong || error !== null"
+                        :placeholder="placeholder"
+                        class="flex field-sizing-content max-h-48 min-h-12 w-full resize-none rounded-t-xl border-0 bg-transparent px-3.5 pt-3 pb-1.5 text-base outline-none placeholder:text-muted-foreground md:text-sm [@media(max-height:32rem)]:max-h-20 [@media(max-height:32rem)]:min-h-9 [@media(max-height:32rem)]:py-1.5"
+                        @input="updateTrigger"
+                        @click="updateTrigger"
+                        @keyup="
+                            (event) =>
+                                [
+                                    'ArrowLeft',
+                                    'ArrowRight',
+                                    'Home',
+                                    'End',
+                                ].includes(event.key) && updateTrigger()
+                        "
+                        @keydown="onKeydown"
+                        @blur="trigger = null"
                     />
+                    <div
+                        v-if="trigger"
+                        class="absolute inset-x-0 bottom-full z-20 mb-1"
+                    >
+                        <QuickReplyPicker
+                            ref="picker"
+                            :query="trigger.query"
+                            :contact-id="conversation.contact.id"
+                            :department-id="conversation.department?.id ?? null"
+                            @select="insertQuickReply"
+                            @close="closePicker"
+                        />
+                    </div>
                 </div>
-            </div>
 
-            <div class="flex flex-wrap items-center gap-1">
-                <AttachmentMenu
-                    v-if="mode === 'reply'"
-                    :rules="channelRules"
-                    :channel-label="channelLabel"
-                    :busy="sending"
-                    @choose="chooseFile"
-                />
-                <EmojiPicker
-                    :disabled="sending"
-                    @select="(emoji) => insertAtCaret(emoji)"
-                />
-                <label
-                    class="ml-1 hidden cursor-pointer items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
-                >
-                    <Switch
-                        v-model="enterSends"
-                        aria-label="Enviar con Enter"
+                <div class="flex flex-wrap items-center gap-1 px-2 pb-2">
+                    <AttachmentMenu
+                        v-if="mode === 'reply'"
+                        :rules="channelRules"
+                        :channel-label="channelLabel"
+                        :busy="sending"
+                        @choose="chooseFile"
                     />
-                    Enter para enviar
-                </label>
-                <span
-                    class="ml-auto text-xs tabular-nums"
-                    :class="
-                        tooLong ? 'text-destructive' : 'text-muted-foreground'
-                    "
-                    :aria-hidden="!tooLong"
-                    :role="tooLong ? 'alert' : undefined"
-                >
-                    {{ text.length }}/{{ maxLength }}
-                </span>
-                <Button
-                    type="submit"
-                    :disabled="!canSubmit"
-                    :variant="mode === 'note' ? 'outline' : 'default'"
-                    class="pointer-coarse:h-10"
-                    :class="mode === 'note' && 'border-warning/60'"
-                >
-                    <Spinner v-if="sending" />
-                    <StickyNote
-                        v-else-if="mode === 'note'"
-                        aria-hidden="true"
+                    <EmojiPicker
+                        :disabled="sending"
+                        @select="(emoji) => insertAtCaret(emoji)"
                     />
-                    <Send v-else aria-hidden="true" />
-                    {{
-                        sending
-                            ? mode === 'note'
-                                ? 'Guardando…'
-                                : 'Enviando…'
-                            : mode === 'note'
-                              ? 'Guardar nota'
-                              : 'Enviar'
-                    }}
-                </Button>
+                    <label
+                        class="ml-1 hidden cursor-pointer items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                    >
+                        <Switch
+                            v-model="enterSends"
+                            aria-label="Enviar con Enter"
+                        />
+                        Enter para enviar
+                    </label>
+                    <span
+                        class="ml-auto text-xs tabular-nums"
+                        :class="
+                            tooLong
+                                ? 'text-destructive'
+                                : 'text-muted-foreground'
+                        "
+                        :aria-hidden="!tooLong"
+                        :role="tooLong ? 'alert' : undefined"
+                    >
+                        {{ text.length }}/{{ maxLength }}
+                    </span>
+                    <Button
+                        type="submit"
+                        :disabled="!canSubmit"
+                        :variant="mode === 'note' ? 'outline' : 'default'"
+                        class="pointer-coarse:h-10"
+                        :class="mode === 'note' && 'border-warning/60'"
+                        :loading="sending"
+                    >
+                        <StickyNote v-if="mode === 'note'" aria-hidden="true" />
+                        <Send v-else aria-hidden="true" />
+                        {{
+                            sending
+                                ? mode === 'note'
+                                    ? 'Guardando…'
+                                    : 'Enviando…'
+                                : mode === 'note'
+                                  ? 'Guardar nota'
+                                  : 'Enviar'
+                        }}
+                    </Button>
+                </div>
             </div>
             <p
                 v-if="error"

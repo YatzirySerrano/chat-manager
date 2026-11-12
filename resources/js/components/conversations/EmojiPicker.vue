@@ -215,7 +215,7 @@ function choose(emoji: string): void {
             <div class="max-h-64 overflow-y-auto p-2">
                 <p
                     v-if="filtered.length === 0"
-                    class="py-6 text-center text-sm text-muted-foreground"
+                    class="py-6 text-sm text-muted-foreground"
                 >
                     Ningún emoji coincide.
                 </p>

@@ -3,10 +3,14 @@ import type { LucideIcon } from '@lucide/vue';
 import { ArrowDownRight, ArrowUpRight, Minus } from '@lucide/vue';
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { NumberTicker } from '@/components/ui/number-ticker';
 import { formatPercent } from '@/composables/useChartTheme';
 
 /**
  * A headline figure with its comparison against the previous period.
+ * The figure is set in the display face; a value made only of digits counts
+ * up to its number, and a light follows the pointer over the card
+ * (`spotlight`), as in StatCard.
  * `value === null` renders "Sin datos suficientes", never a fake zero, and
  * the comparison is only shown when both periods have data. The label and
  * the hint are never cut (they wrap; long words break and hyphenate), as in
@@ -89,6 +93,13 @@ const tone = computed(() => {
     return improved ? 'text-success' : 'text-destructive';
 });
 
+/** The value as a number when it can count up ("13"), otherwise null. */
+const numeric = computed<number | null>(() =>
+    props.value !== null && /^\d{1,9}$/.test(props.value)
+        ? Number(props.value)
+        : null,
+);
+
 const previousText = computed(
     () =>
         props.previousLabel ??
@@ -101,8 +112,8 @@ const previousText = computed(
 <template>
     <div
         :class="[
-            'flex min-w-0 flex-col rounded-xl border bg-surface-raised shadow-card',
-            size === 'compact' ? 'gap-1 px-3.5 py-3' : 'gap-2 p-4',
+            'spotlight flex min-w-0 flex-col rounded-xl border bg-card transition-[border-color] duration-(--duration-base)',
+            size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-2 p-5',
         ]"
     >
         <div
@@ -137,11 +148,14 @@ const previousText = computed(
         <p
             v-if="value !== null"
             :class="[
-                'font-semibold tracking-tight tabular-nums',
-                size === 'compact' ? 'text-xl' : 'text-2xl',
+                'font-display font-semibold tabular-nums',
+                size === 'compact'
+                    ? 'text-[1.625rem] leading-8'
+                    : 'text-3xl leading-9',
             ]"
         >
-            {{ value }}
+            <NumberTicker v-if="numeric !== null" :value="numeric" />
+            <template v-else>{{ value }}</template>
         </p>
         <p v-else class="text-sm font-medium text-muted-foreground">
             {{ unavailableLabel }}

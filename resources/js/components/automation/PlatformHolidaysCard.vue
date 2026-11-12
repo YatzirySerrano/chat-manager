@@ -5,8 +5,8 @@ import { computed, watch } from 'vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { formatHoliday } from '@/lib/holidays';
 import { update } from '@/routes/admin/settings/holidays';
@@ -117,7 +117,7 @@ const help: FieldHelpContent = {
 
 <template>
     <div
-        class="overflow-hidden rounded-xl border bg-card shadow-card"
+        class="overflow-hidden rounded-xl border bg-card"
         role="group"
         aria-labelledby="holidays-title"
         @keydown.enter.prevent="submit"
@@ -153,14 +153,13 @@ const help: FieldHelpContent = {
             <li
                 v-for="(holiday, index) in form.holidays"
                 :key="index"
-                class="grid gap-2 px-5 py-3 sm:grid-cols-[10rem_1fr_auto_auto] sm:items-center"
+                class="row-accent grid gap-2 px-5 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-[12rem_1fr_auto_auto] sm:items-center"
             >
                 <template v-if="canUpdate">
-                    <Input
+                    <DatePicker
                         v-model="holiday.date"
-                        type="date"
                         :aria-label="`Fecha del día no laborable ${index + 1}`"
-                        :aria-invalid="rowError(index) ? true : undefined"
+                        :invalid="Boolean(rowError(index))"
                     />
                     <Input
                         v-model="holiday.label"
@@ -196,9 +195,16 @@ const help: FieldHelpContent = {
 
         <div
             v-if="canUpdate"
-            class="flex items-center justify-end gap-2 border-t px-5 py-3"
+            class="flex flex-wrap items-center gap-3 border-t bg-surface-sunken/50 px-5 py-3"
         >
-            <InputError :message="errors.holidays" class="mr-auto" />
+            <Button
+                type="button"
+                :disabled="!form.isDirty || invalid"
+                :loading="form.processing"
+                @click="submit"
+            >
+                Guardar días
+            </Button>
             <Button
                 type="button"
                 variant="outline"
@@ -207,14 +213,7 @@ const help: FieldHelpContent = {
             >
                 Descartar
             </Button>
-            <Button
-                type="button"
-                :disabled="!form.isDirty || invalid || form.processing"
-                @click="submit"
-            >
-                <Spinner v-if="form.processing" />
-                Guardar días
-            </Button>
+            <InputError :message="errors.holidays" />
         </div>
     </div>
 </template>

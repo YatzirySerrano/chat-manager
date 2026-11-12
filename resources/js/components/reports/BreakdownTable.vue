@@ -124,7 +124,7 @@ function percent(part: number, total: number): string {
                 </TableRow>
             </TableBody>
         </Table>
-        <p v-else class="px-5 py-8 text-center text-sm text-muted-foreground">
+        <p v-else class="px-5 py-6 text-sm text-muted-foreground">
             Sin conversaciones recibidas en el periodo con estos filtros.
         </p>
     </div>

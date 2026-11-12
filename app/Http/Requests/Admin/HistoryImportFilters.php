@@ -22,7 +22,7 @@ class HistoryImportFilters
      *
      * @var list<string>
      */
-    public const FLAGS = ['duplicates', 'empty', 'with_attachments', 'missing_attachments', 'group', 'has_issues'];
+    public const FLAGS = ['duplicates', 'empty', 'with_attachments', 'missing_attachments', 'group', 'has_issues', 'with_phone', 'without_phone'];
 
     /**
      * Keys of text filters.

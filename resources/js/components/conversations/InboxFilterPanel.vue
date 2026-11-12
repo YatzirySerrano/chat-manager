@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { Search } from '@lucide/vue';
+import { RadioGroupItem, RadioGroupRoot } from 'reka-ui';
 import { computed, ref } from 'vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
+import { AppSelect } from '@/components/ui/app-select';
+import type { AppSelectOption } from '@/components/ui/app-select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioCards } from '@/components/ui/radio-cards';
 import { Switch } from '@/components/ui/switch';
 import type { InboxFilterState } from '@/components/conversations/inboxFilters';
 import { useFeatures } from '@/composables/useFeatures';
@@ -90,85 +94,144 @@ function toggleTag(id: number, checked: boolean): void {
     });
 }
 
-function selectValue(event: Event): string {
-    return (event.target as HTMLSelectElement).value;
-}
+const tagMatchOptions: {
+    value: InboxTagMatch;
+    label: string;
+    description: string;
+}[] = [
+    {
+        value: 'any',
+        label: 'Con al menos una de estas etiquetas',
+        description:
+            'Conversaciones con al menos una de las etiquetas elegidas.',
+    },
+    {
+        value: 'all',
+        label: 'Con todas estas etiquetas a la vez',
+        description:
+            'Solo las conversaciones que tienen todas las etiquetas elegidas.',
+    },
+];
 
-const tagMatchOptions: { value: InboxTagMatch; label: string; hint: string }[] =
-    [
-        {
-            value: 'any',
-            label: 'Con al menos una de estas etiquetas',
-            hint: 'Conversaciones con al menos una de las etiquetas elegidas.',
-        },
-        {
-            value: 'all',
-            label: 'Con todas estas etiquetas a la vez',
-            hint: 'Solo las conversaciones que tienen todas las etiquetas elegidas.',
-        },
-    ];
+/* Options of the selects: the values stay the strings the URL carries. */
+const departmentOptions = computed<AppSelectOption<string>[]>(() => [
+    { value: ALL, label: 'Todos los departamentos' },
+    ...(props.canSeeUnrouted
+        ? [{ value: 'none', label: 'Sin departamento' }]
+        : []),
+    ...props.departments.map((department) => ({
+        value: String(department.id),
+        label: `${department.name}${department.is_active ? '' : ' (inactivo)'}`,
+    })),
+]);
 
-const selectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs md:text-sm outline-none hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 pointer-coarse:h-10 motion-safe:transition-colors';
+const agentOptions = computed<AppSelectOption<string>[]>(() => [
+    { value: ALL, label: 'Todos los agentes' },
+    { value: 'none', label: 'Sin agente' },
+    ...props.agents.map((agent) => ({
+        value: String(agent.id),
+        label: `${agent.name}${agent.is_active ? '' : ' (inactivo)'}`,
+    })),
+]);
+
+const connectionOptions = computed<AppSelectOption<string>[]>(() => [
+    { value: ALL, label: 'Todas las conexiones' },
+    ...props.connections.map((connection) => ({
+        value: String(connection.id),
+        label: connection.name,
+        description: connection.display_phone_number
+            ? formatPhone(connection.display_phone_number)
+            : undefined,
+    })),
+]);
+
+const channelOptions = computed<AppSelectOption<string>[]>(() => [
+    { value: ALL, label: 'Todos los canales' },
+    ...props.channels,
+]);
+
+const categoryOptions = computed<AppSelectOption<string>[]>(() => [
+    { value: ALL, label: 'Todas las categorías' },
+    ...props.categories.map((category) => ({
+        value: String(category.id),
+        label: category.name,
+    })),
+]);
+
+const readinessOptions: AppSelectOption<string>[] = [
+    { value: ALL, label: 'Todas' },
+    { value: 'needs_info', label: 'Necesita información' },
+    { value: 'ready', label: 'Lista para atención' },
+];
+
 const sectionClass =
-    'grid min-w-0 gap-3 border-t pt-3 first:border-t-0 first:pt-0';
-const sectionLegendClass = 'mb-1 text-sm font-semibold text-foreground';
+    'grid min-w-0 gap-3 border-t pt-3.5 first:border-t-0 first:pt-0';
+const sectionLegendClass =
+    'font-display text-base font-semibold text-foreground';
 const fieldLabelClass = 'text-xs font-medium text-muted-foreground';
-const optionClass =
-    'flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent has-[:checked]:bg-accent/70 has-[:checked]:font-medium has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring pointer-coarse:min-h-10';
+/* One option of an exclusive group shown as a chip (view, status). */
+const chipClass =
+    'inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-3 text-sm outline-none transition-[background-color,border-color,color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) hover:border-border-strong hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary/25 data-[state=checked]:border-primary data-[state=checked]:bg-primary-soft data-[state=checked]:font-semibold data-[state=checked]:text-primary-soft-foreground pointer-coarse:min-h-10';
 </script>
 
 <template>
     <div class="grid gap-4 text-sm">
-        <fieldset :class="sectionClass" data-inbox-filter-section="what">
-            <legend :class="sectionLegendClass" class="float-left w-full">
-                Qué conversaciones
-            </legend>
+        <section :class="sectionClass" data-inbox-filter-section="what">
+            <h3 :class="sectionLegendClass">Qué conversaciones</h3>
 
-            <fieldset v-if="views.length > 1" class="grid min-w-0 gap-1">
-                <legend :class="fieldLabelClass" class="mb-1">Vista</legend>
-                <div class="grid gap-0.5">
-                    <label
+            <div v-if="views.length > 1" class="grid min-w-0 gap-1.5">
+                <span id="inbox-view-label" :class="fieldLabelClass"
+                    >Vista</span
+                >
+                <RadioGroupRoot
+                    :model-value="state.view"
+                    aria-labelledby="inbox-view-label"
+                    class="flex flex-wrap gap-1.5"
+                    data-inbox-filter-view
+                    @update:model-value="
+                        (value) => emit('change', { view: value as InboxView })
+                    "
+                >
+                    <RadioGroupItem
                         v-for="view in views"
                         :key="view"
-                        :class="optionClass"
+                        :value="view"
+                        :class="chipClass"
                     >
-                        <input
-                            type="radio"
-                            name="inbox-view"
-                            class="size-4 shrink-0 accent-primary"
-                            :value="view"
-                            :checked="state.view === view"
-                            @change="emit('change', { view })"
-                        />
                         {{ viewLabels[view] }}
-                    </label>
-                </div>
-            </fieldset>
+                    </RadioGroupItem>
+                </RadioGroupRoot>
+            </div>
 
-            <fieldset class="grid min-w-0 gap-1">
-                <legend :class="fieldLabelClass" class="mb-1">Estado</legend>
-                <div class="grid gap-0.5">
-                    <label
+            <div class="grid min-w-0 gap-1.5">
+                <span id="inbox-status-label" :class="fieldLabelClass"
+                    >Estado</span
+                >
+                <RadioGroupRoot
+                    :model-value="state.status"
+                    aria-labelledby="inbox-status-label"
+                    class="flex flex-wrap gap-1.5"
+                    data-inbox-filter-status
+                    @update:model-value="
+                        (value) =>
+                            emit('change', {
+                                status: value as ConversationStatusFilter,
+                            })
+                    "
+                >
+                    <RadioGroupItem
                         v-for="option in statusOptions"
                         :key="option.value"
-                        :class="optionClass"
+                        :value="option.value"
+                        :class="chipClass"
                     >
-                        <input
-                            type="radio"
-                            name="inbox-status"
-                            class="size-4 shrink-0 accent-primary"
-                            :value="option.value"
-                            :checked="state.status === option.value"
-                            @change="emit('change', { status: option.value })"
-                        />
                         {{ option.label }}
-                    </label>
-                </div>
-            </fieldset>
+                    </RadioGroupItem>
+                </RadioGroupRoot>
+            </div>
 
             <div
-                class="flex items-center justify-between gap-3 rounded-md px-2 py-1 pointer-coarse:min-h-10"
+                class="flex items-center justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 pointer-coarse:min-h-10"
             >
                 <Label for="inbox-filter-unread" class="text-sm font-normal">
                     Solo no leídas
@@ -184,178 +247,111 @@ const optionClass =
                     "
                 />
             </div>
-        </fieldset>
+        </section>
 
-        <fieldset :class="sectionClass" data-inbox-filter-section="who">
-            <legend :class="sectionLegendClass" class="float-left w-full">
-                Quién y dónde
-            </legend>
+        <section :class="sectionClass" data-inbox-filter-section="who">
+            <h3 :class="sectionLegendClass">Quién y dónde</h3>
 
             <div class="grid gap-1.5">
                 <Label for="inbox-department" :class="fieldLabelClass"
                     >Departamento</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-department"
-                    :value="state.department"
-                    :class="selectClass"
-                    @change="
-                        (event) =>
-                            emit('change', { department: selectValue(event) })
+                    :model-value="state.department"
+                    :options="departmentOptions"
+                    @update:model-value="
+                        (value) => emit('change', { department: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todos los departamentos</option>
-                    <option v-if="canSeeUnrouted" value="none">
-                        Sin departamento
-                    </option>
-                    <option
-                        v-for="department in departments"
-                        :key="department.id"
-                        :value="String(department.id)"
-                    >
-                        {{ department.name
-                        }}{{ department.is_active ? '' : ' (inactivo)' }}
-                    </option>
-                </select>
+                />
             </div>
 
             <div v-if="showAgents" class="grid gap-1.5">
                 <Label for="inbox-agent" :class="fieldLabelClass"
                     >Agente responsable</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-agent"
-                    :value="state.agent"
-                    :class="selectClass"
-                    @change="
-                        (event) => emit('change', { agent: selectValue(event) })
+                    :model-value="state.agent"
+                    :options="agentOptions"
+                    @update:model-value="
+                        (value) => emit('change', { agent: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todos los agentes</option>
-                    <option value="none">Sin agente</option>
-                    <option
-                        v-for="agent in agents"
-                        :key="agent.id"
-                        :value="String(agent.id)"
-                    >
-                        {{ agent.name
-                        }}{{ agent.is_active ? '' : ' (inactivo)' }}
-                    </option>
-                </select>
+                />
             </div>
 
             <div v-if="connections.length > 1" class="grid gap-1.5">
                 <Label for="inbox-connection" :class="fieldLabelClass"
                     >Conexión</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-connection"
-                    :value="state.connection"
-                    :class="selectClass"
-                    @change="
-                        (event) =>
-                            emit('change', { connection: selectValue(event) })
+                    :model-value="state.connection"
+                    :options="connectionOptions"
+                    @update:model-value="
+                        (value) => emit('change', { connection: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todas las conexiones</option>
-                    <option
-                        v-for="connection in connections"
-                        :key="connection.id"
-                        :value="String(connection.id)"
-                    >
-                        {{ connection.name
-                        }}{{
-                            connection.display_phone_number
-                                ? ` · ${formatPhone(connection.display_phone_number)}`
-                                : ''
-                        }}
-                    </option>
-                </select>
+                />
             </div>
 
             <div v-if="channels.length > 1" class="grid gap-1.5">
                 <Label for="inbox-channel" :class="fieldLabelClass"
                     >Canal</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-channel"
-                    :value="state.channel"
-                    :class="selectClass"
-                    @change="
-                        (event) =>
-                            emit('change', { channel: selectValue(event) })
+                    :model-value="state.channel"
+                    :options="channelOptions"
+                    @update:model-value="
+                        (value) => emit('change', { channel: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todos los canales</option>
-                    <option
-                        v-for="channel in channels"
-                        :key="channel.value"
-                        :value="channel.value"
-                    >
-                        {{ channel.label }}
-                    </option>
-                </select>
+                />
             </div>
 
             <div v-if="categories.length > 0" class="grid gap-1.5">
                 <Label for="inbox-category" :class="fieldLabelClass"
                     >Categoría de la solicitud</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-category"
-                    :value="state.category"
-                    :class="selectClass"
+                    :model-value="state.category"
+                    :options="categoryOptions"
                     data-inbox-filter-category
-                    @change="
-                        (event) =>
-                            emit('change', { category: selectValue(event) })
+                    @update:model-value="
+                        (value) => emit('change', { category: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todas las categorías</option>
-                    <option
-                        v-for="category in categories"
-                        :key="category.id"
-                        :value="String(category.id)"
-                    >
-                        {{ category.name }}
-                    </option>
-                </select>
+                />
             </div>
 
             <div v-if="phaseTwo" class="grid gap-1.5">
                 <Label for="inbox-readiness" :class="fieldLabelClass"
                     >Preparación de la solicitud</Label
                 >
-                <select
+                <AppSelect
                     id="inbox-readiness"
-                    :value="state.readiness"
-                    :class="selectClass"
+                    :model-value="state.readiness"
+                    :options="readinessOptions"
                     data-inbox-filter-readiness
-                    @change="
-                        (event) =>
-                            emit('change', { readiness: selectValue(event) })
+                    @update:model-value="
+                        (value) => emit('change', { readiness: value ?? ALL })
                     "
-                >
-                    <option :value="ALL">Todas</option>
-                    <option value="needs_info">Necesita información</option>
-                    <option value="ready">Lista para atención</option>
-                </select>
+                />
             </div>
-        </fieldset>
+        </section>
 
-        <fieldset
+        <section
             v-if="tags.length > 0"
             :class="sectionClass"
             data-inbox-filter-section="tags"
         >
-            <legend :class="sectionLegendClass" class="float-left w-full">
+            <h3 :class="sectionLegendClass">
                 Etiquetas
                 <span
                     v-if="state.tags.length > 0"
-                    class="text-xs font-normal text-muted-foreground tabular-nums"
+                    class="font-sans text-xs font-normal text-muted-foreground tabular-nums"
                     >({{ state.tags.length }} de máximo {{ maxTags }})</span
                 >
-            </legend>
+            </h3>
             <div class="relative">
                 <Search
                     class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
@@ -370,19 +366,19 @@ const optionClass =
                 />
             </div>
             <div
-                class="grid max-h-48 gap-0.5 overflow-y-auto overscroll-contain rounded-md border p-1"
+                class="grid max-h-48 gap-0.5 overflow-y-auto overscroll-contain rounded-lg border bg-surface-sunken/60 p-1"
                 data-inbox-filter-tags
             >
                 <p
                     v-if="filteredTags.length === 0"
-                    class="px-2 py-3 text-center text-sm text-muted-foreground"
+                    class="px-2 py-3 text-sm text-muted-foreground"
                 >
                     Ninguna etiqueta coincide.
                 </p>
                 <Label
                     v-for="tag in filteredTags"
                     :key="tag.id"
-                    class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 font-normal hover:bg-accent pointer-coarse:min-h-10"
+                    class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 font-normal transition-colors duration-(--duration-fast) hover:bg-accent pointer-coarse:min-h-10"
                     :class="
                         tagLimitReached &&
                         !state.tags.includes(tag.id) &&
@@ -409,90 +405,52 @@ const optionClass =
                 Puedes combinar hasta {{ maxTags }} etiquetas.
             </p>
 
-            <div
+            <RadioCards
                 v-if="state.tags.length > 1"
-                class="grid gap-0.5"
-                role="radiogroup"
+                :model-value="state.tagMatch"
+                :options="tagMatchOptions"
                 aria-label="Cómo combinar las etiquetas"
-            >
-                <label
-                    v-for="option in tagMatchOptions"
-                    :key="option.value"
-                    :class="optionClass"
-                    :title="option.hint"
-                >
-                    <input
-                        type="radio"
-                        name="inbox-tag-match"
-                        class="size-4 shrink-0 accent-primary"
-                        :value="option.value"
-                        :checked="state.tagMatch === option.value"
-                        @change="emit('change', { tagMatch: option.value })"
+                class="grid-cols-1 [--grid-gap:0.375rem]"
+                data-inbox-filter-tag-match
+                @update:model-value="
+                    (value) => value && emit('change', { tagMatch: value })
+                "
+            />
+        </section>
+
+        <section :class="sectionClass" data-inbox-filter-section="order">
+            <h3 :class="sectionLegendClass">Orden y búsqueda</h3>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div class="grid gap-1.5">
+                    <Label for="inbox-sort" :class="fieldLabelClass"
+                        >Orden</Label
+                    >
+                    <AppSelect
+                        id="inbox-sort"
+                        :model-value="state.sort"
+                        :options="sortOptions"
+                        @update:model-value="
+                            (value) => value && emit('change', { sort: value })
+                        "
                     />
-                    <span class="grid">
-                        <span>{{ option.label }}</span>
-                        <span class="text-xs font-normal text-muted-foreground">
-                            {{ option.hint }}
-                        </span>
-                    </span>
-                </label>
-            </div>
-        </fieldset>
+                </div>
 
-        <fieldset :class="sectionClass" data-inbox-filter-section="order">
-            <legend :class="sectionLegendClass" class="float-left w-full">
-                Orden y búsqueda
-            </legend>
-
-            <div class="grid gap-1.5">
-                <Label for="inbox-sort" :class="fieldLabelClass">Orden</Label>
-                <select
-                    id="inbox-sort"
-                    :value="state.sort"
-                    :class="selectClass"
-                    @change="
-                        (event) =>
-                            emit('change', {
-                                sort: selectValue(event) as ConversationSort,
-                            })
-                    "
-                >
-                    <option
-                        v-for="option in sortOptions"
-                        :key="option.value"
-                        :value="option.value"
+                <div class="grid gap-1.5">
+                    <Label for="inbox-search-in" :class="fieldLabelClass"
+                        >Buscar en</Label
                     >
-                        {{ option.label }}
-                    </option>
-                </select>
+                    <AppSelect
+                        id="inbox-search-in"
+                        :model-value="state.searchIn"
+                        :options="searchScopes"
+                        @update:model-value="
+                            (value) =>
+                                value && emit('change', { searchIn: value })
+                        "
+                    />
+                </div>
             </div>
-
-            <div class="grid gap-1.5">
-                <Label for="inbox-search-in" :class="fieldLabelClass"
-                    >Buscar en</Label
-                >
-                <select
-                    id="inbox-search-in"
-                    :value="state.searchIn"
-                    :class="selectClass"
-                    @change="
-                        (event) =>
-                            emit('change', {
-                                searchIn: selectValue(
-                                    event,
-                                ) as ConversationSearchScope,
-                            })
-                    "
-                >
-                    <option
-                        v-for="option in searchScopes"
-                        :key="option.value"
-                        :value="option.value"
-                    >
-                        {{ option.label }}
-                    </option>
-                </select>
-            </div>
-        </fieldset>
+        </section>
     </div>
 </template>

@@ -186,8 +186,135 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             etiquetas hasta que alguien lo guarde.
         </StatusNote>
 
-        <div class="grid items-start gap-6 lg:grid-cols-3">
-            <div class="flex flex-col gap-6 lg:col-span-2">
+        <!--
+          Ficha: who the person is on the left rail, what happened with them
+          in the middle, where they came from on the right. Two columns on
+          laptops (the origin drops under the rail), three on wide screens.
+        -->
+        <div
+            class="grid reveal-stagger items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)] 2xl:grid-cols-[22rem_minmax(0,1fr)_25rem]"
+        >
+            <div class="flex flex-col gap-6">
+                <SurfaceCard title="Datos de contacto" body-class="p-5">
+                    <dl class="grid gap-3 text-sm">
+                        <div>
+                            <dt class="text-xs text-muted-foreground">
+                                Teléfono
+                            </dt>
+                            <dd class="font-mono tabular-nums">
+                                {{ formatPhone(contact.phone_e164) }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-muted-foreground">
+                                Correo electrónico
+                            </dt>
+                            <dd class="break-all">
+                                {{ contact.email ?? '—' }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-muted-foreground">
+                                Nombre de perfil de WhatsApp
+                            </dt>
+                            <dd>{{ contact.profile_name ?? '—' }}</dd>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <dt class="text-xs text-muted-foreground">
+                                    Primera interacción
+                                </dt>
+                                <dd>
+                                    {{
+                                        formatDateTime(
+                                            contact.first_interaction_at,
+                                        )
+                                    }}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-muted-foreground">
+                                    Última interacción
+                                </dt>
+                                <dd>
+                                    {{
+                                        formatDateTime(
+                                            contact.last_interaction_at,
+                                        )
+                                    }}
+                                </dd>
+                            </div>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-muted-foreground">
+                                Registro
+                            </dt>
+                            <dd>
+                                {{ contact.source_label }}
+                                <template v-if="contact.creator">
+                                    por {{ contact.creator.name }}</template
+                                >
+                                · {{ formatDateTime(contact.created_at) }}
+                            </dd>
+                        </div>
+                    </dl>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="Etiquetas"
+                    body-class="p-5"
+                    data-tour="contact.tags"
+                >
+                    <TagPicker
+                        :contact-id="contact.id"
+                        :selected="contact.tags ?? []"
+                        :available="availableTags"
+                        :disabled="!can.assignTags"
+                    />
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="Números y cuentas vinculados"
+                    body-class="p-5"
+                >
+                    <ul
+                        v-if="(contact.identities ?? []).length > 0"
+                        class="space-y-2"
+                    >
+                        <li
+                            v-for="identity in contact.identities"
+                            :key="identity.id"
+                            class="flex items-start gap-2 text-sm"
+                        >
+                            <Fingerprint
+                                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                            <div class="min-w-0">
+                                <p class="font-medium">
+                                    {{ identity.channel_label }}
+                                </p>
+                                <p
+                                    class="truncate font-mono text-xs text-muted-foreground"
+                                >
+                                    {{ identity.external_id }}
+                                </p>
+                                <p
+                                    v-if="identity.display_name"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    Perfil: {{ identity.display_name }}
+                                </p>
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-sm text-muted-foreground">
+                        Aún no se ha comunicado por ningún canal.
+                    </p>
+                </SurfaceCard>
+            </div>
+
+            <div class="flex flex-col gap-6 lg:row-span-2 2xl:row-span-1">
                 <SurfaceCard
                     data-tour="contact.history"
                     title="Historial de conversaciones"
@@ -197,7 +324,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                         <li
                             v-for="conversation in conversations"
                             :key="conversation.id"
-                            class="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+                            class="row-accent flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                             <div class="min-w-0 space-y-1">
                                 <div class="flex flex-wrap items-center gap-2">
@@ -284,125 +411,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                 />
             </div>
 
-            <div class="flex flex-col gap-6">
-                <SurfaceCard title="Datos de contacto" body-class="p-5">
-                    <dl class="grid gap-3 text-sm">
-                        <div>
-                            <dt class="text-xs text-muted-foreground">
-                                Teléfono
-                            </dt>
-                            <dd class="font-mono tabular-nums">
-                                {{ formatPhone(contact.phone_e164) }}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs text-muted-foreground">
-                                Correo electrónico
-                            </dt>
-                            <dd class="break-all">
-                                {{ contact.email ?? '—' }}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs text-muted-foreground">
-                                Nombre de perfil de WhatsApp
-                            </dt>
-                            <dd>{{ contact.profile_name ?? '—' }}</dd>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <dt class="text-xs text-muted-foreground">
-                                    Primera interacción
-                                </dt>
-                                <dd>
-                                    {{
-                                        formatDateTime(
-                                            contact.first_interaction_at,
-                                        )
-                                    }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt class="text-xs text-muted-foreground">
-                                    Última interacción
-                                </dt>
-                                <dd>
-                                    {{
-                                        formatDateTime(
-                                            contact.last_interaction_at,
-                                        )
-                                    }}
-                                </dd>
-                            </div>
-                        </div>
-                        <div>
-                            <dt class="text-xs text-muted-foreground">
-                                Registro
-                            </dt>
-                            <dd>
-                                {{ contact.source_label }}
-                                <template v-if="contact.creator">
-                                    por {{ contact.creator.name }}</template
-                                >
-                                · {{ formatDateTime(contact.created_at) }}
-                            </dd>
-                        </div>
-                    </dl>
-                </SurfaceCard>
-
-                <SurfaceCard
-                    title="Números y cuentas vinculados"
-                    body-class="p-5"
-                >
-                    <ul
-                        v-if="(contact.identities ?? []).length > 0"
-                        class="space-y-2"
-                    >
-                        <li
-                            v-for="identity in contact.identities"
-                            :key="identity.id"
-                            class="flex items-start gap-2 text-sm"
-                        >
-                            <Fingerprint
-                                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                                aria-hidden="true"
-                            />
-                            <div class="min-w-0">
-                                <p class="font-medium">
-                                    {{ identity.channel_label }}
-                                </p>
-                                <p
-                                    class="truncate font-mono text-xs text-muted-foreground"
-                                >
-                                    {{ identity.external_id }}
-                                </p>
-                                <p
-                                    v-if="identity.display_name"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    Perfil: {{ identity.display_name }}
-                                </p>
-                            </div>
-                        </li>
-                    </ul>
-                    <p v-else class="text-sm text-muted-foreground">
-                        Aún no se ha comunicado por ningún canal.
-                    </p>
-                </SurfaceCard>
-
-                <SurfaceCard
-                    title="Etiquetas"
-                    body-class="p-5"
-                    data-tour="contact.tags"
-                >
-                    <TagPicker
-                        :contact-id="contact.id"
-                        :selected="contact.tags ?? []"
-                        :available="availableTags"
-                        :disabled="!can.assignTags"
-                    />
-                </SurfaceCard>
-
+            <div class="flex flex-col gap-6 2xl:col-start-3 2xl:row-start-1">
                 <ContactOriginCard
                     :current="origin.current"
                     :history="origin.history"

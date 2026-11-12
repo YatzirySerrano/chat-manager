@@ -566,8 +566,8 @@ const total = computed(() => meta.value?.total ?? 0);
                     class="pointer-coarse:h-10"
                     :disabled="selected.size === 0 || bulkProcessing"
                     @click="applyBulk('selection')"
+                    :loading="bulkProcessing"
                 >
-                    <Spinner v-if="bulkProcessing" />
                     Aplicar destino a la selección
                 </Button>
                 <Button
@@ -580,8 +580,8 @@ const total = computed(() => meta.value?.total ?? 0);
                         filtersPending
                     "
                     @click="filterConfirmOpen = true"
+                    :loading="loading || filtersPending"
                 >
-                    <Spinner v-if="loading || filtersPending" />
                     Aplicar a las {{ formatNumber(total) }} del filtro
                 </Button>
             </div>

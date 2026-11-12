@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
+import FormSection from '@/components/FormSection.vue';
 import { BellRing, MonitorSmartphone, Trash2, Volume2 } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
     browserNotificationPermission,
@@ -212,14 +212,12 @@ function submit(): void {
 <template>
     <Head title="Notificaciones" />
 
-    <div class="space-y-6">
-        <h2 class="mb-1 text-lg font-semibold">Notificaciones</h2>
-        <p class="text-sm text-pretty text-muted-foreground">
-            Elige qué avisos quieres recibir dentro de la plataforma, con sonido
-            o como notificación del navegador.
-        </p>
-
-        <div class="rounded-xl border bg-card p-4 shadow-card">
+    <FormSection
+        title="Este navegador"
+        description="El permiso para mostrar avisos, la prueba de sonido y los dispositivos que reciben notificaciones con la plataforma cerrada."
+        bare
+    >
+        <div class="rounded-xl border bg-card p-4 sm:p-5">
             <div class="flex items-start gap-3">
                 <BellRing
                     class="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -291,7 +289,7 @@ function submit(): void {
             </div>
         </div>
 
-        <div class="rounded-xl border bg-card p-4 shadow-card">
+        <div class="rounded-xl border bg-card p-4 sm:p-5">
             <div class="flex items-start gap-3">
                 <MonitorSmartphone
                     class="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -376,9 +374,25 @@ function submit(): void {
                 </div>
             </div>
         </div>
+    </FormSection>
 
-        <form class="space-y-4" novalidate @submit.prevent="submit">
-            <div class="overflow-hidden rounded-xl border bg-card shadow-card">
+    <form novalidate @submit.prevent="submit">
+        <FormSection
+            title="Qué te avisamos"
+            description="Elige, aviso por aviso, si aparece dentro de la plataforma, si suena y si llega como notificación del navegador."
+            flush
+        >
+            <template #aside>
+                <p class="pt-1 text-xs text-pretty text-muted-foreground">
+                    Si desactivas un aviso en la app tampoco sonará ni aparecerá
+                    en el navegador. Las notificaciones nunca muestran el
+                    contenido de los mensajes de los clientes. Las del chat
+                    interno muestran quién escribió y un fragmento breve solo
+                    dentro de la plataforma; las del navegador no incluyen el
+                    fragmento.
+                </p>
+            </template>
+            <div>
                 <div
                     class="hidden grid-cols-[1fr_repeat(3,5.5rem)] gap-2 border-b px-4 py-2 text-xs font-medium text-muted-foreground sm:grid"
                     aria-hidden="true"
@@ -456,15 +470,7 @@ function submit(): void {
                 </ul>
             </div>
 
-            <p class="text-xs text-muted-foreground">
-                Si desactivas un aviso en la app tampoco sonará ni aparecerá en
-                el navegador. Las notificaciones nunca muestran el contenido de
-                los mensajes de los clientes. Las del chat interno muestran
-                quién escribió y un fragmento breve solo dentro de la
-                plataforma; las del navegador no incluyen el fragmento.
-            </p>
-
-            <div class="flex justify-end gap-2">
+            <template #footer>
                 <Button
                     type="button"
                     variant="outline"
@@ -475,12 +481,12 @@ function submit(): void {
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!form.isDirty || form.processing"
+                    :disabled="!form.isDirty"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar preferencias
                 </Button>
-            </div>
-        </form>
-    </div>
+            </template>
+        </FormSection>
+    </form>
 </template>

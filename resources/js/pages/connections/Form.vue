@@ -3,6 +3,7 @@ import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     Info,
+    KeyRound,
     Lock,
     Power,
     PowerOff,
@@ -18,6 +19,8 @@ import AutoMessagePreview from '@/components/connections/AutoMessagePreview.vue'
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagnosticsCard.vue';
 import MetaAccountCard from '@/components/connections/MetaAccountCard.vue';
+import RegisterNumberDialog from '@/components/connections/RegisterNumberDialog.vue';
+import SectionNav from '@/components/connections/SectionNav.vue';
 import { connectionFieldHelp as help } from '@/components/connections/connectionFieldHelp';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import SecretInput from '@/components/connections/SecretInput.vue';
@@ -30,14 +33,14 @@ import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import FormField from '@/components/FormField.vue';
+import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
@@ -243,9 +246,6 @@ const validation = useFormValidation(form, {
     requireChanges: isEditing,
 });
 
-const nativeSelectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30';
-
 /**
  * Departments that can be offered: active ones, plus inactive ones already
  * authorized (they stay until removed, but cannot be newly added).
@@ -279,10 +279,33 @@ function toggleDepartment(id: number, checked: boolean): void {
     }
 }
 
-function onDefaultDepartmentChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    form.default_department_id = value === '' ? null : Number(value);
-}
+const defaultDepartmentOptions = computed(() => {
+    const options = [
+        {
+            value: null as number | null,
+            label: 'Usar el predeterminado de la plataforma',
+        },
+        ...selectedDepartments.value.map((department) => ({
+            value: department.id as number | null,
+            label: department.name,
+        })),
+    ];
+
+    // A saved default that is no longer authorized stays visible, so it can
+    // be read and replaced.
+    const current = form.default_department_id;
+
+    if (current !== null && !options.some((o) => o.value === current)) {
+        const department = props.departments.find((d) => d.id === current);
+
+        options.push({
+            value: current,
+            label: `${department?.name ?? 'Departamento'} (no autorizado)`,
+        });
+    }
+
+    return options;
+});
 
 const messageDefinitions: {
     kind: ConnectionMessageKind;
@@ -425,6 +448,7 @@ function submit(): void {
 
 const verifying = ref(false);
 const statusProcessing = ref(false);
+const registerOpen = ref(false);
 const confirmDeactivateOpen = ref(false);
 
 const deletion = useRecordDeletion<Connection>({
@@ -493,16 +517,113 @@ const metaDetails = computed(() => {
 const pageTitle = computed(() =>
     connection.value ? connection.value.name : 'Nueva conexión',
 );
+
+/** Why an action of the status section is unavailable, or a caution about it. */
+const statusHints = computed(() => {
+    const current = connection.value;
+    const hints: { text: string; warning?: boolean }[] = [];
+
+    if (!current) {
+        return hints;
+    }
+
+    if (props.can.verify && validation.hasChanges) {
+        hints.push({
+            text: 'Guarda los cambios antes de verificar las credenciales o registrar el número.',
+        });
+    } else if (props.can.verify && !current.has_required_credentials) {
+        hints.push({
+            text: 'Guarda el Phone number ID, el WABA ID y el token de acceso para poder verificar.',
+        });
+    }
+
+    if (!props.can.changeStatus || current.is_active) {
+        return hints;
+    }
+
+    if (isWebChat.value && !current.has_required_credentials) {
+        hints.push({
+            text: 'Guarda al menos un dominio autorizado en el widget para poder activarla.',
+        });
+    }
+
+    if (isMeta.value && !current.has_required_credentials) {
+        hints.push({
+            text: 'Vuelve a autorizar la cuenta con Meta para poder activarla.',
+        });
+    }
+
+    if (
+        !isWebChat.value &&
+        current.has_required_credentials &&
+        credentialsUnverified.value
+    ) {
+        hints.push({
+            text: 'Puedes activarla, pero se recomienda verificar las credenciales primero.',
+            warning: true,
+        });
+    }
+
+    return hints;
+});
+
+/** Sections of the page, in order, for the sticky navigation. */
+const sections = computed(() => [
+    { id: 'diagnostico', label: 'Estado' },
+    { id: 'identificacion', label: 'Identificación' },
+    ...(isMeta.value && connection.value?.meta_account
+        ? [{ id: 'cuenta-meta', label: 'Cuenta de Meta' }]
+        : []),
+    ...(isWhatsapp.value
+        ? [{ id: 'credenciales', label: 'Credenciales' }]
+        : []),
+    ...(isWebChat.value && connection.value && widget.value
+        ? [
+              { id: 'codigo', label: 'Instalación' },
+              { id: 'widget-dominios', label: 'Dominios' },
+              { id: 'widget-apariencia', label: 'Apariencia' },
+              { id: 'widget-identificacion', label: 'Visitantes' },
+              { id: 'widget-formulario', label: 'Formulario previo' },
+              { id: 'widget-disponibilidad', label: 'Disponibilidad' },
+          ]
+        : []),
+    { id: 'departamentos', label: 'Departamentos' },
+    { id: 'mensajes', label: 'Mensajes automáticos' },
+    { id: 'reapertura', label: 'Reapertura' },
+    ...(connection.value && props.diagnostics
+        ? [{ id: 'integracion', label: 'Integración' }]
+        : []),
+]);
+
+const SECTION_FIELDS: Record<string, string[]> = {
+    identificacion: ['name', 'display_phone_number'],
+    credenciales: [...META_FIELDS].filter(
+        (field) => field !== 'display_phone_number',
+    ),
+    departamentos: ['department_ids', 'default_department_id'],
+    mensajes: ['welcome_message', 'away_message', 'farewell_message'],
+    reapertura: ['reopen_window_minutes'],
+};
+
+/** Sections with a field to review: marked in the navigation. */
+const flaggedSections = computed(() =>
+    Object.entries(SECTION_FIELDS)
+        .filter(([, fields]) =>
+            fields.some((field) => Boolean(validation.error(field))),
+        )
+        .map(([id]) => id),
+);
 </script>
 
 <template>
     <Head :title="pageTitle" />
 
     <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
-        <div class="page-shell [--page-max:72rem]">
+        <div
+            class="page-shell lg:[&_[data-slot=form-section]>div:first-child]:top-32"
+        >
             <PageHeader
                 help="conexiones"
-                show-title
                 :title="pageTitle"
                 :description="
                     isEditing
@@ -515,14 +636,23 @@ const pageTitle = computed(() =>
                 <template #eyebrow>
                     <Link
                         :href="connectionsIndex()"
-                        class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                        prefetch
+                        class="group/back inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                     >
-                        <ArrowLeft class="size-4" aria-hidden="true" />
+                        <ArrowLeft
+                            class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/back:-translate-x-0.5"
+                            aria-hidden="true"
+                        />
                         Conexiones
                     </Link>
                 </template>
                 <template v-if="connection" #actions>
                     <DeletedBadge v-if="connection.is_deleted" feminine />
+                    <StatusBadge
+                        :active="connection.is_active"
+                        active-label="Activa"
+                        inactive-label="Inactiva"
+                    />
                     <ConnectionHealthBadge :health="connection.health" />
                 </template>
             </PageHeader>
@@ -553,87 +683,307 @@ const pageTitle = computed(() =>
 
             <p
                 v-else-if="!can.update"
-                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
+                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground"
             >
                 <Lock class="size-4" aria-hidden="true" />
                 Puedes consultar esta conexión, pero no modificarla.
             </p>
 
-            <div
-                class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]"
-            >
-                <fieldset :disabled="!can.update" class="grid min-w-0 gap-6">
-                    <SurfaceCard
+            <SectionNav
+                :sections="sections"
+                :flagged="flaggedSections"
+                aria-label="Secciones de la conexión"
+            />
+
+            <div class="grid gap-10 pt-2">
+                <!--
+                  Control deck of the connection: what Meta has confirmed,
+                  what is missing and every action on the connection itself
+                  (apart from the form fields below, which are saved with
+                  the bar at the bottom).
+                -->
+                <FormSection
+                    id="diagnostico"
+                    class="reveal scroll-mt-32"
+                    title="Estado"
+                    :description="
+                        connection
+                            ? connection.configuration_health.description
+                            : isWebChat
+                              ? 'La conexión se creará inactiva. Después de guardarla podrás configurar el widget y activarla.'
+                              : 'La conexión se creará inactiva. Después de guardarla podrás verificar las credenciales con Meta, registrar el número y activarla.'
+                    "
+                >
+                    <template v-if="connection" #aside>
+                        <div class="flex flex-wrap items-center gap-2 pt-2">
+                            <ConnectionHealthBadge
+                                :health="connection.configuration_health"
+                            />
+                            <FieldHelp
+                                title="Activa o inactiva"
+                                :help="help.active"
+                            />
+                        </div>
+                    </template>
+
+                    <template v-if="connection">
+                        <div class="grid gap-5">
+                            <ConnectionChecklist
+                                :checks="connection.checks"
+                                :monitoring="connection.monitoring"
+                                :channel="connection.channel.value"
+                            />
+
+                            <dl
+                                v-if="metaDetails.length > 0"
+                                class="auto-grid border-t pt-5 [--col-min:11rem] [--grid-gap:1rem]"
+                            >
+                                <div
+                                    v-for="detail in metaDetails"
+                                    :key="detail.label"
+                                    class="min-w-0"
+                                >
+                                    <dt class="text-xs text-muted-foreground">
+                                        {{ detail.label }}
+                                    </dt>
+                                    <dd
+                                        class="truncate font-display text-base font-semibold"
+                                        :title="detail.value ?? undefined"
+                                    >
+                                        {{ detail.value }}
+                                    </dd>
+                                </div>
+                            </dl>
+                        </div>
+                    </template>
+                    <p
+                        v-else
+                        class="flex max-w-prose gap-2 text-sm text-muted-foreground"
+                    >
+                        <Info
+                            class="mt-0.5 size-4 shrink-0"
+                            aria-hidden="true"
+                        />
+                        <span v-if="isWebChat">
+                            Al crear la conexión podrás autorizar los dominios
+                            de tu sitio, personalizar el widget y copiar el
+                            código para insertarlo.
+                        </span>
+                        <span v-else>
+                            Aquí verás lo que Meta haya confirmado: las
+                            credenciales, el webhook, la suscripción de la app y
+                            el estado del número.
+                        </span>
+                    </p>
+
+                    <template
+                        v-if="
+                            connection &&
+                            (can.verify ||
+                                can.changeStatus ||
+                                can.delete ||
+                                can.restore)
+                        "
+                        #footer
+                    >
+                        <Button
+                            v-if="can.verify"
+                            type="button"
+                            variant="outline"
+                            :disabled="
+                                validation.hasChanges ||
+                                !connection.has_required_credentials
+                            "
+                            :loading="verifying"
+                            @click="verifyCredentials"
+                        >
+                            <ShieldCheck />
+                            Verificar credenciales
+                        </Button>
+                        <Button
+                            v-if="can.verify && isWhatsapp"
+                            type="button"
+                            variant="outline"
+                            data-test="register-number"
+                            :disabled="
+                                validation.hasChanges ||
+                                !connection.has_required_credentials
+                            "
+                            @click="registerOpen = true"
+                        >
+                            <KeyRound />
+                            Registrar número
+                        </Button>
+
+                        <template v-if="can.changeStatus">
+                            <Button
+                                v-if="!connection.is_active"
+                                type="button"
+                                :disabled="!connection.has_required_credentials"
+                                :loading="statusProcessing"
+                                @click="changeStatus(true)"
+                            >
+                                <Power />
+                                Activar conexión
+                            </Button>
+                            <Button
+                                v-else
+                                type="button"
+                                variant="ghost"
+                                :disabled="statusProcessing"
+                                @click="confirmDeactivateOpen = true"
+                            >
+                                <PowerOff />
+                                Desactivar conexión
+                            </Button>
+                        </template>
+
+                        <Button
+                            v-if="can.restore"
+                            type="button"
+                            @click="deletion.ask('restore', connection)"
+                        >
+                            <RotateCcw />
+                            Restaurar conexión
+                        </Button>
+                        <Button
+                            v-if="can.delete"
+                            type="button"
+                            variant="ghost"
+                            class="text-destructive hover:bg-destructive/10 hover:text-destructive sm:ml-auto"
+                            @click="deletion.ask('delete', connection)"
+                        >
+                            <Trash2 />
+                            Eliminar conexión
+                        </Button>
+
+                        <div
+                            v-if="statusHints.length > 0"
+                            class="grid basis-full gap-1"
+                        >
+                            <p
+                                v-for="hint in statusHints"
+                                :key="hint.text"
+                                class="flex gap-1.5 text-xs"
+                                :class="
+                                    hint.warning
+                                        ? 'text-warning-soft-foreground'
+                                        : 'text-muted-foreground'
+                                "
+                            >
+                                <TriangleAlert
+                                    v-if="hint.warning"
+                                    class="mt-px size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                {{ hint.text }}
+                            </p>
+                        </div>
+                    </template>
+                </FormSection>
+
+                <fieldset :disabled="!can.update" class="grid min-w-0 gap-10">
+                    <FormSection
+                        id="identificacion"
+                        class="scroll-mt-32"
                         title="Identificación"
                         description="Cómo reconocerás esta conexión dentro de la plataforma."
-                        body-class="grid gap-5 p-5 sm:grid-cols-2"
                     >
-                        <FormField
-                            id="connection-name"
-                            label="Nombre"
-                            :error="validation.error('name')"
-                            :help="help.name"
-                        >
-                            <Input
+                        <div class="field-grid [--col-min:18rem]">
+                            <FormField
                                 id="connection-name"
-                                v-bind="
-                                    validation.field('name', 'connection-name')
-                                "
-                                v-model="form.name"
-                                required
-                                maxlength="120"
-                                placeholder="Ventas CDMX"
-                            />
-                        </FormField>
-                        <FormField
-                            id="connection-channel"
-                            label="Canal"
-                            hint="El canal se elige al crear la conexión y no se puede cambiar."
-                        >
-                            <Input
+                                label="Nombre"
+                                :error="validation.error('name')"
+                                :help="help.name"
+                            >
+                                <Input
+                                    id="connection-name"
+                                    v-bind="
+                                        validation.field(
+                                            'name',
+                                            'connection-name',
+                                        )
+                                    "
+                                    v-model="form.name"
+                                    required
+                                    maxlength="120"
+                                    placeholder="Ventas CDMX"
+                                />
+                            </FormField>
+                            <FormField
                                 id="connection-channel"
-                                :model-value="`${channel.label} · ${provider.label}`"
-                                readonly
-                                disabled
-                            />
-                        </FormField>
-                        <FormField
-                            v-if="isWhatsapp"
-                            id="connection-display-phone"
-                            label="Número visible (opcional)"
-                            :error="validation.error('display_phone_number')"
-                            :help="help.displayPhoneNumber"
-                            class="sm:col-span-2"
-                        >
-                            <Input
+                                label="Canal"
+                                hint="El canal se elige al crear la conexión y no se puede cambiar."
+                            >
+                                <Input
+                                    id="connection-channel"
+                                    :model-value="`${channel.label} · ${provider.label}`"
+                                    readonly
+                                    disabled
+                                />
+                            </FormField>
+                            <FormField
+                                v-if="isWhatsapp"
                                 id="connection-display-phone"
-                                v-bind="
-                                    validation.field(
-                                        'display_phone_number',
-                                        'connection-display-phone',
-                                    )
+                                label="Número visible (opcional)"
+                                :error="
+                                    validation.error('display_phone_number')
                                 "
-                                v-model="form.display_phone_number"
-                                inputmode="tel"
-                                maxlength="32"
-                                placeholder="+52 55 1234 5678"
-                            />
-                        </FormField>
-                    </SurfaceCard>
+                                :help="help.displayPhoneNumber"
+                            >
+                                <Input
+                                    id="connection-display-phone"
+                                    v-bind="
+                                        validation.field(
+                                            'display_phone_number',
+                                            'connection-display-phone',
+                                        )
+                                    "
+                                    v-model="form.display_phone_number"
+                                    inputmode="tel"
+                                    maxlength="32"
+                                    placeholder="+52 55 1234 5678"
+                                />
+                            </FormField>
+                        </div>
+                    </FormSection>
 
-                    <MetaAccountCard
+                    <FormSection
                         v-if="isMeta && connection && connection.meta_account"
-                        :connection="connection"
-                        :can-manage="can.update"
-                    />
+                        id="cuenta-meta"
+                        class="scroll-mt-32"
+                        title="Cuenta de Meta"
+                        description="La cuenta que autorizaste para este canal. Vuelve a autorizarla si Meta retiró el acceso."
+                        bare
+                    >
+                        <MetaAccountCard
+                            :connection="connection"
+                            :can-manage="can.update"
+                        />
+                    </FormSection>
 
-                    <SurfaceCard
+                    <FormSection
                         v-if="isWhatsapp"
+                        id="credenciales"
+                        class="scroll-mt-32"
                         title="Credenciales de Meta"
                         :description="`Datos de tu app y de tu cuenta de WhatsApp Business. Se consultan con la Graph API ${graphVersion ?? ''}.`"
-                        body-class="grid gap-5 p-5"
                     >
-                        <div class="grid gap-5 sm:grid-cols-2">
+                        <template #aside>
+                            <p
+                                class="flex max-w-prose gap-2 pt-2 text-xs text-muted-foreground"
+                            >
+                                <ShieldCheck
+                                    class="mt-0.5 size-4 shrink-0 text-primary"
+                                    aria-hidden="true"
+                                />
+                                Los secretos se guardan cifrados y nunca se
+                                vuelven a mostrar. Deja un campo vacío para
+                                conservar el valor guardado.
+                            </p>
+                        </template>
+
+                        <div class="field-grid [--col-min:18rem]">
                             <FormField
                                 id="connection-phone-number-id"
                                 label="ID del número (Phone number ID)"
@@ -681,7 +1031,6 @@ const pageTitle = computed(() =>
                                 label="ID de la app de Meta (App ID, opcional)"
                                 :error="validation.error('meta_app_id')"
                                 :help="help.metaAppId"
-                                class="sm:col-span-2"
                             >
                                 <Input
                                     id="connection-app-id"
@@ -694,49 +1043,35 @@ const pageTitle = computed(() =>
                                     v-model="form.meta_app_id"
                                     inputmode="numeric"
                                     maxlength="64"
-                                    class="font-mono sm:max-w-xs"
+                                    class="font-mono"
                                 />
                             </FormField>
-                        </div>
 
-                        <div
-                            class="flex gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground"
-                        >
-                            <ShieldCheck
-                                class="mt-0.5 size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                            <p>
-                                Los secretos se guardan cifrados y nunca se
-                                vuelven a mostrar. Deja un campo vacío para
-                                conservar el valor guardado.
-                            </p>
-                        </div>
-
-                        <FormField
-                            id="connection-access-token"
-                            label="Token de acceso"
-                            :error="validation.error('access_token')"
-                            :help="help.accessToken"
-                        >
-                            <SecretInput
+                            <FormField
                                 id="connection-access-token"
-                                v-model="form.access_token"
-                                :saved="
-                                    connection?.secrets.access_token ?? false
-                                "
-                                :disabled="!can.update"
-                                :field-attrs="
-                                    validation.field(
-                                        'access_token',
-                                        'connection-access-token',
-                                    )
-                                "
-                                :maxlength="2000"
-                                placeholder="EAAG…"
-                            />
-                        </FormField>
-                        <div class="grid gap-5 sm:grid-cols-2">
+                                label="Token de acceso"
+                                :error="validation.error('access_token')"
+                                :help="help.accessToken"
+                                class="col-span-full"
+                            >
+                                <SecretInput
+                                    id="connection-access-token"
+                                    v-model="form.access_token"
+                                    :saved="
+                                        connection?.secrets.access_token ??
+                                        false
+                                    "
+                                    :disabled="!can.update"
+                                    :field-attrs="
+                                        validation.field(
+                                            'access_token',
+                                            'connection-access-token',
+                                        )
+                                    "
+                                    :maxlength="2000"
+                                    placeholder="EAAG…"
+                                />
+                            </FormField>
                             <FormField
                                 id="connection-app-secret"
                                 label="App secret"
@@ -786,293 +1121,155 @@ const pageTitle = computed(() =>
                                 />
                             </FormField>
                         </div>
-                    </SurfaceCard>
+                    </FormSection>
 
-                    <template v-if="isWebChat">
+                    <template v-if="isWebChat && connection && widget">
+                        <FormSection
+                            id="codigo"
+                            class="scroll-mt-32"
+                            title="Instalación"
+                            description="El fragmento que conecta tu sitio con este chat. Solo funciona en los dominios autorizados."
+                        >
+                            <WebChatSnippet
+                                :snippet="widget.snippet"
+                                :configured="widget.allowed_origins.length > 0"
+                            />
+                        </FormSection>
+
                         <WebChatWidgetCard
-                            v-if="connection && widget && widgetOptions"
+                            v-if="widgetOptions"
                             :connection-id="connection.id"
                             :widget="widget"
                             :options="widgetOptions"
                             :can-update="can.update"
+                            class="[&>section]:scroll-mt-32"
                             @appearance="onWidgetAppearance"
-                        />
-                        <p
-                            v-else-if="!connection"
-                            class="flex gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
                         >
-                            <Info
-                                class="mt-0.5 size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                            Al crear la conexión podrás autorizar los dominios
-                            de tu sitio, personalizar el widget y copiar el
-                            código para insertarlo.
-                        </p>
+                            <template v-if="previewAppearance" #preview>
+                                <WebChatPreview
+                                    :frame-url="widget.frame_url"
+                                    :appearance="previewAppearance"
+                                    :dirty="previewDirty"
+                                />
+                            </template>
+                        </WebChatWidgetCard>
                     </template>
 
-                    <SurfaceCard
+                    <FormSection
+                        id="departamentos"
+                        class="scroll-mt-32"
                         title="Departamentos"
                         :description="
                             isWebChat
                                 ? 'Quién atiende las conversaciones que lleguen por este chat.'
                                 : 'Quién atiende las conversaciones que lleguen a este número.'
                         "
-                        body-class="grid gap-5 p-5"
                     >
-                        <fieldset class="grid gap-2">
-                            <legend
-                                class="mb-2 flex items-center gap-1.5 text-sm font-medium"
-                            >
-                                Departamentos autorizados
-                                <FieldHelp
-                                    title="Departamentos autorizados"
-                                    :help="help.departments"
-                                />
-                            </legend>
-                            <div
-                                v-if="departmentChoices.length > 0"
-                                class="grid gap-2 sm:grid-cols-2"
-                            >
-                                <label
-                                    v-for="department in departmentChoices"
-                                    :key="department.id"
-                                    class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/40"
+                        <div class="grid gap-6">
+                            <fieldset class="grid gap-2">
+                                <legend
+                                    class="mb-2 flex items-center gap-1.5 text-sm font-medium"
                                 >
-                                    <Checkbox
-                                        :model-value="
-                                            form.department_ids.includes(
-                                                department.id,
-                                            )
-                                        "
-                                        :disabled="!can.update"
-                                        @update:model-value="
-                                            (checked) =>
-                                                toggleDepartment(
-                                                    department.id,
-                                                    checked === true,
-                                                )
-                                        "
+                                    Departamentos autorizados
+                                    <FieldHelp
+                                        title="Departamentos autorizados"
+                                        :help="help.departments"
                                     />
-                                    <span
-                                        class="size-2 shrink-0 rounded-full"
-                                        v-bind="
-                                            colorPresentations(department.color)
-                                                .dot
-                                        "
-                                        aria-hidden="true"
-                                    />
-                                    <span class="truncate">{{
-                                        department.name
-                                    }}</span>
-                                    <span
-                                        v-if="!department.is_active"
-                                        class="ml-auto text-xs text-muted-foreground"
-                                        >Eliminado</span
+                                </legend>
+                                <div
+                                    v-if="departmentChoices.length > 0"
+                                    class="auto-grid [--col-min:13rem] [--grid-gap:0.5rem]"
+                                >
+                                    <label
+                                        v-for="department in departmentChoices"
+                                        :key="department.id"
+                                        class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary-soft/40"
                                     >
-                                </label>
+                                        <Checkbox
+                                            :model-value="
+                                                form.department_ids.includes(
+                                                    department.id,
+                                                )
+                                            "
+                                            :disabled="!can.update"
+                                            @update:model-value="
+                                                (checked) =>
+                                                    toggleDepartment(
+                                                        department.id,
+                                                        checked === true,
+                                                    )
+                                            "
+                                        />
+                                        <span
+                                            class="size-2 shrink-0 rounded-full"
+                                            v-bind="
+                                                colorPresentations(
+                                                    department.color,
+                                                ).dot
+                                            "
+                                            aria-hidden="true"
+                                        />
+                                        <span class="truncate">{{
+                                            department.name
+                                        }}</span>
+                                        <span
+                                            v-if="!department.is_active"
+                                            class="ml-auto text-xs text-muted-foreground"
+                                            >Eliminado</span
+                                        >
+                                    </label>
+                                </div>
+                                <p v-else class="text-sm text-muted-foreground">
+                                    No hay departamentos activos. Crea uno en
+                                    Departamentos para poder autorizarlo.
+                                </p>
+                                <InputError
+                                    :message="
+                                        validation.error('department_ids')
+                                    "
+                                />
+                            </fieldset>
+
+                            <div class="field-grid [--col-min:18rem]">
+                                <FormField
+                                    id="connection-default-department"
+                                    label="Departamento predeterminado"
+                                    :error="
+                                        validation.error(
+                                            'default_department_id',
+                                        )
+                                    "
+                                    :help="help.defaultDepartment"
+                                >
+                                    <AppSelect
+                                        id="connection-default-department"
+                                        v-model="form.default_department_id"
+                                        :options="defaultDepartmentOptions"
+                                        :disabled="!can.update"
+                                    />
+                                </FormField>
                             </div>
-                            <p v-else class="text-sm text-muted-foreground">
-                                No hay departamentos activos. Crea uno en
-                                Departamentos para poder autorizarlo.
-                            </p>
-                            <InputError
-                                :message="validation.error('department_ids')"
-                            />
-                        </fieldset>
+                        </div>
+                    </FormSection>
 
-                        <FormField
-                            id="connection-default-department"
-                            label="Departamento predeterminado"
-                            :error="validation.error('default_department_id')"
-                            :help="help.defaultDepartment"
-                        >
-                            <select
-                                id="connection-default-department"
-                                :value="form.default_department_id ?? ''"
-                                :class="nativeSelectClass"
-                                :disabled="!can.update"
-                                @change="onDefaultDepartmentChange"
-                            >
-                                <option value="">
-                                    Usar el predeterminado de la plataforma
-                                </option>
-                                <option
-                                    v-for="department in selectedDepartments"
-                                    :key="department.id"
-                                    :value="department.id"
-                                >
-                                    {{ department.name }}
-                                </option>
-                            </select>
-                        </FormField>
-                    </SurfaceCard>
-
-                    <SurfaceCard body-class="grid gap-5 p-5">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <h2
-                                    class="flex items-center gap-1.5 text-sm font-semibold"
-                                >
-                                    Mensajes automáticos
+                    <FormSection
+                        id="mensajes"
+                        class="scroll-mt-32"
+                        title="Mensajes automáticos"
+                        description="Respuestas que la plataforma enviará sola."
+                        bare
+                    >
+                        <template #aside>
+                            <div class="grid gap-4 pt-2">
+                                <div class="flex items-center gap-1.5 text-sm">
                                     <FieldHelp
                                         title="Mensajes automáticos"
                                         :help="help.automaticMessages"
                                     />
-                                </h2>
-                                <p class="text-sm text-muted-foreground">
-                                    Respuestas que la plataforma enviará sola.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div
-                            class="flex gap-2 rounded-lg border border-primary/20 bg-primary-soft/50 px-3 py-2 text-sm text-primary-soft-foreground"
-                            role="note"
-                        >
-                            <Info
-                                class="mt-0.5 size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                            <p v-if="isWebChat">
-                                Estos mensajes se envían solos, solo como texto,
-                                y solo mientras la conexión está activa. El
-                                mensaje de ausencia o bienvenida del
-                                departamento tiene prioridad.
-                            </p>
-                            <p v-else>
-                                Estos mensajes se envían solos, solo como texto,
-                                únicamente dentro de la ventana de 24 horas de
-                                atención al cliente de WhatsApp y solo mientras
-                                la conexión está activa. El mensaje de ausencia
-                                o bienvenida del departamento tiene prioridad.
-                            </p>
-                        </div>
-
-                        <div
-                            class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_17rem]"
-                        >
-                            <div class="grid gap-5">
-                                <div
-                                    v-for="definition in messageDefinitions"
-                                    :key="definition.kind"
-                                    class="grid gap-2 rounded-lg border p-4"
-                                >
-                                    <div
-                                        class="flex items-center justify-between gap-3"
+                                    <span class="text-muted-foreground"
+                                        >Cuándo se envía cada uno</span
                                     >
-                                        <div
-                                            class="flex min-w-0 items-center gap-1.5"
-                                        >
-                                            <label
-                                                :for="`connection-${definition.kind}-message`"
-                                                class="text-sm font-medium"
-                                                >{{ definition.label }}</label
-                                            >
-                                            <FieldHelp
-                                                :title="definition.label"
-                                                :help="help[definition.kind]"
-                                            />
-                                        </div>
-                                        <Switch
-                                            :model-value="
-                                                messageEnabled(definition.kind)
-                                            "
-                                            :disabled="!can.update"
-                                            :aria-label="`Activar mensaje de ${definition.label.toLowerCase()}`"
-                                            @update:model-value="
-                                                (value: boolean) =>
-                                                    setMessageEnabled(
-                                                        definition.kind,
-                                                        value,
-                                                    )
-                                            "
-                                        />
-                                    </div>
-                                    <p class="text-xs text-muted-foreground">
-                                        {{ definition.trigger }}
-                                    </p>
-                                    <Textarea
-                                        :id="`connection-${definition.kind}-message`"
-                                        :model-value="
-                                            messageText(definition.kind)
-                                        "
-                                        rows="3"
-                                        :maxlength="limits.message"
-                                        :placeholder="definition.placeholder"
-                                        v-bind="
-                                            validation.field(
-                                                `${definition.kind}_message`,
-                                                `connection-${definition.kind}-message`,
-                                            )
-                                        "
-                                        @update:model-value="
-                                            (value: string | number) =>
-                                                setMessageText(
-                                                    definition.kind,
-                                                    String(value),
-                                                )
-                                        "
-                                    />
-                                    <div
-                                        class="flex items-start justify-between gap-3"
-                                    >
-                                        <InputError
-                                            :id="`connection-${definition.kind}-message-error`"
-                                            :message="
-                                                validation.error(
-                                                    `${definition.kind}_message`,
-                                                )
-                                            "
-                                        />
-                                        <span
-                                            class="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-                                            :class="
-                                                messageText(definition.kind)
-                                                    .length >
-                                                    limits.message * 0.9 &&
-                                                'text-amber-600 dark:text-amber-400'
-                                            "
-                                        >
-                                            {{
-                                                messageText(definition.kind)
-                                                    .length
-                                            }}/{{ limits.message }}
-                                        </span>
-                                    </div>
-                                    <label
-                                        v-if="definition.kind === 'away'"
-                                        class="flex items-start justify-between gap-3 rounded-md bg-muted/40 px-3 py-2 text-sm"
-                                        data-away-in-open
-                                    >
-                                        <span class="min-w-0">
-                                            <span class="block font-medium"
-                                                >También en conversaciones
-                                                abiertas</span
-                                            >
-                                            <span
-                                                class="block text-xs text-muted-foreground"
-                                            >
-                                                Si el cliente vuelve a escribir
-                                                fuera de horario en una
-                                                conversación que ya está abierta
-                                                o en espera, recibe el mensaje
-                                                una sola vez por cada periodo
-                                                fuera de horario.
-                                            </span>
-                                        </span>
-                                        <Switch
-                                            v-model="
-                                                form.away_in_open_conversations
-                                            "
-                                            :disabled="!can.update"
-                                            aria-label="Enviar el mensaje fuera de horario también en conversaciones abiertas"
-                                        />
-                                    </label>
                                 </div>
-                            </div>
-
-                            <div class="xl:sticky xl:top-4 xl:self-start">
                                 <AutoMessagePreview
                                     :business-name="
                                         connection?.verified_name ||
@@ -1082,329 +1279,279 @@ const pageTitle = computed(() =>
                                     :messages="previewMessages"
                                 />
                             </div>
-                        </div>
-                    </SurfaceCard>
-
-                    <SurfaceCard body-class="grid gap-4 p-5">
-                        <div class="flex items-start justify-between gap-4">
-                            <div>
-                                <h2
-                                    class="flex items-center gap-1.5 text-sm font-semibold"
-                                >
-                                    Reapertura
-                                    <FieldHelp
-                                        title="Ventana de reapertura"
-                                        :help="help.reopenWindow"
-                                    />
-                                </h2>
-                                <p class="text-sm text-muted-foreground">
-                                    {{ reopenSummary }}
-                                </p>
-                            </div>
-                            <Switch
-                                v-model="reopenEnabled"
-                                :disabled="!can.update"
-                                aria-label="Reabrir conversaciones cerradas recientemente"
-                            />
-                        </div>
-                        <div
-                            v-if="reopenEnabled"
-                            class="flex flex-wrap items-end gap-3"
-                        >
-                            <FormField
-                                id="connection-reopen-window"
-                                label="Minutos"
-                                :error="
-                                    validation.error('reopen_window_minutes')
-                                "
-                            >
-                                <Input
-                                    id="connection-reopen-window"
-                                    v-bind="
-                                        validation.field(
-                                            'reopen_window_minutes',
-                                            'connection-reopen-window',
-                                        )
-                                    "
-                                    type="number"
-                                    min="1"
-                                    :max="limits.reopen_window"
-                                    step="1"
-                                    class="w-32"
-                                    :model-value="
-                                        form.reopen_window_minutes ?? ''
-                                    "
-                                    @input="onReopenInput"
-                                />
-                            </FormField>
-                            <div class="flex flex-wrap gap-2 pb-0.5">
-                                <Button
-                                    v-for="preset in reopenPresets"
-                                    :key="preset.minutes"
-                                    type="button"
-                                    size="sm"
-                                    :variant="
-                                        form.reopen_window_minutes ===
-                                        preset.minutes
-                                            ? 'default'
-                                            : 'outline'
-                                    "
-                                    @click="
-                                        form.reopen_window_minutes =
-                                            preset.minutes
-                                    "
-                                >
-                                    {{ preset.label }}
-                                </Button>
-                            </div>
-                        </div>
-                    </SurfaceCard>
-                </fieldset>
-
-                <aside
-                    id="diagnostico"
-                    class="grid min-w-0 scroll-mt-4 grid-cols-1 gap-6"
-                    :class="!isWebChat && 'lg:sticky lg:top-4'"
-                >
-                    <SurfaceCard body-class="grid gap-4 p-5">
-                        <div class="flex items-center justify-between gap-2">
-                            <h2
-                                class="flex items-center gap-1.5 text-sm font-semibold"
-                            >
-                                Estado
-                                <FieldHelp
-                                    title="Activa o inactiva"
-                                    :help="help.active"
-                                />
-                            </h2>
-                            <StatusBadge
-                                v-if="connection"
-                                :active="connection.is_active"
-                                active-label="Activa"
-                                inactive-label="Inactiva"
-                            />
-                        </div>
-
-                        <template v-if="connection">
-                            <div class="space-y-1">
-                                <ConnectionHealthBadge
-                                    :health="connection.configuration_health"
-                                />
-                                <p class="text-xs text-muted-foreground">
-                                    {{
-                                        connection.configuration_health
-                                            .description
-                                    }}
-                                </p>
-                            </div>
-
-                            <ConnectionChecklist
-                                :checks="connection.checks"
-                                :monitoring="connection.monitoring"
-                                :channel="connection.channel.value"
-                            />
-
-                            <dl
-                                v-if="metaDetails.length > 0"
-                                class="grid gap-2 border-t pt-4 text-xs"
-                            >
-                                <div
-                                    v-for="detail in metaDetails"
-                                    :key="detail.label"
-                                    class="flex justify-between gap-3"
-                                >
-                                    <dt class="text-muted-foreground">
-                                        {{ detail.label }}
-                                    </dt>
-                                    <dd class="truncate text-right font-medium">
-                                        {{ detail.value }}
-                                    </dd>
-                                </div>
-                            </dl>
-
-                            <div
-                                v-if="
-                                    can.verify ||
-                                    can.changeStatus ||
-                                    can.delete ||
-                                    can.restore
-                                "
-                                class="grid gap-2 border-t pt-4"
-                            >
-                                <Button
-                                    v-if="can.verify"
-                                    type="button"
-                                    variant="outline"
-                                    :disabled="
-                                        verifying ||
-                                        validation.hasChanges ||
-                                        !connection.has_required_credentials
-                                    "
-                                    @click="verifyCredentials"
-                                >
-                                    <Spinner v-if="verifying" />
-                                    <ShieldCheck v-else />
-                                    Verificar credenciales
-                                </Button>
-                                <p
-                                    v-if="can.verify && validation.hasChanges"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    Guarda los cambios antes de verificar.
-                                </p>
-                                <p
-                                    v-else-if="
-                                        can.verify &&
-                                        !connection.has_required_credentials
-                                    "
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    Guarda el Phone number ID, el WABA ID y el
-                                    token de acceso para poder verificar.
-                                </p>
-
-                                <template v-if="can.changeStatus">
-                                    <Button
-                                        v-if="!connection.is_active"
-                                        type="button"
-                                        :disabled="
-                                            statusProcessing ||
-                                            !connection.has_required_credentials
-                                        "
-                                        @click="changeStatus(true)"
-                                    >
-                                        <Spinner v-if="statusProcessing" />
-                                        <Power v-else />
-                                        Activar conexión
-                                    </Button>
-                                    <Button
-                                        v-else
-                                        type="button"
-                                        variant="ghost"
-                                        :disabled="statusProcessing"
-                                        @click="confirmDeactivateOpen = true"
-                                    >
-                                        <PowerOff />
-                                        Desactivar conexión
-                                    </Button>
-                                    <p
-                                        v-if="
-                                            isWebChat &&
-                                            !connection.is_active &&
-                                            !connection.has_required_credentials
-                                        "
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        Guarda al menos un dominio autorizado en
-                                        el widget para poder activarla.
-                                    </p>
-                                    <p
-                                        v-if="
-                                            isMeta &&
-                                            !connection.is_active &&
-                                            !connection.has_required_credentials
-                                        "
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        Vuelve a autorizar la cuenta con Meta
-                                        para poder activarla.
-                                    </p>
-                                    <p
-                                        v-if="
-                                            !isWebChat &&
-                                            !connection.is_active &&
-                                            connection.has_required_credentials &&
-                                            credentialsUnverified
-                                        "
-                                        class="flex gap-1.5 text-xs text-amber-700 dark:text-amber-300"
-                                    >
-                                        <TriangleAlert
-                                            class="mt-px size-3.5 shrink-0"
-                                            aria-hidden="true"
-                                        />
-                                        Puedes activarla, pero se recomienda
-                                        verificar las credenciales primero.
-                                    </p>
-                                </template>
-
-                                <Button
-                                    v-if="can.restore"
-                                    type="button"
-                                    @click="deletion.ask('restore', connection)"
-                                >
-                                    <RotateCcw />
-                                    Restaurar conexión
-                                </Button>
-                                <Button
-                                    v-if="can.delete"
-                                    type="button"
-                                    variant="ghost"
-                                    class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                    @click="deletion.ask('delete', connection)"
-                                >
-                                    <Trash2 />
-                                    Eliminar conexión
-                                </Button>
-                            </div>
                         </template>
 
-                        <p
-                            v-else-if="isWebChat"
-                            class="text-sm text-muted-foreground"
+                        <div
+                            class="flex gap-2 rounded-xl border border-primary/20 bg-primary-soft/50 px-4 py-3 text-sm text-primary-soft-foreground"
+                            role="note"
                         >
-                            La conexión se creará <strong>inactiva</strong>.
-                            Después de guardarla podrás configurar el widget y
-                            activarla.
-                        </p>
-                        <p v-else class="text-sm text-muted-foreground">
-                            La conexión se creará <strong>inactiva</strong>.
-                            Después de guardarla podrás verificar las
-                            credenciales con Meta y activarla.
-                        </p>
-                    </SurfaceCard>
+                            <Info
+                                class="mt-0.5 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <p v-if="isWebChat" class="max-w-prose">
+                                Estos mensajes se envían solos, solo como texto,
+                                y solo mientras la conexión está activa. El
+                                mensaje de ausencia o bienvenida del
+                                departamento tiene prioridad.
+                            </p>
+                            <p v-else class="max-w-prose">
+                                Estos mensajes se envían solos, solo como texto,
+                                únicamente dentro de la ventana de 24 horas de
+                                atención al cliente de WhatsApp y solo mientras
+                                la conexión está activa. El mensaje de ausencia
+                                o bienvenida del departamento tiene prioridad.
+                            </p>
+                        </div>
 
-                    <SurfaceCard
-                        v-if="isWebChat && widget"
-                        body-class="grid gap-5 p-5"
+                        <div
+                            class="auto-grid [--col-min:21rem] [--grid-gap:1rem]"
+                        >
+                            <div
+                                v-for="definition in messageDefinitions"
+                                :key="definition.kind"
+                                class="grid content-start gap-2 rounded-xl border bg-card p-4 transition-colors sm:p-5"
+                                :class="
+                                    messageEnabled(definition.kind) &&
+                                    'border-primary/35'
+                                "
+                            >
+                                <div
+                                    class="flex items-center justify-between gap-3"
+                                >
+                                    <div
+                                        class="flex min-w-0 items-center gap-1.5"
+                                    >
+                                        <label
+                                            :for="`connection-${definition.kind}-message`"
+                                            class="font-display text-base font-semibold"
+                                            >{{ definition.label }}</label
+                                        >
+                                        <FieldHelp
+                                            :title="definition.label"
+                                            :help="help[definition.kind]"
+                                        />
+                                    </div>
+                                    <Switch
+                                        :model-value="
+                                            messageEnabled(definition.kind)
+                                        "
+                                        :disabled="!can.update"
+                                        :aria-label="`Activar mensaje de ${definition.label.toLowerCase()}`"
+                                        @update:model-value="
+                                            (value: boolean) =>
+                                                setMessageEnabled(
+                                                    definition.kind,
+                                                    value,
+                                                )
+                                        "
+                                    />
+                                </div>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ definition.trigger }}
+                                </p>
+                                <Textarea
+                                    :id="`connection-${definition.kind}-message`"
+                                    :model-value="messageText(definition.kind)"
+                                    rows="4"
+                                    :maxlength="limits.message"
+                                    :placeholder="definition.placeholder"
+                                    v-bind="
+                                        validation.field(
+                                            `${definition.kind}_message`,
+                                            `connection-${definition.kind}-message`,
+                                        )
+                                    "
+                                    @update:model-value="
+                                        (value: string | number) =>
+                                            setMessageText(
+                                                definition.kind,
+                                                String(value),
+                                            )
+                                    "
+                                />
+                                <div
+                                    class="flex items-start justify-between gap-3"
+                                >
+                                    <InputError
+                                        :id="`connection-${definition.kind}-message-error`"
+                                        :message="
+                                            validation.error(
+                                                `${definition.kind}_message`,
+                                            )
+                                        "
+                                    />
+                                    <span
+                                        class="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+                                        :class="
+                                            messageText(definition.kind)
+                                                .length >
+                                                limits.message * 0.9 &&
+                                            'text-warning-soft-foreground'
+                                        "
+                                    >
+                                        {{
+                                            messageText(definition.kind).length
+                                        }}/{{ limits.message }}
+                                    </span>
+                                </div>
+                                <label
+                                    v-if="definition.kind === 'away'"
+                                    class="flex items-start justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-sm"
+                                    data-away-in-open
+                                >
+                                    <span class="min-w-0">
+                                        <span class="block font-medium"
+                                            >También en conversaciones
+                                            abiertas</span
+                                        >
+                                        <span
+                                            class="block text-xs text-muted-foreground"
+                                        >
+                                            Si el cliente vuelve a escribir
+                                            fuera de horario en una conversación
+                                            que ya está abierta o en espera,
+                                            recibe el mensaje una sola vez por
+                                            cada periodo fuera de horario.
+                                        </span>
+                                    </span>
+                                    <Switch
+                                        v-model="
+                                            form.away_in_open_conversations
+                                        "
+                                        :disabled="!can.update"
+                                        aria-label="Enviar el mensaje fuera de horario también en conversaciones abiertas"
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </FormSection>
+
+                    <FormSection
+                        id="reapertura"
+                        class="scroll-mt-32"
+                        title="Reapertura"
+                        :description="reopenSummary"
                     >
-                        <WebChatSnippet
-                            :snippet="widget.snippet"
-                            :configured="widget.allowed_origins.length > 0"
-                        />
-                        <WebChatPreview
-                            v-if="previewAppearance"
-                            :frame-url="widget.frame_url"
-                            :appearance="previewAppearance"
-                            :dirty="previewDirty"
-                        />
-                    </SurfaceCard>
+                        <template #aside>
+                            <div class="pt-1">
+                                <FieldHelp
+                                    title="Ventana de reapertura"
+                                    :help="help.reopenWindow"
+                                />
+                            </div>
+                        </template>
+                        <div class="grid gap-5">
+                            <label
+                                class="flex items-center justify-between gap-4"
+                            >
+                                <span class="min-w-0">
+                                    <span class="block text-sm font-medium"
+                                        >Reabrir conversaciones cerradas
+                                        recientemente</span
+                                    >
+                                    <span
+                                        class="block text-xs text-muted-foreground"
+                                        >Si el cliente escribe poco después del
+                                        cierre, vuelve a la misma
+                                        conversación.</span
+                                    >
+                                </span>
+                                <Switch
+                                    v-model="reopenEnabled"
+                                    :disabled="!can.update"
+                                    aria-label="Reabrir conversaciones cerradas recientemente"
+                                />
+                            </label>
+                            <div
+                                v-if="reopenEnabled"
+                                class="flex flex-wrap items-end gap-3 border-t pt-5"
+                            >
+                                <FormField
+                                    id="connection-reopen-window"
+                                    label="Minutos"
+                                    :error="
+                                        validation.error(
+                                            'reopen_window_minutes',
+                                        )
+                                    "
+                                >
+                                    <Input
+                                        id="connection-reopen-window"
+                                        v-bind="
+                                            validation.field(
+                                                'reopen_window_minutes',
+                                                'connection-reopen-window',
+                                            )
+                                        "
+                                        type="number"
+                                        min="1"
+                                        :max="limits.reopen_window"
+                                        step="1"
+                                        class="w-32"
+                                        :model-value="
+                                            form.reopen_window_minutes ?? ''
+                                        "
+                                        @input="onReopenInput"
+                                    />
+                                </FormField>
+                                <div class="flex flex-wrap gap-2 pb-0.5">
+                                    <Button
+                                        v-for="preset in reopenPresets"
+                                        :key="preset.minutes"
+                                        type="button"
+                                        size="sm"
+                                        :variant="
+                                            form.reopen_window_minutes ===
+                                            preset.minutes
+                                                ? 'default'
+                                                : 'outline'
+                                        "
+                                        :aria-pressed="
+                                            form.reopen_window_minutes ===
+                                            preset.minutes
+                                        "
+                                        @click="
+                                            form.reopen_window_minutes =
+                                                preset.minutes
+                                        "
+                                    >
+                                        {{ preset.label }}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </FormSection>
+                </fieldset>
 
+                <FormSection
+                    v-if="connection && diagnostics"
+                    id="integracion"
+                    class="scroll-mt-32"
+                    title="Integración con WhatsApp Cloud API"
+                    description="Pasos para activar la conexión, confirmados con Meta."
+                >
                     <ConnectionDiagnosticsCard
-                        v-if="connection && diagnostics"
                         :connection="connection"
                         :diagnostics="diagnostics"
                         :can="can"
                     />
-                </aside>
+                </FormSection>
             </div>
         </div>
 
         <div
             v-if="can.update"
             data-dock-bottom
-            class="sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6"
+            class="sticky bottom-0 z-10 flex items-center gap-3 border-t bg-background/85 px-4 py-3 backdrop-blur-md md:px-6 lg:px-8 min-[100rem]:px-10"
         >
-            <span
-                v-if="validation.hasChanges"
-                class="text-sm text-muted-foreground max-sm:sr-only"
-                >Cambios sin guardar</span
+            <Button
+                type="submit"
+                :disabled="validation.requiresChanges && !validation.hasChanges"
+                :loading="form.processing"
             >
-            <span
-                v-else-if="isEditing"
-                class="text-sm text-muted-foreground max-sm:sr-only"
-                aria-live="polite"
-                >Sin cambios por guardar</span
-            >
+                {{ isEditing ? 'Guardar cambios' : 'Crear conexión' }}
+            </Button>
             <Button
                 v-if="isEditing"
                 type="button"
@@ -1417,16 +1564,22 @@ const pageTitle = computed(() =>
             <Button v-else as-child variant="outline">
                 <Link :href="connectionsIndex()">Cancelar</Link>
             </Button>
-            <Button
-                type="submit"
-                :disabled="
-                    form.processing ||
-                    (validation.requiresChanges && !validation.hasChanges)
-                "
+            <span
+                v-if="validation.hasChanges"
+                class="flex items-center gap-2 text-sm text-muted-foreground max-sm:sr-only"
             >
-                <Spinner v-if="form.processing" />
-                {{ isEditing ? 'Guardar cambios' : 'Crear conexión' }}
-            </Button>
+                <span
+                    class="size-1.5 rounded-full bg-warning"
+                    aria-hidden="true"
+                />
+                Cambios sin guardar
+            </span>
+            <span
+                v-else-if="isEditing"
+                class="text-sm text-muted-foreground max-sm:sr-only"
+                aria-live="polite"
+                >Sin cambios por guardar</span
+            >
         </div>
 
         <ConfirmDialog
@@ -1447,6 +1600,14 @@ const pageTitle = computed(() =>
             v-model:open="deletion.open"
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
+        />
+
+        <RegisterNumberDialog
+            v-if="connection && isWhatsapp && can.verify"
+            v-model:open="registerOpen"
+            :connection-id="connection.id"
+            :display-number="connection.display_phone_number"
+            :phone-status="connection.meta.phone_status"
         />
     </form>
 </template>

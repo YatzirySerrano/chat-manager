@@ -260,6 +260,146 @@ class HistoryValues
         return $mediaName === null ? MessageType::Text : $this->typeOfFile($mediaName);
     }
 
+    /**
+     * Whether the Whaticket media type is a call the customer made and
+     * nobody answered ("missed" in the authentic export, without text).
+     */
+    public function isMissedCall(?string $mediaType): bool
+    {
+        return in_array(mb_strtolower(trim((string) $mediaType)), ['missed', 'missed_call', 'missedcall', 'call_log', 'llamada perdida'], true);
+    }
+
+    /**
+     * The place of a "location" message. The authentic Whaticket export
+     * writes it in the text as JSON ({"degreesLatitude": .., "degreesLongitude": ..});
+     * "latitude"/"longitude" and "lat"/"lng" are read too. Returns the
+     * content in the shape live messages keep (metadata.content) and its
+     * readable text, or null when the text is not a place (it is then kept
+     * as written).
+     *
+     * @return array{content: array{latitude: float, longitude: float, name?: string, address?: string}, text: string}|null
+     */
+    public function location(?string $body): ?array
+    {
+        $data = $this->json($body);
+
+        if ($data === null || array_is_list($data)) {
+            return null;
+        }
+
+        $latitude = $data['degreesLatitude'] ?? $data['latitude'] ?? $data['lat'] ?? null;
+        $longitude = $data['degreesLongitude'] ?? $data['longitude'] ?? $data['lng'] ?? $data['lon'] ?? null;
+
+        if (! is_numeric($latitude) || ! is_numeric($longitude) || abs((float) $latitude) > 90 || abs((float) $longitude) > 180) {
+            return null;
+        }
+
+        $content = ['latitude' => round((float) $latitude, 7), 'longitude' => round((float) $longitude, 7)];
+        $name = $this->label(is_string($data['name'] ?? null) ? $data['name'] : null, 200);
+        $address = $this->label(is_string($data['address'] ?? null) ? $data['address'] : null, 300);
+
+        if ($name !== null) {
+            $content['name'] = $name;
+        }
+
+        if ($address !== null) {
+            $content['address'] = $address;
+        }
+
+        return ['content' => $content, 'text' => $name ?? $address ?? "Ubicación: {$content['latitude']}, {$content['longitude']}"];
+    }
+
+    /**
+     * The people of a "contact" message. The authentic Whaticket export
+     * writes them in the text as JSON ([{"name": .., "number": ..}]); a
+     * single object and a vCard (FN / TEL lines, as the open-source
+     * Whaticket stores it) are read too. Returns the content in the shape
+     * live messages keep (metadata.content) and its readable text, or null
+     * when the text has no person (it is then kept as written).
+     *
+     * @return array{content: list<array{name: array{formatted_name: string}, phones: list<array{phone: string}>}>, text: string}|null
+     */
+    public function sharedContacts(?string $body): ?array
+    {
+        $people = [];
+        $data = $this->json($body);
+
+        if ($data !== null) {
+            foreach (array_is_list($data) ? $data : [$data] as $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+
+                $name = $entry['name'] ?? $entry['displayName'] ?? null;
+                $name = is_array($name) ? ($name['formatted_name'] ?? $name['first_name'] ?? null) : $name;
+                $numbers = [];
+
+                foreach ([$entry['number'] ?? null, $entry['phone'] ?? null, ...(is_array($entry['phones'] ?? null) ? $entry['phones'] : [])] as $number) {
+                    $numbers[] = is_array($number) ? ($number['phone'] ?? $number['number'] ?? null) : $number;
+                }
+
+                $people[] = ['name' => $name, 'numbers' => $numbers];
+            }
+        } elseif (stripos((string) $body, 'BEGIN:VCARD') !== false) {
+            foreach (preg_split('/BEGIN:VCARD/i', (string) $body) ?: [] as $card) {
+                if (preg_match('/^FN[^:\r\n]*:(.+)$/mi', $card, $name) !== 1) {
+                    continue;
+                }
+
+                preg_match_all('/^(?:item\d+\.)?TEL[^:\r\n]*:(.+)$/mi', $card, $numbers);
+                $people[] = ['name' => $name[1], 'numbers' => $numbers[1]];
+            }
+        }
+
+        $content = [];
+        $texts = [];
+
+        foreach (array_slice($people, 0, 10) as $person) {
+            $name = $this->label(is_scalar($person['name']) ? (string) $person['name'] : null);
+            $phones = [];
+
+            foreach ($person['numbers'] as $number) {
+                $number = is_scalar($number) ? trim((string) $number) : '';
+
+                // Digits and the usual separators only: never free text in a phone.
+                if ($number !== '' && preg_match('/^\+?[\d\s().\-]{3,30}$/', $number) === 1 && ! in_array(['phone' => $number], $phones, true)) {
+                    $phones[] = ['phone' => $number];
+                }
+            }
+
+            $phones = array_slice($phones, 0, 5);
+
+            if ($name === null && $phones === []) {
+                continue;
+            }
+
+            $name ??= $phones[0]['phone'];
+            $content[] = ['name' => ['formatted_name' => $name], 'phones' => $phones];
+            $texts[] = $phones === [] || $phones[0]['phone'] === $name ? $name : "{$name} ({$phones[0]['phone']})";
+        }
+
+        return $content === [] ? null : ['content' => $content, 'text' => Str::limit('Contacto compartido: '.implode(', ', $texts), 1000, '…')];
+    }
+
+    /**
+     * A JSON object or list written in a cell, or null. Nothing else of the
+     * cell is interpreted.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    private function json(?string $value): ?array
+    {
+        $value = trim((string) $value);
+
+        if ($value === '' || ($value[0] !== '{' && $value[0] !== '[') || strlen($value) > 20000) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true, 8);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
     public function typeOfFile(string $name): MessageType
     {
         $extension = mb_strtolower(pathinfo($name, PATHINFO_EXTENSION));

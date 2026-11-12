@@ -298,11 +298,11 @@ function duration(seconds: number | null): string {
         </Table>
         <p
             v-else-if="!complete"
-            class="px-5 py-8 text-center text-sm text-muted-foreground"
+            class="px-5 py-6 text-sm text-muted-foreground"
         >
             Sin datos: la productividad de este periodo aún no se ha calculado.
         </p>
-        <p v-else class="px-5 py-8 text-center text-sm text-muted-foreground">
+        <p v-else class="px-5 py-6 text-sm text-muted-foreground">
             Nadie atendió solicitudes recibidas en este periodo con estos
             filtros, ni tiene solicitudes asignadas ahora.
         </p>

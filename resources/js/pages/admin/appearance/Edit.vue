@@ -7,7 +7,6 @@ import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { applyPalette } from '@/lib/theme';
 import { edit, update } from '@/routes/admin/appearance';
 import type { ThemePaletteValue } from '@/types';
@@ -61,7 +60,7 @@ function save(): void {
 <template>
     <Head title="Personalización" />
 
-    <div class="page-shell [--page-max:72rem]">
+    <div class="page-shell">
         <PageHeader
             help="configuracion"
             title="Personalización"
@@ -72,7 +71,7 @@ function save(): void {
             Puedes consultar la apariencia, pero no modificarla.
         </StatusNote>
 
-        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
+        <div class="split-layout [--aside-w:24rem]">
             <SurfaceCard
                 data-tour="appearance.palettes"
                 title="Paleta de color"
@@ -80,7 +79,7 @@ function save(): void {
                 body-class="p-5"
             >
                 <div
-                    class="grid grid-cols-2 gap-3 sm:grid-cols-4"
+                    class="auto-grid reveal-stagger [--col-min:11rem]"
                     role="radiogroup"
                     aria-label="Paleta de color"
                 >
@@ -95,16 +94,18 @@ function save(): void {
                         class="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed"
                         :class="
                             form.palette === option.value
-                                ? 'border-primary ring-2 ring-primary'
+                                ? 'border-primary ring-2 ring-primary/70'
                                 : 'interactive-surface'
                         "
                         @click="form.palette = option.value"
                     >
                         <span
-                            class="flex h-10 overflow-hidden rounded-lg"
+                            class="flex h-14 overflow-hidden rounded-lg"
                             aria-hidden="true"
                         >
-                            <span class="flex-[2] bg-primary" />
+                            <span
+                                class="flex-[2] bg-primary transition-[flex-grow] duration-(--duration-panel) ease-(--ease-out-quint) group-hover:flex-[3]"
+                            />
                             <span class="flex-1 bg-primary-soft" />
                         </span>
                         <span
@@ -126,10 +127,47 @@ function save(): void {
                         </Badge>
                     </button>
                 </div>
+
+                <template v-if="can.update" #footer>
+                    <div
+                        class="flex w-full flex-wrap items-center gap-2"
+                        data-tour="appearance.actions"
+                    >
+                        <Button
+                            type="button"
+                            :disabled="!form.isDirty"
+                            :loading="form.processing"
+                            @click="save"
+                        >
+                            Guardar apariencia
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            :disabled="!form.isDirty || form.processing"
+                            @click="form.reset()"
+                        >
+                            Descartar
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            :disabled="
+                                form.processing ||
+                                form.palette === defaultPalette
+                            "
+                            @click="form.palette = defaultPalette"
+                        >
+                            <RotateCcw />
+                            Restaurar predeterminada
+                        </Button>
+                    </div>
+                </template>
             </SurfaceCard>
 
             <SurfaceCard
                 title="Vista previa"
+                class="xl:sticky xl:top-22"
                 body-class="space-y-4 p-5"
                 data-tour="appearance.preview"
             >
@@ -149,7 +187,7 @@ function save(): void {
                         <MessagesSquare class="size-4.5" />
                     </span>
                     <div>
-                        <p class="text-sm font-semibold">
+                        <p class="font-display text-base font-semibold">
                             {{ $page.props.platform.name }}
                         </p>
                         <p class="text-xs text-muted-foreground">
@@ -204,38 +242,6 @@ function save(): void {
                     estás en esta pantalla.
                 </p>
             </SurfaceCard>
-        </div>
-
-        <div
-            v-if="can.update"
-            class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"
-            data-tour="appearance.actions"
-        >
-            <Button
-                type="button"
-                variant="ghost"
-                :disabled="form.processing || form.palette === defaultPalette"
-                @click="form.palette = defaultPalette"
-            >
-                <RotateCcw />
-                Restaurar predeterminada
-            </Button>
-            <Button
-                type="button"
-                variant="outline"
-                :disabled="!form.isDirty || form.processing"
-                @click="form.reset()"
-            >
-                Descartar
-            </Button>
-            <Button
-                type="button"
-                :disabled="!form.isDirty || form.processing"
-                @click="save"
-            >
-                <Spinner v-if="form.processing" />
-                Guardar apariencia
-            </Button>
         </div>
     </div>
 </template>

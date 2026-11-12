@@ -29,6 +29,7 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | [pruebas.md](pruebas.md)                                           | Pest sobre MariaDB, análisis estático, E2E, concurrencia, carga, real frente a simulado                                   |
 | [guia-pruebas-manuales.md](guia-pruebas-manuales.md)               | Guía práctica de pruebas manuales por módulo (fase 5 en §29, 5.1 en §30, 5.2 en §31), con cuentas, simulador y resultados |
 | [rendimiento-y-carga.md](rendimiento-y-carga.md)                   | Batería de carga y resistencia, resultados medidos y cuellos de botella                                                   |
+| [puesta-en-produccion.md](puesta-en-produccion.md)                 | Lista ordenada para salir a producción con un número real: requisitos, `.env`, Meta, piloto, vigilancia, reversión        |
 | [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md) | Servidor, almacenamiento de adjuntos (S3, Synology), variables, colas, Redis, preflight, despliegue (fases 5 a 5.2), PWA  |
 | [recuperacion-y-respaldos.md](recuperacion-y-respaldos.md)         | Respaldos de base y archivos, copia externa, verificación, restauración                                                   |
 | [limitaciones.md](limitaciones.md)                                 | Dependencias externas; probado, simulado, pendiente de validación, resuelto y trabajo futuro                              |
@@ -169,8 +170,8 @@ Chromium para los PDF.
    `php artisan app:sync-permissions --upgrade-default-roles` antes de añadir `--apply`) y, la primera vez,
    `php artisan analytics:rebuild`. Fase 5: ver el
    [procedimiento](infraestructura-y-despliegue.md#procedimiento-de-la-fase-5) (incluye `conversations:retire-on-hold`).
-   Fase 5.2: siete migraciones del importador de historial, **no aplicadas en `chatmanager`**; se aplican solo con
-   autorización ([procedimiento](infraestructura-y-despliegue.md#procedimiento-de-la-fase-52)).
+   Fase 5.2: migraciones del importador de historial; tras actualizar el código ejecuta `php artisan migrate` (hay una nueva, `add_details_to_history_import_messages_table`), ver
+   el [procedimiento](infraestructura-y-despliegue.md#procedimiento-de-la-fase-52).
 4. **Tiempo real (opcional):** `BROADCAST_CONNECTION=reverb` y credenciales propias `REVERB_APP_ID`, `REVERB_APP_KEY`,
    `REVERB_APP_SECRET` generadas al azar ([tiempo-real.md §Configuración](tiempo-real.md#configuración)). Sin Reverb la
    interfaz se actualiza por sondeo.
@@ -187,5 +188,7 @@ Chromium para los PDF.
 8. **Pruebas:** configura `.env.testing` (base `chatmanager_testing`) y sigue [pruebas.md](pruebas.md); para probar a
    mano, [guia-pruebas-manuales.md](guia-pruebas-manuales.md).
 
-Producción: [infraestructura-y-despliegue.md](infraestructura-y-despliegue.md). Antes de salir a producción revisa la
+Producción: sigue la lista ordenada de [puesta-en-produccion.md](puesta-en-produccion.md) (número real de WhatsApp,
+piloto, Messenger, Instagram, chat web e historial de Whaticket); el detalle del servidor está en
+[infraestructura-y-despliegue.md](infraestructura-y-despliegue.md). Antes de salir a producción revisa también la
 lista de [limitaciones.md §8](limitaciones.md#8-antes-de-producción).

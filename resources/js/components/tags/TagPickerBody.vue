@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { sync } from '@/routes/contacts/tags';
 import type { TagOption } from '@/types';
 
@@ -175,7 +174,7 @@ function save(): void {
         <div class="max-h-64 overflow-y-auto p-1">
             <p
                 v-if="filteredOptions.length === 0"
-                class="px-2 py-6 text-center text-sm text-muted-foreground"
+                class="px-2 py-4 text-sm text-muted-foreground"
             >
                 {{
                     options.length === 0
@@ -223,10 +222,10 @@ function save(): void {
                 </Button>
                 <Button
                     size="sm"
-                    :disabled="processing || !isDirty"
+                    :disabled="!isDirty"
+                    :loading="processing"
                     @click="save"
                 >
-                    <Spinner v-if="processing" />
                     Guardar
                 </Button>
             </div>

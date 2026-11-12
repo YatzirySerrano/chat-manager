@@ -14,6 +14,14 @@
         'Noto Color Emoji';
 
     /*
+      Display face: page titles, indicator figures, dialog and empty-state
+      titles (font-display utility). Body copy stays in Instrument Sans.
+    */
+    --font-display:
+        'Bricolage Grotesque', 'Instrument Sans', ui-sans-serif, system-ui,
+        sans-serif;
+
+    /*
       Type scale for all-day reading: every step pairs its size with a
       1.4–1.5 line-height, and larger steps tighten their tracking slightly.
       Headings stay at 500/600; nothing in the scale asks for 700+.
@@ -51,7 +59,14 @@
 
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+    /*
+      Radius by hierarchy: controls 8 px (rounded-md), popovers 10 px
+      (rounded-lg), panels 14 px (rounded-xl), dialogs 18 px (rounded-2xl).
+    */
+    --radius-2xl: calc(var(--radius) + 8px);
     --radius-xl: calc(var(--radius) + 4px);
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -99,18 +114,29 @@
     --color-surface-raised: var(--surface-raised);
     --color-border-strong: var(--border-strong);
 
-    --shadow-card:
-        0 1px 2px hsl(var(--shadow-color) / 0.04),
-        0 1px 3px hsl(var(--shadow-color) / 0.05);
+    /*
+      Elevation is tinted by the palette hue (--shadow-ink). Panels rest flat
+      on a hairline (shadow-card is intentionally empty): only what floats
+      above the page (popovers, dialogs, hovered navigable cards) casts one.
+    */
+    --shadow-card: 0 0 0 0 transparent;
     --shadow-popover:
-        0 2px 8px -2px hsl(var(--shadow-color) / 0.1),
-        0 8px 24px -8px hsl(var(--shadow-color) / 0.14);
+        0 0 0 1px color-mix(in oklch, var(--shadow-ink) 4%, transparent),
+        0 4px 10px -4px color-mix(in oklch, var(--shadow-ink) 12%, transparent),
+        0 14px 32px -12px
+            color-mix(in oklch, var(--shadow-ink) 22%, transparent);
     --shadow-elevated:
-        0 12px 30px -10px hsl(var(--shadow-color) / 0.16),
-        0 4px 12px -4px hsl(var(--shadow-color) / 0.08);
+        0 0 0 1px color-mix(in oklch, var(--shadow-ink) 5%, transparent),
+        0 8px 18px -8px color-mix(in oklch, var(--shadow-ink) 16%, transparent),
+        0 28px 60px -20px
+            color-mix(in oklch, var(--shadow-ink) 30%, transparent);
     --shadow-hover:
-        0 2px 4px -1px hsl(var(--shadow-color) / 0.06),
-        0 4px 12px -4px hsl(var(--shadow-color) / 0.1);
+        0 2px 6px -2px color-mix(in oklch, var(--shadow-ink) 10%, transparent),
+        0 10px 24px -12px
+            color-mix(in oklch, var(--shadow-ink) 22%, transparent);
+    --shadow-control:
+        0 1px 1px color-mix(in oklch, var(--shadow-ink) 6%, transparent),
+        0 1px 2px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -135,6 +161,9 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-muted: var(--sidebar-muted);
+
+    --animate-check: check-draw 220ms var(--ease-out-quint) both;
 }
 
 /*
@@ -220,29 +249,46 @@
     --chart-4: var(--chart-cat-4);
     --chart-5: var(--chart-cat-5);
     --radius: 0.625rem;
-    --sidebar-background: oklch(1 0 0);
-    --sidebar: oklch(1 0 0);
-    --sidebar-foreground: oklch(0.35 0.02 255);
-    --sidebar-accent: oklch(0.965 0.006 250);
-    --sidebar-accent-foreground: oklch(0.21 0.02 255);
-    --sidebar-border: oklch(0.93 0.006 250);
+    /*
+      The sidebar is a deep ink rail tinted by the active palette
+      (--brand-hue / --ink-chroma, set per palette below), in the light theme
+      too. Everything rendered inside it reads the scoped tokens of the
+      [data-sidebar='sidebar'] block further down.
+    */
+    --sidebar-background: oklch(0.215 var(--ink-chroma) var(--brand-hue));
+    --sidebar: var(--sidebar-background);
+    --sidebar-foreground: oklch(0.84 0.02 var(--brand-hue));
+    --sidebar-muted: oklch(0.67 0.025 var(--brand-hue));
+    --sidebar-accent: oklch(0.275 var(--ink-chroma) var(--brand-hue));
+    --sidebar-accent-foreground: oklch(0.985 0.005 var(--brand-hue));
+    --sidebar-border: oklch(0.295 var(--ink-chroma) var(--brand-hue));
+    --sidebar-primary: oklch(0.8 var(--brand-chroma) var(--brand-hue));
+    --sidebar-primary-foreground: oklch(0.18 0.03 var(--brand-hue));
+    --sidebar-ring: oklch(0.8 var(--brand-chroma) var(--brand-hue) / 0.7);
     --shadow-color: 220 40% 12%;
+    --shadow-ink: oklch(0.25 0.06 var(--brand-hue));
 
     /* Layout rhythm shared by every page (see the page-shell utility). */
     --page-gutter: 1rem;
     --page-gutter-md: 1.5rem;
     --page-gutter-lg: 2rem;
-    --page-max: 80rem;
+    /* Deprecated: pages are full width; page-shell no longer reads it. */
+    --page-max: none;
     --section-gap: 1.5rem;
     --stack-gap: 0.75rem;
     --control-h: 2.25rem;
     --control-h-coarse: 2.5rem;
     --touch-min: 2.75rem;
 
-    /* Motion: controls 150 ms, toggles/popovers 200 ms, panels 280 ms. */
+    /*
+      Motion: controls 150 ms, toggles/popovers 200 ms, panels and page
+      changes 280 ms. --stagger is the delay between items of a staggered
+      entrance (reveal / reveal-stagger utilities).
+    */
     --duration-fast: 150ms;
     --duration-base: 200ms;
     --duration-panel: 280ms;
+    --stagger: 36ms;
     /* Also exposed as ease-standard / ease-emphasized utilities via @theme. */
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
 
@@ -295,13 +341,20 @@
     --chart-3: var(--chart-cat-3);
     --chart-4: var(--chart-cat-4);
     --chart-5: var(--chart-cat-5);
-    --sidebar-background: oklch(0.185 0.012 255);
-    --sidebar: oklch(0.185 0.012 255);
-    --sidebar-foreground: oklch(0.8 0.01 255);
-    --sidebar-accent: oklch(0.25 0.013 255);
-    --sidebar-accent-foreground: oklch(0.97 0.005 250);
-    --sidebar-border: oklch(0.27 0.012 255);
+    /* One step deeper than the canvas, still tinted by the palette. */
+    --sidebar-background: oklch(
+        0.125 calc(var(--ink-chroma) * 0.6) var(--brand-hue)
+    );
+    --sidebar: var(--sidebar-background);
+    --sidebar-foreground: oklch(0.82 0.015 var(--brand-hue));
+    --sidebar-muted: oklch(0.62 0.02 var(--brand-hue));
+    --sidebar-accent: oklch(0.2 calc(var(--ink-chroma) * 0.8) var(--brand-hue));
+    --sidebar-accent-foreground: oklch(0.985 0.005 var(--brand-hue));
+    --sidebar-border: oklch(
+        0.215 calc(var(--ink-chroma) * 0.7) var(--brand-hue)
+    );
     --shadow-color: 220 40% 2%;
+    --shadow-ink: oklch(0 0 0);
 }
 
 /*
@@ -311,91 +364,91 @@
 */
 :root,
 [data-palette='emerald'] {
+    --brand-hue: 160;
+    --brand-chroma: 0.14;
+    --ink-chroma: 0.038;
     --primary: oklch(0.53 0.13 160);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.033 160);
     --primary-soft-foreground: oklch(0.43 0.13 160);
     --ring: oklch(0.53 0.13 160 / 0.6);
-    --sidebar-primary: oklch(0.53 0.13 160);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.53 0.13 160 / 0.6);
 }
 
 [data-palette='teal'] {
+    --brand-hue: 185;
+    --brand-chroma: 0.12;
+    --ink-chroma: 0.038;
     --primary: oklch(0.52 0.11 185);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.028 185);
     --primary-soft-foreground: oklch(0.42 0.11 185);
     --ring: oklch(0.52 0.11 185 / 0.6);
-    --sidebar-primary: oklch(0.52 0.11 185);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.52 0.11 185 / 0.6);
 }
 
 [data-palette='sky'] {
+    --brand-hue: 240;
+    --brand-chroma: 0.13;
+    --ink-chroma: 0.038;
     --primary: oklch(0.53 0.15 240);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.037 240);
     --primary-soft-foreground: oklch(0.43 0.15 240);
     --ring: oklch(0.53 0.15 240 / 0.6);
-    --sidebar-primary: oklch(0.53 0.15 240);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.53 0.15 240 / 0.6);
 }
 
 [data-palette='indigo'] {
+    --brand-hue: 275;
+    --brand-chroma: 0.14;
+    --ink-chroma: 0.038;
     --primary: oklch(0.5 0.17 275);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 275);
     --primary-soft-foreground: oklch(0.4 0.17 275);
     --ring: oklch(0.5 0.17 275 / 0.6);
-    --sidebar-primary: oklch(0.5 0.17 275);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.5 0.17 275 / 0.6);
 }
 
 [data-palette='violet'] {
+    --brand-hue: 295;
+    --brand-chroma: 0.15;
+    --ink-chroma: 0.038;
     --primary: oklch(0.52 0.19 295);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 295);
     --primary-soft-foreground: oklch(0.42 0.19 295);
     --ring: oklch(0.52 0.19 295 / 0.6);
-    --sidebar-primary: oklch(0.52 0.19 295);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.52 0.19 295 / 0.6);
 }
 
 [data-palette='rose'] {
+    --brand-hue: 12;
+    --brand-chroma: 0.15;
+    --ink-chroma: 0.038;
     --primary: oklch(0.55 0.19 12);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.04 12);
     --primary-soft-foreground: oklch(0.45 0.19 12);
     --ring: oklch(0.55 0.19 12 / 0.6);
-    --sidebar-primary: oklch(0.55 0.19 12);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.55 0.19 12 / 0.6);
 }
 
 [data-palette='amber'] {
+    --brand-hue: 55;
+    --brand-chroma: 0.14;
+    --ink-chroma: 0.038;
     --primary: oklch(0.56 0.14 55);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.035 55);
     --primary-soft-foreground: oklch(0.46 0.14 55);
     --ring: oklch(0.56 0.14 55 / 0.6);
-    --sidebar-primary: oklch(0.56 0.14 55);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.56 0.14 55 / 0.6);
 }
 
 [data-palette='graphite'] {
+    --brand-hue: 255;
+    --brand-chroma: 0.015;
+    --ink-chroma: 0.012;
     --primary: oklch(0.32 0.02 255);
     --primary-foreground: oklch(0.99 0 0);
     --primary-soft: oklch(0.96 0.005 255);
     --primary-soft-foreground: oklch(0.22 0.02 255);
     --ring: oklch(0.32 0.02 255 / 0.6);
-    --sidebar-primary: oklch(0.32 0.02 255);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-ring: oklch(0.32 0.02 255 / 0.6);
 }
 
 .dark,
@@ -406,9 +459,6 @@
     --primary-soft: oklch(0.3 0.056 160);
     --primary-soft-foreground: oklch(0.86 0.14 160);
     --ring: oklch(0.74 0.14 160 / 0.65);
-    --sidebar-primary: oklch(0.74 0.14 160);
-    --sidebar-primary-foreground: oklch(0.18 0.03 160);
-    --sidebar-ring: oklch(0.74 0.14 160 / 0.65);
 }
 
 [data-palette='teal'].dark,
@@ -418,9 +468,6 @@
     --primary-soft: oklch(0.3 0.048 185);
     --primary-soft-foreground: oklch(0.87 0.12 185);
     --ring: oklch(0.75 0.12 185 / 0.65);
-    --sidebar-primary: oklch(0.75 0.12 185);
-    --sidebar-primary-foreground: oklch(0.18 0.03 185);
-    --sidebar-ring: oklch(0.75 0.12 185 / 0.65);
 }
 
 [data-palette='sky'].dark,
@@ -430,9 +477,6 @@
     --primary-soft: oklch(0.3 0.052 240);
     --primary-soft-foreground: oklch(0.86 0.13 240);
     --ring: oklch(0.74 0.13 240 / 0.65);
-    --sidebar-primary: oklch(0.74 0.13 240);
-    --sidebar-primary-foreground: oklch(0.18 0.03 240);
-    --sidebar-ring: oklch(0.74 0.13 240 / 0.65);
 }
 
 [data-palette='indigo'].dark,
@@ -442,9 +486,6 @@
     --primary-soft: oklch(0.3 0.056 275);
     --primary-soft-foreground: oklch(0.85 0.14 275);
     --ring: oklch(0.73 0.14 275 / 0.65);
-    --sidebar-primary: oklch(0.73 0.14 275);
-    --sidebar-primary-foreground: oklch(0.18 0.03 275);
-    --sidebar-ring: oklch(0.73 0.14 275 / 0.65);
 }
 
 [data-palette='violet'].dark,
@@ -454,9 +495,6 @@
     --primary-soft: oklch(0.3 0.06 295);
     --primary-soft-foreground: oklch(0.86 0.15 295);
     --ring: oklch(0.74 0.15 295 / 0.65);
-    --sidebar-primary: oklch(0.74 0.15 295);
-    --sidebar-primary-foreground: oklch(0.18 0.03 295);
-    --sidebar-ring: oklch(0.74 0.15 295 / 0.65);
 }
 
 [data-palette='rose'].dark,
@@ -466,9 +504,6 @@
     --primary-soft: oklch(0.3 0.06 12);
     --primary-soft-foreground: oklch(0.86 0.15 12);
     --ring: oklch(0.74 0.15 12 / 0.65);
-    --sidebar-primary: oklch(0.74 0.15 12);
-    --sidebar-primary-foreground: oklch(0.18 0.03 12);
-    --sidebar-ring: oklch(0.74 0.15 12 / 0.65);
 }
 
 [data-palette='amber'].dark,
@@ -478,9 +513,6 @@
     --primary-soft: oklch(0.3 0.056 55);
     --primary-soft-foreground: oklch(0.91 0.14 55);
     --ring: oklch(0.79 0.14 55 / 0.65);
-    --sidebar-primary: oklch(0.79 0.14 55);
-    --sidebar-primary-foreground: oklch(0.18 0.03 55);
-    --sidebar-ring: oklch(0.79 0.14 55 / 0.65);
 }
 
 [data-palette='graphite'].dark,
@@ -490,9 +522,6 @@
     --primary-soft: oklch(0.3 0.006 255);
     --primary-soft-foreground: oklch(0.95 0.015 255);
     --ring: oklch(0.86 0.015 255 / 0.65);
-    --sidebar-primary: oklch(0.86 0.015 255);
-    --sidebar-primary-foreground: oklch(0.18 0.03 255);
-    --sidebar-ring: oklch(0.86 0.015 255 / 0.65);
 }
 
 @layer base {
@@ -562,14 +591,14 @@
 }
 
 /*
-  Page container: one source for the gutter/max-width chain every page used
-  to repeat (mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8).
+  Page container: full width, left aligned. Every page uses the whole
+  workspace next to the sidebar; nothing is centered in a narrow column.
+  (--page-max is ignored: leftover [--page-max:…] overrides are harmless.)
 */
 @utility page-shell {
-    margin-inline: auto;
     display: flex;
     width: 100%;
-    max-width: var(--page-max);
+    min-width: 0;
     flex: 1 1 0%;
     flex-direction: column;
     gap: var(--section-gap);
@@ -582,34 +611,499 @@
     @media (width >= 64rem) {
         padding: var(--page-gutter-lg);
     }
+
+    @media (width >= 100rem) {
+        padding-inline: 2.5rem;
+    }
+}
+
+/*
+  Full-width layout helpers (docs/sistema-de-diseno.md §2).
+
+  auto-grid     as many equal columns as fit, stretched so the row is always
+                full (auto-fit); --col-min is the narrowest column
+                (default 18rem), --grid-gap the gap.
+  field-grid    form fields flowing in columns of at least --col-min
+                (default 17rem); a field spans the row with col-span-full.
+  form-row      settings/form section: description on the left, controls
+                on the right from lg; stacked below.
+  split-layout  main content plus a side panel of --aside-w (default 22rem)
+                from xl; stacked below. split-layout-start puts the panel
+                first (filters rail).
+*/
+@utility auto-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(min(100%, var(--col-min, 18rem)), 1fr)
+    );
+    gap: var(--grid-gap, 0.75rem);
+}
+
+@utility field-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(min(100%, var(--col-min, 17rem)), 1fr)
+    );
+    gap: 1.25rem 1.5rem;
+    align-items: start;
+}
+
+@utility form-row {
+    display: grid;
+    gap: 1rem 3rem;
+    min-width: 0;
+
+    & > * {
+        min-width: 0;
+    }
+
+    @media (width >= 64rem) {
+        grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr);
+        align-items: start;
+    }
+}
+
+@utility split-layout {
+    display: grid;
+    gap: var(--section-gap);
+    min-width: 0;
+
+    & > * {
+        min-width: 0;
+    }
+
+    @media (width >= 80rem) {
+        grid-template-columns: minmax(0, 1fr) var(--aside-w, 22rem);
+        align-items: start;
+    }
+}
+
+@utility split-layout-start {
+    display: grid;
+    gap: var(--section-gap);
+    min-width: 0;
+
+    & > * {
+        min-width: 0;
+    }
+
+    @media (width >= 80rem) {
+        grid-template-columns: var(--aside-w, 18rem) minmax(0, 1fr);
+        align-items: start;
+    }
+}
+
+/* Display face for titles and figures. */
+@utility font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+}
+
+/*
+  Surfaces by hierarchy: canvas (bg-background) → panel (hairline, flat) →
+  raised (popover / dialog, tinted shadow).
+*/
+@utility surface-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background-color: var(--card);
+}
+
+@utility surface-raised {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--popover);
+    box-shadow: var(--shadow-popover);
 }
 
 /*
   Navigable cards and rows (RecordCard with href, linked chart cards, scope
-  options): background, strong border, a 1 px lift and a soft shadow on hover.
+  options): a border tinted by the palette, a 2 px lift and a tinted shadow
+  on hover.
 */
 @utility interactive-surface {
     transition-property: background-color, border-color, box-shadow, translate;
-    transition-duration: var(--duration-fast);
-    transition-timing-function: var(--ease-standard);
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-out-quint);
 
     @media (hover: hover) {
         &:hover {
-            background-color: color-mix(
+            border-color: color-mix(
                 in oklch,
-                var(--card) 50%,
-                var(--accent)
+                var(--primary) 45%,
+                var(--border-strong)
             );
-            border-color: var(--border-strong);
             box-shadow: var(--shadow-hover);
-            translate: 0 -1px;
+            translate: 0 -2px;
         }
     }
 
     &:active {
         translate: 0 0;
-        box-shadow: var(--shadow-card);
+        box-shadow: none;
     }
+}
+
+/*
+  Spotlight: a soft light and a border glow follow the pointer (indicator
+  cards). --mx / --my are written by lib/spotlight.ts for any element with
+  this utility; without JavaScript the light simply stays at the top.
+*/
+@utility spotlight {
+    position: relative;
+    isolation: isolate;
+
+    &::before,
+    &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity var(--duration-panel) var(--ease-standard);
+    }
+
+    &::before {
+        z-index: -1;
+        background: radial-gradient(
+            18rem circle at var(--mx, 50%) var(--my, 0%),
+            color-mix(in oklch, var(--primary) 13%, transparent),
+            transparent 70%
+        );
+    }
+
+    &::after {
+        inset: -1px;
+        padding: 1px;
+        background: radial-gradient(
+            12rem circle at var(--mx, 50%) var(--my, 0%),
+            color-mix(in oklch, var(--primary) 75%, transparent),
+            transparent 70%
+        );
+        mask:
+            linear-gradient(#000 0 0) content-box exclude,
+            linear-gradient(#000 0 0);
+    }
+
+    @media (hover: hover) {
+        &:hover::before,
+        &:hover::after {
+            opacity: 1;
+        }
+    }
+}
+
+/*
+  Table and list rows: an accent bar slides in from the left edge on hover
+  (and stays for the selected row).
+*/
+@utility row-accent {
+    & > :first-child {
+        position: relative;
+    }
+
+    & > :first-child::before {
+        content: '';
+        position: absolute;
+        inset-block: 22%;
+        left: 0;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--primary);
+        opacity: 0;
+        transform: translateX(-3px);
+        transition:
+            transform var(--duration-base) var(--ease-out-quint),
+            opacity var(--duration-fast) var(--ease-standard);
+    }
+
+    &:hover > :first-child::before,
+    &[data-state='selected'] > :first-child::before {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/*
+  Entrance on first render. `reveal` animates one element (stagger it with
+  style="--i: n"); `reveal-stagger` on a list or grid staggers its first
+  twelve children. Keyframes use transform (not translate) and fill
+  backwards, so hover effects and fixed descendants are never affected once
+  the entrance ends.
+*/
+@utility reveal {
+    animation: reveal-up var(--duration-panel) var(--ease-out-quint) backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+@utility reveal-stagger {
+    & > * {
+        animation: reveal-up var(--duration-panel) var(--ease-out-quint)
+            backwards;
+        animation-delay: calc(11 * var(--stagger));
+    }
+
+    & > :nth-child(1) {
+        animation-delay: 0ms;
+    }
+
+    & > :nth-child(2) {
+        animation-delay: calc(1 * var(--stagger));
+    }
+
+    & > :nth-child(3) {
+        animation-delay: calc(2 * var(--stagger));
+    }
+
+    & > :nth-child(4) {
+        animation-delay: calc(3 * var(--stagger));
+    }
+
+    & > :nth-child(5) {
+        animation-delay: calc(4 * var(--stagger));
+    }
+
+    & > :nth-child(6) {
+        animation-delay: calc(5 * var(--stagger));
+    }
+
+    & > :nth-child(7) {
+        animation-delay: calc(6 * var(--stagger));
+    }
+
+    & > :nth-child(8) {
+        animation-delay: calc(7 * var(--stagger));
+    }
+
+    & > :nth-child(9) {
+        animation-delay: calc(8 * var(--stagger));
+    }
+
+    & > :nth-child(10) {
+        animation-delay: calc(9 * var(--stagger));
+    }
+
+    & > :nth-child(11) {
+        animation-delay: calc(10 * var(--stagger));
+    }
+}
+
+/*
+  Floating layers (popover, dropdown, select, tooltip): scale and fade from
+  the trigger (transform-origin comes from reka-ui). Dialogs rise and scale.
+*/
+@utility pop {
+    &[data-state='open'],
+    &[data-state='delayed-open'],
+    &[data-state='instant-open'] {
+        animation: pop-in var(--duration-base) var(--ease-out-quint);
+    }
+
+    &[data-state='closed'] {
+        animation: pop-out 120ms var(--ease-standard) forwards;
+    }
+}
+
+@utility dialog-motion {
+    &[data-state='open'] {
+        animation: dialog-in var(--duration-panel) var(--ease-out-quint);
+    }
+
+    &[data-state='closed'] {
+        animation: dialog-out var(--duration-fast) var(--ease-standard) forwards;
+    }
+}
+
+@keyframes reveal-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+}
+
+@keyframes pop-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+
+@keyframes pop-out {
+    to {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+@keyframes dialog-in {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.97);
+    }
+}
+
+@keyframes dialog-out {
+    to {
+        opacity: 0;
+        transform: translateY(6px) scale(0.985);
+    }
+}
+
+@keyframes shimmer {
+    from {
+        background-position: 180% 0;
+    }
+
+    to {
+        background-position: -80% 0;
+    }
+}
+
+@keyframes check-draw {
+    from {
+        stroke-dashoffset: 1;
+    }
+
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes page-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@keyframes page-out {
+    to {
+        opacity: 0;
+    }
+}
+
+/*
+  Page changes (Inertia view transitions, enabled in app.ts only when the
+  path changes). The shell keeps still: sidebar, top bar and toasts are
+  their own groups, and only the page content fades out and rises in.
+*/
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+}
+
+::view-transition-group(page) {
+    animation-duration: 0s;
+}
+
+::view-transition-old(page) {
+    animation: page-out 110ms var(--ease-standard) both;
+}
+
+::view-transition-new(page) {
+    animation: page-in 240ms var(--ease-out-quint) 60ms both;
+}
+
+::view-transition-old(shell-sidebar),
+::view-transition-old(shell-topbar),
+::view-transition-old(shell-floating),
+::view-transition-old(shell-alerts),
+::view-transition-old(shell-toasts) {
+    display: none;
+}
+
+::view-transition-new(shell-sidebar),
+::view-transition-new(shell-topbar),
+::view-transition-new(shell-floating),
+::view-transition-new(shell-alerts),
+::view-transition-new(shell-toasts) {
+    animation: none;
+}
+
+[data-page-content] {
+    view-transition-name: page;
+}
+
+[data-shell-topbar] {
+    view-transition-name: shell-topbar;
+}
+
+[data-shell-sidebar] {
+    view-transition-name: shell-sidebar;
+}
+
+[data-tour-layer].fixed {
+    view-transition-name: shell-floating;
+}
+
+[data-attention-alerts] {
+    view-transition-name: shell-alerts;
+}
+
+[data-sonner-toaster] {
+    view-transition-name: shell-toasts;
+}
+
+/* Skeletons: a light sweeps across instead of pulsing. */
+[data-slot='skeleton'] {
+    background-image: linear-gradient(
+        100deg,
+        transparent 30%,
+        color-mix(in oklch, var(--card) 70%, transparent) 50%,
+        transparent 70%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.5s linear infinite;
+}
+
+/*
+  Tokens inside the ink sidebar: every component rendered in it (labels,
+  badges, the user row, focus rings) reads light-on-ink values without
+  knowing where it is. Menus opened from it are portaled and keep the
+  normal theme. [data-ink] gives the same ink surface to any other block
+  (the stage of the sign-in screen).
+*/
+[data-sidebar='sidebar'],
+[data-ink] {
+    color-scheme: dark;
+    --foreground: var(--sidebar-accent-foreground);
+    --muted-foreground: var(--sidebar-muted);
+    --muted: var(--sidebar-accent);
+    --border: var(--sidebar-border);
+    --accent: var(--sidebar-accent);
+    --accent-foreground: var(--sidebar-accent-foreground);
+    --card: var(--sidebar-accent);
+    --primary: var(--sidebar-primary);
+    --primary-foreground: var(--sidebar-primary-foreground);
+    --primary-soft: color-mix(
+        in oklch,
+        var(--sidebar-primary) 16%,
+        transparent
+    );
+    --primary-soft-foreground: oklch(0.95 0.05 var(--brand-hue));
+    --ring: var(--sidebar-ring);
+    --focus-ring: var(--sidebar-primary);
+}
+
+/* Thin themed scrollbars for panels that scroll inside the page. */
+@supports (scrollbar-width: thin) {
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(
+                in oklch,
+                var(--muted-foreground) 35%,
+                transparent
+            )
+            transparent;
+    }
+}
+
+::selection {
+    background: color-mix(in oklch, var(--primary) 26%, transparent);
 }
 
 /* Press feedback for primary buttons and the floating help button. */
@@ -662,6 +1156,12 @@
 
     .animate-ping,
     .animate-bounce {
+        animation: none !important;
+    }
+
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
         animation: none !important;
     }
 }

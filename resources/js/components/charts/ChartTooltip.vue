@@ -45,14 +45,14 @@ const left = computed(() => {
         ref="tooltip"
         role="tooltip"
         data-chart-tooltip
-        class="pointer-events-none absolute z-20 max-w-[16rem] min-w-[9rem] rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-popover"
+        class="pointer-events-none absolute z-20 max-w-[16rem] min-w-[9rem] rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-popover transition-[left,top] duration-(--duration-fast) ease-(--ease-standard)"
         :style="{
             left: `${left}px`,
             top: `${Math.max(0, y)}px`,
             visibility: width > 0 ? 'visible' : 'hidden',
         }"
     >
-        <p class="mb-1 font-medium text-pretty">{{ title }}</p>
+        <p class="mb-1 font-semibold text-pretty">{{ title }}</p>
         <ul class="space-y-0.5">
             <li
                 v-for="row in rows"

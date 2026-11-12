@@ -53,7 +53,7 @@ const stateIcon = {
 
 const stateClass: Record<CheckState, string> = {
     ok: 'text-success',
-    pending: 'text-amber-600 dark:text-amber-400',
+    pending: 'text-warning',
     error: 'text-destructive',
     muted: 'text-muted-foreground',
     history: 'text-muted-foreground',
@@ -292,8 +292,11 @@ function capitalize(text: string): string {
             :with-warnings="compact"
         />
         <ul
-            class="grid"
-            :class="compact ? 'gap-1.5' : 'gap-3'"
+            :class="
+                compact
+                    ? 'grid gap-1.5'
+                    : 'auto-grid [--col-min:17rem] [--grid-gap:1rem]'
+            "
             aria-label="Evidencia del estado de la conexión"
         >
             <li

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
-import { ArrowDown, MessagesSquare } from '@lucide/vue';
+import { ArrowDown, History, MessagesSquare } from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
@@ -10,6 +10,7 @@ import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import { groupByCalendarDay } from '@/components/conversations/dayGroups';
 import { todayKey } from '@/components/conversations/messageFormat';
 import TimelineEvent from '@/components/conversations/TimelineEvent.vue';
@@ -17,7 +18,6 @@ import TimelineNote from '@/components/conversations/TimelineNote.vue';
 import type { TimelineItem } from '@/components/conversations/useConversationTimeline';
 import EmptyState from '@/components/EmptyState.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import {
     CUSTOM_BUBBLE_CLASSES,
     CUSTOM_CHAT_COLORS,
@@ -60,6 +60,11 @@ const customColors = inject(
 );
 
 const scroller = ref<HTMLElement | null>(null);
+/*
+ * Keys of the items that arrived while the chat was open (never the first
+ * page nor an older page): only those slide in.
+ */
+const fresh = ref<Set<string | number>>(new Set());
 const atBottom = ref(true);
 const unseen = ref(0);
 const announcement = ref('');
@@ -206,6 +211,10 @@ watch(
                       .slice(firstKeptIndex + 1)
                       .filter((item) => !previousKeys.has(item.key))
                 : [];
+
+        if (appended.length > 0 && appended.length <= 3) {
+            fresh.value = new Set(appended.map((item) => item.key));
+        }
 
         await nextTick();
 
@@ -503,7 +512,7 @@ defineExpose({ scrollToBottom });
                 showJumpButton
                     ? 'pb-16 [@media(max-height:20rem)]:pb-10'
                     : 'pb-4',
-                customColors ? CUSTOM_BUBBLE_CLASSES.chat : 'bg-muted/30',
+                customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS,
             ]"
             tabindex="0"
             role="log"
@@ -511,18 +520,17 @@ defineExpose({ scrollToBottom });
             aria-live="off"
             @scroll.passive="onScroll"
         >
-            <div class="mx-auto grid max-w-4xl grid-cols-1 gap-2">
+            <div class="grid grid-cols-1 gap-2">
                 <div class="flex justify-center py-1">
                     <Button
                         v-if="hasMore"
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        class="pointer-coarse:h-10"
-                        :class="customColors && 'bg-background'"
-                        :disabled="loadingOlder"
+                        class="rounded-full pointer-coarse:h-10"
+                        :loading="loadingOlder"
                         @click="loadOlder"
                     >
-                        <Spinner v-if="loadingOlder" />
+                        <History v-if="!loadingOlder" aria-hidden="true" />
                         Cargar mensajes anteriores
                     </Button>
                     <p
@@ -573,7 +581,7 @@ defineExpose({ scrollToBottom });
                         data-day-separator
                     >
                         <span
-                            class="max-w-full rounded-full border bg-background px-3 py-0.5 text-center text-xs font-medium text-balance break-words text-muted-foreground shadow-xs"
+                            class="max-w-full rounded-full border bg-background/85 px-3 py-0.5 text-center text-xs font-medium text-balance break-words text-muted-foreground backdrop-blur-sm"
                             >{{ group.label }}</span
                         >
                     </h3>
@@ -593,6 +601,7 @@ defineExpose({ scrollToBottom });
                             "
                             :retrying="retryingId === item.message.id"
                             :can-quote="conversation.can.reply"
+                            :class="fresh.has(item.key) && 'reveal'"
                             @retry="requestRetry"
                             @quote="(message) => emit('quote', message)"
                             :revoking-attachment-id="revokingAttachmentId"
@@ -604,6 +613,7 @@ defineExpose({ scrollToBottom });
                             :note="item.note"
                             :conversation-id="conversation.id"
                             :max-length="noteMaxLength"
+                            :class="fresh.has(item.key) && 'reveal'"
                             @saved="
                                 (noteId) => emit('refresh', { notes: [noteId] })
                             "
@@ -618,7 +628,7 @@ defineExpose({ scrollToBottom });
             v-if="showJumpButton"
             size="sm"
             variant="secondary"
-            class="absolute right-4 bottom-4 rounded-full shadow-elevated pointer-coarse:h-10 [@media(max-height:20rem)]:right-2 [@media(max-height:20rem)]:bottom-2 [@media(max-height:20rem)]:h-7 [@media(max-height:20rem)]:px-2.5"
+            class="absolute right-4 bottom-4 pop rounded-full shadow-elevated pointer-coarse:h-10 [@media(max-height:20rem)]:right-2 [@media(max-height:20rem)]:bottom-2 [@media(max-height:20rem)]:h-7 [@media(max-height:20rem)]:px-2.5"
             @click="scrollToBottom(true)"
         >
             <ArrowDown aria-hidden="true" />

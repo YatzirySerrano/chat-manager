@@ -464,7 +464,7 @@ function contactSubtitle(contact: Contact): string | null {
             </template>
         </PageHeader>
 
-        <SurfaceCard>
+        <SurfaceCard class="reveal">
             <div
                 class="flex flex-wrap items-center gap-2 border-b p-4"
                 role="search"

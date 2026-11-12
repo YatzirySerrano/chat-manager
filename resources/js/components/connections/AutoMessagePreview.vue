@@ -66,7 +66,7 @@ defineProps<{
                 </span>
                 <div
                     v-if="message.text.trim() !== ''"
-                    class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm transition-opacity"
+                    class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-opacity"
                     :class="!message.enabled && 'opacity-50'"
                 >
                     <WhatsAppText :text="message.text" />

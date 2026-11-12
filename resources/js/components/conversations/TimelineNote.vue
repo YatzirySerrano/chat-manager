@@ -5,7 +5,6 @@ import { ref } from 'vue';
 import { formatTime } from '@/components/conversations/messageFormat';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { formatDateTime } from '@/lib/format';
@@ -68,7 +67,7 @@ function save(): void {
 <template>
     <article
         data-layout-box="note"
-        class="mx-auto w-full max-w-2xl rounded-xl border border-dashed border-warning/60 bg-warning/10 px-3 py-2 text-sm"
+        class="ml-auto w-full max-w-[min(85%,44rem)] rounded-2xl rounded-br-md border border-dashed border-warning/60 bg-warning-soft px-3 py-2 text-sm"
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
         <header
@@ -109,8 +108,8 @@ function save(): void {
                     type="submit"
                     size="sm"
                     :disabled="form.processing || !validation.hasChanges"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar
                 </Button>
             </div>

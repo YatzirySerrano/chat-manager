@@ -2,6 +2,7 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
+import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,77 +53,77 @@ function submit(): void {
 <template>
     <Head title="Perfil" />
 
-    <div class="flex flex-col space-y-6">
-        <h2 class="mb-1 text-lg font-semibold">Perfil</h2>
-        <p class="text-sm text-pretty text-muted-foreground">
-            Actualiza tu nombre y correo electrónico.
-        </p>
+    <form novalidate @submit.prevent="submit">
+        <FormSection
+            title="Perfil"
+            description="Tu nombre es el que ven tus compañeros en las conversaciones y en el chat interno. El correo es con el que inicias sesión."
+        >
+            <div class="field-grid [--col-min:20rem]">
+                <div class="grid gap-2">
+                    <Label for="name">Nombre</Label>
+                    <Input
+                        id="name"
+                        v-model="form.name"
+                        name="name"
+                        required
+                        maxlength="255"
+                        autocomplete="name"
+                        placeholder="Nombre completo"
+                        v-bind="validation.field('name', 'name')"
+                    />
+                    <InputError
+                        id="name-error"
+                        :message="validation.error('name')"
+                    />
+                </div>
 
-        <form class="space-y-6" novalidate @submit.prevent="submit">
-            <div class="grid gap-2">
-                <Label for="name">Nombre</Label>
-                <Input
-                    id="name"
-                    class="mt-1 block w-full"
-                    v-model="form.name"
-                    name="name"
-                    required
-                    maxlength="255"
-                    autocomplete="name"
-                    placeholder="Nombre completo"
-                    v-bind="validation.field('name', 'name')"
-                />
-                <InputError
-                    id="name-error"
-                    class="mt-2"
-                    :message="validation.error('name')"
-                />
-            </div>
-
-            <div class="grid gap-2">
-                <Label for="email">Correo electrónico</Label>
-                <Input
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    name="email"
-                    required
-                    maxlength="255"
-                    autocomplete="username"
-                    placeholder="Correo electrónico"
-                    v-bind="validation.field('email', 'email')"
-                />
-                <InputError
-                    id="email-error"
-                    class="mt-2"
-                    :message="validation.error('email')"
-                />
-            </div>
-
-            <div v-if="page.props.mustVerifyEmail && !user.email_verified_at">
-                <p class="-mt-4 text-sm text-muted-foreground">
-                    Tu correo electrónico no está verificado.
-                    <Link
-                        :href="send()"
-                        as="button"
-                        class="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
-                    >
-                        Reenviar el correo de verificación.
-                    </Link>
-                </p>
+                <div class="grid gap-2">
+                    <Label for="email">Correo electrónico</Label>
+                    <Input
+                        id="email"
+                        v-model="form.email"
+                        type="email"
+                        name="email"
+                        required
+                        maxlength="255"
+                        autocomplete="username"
+                        placeholder="Correo electrónico"
+                        v-bind="validation.field('email', 'email')"
+                    />
+                    <InputError
+                        id="email-error"
+                        :message="validation.error('email')"
+                    />
+                </div>
 
                 <div
-                    v-if="page.props.status === 'verification-link-sent'"
-                    class="mt-2 text-sm font-medium text-green-600"
+                    v-if="page.props.mustVerifyEmail && !user.email_verified_at"
+                    class="col-span-full"
                 >
-                    Enviamos un nuevo enlace de verificación a tu correo.
+                    <p class="text-sm text-muted-foreground">
+                        Tu correo electrónico no está verificado.
+                        <Link
+                            :href="send()"
+                            as="button"
+                            class="font-medium text-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:decoration-current"
+                        >
+                            Reenviar el correo de verificación.
+                        </Link>
+                    </p>
+
+                    <p
+                        v-if="page.props.status === 'verification-link-sent'"
+                        class="mt-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
+                    >
+                        Enviamos un nuevo enlace de verificación a tu correo.
+                    </p>
                 </div>
             </div>
 
-            <div class="flex items-center gap-4">
+            <template #footer>
                 <Button
-                    :disabled="form.processing || !validation.hasChanges"
+                    :disabled="!validation.hasChanges"
+                    :loading="form.processing"
                     data-test="update-profile-button"
                     >Guardar</Button
                 >
@@ -133,7 +134,7 @@ function submit(): void {
                 >
                     Sin cambios por guardar
                 </p>
-            </div>
-        </form>
-    </div>
+            </template>
+        </FormSection>
+    </form>
 </template>

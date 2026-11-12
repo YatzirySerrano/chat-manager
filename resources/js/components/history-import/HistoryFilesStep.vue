@@ -33,6 +33,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { FileDropzone } from '@/components/ui/file-dropzone';
+import type { RejectedFile } from '@/components/ui/file-dropzone';
+import { RadioCards } from '@/components/ui/radio-cards';
 import { Spinner } from '@/components/ui/spinner';
 import { formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -91,10 +94,17 @@ const upload = useForm<{ kind: HistoryFileKind; file: File | null }>({
     file: null,
 });
 
-const fileInput = ref<HTMLInputElement | null>(null);
-
 const selectedKind = computed(() =>
     props.kinds.find((kind) => kind.value === upload.kind),
+);
+
+const kindOptions = computed(() =>
+    props.kinds.map((kind) => ({
+        value: kind.value,
+        label: kind.label,
+        description: `${KIND_HINTS[kind.value]} Acepta ${kind.extensions.map((ext) => `.${ext}`).join(' o ')}.`,
+        icon: KIND_ICONS[kind.value],
+    })),
 );
 
 const accept = computed(() =>
@@ -105,32 +115,24 @@ const maxMegabytes = computed(() => Math.round(props.maxKilobytes / 1024));
 
 const clientError = ref<string | null>(null);
 
-function pickFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
+/** The dropzone refused a file (type or size): explain what to do next. */
+function onReject(rejected: RejectedFile[]): void {
+    upload.clearErrors();
+
+    const first = rejected[0];
+
+    if (first?.reason === 'size') {
+        clientError.value = `El archivo pesa ${formatFileSize(first.file.size)}; el máximo es ${maxMegabytes.value} MB. Exporta el periodo en partes o pide a quien administra el servidor que lo agregue con «php artisan history-import:add-file».`;
+
+        return;
+    }
+
+    clientError.value = `Para «${selectedKind.value?.label ?? 'este archivo'}» solo se aceptan archivos ${(selectedKind.value?.extensions ?? []).map((ext) => `.${ext}`).join(' o ')}.`;
+}
+
+function onPick(): void {
     upload.clearErrors();
     clientError.value = null;
-    upload.file = file;
-
-    if (!file) {
-        return;
-    }
-
-    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
-
-    if (!(selectedKind.value?.extensions ?? []).includes(extension)) {
-        clientError.value = `Para «${selectedKind.value?.label ?? 'este archivo'}» solo se aceptan archivos ${(selectedKind.value?.extensions ?? []).map((ext) => `.${ext}`).join(' o ')}.`;
-        upload.file = null;
-        input.value = '';
-
-        return;
-    }
-
-    if (file.size > props.maxKilobytes * 1024) {
-        clientError.value = `El archivo pesa ${formatFileSize(file.size)}; el máximo es ${maxMegabytes.value} MB. Exporta el periodo en partes.`;
-        upload.file = null;
-        input.value = '';
-    }
 }
 
 watch(
@@ -139,10 +141,6 @@ watch(
         upload.file = null;
         clientError.value = null;
         upload.clearErrors();
-
-        if (fileInput.value) {
-            fileInput.value.value = '';
-        }
     },
 );
 
@@ -159,10 +157,6 @@ function submit(): void {
         preserveState: true,
         onSuccess: () => {
             upload.reset('file');
-
-            if (fileInput.value) {
-                fileInput.value.value = '';
-            }
         },
     });
 }
@@ -318,111 +312,81 @@ function hasColumns(file: HistoryBatchFile): boolean {
             body-class="p-4 sm:p-5"
             data-tour="history-import.upload"
         >
-            <form class="grid gap-4" @submit.prevent="submit">
+            <form
+                class="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,1fr)] xl:items-start"
+                @submit.prevent="submit"
+            >
                 <fieldset class="grid gap-2">
-                    <legend class="mb-1 text-sm font-medium">
+                    <legend class="mb-2 text-sm font-medium">
                         ¿Qué archivo vas a subir?
                     </legend>
-                    <div class="grid gap-2 md:grid-cols-2">
-                        <label
-                            v-for="kind in kinds"
-                            :key="kind.value"
-                            :class="
-                                cn(
-                                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring',
-                                    upload.kind === kind.value
-                                        ? 'border-primary bg-primary-soft/60'
-                                        : 'hover:bg-muted/40',
-                                )
-                            "
-                        >
-                            <input
-                                v-model="upload.kind"
-                                type="radio"
-                                name="history-file-kind"
-                                :value="kind.value"
-                                class="mt-0.5 accent-primary"
-                            />
-                            <component
-                                :is="KIND_ICONS[kind.value]"
-                                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                                aria-hidden="true"
-                            />
-                            <span class="min-w-0 space-y-0.5">
-                                <span class="block font-medium">
-                                    {{ kind.label }}
-                                </span>
-                                <span
-                                    class="block text-xs text-pretty text-muted-foreground"
-                                >
-                                    {{ KIND_HINTS[kind.value] }}
-                                    Acepta
-                                    {{
-                                        kind.extensions
-                                            .map((ext) => `.${ext}`)
-                                            .join(' o ')
-                                    }}.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
+                    <RadioCards
+                        v-model="upload.kind"
+                        :options="kindOptions"
+                        aria-label="Tipo de archivo"
+                        class="[--col-min:17rem]"
+                        data-history-file-kind
+                    />
                 </fieldset>
 
-                <label
-                    for="history-file"
-                    class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors focus-within:border-primary hover:border-primary hover:bg-muted/40"
-                >
-                    <span
-                        class="flex size-11 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
-                    >
-                        <Upload class="size-5" aria-hidden="true" />
-                    </span>
-                    <span class="text-sm font-medium wrap-anywhere">
-                        {{
-                            upload.file
-                                ? upload.file.name
-                                : `Selecciona el archivo (${accept.replaceAll(',', ' o ')})`
-                        }}
-                    </span>
-                    <span class="text-xs text-muted-foreground">
-                        Máximo {{ maxMegabytes }} MB por archivo.
-                    </span>
-                    <input
+                <div class="grid gap-3">
+                    <p class="text-sm font-medium">
+                        Archivo de «{{ selectedKind?.label ?? 'Whaticket' }}»
+                    </p>
+                    <FileDropzone
                         id="history-file"
-                        ref="fileInput"
-                        type="file"
+                        v-model="upload.file"
                         :accept="accept"
-                        class="sr-only"
-                        :aria-invalid="Boolean(uploadError) || undefined"
+                        :max-size-mb="maxMegabytes"
+                        :invalid="Boolean(uploadError)"
+                        :disabled="upload.processing"
+                        :title="`Arrastra aquí el archivo o haz clic para elegirlo`"
+                        :hint="`${accept.replaceAll(',', ' o ')}, máximo ${maxMegabytes} MB por archivo`"
                         aria-describedby="history-file-error"
-                        @change="pickFile"
+                        @reject="onReject"
+                        @change="onPick"
                     />
-                </label>
-                <InputError
-                    id="history-file-error"
-                    :message="uploadError ?? undefined"
-                />
+                    <InputError
+                        id="history-file-error"
+                        :message="uploadError ?? undefined"
+                    />
 
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                    <span
+                    <div
                         v-if="upload.progress"
-                        class="text-xs text-muted-foreground tabular-nums"
+                        class="h-1.5 overflow-hidden rounded-full bg-muted"
                         aria-hidden="true"
                     >
-                        Subiendo {{ upload.progress.percentage }} %
-                    </span>
-                    <span class="sr-only" role="status">
-                        {{ upload.processing ? 'Subiendo el archivo…' : '' }}
-                    </span>
-                    <Button
-                        type="submit"
-                        class="pointer-coarse:h-11"
-                        :disabled="upload.file === null || upload.processing"
-                    >
-                        <Spinner v-if="upload.processing" />
-                        <Upload v-else />
-                        Subir y leer
-                    </Button>
+                        <div
+                            class="h-full rounded-full bg-primary transition-[width] duration-(--duration-base) ease-(--ease-standard)"
+                            :style="{
+                                width: `${upload.progress.percentage ?? 0}%`,
+                            }"
+                        />
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-end gap-3">
+                        <span
+                            v-if="upload.progress"
+                            class="text-xs text-muted-foreground tabular-nums"
+                            aria-hidden="true"
+                        >
+                            Subiendo {{ upload.progress.percentage }} %
+                        </span>
+                        <span class="sr-only" role="status">
+                            {{
+                                upload.processing ? 'Subiendo el archivo…' : ''
+                            }}
+                        </span>
+                        <Button
+                            type="submit"
+                            class="pointer-coarse:h-11"
+                            :disabled="upload.file === null"
+                            :loading="upload.processing"
+                        >
+                            <Upload v-if="!upload.processing" />
+                            Subir y leer
+                        </Button>
+                    </div>
                 </div>
             </form>
         </SurfaceCard>
@@ -471,8 +435,16 @@ function hasColumns(file: HistoryBatchFile): boolean {
                                     {{ file.status_label }}
                                 </Badge>
                                 <Badge
+                                    v-if="file.verified_format"
+                                    variant="success"
+                                    title="Este archivo tiene el formato comprobado con una exportación real de Whaticket: se lee sin mapeo manual."
+                                >
+                                    Formato verificado
+                                </Badge>
+                                <Badge
+                                    v-else
                                     variant="outline"
-                                    title="El formato de Whaticket aún no se comprobó con una exportación real (ver el aviso de arriba)."
+                                    title="El formato de este archivo aún no se comprobó con una exportación real de Whaticket (ver el aviso de arriba)."
                                 >
                                     Sin verificar
                                 </Badge>
@@ -497,9 +469,9 @@ function hasColumns(file: HistoryBatchFile): boolean {
                                 :disabled="retryingFile === file.id"
                                 data-file-retry
                                 @click="retryFile(file)"
+                                :loading="retryingFile === file.id"
                             >
-                                <Spinner v-if="retryingFile === file.id" />
-                                <RotateCw v-else />
+                                <RotateCw v-if="!(retryingFile === file.id)" />
                                 Volver a leer
                             </Button>
                             <Button
@@ -726,8 +698,11 @@ function hasColumns(file: HistoryBatchFile): boolean {
                     >
                         Cancelar
                     </Button>
-                    <Button :disabled="mappingSaving" @click="saveMapping">
-                        <Spinner v-if="mappingSaving" />
+                    <Button
+                        :disabled="mappingSaving"
+                        @click="saveMapping"
+                        :loading="mappingSaving"
+                    >
                         Guardar y volver a leer
                     </Button>
                 </DialogFooter>

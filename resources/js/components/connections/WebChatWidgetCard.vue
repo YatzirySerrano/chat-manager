@@ -17,12 +17,15 @@ import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { WebChatPreviewAppearance } from '@/components/connections/WebChatPreview.vue';
 import FormField from '@/components/FormField.vue';
+import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
+import HexColorField from '@/components/personalization/HexColorField.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FileDropzone } from '@/components/ui/file-dropzone';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { RadioCards } from '@/components/ui/radio-cards';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
@@ -301,25 +304,29 @@ function readAsDataUrl(file: File): Promise<string> {
     });
 }
 
-async function onAvatarChange(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
+async function setAvatar(file: File | null): Promise<void> {
     avatarError.value = null;
 
     if (!file) {
+        // The chosen file was taken back: the saved image shows again.
+        if (form.avatar !== null) {
+            form.avatar = null;
+            avatarPreview.value = form.remove_avatar
+                ? null
+                : props.widget.avatar_url;
+        }
+
         return;
     }
 
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
         avatarError.value = 'La imagen debe ser PNG, JPG o WebP.';
-        input.value = '';
 
         return;
     }
 
     if (file.size > props.options.limits.avatar_kb * 1024) {
         avatarError.value = `La imagen no debe pesar más de ${props.options.limits.avatar_kb} KB.`;
-        input.value = '';
 
         return;
     }
@@ -328,6 +335,27 @@ async function onAvatarChange(event: Event): Promise<void> {
     form.remove_avatar = false;
     avatarPreview.value = await readAsDataUrl(file);
 }
+
+/** Model of the dropzone: the image chosen and not yet saved. */
+const avatarFile = computed<File | File[] | null | undefined>({
+    get: () => form.avatar,
+    set: (value) => {
+        void setAvatar(
+            Array.isArray(value) ? (value[0] ?? null) : (value ?? null),
+        );
+    },
+});
+
+const ACCENT_SWATCHES = [
+    '#2563eb',
+    '#0f766e',
+    '#15803d',
+    '#b45309',
+    '#be123c',
+    '#7c3aed',
+    '#334155',
+    '#111827',
+];
 
 function removeAvatar(): void {
     form.avatar = null;
@@ -484,32 +512,25 @@ $signature = hash_hmac('sha256', $payload, $secret);
 </${SCRIPT_TAG}>`,
 );
 
-const nativeSelectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 dark:bg-input/30';
-
 const fieldError = (path: string): string | undefined =>
     validation.error(path) ?? form.errors[path as keyof WidgetForm];
 </script>
 
 <template>
-    <SurfaceCard
-        title="Widget de chat web"
-        description="Dónde se puede insertar el chat, cómo se ve y cómo se identifican los visitantes."
-        body-class="grid gap-6 p-5"
+    <div
+        class="grid gap-10"
+        data-slot="web-chat-widget"
+        @keydown.enter="onEnter"
     >
-        <div class="grid gap-6" @keydown.enter="onEnter">
+        <FormSection
+            id="widget-dominios"
+            title="Dominios autorizados"
+            description="Solo estos sitios pueden mostrar el chat. Escribe el origen exacto (https://tienda.example.com); los subdominios no se incluyen solos. Usa http únicamente con localhost o 127.0.0.1 para desarrollo."
+        >
             <section class="grid gap-3" aria-labelledby="widget-origins-title">
-                <div>
-                    <h3 id="widget-origins-title" class="text-sm font-medium">
-                        Dominios autorizados
-                    </h3>
-                    <p class="text-xs text-muted-foreground">
-                        Solo estos sitios pueden mostrar el chat. Escribe el
-                        origen exacto (https://tienda.example.com); los
-                        subdominios no se incluyen solos. Usa http únicamente
-                        con localhost o 127.0.0.1 para desarrollo.
-                    </p>
-                </div>
+                <h3 id="widget-origins-title" class="sr-only">
+                    Dominios autorizados
+                </h3>
                 <ul class="grid gap-2">
                     <li
                         v-for="(origin, index) in form.allowed_origins"
@@ -582,17 +603,23 @@ const fieldError = (path: string): string | undefined =>
                     </Button>
                 </div>
             </section>
+        </FormSection>
 
+        <FormSection
+            id="widget-apariencia"
+            title="Apariencia del widget"
+            description="Cómo se ve el chat en tu sitio. La vista previa sigue lo que escribes, aun antes de guardar."
+        >
+            <template v-if="$slots.preview" #aside>
+                <div class="pt-3">
+                    <slot name="preview" />
+                </div>
+            </template>
             <section
-                class="grid gap-4 border-t pt-5 sm:grid-cols-2"
+                class="field-grid [--col-min:16rem]"
                 aria-labelledby="widget-appearance-title"
             >
-                <h3
-                    id="widget-appearance-title"
-                    class="text-sm font-medium sm:col-span-2"
-                >
-                    Apariencia
-                </h3>
+                <h3 id="widget-appearance-title" class="sr-only">Apariencia</h3>
                 <FormField
                     id="widget-title"
                     label="Título"
@@ -623,7 +650,7 @@ const fieldError = (path: string): string | undefined =>
                     id="widget-welcome"
                     label="Mensaje de bienvenida (opcional)"
                     :error="fieldError('welcome_text')"
-                    class="sm:col-span-2"
+                    class="col-span-full"
                 >
                     <Textarea
                         id="widget-welcome"
@@ -647,21 +674,12 @@ const fieldError = (path: string): string | undefined =>
                     "
                 >
                     <div class="flex gap-2">
-                        <input
-                            type="color"
-                            :value="
-                                HEX_COLOR.test(form.accent_color)
-                                    ? form.accent_color
-                                    : widget.accent_color
-                            "
-                            class="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-transparent p-1 disabled:cursor-not-allowed disabled:opacity-50"
+                        <HexColorField
+                            v-model="form.accent_color"
                             aria-label="Elegir el color de acento"
+                            :fallback="widget.accent_color"
+                            :swatches="ACCENT_SWATCHES"
                             :disabled="!canUpdate"
-                            @input="
-                                form.accent_color = (
-                                    $event.target as HTMLInputElement
-                                ).value
-                            "
                         />
                         <Input
                             id="widget-accent"
@@ -683,33 +701,13 @@ const fieldError = (path: string): string | undefined =>
                     label="Posición"
                     :error="fieldError('position')"
                 >
-                    <select
+                    <AppSelect
                         id="widget-position"
                         v-model="form.position"
-                        :class="nativeSelectClass"
-                        :disabled="!canUpdate"
-                    >
-                        <option
-                            v-for="option in options.positions"
-                            :key="option.value"
-                            :value="option.value"
-                        >
-                            {{ option.label }}
-                        </option>
-                    </select>
-                </FormField>
-                <div
-                    class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
-                >
-                    <label for="widget-launcher" class="text-sm"
-                        >Mostrar botón flotante</label
-                    >
-                    <Switch
-                        id="widget-launcher"
-                        v-model="form.launcher_enabled"
+                        :options="options.positions"
                         :disabled="!canUpdate"
                     />
-                </div>
+                </FormField>
                 <FormField
                     id="widget-launcher-label"
                     label="Texto del botón (opcional)"
@@ -729,76 +727,90 @@ const fieldError = (path: string): string | undefined =>
                         :disabled="!form.launcher_enabled"
                     />
                 </FormField>
+                <div class="grid gap-2">
+                    <span class="text-sm font-medium" aria-hidden="true"
+                        >Botón flotante</span
+                    >
+                    <div
+                        class="flex min-h-9 items-center justify-between gap-3 rounded-md border px-3 py-1.5"
+                    >
+                        <label for="widget-launcher" class="text-sm"
+                            >Mostrar botón flotante</label
+                        >
+                        <Switch
+                            id="widget-launcher"
+                            v-model="form.launcher_enabled"
+                            :disabled="!canUpdate"
+                        />
+                    </div>
+                </div>
                 <FormField
                     id="widget-avatar"
                     label="Imagen (opcional)"
                     :error="avatarError ?? form.errors.avatar"
-                    :hint="`PNG, JPG o WebP de hasta ${options.limits.avatar_kb} KB.`"
-                    class="sm:col-span-2"
+                    class="col-span-full"
                 >
-                    <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex flex-wrap items-start gap-3">
                         <img
                             v-if="avatarPreview"
                             :src="avatarPreview"
                             alt="Imagen actual del chat"
-                            class="size-10 rounded-full border object-cover"
+                            class="size-14 shrink-0 rounded-full border object-cover"
                         />
-                        <input
-                            id="widget-avatar"
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            class="max-w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-transparent file:px-3 file:py-1.5 file:text-sm"
-                            :disabled="!canUpdate"
-                            @change="onAvatarChange"
-                        />
-                        <Button
-                            v-if="avatarPreview"
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            :disabled="!canUpdate"
-                            @click="removeAvatar"
-                        >
-                            Quitar imagen
-                        </Button>
+                        <div class="grid min-w-0 flex-1 basis-64 gap-2">
+                            <FileDropzone
+                                id="widget-avatar"
+                                v-model="avatarFile"
+                                compact
+                                accept="image/png,image/jpeg,image/webp"
+                                :max-size-mb="options.limits.avatar_kb / 1024"
+                                title="Arrastra una imagen o elige un archivo"
+                                :hint="`PNG, JPG o WebP de hasta ${options.limits.avatar_kb} KB.`"
+                                :invalid="
+                                    Boolean(avatarError ?? form.errors.avatar)
+                                "
+                                :disabled="!canUpdate"
+                            />
+                            <div v-if="avatarPreview">
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    :disabled="!canUpdate"
+                                    @click="removeAvatar"
+                                >
+                                    <Trash2 />
+                                    Quitar imagen
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 </FormField>
             </section>
+        </FormSection>
 
-            <section
-                class="grid gap-4 border-t pt-5"
-                aria-labelledby="widget-identity-title"
-            >
-                <div>
-                    <h3 id="widget-identity-title" class="text-sm font-medium">
-                        Identificación de visitantes
-                    </h3>
-                    <p class="text-xs text-muted-foreground">
-                        Si tu sitio tiene usuarios con sesión, puede
-                        identificarlos con una firma para que sus conversaciones
-                        los sigan entre dispositivos. Un visitante identificado
-                        nunca se mezcla con contactos de WhatsApp.
-                    </p>
-                </div>
+        <FormSection
+            id="widget-identificacion"
+            title="Identificación de visitantes"
+            description="Si tu sitio tiene usuarios con sesión, puede identificarlos con una firma para que sus conversaciones los sigan entre dispositivos. Un visitante identificado nunca se mezcla con contactos de WhatsApp."
+        >
+            <section class="grid gap-4" aria-labelledby="widget-identity-title">
+                <h3 id="widget-identity-title" class="sr-only">
+                    Identificación de visitantes
+                </h3>
                 <FormField
                     id="widget-identity-mode"
                     label="Modo"
                     :error="fieldError('identity_mode')"
                 >
-                    <select
+                    <RadioCards
                         id="widget-identity-mode"
                         v-model="form.identity_mode"
-                        :class="nativeSelectClass"
+                        :options="options.identityModes"
+                        aria-label="Modo de identificación de visitantes"
+                        class="[--col-min:13rem]"
                         :disabled="!canUpdate"
-                    >
-                        <option
-                            v-for="option in options.identityModes"
-                            :key="option.value"
-                            :value="option.value"
-                        >
-                            {{ option.label }}
-                        </option>
-                    </select>
+                    />
                 </FormField>
 
                 <div
@@ -810,7 +822,7 @@ const fieldError = (path: string): string | undefined =>
                             class="mt-0.5 size-4 shrink-0"
                             aria-hidden="true"
                         />
-                        <p>
+                        <p class="max-w-prose">
                             <strong class="font-medium text-foreground"
                                 >Instrucciones para el desarrollador de tu
                                 sitio:</strong
@@ -823,7 +835,7 @@ const fieldError = (path: string): string | undefined =>
                         </p>
                     </div>
                     <pre
-                        class="max-h-72 overflow-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed"
+                        class="max-h-72 overflow-auto rounded-md border bg-surface-sunken p-3 text-xs leading-relaxed"
                     ><code class="font-mono whitespace-pre">{{ signatureExample }}</code></pre>
                 </div>
 
@@ -903,28 +915,25 @@ const fieldError = (path: string): string | undefined =>
                     </div>
                 </div>
             </section>
+        </FormSection>
 
-            <section
-                class="grid gap-4 border-t pt-5"
-                aria-labelledby="widget-prechat-title"
-            >
-                <div>
-                    <h3 id="widget-prechat-title" class="text-sm font-medium">
-                        Formulario previo
-                    </h3>
-                    <p class="text-xs text-muted-foreground">
-                        Datos que se piden al visitante antes de su primer
-                        mensaje. Sin campos, puede escribir directamente.
-                    </p>
-                </div>
-                <div class="flex flex-wrap gap-3">
+        <FormSection
+            id="widget-formulario"
+            title="Formulario previo"
+            description="Datos que se piden al visitante antes de su primer mensaje. Sin campos, puede escribir directamente."
+        >
+            <section class="grid gap-4" aria-labelledby="widget-prechat-title">
+                <h3 id="widget-prechat-title" class="sr-only">
+                    Formulario previo
+                </h3>
+                <div class="auto-grid [--col-min:13rem]">
                     <label
                         v-for="field in [
                             { value: 'name', label: 'Nombre' },
                             { value: 'email', label: 'Correo electrónico' },
                         ] as const"
                         :key="field.value"
-                        class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                        class="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary-soft/40"
                     >
                         <Checkbox
                             :model-value="
@@ -941,19 +950,19 @@ const fieldError = (path: string): string | undefined =>
                         />
                         {{ field.label }}
                     </label>
-                </div>
-                <div
-                    v-if="form.prechat.fields.length > 0"
-                    class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
-                >
-                    <label for="widget-prechat-required" class="text-sm"
-                        >Datos obligatorios</label
+                    <div
+                        v-if="form.prechat.fields.length > 0"
+                        class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
                     >
-                    <Switch
-                        id="widget-prechat-required"
-                        v-model="form.prechat.required"
-                        :disabled="!canUpdate"
-                    />
+                        <label for="widget-prechat-required" class="text-sm"
+                            >Datos obligatorios</label
+                        >
+                        <Switch
+                            id="widget-prechat-required"
+                            v-model="form.prechat.required"
+                            :disabled="!canUpdate"
+                        />
+                    </div>
                 </div>
                 <FormField
                     id="widget-privacy"
@@ -975,15 +984,18 @@ const fieldError = (path: string): string | undefined =>
                     />
                 </FormField>
             </section>
+        </FormSection>
 
+        <FormSection
+            id="widget-disponibilidad"
+            title="Disponibilidad"
+            description="Cuándo se muestra el chat en línea y cuánto conserva el visitante su conversación."
+        >
             <section
-                class="grid gap-4 border-t pt-5 sm:grid-cols-2"
+                class="field-grid [--col-min:16rem]"
                 aria-labelledby="widget-availability-title"
             >
-                <h3
-                    id="widget-availability-title"
-                    class="text-sm font-medium sm:col-span-2"
-                >
+                <h3 id="widget-availability-title" class="sr-only">
                     Disponibilidad
                 </h3>
                 <FormField
@@ -992,20 +1004,12 @@ const fieldError = (path: string): string | undefined =>
                     :error="fieldError('availability_mode')"
                     hint="Según el horario usa el horario de atención del departamento predeterminado."
                 >
-                    <select
+                    <AppSelect
                         id="widget-availability"
                         v-model="form.availability_mode"
-                        :class="nativeSelectClass"
+                        :options="options.availabilityModes"
                         :disabled="!canUpdate"
-                    >
-                        <option
-                            v-for="option in options.availabilityModes"
-                            :key="option.value"
-                            :value="option.value"
-                        >
-                            {{ option.label }}
-                        </option>
-                    </select>
+                    />
                 </FormField>
                 <FormField
                     id="widget-idle-days"
@@ -1038,7 +1042,7 @@ const fieldError = (path: string): string | undefined =>
                     id="widget-offline"
                     label="Mensaje fuera de línea (opcional)"
                     :error="fieldError('offline_text')"
-                    class="sm:col-span-2"
+                    class="col-span-full"
                 >
                     <Textarea
                         id="widget-offline"
@@ -1052,25 +1056,18 @@ const fieldError = (path: string): string | undefined =>
                     />
                 </FormField>
             </section>
+        </FormSection>
 
-            <section
-                class="grid gap-3 border-t pt-5"
-                aria-labelledby="widget-key-title"
-            >
-                <div>
-                    <h3 id="widget-key-title" class="text-sm font-medium">
-                        Clave pública
-                    </h3>
-                    <p class="text-xs text-muted-foreground">
-                        Identifica al widget en el fragmento de código; no es un
-                        secreto. Rótala si se insertó donde no debía: el código
-                        anterior dejará de funcionar y se cerrarán las sesiones
-                        abiertas de los visitantes.
-                    </p>
-                </div>
+        <FormSection
+            id="widget-clave"
+            title="Clave pública"
+            description="Identifica al widget en el fragmento de código; no es un secreto. Rótala si se insertó donde no debía: el código anterior dejará de funcionar y se cerrarán las sesiones abiertas de los visitantes."
+        >
+            <section class="grid gap-3" aria-labelledby="widget-key-title">
+                <h3 id="widget-key-title" class="sr-only">Clave pública</h3>
                 <div class="flex flex-wrap items-center gap-2">
                     <code
-                        class="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-2 py-1.5 font-mono text-xs"
+                        class="min-w-0 flex-1 truncate rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs"
                         >{{ widget.public_key }}</code
                     >
                     <Button
@@ -1100,10 +1097,23 @@ const fieldError = (path: string): string | undefined =>
                 </p>
             </section>
 
-            <div
-                v-if="canUpdate"
-                class="flex flex-wrap items-center justify-end gap-3 border-t pt-4"
-            >
+            <template v-if="canUpdate" #footer>
+                <Button
+                    type="button"
+                    :disabled="!hasChanges"
+                    :loading="form.processing"
+                    @click="save"
+                >
+                    Guardar widget
+                </Button>
+                <Button
+                    type="button"
+                    variant="outline"
+                    :disabled="!hasChanges || form.processing"
+                    @click="discard"
+                >
+                    Descartar
+                </Button>
                 <span
                     class="text-sm text-muted-foreground max-sm:sr-only"
                     aria-live="polite"
@@ -1113,24 +1123,8 @@ const fieldError = (path: string): string | undefined =>
                             : 'Sin cambios en el widget'
                     }}</span
                 >
-                <Button
-                    type="button"
-                    variant="outline"
-                    :disabled="!hasChanges || form.processing"
-                    @click="discard"
-                >
-                    Descartar
-                </Button>
-                <Button
-                    type="button"
-                    :disabled="!hasChanges || form.processing"
-                    @click="save"
-                >
-                    <Spinner v-if="form.processing" />
-                    Guardar widget
-                </Button>
-            </div>
-        </div>
+            </template>
+        </FormSection>
 
         <ConfirmDialog
             v-model:open="confirmKeyOpen"
@@ -1157,5 +1151,5 @@ const fieldError = (path: string): string | undefined =>
             :processing="rotating === 'secret'"
             @confirm="rotate('secret')"
         />
-    </SurfaceCard>
+    </div>
 </template>

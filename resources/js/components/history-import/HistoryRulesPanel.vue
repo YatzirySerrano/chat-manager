@@ -10,9 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { RadioCards } from '@/components/ui/radio-cards';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import {
     destroy as ruleDestroy,
     preview as rulePreview,
@@ -65,6 +64,11 @@ const emit = defineEmits<{
 const formOpen = ref(false);
 const name = ref('');
 const decision = ref<HistoryDecision>('archive');
+const decisionOptions = DECISION_ORDER.map((option) => ({
+    value: option,
+    label: DECISIONS[option].label,
+    description: DECISIONS[option].summary,
+}));
 const overwrite = ref(false);
 const criteria = ref<HistoryFilters>({});
 const preview = ref<{
@@ -326,36 +330,13 @@ async function remove(): Promise<void> {
 
             <fieldset class="grid gap-2">
                 <legend class="mb-1 text-sm font-medium">Destino</legend>
-                <div class="grid gap-2 sm:grid-cols-3">
-                    <label
-                        v-for="option in DECISION_ORDER"
-                        :key="option"
-                        :class="
-                            cn(
-                                'flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm focus-within:ring-2 focus-within:ring-ring',
-                                decision === option
-                                    ? 'border-primary bg-primary-soft/60'
-                                    : 'hover:bg-muted/40',
-                            )
-                        "
-                    >
-                        <input
-                            v-model="decision"
-                            type="radio"
-                            name="rule-decision"
-                            :value="option"
-                            class="mt-0.5 accent-primary"
-                        />
-                        <span>
-                            <span class="block font-medium">
-                                {{ DECISIONS[option].label }}
-                            </span>
-                            <span class="block text-xs text-muted-foreground">
-                                {{ DECISIONS[option].summary }}
-                            </span>
-                        </span>
-                    </label>
-                </div>
+                <RadioCards
+                    v-model="decision"
+                    :options="decisionOptions"
+                    aria-label="Destino"
+                    name="rule-decision"
+                    class="[--col-min:13rem]"
+                />
             </fieldset>
 
             <div class="grid gap-2">
@@ -423,13 +404,16 @@ async function remove(): Promise<void> {
                     variant="outline"
                     :disabled="previewing || applying"
                     @click="runPreview"
+                    :loading="previewing"
                 >
-                    <Spinner v-if="previewing" />
-                    <Eye v-else />
+                    <Eye v-if="!previewing" />
                     Ver cuántas cambian
                 </Button>
-                <Button type="submit" :disabled="applying || preview === null">
-                    <Spinner v-if="applying" />
+                <Button
+                    type="submit"
+                    :disabled="applying || preview === null"
+                    :loading="applying"
+                >
                     Aplicar regla
                 </Button>
             </div>

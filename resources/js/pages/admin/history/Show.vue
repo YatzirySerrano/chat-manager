@@ -134,7 +134,7 @@ const sourceRows = computed(() =>
         </StatusNote>
 
         <div
-            class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start"
+            class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_24rem]"
         >
             <HistoryTimeline
                 :conversation-id="conversation.id"

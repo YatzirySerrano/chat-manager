@@ -6,7 +6,6 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { authorize, disconnect } from '@/routes/connections/meta';
 import type { Connection, MetaAccount } from '@/types';
@@ -187,11 +186,10 @@ function confirmDisconnect(): void {
             <Button
                 type="button"
                 variant="outline"
-                :disabled="reauthorizing"
+                :loading="reauthorizing"
                 @click="reauthorize"
             >
-                <Spinner v-if="reauthorizing" />
-                <RefreshCw v-else />
+                <RefreshCw />
                 Volver a autorizar
             </Button>
             <Button

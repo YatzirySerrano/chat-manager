@@ -8,7 +8,6 @@ import TimelineEvent from '@/components/conversations/TimelineEvent.vue';
 import { messageWrittenAt } from '@/components/conversations/useConversationTimeline';
 import EmptyState from '@/components/EmptyState.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { platformTimezone } from '@/lib/format';
 import { messages as messagesRoute } from '@/routes/admin/history/conversations';
 import type { ConversationEvent } from '@/types';
@@ -175,7 +174,7 @@ async function loadOlder(): Promise<void> {
         :aria-label="`Historial importado de la conversación con ${contactName}`"
         data-history-timeline
     >
-        <div class="mx-auto grid max-w-4xl grid-cols-1 gap-2">
+        <div class="grid grid-cols-1 gap-2">
             <div class="flex justify-center py-1">
                 <Button
                     v-if="hasMore"
@@ -184,8 +183,8 @@ async function loadOlder(): Promise<void> {
                     class="pointer-coarse:h-10"
                     :disabled="loading"
                     @click="loadOlder"
+                    :loading="loading"
                 >
-                    <Spinner v-if="loading" />
                     Cargar mensajes anteriores
                 </Button>
                 <p

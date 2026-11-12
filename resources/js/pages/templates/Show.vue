@@ -31,12 +31,15 @@ defineProps<{
 <template>
     <Head :title="`Plantilla ${template.name}`" />
 
-    <div class="page-shell [--page-max:64rem]">
+    <div class="page-shell">
         <PageHeader
             help="plantillas"
-            show-title
             :title="template.name"
-            :description="`${formatLocale(template.language)} · ${template.connection?.name ?? ''}`"
+            :description="
+                [formatLocale(template.language), template.connection?.name]
+                    .filter(Boolean)
+                    .join(', ')
+            "
         />
 
         <DeletedRecordNotice
@@ -49,9 +52,11 @@ defineProps<{
             vez que se actualicen las plantillas.
         </DeletedRecordNotice>
 
-        <div class="grid gap-6 lg:grid-cols-[1fr_22rem]">
+        <div
+            class="grid reveal-stagger gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]"
+        >
             <SurfaceCard title="Vista previa" body-class="grid gap-4 p-5">
-                <div class="rounded-xl bg-muted/50 p-4">
+                <div class="rounded-xl bg-surface-sunken p-5 sm:p-8">
                     <TemplatePreview :template="template" />
                 </div>
                 <p class="text-xs text-muted-foreground">
@@ -61,7 +66,7 @@ defineProps<{
                 </p>
             </SurfaceCard>
 
-            <div class="grid content-start gap-6">
+            <div class="grid content-start gap-6 2xl:contents">
                 <SurfaceCard
                     title="Estado según Meta"
                     body-class="grid gap-3 p-5 text-sm"

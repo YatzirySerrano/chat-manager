@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_agent
  * @property string|null $source_department
  * @property string|null $source_connection
+ * @property array{content?: array<array-key, mixed>, event?: string, campaign_id?: string}|null $details Structured data of the source: place or shared people (content), a missed call (event) and the campaign that sent it.
  * @property Carbon|null $created_at
  */
 class HistoryImportMessage extends Model
@@ -58,6 +59,7 @@ class HistoryImportMessage extends Model
             'is_system' => 'boolean',
             'media_available' => 'boolean',
             'media_size' => 'integer',
+            'details' => 'array',
         ];
     }
 

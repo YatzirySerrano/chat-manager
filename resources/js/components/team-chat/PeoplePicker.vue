@@ -133,19 +133,16 @@ function choose(contact: TeamContact): void {
         >
             <div
                 v-if="!loaded && !failed"
-                class="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground"
+                class="flex items-center gap-2 p-6 text-sm text-muted-foreground"
             >
                 <Spinner /> Cargando personas…
             </div>
-            <p
-                v-else-if="failed"
-                class="p-6 text-center text-sm text-destructive"
-            >
+            <p v-else-if="failed" class="p-6 text-sm text-destructive">
                 No se pudo cargar la lista de personas. Inténtalo de nuevo.
             </p>
             <p
                 v-else-if="contacts.length === 0"
-                class="p-6 text-center text-sm text-muted-foreground"
+                class="p-6 text-sm text-muted-foreground"
             >
                 {{
                     search.trim() === ''

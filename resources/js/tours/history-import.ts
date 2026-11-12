@@ -5,8 +5,8 @@ export default {
         {
             id: 'formato',
             target: 'history-import.format',
-            title: 'Formato no verificado',
-            body: 'Las columnas se reconocen por su nombre. Revisa siempre el inventario antes de confirmar.',
+            title: 'Formatos de Whaticket',
+            body: 'El CSV de «Exportar mensajes» está verificado y se lee sin mapeo manual; los demás archivos se reconocen por el nombre de sus columnas. Revisa siempre el inventario antes de confirmar.',
         },
         {
             id: 'crear',

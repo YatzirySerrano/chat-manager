@@ -4,7 +4,6 @@ import { computed, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { maxLength } from '@/lib/validation';
@@ -161,9 +160,9 @@ function submit(): void {
                 </Button>
                 <Button
                     type="submit"
-                    :disabled="!validation.hasChanges || form.processing"
+                    :disabled="!validation.hasChanges"
+                    :loading="form.processing"
                 >
-                    <Spinner v-if="form.processing" />
                     Guardar mensajes
                 </Button>
             </div>

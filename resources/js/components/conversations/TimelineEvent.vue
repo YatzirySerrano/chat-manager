@@ -85,9 +85,10 @@ const detail = computed(() => {
 </script>
 
 <template>
-    <div class="flex justify-center px-2">
+    <div class="flex items-center gap-3 px-2">
+        <span class="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
         <p
-            class="inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-2xl border bg-muted/60 px-3 py-1 text-center text-xs wrap-anywhere text-muted-foreground"
+            class="inline-flex max-w-[min(100%,48rem)] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border bg-background/80 px-3 py-1 text-center text-xs wrap-anywhere text-muted-foreground backdrop-blur-sm"
         >
             <History class="size-3.5 shrink-0" aria-hidden="true" />
             <span class="font-medium text-foreground/80">{{ label }}</span>
@@ -102,5 +103,6 @@ const detail = computed(() => {
                 >· {{ formatTime(event.created_at) }}</time
             >
         </p>
+        <span class="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
     </div>
 </template>

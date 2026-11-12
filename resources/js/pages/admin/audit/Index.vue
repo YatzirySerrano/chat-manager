@@ -9,7 +9,7 @@ import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DateRangePicker } from '@/components/ui/date-picker';
 import {
     Select,
     SelectContent,
@@ -102,10 +102,10 @@ function clearFilters(): void {
 }
 
 const toneClasses: Record<AuditTone, string> = {
-    success: 'bg-emerald-500',
-    warning: 'bg-amber-500',
-    danger: 'bg-rose-500',
-    neutral: 'bg-slate-400',
+    success: 'bg-success',
+    warning: 'bg-warning',
+    danger: 'bg-destructive',
+    neutral: 'bg-muted-foreground/60',
 };
 
 const selectedEntry = ref<AuditLogEntry | null>(null);
@@ -138,7 +138,7 @@ function openDetail(entry: AuditLogEntry): void {
         </PageHeader>
 
         <div
-            class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-end"
+            class="grid grid-cols-1 gap-2 rounded-xl border bg-card p-3 sm:grid-cols-2 lg:flex lg:items-center"
             data-tour="audit.filters"
         >
             <Select
@@ -146,7 +146,7 @@ function openDetail(entry: AuditLogEntry): void {
                 @update:model-value="applyFilters"
             >
                 <SelectTrigger
-                    class="w-full lg:w-64"
+                    class="w-full lg:w-64 lg:shrink-0"
                     aria-label="Filtrar por acción"
                 >
                     <SelectValue />
@@ -167,7 +167,7 @@ function openDetail(entry: AuditLogEntry): void {
                 @update:model-value="applyFilters"
             >
                 <SelectTrigger
-                    class="w-full lg:w-52"
+                    class="w-full lg:w-60 lg:shrink-0"
                     aria-label="Filtrar por responsable"
                 >
                     <SelectValue />
@@ -183,30 +183,20 @@ function openDetail(entry: AuditLogEntry): void {
                     </SelectItem>
                 </SelectContent>
             </Select>
-            <label
-                class="flex items-center gap-2 text-sm text-muted-foreground"
+            <DateRangePicker
+                v-model:from="filterState.from"
+                v-model:to="filterState.to"
+                class="w-full lg:w-72 lg:shrink-0"
+                placeholder="Cualquier fecha"
+                aria-label="Filtrar por fecha"
+                @change="applyFilters"
+            />
+            <Button
+                v-if="hasFilters"
+                variant="ghost"
+                class="lg:ml-auto"
+                @click="clearFilters"
             >
-                Desde
-                <Input
-                    v-model="filterState.from"
-                    type="date"
-                    class="w-full lg:w-40"
-                    @change="applyFilters"
-                />
-            </label>
-            <label
-                class="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-                Hasta
-                <Input
-                    v-model="filterState.to"
-                    type="date"
-                    class="w-full lg:w-40"
-                    :min="filterState.from || undefined"
-                    @change="applyFilters"
-                />
-            </label>
-            <Button v-if="hasFilters" variant="ghost" @click="clearFilters">
                 <X />
                 Limpiar
             </Button>
@@ -214,18 +204,18 @@ function openDetail(entry: AuditLogEntry): void {
 
         <div
             v-if="logs.data.length > 0"
-            class="overflow-hidden rounded-xl border bg-card shadow-card"
+            class="reveal overflow-hidden rounded-xl border bg-card"
             data-tour="audit.table"
         >
             <Table>
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
-                        <TableHead>Fecha</TableHead>
+                        <TableHead class="w-48 pl-5">Fecha</TableHead>
                         <TableHead>Acción</TableHead>
                         <TableHead class="hidden md:table-cell"
                             >Entidad</TableHead
                         >
-                        <TableHead>Responsable</TableHead>
+                        <TableHead class="w-56">Responsable</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -242,7 +232,7 @@ function openDetail(entry: AuditLogEntry): void {
                         @keydown.space.prevent="openDetail(entry)"
                     >
                         <TableCell
-                            class="text-xs text-muted-foreground tabular-nums"
+                            class="pl-5 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                         >
                             {{ formatDateTime(entry.created_at) }}
                         </TableCell>
@@ -260,7 +250,7 @@ function openDetail(entry: AuditLogEntry): void {
                             </span>
                         </TableCell>
                         <TableCell
-                            class="hidden max-w-72 truncate md:table-cell"
+                            class="hidden w-full max-w-0 truncate md:table-cell"
                         >
                             <template v-if="entry.subject.type_label">
                                 <span class="text-muted-foreground"

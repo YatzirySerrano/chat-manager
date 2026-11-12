@@ -58,9 +58,13 @@ use Throwable;
  *    no ids in whatsapp_message_id), its attachments, the mapped tags, the
  *    source key (idempotency) and the batch record — or nothing at all.
  *
- * A conversation keyed by contact (exports without a conversation id) that
- * an earlier batch already imported is extended with the messages it did
- * not have yet (message source keys), never duplicated.
+ * A conversation keyed by contact (exports without a conversation id) or a
+ * ticket of the messages CSV that an earlier batch already imported is
+ * extended with the messages it did not have yet (message source keys;
+ * the authentic Whaticket export has no message id, so the key is the
+ * fingerprint HistoryFileIngestor gives every row), never duplicated: a
+ * later export that overlaps an earlier one, or that continues the same
+ * ticket, only adds what is new.
  *
  * The media disk is checked before the run; if it fails during the run the
  * batch is paused (HistoryImportPaused) and the conversation in progress
@@ -223,7 +227,8 @@ class HistoryImportExecutor
 
                 ['contact' => $contact, 'created' => $createdContact] = $this->contacts->resolve($batch, $locked, $actor);
                 $conversation = $this->createConversation($batch, $locked, $connectionId, $contact->id);
-                $counts = $this->copyMessages($locked, $conversation, $locked->source_kind === HistoryImportConversation::KIND_CONTACT);
+                $keyed = self::keyedByMessage($locked);
+                $counts = $this->copyMessages($locked, $conversation, $keyed);
                 $this->attachTags($batch, $locked, $conversation, $actor);
 
                 HistoryImportSourceKey::query()->insert([
@@ -242,6 +247,8 @@ class HistoryImportExecutor
                         'chat_id' => $locked->source_details['chat_id'] ?? null,
                         'chat_link' => $locked->source_details['chat_link'] ?? null,
                         'status' => $locked->source_status,
+                        // A ticket imported with a key per message can be extended by a later export.
+                        'message_keys' => $keyed && $locked->source_kind === HistoryImportConversation::KIND_TICKET ? true : null,
                     ]), JSON_UNESCAPED_UNICODE),
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -413,15 +420,17 @@ class HistoryImportExecutor
     }
 
     /**
-     * Already imported: a contact-keyed conversation gets the messages it did
-     * not have (later exports of the same number); anything else is a
-     * duplicate.
+     * Already imported: a contact-keyed conversation, or a ticket imported
+     * with a key per message, gets the messages it did not have (a later
+     * or overlapping export); anything else is a duplicate.
      */
     private function extendOrSkip(DataTransfer $batch, HistoryImportConversation $row, HistoryImportSourceKey $key): void
     {
         $conversation = $key->target_type === 'conversation' ? Conversation::query()->lockForUpdate()->find($key->target_id) : null;
+        $extends = $row->source_kind === HistoryImportConversation::KIND_CONTACT
+            || ($row->source_kind === HistoryImportConversation::KIND_TICKET && $key->extendable());
 
-        if ($conversation === null || $row->source_kind !== HistoryImportConversation::KIND_CONTACT) {
+        if ($conversation === null || ! $extends) {
             $row->forceFill(['state' => HistoryImportRowState::Duplicate, 'result_conversation_id' => $conversation?->id, 'processed_at' => now()])->save();
 
             return;
@@ -558,6 +567,9 @@ class HistoryImportExecutor
             foreach ($chunk as $staged) {
                 $reference = (string) Str::uuid();
                 $outbound = $staged->from_me === true;
+                $details = $staged->details ?? [];
+                // A fingerprint is this importer's key, not an id of the source.
+                $sourceId = $staged->source_message_id !== null && ! str_starts_with($staged->source_message_id, 'fp:') ? $staged->source_message_id : null;
                 $inserts[] = [
                     'conversation_id' => $conversation->id,
                     'whatsapp_message_id' => null,
@@ -569,15 +581,22 @@ class HistoryImportExecutor
                     'body' => $staged->body,
                     'sender_user_id' => null,
                     'reply_to_message_id' => null,
-                    'metadata' => json_encode(['import' => array_filter([
-                        'source' => 'whaticket',
-                        'batch_id' => $row->data_transfer_id,
-                        'kind' => $row->source_kind,
-                        'source_id' => $staged->source_message_id,
-                        'sender_name' => $staged->sender_name,
-                        'from_me' => $outbound,
-                        'quoted_source_id' => $staged->quoted_source_id,
-                    ], fn (mixed $value): bool => $value !== null)], JSON_UNESCAPED_UNICODE),
+                    'metadata' => json_encode(array_filter([
+                        'import' => array_filter([
+                            'source' => 'whaticket',
+                            'batch_id' => $row->data_transfer_id,
+                            'kind' => $row->source_kind,
+                            'source_id' => $sourceId,
+                            'sender_name' => $staged->sender_name,
+                            'from_me' => $outbound,
+                            'quoted_source_id' => $staged->quoted_source_id,
+                            // "missed_call" and the Whaticket campaign that sent the message.
+                            'event' => is_string($details['event'] ?? null) ? $details['event'] : null,
+                            'campaign_id' => is_string($details['campaign_id'] ?? null) ? $details['campaign_id'] : null,
+                        ], fn (mixed $value): bool => $value !== null),
+                        // Place or shared people, in the shape live messages keep (ConversationMessageResource).
+                        'content' => is_array($details['content'] ?? null) ? $details['content'] : null,
+                    ], fn (mixed $value): bool => $value !== null), JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION),
                     'sent_at' => $staged->occurred_at,
                     'delivery_attempts' => 0,
                     'created_at' => $staged->occurred_at,
@@ -638,8 +657,19 @@ class HistoryImportExecutor
     }
 
     /**
-     * Stable key of a message of a contact-keyed conversation: its source
-     * id, else a fingerprint of when, who, what (never the text itself).
+     * Whether the messages of the conversation get a source key each (so a
+     * later export only adds the missing ones): conversations keyed by
+     * contact and tickets. A Chat.txt is keyed by its whole content.
+     */
+    private static function keyedByMessage(HistoryImportConversation $row): bool
+    {
+        return in_array($row->source_kind, [HistoryImportConversation::KIND_CONTACT, HistoryImportConversation::KIND_TICKET], true);
+    }
+
+    /**
+     * Stable key of a message of a conversation keyed by message: its source
+     * id (or the fingerprint the reader gave a row without one), else a
+     * fingerprint of when, who, what (never the text itself).
      */
     private function messageKey(HistoryImportConversation $row, HistoryImportMessage $staged): string
     {

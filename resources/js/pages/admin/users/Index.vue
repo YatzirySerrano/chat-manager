@@ -250,7 +250,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
         </PageHeader>
 
         <div
-            class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-3"
             data-tour="users.stats"
         >
             <StatCard

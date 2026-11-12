@@ -217,7 +217,8 @@ class MediaDisk
         }
 
         try {
-            Storage::disk($disk)->delete($path);
+            // The image preview kept next to the original, if any (MediaThumbnails).
+            Storage::disk($disk)->delete([$path, ...MediaThumbnails::pathsFor($path)]);
         } catch (Throwable $exception) {
             $this->logFailure('delete_failed', $disk, $exception);
         }

@@ -13,7 +13,6 @@ import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { index as connectionsIndex } from '@/routes/connections';
 import { authorize } from '@/routes/connections/meta';
 import type { ConnectionChannel, MetaScope } from '@/types';
@@ -76,10 +75,9 @@ async function copy(value: string, label: string): Promise<void> {
 <template>
     <Head :title="title" />
 
-    <div class="page-shell [--page-max:56rem]">
+    <div class="page-shell">
         <PageHeader
             help="conexiones"
-            show-title
             :title="title"
             :description="`Autoriza el acceso con ${providerName} para recibir y responder los mensajes en la bandeja de Chat Manager.`"
         >
@@ -97,10 +95,18 @@ async function copy(value: string, label: string): Promise<void> {
             </template>
             <template #actions>
                 <Button variant="outline" as-child>
-                    <Link :href="connectionsIndex()">
+                    <Link :href="connectionsIndex()" prefetch>
                         <ArrowLeft class="size-4" aria-hidden="true" />
                         Volver a conexiones
                     </Link>
+                </Button>
+                <Button
+                    type="button"
+                    :disabled="!configured"
+                    :loading="processing"
+                    @click="start"
+                >
+                    Autorizar acceso
                 </Button>
             </template>
         </PageHeader>
@@ -140,110 +146,122 @@ async function copy(value: string, label: string): Promise<void> {
             </div>
         </div>
 
-        <SurfaceCard
-            title="Antes de autorizar"
-            description="Revisa que se cumplan estos requisitos de Meta."
-            body-class="p-5"
-        >
-            <ul class="space-y-3 text-sm">
-                <li
-                    v-for="requirement in requirements"
-                    :key="requirement"
-                    class="flex gap-2"
-                >
-                    <CircleCheck
-                        class="mt-0.5 size-4 shrink-0 text-primary"
-                        aria-hidden="true"
-                    />
-                    <span>{{ requirement }}</span>
-                </li>
-            </ul>
-        </SurfaceCard>
-
-        <SurfaceCard
-            title="Permisos que se solicitarán"
-            :description="
-                usesLoginConfiguration
-                    ? 'Se usa la configuración de inicio de sesión para empresas definida en la app de Meta; estos son los permisos que necesita.'
-                    : `${providerName} te pedirá confirmar estos permisos. Puedes revisarlos o retirarlos después desde tu cuenta.`
-            "
-            body-class="p-5"
-        >
-            <ul class="grid gap-2 text-sm sm:grid-cols-2">
-                <li
-                    v-for="scope in scopes"
-                    :key="scope.value"
-                    class="flex gap-2"
-                >
-                    <ShieldCheck
-                        class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <span>{{ scope.label }}</span>
-                </li>
-            </ul>
-        </SurfaceCard>
-
-        <SurfaceCard
-            title="Datos para la app de Meta"
-            description="Quien administra la app de Meta debe registrar estas direcciones."
-            body-class="space-y-4 p-5 text-sm"
-        >
-            <div class="space-y-1">
-                <p class="font-medium">Dirección de retorno (OAuth)</p>
-                <div class="flex items-center gap-2">
-                    <code
-                        class="min-w-0 flex-1 rounded-md bg-muted px-2 py-1 break-all"
-                        >{{ redirectUri }}</code
-                    >
-                    <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Copiar dirección de retorno"
-                        @click="copy(redirectUri, 'Dirección de retorno')"
-                    >
-                        <Copy class="size-4" aria-hidden="true" />
-                    </Button>
-                </div>
-            </div>
-            <div class="space-y-1">
-                <p class="font-medium">URL del webhook</p>
-                <div class="flex items-center gap-2">
-                    <code
-                        class="min-w-0 flex-1 rounded-md bg-muted px-2 py-1 break-all"
-                        >{{ webhookUrl }}</code
-                    >
-                    <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Copiar URL del webhook"
-                        @click="copy(webhookUrl, 'URL del webhook')"
-                    >
-                        <Copy class="size-4" aria-hidden="true" />
-                    </Button>
-                </div>
-                <p class="text-muted-foreground">
-                    Campos que se suscriben automáticamente:
-                    {{ subscribedFields.join(', ') }}.
-                </p>
-            </div>
-        </SurfaceCard>
-
-        <div class="flex flex-wrap items-center justify-end gap-3">
-            <p class="text-sm text-muted-foreground">
-                Se abrirá {{ providerName }}; al terminar volverás aquí para
-                elegir la cuenta.
-            </p>
-            <Button
-                type="button"
-                :disabled="!configured || processing"
-                @click="start"
+        <div class="split-layout [--aside-w:28rem]">
+            <div
+                class="auto-grid reveal-stagger items-start [--col-min:22rem] [--grid-gap:1.5rem]"
             >
-                <Spinner v-if="processing" />
-                Autorizar acceso
-            </Button>
+                <SurfaceCard
+                    title="Antes de autorizar"
+                    description="Revisa que se cumplan estos requisitos de Meta."
+                    body-class="p-5"
+                >
+                    <ul class="space-y-3 text-sm">
+                        <li
+                            v-for="requirement in requirements"
+                            :key="requirement"
+                            class="flex gap-2"
+                        >
+                            <CircleCheck
+                                class="mt-0.5 size-4 shrink-0 text-primary"
+                                aria-hidden="true"
+                            />
+                            <span>{{ requirement }}</span>
+                        </li>
+                    </ul>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="Permisos que se solicitarán"
+                    :description="
+                        usesLoginConfiguration
+                            ? 'Se usa la configuración de inicio de sesión para empresas definida en la app de Meta; estos son los permisos que necesita.'
+                            : `${providerName} te pedirá confirmar estos permisos. Puedes revisarlos o retirarlos después desde tu cuenta.`
+                    "
+                    body-class="p-5"
+                >
+                    <ul class="grid gap-3 text-sm">
+                        <li
+                            v-for="scope in scopes"
+                            :key="scope.value"
+                            class="flex gap-2"
+                        >
+                            <ShieldCheck
+                                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                            <span>{{ scope.label }}</span>
+                        </li>
+                    </ul>
+                </SurfaceCard>
+            </div>
+
+            <aside class="grid gap-6">
+                <SurfaceCard
+                    title="Datos para la app de Meta"
+                    description="Quien administra la app de Meta debe registrar estas direcciones."
+                    body-class="space-y-4 p-5 text-sm"
+                >
+                    <div class="space-y-1">
+                        <p class="font-medium">Dirección de retorno (OAuth)</p>
+                        <div class="flex items-center gap-2">
+                            <code
+                                class="min-w-0 flex-1 rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs break-all"
+                                >{{ redirectUri }}</code
+                            >
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                aria-label="Copiar dirección de retorno"
+                                @click="
+                                    copy(redirectUri, 'Dirección de retorno')
+                                "
+                            >
+                                <Copy class="size-4" aria-hidden="true" />
+                            </Button>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="font-medium">URL del webhook</p>
+                        <div class="flex items-center gap-2">
+                            <code
+                                class="min-w-0 flex-1 rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs break-all"
+                                >{{ webhookUrl }}</code
+                            >
+                            <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                aria-label="Copiar URL del webhook"
+                                @click="copy(webhookUrl, 'URL del webhook')"
+                            >
+                                <Copy class="size-4" aria-hidden="true" />
+                            </Button>
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            Campos que se suscriben automáticamente:
+                            {{ subscribedFields.join(', ') }}.
+                        </p>
+                    </div>
+
+                    <template #footer>
+                        <Button
+                            type="button"
+                            :disabled="!configured"
+                            :loading="processing"
+                            @click="start"
+                        >
+                            Autorizar acceso
+                        </Button>
+                        <p
+                            class="min-w-0 flex-1 basis-48 text-xs text-muted-foreground"
+                        >
+                            Se abrirá {{ providerName }}; al terminar volverás
+                            aquí para elegir la cuenta.
+                        </p>
+                    </template>
+                </SurfaceCard>
+            </aside>
         </div>
     </div>
 </template>

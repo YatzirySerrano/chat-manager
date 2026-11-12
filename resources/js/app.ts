@@ -7,9 +7,35 @@ import { initializeDataFreshness } from '@/lib/dataFreshness';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { initializePwa } from '@/lib/pwa/register';
 import { initializeRealtime } from '@/lib/realtime';
+import { initializeSpotlight } from '@/lib/spotlight';
 import { initializeThemePalette } from '@/lib/theme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+/**
+ * Page changes use a view transition (the shell keeps still and the content
+ * fades and rises, see app.css). Only real navigations get one: a GET visit
+ * to another path. Filters, pagination, polling reloads and form posts stay
+ * on the same path and must update in place, without a transition.
+ */
+function isPageChange(href: string, method: unknown, async: unknown): boolean {
+    if (
+        typeof window === 'undefined' ||
+        async === true ||
+        (typeof method === 'string' && method.toLowerCase() !== 'get')
+    ) {
+        return false;
+    }
+
+    try {
+        return (
+            new URL(href, window.location.href).pathname !==
+            window.location.pathname
+        );
+    } catch {
+        return false;
+    }
+}
 
 void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -31,6 +57,13 @@ void createInertiaApp({
                 }
             },
         });
+    },
+    defaults: {
+        visitOptions: (href, options) =>
+            options.viewTransition === undefined &&
+            isPageChange(href, options.method, options.async)
+                ? { viewTransition: true }
+                : {},
     },
     progress: {
         color: 'var(--primary)',
@@ -54,3 +87,6 @@ initializeRealtime();
 
 // Service worker (offline page, updates, install) for signed-in pages...
 initializePwa();
+
+// Pointer-following light of the `spotlight` utility (indicator cards)...
+initializeSpotlight();

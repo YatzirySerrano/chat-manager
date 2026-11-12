@@ -44,7 +44,8 @@ export type HistoryBatchFile = {
     name: string;
     size_bytes: number;
     format: string | null;
-    verified_format: false;
+    /** Read with a format checked against an authentic Whaticket export. */
+    verified_format: boolean;
     headers: string[];
     /** Logical field → column index (null: without column). */
     mapping: Record<string, number | null>;
@@ -189,6 +190,8 @@ export type HistoryFilters = {
     missing_attachments?: boolean;
     group?: boolean;
     has_issues?: boolean;
+    with_phone?: boolean;
+    without_phone?: boolean;
 };
 
 export type HistoryRule = {

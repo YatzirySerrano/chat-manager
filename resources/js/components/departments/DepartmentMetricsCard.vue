@@ -8,7 +8,6 @@ import {
     Users,
 } from '@lucide/vue';
 import StatCard from '@/components/StatCard.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import type { DepartmentMetrics } from '@/types';
 
 /**
@@ -22,14 +21,14 @@ defineProps<{
 </script>
 
 <template>
-    <SurfaceCard
-        title="Métricas operativas"
-        description="Conteos reales de las conversaciones del departamento."
-        body-class="p-5"
-    >
+    <!--
+      The counters sit straight on the canvas, one row on wide screens: a
+      card around six cards only added a frame.
+    -->
+    <section aria-label="Métricas operativas">
         <div
             v-if="metrics.total > 0"
-            class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            class="auto-grid reveal-stagger [--col-min:9.5rem]"
         >
             <StatCard
                 label="Pendientes"
@@ -62,10 +61,13 @@ defineProps<{
             />
             <StatCard label="Miembros" :value="membersCount" :icon="Users" />
         </div>
-        <div v-else class="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div
+            v-else
+            class="flex flex-col gap-4 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center"
+        >
             <div class="flex flex-1 items-start gap-3">
                 <span
-                    class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                    class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-muted-foreground"
                 >
                     <MessagesSquare class="size-4" aria-hidden="true" />
                 </span>
@@ -87,5 +89,5 @@ defineProps<{
                 {{ membersCount === 1 ? 'miembro' : 'miembros' }}
             </p>
         </div>
-    </SurfaceCard>
+    </section>
 </template>

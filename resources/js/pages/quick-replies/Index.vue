@@ -401,9 +401,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
 <template>
     <Head title="Respuestas rápidas" />
 
-    <div
-        class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8"
-    >
+    <div class="page-shell">
         <PageHeader
             help="respuestas-rapidas"
             title="Respuestas rápidas"
@@ -429,7 +427,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             </template>
         </PageHeader>
 
-        <div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div class="split-layout reveal [--aside-w:24rem]">
             <SurfaceCard>
                 <div
                     v-if="segments.length > 1"
@@ -441,7 +439,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                         aria-label="Tipo de respuestas"
                         data-tour="quick-replies.segments"
                         :aria-busy="loadingSegment !== null"
-                        class="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1"
+                        class="inline-flex flex-wrap gap-1 rounded-lg bg-surface-sunken p-1"
                     >
                         <button
                             v-for="segment in segments"
@@ -453,7 +451,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
                             class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-standard outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                             :class="
                                 filterState.segment === segment.value &&
-                                'bg-background text-foreground shadow-xs'
+                                'bg-card text-foreground shadow-(--shadow-control)'
                             "
                             @click="selectSegment(segment.value)"
                         >
@@ -904,7 +902,7 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
 
             <SurfaceCard
                 v-if="can.use"
-                class="overflow-visible"
+                class="overflow-visible xl:sticky xl:top-20"
                 data-tour="quick-replies.sandbox"
                 title="Probar respuesta"
                 description="Escribe «/» como lo harás en el chat para buscar e insertar una respuesta."

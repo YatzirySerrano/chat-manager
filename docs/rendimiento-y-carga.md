@@ -759,3 +759,99 @@ contadores y las no leídas en la misma petición.
   por qué el trabajo liberado no lo reclama en esos casos (no hay doble envío ni desorden; solo latencia).
 - `webhooks:1000` y `agents:10` no empeoraron (procesamiento de webhooks p50/p95 9/12 s → 5/7 s, probablemente ruido
   de la máquina; `message.send` HTTP 44 ms en ambas).
+
+## 14. Tiempo de carga de las páginas y multimedia (2026-11-12)
+
+Medición de por qué «el sitio tarda en cargar» en la máquina de desarrollo con Windows (PHP 8.4.15 de WAMP, servidor
+integrado de PHP, MariaDB 11.4.9) y qué se corrigió. Datos: el conjunto sintético de la sección 3 (10 000
+conversaciones, 72 185 mensajes, 106 usuarios) en una base aparte; sesión del superadministrador. Tiempo hasta el
+primer byte (TTFB) de la página completa, mediana de 5 peticiones seguidas. La máquina estaba compartida con otras
+tareas: las cifras tienen un ruido de ±20 %.
+
+### 14.1 Dónde se iba el tiempo
+
+| Ruta                           | Entorno tal cual (Xdebug `develop`) | Sin Xdebug | Sin Xdebug ni Inertia DevTools | OPcache apagado |
+| ------------------------------ | ----------------------------------: | ---------: | -----------------------------: | --------------: |
+| `/dashboard`                   |                              223 ms |      76 ms |                          60 ms |          339 ms |
+| `/conversations` (bandeja)     |                            2 721 ms |     415 ms |                              — |          694 ms |
+| `/conversations?c=…` (abierta) |                            2 439 ms |     443 ms |                              — |               — |
+| `/attention`                   |                              639 ms |     184 ms |                              — |               — |
+| `/admin/users`                 |                              977 ms |     244 ms |                              — |          520 ms |
+| Resto de listados              |                          145–260 ms |   52–98 ms |                       36–55 ms |               — |
+
+- **Entorno local (la mayor parte):** Xdebug en modo `develop` multiplica por 3–6 cada petición PHP.
+  `php artisan serve` en Windows atiende **una petición a la vez** (`PHP_CLI_SERVER_WORKERS` no existe en Windows), así que la
+  página, sus propiedades diferidas, el resumen de notificaciones y los refrescos periódicos hacen fila. En `local`,
+  Inertia DevTools graba cada petición en `storage/inertia-devtools` (+20 ms por página, +70 ms en la bandeja). Y
+  `npm run dev` sirve cientos de módulos sin empaquetar en cada carga completa.
+- **Aplicación (corregido, 14.2):** la bandeja gastaba ~280 ms de PHP puro (2,5 ms de SQL) en resolver permisos:
+  ~1 670 comprobaciones por petición (unas 65 por conversación listada), cada una recorriendo la colección de permisos
+  del paquete con accesores de Eloquent, más ~425 excepciones `PermissionDoesNotExist` lanzadas y atrapadas porque el
+  `Gate::before` del paquete prueba cada habilidad de política («view», «reply»…) como nombre de permiso. La lista de
+  usuarios resolvía el catálogo completo por cada fila. «Atención» leía la configuración de la plataforma desde la
+  caché (una consulta SQL con `CACHE_STORE=database`) 101 veces por petición.
+
+### 14.2 Cambios
+
+- **Permisos indexados** (`App\Support\Authorization\PermissionMemo`, `User::checkPermissionTo()`): la misma regla
+  del paquete (permiso directo o por rol) respondida desde un índice por nombre. El índice pertenece a la colección
+  que el registrador tiene en memoria y la entrada de cada usuario a sus relaciones `roles` y `permissions` cargadas:
+  cualquier cambio que el paquete ya vería (`forgetCachedPermissions`, `assignRole`, `givePermissionTo`, el refresco
+  antes de cada job) lo invalida. Pruebas: `tests/Feature/Security/PermissionMemoTest.php` (igualdad con el paquete
+  para todos los permisos y roles, y frescura).
+- **Alcance y autoridad raíz** (`User::dataScope()`, `hasRootAuthority()`): se releen de los _casts_ solo cuando
+  cambian los valores guardados del usuario o de su rol (3 150 lecturas por petición de bandeja: 27 ms → 5 ms).
+- **`PlatformSettings` con alcance de petición** (`#[Scoped]`) y resultado memorizado: una lectura de caché por
+  petición o job en lugar de una por valor consultado (Atención: 131 → 27 consultas).
+- **Tiempo real fuera del arranque:** `laravel-echo` y `pusher-js` (60 kB) se cargan con `import()` solo cuando el
+  servidor habilita Reverb, después del primer pintado (`resources/js/lib/realtime/echo.ts`).
+
+| Medida (sin Xdebug)                       |           Antes |         Después |
+| ----------------------------------------- | --------------: | --------------: |
+| `/conversations`, TTFB                    |          415 ms |      190–220 ms |
+| `/conversations?c=…`, TTFB                |          443 ms |      220–250 ms |
+| `/admin/users`, TTFB                      |          244 ms |      130–160 ms |
+| `/attention`, consultas                   |             131 |              27 |
+| Propiedad `conversations` (25 filas), PHP |          283 ms |         ~115 ms |
+| `/conversations` con Xdebug `develop`     |        2 721 ms |          685 ms |
+| JS inicial de toda página (sin comprimir) | 828 kB (242 gz) | 746 kB (219 gz) |
+
+Lo que **no** mejoró: se probó marcar como puras las copias `Object.assign` de los archivos generados por Wayfinder
+para que el empaquetador descartara rutas sin uso (135 kB de definiciones en el _chunk_ de entrada); rolldown conserva
+las asignaciones de propiedades (`ruta.url = …`) y el _chunk_ solo bajó 5 kB, así que se descartó.
+
+### 14.3 Imágenes y video en las conversaciones
+
+- **Miniaturas** (`App\Services\Storage\MediaThumbnails`, `?thumb=1` en la ruta autorizada del adjunto): la burbuja
+  pinta una vista previa de 640 px como máximo (WebP, o JPEG si GD no tiene WebP) en lugar del original, que solo
+  viaja al abrirlo. Se genera la primera vez que se pide y se guarda junto al original en el mismo disco privado
+  (`{ruta}.thumb.webp`); `MediaDisk::discard()` borra ambos. Misma autorización, cabeceras y revalidación
+  (`private, no-cache` + `ETag`) que el original. GIF y stickers no se reducen (perderían la animación); una imagen
+  ilegible, de más de 16 megapíxeles o de más de 25 MB se sirve tal cual. Una foto JPEG de 2400×1600 (calidad 95) pasa
+  a menos de la cuarta parte de su peso (prueba `MediaPreviewTest`).
+- **Sin saltos de diseño:** la primera vez que se genera la miniatura se guardan `width` y `height` del original
+  (migración `2026_11_12_165540_add_dimensions_to_message_attachments_table`); el chat reserva la caja con esas medidas
+  y decodifica fuera del hilo principal (`decoding="async"`, `loading="lazy"`).
+- **Video sin precarga:** antes cada video del historial pedía sus metadatos (`preload="metadata"`); ahora hay un
+  botón de reproducción y el archivo no se descarga hasta pulsarlo. El audio ya usaba `preload="none"`.
+- **Rangos de bytes en discos externos** (`App\Support\Attachments\RangedStream`): un archivo en S3 o compatible
+  responde `206 Partial Content`, así que el video se puede adelantar y se reproduce en Safari; se copia en bloques de
+  64 kB, nunca entero en memoria. Los discos locales y el recurso montado del NAS ya respondían rangos.
+- **No se cambió** la política `private, no-cache`: los adjuntos se revalidan en cada apertura para no sobrevivir a la
+  sesión ni al acceso (prueba `InboxAttachmentTest`); un 304 no reenvía el archivo.
+
+Pendiente: el chat interno (`TeamAttachmentController`) sigue sirviendo el original con `no-store`; el camino de rangos
+se probó con un flujo en memoria, no contra un S3 real; no hay póster de video (requeriría ffmpeg en el servidor).
+
+### 14.4 Recomendaciones de entorno
+
+- **Desarrollo en Windows:** apagar Xdebug cuando no se depura (`xdebug.mode=off` en `php.ini`, o
+  `php -d xdebug.mode=off artisan serve`): 3–6× en cada petición. Añadir `INERTIA_DEVTOOLS_ENABLED=false` al `.env` si
+  no se usa la extensión de DevTools. Para revisar la velocidad real, compilar (`npm run build`) en lugar de
+  `npm run dev`, y servir con Apache de WAMP (varias peticiones a la vez) en lugar de `artisan serve`.
+- **Producción:** PHP-FPM con OPcache (ya en `deploy/php-fpm`; sin OPcache cada petición cuesta ~270 ms más),
+  `php artisan optimize` en el despliegue, `APP_DEBUG=false`, y compresión gzip o brotli de `application/javascript`,
+  `text/css` y `application/json` en nginx (el JS inicial pasa de 746 kB a ~219 kB). Con `CACHE_STORE=database` y
+  `SESSION_DRIVER=database` cada petición hace 3 consultas de infraestructura; Redis las evita.
+- La extensión `gd` es necesaria para las miniaturas (ya es obligatoria); con `exif` se respeta la orientación de las
+  fotos de cámara (sin ella, una foto con datos EXIF se sirve sin reducir).

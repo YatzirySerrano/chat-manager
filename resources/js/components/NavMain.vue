@@ -27,17 +27,23 @@ const { setOpenMobile } = useSidebar();
 </script>
 
 <template>
-    <SidebarGroup class="px-3 py-1.5">
-        <SidebarGroupLabel class="text-xs font-semibold text-muted-foreground">
+    <SidebarGroup class="relative px-3 py-1.5">
+        <SidebarGroupLabel class="text-xs font-semibold text-sidebar-muted">
             {{ label }}
         </SidebarGroupLabel>
         <SidebarMenu class="gap-0.5">
             <SidebarMenuItem v-for="item in items" :key="item.title">
+                <!--
+                  The active background is the sliding highlight of
+                  AppSidebar, so the item itself only changes its text and
+                  icon color. Links prefetch on hover: the page is usually
+                  ready when the click lands.
+                -->
                 <SidebarMenuButton
                     as-child
                     :is-active="isCurrentOrParentUrl(item.href)"
                     :tooltip="item.title"
-                    class="relative h-10 rounded-lg font-medium text-sidebar-foreground transition-colors before:absolute before:inset-y-2 before:left-0 before:w-0.75 before:rounded-full before:bg-primary before:opacity-0 before:transition-opacity hover:bg-sidebar-accent data-[active=true]:bg-primary-soft data-[active=true]:text-primary-soft-foreground data-[active=true]:before:opacity-100 pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-muted-foreground data-[active=true]:[&>svg]:text-primary-soft-foreground"
+                    class="group/nav relative h-10 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-accent-foreground active:bg-sidebar-accent/70 data-[active=true]:bg-transparent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-sidebar-muted [&>svg]:transition-[color,scale,rotate] [&>svg]:duration-(--duration-base) [&>svg]:ease-(--ease-spring) hover:[&>svg]:scale-110 hover:[&>svg]:-rotate-6 hover:[&>svg]:text-sidebar-accent-foreground data-[active=true]:[&>svg]:text-sidebar-primary"
                 >
                     <Link
                         :href="item.href"
@@ -50,7 +56,7 @@ const { setOpenMobile } = useSidebar();
                 </SidebarMenuButton>
                 <SidebarMenuBadge
                     v-if="item.badge"
-                    class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
+                    class="rounded-full bg-sidebar-primary px-1.5 text-xs font-semibold text-sidebar-primary-foreground peer-hover/menu-button:text-sidebar-primary-foreground peer-data-[active=true]/menu-button:text-sidebar-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
                     :aria-label="`${item.badge} sin leer`"
                 >
                     {{ item.badge > 99 ? '99+' : item.badge }}

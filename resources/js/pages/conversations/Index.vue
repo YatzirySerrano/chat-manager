@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
-import { MessagesSquare, SearchX } from '@lucide/vue';
+import { Hourglass, Inbox, MailWarning, SearchX } from '@lucide/vue';
 import { useMediaQuery } from '@vueuse/core';
 import {
     computed,
@@ -12,6 +12,7 @@ import {
 } from 'vue';
 import { toast } from 'vue-sonner';
 import { ACCEPT_BLOCK } from '@/components/conversations/acceptBlock';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import ConversationPreview from '@/components/conversations/ConversationPreview.vue';
@@ -28,7 +29,7 @@ import {
     reportMessageStatus,
     withReportedStatus,
 } from '@/components/conversations/useInboxMessageStatus';
-import EmptyState from '@/components/EmptyState.vue';
+import { NumberTicker } from '@/components/ui/number-ticker';
 import AliasDialog from '@/components/personalization/AliasDialog.vue';
 import {
     Sheet,
@@ -751,8 +752,8 @@ function onAliasSaved(): void {
         :data-pane="showChat && !wide ? 'chat' : 'list'"
         :class="
             showDetailsColumn
-                ? 'lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]'
-                : 'lg:grid-cols-[22rem_minmax(0,1fr)]'
+                ? 'lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_21rem] 2xl:grid-cols-[25rem_minmax(0,1fr)_24rem] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)_26rem]'
+                : 'lg:grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[25rem_minmax(0,1fr)] min-[120rem]:grid-cols-[27rem_minmax(0,1fr)]'
         "
     >
         <div v-show="showList" class="min-h-0 border-r">
@@ -813,24 +814,109 @@ function onAliasSaved(): void {
                 @read="onRead"
                 @toggle-details="toggleDetails"
             />
+            <!--
+                Nothing open: the pane states it at its top-left corner and
+                offers the three counters of the inbox as shortcuts.
+            -->
             <div
                 v-else
-                class="flex h-full items-center justify-center bg-muted/30 p-6"
+                class="h-full overflow-y-auto p-6 sm:p-10"
+                :class="CHAT_CANVAS"
+                data-empty-chat
             >
-                <EmptyState
-                    class="max-w-md border-none bg-transparent"
-                    :icon="selectionMissing ? SearchX : MessagesSquare"
-                    :title="
-                        selectionMissing
-                            ? 'La conversación no está disponible'
-                            : 'Elige una conversación'
-                    "
-                    :description="
-                        selectionMissing
-                            ? 'No existe o ya no tienes acceso (por ejemplo, otra persona la aceptó o se transfirió).'
-                            : 'Selecciona una conversación de la lista para ver sus mensajes y atender al cliente.'
-                    "
-                />
+                <div class="grid reveal gap-2">
+                    <span
+                        class="mb-2 grid size-12 place-items-center rounded-xl border bg-card text-primary"
+                        aria-hidden="true"
+                    >
+                        <SearchX v-if="selectionMissing" class="size-6" />
+                        <Inbox v-else class="size-6" />
+                    </span>
+                    <h2
+                        class="font-display text-3xl font-semibold text-balance"
+                    >
+                        {{
+                            selectionMissing
+                                ? 'La conversación no está disponible'
+                                : 'Elige una conversación'
+                        }}
+                    </h2>
+                    <p
+                        class="max-w-prose text-base text-pretty text-muted-foreground"
+                    >
+                        {{
+                            selectionMissing
+                                ? 'No existe o ya no tienes acceso (por ejemplo, otra persona la aceptó o se transfirió).'
+                                : 'Selecciona una conversación de la lista para ver sus mensajes y atender al cliente.'
+                        }}
+                    </p>
+                </div>
+
+                <div
+                    class="mt-8 grid reveal-stagger grid-cols-[repeat(auto-fill,minmax(13rem,17rem))] gap-3"
+                >
+                    <button
+                        type="button"
+                        class="spotlight grid interactive-surface gap-1 rounded-xl border bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                        data-empty-chat-shortcut="pending"
+                        @click="inboxList?.showPending()"
+                    >
+                        <span
+                            class="flex items-center gap-1.5 text-sm text-muted-foreground"
+                        >
+                            <Hourglass
+                                class="size-4 text-warning"
+                                aria-hidden="true"
+                            />
+                            Pendientes
+                        </span>
+                        <NumberTicker
+                            :value="counts.pending"
+                            class="font-display text-4xl font-semibold tabular-nums"
+                        />
+                        <span class="text-xs text-muted-foreground"
+                            >Esperan que alguien las acepte</span
+                        >
+                    </button>
+                    <button
+                        type="button"
+                        class="spotlight grid interactive-surface gap-1 rounded-xl border bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                        data-empty-chat-shortcut="unread"
+                        @click="inboxList?.showUnread()"
+                    >
+                        <span
+                            class="flex items-center gap-1.5 text-sm text-muted-foreground"
+                        >
+                            <MailWarning
+                                class="size-4 text-primary"
+                                aria-hidden="true"
+                            />
+                            No leídas
+                        </span>
+                        <NumberTicker
+                            :value="unreadCount"
+                            class="font-display text-4xl font-semibold tabular-nums"
+                        />
+                        <span class="text-xs text-muted-foreground"
+                            >Con mensajes del cliente sin leer</span
+                        >
+                    </button>
+                    <div class="grid gap-1 rounded-xl border bg-card p-4">
+                        <span
+                            class="flex items-center gap-1.5 text-sm text-muted-foreground"
+                        >
+                            <Inbox class="size-4" aria-hidden="true" />
+                            Activas en tu bandeja
+                        </span>
+                        <NumberTicker
+                            :value="counts.general"
+                            class="font-display text-4xl font-semibold tabular-nums"
+                        />
+                        <span class="text-xs text-muted-foreground"
+                            >Pendientes y en atención</span
+                        >
+                    </div>
+                </div>
             </div>
         </main>
 

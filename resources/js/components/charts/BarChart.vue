@@ -260,7 +260,7 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                 <li
                     v-for="(item, itemIndex) in items"
                     :key="item.key"
-                    class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md px-1.5 py-1 sm:grid-cols-[minmax(6rem,32%)_1fr] sm:items-center"
+                    class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md px-1.5 py-1 transition-colors duration-(--duration-fast) sm:grid-cols-[minmax(6rem,32%)_1fr] sm:items-center"
                     :class="active === itemIndex && 'bg-muted/60'"
                     :data-unit="itemIndex"
                     :data-bar-row="item.key"
@@ -296,8 +296,9 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                         >
                             <span
                                 v-if="(item.values[seriesIndex] ?? 0) > 0"
-                                class="h-3 shrink-0 rounded-r-[4px]"
+                                class="bar-grow h-3 shrink-0 rounded-r-[4px]"
                                 :style="{
+                                    '--i': Math.min(itemIndex, 10),
                                     width: `calc((100% - 4.5rem) * ${ratio(item.values[seriesIndex] ?? 0)})`,
                                     minWidth: '2px',
                                     backgroundColor: seriesColor(
@@ -326,7 +327,8 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                 >
                     <p v-if="item.label" class="text-sm">{{ item.label }}</p>
                     <div
-                        class="flex h-4 w-full gap-0.5 overflow-hidden rounded-[4px]"
+                        class="bar-grow flex h-4 w-full gap-0.5 overflow-hidden rounded-[4px]"
+                        :style="{ '--i': Math.min(itemIndex, 10) }"
                     >
                         <template
                             v-for="(seriesItem, seriesIndex) in series"
@@ -378,3 +380,18 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
         <p class="sr-only" aria-live="polite">{{ announcement }}</p>
     </div>
 </template>
+
+<style scoped>
+/* Bars grow from the axis once, on mount; the reduced-motion rule of app.css skips it. */
+.bar-grow {
+    transform-origin: left center;
+    animation: bar-grow var(--duration-panel) var(--ease-out-quint) backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+@keyframes bar-grow {
+    from {
+        transform: scaleX(0);
+    }
+}
+</style>

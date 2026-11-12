@@ -18,7 +18,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Spinner } from '@/components/ui/spinner';
 import type { RoleChangeImpact } from '@/types';
 
 /**
@@ -256,12 +255,10 @@ function groupByModule<T extends { group: string }>(
                     Revisar de nuevo
                 </Button>
                 <Button
-                    :disabled="
-                        processing || !impact || impact.blockers.length > 0
-                    "
+                    :disabled="!impact || impact.blockers.length > 0"
+                    :loading="processing"
                     @click="emit('confirm')"
                 >
-                    <Spinner v-if="processing" />
                     Confirmar cambio de rol
                 </Button>
             </DialogFooter>

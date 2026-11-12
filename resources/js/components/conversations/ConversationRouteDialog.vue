@@ -4,6 +4,7 @@ import { TriangleAlert } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -193,8 +194,31 @@ const hasBlockedAgents = computed(
         ),
 );
 
-const selectClass =
-    'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-10 md:text-sm dark:bg-input/30';
+const departmentSelectOptions = computed(() => [
+    ...(props.conversation.department
+        ? []
+        : [{ value: '', label: 'Sin departamento' }]),
+    ...(props.options?.departments ?? []).map((department) => ({
+        value: String(department.id),
+        label: `${department.name}${department.id === props.conversation.department?.id ? ' (actual)' : ''}`,
+    })),
+]);
+
+const agentSelectOptions = computed(() => [
+    {
+        value: NO_AGENT,
+        label: isTransfer.value
+            ? 'Sin agente: queda en «Pendientes» del departamento'
+            : 'Elige un agente',
+    },
+    ...agents.value.map((agent) => ({
+        value: String(agent.id),
+        label: agentLabel(agent),
+        disabled:
+            isCurrentResponsible(agent) ||
+            (isException(agent) && !allowsExceptions.value),
+    })),
+]);
 
 const isTransfer = computed(() => props.mode === 'transfer');
 
@@ -285,28 +309,11 @@ function agentLabel(agent: TransferAgentOption): string {
                             howTo: 'Deja el departamento actual para cambiar solo de agente.',
                         }"
                     >
-                        <select
+                        <AppSelect
                             id="transfer-department"
                             v-model="departmentId"
-                            :class="selectClass"
-                        >
-                            <option v-if="!conversation.department" value="">
-                                Sin departamento
-                            </option>
-                            <option
-                                v-for="department in options?.departments ?? []"
-                                :key="department.id"
-                                :value="String(department.id)"
-                            >
-                                {{ department.name
-                                }}{{
-                                    department.id ===
-                                    conversation.department?.id
-                                        ? ' (actual)'
-                                        : ''
-                                }}
-                            </option>
-                        </select>
+                            :options="departmentSelectOptions"
+                        />
                     </FormField>
 
                     <FormField
@@ -328,30 +335,11 @@ function agentLabel(agent: TransferAgentOption): string {
                                   : undefined
                         "
                     >
-                        <select
+                        <AppSelect
                             id="route-agent"
                             v-model="userId"
-                            :class="selectClass"
-                        >
-                            <option :value="NO_AGENT">
-                                {{
-                                    isTransfer
-                                        ? 'Sin agente: queda en «Pendientes» del departamento'
-                                        : 'Elige un agente'
-                                }}
-                            </option>
-                            <option
-                                v-for="agent in agents"
-                                :key="agent.id"
-                                :value="String(agent.id)"
-                                :disabled="
-                                    isCurrentResponsible(agent) ||
-                                    (isException(agent) && !allowsExceptions)
-                                "
-                            >
-                                {{ agentLabel(agent) }}
-                            </option>
-                        </select>
+                            :options="agentSelectOptions"
+                        />
                     </FormField>
 
                     <div
@@ -466,8 +454,11 @@ function agentLabel(agent: TransferAgentOption): string {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="!canSubmit">
-                        <Spinner v-if="processing" />
+                    <Button
+                        type="submit"
+                        :disabled="!canSubmit"
+                        :loading="processing"
+                    >
                         {{ isTransfer ? 'Transferir' : 'Asignar' }}
                     </Button>
                 </DialogFooter>

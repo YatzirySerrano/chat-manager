@@ -47,6 +47,7 @@ enum AuditAction: string
     case ConnectionCredentialsFailed = 'connection.credentials_failed';
     case ConnectionSubscriptionChecked = 'connection.subscription_checked';
     case ConnectionAppSubscribed = 'connection.app_subscribed';
+    case ConnectionNumberRegistered = 'connection.number_registered';
     case TemplatesSynchronized = 'templates.synchronized';
     case ContactCreated = 'contact.created';
     case ContactUpdated = 'contact.updated';
@@ -170,6 +171,7 @@ enum AuditAction: string
             self::ConnectionCredentialsFailed => 'Falló la verificación de credenciales',
             self::ConnectionSubscriptionChecked => 'Se revisó si Meta envía los mensajes de esta conexión',
             self::ConnectionAppSubscribed => 'Se activó la recepción de mensajes de WhatsApp desde Meta',
+            self::ConnectionNumberRegistered => 'Número de WhatsApp registrado en la API de Meta',
             self::TemplatesSynchronized => 'Plantillas de WhatsApp actualizadas desde Meta',
             self::ContactCreated => 'Contacto creado',
             self::ContactUpdated => 'Contacto actualizado',
@@ -280,7 +282,7 @@ enum AuditAction: string
             self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
-            self::ConnectionCredentialsVerified, self::ContactCreated, self::ContactRestored, self::TagCreated,
+            self::ConnectionCredentialsVerified, self::ConnectionNumberRegistered, self::ContactCreated, self::ContactRestored, self::TagCreated,
             self::QuickReplyCreated, self::UserRestored,
             self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,

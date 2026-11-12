@@ -304,6 +304,11 @@ export type MessageAttachment = {
     error_code?: string | null;
     url: string;
     download_url: string;
+    /** Small preview of an image for the bubble; null when the file is its own preview. */
+    thumb_url?: string | null;
+    /** Pixels of an image once measured (reserves its box before it loads). */
+    width?: number | null;
+    height?: number | null;
     /** 'link': the customer received a secure download link instead of the file. */
     delivery_method?: 'native' | 'link';
     /** Until when the customer's download link works (link delivery only). */

@@ -44,3 +44,6 @@ yarn-error.log
 /boost.json
 /opencode.json
 /opencode.jsonc
+
+# Exportaciones reales de Whaticket: contienen datos personales de clientes.
+/docs/export

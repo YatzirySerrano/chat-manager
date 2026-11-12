@@ -1,5 +1,5 @@
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
+import type Echo from 'laravel-echo';
+import type Pusher from 'pusher-js';
 import type { ChannelAuthorizationCallback } from 'pusher-js';
 import { readonly, ref } from 'vue';
 import type {
@@ -414,10 +414,63 @@ export function configureRealtime(
         return;
     }
 
+    state.value = 'connecting';
+
+    void loadLibraries().then(
+        ([EchoClient, PusherClient]) => {
+            // Signed out or reconfigured while the libraries were loading.
+            if (currentKey === key) {
+                connect(config, EchoClient, PusherClient);
+            }
+        },
+        () => {
+            // The chunk could not be fetched (offline, a deploy in between):
+            // pages keep their periodic refresh and the next visit retries.
+            if (currentKey === key) {
+                currentKey = null;
+                state.value = 'unavailable';
+            }
+        },
+    );
+}
+
+type RealtimeLibraries = [typeof Echo, typeof Pusher];
+
+let libraries: Promise<RealtimeLibraries> | null = null;
+
+/**
+ * laravel-echo and pusher-js (about 60 kB) are only fetched when the server
+ * enables real time, and off the critical path of the first paint: nothing
+ * on screen waits for the socket.
+ */
+function loadLibraries(): Promise<RealtimeLibraries> {
+    libraries ??= Promise.all([
+        import('laravel-echo'),
+        import('pusher-js'),
+    ]).then(
+        ([echoModule, pusherModule]): RealtimeLibraries => [
+            echoModule.default,
+            pusherModule.default,
+        ],
+        (error: unknown) => {
+            libraries = null;
+
+            throw error;
+        },
+    );
+
+    return libraries;
+}
+
+function connect(
+    config: RealtimeConfig,
+    EchoClient: typeof Echo,
+    PusherClient: typeof Pusher,
+): void {
     const secure = config.scheme === 'https';
     const port = config.port ?? (secure ? 443 : 80);
 
-    client = new Pusher(config.key!, {
+    client = new PusherClient(config.key!, {
         cluster: '',
         wsHost: config.host ?? window.location.hostname,
         wsPort: port,
@@ -428,8 +481,6 @@ export function configureRealtime(
         disableStats: true,
         channelAuthorization: { customHandler: authorize },
     });
-
-    state.value = 'connecting';
 
     client.connection.bind(
         'state_change',
@@ -452,7 +503,7 @@ export function configureRealtime(
         },
     );
 
-    echo = new Echo({
+    echo = new EchoClient({
         broadcaster: 'reverb',
         key: config.key!,
         client,

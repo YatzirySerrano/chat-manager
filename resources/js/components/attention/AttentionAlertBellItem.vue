@@ -3,7 +3,6 @@ import { ListChecks } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { ALERT_SURFACE, PRIORITY_LOOK } from '@/components/attention/priority';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { MyAttentionAlert } from '@/types';
@@ -130,8 +129,8 @@ const bodyId = computed(() => `attention-bell-body-${props.alert.id}`);
                 :disabled="acknowledging || busy"
                 data-bell-attention-acknowledge
                 @click="emit('acknowledge')"
+                :loading="acknowledging"
             >
-                <Spinner v-if="acknowledging" />
                 Entendido
             </Button>
         </footer>

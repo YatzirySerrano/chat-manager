@@ -17,7 +17,6 @@ import StatCard from '@/components/StatCard.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/format';
 import { index as historyIndex } from '@/routes/admin/history';
 import { index as conversationsIndex } from '@/routes/conversations';
@@ -100,7 +99,7 @@ async function resume(): Promise<void> {
                 aria-valuemax="100"
             >
                 <div
-                    class="h-full rounded-full bg-primary transition-[width] duration-500 motion-reduce:transition-none"
+                    class="import-bar h-full rounded-full bg-primary transition-[width] duration-(--duration-panel) ease-(--ease-standard)"
                     :style="{ width: `${percent}%` }"
                 />
             </div>
@@ -128,9 +127,13 @@ async function resume(): Promise<void> {
             {{ batch.error ?? 'Ocurrió un problema mientras se importaba.' }}
             Lo que ya se importó no se repetirá al continuar.
             <template v-if="canExecute" #actions>
-                <Button size="sm" :disabled="resuming" @click="resume">
-                    <Spinner v-if="resuming" />
-                    <RotateCw v-else />
+                <Button
+                    size="sm"
+                    :disabled="resuming"
+                    @click="resume"
+                    :loading="resuming"
+                >
+                    <RotateCw v-if="!resuming" />
                     Continuar importación
                 </Button>
             </template>
@@ -176,9 +179,9 @@ async function resume(): Promise<void> {
                         :disabled="resuming"
                         data-retry-failed
                         @click="resume"
+                        :loading="resuming"
                     >
-                        <Spinner v-if="resuming" />
-                        <RotateCw v-else />
+                        <RotateCw v-if="!resuming" />
                         Reintentar fallidas ({{ formatNumber(retryable) }})
                     </Button>
                 </template>
@@ -321,3 +324,34 @@ async function resume(): Promise<void> {
         </div>
     </div>
 </template>
+
+<style scoped>
+/* A light sweeps the bar while the import runs (a loading indicator). */
+.import-bar {
+    position: relative;
+    overflow: hidden;
+}
+
+.import-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in oklch, var(--primary-foreground) 35%, transparent),
+        transparent
+    );
+    animation: import-bar 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes import-bar {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(100%);
+    }
+}
+</style>

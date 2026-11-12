@@ -17,7 +17,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import {
     conversationConflictFromErrors,
@@ -195,8 +194,11 @@ function submit(): void {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="processing">
-                        <Spinner v-if="processing" />
+                    <Button
+                        type="submit"
+                        :disabled="processing"
+                        :loading="processing"
+                    >
                         Aceptar con excepción
                     </Button>
                 </DialogFooter>

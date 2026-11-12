@@ -4,6 +4,10 @@ import type { ConnectionHealthDescriptor, ConnectionTone } from '@/types';
 /**
  * Derived health of a connection. The label comes from the backend
  * (ConnectionHealth), so the interface never invents a state.
+ *
+ * A healthy connection breathes: its dot sends a slow, soft ring, the only
+ * looping motion of the screen (off with reduced motion). Every other tone
+ * stays still, so a problem never competes with it for attention.
  */
 defineProps<{
     health: ConnectionHealthDescriptor;
@@ -19,7 +23,7 @@ const toneClasses: Record<ConnectionTone, { badge: string; dot: string }> = {
         dot: 'bg-primary',
     },
     warning: {
-        badge: 'bg-warning/15 text-amber-700 dark:text-amber-300',
+        badge: 'bg-warning-soft text-warning-soft-foreground',
         dot: 'bg-warning',
     },
     danger: {
@@ -39,11 +43,16 @@ const toneClasses: Record<ConnectionTone, { badge: string; dot: string }> = {
         :class="toneClasses[health.tone].badge"
         :title="health.description"
     >
-        <span
-            class="size-1.5 rounded-full"
-            :class="toneClasses[health.tone].dot"
-            aria-hidden="true"
-        />
+        <span class="relative flex size-1.5 shrink-0" aria-hidden="true">
+            <span
+                v-if="health.tone === 'success'"
+                class="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60 [animation-duration:2.4s]"
+            />
+            <span
+                class="relative inline-flex size-1.5 rounded-full"
+                :class="toneClasses[health.tone].dot"
+            />
+        </span>
         {{ health.label }}
     </span>
 </template>

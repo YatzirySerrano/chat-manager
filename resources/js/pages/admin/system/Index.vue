@@ -27,7 +27,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -235,26 +234,28 @@ function age(seconds: number | null): string {
                 <Button
                     variant="outline"
                     size="sm"
-                    :disabled="refreshing"
+                    :loading="refreshing"
                     data-tour="system.refresh"
                     @click="refreshAll"
                 >
-                    <Spinner v-if="refreshing" />
-                    <RefreshCw v-else />
+                    <RefreshCw />
                     Actualizar
                 </Button>
             </template>
         </PageHeader>
 
         <SurfaceCard
+            class="reveal"
             body-class="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:gap-4"
             data-tour="system.overall"
         >
-            <HealthStatusBadge :status="overall" />
-            <p class="text-sm">{{ overallCopy }}</p>
+            <HealthStatusBadge :status="overall" pulse />
+            <p class="font-display text-base font-semibold">
+                {{ overallCopy }}
+            </p>
         </SurfaceCard>
 
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="auto-grid reveal-stagger [--col-min:14rem]">
             <StatCard
                 label="Tareas pendientes"
                 :value="queuesAsync ? totalPending : null"
@@ -294,11 +295,11 @@ function age(seconds: number | null): string {
             title="Verificaciones"
             description="Una falla marca la plataforma como «no lista» ante el monitoreo externo; las advertencias solo se muestran aquí."
         >
-            <ul class="divide-y">
+            <ul class="grid gap-px bg-border min-[110rem]:grid-cols-2">
                 <li
                     v-for="check in checks"
                     :key="check.key"
-                    class="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-start sm:gap-4"
+                    class="row-accent flex flex-col gap-1 bg-card px-5 py-3 transition-colors hover:bg-[color-mix(in_oklch,var(--card)_60%,var(--accent))] sm:flex-row sm:items-start sm:gap-4"
                 >
                     <div class="flex w-56 shrink-0 items-center gap-2">
                         <HealthStatusBadge :status="check.status" />
@@ -363,10 +364,10 @@ function age(seconds: number | null): string {
                             age(queue.oldest_pending_age)
                         }}</TableCell>
                         <TableCell>
-                            <div class="flex flex-col gap-1">
+                            <div class="flex flex-col items-start gap-1">
                                 <HealthStatusBadge :status="queue.status" />
                                 <span
-                                    class="max-w-xs text-xs text-muted-foreground"
+                                    class="max-w-md text-xs whitespace-normal text-muted-foreground"
                                     >{{ queue.summary }}</span
                                 >
                             </div>
@@ -578,10 +579,9 @@ function age(seconds: number | null): string {
                                 v-if="connection.can_verify"
                                 variant="outline"
                                 size="sm"
-                                :disabled="verifyingId === connection.id"
+                                :loading="verifyingId === connection.id"
                                 @click="probeConnection(connection.id)"
                             >
-                                <Spinner v-if="verifyingId === connection.id" />
                                 Probar
                             </Button>
                         </TableCell>
@@ -654,7 +654,7 @@ function age(seconds: number | null): string {
                             v-if="
                                 environment.whatsapp_transport === 'simulated'
                             "
-                            class="block text-xs text-amber-700 dark:text-amber-300"
+                            class="block text-xs text-warning-soft-foreground"
                             >Modo de prueba: los mensajes no salen a
                             WhatsApp</span
                         >

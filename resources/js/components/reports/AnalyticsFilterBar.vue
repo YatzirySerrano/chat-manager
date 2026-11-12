@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive, watch } from 'vue';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { computed, reactive, watch } from 'vue';
+import { AppSelect } from '@/components/ui/app-select';
+import type { AppSelectOption } from '@/components/ui/app-select';
+import { DateRangePicker } from '@/components/ui/date-picker';
 import { zoneLabel } from '@/composables/useChartTheme';
 import type {
     AnalyticsOptions,
@@ -52,9 +53,6 @@ watch(
         state.channel = query.channel ?? '';
     },
 );
-
-const selectClass =
-    'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30';
 
 function build(): AnalyticsQuery {
     const query: AnalyticsQuery = {};
@@ -110,200 +108,149 @@ function changePeriod(): void {
     }
 }
 
-const rangeInvalid = () =>
-    state.from === '' || state.to === '' || state.to < state.from;
+/** A custom range is applied as soon as both of its dates are chosen. */
+function applyRange(): void {
+    if (state.from !== '' && state.to !== '' && state.to >= state.from) {
+        apply();
+    }
+}
+
+type DimensionKey =
+    | 'department'
+    | 'agent'
+    | 'connection'
+    | 'channel'
+    | 'category'
+    | 'status';
+
+type Dimension = {
+    key: DimensionKey;
+    label: string;
+    options: AppSelectOption<string | number>[];
+};
+
+function withAll(
+    all: string,
+    items: { id: string | number; name: string }[] | undefined,
+): AppSelectOption<string | number>[] {
+    return [
+        { value: '', label: all },
+        ...(items ?? []).map((item) => ({ value: item.id, label: item.name })),
+    ];
+}
+
+/** The dimension filters the viewer can use (an empty list hides one). */
+const dimensions = computed<Dimension[]>(() => {
+    const { options } = props;
+    const list: (Dimension & { show: boolean })[] = [
+        {
+            key: 'department',
+            label: 'Departamento',
+            options: withAll('Todos los que puedes ver', options.departments),
+            show: options.departments.length > 0,
+        },
+        {
+            key: 'agent',
+            label: 'Agente responsable',
+            options: withAll('Todos', options.agents),
+            show: options.agents.length > 0,
+        },
+        {
+            key: 'connection',
+            label: 'Conexión',
+            options: withAll('Todas', options.connections),
+            show: options.connections.length > 1,
+        },
+        {
+            key: 'channel',
+            label: 'Canal',
+            options: withAll('Todos', options.channels),
+            show: (options.channels?.length ?? 0) > 1,
+        },
+        {
+            key: 'category',
+            label: 'Categoría',
+            options: withAll('Todas', options.categories),
+            show: (options.categories?.length ?? 0) > 0,
+        },
+        {
+            key: 'status',
+            label: 'Estado actual',
+            options: withAll('Todos', options.statuses),
+            show: (options.statuses?.length ?? 0) > 0,
+        },
+    ];
+
+    return list.filter((dimension) => dimension.show);
+});
+
+const periodOptions = computed(() =>
+    props.presets.map((preset) => ({
+        value: preset.value,
+        label: preset.label,
+    })),
+);
 </script>
 
 <template>
-    <div class="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-card">
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label class="space-y-1 text-xs font-medium text-muted-foreground">
-                <span>Periodo</span>
-                <select
+    <!--
+      Full-width filter bar: every filter is a column of the same grid, so
+      the bar fills the workspace on wide screens and stacks on phones.
+    -->
+    <div class="flex flex-col gap-3 rounded-xl border bg-card p-4">
+        <div class="auto-grid [--col-min:13rem]">
+            <div class="grid gap-1.5">
+                <span class="text-xs font-medium text-muted-foreground"
+                    >Periodo</span
+                >
+                <AppSelect
                     v-model="state.period"
-                    :class="selectClass"
-                    class="text-foreground"
+                    :options="periodOptions"
+                    aria-label="Periodo"
+                    data-filter="period"
                     @change="changePeriod"
+                />
+            </div>
+            <div v-if="state.period === 'custom'" class="grid gap-1.5">
+                <span class="text-xs font-medium text-muted-foreground"
+                    >Rango de fechas<template v-if="maxDays">
+                        (hasta {{ maxDays }} días)</template
+                    ></span
                 >
-                    <option
-                        v-for="preset in presets"
-                        :key="preset.value"
-                        :value="preset.value"
-                    >
-                        {{ preset.label }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="options.departments.length > 0"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
+                <DateRangePicker
+                    v-model:from="state.from"
+                    v-model:to="state.to"
+                    required
+                    aria-label="Rango de fechas"
+                    @change="applyRange"
+                />
+            </div>
+            <div
+                v-for="dimension in dimensions"
+                :key="dimension.key"
+                class="grid gap-1.5"
             >
-                <span>Departamento</span>
-                <select
-                    v-model="state.department"
-                    :class="selectClass"
-                    class="text-foreground"
+                <span class="text-xs font-medium text-muted-foreground">{{
+                    dimension.label
+                }}</span>
+                <AppSelect
+                    v-model="state[dimension.key]"
+                    :options="dimension.options"
+                    :aria-label="dimension.label"
+                    :data-filter="dimension.key"
                     @change="apply"
-                >
-                    <option value="">Todos los que puedes ver</option>
-                    <option
-                        v-for="department in options.departments"
-                        :key="department.id"
-                        :value="department.id"
-                    >
-                        {{ department.name }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="options.agents.length > 0"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
-            >
-                <span>Agente responsable</span>
-                <select
-                    v-model="state.agent"
-                    :class="selectClass"
-                    class="text-foreground"
-                    @change="apply"
-                >
-                    <option value="">Todos</option>
-                    <option
-                        v-for="agent in options.agents"
-                        :key="agent.id"
-                        :value="agent.id"
-                    >
-                        {{ agent.name }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="options.connections.length > 1"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
-            >
-                <span>Conexión</span>
-                <select
-                    v-model="state.connection"
-                    :class="selectClass"
-                    class="text-foreground"
-                    @change="apply"
-                >
-                    <option value="">Todas</option>
-                    <option
-                        v-for="connection in options.connections"
-                        :key="connection.id"
-                        :value="connection.id"
-                    >
-                        {{ connection.name }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="(options.channels?.length ?? 0) > 1"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
-            >
-                <span>Canal</span>
-                <select
-                    v-model="state.channel"
-                    :class="selectClass"
-                    class="text-foreground"
-                    data-filter="channel"
-                    @change="apply"
-                >
-                    <option value="">Todos</option>
-                    <option
-                        v-for="channel in options.channels"
-                        :key="channel.id"
-                        :value="channel.id"
-                    >
-                        {{ channel.name }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="(options.categories?.length ?? 0) > 0"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
-            >
-                <span>Categoría</span>
-                <select
-                    v-model="state.category"
-                    :class="selectClass"
-                    class="text-foreground"
-                    data-filter="category"
-                    @change="apply"
-                >
-                    <option value="">Todas</option>
-                    <option
-                        v-for="category in options.categories"
-                        :key="category.id"
-                        :value="category.id"
-                    >
-                        {{ category.name }}
-                    </option>
-                </select>
-            </label>
-            <label
-                v-if="(options.statuses?.length ?? 0) > 0"
-                class="space-y-1 text-xs font-medium text-muted-foreground"
-            >
-                <span>Estado actual</span>
-                <select
-                    v-model="state.status"
-                    :class="selectClass"
-                    class="text-foreground"
-                    data-filter="status"
-                    @change="apply"
-                >
-                    <option value="">Todos</option>
-                    <option
-                        v-for="status in options.statuses"
-                        :key="status.id"
-                        :value="status.id"
-                    >
-                        {{ status.name }}
-                    </option>
-                </select>
-            </label>
+                />
+            </div>
         </div>
 
-        <form
-            v-if="state.period === 'custom'"
-            class="flex flex-col gap-3 sm:flex-row sm:items-end"
-            @submit.prevent="apply"
-        >
-            <label class="space-y-1 text-xs font-medium text-muted-foreground">
-                <span>Desde</span>
-                <Input
-                    v-model="state.from"
-                    type="date"
-                    :max="state.to"
-                    required
-                />
-            </label>
-            <label class="space-y-1 text-xs font-medium text-muted-foreground">
-                <span>Hasta</span>
-                <Input
-                    v-model="state.to"
-                    type="date"
-                    :min="state.from"
-                    required
-                />
-            </label>
-            <Button type="submit" :disabled="rangeInvalid()"
-                >Aplicar rango</Button
-            >
-            <p v-if="maxDays" class="text-xs text-muted-foreground sm:pb-2">
-                Hasta {{ maxDays }} días.
-            </p>
-        </form>
-
         <p class="text-xs text-muted-foreground">
-            {{ period.label }} · comparado con
+            {{ period.label }}, comparado con
             <template v-if="period.comparison.partial"
                 >el mismo tramo transcurrido del periodo anterior ({{
                     period.comparison.label
                 }})</template
-            ><template v-else>{{ period.comparison.label }}</template> ·
-            {{ zoneLabel(period.timezone) }}
+            ><template v-else>{{ period.comparison.label }}</template
+            >, {{ zoneLabel(period.timezone) }}
         </p>
     </div>
 </template>

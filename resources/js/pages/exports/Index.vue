@@ -138,17 +138,17 @@ function detail(transfer: DataTransfer): string {
 
         <template v-if="transfers.data.length > 0">
             <div
-                class="hidden overflow-hidden rounded-xl border bg-card shadow-card md:block"
+                class="hidden reveal overflow-hidden rounded-xl border bg-card md:block"
                 data-tour="exports.list"
             >
                 <Table>
                     <TableHeader>
                         <TableRow class="hover:bg-transparent">
-                            <TableHead>Reporte</TableHead>
+                            <TableHead class="pl-5">Reporte</TableHead>
                             <TableHead>Estado</TableHead>
                             <TableHead class="text-right">Registros</TableHead>
                             <TableHead>Solicitado</TableHead>
-                            <TableHead class="text-right">
+                            <TableHead class="pr-5 text-right">
                                 <span class="sr-only">Acciones</span>
                             </TableHead>
                         </TableRow>
@@ -158,7 +158,7 @@ function detail(transfer: DataTransfer): string {
                             v-for="transfer in transfers.data"
                             :key="transfer.id"
                         >
-                            <TableCell class="max-w-md">
+                            <TableCell class="w-full max-w-0 pl-5">
                                 <div class="flex items-start gap-3">
                                     <span
                                         class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
@@ -220,8 +220,21 @@ function detail(transfer: DataTransfer): string {
                                         />
                                         {{ transfer.status.label }}
                                     </span>
+                                    <div
+                                        v-if="
+                                            transfer.status.value ===
+                                                'processing' ||
+                                            transfer.status.value === 'queued'
+                                        "
+                                        class="h-1 w-40 overflow-hidden rounded-full bg-muted"
+                                        aria-hidden="true"
+                                    >
+                                        <div
+                                            class="export-progress h-full w-2/5 rounded-full bg-primary"
+                                        />
+                                    </div>
                                     <p
-                                        class="max-w-64 text-xs text-muted-foreground"
+                                        class="w-64 text-xs text-pretty whitespace-normal text-muted-foreground"
                                     >
                                         {{ detail(transfer) }}
                                     </p>
@@ -238,7 +251,7 @@ function detail(transfer: DataTransfer): string {
                             >
                                 {{ formatRelative(transfer.created_at) }}
                             </TableCell>
-                            <TableCell class="text-right">
+                            <TableCell class="pr-5 text-right">
                                 <Button
                                     v-if="transfer.download_url"
                                     size="sm"
@@ -260,7 +273,7 @@ function detail(transfer: DataTransfer): string {
                 <li
                     v-for="transfer in transfers.data"
                     :key="transfer.id"
-                    class="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-card"
+                    class="flex flex-col gap-3 rounded-xl border bg-card p-4"
                 >
                     <div class="flex items-start gap-3">
                         <span
@@ -320,3 +333,20 @@ function detail(transfer: DataTransfer): string {
         <DataPagination :meta="transfers.meta" noun="archivos" />
     </div>
 </template>
+
+<style scoped>
+/* Indeterminate bar of a file that is being prepared (a loading indicator). */
+.export-progress {
+    animation: export-progress 1.4s var(--ease-standard) infinite;
+}
+
+@keyframes export-progress {
+    from {
+        transform: translateX(-110%);
+    }
+
+    to {
+        transform: translateX(260%);
+    }
+}
+</style>

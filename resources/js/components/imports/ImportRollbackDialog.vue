@@ -5,6 +5,7 @@ import { ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -14,7 +15,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { show as contactShow } from '@/routes/contacts';
 import { rollback as rollbackImport } from '@/routes/contacts/import';
 import type { ImportRollbackPreview } from '@/types';
@@ -205,11 +205,14 @@ function submit(): void {
                     No hay registros pendientes de revertir.
                 </p>
 
-                <label class="flex items-start gap-2">
-                    <input
+                <label
+                    for="rollback-confirmation"
+                    class="flex cursor-pointer items-start gap-3 rounded-lg border bg-surface-sunken/60 p-3"
+                >
+                    <Checkbox
+                        id="rollback-confirmation"
                         v-model="form.confirmation"
-                        type="checkbox"
-                        class="mt-0.5 accent-primary"
+                        class="mt-0.5"
                     />
                     <span>
                         Revisé la vista previa. Entiendo que los contactos
@@ -235,13 +238,12 @@ function submit(): void {
                         !preview ||
                         loading ||
                         !form.confirmation ||
-                        form.processing ||
                         preview.summary.records === 0
                     "
+                    :loading="form.processing"
                     @click="submit"
                 >
-                    <Spinner v-if="form.processing" />
-                    <RotateCcw v-else />
+                    <RotateCcw v-if="!form.processing" />
                     Revertir importación
                 </Button>
             </DialogFooter>

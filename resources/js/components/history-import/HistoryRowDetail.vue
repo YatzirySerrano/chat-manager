@@ -15,7 +15,6 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatFileSize } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import {
@@ -412,9 +411,9 @@ function displayPhone(phone: string | null): string | null {
                             class="pointer-coarse:h-10"
                             :disabled="saving || !dirty"
                             @click="save"
+                            :loading="saving"
                         >
-                            <Spinner v-if="saving" />
-                            <Save v-else />
+                            <Save v-if="!saving" />
                             Guardar cambios
                         </Button>
                     </div>

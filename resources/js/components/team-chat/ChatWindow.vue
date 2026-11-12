@@ -28,7 +28,6 @@ import MessageBubble from '@/components/team-chat/MessageBubble.vue';
 import MessageComposer from '@/components/team-chat/MessageComposer.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { useChannel } from '@/composables/useChannel';
 import { useTeamPresence } from '@/composables/useTeamPresence';
 import {
@@ -36,6 +35,7 @@ import {
     CUSTOM_CHAT_COLORS,
     chatColorVariables,
 } from '@/lib/chatAppearance';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import { onReconnect, realtimeState } from '@/lib/realtime';
 import { formatDate } from '@/lib/format';
 import { index as teamChatIndex } from '@/routes/team-chat';
@@ -695,7 +695,7 @@ onBeforeUnmount(() => {
         :aria-label="`Chat: ${thread.title}`"
     >
         <header
-            class="flex shrink-0 items-center gap-2 border-b px-2 py-2 sm:px-4"
+            class="flex shrink-0 items-center gap-2 border-b bg-background px-2 py-2 sm:gap-3 sm:px-5 sm:py-2.5"
         >
             <Button
                 variant="ghost"
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
             />
             <div class="min-w-0 flex-1">
                 <h2
-                    class="flex items-center gap-1.5 truncate text-sm font-semibold"
+                    class="flex items-center gap-1.5 truncate font-display text-lg leading-snug font-semibold"
                 >
                     <span class="truncate">{{ thread.title }}</span>
                     <BellOff
@@ -773,7 +773,7 @@ onBeforeUnmount(() => {
             <div
                 ref="scroller"
                 class="h-full overflow-y-auto overscroll-contain py-3"
-                :class="customColors && CUSTOM_BUBBLE_CLASSES.chat"
+                :class="customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS"
                 :style="chatStyle"
                 :data-custom-colors="customColors || undefined"
                 role="log"
@@ -784,13 +784,13 @@ onBeforeUnmount(() => {
             >
                 <div v-if="hasMoreBefore" class="flex justify-center py-2">
                     <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        :class="customColors && 'bg-background'"
+                        class="rounded-full"
                         :disabled="loadingOlder"
                         @click="loadOlder"
+                        :loading="loadingOlder"
                     >
-                        <Spinner v-if="loadingOlder" />
                         Cargar mensajes anteriores
                     </Button>
                 </div>
@@ -809,8 +809,7 @@ onBeforeUnmount(() => {
 
                 <p
                     v-if="messages.length === 0"
-                    class="mx-auto mt-10 max-w-xs px-4 text-center text-sm text-muted-foreground"
-                    :class="customColors && 'rounded-lg bg-background py-2'"
+                    class="mx-4 mt-6 w-fit max-w-prose rounded-xl border bg-card px-4 py-3 text-sm text-pretty text-muted-foreground sm:mx-6"
                 >
                     Aún no hay mensajes. Escribe el primero: solo
                     {{
@@ -830,7 +829,7 @@ onBeforeUnmount(() => {
                         class="flex justify-center py-2"
                     >
                         <span
-                            class="rounded-full border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                            class="rounded-full border bg-background/85 px-3 py-0.5 text-xs font-medium text-muted-foreground backdrop-blur-sm"
                         >
                             {{ dayOf(message) }}
                         </span>
@@ -857,13 +856,13 @@ onBeforeUnmount(() => {
 
                 <div v-if="hasMoreAfter" class="flex justify-center py-2">
                     <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        :class="customColors && 'bg-background'"
+                        class="rounded-full"
                         :disabled="loadingNewer"
                         @click="loadNewer"
+                        :loading="loadingNewer"
                     >
-                        <Spinner v-if="loadingNewer" />
                         Cargar mensajes más recientes
                     </Button>
                 </div>
@@ -873,7 +872,7 @@ onBeforeUnmount(() => {
                 v-if="!atBottom"
                 size="sm"
                 variant="secondary"
-                class="absolute right-4 bottom-3 rounded-full shadow-md"
+                class="absolute right-4 bottom-3 pop rounded-full shadow-elevated"
                 :aria-label="
                     newBelow > 0
                         ? `${newBelow} mensajes nuevos, ir al final`
@@ -900,10 +899,19 @@ onBeforeUnmount(() => {
 
         <p
             v-if="typingLabel && thread.can.post"
-            class="shrink-0 truncate px-4 pt-1 text-xs text-muted-foreground italic"
+            class="flex shrink-0 items-center gap-2 bg-background px-4 pt-1.5 text-xs text-muted-foreground sm:px-5"
             aria-live="polite"
+            data-typing
         >
-            {{ typingLabel }}
+            <span class="flex items-center gap-0.5" aria-hidden="true">
+                <span
+                    v-for="dot in 3"
+                    :key="dot"
+                    class="size-1.5 animate-bounce rounded-full bg-primary/70"
+                    :style="{ animationDelay: `${(dot - 1) * 120}ms` }"
+                />
+            </span>
+            <span class="truncate">{{ typingLabel }}</span>
         </p>
         <MessageComposer
             v-if="thread.can.post"
@@ -917,7 +925,7 @@ onBeforeUnmount(() => {
         />
         <p
             v-else
-            class="shrink-0 border-t bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground"
+            class="shrink-0 border-t bg-surface-sunken px-4 py-3 text-sm text-muted-foreground sm:px-5"
         >
             {{
                 thread.post_blocked_reason ??

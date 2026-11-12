@@ -315,7 +315,7 @@ function phoneLabel(connection: Connection): string {
 
         <div
             v-if="stats.total > 0"
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            class="auto-grid reveal-stagger [--col-min:14rem]"
             data-tour="connections.stats"
         >
             <StatCard

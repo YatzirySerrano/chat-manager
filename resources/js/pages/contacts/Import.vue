@@ -19,9 +19,14 @@ import ImportRollbackDialog from '@/components/imports/ImportRollbackDialog.vue'
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatCard from '@/components/StatCard.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
+import { FileDropzone } from '@/components/ui/file-dropzone';
+import { RadioCards } from '@/components/ui/radio-cards';
+import { Segmented } from '@/components/ui/segmented';
 import {
     Select,
     SelectContent,
@@ -111,11 +116,36 @@ const upload = useForm<{ file: File | null; source: string }>({
     source: props.sources[0]?.value ?? 'generic',
 });
 
-function pickFile(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    upload.file = input.files?.[0] ?? null;
-    upload.clearErrors();
-}
+const sourceCards = computed(() =>
+    props.sources.map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description,
+    })),
+);
+
+const selectedSource = computed(() => sourceOption(upload.source));
+
+const decisionCards = computed(() =>
+    (props.mapping?.decisions ?? []).map((option) => ({
+        value: option.value,
+        label: option.label,
+        description:
+            option.value === 'skip'
+                ? 'Recomendado. La fila se registra como omitida en el reporte.'
+                : 'Solo agrega datos que falten (teléfono, correo, etiquetas o una nota). Nunca reemplaza datos existentes.',
+    })),
+);
+
+const limitFacts = computed(() => [
+    { label: 'Formatos', value: '.xlsx y .csv' },
+    { label: 'Tamaño máximo', value: `${props.limits.max_megabytes} MB` },
+    {
+        label: 'Filas',
+        value: props.limits.max_rows.toLocaleString('es-MX'),
+    },
+    { label: 'Columnas', value: String(props.limits.max_columns) },
+]);
 
 function submitUpload(): void {
     upload.post(storeImport.url(), { forceFormData: true });
@@ -249,6 +279,18 @@ function cancelImport(): void {
 }
 
 const previewTab = ref<'issues' | 'rows'>('issues');
+const previewTabs: { value: 'issues' | 'rows'; label: string }[] = [
+    { value: 'issues', label: 'Con observaciones' },
+    { value: 'rows', label: 'Primeras filas' },
+];
+
+const headerOptions = computed(() => [
+    { value: NONE, label: 'No importar' },
+    ...(props.mapping?.headers ?? []).map((header, index) => ({
+        value: String(index),
+        label: header,
+    })),
+]);
 
 const previewRows = computed<ContactImportPreviewRow[]>(() =>
     previewTab.value === 'issues'
@@ -388,162 +430,212 @@ const progress = computed(() => {
             </template>
         </PageHeader>
 
+        <!--
+          The three steps are a real sequence: a rail that fills up to the
+          current one, so the progress reads at a glance.
+        -->
         <ol
-            class="grid grid-cols-3 gap-2 text-sm"
+            class="grid grid-cols-3 gap-x-3 text-sm"
             aria-label="Pasos de la importación"
         >
             <li
                 v-for="(item, index) in steps"
                 :key="item.key"
                 :aria-current="index === currentStep ? 'step' : undefined"
-                :class="
-                    cn(
-                        'flex items-center gap-2 rounded-lg border px-3 py-2 max-sm:flex-col max-sm:gap-1 max-sm:px-2 max-sm:text-center',
-                        index === currentStep &&
-                            'border-primary bg-primary-soft text-primary-soft-foreground',
-                        index !== currentStep && 'text-muted-foreground',
-                    )
-                "
+                class="flex min-w-0 flex-col gap-2.5"
             >
                 <span
-                    :class="
-                        cn(
-                            'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums',
-                            index === currentStep &&
-                                'border-primary bg-primary text-primary-foreground',
-                            index < currentStep &&
-                                'border-success bg-success-soft text-success-soft-foreground',
-                        )
-                    "
+                    class="h-1 overflow-hidden rounded-full bg-surface-sunken"
+                    aria-hidden="true"
                 >
-                    <Check v-if="index < currentStep" class="size-3.5" />
-                    <template v-else>{{ index + 1 }}</template>
+                    <span
+                        :class="
+                            cn(
+                                'block h-full origin-left rounded-full bg-primary transition-transform duration-(--duration-panel) ease-(--ease-out-quint)',
+                                index <= currentStep
+                                    ? 'scale-x-100'
+                                    : 'scale-x-0',
+                            )
+                        "
+                    />
                 </span>
-                <span class="leading-tight font-medium sm:truncate">{{
-                    item.label
-                }}</span>
+                <span class="flex min-w-0 items-center gap-2.5">
+                    <span
+                        :class="
+                            cn(
+                                'grid size-7 shrink-0 place-items-center rounded-md border font-display text-sm font-semibold tabular-nums transition-colors duration-(--duration-base)',
+                                index === currentStep &&
+                                    'border-primary bg-primary text-primary-foreground',
+                                index < currentStep &&
+                                    'border-transparent bg-success-soft text-success-soft-foreground',
+                                index > currentStep &&
+                                    'bg-card text-muted-foreground',
+                            )
+                        "
+                    >
+                        <Check v-if="index < currentStep" class="size-4" />
+                        <template v-else>{{ index + 1 }}</template>
+                    </span>
+                    <span
+                        :class="
+                            cn(
+                                'min-w-0 leading-tight font-medium max-sm:text-xs sm:truncate',
+                                index === currentStep
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground',
+                            )
+                        "
+                        >{{ item.label }}</span
+                    >
+                </span>
             </li>
         </ol>
 
         <!-- Step 1 -->
         <template v-if="step === 'upload'">
-            <SurfaceCard
-                title="Sube tu archivo"
-                description="Usa la primera hoja con los encabezados en la primera fila."
-                body-class="p-5"
-            >
-                <form
-                    class="flex flex-col gap-4"
-                    @submit.prevent="submitUpload"
+            <div class="split-layout reveal [--aside-w:24rem]">
+                <SurfaceCard
+                    title="Sube tu archivo"
+                    description="Usa la primera hoja con los encabezados en la primera fila."
+                    body-class="p-5"
                 >
-                    <fieldset class="flex flex-col gap-2">
-                        <legend class="mb-1 text-sm font-medium">
-                            ¿De dónde viene el archivo?
-                        </legend>
-                        <div class="grid gap-2 md:grid-cols-2">
-                            <label
-                                v-for="option in sources"
-                                :key="option.value"
-                                :class="
-                                    cn(
-                                        'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors',
-                                        upload.source === option.value
-                                            ? 'border-primary bg-primary-soft/60'
-                                            : 'hover:bg-muted/40',
-                                    )
-                                "
-                            >
-                                <input
-                                    v-model="upload.source"
-                                    type="radio"
-                                    name="source"
-                                    :value="option.value"
-                                    class="mt-0.5 accent-primary"
-                                />
-                                <span class="flex flex-col gap-1">
-                                    <span
-                                        class="flex flex-wrap items-center gap-2 font-medium"
-                                    >
-                                        {{ option.label }}
-                                        <span
-                                            v-if="!option.validated"
-                                            class="inline-flex rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground"
-                                        >
-                                            Pendiente de validación
-                                        </span>
-                                    </span>
-                                    <span class="text-xs text-muted-foreground">
-                                        {{ option.description }}
-                                    </span>
-                                    <span
-                                        v-if="option.validation_note"
-                                        class="text-xs text-warning"
-                                    >
-                                        {{ option.validation_note }}
-                                    </span>
-                                </span>
-                            </label>
-                        </div>
-                        <InputError :message="upload.errors.source" />
-                    </fieldset>
-
-                    <label
-                        for="import-file"
-                        class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors focus-within:border-primary hover:border-primary hover:bg-muted/40"
+                    <form
+                        class="flex flex-col gap-5"
+                        @submit.prevent="submitUpload"
                     >
-                        <span
-                            class="flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
-                        >
-                            <FileSpreadsheet
-                                class="size-6"
-                                aria-hidden="true"
+                        <div class="flex flex-col gap-2">
+                            <p class="text-sm font-medium">
+                                ¿De dónde viene el archivo?
+                            </p>
+                            <RadioCards
+                                v-model="upload.source"
+                                :options="sourceCards"
+                                name="source"
+                                aria-label="¿De dónde viene el archivo?"
+                                :invalid="!!upload.errors.source"
+                                class="[--col-min:18rem]"
                             />
-                        </span>
-                        <span class="text-sm font-medium">
-                            {{
-                                upload.file
-                                    ? upload.file.name
-                                    : 'Selecciona un archivo .xlsx o .csv'
-                            }}
-                        </span>
-                        <span class="text-xs text-muted-foreground">
-                            Máximo {{ limits.max_megabytes }} MB,
-                            {{ limits.max_rows.toLocaleString('es-MX') }} filas
-                            y {{ limits.max_columns }} columnas. Los libros con
-                            macros no se aceptan y las fórmulas se importan como
-                            texto.
-                        </span>
-                        <input
-                            id="import-file"
-                            type="file"
-                            accept=".xlsx,.csv"
-                            class="sr-only"
-                            @change="pickFile"
-                        />
-                    </label>
-                    <InputError :message="upload.errors.file" />
+                            <StatusNote
+                                v-if="
+                                    selectedSource && !selectedSource.validated
+                                "
+                                tone="warning"
+                                title="Pendiente de validación"
+                            >
+                                {{
+                                    selectedSource.validation_note ??
+                                    'Revisa con cuidado la relación de columnas en el siguiente paso.'
+                                }}
+                            </StatusNote>
+                            <InputError :message="upload.errors.source" />
+                        </div>
 
-                    <div class="flex flex-wrap items-center justify-end gap-2">
-                        <span
-                            v-if="upload.progress"
-                            class="text-xs text-muted-foreground tabular-nums"
+                        <FileDropzone
+                            id="import-file"
+                            v-model="upload.file"
+                            accept=".xlsx,.csv"
+                            :max-size-mb="limits.max_megabytes"
+                            title="Arrastra aquí tu archivo .xlsx o .csv, o elígelo"
+                            :hint="`Hasta ${limits.max_megabytes} MB. Solo se lee la primera hoja.`"
+                            :invalid="!!upload.errors.file"
+                            @change="upload.clearErrors()"
+                        />
+                        <InputError :message="upload.errors.file" />
+
+                        <div
+                            class="flex flex-wrap items-center justify-end gap-3"
                         >
-                            Subiendo {{ upload.progress.percentage }} %
-                        </span>
-                        <Button
-                            type="submit"
-                            class="pointer-coarse:h-10"
-                            :disabled="
-                                upload.file === null || upload.processing
-                            "
-                        >
-                            <Spinner v-if="upload.processing" />
-                            <Upload v-else />
-                            Subir y revisar
-                        </Button>
+                            <div
+                                v-if="upload.progress"
+                                class="flex min-w-40 flex-1 items-center gap-3"
+                            >
+                                <span
+                                    class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-sunken"
+                                    aria-hidden="true"
+                                >
+                                    <span
+                                        class="block h-full rounded-full bg-primary transition-[width] duration-(--duration-base)"
+                                        :style="{
+                                            width: `${upload.progress.percentage ?? 0}%`,
+                                        }"
+                                    />
+                                </span>
+                                <span
+                                    class="text-xs text-muted-foreground tabular-nums"
+                                >
+                                    Subiendo {{ upload.progress.percentage }} %
+                                </span>
+                            </div>
+                            <Button
+                                type="submit"
+                                class="pointer-coarse:h-10"
+                                :disabled="upload.file === null"
+                                :loading="upload.processing"
+                            >
+                                <Upload v-if="!upload.processing" />
+                                Subir y revisar
+                            </Button>
+                        </div>
+                    </form>
+                </SurfaceCard>
+
+                <aside class="flex flex-col gap-4">
+                    <SurfaceCard
+                        title="Qué acepta el importador"
+                        body-class="p-0"
+                    >
+                        <dl class="divide-y text-sm">
+                            <div
+                                v-for="item in limitFacts"
+                                :key="item.label"
+                                class="flex items-baseline justify-between gap-4 px-5 py-3"
+                            >
+                                <dt class="text-muted-foreground">
+                                    {{ item.label }}
+                                </dt>
+                                <dd
+                                    class="font-display text-base font-semibold tabular-nums"
+                                >
+                                    {{ item.value }}
+                                </dd>
+                            </div>
+                        </dl>
+                        <template #footer>
+                            <p
+                                class="text-xs text-pretty text-muted-foreground"
+                            >
+                                Los libros con macros no se aceptan y las
+                                fórmulas se importan como texto.
+                            </p>
+                        </template>
+                    </SurfaceCard>
+                    <div
+                        class="flex items-start gap-3 rounded-xl border border-dashed p-4 text-sm"
+                    >
+                        <FileSpreadsheet
+                            class="mt-0.5 size-5 shrink-0 text-primary"
+                            aria-hidden="true"
+                        />
+                        <div class="min-w-0 space-y-1.5">
+                            <p class="font-medium">¿Empiezas desde cero?</p>
+                            <p
+                                class="text-xs text-pretty text-muted-foreground"
+                            >
+                                La plantilla trae los encabezados que el
+                                importador reconoce sin relacionar nada a mano.
+                            </p>
+                            <a
+                                :href="importTemplate.url()"
+                                download
+                                class="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                                <Download class="size-4" aria-hidden="true" />
+                                Descargar plantilla
+                            </a>
+                        </div>
                     </div>
-                </form>
-            </SurfaceCard>
+                </aside>
+            </div>
 
             <SurfaceCard
                 title="Historial de lotes"
@@ -640,7 +732,7 @@ const progress = computed(() => {
                 body-class="flex flex-col gap-3 p-5"
             >
                 <div
-                    class="grid gap-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center"
+                    class="grid gap-1.5 sm:grid-cols-[9rem_minmax(0,26rem)] sm:items-center"
                 >
                     <label for="import-source" class="text-sm font-medium">
                         Origen
@@ -698,16 +790,18 @@ const progress = computed(() => {
                 </p>
             </SurfaceCard>
 
-            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div
+                class="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]"
+            >
                 <SurfaceCard
                     title="Columnas del archivo"
-                    :description="`${transfer.file ?? 'Archivo'} · ${transfer.rows_total ?? 0} filas`"
-                    body-class="flex flex-col gap-3 p-5"
+                    :description="`${transfer.file ?? 'Archivo'}, ${(transfer.rows_total ?? 0).toLocaleString('es-MX')} filas`"
+                    body-class="field-grid p-5 [--col-min:15rem]"
                 >
                     <div
                         v-for="field in mapping.fields"
                         :key="field.value"
-                        class="grid gap-1.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center"
+                        class="grid gap-1.5"
                     >
                         <label
                             :for="`map-${field.value}`"
@@ -715,28 +809,16 @@ const progress = computed(() => {
                         >
                             {{ field.label }}
                         </label>
-                        <Select v-model="configuration.mapping[field.value]">
-                            <SelectTrigger
-                                :id="`map-${field.value}`"
-                                class="w-full"
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="NONE"
-                                    >No importar</SelectItem
-                                >
-                                <SelectItem
-                                    v-for="(header, index) in mapping.headers"
-                                    :key="index"
-                                    :value="String(index)"
-                                >
-                                    {{ header }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <AppSelect
+                            :id="`map-${field.value}`"
+                            v-model="configuration.mapping[field.value]"
+                            :options="headerOptions"
+                        />
                     </div>
-                    <InputError :message="configuration.errors.mapping" />
+                    <InputError
+                        class="col-span-full"
+                        :message="configuration.errors.mapping"
+                    />
                 </SurfaceCard>
 
                 <SurfaceCard
@@ -744,50 +826,23 @@ const progress = computed(() => {
                     description="Se reconocen por el mismo teléfono (aunque esté escrito distinto) o el mismo correo."
                     body-class="flex flex-col gap-3 p-5"
                 >
-                    <label
-                        v-for="option in mapping.decisions"
-                        :key="option.value"
-                        :class="
-                            cn(
-                                'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors',
-                                configuration.decision === option.value
-                                    ? 'border-primary bg-primary-soft/60'
-                                    : 'hover:bg-muted/40',
-                            )
-                        "
-                    >
-                        <input
-                            v-model="configuration.decision"
-                            type="radio"
-                            name="decision"
-                            :value="option.value"
-                            class="mt-0.5 accent-primary"
-                        />
-                        <span>
-                            <span class="block font-medium">{{
-                                option.label
-                            }}</span>
-                            <span class="block text-xs text-muted-foreground">
-                                {{
-                                    option.value === 'skip'
-                                        ? 'Recomendado. La fila se registra como omitida en el reporte.'
-                                        : 'Solo agrega datos que falten (teléfono, correo, etiquetas o una nota). Nunca reemplaza datos existentes.'
-                                }}
-                            </span>
-                        </span>
-                    </label>
+                    <RadioCards
+                        v-model="configuration.decision"
+                        :options="decisionCards"
+                        name="decision"
+                        aria-label="Qué hacer con los contactos que ya existen"
+                        :invalid="!!configuration.errors.decision"
+                        class="grid-cols-1"
+                    />
                     <InputError :message="configuration.errors.decision" />
 
                     <div class="mt-auto flex flex-wrap justify-end gap-2 pt-2">
                         <Button
                             variant="outline"
-                            :disabled="
-                                !configuration.isDirty ||
-                                configuration.processing
-                            "
+                            :disabled="!configuration.isDirty"
+                            :loading="configuration.processing"
                             @click="saveConfiguration()"
                         >
-                            <Spinner v-if="configuration.processing" />
                             Actualizar vista previa
                         </Button>
                     </div>
@@ -806,7 +861,7 @@ const progress = computed(() => {
 
             <div
                 v-if="preview"
-                class="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-6"
+                class="auto-grid reveal-stagger [--col-min:11rem]"
             >
                 <StatCard label="Filas" :value="preview.summary.total" />
                 <StatCard label="Nuevos" :value="preview.summary.new" />
@@ -827,32 +882,12 @@ const progress = computed(() => {
 
             <SurfaceCard v-if="preview" title="Vista previa">
                 <template #actions>
-                    <div
-                        class="inline-flex rounded-lg border p-0.5 text-sm"
-                        role="tablist"
-                    >
-                        <button
-                            v-for="tab in [
-                                { key: 'issues', label: 'Con observaciones' },
-                                { key: 'rows', label: 'Primeras filas' },
-                            ] as const"
-                            :key="tab.key"
-                            type="button"
-                            role="tab"
-                            :aria-selected="previewTab === tab.key"
-                            :class="
-                                cn(
-                                    'rounded-md px-3 py-1 transition-colors',
-                                    previewTab === tab.key
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'text-muted-foreground hover:text-foreground',
-                                )
-                            "
-                            @click="previewTab = tab.key"
-                        >
-                            {{ tab.label }}
-                        </button>
-                    </div>
+                    <Segmented
+                        v-model="previewTab"
+                        :options="previewTabs"
+                        size="sm"
+                        aria-label="Filas de la vista previa"
+                    />
                 </template>
 
                 <EmptyState
@@ -1001,15 +1036,11 @@ const progress = computed(() => {
                 </Button>
                 <div class="flex flex-col gap-1 sm:items-end">
                     <Button
-                        :disabled="
-                            !canConfirm ||
-                            confirming ||
-                            configuration.processing
-                        "
+                        :disabled="!canConfirm || configuration.processing"
+                        :loading="confirming"
                         @click="confirm"
                     >
-                        <Spinner v-if="confirming" />
-                        <Upload v-else />
+                        <Upload v-if="!confirming" />
                         Importar {{ preview?.summary.valid ?? 0 }} filas válidas
                     </Button>
                     <span class="text-xs text-muted-foreground">
@@ -1077,9 +1108,7 @@ const progress = computed(() => {
                 </Alert>
 
                 <template v-if="transfer.summary">
-                    <div
-                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                    >
+                    <div class="auto-grid reveal-stagger [--col-min:12rem]">
                         <StatCard
                             label="Creados"
                             :value="transfer.summary.created"
@@ -1157,9 +1186,7 @@ const progress = computed(() => {
                             )
                         }}
                     </p>
-                    <div
-                        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                    >
+                    <div class="auto-grid [--col-min:12rem]">
                         <StatCard
                             label="Contactos eliminados"
                             :value="transfer.rollback.summary.contacts_archived"

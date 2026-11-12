@@ -17,6 +17,10 @@ export default defineConfig({
             ],
             refresh: true,
             fonts: [
+                bunny('Bricolage Grotesque', {
+                    weights: [500, 600, 700],
+                    optimizedFallbacks: false,
+                }),
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
                     // Metric-matched fallbacks need the optional "fontaine"

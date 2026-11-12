@@ -27,6 +27,7 @@ import ExportMenu from '@/components/ExportMenu.vue';
 import AliasDialog from '@/components/personalization/AliasDialog.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
@@ -71,12 +72,25 @@ const categoryOptions = computed(() => {
 });
 const savingCategory = ref(false);
 
-function changeCategory(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
+const categorySelectOptions = computed(() => [
+    { value: null, label: 'Sin categoría' },
+    ...categoryOptions.value.map((category) => ({
+        value: category.id,
+        label: `${category.name}${category.is_active === false ? ' (eliminada)' : ''}`,
+        disabled: category.is_active === false,
+    })),
+]);
+
+function changeCategory(selected: number | null | undefined): void {
+    const value = selected ?? null;
+
+    if (value === (props.conversation.category?.id ?? null)) {
+        return;
+    }
 
     router.put(
         updateCategory.url(props.conversation.id),
-        { category_id: value === '' ? null : Number(value) },
+        { category_id: value },
         {
             preserveScroll: true,
             preserveState: true,
@@ -156,7 +170,7 @@ function safeUrl(url: string | null): string | null {
         <header
             class="flex items-center justify-between gap-2 border-b px-4 py-3"
         >
-            <h2 class="text-sm font-semibold">Detalles</h2>
+            <h2 class="font-display text-lg font-semibold">Detalles</h2>
             <Button
                 variant="ghost"
                 size="icon-sm"
@@ -179,7 +193,7 @@ function safeUrl(url: string | null): string | null {
                     </span>
                     <div class="min-w-0">
                         <p
-                            class="truncate font-semibold"
+                            class="truncate font-display text-base font-semibold"
                             :title="details.contact.display_name"
                         >
                             {{ details.contact.display_name }}
@@ -411,29 +425,14 @@ function safeUrl(url: string | null): string | null {
                         class="text-xs text-muted-foreground"
                         >Categoría de la solicitud</label
                     >
-                    <select
+                    <AppSelect
                         v-if="conversation.can.categorize"
                         id="conversation-category"
-                        class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 pointer-coarse:h-11"
-                        :value="conversation.category?.id ?? ''"
+                        :model-value="conversation.category?.id ?? null"
+                        :options="categorySelectOptions"
                         :disabled="savingCategory"
-                        @change="changeCategory"
-                    >
-                        <option value="">Sin categoría</option>
-                        <option
-                            v-for="category in categoryOptions"
-                            :key="category.id"
-                            :value="category.id"
-                            :disabled="category.is_active === false"
-                        >
-                            {{ category.name
-                            }}{{
-                                category.is_active === false
-                                    ? ' (eliminada)'
-                                    : ''
-                            }}
-                        </option>
-                    </select>
+                        @update:model-value="changeCategory"
+                    />
                     <p v-else id="conversation-category">
                         <CategoryBadge
                             v-if="conversation.category"

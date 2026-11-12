@@ -45,7 +45,7 @@ async function copySnippet(): Promise<void> {
             </Button>
         </div>
         <pre
-            class="max-h-48 overflow-auto rounded-lg border bg-muted/50 p-3 text-xs leading-relaxed"
+            class="max-h-48 overflow-auto rounded-lg border bg-surface-sunken p-3 text-xs leading-relaxed"
         ><code class="font-mono break-all whitespace-pre-wrap" data-testid="web-chat-snippet">{{ snippet }}</code></pre>
         <p
             v-if="!configured"

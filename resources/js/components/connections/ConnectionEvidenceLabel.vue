@@ -95,7 +95,7 @@ const warnings = computed(() => props.monitoring.warnings.length);
         </span>
         <span
             v-if="withWarnings && warnings > 0"
-            class="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"
+            class="inline-flex items-center gap-1 text-warning-soft-foreground"
             data-connection-warning-count
             :title="
                 monitoring.warnings.map((warning) => warning.message).join(' ')

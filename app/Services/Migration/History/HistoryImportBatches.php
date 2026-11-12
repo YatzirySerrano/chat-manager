@@ -641,7 +641,7 @@ class HistoryImportBatches
                 'name' => $file->original_name,
                 'size_bytes' => $file->size_bytes,
                 'format' => $file->format_version,
-                'verified_format' => false,
+                'verified_format' => $file->format_version === HistoryFileIngestor::FORMAT_MESSAGES_VERIFIED,
                 'headers' => $file->headers ?? [],
                 'mapping' => $file->column_mapping ?? (object) [],
                 'fields' => $file->kind === HistoryImportFileKind::Contacts

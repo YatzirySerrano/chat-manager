@@ -15,6 +15,7 @@ import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
     Dialog,
     DialogContent,
@@ -247,14 +248,16 @@ function departmentsLabel(token: ApiTokenSummary): string {
                 <li
                     v-for="token in tokens.data"
                     :key="token.id"
-                    class="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
+                    class="row-accent grid gap-3 p-4 transition-colors hover:bg-accent/40 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:p-5"
                     :class="
                         token.status !== 'active' && 'text-muted-foreground'
                     "
                 >
                     <div class="grid min-w-0 gap-2">
                         <div class="flex flex-wrap items-center gap-2">
-                            <h2 class="font-medium wrap-anywhere">
+                            <h2
+                                class="font-display text-base font-semibold wrap-anywhere"
+                            >
                                 {{ token.name }}
                             </h2>
                             <span
@@ -265,7 +268,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                             </span>
                         </div>
                         <code
-                            class="w-fit max-w-full rounded bg-muted px-1.5 py-0.5 font-mono text-xs wrap-anywhere"
+                            class="w-fit max-w-full rounded-md border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs wrap-anywhere"
                             >{{ token.prefix }}_…</code
                         >
                         <div class="flex flex-wrap gap-1.5">
@@ -278,7 +281,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                             </span>
                         </div>
                         <dl
-                            class="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2"
+                            class="auto-grid text-xs text-muted-foreground [--col-min:15rem] [--grid-gap:0.25rem_1.5rem]"
                         >
                             <div class="min-w-0">
                                 <dt class="inline font-medium">Conexiones:</dt>
@@ -347,7 +350,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                             </div>
                             <div
                                 v-if="token.status === 'revoked'"
-                                class="min-w-0 sm:col-span-2"
+                                class="col-span-full min-w-0"
                             >
                                 <dt class="inline font-medium">Revocada:</dt>
                                 {{ ' ' }}
@@ -553,13 +556,14 @@ function departmentsLabel(token: ApiTokenSummary): string {
                     :error="form.errors.expires_at"
                     :hint="`Como máximo ${expiry.max_days} días a partir de hoy.`"
                 >
-                    <Input
+                    <DatePicker
                         id="token-expires"
                         v-model="form.expires_at"
-                        type="date"
                         :min="expiry.min"
                         :max="expiry.max"
-                        class="sm:w-48"
+                        required
+                        :invalid="Boolean(form.errors.expires_at)"
+                        class="sm:w-56"
                     />
                 </FormField>
             </div>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ThemePalette;
 use App\Models\Setting;
+use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 
@@ -23,9 +24,19 @@ use Illuminate\Support\Facades\Cache;
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  * }
  */
+#[Scoped]
 class PlatformSettings
 {
     public const CACHE_KEY = 'platform-settings';
+
+    /**
+     * The merged configuration, read once per request or queued job (the
+     * class is scoped): pages and jobs ask for single values many times, and
+     * with the database cache store each read was a query.
+     *
+     * @var SettingsShape|null
+     */
+    private ?array $resolved = null;
 
     /**
      * Ordered list of weekdays used for business hours.
@@ -41,6 +52,10 @@ class PlatformSettings
      */
     public function all(): array
     {
+        if ($this->resolved !== null) {
+            return $this->resolved;
+        }
+
         /** @var array<string, mixed> $stored */
         $stored = Cache::rememberForever(self::CACHE_KEY, fn (): array => Setting::query()
             ->pluck('value', 'key')
@@ -55,7 +70,7 @@ class PlatformSettings
         }
 
         /** @var SettingsShape $settings */
-        return $settings;
+        return $this->resolved = $settings;
     }
 
     /**
@@ -107,6 +122,7 @@ class PlatformSettings
 
         if ($changes !== []) {
             Cache::forget(self::CACHE_KEY);
+            $this->resolved = null;
 
             // The service rules memoize the platform values they resolved.
             if (app()->resolved(ServiceRules::class)) {

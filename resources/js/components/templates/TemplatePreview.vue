@@ -51,7 +51,7 @@ const mediaIcon = computed(() =>
 
 <template>
     <div
-        class="max-w-sm rounded-xl rounded-tl-sm border bg-card p-3 text-sm shadow-card"
+        class="max-w-sm rounded-xl rounded-tl-sm border bg-card p-3 text-sm shadow-(--shadow-control)"
     >
         <div
             v-if="header && header.format !== 'TEXT'"

@@ -26,9 +26,22 @@ use Carbon\CarbonInterface;
  * customer links the identity through the normal inbound flow. Several
  * active contacts with the number, or only a deleted one, stop the
  * conversation with a reason instead of guessing.
+ *
+ * Tickets whose files identify nobody (no number, no name, no identifier:
+ * the authentic Whaticket export has hundreds with company messages only)
+ * share ONE provisional contact per Whaticket installation, «Contacto no
+ * identificado (Whaticket)», instead of hundreds of nameless contacts;
+ * those tickets can only be archived (HistoryImportConversation::allowedDecisions()).
+ * A contact with a name but no number (Messenger, Instagram) is one
+ * provisional contact per ticket: never merged by name.
  */
 class HistoryContactResolver
 {
+    /** Source id of the shared contact of the tickets that identify nobody. */
+    public const UNIDENTIFIED_SOURCE_ID = 'sin-contacto';
+
+    public const UNIDENTIFIED_NAME = 'Contacto no identificado (Whaticket)';
+
     public function __construct(private AuditLogger $audit) {}
 
     /**
@@ -119,7 +132,11 @@ class HistoryContactResolver
             return ltrim($row->contact_phone, '+');
         }
 
-        return $row->contact_identifier === null ? null : mb_substr(mb_strtolower($row->contact_identifier), 0, 128);
+        if ($row->contact_identifier !== null) {
+            return mb_substr(mb_strtolower($row->contact_identifier), 0, 128);
+        }
+
+        return $row->contact_name === null && $row->source_kind !== HistoryImportConversation::KIND_CHAT_TEXT ? self::UNIDENTIFIED_SOURCE_ID : null;
     }
 
     private function fromSourceKey(string $instance, string $sourceId): ?Contact
@@ -169,7 +186,13 @@ class HistoryContactResolver
     {
         $name = $row->contact_name ?? PhoneNumber::format($row->contact_phone) ?? $row->contact_identifier;
 
-        return mb_substr($name ?? ($row->is_group ? 'Grupo de WhatsApp (Whaticket)' : 'Contacto de Whaticket'), 0, 160);
+        $fallback = match (true) {
+            $row->is_group => 'Grupo de WhatsApp (Whaticket)',
+            $row->source_kind !== HistoryImportConversation::KIND_CHAT_TEXT => self::UNIDENTIFIED_NAME,
+            default => 'Contacto de Whaticket',
+        };
+
+        return mb_substr($name ?? $fallback, 0, 160);
     }
 
     private function earliest(?CarbonInterface $current, ?CarbonInterface $candidate): ?CarbonInterface

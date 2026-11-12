@@ -89,10 +89,15 @@ test('conversations already imported by an earlier batch are skipped as duplicat
     $content = (string) file_get_contents(historyFixture('messages.csv'))."\r\n";
     historyAddFile($this->admin, $second, 'messages', historyUpload($content, 'mensajes-otra-vez.csv'));
 
+    // The ticket was imported with a key per message: nothing to exclude
+    // blindly, the execution only adds what it does not have (here, nothing).
     $row = historyRow($second, 'ticket:1001');
     expect($row->already_imported)->toBeTrue()
-        ->and($row->recommendation)->toBe('exclude')
-        ->and(collect($row->issues)->pluck('code')->all())->toContain('already_imported');
+        ->and($row->recommendation)->toBeNull()
+        ->and(collect($row->issues)->firstWhere('code', 'already_imported')['message'])->toContain('solo se agregarán los mensajes que todavía no tiene');
+
+    $conversationId = historyRow($first, 'ticket:1001')->result_conversation_id;
+    $messages = Message::query()->where('conversation_id', $conversationId)->count();
 
     historyMapPlaceholders($this->admin, $second);
     historyDecide($this->admin, $second, 'archive');
@@ -101,7 +106,39 @@ test('conversations already imported by an earlier batch are skipped as duplicat
     expect($summary['duplicates'])->toBe(1)
         ->and(historyRow($second, 'ticket:1001')->state)->toBe(HistoryImportRowState::Duplicate)
         ->and($second->refresh()->summary['duplicates'])->toBe(1)
+        ->and(historyRow($second, 'ticket:1001')->result_conversation_id)->toBe($conversationId)
+        ->and(Message::query()->where('conversation_id', $conversationId)->count())->toBe($messages)
         ->and(Conversation::query()->imported()->whereHas('contact', fn ($query) => $query->where('phone_e164', '+525500000001'))->count())->toBe(1);
+});
+
+test('a ticket imported before messages had their own key is skipped whole, never extended', function () {
+    $first = historyStandardBatch($this->admin);
+    historyMapPlaceholders($this->admin, $first);
+    historyDecide($this->admin, $first, 'exclude');
+    $this->actingAs($this->admin)->patchJson(route('admin.history-import.inventory.update', [$first, historyRow($first, 'ticket:1001')]), ['decision' => 'import'])->assertOk();
+    historyConfirm($this->admin, $first);
+
+    // As an import made by an earlier version left it: no key per message.
+    $key = HistoryImportSourceKey::query()->where('source_kind', HistoryImportSourceKey::KIND_CONVERSATION)->where('source_id', 'ticket:1001')->sole();
+    $key->forceFill(['details' => array_diff_key($key->details ?? [], ['message_keys' => true])])->save();
+    HistoryImportSourceKey::query()->where('source_kind', HistoryImportSourceKey::KIND_MESSAGE)->delete();
+
+    $second = historyBatch($this->admin);
+    historyAddFile($this->admin, $second, 'messages', historyUpload((string) file_get_contents(historyFixture('messages.csv'))."\r\n", 'mensajes-otra-vez.csv'));
+
+    $row = historyRow($second, 'ticket:1001');
+    expect($row->recommendation)->toBe('exclude')
+        ->and(collect($row->issues)->firstWhere('code', 'already_imported')['message'])->toContain('se omitirá para no duplicarla');
+
+    $messages = Message::query()->where('conversation_id', $key->target_id)->count();
+
+    historyMapPlaceholders($this->admin, $second);
+    historyDecide($this->admin, $second, 'exclude');
+    $this->actingAs($this->admin)->patchJson(route('admin.history-import.inventory.update', [$second, $row]), ['decision' => 'import'])->assertOk();
+    historyConfirm($this->admin, $second);
+
+    expect($row->refresh()->state)->toBe(HistoryImportRowState::Duplicate)
+        ->and(Message::query()->where('conversation_id', $key->target_id)->count())->toBe($messages);
 });
 
 test('contacts are matched by normalized number, never by name, and stay out of the directory unless chosen', function () {

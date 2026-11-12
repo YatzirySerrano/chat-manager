@@ -3,6 +3,7 @@ import { useHttp } from '@inertiajs/vue3';
 import { TriangleAlert } from '@lucide/vue';
 import { computed, reactive, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import HexColorField from '@/components/personalization/HexColorField.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -13,7 +14,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { Segmented } from '@/components/ui/segmented';
 import { colorLabelsFor } from '@/lib/chatAppearance';
 import {
     contrastRatio,
@@ -129,6 +130,10 @@ function destroyUrl(scope: Scope): string {
 }
 
 const scope = ref<Scope>('conversation');
+const scopeOptions = computed<{ value: Scope; label: string }[]>(() => [
+    { value: 'conversation', label: copy.value.only },
+    { value: 'all', label: copy.value.all },
+]);
 const choice = ref<string>(DEFAULT);
 const editingMode = ref<Mode>('light');
 const draft = reactive<ChatColors>(blankColors());
@@ -420,25 +425,12 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
 
                 <fieldset class="grid gap-2">
                     <legend class="mb-1 text-sm font-medium">Aplicar a</legend>
-                    <div class="flex flex-wrap gap-2">
-                        <label
-                            v-for="option in [
-                                { value: 'conversation', label: copy.only },
-                                { value: 'all', label: copy.all },
-                            ]"
-                            :key="option.value"
-                            class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm has-checked:border-primary has-checked:bg-primary/5"
-                        >
-                            <input
-                                v-model="scope"
-                                type="radio"
-                                name="appearance-scope"
-                                :value="option.value"
-                                class="accent-primary"
-                            />
-                            {{ option.label }}
-                        </label>
-                    </div>
+                    <Segmented
+                        v-model="scope"
+                        :options="scopeOptions"
+                        aria-label="Aplicar a"
+                        class="w-fit max-w-full"
+                    />
                     <p
                         v-if="
                             scope === 'conversation' &&
@@ -556,23 +548,13 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                             :key="`${editingMode}-${key}`"
                             class="flex items-center gap-2"
                         >
-                            <input
+                            <HexColorField
                                 :id="`chat-color-${editingMode}-${key}`"
-                                type="color"
-                                class="h-9 w-11 shrink-0 cursor-pointer rounded-md border bg-transparent p-0.5"
-                                :value="
-                                    isHex(draft[editingMode][key])
-                                        ? draft[editingMode][key].toLowerCase()
-                                        : '#000000'
-                                "
+                                :model-value="draft[editingMode][key]"
                                 :aria-label="`${COLOR_LABELS[key]} (selector)`"
-                                @input="
-                                    setColor(
-                                        editingMode,
-                                        key,
-                                        ($event.target as HTMLInputElement)
-                                            .value,
-                                    )
+                                @update:model-value="
+                                    (value: string) =>
+                                        setColor(editingMode, key, value)
                                 "
                             />
                             <div class="grid min-w-0 flex-1 gap-0.5">
@@ -629,13 +611,13 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                                 {{ mode.label }}
                             </span>
                             <p
-                                class="w-fit max-w-[85%] rounded-2xl rounded-bl-md border px-3 py-1.5 text-sm shadow-xs"
+                                class="w-fit max-w-[85%] rounded-2xl rounded-bl-md border px-3 py-1.5 text-sm"
                                 :style="previewStyle(mode.value, 'received')"
                             >
                                 {{ copy.receivedSample }}
                             </p>
                             <p
-                                class="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md px-3 py-1.5 text-sm shadow-xs"
+                                class="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md px-3 py-1.5 text-sm"
                                 :style="previewStyle(mode.value, 'sent')"
                             >
                                 ¡Claro! Ya lo reviso.
@@ -693,8 +675,11 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
                     >
                         Cancelar
                     </Button>
-                    <Button type="submit" :disabled="processing || !dirty">
-                        <Spinner v-if="processing" />
+                    <Button
+                        type="submit"
+                        :disabled="!dirty"
+                        :loading="processing"
+                    >
                         Guardar
                     </Button>
                 </DialogFooter>

@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import AppContent from '@/components/AppContent.vue';
-import AttentionAlertCenter from '@/components/attention/AttentionAlertCenter.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
 import TourHelpButton from '@/components/tour/TourHelpButton.vue';
-import TourOverlay from '@/components/tour/TourOverlay.vue';
 import { Toaster } from '@/components/ui/sonner';
 import { useDockedComposer } from '@/composables/useDockedComposer';
 import { useToastClearance } from '@/composables/useToastClearance';
 import type { BreadcrumbItem } from '@/types';
+
+// Not needed for the first paint: loaded in their own chunks after the shell.
+const AttentionAlertCenter = defineAsyncComponent(
+    () => import('@/components/attention/AttentionAlertCenter.vue'),
+);
+const TourOverlay = defineAsyncComponent(
+    () => import('@/components/tour/TourOverlay.vue'),
+);
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
@@ -64,7 +70,14 @@ const toastOptions = {
         <AppSidebar />
         <AppContent class="min-w-0 overflow-x-clip">
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />
-            <slot />
+            <!--
+              The page itself. It is the only part that changes on navigation:
+              [data-page-content] is the "page" group of the view transition
+              (app.css), while the sidebar and the top bar keep still.
+            -->
+            <div data-page-content class="flex min-h-0 min-w-0 flex-1 flex-col">
+                <slot />
+            </div>
             <div
                 v-if="reserveHelpSpace"
                 class="h-16 shrink-0"

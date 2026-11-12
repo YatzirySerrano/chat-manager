@@ -241,7 +241,7 @@ function linkLabel(expiresAt: string | null | undefined): string {
         :class="outbound ? 'justify-end' : 'justify-start'"
     >
         <div
-            class="relative max-w-[85%] min-w-0 rounded-2xl px-3 py-2 text-sm/snug wrap-anywhere shadow-xs sm:max-w-[70%] md:text-sm"
+            class="relative max-w-[85%] min-w-0 rounded-2xl px-3.5 py-2 text-sm/snug wrap-anywhere transition-shadow duration-(--duration-base) ease-(--ease-out-quint) group-hover:shadow-hover sm:max-w-[min(70%,46rem)] md:text-sm"
             :class="[
                 outbound
                     ? [
@@ -251,7 +251,7 @@ function linkLabel(expiresAt: string | null | undefined): string {
                               : 'bg-primary-soft text-primary-soft-foreground',
                       ]
                     : [
-                          'rounded-bl-md border',
+                          'rounded-bl-md border border-border-strong/70',
                           customColors
                               ? CUSTOM_BUBBLE_CLASSES.received
                               : 'bg-card text-card-foreground',
@@ -694,7 +694,7 @@ function linkLabel(expiresAt: string | null | undefined): string {
                 @click="emit('quote', message)"
             >
                 <span
-                    class="flex size-7 items-center justify-center rounded-full border bg-background text-muted-foreground hover:text-foreground pointer-coarse:size-8"
+                    class="flex size-7 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-(--shadow-control) transition-[color,scale] duration-(--duration-fast) hover:scale-110 hover:text-primary pointer-coarse:size-8"
                 >
                     <Reply class="size-3.5" aria-hidden="true" />
                 </span>

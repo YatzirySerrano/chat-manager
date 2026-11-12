@@ -72,6 +72,26 @@ const filterState = reactive({
     record: props.filters.record,
 });
 
+/* Ranking of the tags on screen by how many records carry them. */
+const usage = computed(() => {
+    const rows = props.tags.data
+        .filter((tag) => !tag.is_deleted)
+        .map((tag) => ({
+            id: tag.id,
+            name: tag.name,
+            total: (tag.contacts_count ?? 0) + (tag.conversations_count ?? 0),
+        }))
+        .filter((row) => row.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 8);
+    const top = rows[0]?.total ?? 0;
+
+    return rows.map((row) => ({
+        ...row,
+        share: Math.max(4, Math.round((row.total / top) * 100)),
+    }));
+});
+
 const hasFilters = computed(
     () => filterState.search !== '' || filterState.record !== 'active',
 );
@@ -179,84 +199,172 @@ function usageLabel(
             </template>
         </PageHeader>
 
-        <SurfaceCard>
-            <div
-                class="flex flex-wrap items-center gap-2 border-b p-4"
-                role="search"
-                data-tour="tags.search"
-            >
-                <div class="relative order-1 min-w-0 flex-1">
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
+        <div
+            :class="
+                usage.length > 0
+                    ? 'split-layout reveal [--aside-w:22rem]'
+                    : 'grid reveal'
+            "
+        >
+            <SurfaceCard>
+                <div
+                    class="flex flex-wrap items-center gap-2 border-b p-4"
+                    role="search"
+                    data-tour="tags.search"
+                >
+                    <div class="relative order-1 min-w-0 flex-1">
+                        <Search
+                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <Input
+                            v-model="filterState.search"
+                            type="search"
+                            placeholder="Buscar por nombre o descripción"
+                            class="pl-9"
+                            aria-label="Buscar etiquetas"
+                        />
+                    </div>
+                    <ViewModeToggle
+                        v-model="viewMode"
+                        class="order-2 sm:order-3"
                     />
-                    <Input
-                        v-model="filterState.search"
-                        type="search"
-                        placeholder="Buscar por nombre o descripción"
-                        class="pl-9"
-                        aria-label="Buscar etiquetas"
-                    />
+                    <div class="order-3 flex w-full gap-2 sm:order-2 sm:w-auto">
+                        <RecordStateFilter
+                            v-model="filterState.record"
+                            :options="recordStates"
+                            class="sm:w-36"
+                            @change="applyFilters"
+                        />
+                        <Button
+                            v-if="hasFilters"
+                            variant="ghost"
+                            @click="clearFilters"
+                        >
+                            <X />
+                            Limpiar
+                        </Button>
+                    </div>
                 </div>
-                <ViewModeToggle v-model="viewMode" class="order-2 sm:order-3" />
-                <div class="order-3 flex w-full gap-2 sm:order-2 sm:w-auto">
-                    <RecordStateFilter
-                        v-model="filterState.record"
-                        :options="recordStates"
-                        class="sm:w-36"
-                        @change="applyFilters"
-                    />
-                    <Button
-                        v-if="hasFilters"
-                        variant="ghost"
-                        @click="clearFilters"
-                    >
-                        <X />
-                        Limpiar
-                    </Button>
-                </div>
-            </div>
 
-            <Table v-if="tags.data.length > 0 && viewMode === 'table'">
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead class="pl-5">Etiqueta</TableHead>
-                        <TableHead class="hidden md:table-cell">Uso</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead class="pr-5 text-right">
-                            <span class="sr-only">Acciones</span>
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow
+                <Table v-if="tags.data.length > 0 && viewMode === 'table'">
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Etiqueta</TableHead>
+                            <TableHead class="hidden md:table-cell"
+                                >Uso</TableHead
+                            >
+                            <TableHead>Estado</TableHead>
+                            <TableHead class="pr-5 text-right">
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow
+                            v-for="(tag, position) in tags.data"
+                            :key="tag.id"
+                            :data-tour="
+                                position === 0 ? 'tags.list' : undefined
+                            "
+                            :class="tag.is_deleted && 'text-muted-foreground'"
+                        >
+                            <TableCell class="w-full max-w-0 py-3 pl-5">
+                                <div class="grid gap-1">
+                                    <TagBadge
+                                        :name="tag.name"
+                                        :color="tag.color"
+                                        :deleted="tag.is_deleted"
+                                        size="md"
+                                        class="w-fit"
+                                    />
+                                    <p
+                                        v-if="tag.description"
+                                        class="line-clamp-2 max-w-md text-xs whitespace-normal text-muted-foreground"
+                                    >
+                                        {{ tag.description }}
+                                    </p>
+                                </div>
+                            </TableCell>
+                            <TableCell class="hidden md:table-cell">
+                                <div
+                                    class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground"
+                                >
+                                    <span
+                                        class="inline-flex items-center gap-1.5"
+                                    >
+                                        <UsersRound
+                                            class="size-3.5"
+                                            aria-hidden="true"
+                                        />
+                                        {{
+                                            usageLabel(
+                                                tag.contacts_count,
+                                                'contacto',
+                                                'contactos',
+                                            )
+                                        }}
+                                    </span>
+                                    <span
+                                        class="inline-flex items-center gap-1.5"
+                                    >
+                                        <MessagesSquare
+                                            class="size-3.5"
+                                            aria-hidden="true"
+                                        />
+                                        {{
+                                            usageLabel(
+                                                tag.conversations_count,
+                                                'conversación',
+                                                'conversaciones',
+                                            )
+                                        }}
+                                    </span>
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                <DeletedBadge v-if="tag.is_deleted" feminine />
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >Activa</span
+                                >
+                            </TableCell>
+                            <TableCell class="w-px pr-5 text-right">
+                                <RecordActions
+                                    :actions="actionsFor(tag)"
+                                    :record="`la etiqueta ${tag.name}`"
+                                    :busy="deletion.processingId === tag.id"
+                                />
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+
+                <RecordGrid v-else-if="tags.data.length > 0">
+                    <li
                         v-for="(tag, position) in tags.data"
                         :key="tag.id"
                         :data-tour="position === 0 ? 'tags.list' : undefined"
-                        :class="tag.is_deleted && 'text-muted-foreground'"
                     >
-                        <TableCell class="w-full max-w-0 py-3 pl-5">
-                            <div class="grid gap-1">
+                        <RecordCard :muted="tag.is_deleted">
+                            <template #title>
                                 <TagBadge
                                     :name="tag.name"
                                     :color="tag.color"
                                     :deleted="tag.is_deleted"
                                     size="md"
-                                    class="w-fit"
+                                    class="max-w-full"
                                 />
-                                <p
-                                    v-if="tag.description"
-                                    class="line-clamp-2 max-w-md text-xs whitespace-normal text-muted-foreground"
-                                >
-                                    {{ tag.description }}
-                                </p>
-                            </div>
-                        </TableCell>
-                        <TableCell class="hidden md:table-cell">
-                            <div
-                                class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground"
-                            >
-                                <span class="inline-flex items-center gap-1.5">
+                            </template>
+                            <template v-if="tag.is_deleted" #badges>
+                                <DeletedBadge feminine />
+                            </template>
+                            <p class="line-clamp-2 text-muted-foreground">
+                                {{ tag.description || 'Sin descripción.' }}
+                            </p>
+                            <template #meta>
+                                <span class="inline-flex items-center gap-1">
                                     <UsersRound
                                         class="size-3.5"
                                         aria-hidden="true"
@@ -269,7 +377,7 @@ function usageLabel(
                                         )
                                     }}
                                 </span>
-                                <span class="inline-flex items-center gap-1.5">
+                                <span class="inline-flex items-center gap-1">
                                     <MessagesSquare
                                         class="size-3.5"
                                         aria-hidden="true"
@@ -282,122 +390,102 @@ function usageLabel(
                                         )
                                     }}
                                 </span>
-                            </div>
-                        </TableCell>
-                        <TableCell>
-                            <DeletedBadge v-if="tag.is_deleted" feminine />
-                            <span v-else class="text-xs text-muted-foreground"
-                                >Activa</span
+                            </template>
+                            <template #actions>
+                                <RecordActions
+                                    :actions="actionsFor(tag)"
+                                    :record="`la etiqueta ${tag.name}`"
+                                    :busy="deletion.processingId === tag.id"
+                                />
+                            </template>
+                        </RecordCard>
+                    </li>
+                </RecordGrid>
+
+                <EmptyState
+                    v-else
+                    class="m-4 border-none"
+                    :icon="TagIcon"
+                    :title="
+                        hasFilters
+                            ? 'Ninguna etiqueta coincide con los filtros'
+                            : 'Aún no hay etiquetas'
+                    "
+                    :description="
+                        hasFilters
+                            ? 'Prueba con otros criterios de búsqueda.'
+                            : can.manage
+                              ? 'Crea la primera etiqueta para clasificar contactos y conversaciones.'
+                              : 'Cuando se creen etiquetas aparecerán aquí.'
+                    "
+                >
+                    <Button
+                        v-if="hasFilters"
+                        variant="outline"
+                        @click="clearFilters"
+                        >Limpiar filtros</Button
+                    >
+                    <Button v-else-if="can.manage" @click="openCreate">
+                        <Plus />
+                        Nueva etiqueta
+                    </Button>
+                </EmptyState>
+
+                <div
+                    v-if="tags.meta.last_page > 1 || tags.data.length > 0"
+                    class="border-t px-4 py-3"
+                >
+                    <DataPagination :meta="tags.meta" noun="etiquetas" />
+                </div>
+            </SurfaceCard>
+
+            <aside
+                v-if="usage.length > 0"
+                class="overflow-hidden surface-panel"
+                aria-labelledby="tag-usage-title"
+            >
+                <header class="border-b px-5 py-4">
+                    <h2
+                        id="tag-usage-title"
+                        class="font-display text-lg font-semibold"
+                    >
+                        Más usadas
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Contactos y conversaciones que llevan cada etiqueta de
+                        esta lista.
+                    </p>
+                </header>
+                <ol class="grid gap-3.5 p-5">
+                    <li
+                        v-for="item in usage"
+                        :key="item.id"
+                        class="grid gap-1.5"
+                    >
+                        <div
+                            class="flex items-baseline justify-between gap-3 text-sm"
+                        >
+                            <span class="min-w-0 truncate font-medium">{{
+                                item.name
+                            }}</span>
+                            <span
+                                class="shrink-0 font-display font-semibold tabular-nums"
+                                >{{ item.total }}</span
                             >
-                        </TableCell>
-                        <TableCell class="w-px pr-5 text-right">
-                            <RecordActions
-                                :actions="actionsFor(tag)"
-                                :record="`la etiqueta ${tag.name}`"
-                                :busy="deletion.processingId === tag.id"
+                        </div>
+                        <span
+                            class="h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+                            aria-hidden="true"
+                        >
+                            <span
+                                class="block h-full origin-left rounded-full bg-primary"
+                                :style="{ width: `${item.share}%` }"
                             />
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
-
-            <RecordGrid v-else-if="tags.data.length > 0">
-                <li
-                    v-for="(tag, position) in tags.data"
-                    :key="tag.id"
-                    :data-tour="position === 0 ? 'tags.list' : undefined"
-                >
-                    <RecordCard :muted="tag.is_deleted">
-                        <template #title>
-                            <TagBadge
-                                :name="tag.name"
-                                :color="tag.color"
-                                :deleted="tag.is_deleted"
-                                size="md"
-                                class="max-w-full"
-                            />
-                        </template>
-                        <template v-if="tag.is_deleted" #badges>
-                            <DeletedBadge feminine />
-                        </template>
-                        <p class="line-clamp-2 text-muted-foreground">
-                            {{ tag.description || 'Sin descripción.' }}
-                        </p>
-                        <template #meta>
-                            <span class="inline-flex items-center gap-1">
-                                <UsersRound
-                                    class="size-3.5"
-                                    aria-hidden="true"
-                                />
-                                {{
-                                    usageLabel(
-                                        tag.contacts_count,
-                                        'contacto',
-                                        'contactos',
-                                    )
-                                }}
-                            </span>
-                            <span class="inline-flex items-center gap-1">
-                                <MessagesSquare
-                                    class="size-3.5"
-                                    aria-hidden="true"
-                                />
-                                {{
-                                    usageLabel(
-                                        tag.conversations_count,
-                                        'conversación',
-                                        'conversaciones',
-                                    )
-                                }}
-                            </span>
-                        </template>
-                        <template #actions>
-                            <RecordActions
-                                :actions="actionsFor(tag)"
-                                :record="`la etiqueta ${tag.name}`"
-                                :busy="deletion.processingId === tag.id"
-                            />
-                        </template>
-                    </RecordCard>
-                </li>
-            </RecordGrid>
-
-            <EmptyState
-                v-else
-                class="m-4 border-none"
-                :icon="TagIcon"
-                :title="
-                    hasFilters
-                        ? 'Ninguna etiqueta coincide con los filtros'
-                        : 'Aún no hay etiquetas'
-                "
-                :description="
-                    hasFilters
-                        ? 'Prueba con otros criterios de búsqueda.'
-                        : can.manage
-                          ? 'Crea la primera etiqueta para clasificar contactos y conversaciones.'
-                          : 'Cuando se creen etiquetas aparecerán aquí.'
-                "
-            >
-                <Button
-                    v-if="hasFilters"
-                    variant="outline"
-                    @click="clearFilters"
-                    >Limpiar filtros</Button
-                >
-                <Button v-else-if="can.manage" @click="openCreate">
-                    <Plus />
-                    Nueva etiqueta
-                </Button>
-            </EmptyState>
-
-            <div
-                v-if="tags.meta.last_page > 1 || tags.data.length > 0"
-                class="border-t px-4 py-3"
-            >
-                <DataPagination :meta="tags.meta" noun="etiquetas" />
-            </div>
-        </SurfaceCard>
+                        </span>
+                    </li>
+                </ol>
+            </aside>
+        </div>
 
         <TagFormDialog
             v-if="can.manage"

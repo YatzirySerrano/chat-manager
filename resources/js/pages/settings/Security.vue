@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
-import Heading from '@/components/Heading.vue';
+import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import PasswordRequirements from '@/components/PasswordRequirements.vue';
@@ -74,95 +74,95 @@ defineOptions({
 <template>
     <Head title="Seguridad" />
 
-    <div class="space-y-6">
-        <h2 class="mb-1 text-lg font-semibold">Seguridad</h2>
-        <Heading
-            variant="small"
-            title="Actualizar contraseña"
-            description="Usa una contraseña larga y aleatoria para mantener tu cuenta segura"
-        />
+    <form novalidate @submit.prevent="submit">
+        <FormSection
+            title="Contraseña"
+            description="Usa una contraseña larga y que no repitas en otro sitio. Al cambiarla se cierran tus demás sesiones."
+        >
+            <div class="field-grid [--col-min:20rem]">
+                <div class="col-span-full grid max-w-xl gap-2">
+                    <Label for="current_password">Contraseña actual</Label>
+                    <PasswordInput
+                        id="current_password"
+                        v-model="form.current_password"
+                        name="current_password"
+                        autocomplete="current-password"
+                        placeholder="Contraseña actual"
+                        v-bind="
+                            validation.field(
+                                'current_password',
+                                'current_password',
+                            )
+                        "
+                    />
+                    <InputError
+                        id="current_password-error"
+                        :message="validation.error('current_password')"
+                    />
+                </div>
 
-        <form class="space-y-6" novalidate @submit.prevent="submit">
-            <div class="grid gap-2">
-                <Label for="current_password">Contraseña actual</Label>
-                <PasswordInput
-                    id="current_password"
-                    v-model="form.current_password"
-                    name="current_password"
-                    class="mt-1 block w-full"
-                    autocomplete="current-password"
-                    placeholder="Contraseña actual"
-                    v-bind="
-                        validation.field('current_password', 'current_password')
-                    "
-                />
-                <InputError
-                    id="current_password-error"
-                    :message="validation.error('current_password')"
-                />
+                <div class="grid gap-2">
+                    <Label for="password">Nueva contraseña</Label>
+                    <PasswordInput
+                        id="password"
+                        v-model="form.password"
+                        name="password"
+                        autocomplete="new-password"
+                        placeholder="Nueva contraseña"
+                        :passwordrules="props.passwordRules"
+                        v-bind="
+                            validation.field(
+                                'password',
+                                'password',
+                                'password-requirements',
+                            )
+                        "
+                    />
+                    <InputError
+                        id="password-error"
+                        :message="validation.error('password')"
+                    />
+                    <PasswordRequirements
+                        id="password-requirements"
+                        :password="form.password"
+                    />
+                </div>
+
+                <div class="grid gap-2">
+                    <Label for="password_confirmation"
+                        >Confirmar contraseña</Label
+                    >
+                    <PasswordInput
+                        id="password_confirmation"
+                        v-model="form.password_confirmation"
+                        name="password_confirmation"
+                        autocomplete="new-password"
+                        placeholder="Confirmar contraseña"
+                        :passwordrules="props.passwordRules"
+                        v-bind="
+                            validation.field(
+                                'password_confirmation',
+                                'password_confirmation',
+                            )
+                        "
+                    />
+                    <InputError
+                        id="password_confirmation-error"
+                        :message="validation.error('password_confirmation')"
+                    />
+                </div>
             </div>
 
-            <div class="grid gap-2">
-                <Label for="password">Nueva contraseña</Label>
-                <PasswordInput
-                    id="password"
-                    v-model="form.password"
-                    name="password"
-                    class="mt-1 block w-full"
-                    autocomplete="new-password"
-                    placeholder="Nueva contraseña"
-                    :passwordrules="props.passwordRules"
-                    v-bind="
-                        validation.field(
-                            'password',
-                            'password',
-                            'password-requirements',
-                        )
-                    "
-                />
-                <InputError
-                    id="password-error"
-                    :message="validation.error('password')"
-                />
-                <PasswordRequirements
-                    id="password-requirements"
-                    :password="form.password"
-                />
-            </div>
-
-            <div class="grid gap-2">
-                <Label for="password_confirmation">Confirmar contraseña</Label>
-                <PasswordInput
-                    id="password_confirmation"
-                    v-model="form.password_confirmation"
-                    name="password_confirmation"
-                    class="mt-1 block w-full"
-                    autocomplete="new-password"
-                    placeholder="Confirmar contraseña"
-                    :passwordrules="props.passwordRules"
-                    v-bind="
-                        validation.field(
-                            'password_confirmation',
-                            'password_confirmation',
-                        )
-                    "
-                />
-                <InputError
-                    id="password_confirmation-error"
-                    :message="validation.error('password_confirmation')"
-                />
-            </div>
-
-            <div class="flex items-center gap-4">
+            <template #footer>
                 <Button
-                    :disabled="form.processing"
+                    :loading="form.processing"
                     data-test="update-password-button"
                 >
                     Guardar
                 </Button>
-            </div>
-        </form>
-    </div>
+            </template>
+        </FormSection>
+    </form>
 
     <ManageTwoFactor
         :canManageTwoFactor="canManageTwoFactor"

@@ -8,6 +8,7 @@ use App\Enums\HistoryImportFileKind;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\HistoryImportBatchRequest;
 use App\Http\Requests\Admin\HistoryImportExecuteRequest;
+use App\Http\Requests\Admin\HistoryImportFileRequest;
 use App\Http\Requests\Admin\HistoryImportMappingsRequest;
 use App\Models\Connection;
 use App\Models\DataTransfer;
@@ -99,7 +100,7 @@ class HistoryImportController extends Controller
                 'archive' => $this->policy->viewArchive($actor)->allowed(),
             ],
             'limits' => [
-                'max_kilobytes' => (int) config('history-import.max_kilobytes', 512000),
+                'max_kilobytes' => HistoryImportFileRequest::maxKilobytes(),
                 'per_page' => (int) config('history-import.per_page', 50),
             ],
             'formatNote' => self::formatNote(),
@@ -198,11 +199,12 @@ class HistoryImportController extends Controller
     }
 
     /**
-     * The formats were not verified against an authentic export.
+     * Which formats were verified against an authentic export: only the
+     * messages CSV («Exportar mensajes»), on 2026-11-12.
      */
     public static function formatNote(): string
     {
-        return 'Formato no verificado con una exportación auténtica de Whaticket: las columnas se reconocen por su nombre y puedes corregir el mapeo de cada archivo. Revisa el inventario antes de confirmar.';
+        return 'Verificado con una exportación auténtica: el CSV de «Exportar mensajes» (columnas ticketId, contact_name, contact_number, createdAt, fromMe, body, mediaType, mediaUrl y campaignId), que se lee sin mapeo manual. Sin verificar: el reporte de chats, el CSV de contactos y los Chat.txt; sus columnas se reconocen por su nombre y puedes corregir el mapeo de cada archivo. Revisa el inventario antes de confirmar.';
     }
 
     private function done(Request $request, DataTransfer $transfer, HistoryImportBatches $batches, string $message, int $status): RedirectResponse|JsonResponse

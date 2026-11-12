@@ -26,6 +26,7 @@ departamentos, asignación, tiempo real, chat interno, reportes y exportaciones.
 | [reglas-de-servicio.md](reglas-de-servicio.md)                     | Reglas de servicio: jerarquía categoría › departamento › plataforma, SLA, solicitud completa, cola, categorías, permisos  |
 | [migracion-whaticket.md](migracion-whaticket.md)                   | Importación de contactos e importador de historial de Whaticket (fase 5.2): formatos, destinos, permisos, requisitos      |
 | [seguridad-y-auditoria.md](seguridad-y-auditoria.md)               | Modelo de amenazas, controles, permisos por rol, bitácora, privacidad, hallazgos, riesgos y dependencias                  |
+| [roles-y-permisos.md](roles-y-permisos.md)                         | Matriz de permisos por acción y módulo, alcance por rol, eliminación definitiva y hallazgos de la auditoría de permisos   |
 | [pruebas.md](pruebas.md)                                           | Pest sobre MariaDB, análisis estático, E2E, concurrencia, carga, real frente a simulado                                   |
 | [guia-pruebas-manuales.md](guia-pruebas-manuales.md)               | Guía práctica de pruebas manuales por módulo (fase 5 en §29, 5.1 en §30, 5.2 en §31), con cuentas, simulador y resultados |
 | [rendimiento-y-carga.md](rendimiento-y-carga.md)                   | Batería de carga y resistencia, resultados medidos y cuellos de botella                                                   |

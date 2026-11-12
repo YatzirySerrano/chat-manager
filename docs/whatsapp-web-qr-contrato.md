@@ -255,3 +255,20 @@ automáticos; no pide credenciales de Meta. La vinculación es un paso posterior
 | —                      | `WAWEB_LARAVEL_URL`                                                | Base de Laravel para eventos y medios.               |
 | —                      | `WAWEB_DATA_DIR`, `WAWEB_SESSION_KEY`                              | Sesiones cifradas (§7).                              |
 | —                      | `WAWEB_LOG_LEVEL`, `WAWEB_QR_MAX_REFRESH`, `WAWEB_MAX_MEDIA_BYTES` | Operación.                                           |
+
+## 10. Precisiones de la implementación
+
+- `LinkState` incluye además `state_description` (frase para la interfaz) y `linked_at`. `GET …/session` lo puede leer
+  quien puede ver la conexión; sin permiso de gestión llega sin QR y con todas las `actions` en `false`.
+- Los conflictos de estado de las rutas del §8 (ya vinculada, nada que reconectar) responden `422` con
+  `errors.session[0]`; `503` significa servicio caído o modalidad deshabilitada.
+- Laravel guarda los identificadores de mensaje como `wweb.{connection_id}.{id}`: dos números vinculados ven el mismo id
+  de WhatsApp cuando se escriben entre sí. Un contacto sin teléfono se identifica como `lid:{id}`.
+- Variables adicionales de Laravel: `WHATSAPP_WEB_CALLBACK_URL` (base con la que se construyen las URLs de medios para
+  el servicio) y `WHATSAPP_WEB_ALLOWED_IPS` (orígenes aceptados en `/internal/whatsapp-web/*`; vacío acepta cualquiera,
+  la firma siempre se exige). Del servicio: `WAWEB_LIBRARY_LOG_LEVEL`, `WAWEB_RECONNECT_MAX_ATTEMPTS`,
+  `WAWEB_SEND_TIMEOUT_MS`, `WAWEB_EVENT_TIMEOUT_MS`, `WAWEB_ENV_FILE`.
+- Las conexiones `whatsapp_web` no envían mensajes automáticos (bienvenida, ausencia, despedida): el servidor los omite
+  aunque existan textos configurados.
+- Señal de tiempo real `connection.session` con `{ connection_id }` al canal personal de quien puede ver o gestionar
+  conexiones; la interfaz sondea además como respaldo.

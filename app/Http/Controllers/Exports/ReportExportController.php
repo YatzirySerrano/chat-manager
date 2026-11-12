@@ -6,6 +6,7 @@ use App\Enums\ExportFormat;
 use App\Http\Controllers\Controller;
 use App\Models\DataTransfer;
 use App\Models\User;
+use App\Reports\Rendering\PdfRenderingFailed;
 use App\Reports\ReportRegistry;
 use App\Services\Exports\ReportExporter;
 use Illuminate\Http\RedirectResponse;
@@ -36,6 +37,15 @@ class ReportExportController extends Controller
             Inertia::flash('toast', ['type' => 'error', 'message' => $exception->validator->errors()->first()]);
 
             throw $exception;
+        } catch (PdfRenderingFailed $exception) {
+            // Chrome could not print: the cause goes to the log (and to
+            // `php artisan exports:pdf-check`), the person gets a clear
+            // message instead of a 500.
+            report($exception);
+
+            Inertia::flash('toast', ['type' => 'error', 'message' => $exception->userMessage]);
+
+            return back();
         }
 
         if ($result instanceof DataTransfer) {

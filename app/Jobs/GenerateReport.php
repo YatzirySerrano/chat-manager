@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\AuditAction;
 use App\Enums\DataTransferStatus;
 use App\Models\DataTransfer;
+use App\Reports\Rendering\PdfRenderingFailed;
 use App\Reports\ReportRegistry;
 use App\Services\AuditLogger;
 use App\Services\Exports\ReportExporter;
@@ -93,6 +94,11 @@ class GenerateReport implements ShouldBeUnique, ShouldQueue
             }
         } catch (ValidationException $exception) {
             $this->markFailed($transfer, $exception->validator->errors()->first());
+
+            return;
+        } catch (PdfRenderingFailed $exception) {
+            report($exception);
+            $this->markFailed($transfer, $exception->userMessage);
 
             return;
         } finally {

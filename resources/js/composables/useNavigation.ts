@@ -5,6 +5,7 @@ import {
     ChartNoAxesCombined,
     ContactRound,
     FileText,
+    HardDriveDownload,
     History,
     KeyRound,
     LayoutGrid,
@@ -34,6 +35,7 @@ import { index as historyImportIndex } from '@/routes/admin/history-import';
 import { index as personalItemsIndex } from '@/routes/admin/personal-items';
 import { edit as profileEdit } from '@/routes/profile';
 import { index as rolesIndex } from '@/routes/admin/roles';
+import { index as storageIndex } from '@/routes/admin/storage';
 import { edit as platformSettings } from '@/routes/admin/settings';
 import { index as systemIndex } from '@/routes/admin/system';
 import { index as usersIndex } from '@/routes/admin/users';
@@ -267,6 +269,12 @@ export function useNavigation() {
                 description: 'Estado técnico y tareas con error',
                 href: systemIndex(),
                 icon: ServerCog,
+            });
+            admin.push({
+                title: 'Almacenamiento',
+                description: 'Conexión con el NAS y archivos guardados',
+                href: storageIndex(),
+                icon: HardDriveDownload,
             });
         }
 

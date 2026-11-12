@@ -10,6 +10,7 @@ use App\Jobs\GenerateReport;
 use App\Models\DataTransfer;
 use App\Models\User;
 use App\Reports\Rendering\PdfRenderer;
+use App\Reports\Rendering\PdfRenderingFailed;
 use App\Reports\Rendering\ReportRenderer;
 use App\Reports\Rendering\XlsxRenderer;
 use App\Reports\ReportContext;
@@ -138,6 +139,7 @@ class ReportExporter
      * @param  ReportDefinition<Model>  $definition
      *
      * @throws ValidationException When the report exceeds the hard limit.
+     * @throws PdfRenderingFailed When Chrome cannot print the PDF.
      */
     public function export(ReportDefinition $definition, ReportContext $context, ExportFormat $format): BinaryFileResponse|DataTransfer
     {
@@ -176,6 +178,8 @@ class ReportExporter
      *
      * @param  ReportDefinition<Model>  $definition
      * @return int Rows written.
+     *
+     * @throws PdfRenderingFailed When Chrome cannot print the PDF.
      */
     public function render(ReportDefinition $definition, ReportContext $context, ExportFormat $format, string $path): int
     {

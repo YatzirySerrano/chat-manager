@@ -13,6 +13,7 @@ use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use Spatie\Browsershot\Browsershot;
+use Throwable;
 
 /**
  * Renders a report definition as an A4 PDF: Blade builds a self-contained
@@ -26,6 +27,7 @@ class PdfRenderer implements ReportRenderer
     public function __construct(
         private ViewFactory $view,
         private ChartGeometry $geometry,
+        private ChromeLocator $chrome,
     ) {}
 
     /**
@@ -35,7 +37,7 @@ class PdfRenderer implements ReportRenderer
     {
         $document = $this->document($definition, $context, $maxRows);
 
-        $this->browsershot((string) $document['html'], $definition, $context)->save($path);
+        $this->print((string) $document['html'], $definition, $context, $path);
 
         return $document['rows'];
     }
@@ -51,13 +53,48 @@ class PdfRenderer implements ReportRenderer
     }
 
     /**
+     * Print the HTML with Chrome. A sandbox failure (Chrome running as root,
+     * or a server without user namespaces) is retried once without the
+     * sandbox: the document is built by this application and loads no
+     * remote content. Any other failure becomes a PdfRenderingFailed that
+     * names the cause for the administrator.
+     *
+     * @param  ReportDefinition<Model>  $definition
+     *
+     * @throws PdfRenderingFailed
+     */
+    public function print(string $html, ReportDefinition $definition, ReportContext $context, string $path): void
+    {
+        try {
+            $this->browsershot($html, $definition, $context)->save($path);
+
+            return;
+        } catch (Throwable $exception) {
+            $failure = PdfRenderingFailed::from($exception);
+        }
+
+        if ($failure->reason === 'sandbox' && ! (bool) config('exports.pdf.no_sandbox')) {
+            try {
+                $this->browsershot($html, $definition, $context, noSandbox: true)->save($path);
+
+                return;
+            } catch (Throwable $exception) {
+                $failure = PdfRenderingFailed::from($exception);
+            }
+        }
+
+        throw $failure;
+    }
+
+    /**
      * A configured Browsershot instance for the HTML.
      *
      * @param  ReportDefinition<Model>  $definition
      */
-    public function browsershot(string $html, ReportDefinition $definition, ReportContext $context): Browsershot
+    public function browsershot(string $html, ReportDefinition $definition, ReportContext $context, bool $noSandbox = false): Browsershot
     {
         $config = (array) config('exports.pdf');
+        $workspace = $this->workspace();
 
         $browsershot = Browsershot::html($html)
             ->setNodeBinary((string) $config['node_binary'])
@@ -75,15 +112,59 @@ class PdfRenderer implements ReportRenderer
             ])->render())
             ->timeout((int) $config['timeout']);
 
-        if (filled($config['chrome_path'] ?? null)) {
-            $browsershot->setChromePath((string) $config['chrome_path']);
+        // Chrome needs writable places for its profile and crash data; the
+        // account running PHP often has a read-only or missing HOME. The
+        // environment only fills in variables the process does not have.
+        $browsershot
+            ->userDataDir($workspace.'/profile')
+            ->setEnvironmentOptions([
+                'HOME' => $workspace,
+                'XDG_CONFIG_HOME' => $workspace.'/config',
+                'XDG_CACHE_HOME' => $workspace.'/cache',
+            ])
+            ->addChromiumArguments([
+                'disable-dev-shm-usage',
+                'disable-gpu',
+                'no-first-run',
+                'disable-crash-reporter',
+                'crash-dumps-dir' => $workspace.'/crashes',
+            ]);
+
+        $chrome = $this->chrome->path();
+
+        if ($chrome !== null) {
+            $browsershot->setChromePath($chrome);
         }
 
-        if ((bool) ($config['no_sandbox'] ?? false)) {
+        if ($noSandbox || (bool) ($config['no_sandbox'] ?? false) || $this->runsAsRoot()) {
             $browsershot->noSandbox();
         }
 
         return $browsershot;
+    }
+
+    /**
+     * Private, writable directory for Chrome (profile, cache, crash data).
+     */
+    private function workspace(): string
+    {
+        $workspace = str_replace('\\', '/', storage_path('app/chrome'));
+
+        foreach (['', '/profile', '/config', '/cache', '/crashes'] as $directory) {
+            if (! is_dir($workspace.$directory)) {
+                @mkdir($workspace.$directory, 0700, true);
+            }
+        }
+
+        return $workspace;
+    }
+
+    /**
+     * Chrome refuses to start as root with its sandbox on.
+     */
+    private function runsAsRoot(): bool
+    {
+        return function_exists('posix_geteuid') && posix_geteuid() === 0;
     }
 
     /**

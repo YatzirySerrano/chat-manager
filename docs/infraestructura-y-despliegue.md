@@ -624,6 +624,22 @@ which chromium node npm                                        # usa estas rutas
 `EXPORTS_CHROME_NO_SANDBOX=true` solo si Chromium corre como root o en un contenedor sin espacios de nombres.
 El preflight comprueba Node, npm, Chromium y puppeteer; si fallan, solo se afectan los PDF (Excel sigue funcionando).
 
+**Diagnóstico y reparación de los PDF.** Si exportar un PDF falla, la aplicación ya no responde 500: muestra un aviso
+y deja la causa en el registro. Para verla y corregirla en el servidor, ejecuta el comando con la misma cuenta que
+corre PHP-FPM y los workers:
+
+```bash
+sudo -u www-data php artisan exports:pdf-check                    # genera un PDF de prueba y explica la causa si falla
+sudo -u www-data php artisan exports:pdf-check --install          # descarga Chrome en storage/app/puppeteer y prueba
+sudo -u www-data php artisan exports:pdf-check --show-candidates  # lista dónde se buscó Chrome
+```
+
+Sin `EXPORTS_CHROME_PATH`, la aplicación busca Chrome sola: paquetes del sistema (`/usr/bin/chromium`,
+`/usr/bin/google-chrome`…), `storage/app/puppeteer` y las cachés de puppeteer de las cuentas del servidor. Si Chrome no
+puede iniciar su sandbox (Chrome como root, contenedor, AppArmor de Ubuntu 24.04), el PDF se reintenta sin sandbox:
+el documento lo construye la propia aplicación y no carga contenido remoto. Chrome usa `storage/app/chrome` como
+perfil y caché, así que no necesita un HOME con permisos de escritura.
+
 ## 13. Logs y rotación
 
 - Aplicación: `storage/logs/laravel*.log` (`LOG_STACK=daily` rota por día y conserva `LOG_DAILY_DAYS`; con `single`

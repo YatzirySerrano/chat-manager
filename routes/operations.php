@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\StorageStatusController;
 use App\Http\Controllers\Admin\SystemController;
 use App\Http\Controllers\Admin\SystemFailedJobController;
 use Illuminate\Support\Facades\Route;
@@ -20,4 +21,15 @@ Route::middleware(['auth', 'verified'])->prefix('admin/system')->name('admin.sys
         ->whereUuid('uuid')
         ->middleware('throttle:30,1')
         ->name('failed-jobs.destroy');
+});
+
+/*
+| Administración > Almacenamiento: state of the media disk (NAS share, S3 or
+| the server's disk). Same gates as Sistema; the page polls "status".
+*/
+
+Route::middleware(['auth', 'verified'])->prefix('admin/storage')->name('admin.storage.')->group(function () {
+    Route::get('/', [StorageStatusController::class, 'index'])->name('index');
+    Route::get('status', [StorageStatusController::class, 'status'])->middleware('throttle:30,1')->name('status');
+    Route::post('probe', [StorageStatusController::class, 'probe'])->middleware('throttle:6,1')->name('probe');
 });

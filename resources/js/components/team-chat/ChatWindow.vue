@@ -29,6 +29,7 @@ import MessageComposer from '@/components/team-chat/MessageComposer.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/composables/useChannel';
+import { useStickToBottom } from '@/composables/useStickToBottom';
 import { useTeamPresence } from '@/composables/useTeamPresence';
 import {
     CUSTOM_BUBBLE_CLASSES,
@@ -110,6 +111,8 @@ let newerRequested = false;
 const scroller = ref<HTMLElement | null>(null);
 const composer = ref<InstanceType<typeof MessageComposer> | null>(null);
 const atBottom = ref(true);
+/* Media gets its height on load: keep the end in view while it grows. */
+const { follow } = useStickToBottom(scroller, 80);
 const newBelow = ref(0);
 const replyTo = ref<TeamMessage | null>(null);
 const highlightedId = ref<number | null>(props.around);
@@ -302,6 +305,7 @@ function onScroll(): void {
 }
 
 async function scrollToBottom(smooth = false): Promise<void> {
+    follow();
     await nextTick();
     scroller.value?.scrollTo({
         top: scroller.value.scrollHeight,
@@ -310,6 +314,7 @@ async function scrollToBottom(smooth = false): Promise<void> {
 }
 
 async function scrollToMessage(messageId: number): Promise<void> {
+    follow(false);
     await nextTick();
     document
         .getElementById(`team-message-${messageId}`)

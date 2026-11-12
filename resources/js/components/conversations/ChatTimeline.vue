@@ -22,6 +22,7 @@ import {
     CUSTOM_BUBBLE_CLASSES,
     CUSTOM_CHAT_COLORS,
 } from '@/lib/chatAppearance';
+import { useStickToBottom } from '@/composables/useStickToBottom';
 import { platformTimezone } from '@/lib/format';
 import { retry as retryRoute } from '@/routes/conversations/messages';
 import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
@@ -70,6 +71,9 @@ const unseen = ref(0);
 const announcement = ref('');
 
 const BOTTOM_THRESHOLD = 96;
+
+/* Media gets its height on load: keep the end in view while it grows. */
+const { follow } = useStickToBottom(scroller, BOTTOM_THRESHOLD);
 
 /*
  * While the "go to the end" button floats over the history, the history
@@ -144,6 +148,8 @@ function measureBottom(): void {
 
 function scrollToBottom(smooth = false): void {
     const element = scroller.value;
+
+    follow();
 
     if (element) {
         element.scrollTo({

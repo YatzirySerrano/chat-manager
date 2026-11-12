@@ -92,7 +92,10 @@ class TeamChatController extends Controller
                 'messageMaxLength' => (int) config('team-chat.message_max_length'),
                 'maxFiles' => (int) config('team-chat.attachments.max_files'),
                 'maxKilobytes' => (int) config('team-chat.attachments.max_kilobytes'),
-                'accept' => implode(',', array_map(fn (string $extension): string => '.'.$extension, array_merge(...array_values($types)))),
+                // HEIC/HEIF are accepted by the server but left out of the picker:
+                // an iPhone then hands over its photos as JPEG, which every
+                // browser shows in the chat.
+                'accept' => implode(',', array_map(fn (string $extension): string => '.'.$extension, array_values(array_diff(array_merge(...array_values($types)), ['heic', 'heif'])))),
                 'groupMaxParticipants' => (int) config('team-chat.group_max_participants'),
                 'maxThreads' => TeamThreadListQuery::MAX_LIMIT,
                 'maxMentions' => (int) config('team-chat.max_mentions'),

@@ -165,10 +165,14 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   seguir configurado (y privado) mientras existan; el chequeo de privacidad de `app:preflight` lo sigue revisando.
 - Validación del **contenido real** con `finfo` (nunca el tipo que declara el navegador) y coherencia con la extensión.
   Permitidos: JPEG, PNG, GIF, WebP, PDF, TXT/LOG, CSV, Word/Excel/PowerPoint (97 y OOXML), OpenDocument texto/hoja,
-  MP3, OGG, M4A y MP4. Nunca HTML, SVG, scripts ni ejecutables. Los OOXML/ODF que `finfo` reporta como ZIP se aceptan solo
+  MP3, OGG/OPUS, M4A, AAC, WAV, AMR, MP4/M4V y, desde 2026-11-12, lo que graban los teléfonos: MOV (iPhone), WebM, 3GP
+  y fotos HEIC/HEIF (estas se descargan, no se muestran en línea; el selector de archivos no las lista para que el
+  iPhone entregue sus fotos como JPEG). Nunca HTML, SVG, scripts ni ejecutables. Los OOXML/ODF que `finfo` reporta como ZIP se aceptan solo
   si contienen el manifiesto de su formato.
-- Límites: `TEAM_CHAT_MAX_KILOBYTES` (10 240 KB) por archivo y `TEAM_CHAT_MAX_FILES` (5) por mensaje. Desde la fase
-  5.2.1 los tamaños se muestran en MB decimales (10 240 KB = 10.5 MB), como en el compositor de clientes.
+- Límites: `TEAM_CHAT_MAX_KILOBYTES` (51 200 KB, 50 MB, desde 2026-11-12; antes 10 240 KB, donde casi ningún video de
+  teléfono cabía) por archivo y `TEAM_CHAT_MAX_FILES` (5) por mensaje. Un `.env` que fije el valor anterior lo
+  conserva. Los tamaños se muestran en MB decimales, como en el compositor de clientes; si el límite de subida de PHP
+  del servidor es menor, el compositor lo dice antes de enviar.
 - **Compositor (fase 5.2.1)**: un mensaje puede llevar solo archivos (el texto es opcional junto a un archivo). Antes de
   subir se descartan, cada uno con su motivo, los archivos que superan el límite del chat, los que superan el límite de
   subida de PHP de este servidor (`limits.server`, «… pesa 2.2 MB y el servidor de Chat Manager acepta hasta 2.1 MB; un
@@ -181,7 +185,10 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   [mensajería §4.2](mensajeria-whatsapp.md#42-saliente)), nunca con «Escribe un mensaje o adjunta un archivo»; un 413
   muestra el mensaje del límite del servidor. Quitar un archivo limpia los errores (sus posiciones ya no existen).
 - Descarga solo por `GET team-chat/threads/{thread}/messages/{message}/attachments/{attachment}`, que vuelve a autorizar.
-  `Content-Disposition: attachment` salvo `?inline=1` para imágenes seguras y PDF; siempre
+  `Content-Disposition: attachment` salvo `?inline=1` para imágenes seguras y PDF, y para audio y video reproducibles
+  (`playable_types`), que se sirven con **rangos de bytes** (`206`, `Accept-Ranges`): Safari, y por lo tanto todo
+  iPhone, no reproduce un video sin ellos. El chat los reproduce en la burbuja (el video no descarga nada hasta pulsar
+  reproducir) y las imágenes se abren en un visor dentro de la app. Siempre
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` y CSP con `sandbox` (salvo la vista previa de PDF, porque los navegadores no muestran un PDF dentro de un documento aislado). No hay URLs públicas ni
   permanentes. Nombre mostrado saneado (sin rutas, comillas ni caracteres de control). SHA-256 guardado.
 - Si el archivo falta en disco, la descarga responde 404 y se registra una advertencia (sin datos del archivo).

@@ -108,6 +108,12 @@ sudo systemctl reload "$PHP_FPM_SERVICE"
 "$PHP" artisan queue:restart
 "$PHP" artisan reverb:restart || true
 restart_scheduler
+
+# The WhatsApp Web (QR) service must run the code of the release now active.
+if [ -f /etc/supervisor/conf.d/chat-manager-whatsapp-web.conf ] && command -v supervisorctl >/dev/null 2>&1; then
+    sudo supervisorctl restart chatmanager-whatsapp-web || printf 'WARNING: could not restart chatmanager-whatsapp-web (Supervisor); restart it by hand.
+' >&2
+fi
 "$PHP" artisan up
 
 echo "Active release: $target ($(cat "$CURRENT/REVISION"))"

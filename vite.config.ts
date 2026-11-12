@@ -66,6 +66,8 @@ export default defineConfig({
             'resources/js/components/ui/*',
             'resources/js/routes/**',
             'resources/js/wayfinder/**',
+            // The WhatsApp Web service is its own Node project (own tsconfig and tests).
+            'services/**',
         ],
         options: {
             denyWarnings: true,

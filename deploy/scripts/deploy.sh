@@ -93,6 +93,18 @@ restart_scheduler() {
     "$PHP" artisan schedule:clear-cache || true
 }
 
+# The WhatsApp Web (QR) service (services/whatsapp-web) keeps running the
+# release it started with: restart it when Supervisor runs it (the program is
+# optional; see deploy/supervisor/chat-manager-whatsapp-web.conf). The restart
+# closes the sockets without logging any device out; the sessions live in
+# WAWEB_DATA_DIR, outside the releases, and reconnect by themselves.
+restart_whatsapp_web() {
+    if [ -f /etc/supervisor/conf.d/chat-manager-whatsapp-web.conf ] && command -v supervisorctl >/dev/null 2>&1; then
+        sudo supervisorctl restart chatmanager-whatsapp-web || printf 'WARNING: could not restart chatmanager-whatsapp-web (Supervisor); restart it by hand.
+' >&2
+    fi
+}
+
 log() { printf '\n[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -158,6 +170,13 @@ npm ci --no-audit --no-fund
 npm run build
 rm -f public/hot
 
+if [ -f services/whatsapp-web/package.json ]; then
+    log "Building the WhatsApp Web (QR) service"
+    # Its own dependencies and build, inside the release. The linked sessions
+    # are in WAWEB_DATA_DIR (outside the releases): nothing here touches them.
+    (cd services/whatsapp-web && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund)
+fi
+
 log "Preflight (read-only)"
 "$PHP" artisan app:preflight || fail "preflight failed; the current release keeps serving traffic"
 
@@ -203,6 +222,7 @@ sudo systemctl reload "$PHP_FPM_SERVICE"
 "$PHP" artisan queue:restart
 "$PHP" artisan reverb:restart || true
 restart_scheduler
+restart_whatsapp_web
 
 "$PHP" artisan up
 in_maintenance=0

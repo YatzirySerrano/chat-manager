@@ -48,6 +48,12 @@ enum AuditAction: string
     case ConnectionSubscriptionChecked = 'connection.subscription_checked';
     case ConnectionAppSubscribed = 'connection.app_subscribed';
     case ConnectionNumberRegistered = 'connection.number_registered';
+    case ConnectionWebLinkRequested = 'connection.web_link_requested';
+    case ConnectionWebLinked = 'connection.web_linked';
+    case ConnectionWebDisconnected = 'connection.web_disconnected';
+    case ConnectionWebReconnectRequested = 'connection.web_reconnect_requested';
+    case ConnectionWebLoggedOut = 'connection.web_logged_out';
+    case ConnectionWebSessionLost = 'connection.web_session_lost';
     case TemplatesSynchronized = 'templates.synchronized';
     case ContactCreated = 'contact.created';
     case ContactUpdated = 'contact.updated';
@@ -127,6 +133,8 @@ enum AuditAction: string
     case ConversationReadinessReverted = 'conversation.readiness_reverted';
     case ConversationQueueRulesOverridden = 'conversation.queue_rules_overridden';
     case ConversationCategoryChanged = 'conversation.category_changed';
+    case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
+    case RecordPermanentlyDeleted = 'record.permanently_deleted';
 
     /**
      * Human readable description of the action.
@@ -172,6 +180,12 @@ enum AuditAction: string
             self::ConnectionSubscriptionChecked => 'Se revisó si Meta envía los mensajes de esta conexión',
             self::ConnectionAppSubscribed => 'Se activó la recepción de mensajes de WhatsApp desde Meta',
             self::ConnectionNumberRegistered => 'Número de WhatsApp registrado en la API de Meta',
+            self::ConnectionWebLinkRequested => 'Vinculación de WhatsApp Web (QR) iniciada',
+            self::ConnectionWebLinked => 'Teléfono vinculado por WhatsApp Web (QR)',
+            self::ConnectionWebDisconnected => 'Sesión de WhatsApp Web desconectada temporalmente',
+            self::ConnectionWebReconnectRequested => 'Reconexión de WhatsApp Web solicitada',
+            self::ConnectionWebLoggedOut => 'Sesión de WhatsApp Web cerrada en el dispositivo',
+            self::ConnectionWebSessionLost => 'Sesión de WhatsApp Web revocada o perdida',
             self::TemplatesSynchronized => 'Plantillas de WhatsApp actualizadas desde Meta',
             self::ContactCreated => 'Contacto creado',
             self::ContactUpdated => 'Contacto actualizado',
@@ -251,6 +265,8 @@ enum AuditAction: string
             self::ConversationReadinessReverted => 'Solicitud devuelta a «Necesita información»',
             self::ConversationQueueRulesOverridden => 'Excepción a las reglas de la cola',
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
+            self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
+            self::RecordPermanentlyDeleted => 'Registro eliminado definitivamente',
         };
     }
 
@@ -267,9 +283,12 @@ enum AuditAction: string
             self::ExportFailed, self::ImportFailed, self::ImportRollbackFailed,
             self::AuthTwoFactorDisabled, self::AuthLockout, self::ApiTokenRevoked,
             self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
-            self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached => 'danger',
+            self::ConnectionWebLoggedOut, self::ConnectionWebSessionLost,
+            self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached,
+            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
+            self::ConnectionWebLinkRequested, self::ConnectionWebDisconnected, self::ConnectionWebReconnectRequested,
             self::DepartmentHoursUpdated, self::ContactOriginClassified, self::ContactIdentityLinked,
             self::ContactReviewOpened, self::TeamChatParticipantRemoved, self::TeamChatParticipantRoleChanged,
             self::TeamChatGroupArchived, self::SystemJobRetried, self::SystemJobForgotten, self::MessageRetriedWithDuplicateRisk,
@@ -282,7 +301,7 @@ enum AuditAction: string
             self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
-            self::ConnectionCredentialsVerified, self::ConnectionNumberRegistered, self::ContactCreated, self::ContactRestored, self::TagCreated,
+            self::ConnectionCredentialsVerified, self::ConnectionNumberRegistered, self::ConnectionWebLinked, self::ContactCreated, self::ContactRestored, self::TagCreated,
             self::QuickReplyCreated, self::UserRestored,
             self::DepartmentRestored, self::RoleRestored, self::ConnectionRestored, self::TagRestored,
             self::QuickReplyRestored, self::ImportCompleted, self::TeamChatGroupCreated,
@@ -308,6 +327,7 @@ enum AuditAction: string
             self::HistoryImportCreated, self::HistoryImportFileAdded, self::HistoryImportClassified,
             self::HistoryImportRuleApplied, self::HistoryImportRequested, self::HistoryImportCompleted,
             self::HistoryImportFailed, self::HistoryImportDiscarded,
+            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted,
         ], true);
     }
 

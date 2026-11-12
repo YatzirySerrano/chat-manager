@@ -3,7 +3,9 @@
 namespace App\Enums;
 
 /**
- * Official API used to operate a connection.
+ * API used to operate a connection. Every provider is an official API
+ * except WhatsappWeb, the WhatsApp Web protocol of a phone linked by QR
+ * (docs/whatsapp-web-qr.md): unofficial, opt-in and never the default.
  */
 enum ConnectionProvider: string
 {
@@ -11,6 +13,7 @@ enum ConnectionProvider: string
     case WebWidget = 'web_widget';
     case MetaMessenger = 'meta_messenger';
     case MetaInstagram = 'meta_instagram';
+    case WhatsappWeb = 'whatsapp_web';
 
     public function label(): string
     {
@@ -19,6 +22,7 @@ enum ConnectionProvider: string
             self::WebWidget => 'Widget de chat web',
             self::MetaMessenger => 'Messenger Platform (Meta)',
             self::MetaInstagram => 'Instagram Messaging API (Meta)',
+            self::WhatsappWeb => 'WhatsApp Web (QR)',
         };
     }
 
@@ -29,7 +33,17 @@ enum ConnectionProvider: string
             self::WebWidget => ConnectionChannel::WebChat,
             self::MetaMessenger => ConnectionChannel::Messenger,
             self::MetaInstagram => ConnectionChannel::Instagram,
+            self::WhatsappWeb => ConnectionChannel::Whatsapp,
         };
+    }
+
+    /**
+     * Whether the connection is operated through a Meta API with Meta
+     * credentials (every provider except the web widget and WhatsApp Web).
+     */
+    public function usesMetaApi(): bool
+    {
+        return ! in_array($this, [self::WebWidget, self::WhatsappWeb], true);
     }
 
     /**

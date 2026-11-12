@@ -3,6 +3,7 @@
 namespace App\Actions\Connections;
 
 use App\Enums\AuditAction;
+use App\Enums\WhatsAppWebState;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
@@ -32,6 +33,10 @@ class CreateConnection
             $connection = new Connection([...$data['attributes'], ...$data['secrets']]);
             $connection->forceFill(['is_active' => false, 'created_by_user_id' => $actor->id]);
 
+            if ($connection->isWhatsAppWeb()) {
+                $connection->forceFill(['web_session_state' => WhatsAppWebState::Unconfigured]);
+            }
+
             try {
                 $connection->save();
             } catch (UniqueConstraintViolationException $exception) {
@@ -53,6 +58,7 @@ class CreateConnection
 
             $this->audit->record(AuditAction::ConnectionCreated, $connection, [
                 'channel' => $connection->channel->value,
+                'provider' => $connection->provider->value,
                 'phone_number_id' => $connection->phone_number_id,
                 'business_account_id' => $connection->business_account_id,
                 'departments' => Department::query()->whereKey($data['department_ids'])->orderBy('name')->pluck('name')->all(),

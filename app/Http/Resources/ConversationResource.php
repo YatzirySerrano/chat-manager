@@ -59,6 +59,9 @@ class ConversationResource extends JsonResource
                 // Channel of the receiving connection, for the list indicator.
                 'channel' => $this->channelConnection->channel->value,
                 'channel_label' => $this->channelConnection->channel->label(),
+                // Modality inside the channel: WhatsApp Cloud API or WhatsApp Web (QR).
+                'provider' => $this->channelConnection->provider->value,
+                'provider_label' => $this->channelConnection->provider->label(),
                 // Operational state for the composer; the server checks it again on every send.
                 'state' => match (true) {
                     $this->channelConnection->isDeleted() => 'deleted',
@@ -139,6 +142,8 @@ class ConversationResource extends JsonResource
                 'confirm_ready' => $viewer->can('confirmReadiness', $this->resource),
                 'override_queue_rules' => $viewer->can('overrideQueueRules', $this->resource),
                 'categorize' => $viewer->can('categorize', $this->resource),
+                // Irreversible, reserved to the root authority (permanent-deletion.conversations).
+                'delete_permanently' => $viewer->can('deletePermanently', $this->resource),
             ],
         ];
     }

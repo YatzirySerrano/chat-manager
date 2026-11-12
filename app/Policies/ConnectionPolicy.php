@@ -59,7 +59,16 @@ class ConnectionPolicy
      */
     public function verify(User $actor, Connection $connection): bool
     {
-        return $connection->channel === ConnectionChannel::Whatsapp && $this->update($actor, $connection);
+        return $connection->channel === ConnectionChannel::Whatsapp && ! $connection->isWhatsAppWeb() && $this->update($actor, $connection);
+    }
+
+    /**
+     * Link, reconnect, disconnect or sign out the phone of a WhatsApp Web
+     * (QR) connection: the same people who manage connections.
+     */
+    public function manageWebSession(User $actor, Connection $connection): bool
+    {
+        return $connection->isWhatsAppWeb() && $this->update($actor, $connection);
     }
 
     /**

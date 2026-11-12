@@ -9,6 +9,7 @@ use App\Actions\Connections\RestoreConnection;
 use App\Actions\Connections\UpdateConnection;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
+use App\Enums\ConnectionProvider;
 use App\Enums\RecordState;
 use App\Enums\WebChatAvailabilityMode;
 use App\Enums\WebChatIdentityMode;
@@ -24,6 +25,7 @@ use App\Models\User;
 use App\Services\Exports\ReportExporter;
 use App\Services\Meta\ConnectionDiagnostics;
 use App\Services\Meta\MetaApp;
+use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -43,7 +45,7 @@ class ConnectionController extends Controller
      * applied after the query; a company has few connections, so the list is
      * not paginated. Counters never include deleted connections.
      */
-    public function index(Request $request, ConnectionListQuery $list, ReportExporter $exporter): Response
+    public function index(Request $request, ConnectionListQuery $list, ReportExporter $exporter, WhatsAppWebSessions $sessions): Response
     {
         Gate::authorize('viewAny', Connection::class);
 
@@ -89,7 +91,15 @@ class ConnectionController extends Controller
                     true,
                 ))->count(),
             ],
-            'channels' => ConnectionChannel::options(),
+            // The filter lists every channel plus, where the server enabled
+            // it, the WhatsApp Web (QR) modality of the WhatsApp channel.
+            'channels' => [
+                ...ConnectionChannel::options(),
+                ...($sessions->isEnabled() || $all->contains(fn (Connection $connection): bool => $connection->isWhatsAppWeb())
+                    ? [['value' => ConnectionProvider::WhatsappWeb->value, 'label' => ConnectionProvider::WhatsappWeb->label()]]
+                    : []),
+            ],
+            'whatsappWebEnabled' => $sessions->isEnabled(),
             // Messenger and Instagram are created by authorizing with Meta: the
             // selector explains what the server still needs when the app is not configured.
             'metaChannels' => collect([ConnectionChannel::Messenger, ConnectionChannel::Instagram])
@@ -115,8 +125,19 @@ class ConnectionController extends Controller
     {
         Gate::authorize('create', Connection::class);
 
-        $validated = $request->validate(['channel' => ['nullable', Rule::enum(ConnectionChannel::class)]]);
+        $validated = $request->validate([
+            'channel' => ['nullable', Rule::enum(ConnectionChannel::class)],
+            'provider' => ['nullable', Rule::enum(ConnectionProvider::class)],
+        ]);
         $channel = is_string($validated['channel'] ?? null) ? ConnectionChannel::from($validated['channel']) : ConnectionChannel::Whatsapp;
+
+        // ?provider=whatsapp_web: a phone linked by QR instead of WhatsApp
+        // Cloud API, only where the server enabled the modality.
+        $provider = $channel === ConnectionChannel::Whatsapp && ($validated['provider'] ?? null) === ConnectionProvider::WhatsappWeb->value
+            ? ConnectionProvider::WhatsappWeb
+            : $channel->defaultProvider();
+
+        abort_if($provider === ConnectionProvider::WhatsappWeb && ! app(WhatsAppWebSessions::class)->isEnabled(), 404);
 
         // Messenger and Instagram have no form: they are authorized with Meta.
         if (! $channel->isCreatedFromForm()) {
@@ -126,7 +147,8 @@ class ConnectionController extends Controller
         return Inertia::render('connections/Form', [
             'connection' => null,
             'diagnostics' => null,
-            ...$this->formOptions($channel),
+            'whatsappWeb' => null,
+            ...$this->formOptions($channel, null, $provider),
             'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false],
         ]);
     }
@@ -137,7 +159,9 @@ class ConnectionController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => "Conexión {$connection->name} creada. Está inactiva hasta que la actives.",
+            'message' => $connection->isWhatsAppWeb()
+                ? "Conexión {$connection->name} creada. Ahora vincula el teléfono con el código QR."
+                : "Conexión {$connection->name} creada. Está inactiva hasta que la actives.",
         ]);
 
         return to_route('connections.show', $connection);
@@ -162,7 +186,12 @@ class ConnectionController extends Controller
             'connection' => ConnectionResource::make($connection)->resolve($request),
             // The Meta checklist (webhook, subscription, templates) only applies to WhatsApp;
             // Messenger and Instagram show their authorization instead (meta_account).
-            'diagnostics' => fn () => $connection->channel !== ConnectionChannel::Whatsapp ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
+            // A phone linked by QR has no Meta checklist either: its session state is "whatsappWeb".
+            'diagnostics' => fn () => $connection->channel !== ConnectionChannel::Whatsapp || $connection->isWhatsAppWeb() ? null : app(ConnectionDiagnostics::class)->for($connection, $actor),
+            // LinkState of the contract (§8); the QR only for people who can manage the connection.
+            'whatsappWeb' => fn () => $connection->isWhatsAppWeb()
+                ? [...app(WhatsAppWebSessions::class)->linkState($connection, withQr: $actor->can('manageWebSession', $connection)), 'can_manage' => $actor->can('manageWebSession', $connection)]
+                : null,
             ...$this->formOptions($connection->channel, $connection),
             'can' => [
                 'update' => $actor->can('update', $connection),
@@ -195,7 +224,9 @@ class ConnectionController extends Controller
 
         $deleteConnection->handle($connection, $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Conexión {$connection->name} eliminada. Sus conversaciones e historial se conservan."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => $connection->isWhatsAppWeb()
+            ? "Conexión {$connection->name} eliminada y teléfono desvinculado. Sus conversaciones e historial se conservan."
+            : "Conexión {$connection->name} eliminada. Sus conversaciones e historial se conservan."]);
 
         return to_route('connections.index');
     }
@@ -211,7 +242,9 @@ class ConnectionController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => "Conexión {$connection->name} restaurada. Está inactiva: verifica sus credenciales antes de activarla.",
+            'message' => $connection->isWhatsAppWeb()
+                ? "Conexión {$connection->name} restaurada. Está inactiva: vincula el teléfono de nuevo con el código QR."
+                : "Conexión {$connection->name} restaurada. Está inactiva: verifica sus credenciales antes de activarla.",
         ]);
 
         return back();
@@ -221,11 +254,11 @@ class ConnectionController extends Controller
      * Options of the form for the channel of the connection. The Graph API
      * version only applies to WhatsApp; the widget options to the web chat.
      *
-     * @return array{channel: array{value: string, label: string}, provider: array{value: string, label: string}, departments: list<array{id: int, name: string, color: string, is_active: bool}>, limits: array{message: int, reopen_window: int}, graphVersion: string|null, widgetOptions: array<string, mixed>|null}
+     * @return array{channel: array{value: string, label: string}, provider: array{value: string, label: string}, departments: list<array{id: int, name: string, color: string, is_active: bool}>, limits: array{message: int, reopen_window: int}, graphVersion: string|null, whatsappWebEnabled: bool, widgetOptions: array<string, mixed>|null}
      */
-    private function formOptions(ConnectionChannel $channel, ?Connection $connection = null): array
+    private function formOptions(ConnectionChannel $channel, ?Connection $connection = null, ?ConnectionProvider $provider = null): array
     {
-        $provider = $connection === null ? $channel->defaultProvider() : $connection->provider;
+        $provider = $connection === null ? ($provider ?? $channel->defaultProvider()) : $connection->provider;
 
         return [
             'channel' => ['value' => $channel->value, 'label' => $channel->label()],
@@ -235,7 +268,8 @@ class ConnectionController extends Controller
                 'message' => ConnectionRequest::MESSAGE_MAX_LENGTH,
                 'reopen_window' => ConnectionRequest::REOPEN_WINDOW_MAX_MINUTES,
             ],
-            'graphVersion' => $channel === ConnectionChannel::Whatsapp ? (string) config('services.meta.graph_version') : null,
+            'graphVersion' => $channel === ConnectionChannel::Whatsapp && $provider !== ConnectionProvider::WhatsappWeb ? (string) config('services.meta.graph_version') : null,
+            'whatsappWebEnabled' => app(WhatsAppWebSessions::class)->isEnabled(),
             'widgetOptions' => $channel === ConnectionChannel::WebChat ? [
                 'positions' => WebChatPosition::options(),
                 'identityModes' => WebChatIdentityMode::options(),

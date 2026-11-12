@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Actions\Connections\ConnectionSecrets;
 use App\Enums\ConnectionChannel;
+use App\Enums\ConnectionProvider;
 use App\Enums\RecordState;
 use App\Models\Connection;
 use App\Models\Department;
@@ -85,6 +86,35 @@ class ConnectionRequest extends FormRequest
     }
 
     /**
+     * Modality of the connection: the stored one when updating; when
+     * creating a WhatsApp connection, WhatsApp Web (QR) if it was chosen
+     * and WhatsApp Cloud API otherwise. Other channels have a single one.
+     */
+    public function provider(): ConnectionProvider
+    {
+        $connection = $this->route('connection');
+
+        if ($connection instanceof Connection) {
+            return $connection->provider;
+        }
+
+        $channel = $this->channel();
+
+        return $channel === ConnectionChannel::Whatsapp && $this->input('provider') === ConnectionProvider::WhatsappWeb->value
+            ? ConnectionProvider::WhatsappWeb
+            : $channel->defaultProvider();
+    }
+
+    /**
+     * Whether the connection has Meta identifiers and secrets: only a
+     * WhatsApp Cloud API one (a phone linked by QR has none).
+     */
+    private function hasMetaFields(): bool
+    {
+        return $this->channel() === ConnectionChannel::Whatsapp && $this->provider() !== ConnectionProvider::WhatsappWeb;
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
@@ -96,6 +126,11 @@ class ConnectionRequest extends FormRequest
 
         $rules = [
             'channel' => $connection instanceof Connection ? ['prohibited'] : ['required', Rule::enum(ConnectionChannel::class)->only(ConnectionChannel::formCreatable())],
+            // Chosen with the channel and never changed. WhatsApp Web (QR) is
+            // only accepted where the server enabled it (WHATSAPP_WEB_ENABLED).
+            'provider' => $connection instanceof Connection
+                ? ['prohibited']
+                : ['sometimes', 'nullable', Rule::in($this->allowedProviders())],
             'name' => ['required', 'string', 'max:120'],
             'display_phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+?[0-9][0-9 ()\-]{5,31}$/'],
             // A deleted connection keeps its number reserved: that conflict
@@ -122,13 +157,30 @@ class ConnectionRequest extends FormRequest
             'reopen_window_minutes' => ['nullable', 'integer', 'min:1', 'max:'.self::REOPEN_WINDOW_MAX_MINUTES],
         ];
 
-        if ($this->channel() !== ConnectionChannel::Whatsapp) {
+        if (! $this->hasMetaFields()) {
             foreach (self::META_FIELDS as $field) {
                 $rules[$field] = ['prohibited'];
             }
         }
 
         return $rules;
+    }
+
+    /**
+     * Modalities that may be sent when creating a connection of the chosen channel.
+     *
+     * @return list<string>
+     */
+    private function allowedProviders(): array
+    {
+        $channel = $this->channel();
+        $allowed = [$channel->defaultProvider()->value];
+
+        if ($channel === ConnectionChannel::Whatsapp && (bool) config('whatsapp_web.enabled', false)) {
+            $allowed[] = ConnectionProvider::WhatsappWeb->value;
+        }
+
+        return $allowed;
     }
 
     /**
@@ -208,6 +260,8 @@ class ConnectionRequest extends FormRequest
             'default_department_id.in' => 'El departamento predeterminado debe ser uno de los departamentos autorizados.',
             '*.required_if_accepted' => 'Escribe el mensaje o desactívalo.',
             'channel.prohibited' => 'El canal de una conexión no se puede cambiar. Crea una conexión nueva para otro canal.',
+            'provider.prohibited' => 'La modalidad de una conexión no se puede cambiar. Crea una conexión nueva para otra modalidad.',
+            'provider.in' => 'Esta modalidad no está disponible en este servidor.',
             '*.prohibited' => 'Este dato solo existe en las conexiones de WhatsApp.',
         ];
     }
@@ -221,6 +275,7 @@ class ConnectionRequest extends FormRequest
     {
         return [
             'channel' => 'canal',
+            'provider' => 'modalidad',
             'name' => 'nombre',
             'display_phone_number' => 'número visible',
             'phone_number_id' => 'Phone number ID',
@@ -250,7 +305,8 @@ class ConnectionRequest extends FormRequest
     public function payload(): array
     {
         $channel = $this->channel();
-        $isWhatsapp = $channel === ConnectionChannel::Whatsapp;
+        // Only WhatsApp Cloud API has Meta identifiers and secrets.
+        $isWhatsapp = $this->hasMetaFields();
         $secrets = [];
 
         foreach (array_keys(ConnectionSecrets::FIELDS) as $field) {
@@ -261,7 +317,7 @@ class ConnectionRequest extends FormRequest
 
         $creation = $this->route('connection') instanceof Connection
             ? []
-            : ['channel' => $channel, 'provider' => $channel->defaultProvider()];
+            : ['channel' => $channel, 'provider' => $this->provider()];
 
         $meta = $isWhatsapp ? [
             'display_phone_number' => $this->nullableString('display_phone_number'),
@@ -285,6 +341,13 @@ class ConnectionRequest extends FormRequest
                 'farewell_enabled' => $this->boolean('farewell_enabled'),
                 'farewell_message' => $this->nullableString('farewell_message'),
                 'reopen_window_minutes' => $this->filled('reopen_window_minutes') ? $this->integer('reopen_window_minutes') : null,
+                // WhatsApp Web (QR): no automatic answers at all (welcome, away,
+                // farewell); only people write. Reopening and departments apply.
+                ...($this->provider() === ConnectionProvider::WhatsappWeb ? [
+                    'welcome_enabled' => false, 'welcome_message' => null,
+                    'away_enabled' => false, 'away_message' => null, 'away_in_open_conversations' => false,
+                    'farewell_enabled' => false, 'farewell_message' => null,
+                ] : []),
             ],
             'secrets' => $secrets,
             'department_ids' => $this->departmentIds(),

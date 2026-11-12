@@ -4,6 +4,7 @@ namespace App\Actions\Connections;
 
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
+use App\Enums\ConnectionProvider;
 use App\Enums\ConversationOrigin;
 use App\Enums\RecordState;
 use App\Models\Connection;
@@ -35,7 +36,8 @@ class ConnectionListQuery
     {
         return [
             'search' => ['nullable', 'string', 'max:100'],
-            'channel' => ['nullable', Rule::enum(ConnectionChannel::class)],
+            // A channel, or the WhatsApp Web (QR) modality of the WhatsApp channel.
+            'channel' => ['nullable', Rule::in([...array_map(fn (ConnectionChannel $channel): string => $channel->value, ConnectionChannel::cases()), ConnectionProvider::WhatsappWeb->value])],
             'health' => ['nullable', Rule::enum(ConnectionHealth::class)],
             'department' => ['nullable', 'integer'],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
@@ -93,7 +95,9 @@ class ConnectionListQuery
                     ->orWhere('phone_number_id', 'like', $term)
                     ->orWhere('business_account_id', 'like', $term));
             })
-            ->when($filters['channel'] !== null, fn (Builder $query) => $query->where('channel', $filters['channel']))
+            ->when($filters['channel'] !== null, fn (Builder $query) => $filters['channel'] === ConnectionProvider::WhatsappWeb->value
+                ? $query->where('provider', ConnectionProvider::WhatsappWeb)
+                : $query->where('channel', $filters['channel']))
             ->when($filters['department'] !== null, fn (Builder $query) => $query->whereHas(
                 'departments',
                 fn (Builder $departments) => $departments->whereKey($filters['department']),

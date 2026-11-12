@@ -6,6 +6,7 @@ use App\Enums\ConnectionChannel;
 use App\Enums\CustomerWindowStatus;
 use App\Models\Connection;
 use App\Models\Conversation;
+use App\Services\Messaging\ConnectionModality;
 use App\Support\CustomerWindowState;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -59,7 +60,9 @@ class CustomerServiceWindow
 
         $channel = $this->channelOf($conversation);
 
-        if ($channel !== null && ! $channel->usesCustomerServiceWindow()) {
+        // The web chat has no window, and neither has a WhatsApp connection
+        // operated by a phone linked by QR (WhatsApp Web).
+        if (($channel !== null && ! $channel->usesCustomerServiceWindow()) || app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
             return new CustomerWindowState(CustomerWindowStatus::NotApplicable, null, null, 0, null);
         }
 

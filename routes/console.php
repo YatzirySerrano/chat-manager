@@ -2,6 +2,7 @@
 
 use App\Actions\Conversations\CloseInactiveConversations;
 use App\Services\Storage\MediaDisk;
+use App\Services\WhatsAppWeb\InternalSignature;
 use App\Support\Features;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -41,6 +42,9 @@ Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOv
 
 // Media disk mounted from a NAS (MEDIA_DISK=nas only): bounded health probe whose cached result gates file writes.
 Schedule::command('storage:mount-health')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => app(MediaDisk::class)->isMount());
+
+// WhatsApp Web (QR): the stored state of each session follows the Node service (down, restarted, session lost).
+Schedule::command('whatsapp-web:sync')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => (bool) config('whatsapp_web.enabled') && app(InternalSignature::class)->isConfigured());
 
 // Messenger / Instagram (meta module): Instagram Login tokens last 60 days and are renewed before they expire.
 Schedule::command('meta:refresh-instagram-tokens')->dailyAt('03:50')->withoutOverlapping();

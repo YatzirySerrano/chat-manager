@@ -7,6 +7,7 @@ use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
 use App\Enums\ConnectionProvider;
 use App\Enums\DataScope;
+use App\Enums\WhatsAppWebState;
 use Database\Factories\ConnectionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -80,6 +81,17 @@ use Illuminate\Support\Str;
  * @property Carbon|null $last_error_at
  * @property string|null $last_error_message
  * @property Carbon|null $last_activity_at
+ * @property WhatsAppWebState|null $web_session_state State of the WhatsApp Web (QR) session; null for every other provider.
+ * @property string|null $web_session_phone Digits of the linked phone, once WhatsApp reports it.
+ * @property string|null $web_session_push_name
+ * @property string|null $web_session_reason
+ * @property string|null $web_session_error_code
+ * @property string|null $web_session_error Last error of the session, readable and without personal data.
+ * @property int $web_session_reconnects
+ * @property Carbon|null $web_session_linked_at When the phone currently linked finished linking; null while none is linked.
+ * @property Carbon|null $web_session_connected_at
+ * @property Carbon|null $web_session_event_at
+ * @property int|null $web_session_link_user_id Who requested the link in progress.
  * @property Carbon|null $deleted_at Logical deletion; explicit, never a global scope (history relations must keep resolving it).
  * @property int|null $created_by_user_id
  * @property Carbon|null $created_at
@@ -154,6 +166,11 @@ class Connection extends Model
             'last_outbound_at' => 'datetime',
             'last_error_at' => 'datetime',
             'last_activity_at' => 'datetime',
+            'web_session_state' => WhatsAppWebState::class,
+            'web_session_reconnects' => 'integer',
+            'web_session_linked_at' => 'datetime',
+            'web_session_connected_at' => 'datetime',
+            'web_session_event_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
     }
@@ -265,6 +282,12 @@ class Connection extends Model
      */
     public function hasRequiredCredentials(): bool
     {
+        // A WhatsApp Web (QR) connection has no Meta credentials at all, so
+        // nothing ever calls Meta for it.
+        if ($this->isWhatsAppWeb()) {
+            return false;
+        }
+
         return match ($this->channel) {
             ConnectionChannel::Whatsapp => filled($this->phone_number_id) && filled($this->business_account_id) && filled($this->access_token),
             ConnectionChannel::Messenger, ConnectionChannel::Instagram => filled($this->external_account_id) && filled($this->access_token),
@@ -286,6 +309,50 @@ class Connection extends Model
     }
 
     /**
+     * Whether the connection is a phone linked by QR (WhatsApp Web, the
+     * unofficial modality) instead of WhatsApp Cloud API. The modality is
+     * chosen when the connection is created and never changes.
+     */
+    public function isWhatsAppWeb(): bool
+    {
+        return $this->provider === ConnectionProvider::WhatsappWeb;
+    }
+
+    /**
+     * Whether the connection is operated with Meta credentials (Cloud API,
+     * Messenger, Instagram): verification, templates, webhooks and the
+     * subscription only exist for these.
+     */
+    public function usesMetaApi(): bool
+    {
+        return $this->provider->usesMetaApi();
+    }
+
+    /**
+     * State of the WhatsApp Web session (Unconfigured until a phone is
+     * linked); null for every other provider.
+     */
+    public function webSessionState(): ?WhatsAppWebState
+    {
+        return $this->isWhatsAppWeb() ? ($this->web_session_state ?? WhatsAppWebState::Unconfigured) : null;
+    }
+
+    /**
+     * Whether the provider limits free-form replies to the 24 hour customer
+     * service window and offers approved templates. It is a rule of the
+     * official APIs: a phone linked by QR has neither.
+     */
+    public function usesCustomerServiceWindow(): bool
+    {
+        return $this->channel->usesCustomerServiceWindow() && ! $this->isWhatsAppWeb();
+    }
+
+    public function supportsTemplates(): bool
+    {
+        return $this->channel->supportsTemplates() && ! $this->isWhatsAppWeb();
+    }
+
+    /**
      * Whether the connection has what its channel needs to operate: the Meta
      * credentials for WhatsApp, or a widget with at least one authorized
      * origin for the web chat. hasRequiredCredentials() keeps meaning "Meta
@@ -293,6 +360,11 @@ class Connection extends Model
      */
     public function isConfigured(): bool
     {
+        // WhatsApp Web: a phone finished linking and its session was not revoked.
+        if ($this->isWhatsAppWeb()) {
+            return $this->web_session_linked_at !== null && ($this->webSessionState()?->isLinked() ?? false);
+        }
+
         return match ($this->channel) {
             ConnectionChannel::Whatsapp => $this->hasRequiredCredentials(),
             ConnectionChannel::WebChat => ($widget = $this->loadMissing('webChatWidget')->webChatWidget) !== null && $widget->allowed_origins !== [],
@@ -331,10 +403,30 @@ class Connection extends Model
             ! $this->is_active => "La conexión de {$channel} «{$this->name}» está desactivada: no se pueden enviar mensajes hasta que un administrador la vuelva a activar.",
             $this->isWebChat() && ! $this->isConfigured() => "La conexión de {$channel} «{$this->name}» no tiene configurado su widget ni sus dominios autorizados: un administrador debe completarlos antes de enviar mensajes.",
             $this->isWebChat() => null,
+            $this->isWhatsAppWeb() => $this->webSessionBlockReason(),
             $this->usesMetaAuthorization() && ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene una autorización vigente de Meta: un administrador debe volver a autorizarla desde Conexiones antes de enviar mensajes.",
             ! $this->hasRequiredCredentials() => "La conexión de {$channel} «{$this->name}» no tiene guardados sus identificadores o su token de acceso de Meta: un administrador debe completarlos antes de enviar mensajes.",
             filled($this->credentials_error) => "Meta rechazó las credenciales de la conexión de {$channel} «{$this->name}»: un administrador debe corregirlas y verificarlas antes de enviar mensajes.",
             default => null,
+        };
+    }
+
+    /**
+     * Why a WhatsApp Web session cannot send right now; null when it is
+     * connected. Only a connected session sends: a running service or a
+     * linked phone alone is not enough.
+     */
+    private function webSessionBlockReason(): ?string
+    {
+        $name = "La conexión de WhatsApp Web «{$this->name}»";
+
+        return match ($this->webSessionState()) {
+            WhatsAppWebState::Connected => null,
+            WhatsAppWebState::Reconnecting => "{$name} perdió la conexión con WhatsApp y se está reconectando: espera unos segundos antes de enviar.",
+            WhatsAppWebState::Disconnected => "{$name} está desconectada temporalmente: un administrador debe reconectarla desde Conexiones antes de enviar mensajes.",
+            WhatsAppWebState::LoggedOut => "{$name} requiere una nueva vinculación: WhatsApp cerró la sesión del teléfono. Un administrador debe escanear un código QR nuevo desde Conexiones.",
+            WhatsAppWebState::Error => "{$name} tiene un error y no puede enviar: un administrador debe revisarla y reconectarla desde Conexiones.",
+            default => "{$name} todavía no tiene un teléfono vinculado: un administrador debe escanear el código QR desde Conexiones antes de enviar mensajes.",
         };
     }
 

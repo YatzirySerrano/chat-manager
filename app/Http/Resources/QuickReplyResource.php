@@ -52,6 +52,8 @@ class QuickReplyResource extends JsonResource
                 'update' => $request->user()?->can('update', $this->resource) ?? false,
                 'delete' => $request->user()?->can('delete', $this->resource) ?? false,
                 'restore' => $request->user()?->can('restore', $this->resource) ?? false,
+                // Irreversible (permanent-deletion.*, Superadministrador): only for records already deleted.
+                'purge' => $request->user()?->can('deletePermanently', $this->resource) ?? false,
             ],
         ];
     }

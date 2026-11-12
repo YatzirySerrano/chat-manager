@@ -51,7 +51,7 @@ class SendAwayInOpenConversation implements ShouldQueue
         $connection = $conversation?->channelConnection;
         $message = Message::query()->whereKey($this->messageId)->where('conversation_id', $this->conversationId)->first(['id', 'sent_at', 'created_at']);
 
-        if ($conversation === null || $connection === null || $message === null || ! $connection->away_in_open_conversations || $conversation->isImported()) {
+        if ($conversation === null || $connection === null || $message === null || ! $connection->away_in_open_conversations || $connection->isWhatsAppWeb() || $conversation->isImported()) {
             return;
         }
 

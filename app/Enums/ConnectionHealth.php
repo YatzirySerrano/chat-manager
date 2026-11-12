@@ -68,6 +68,10 @@ enum ConnectionHealth: string
             return self::resolveWebChat($connection);
         }
 
+        if ($connection->isWhatsAppWeb()) {
+            return self::resolveWhatsAppWeb($connection);
+        }
+
         if (! $connection->hasRequiredCredentials()) {
             return self::NotConfigured;
         }
@@ -131,6 +135,28 @@ enum ConnectionHealth: string
         }
 
         return self::Configured;
+    }
+
+    /**
+     * A WhatsApp Web (QR) connection has no credentials to verify: its
+     * health is the real state of its session. Only a connected session is
+     * receiving, and operational once traffic was confirmed in both
+     * directions; a session that is recovering, stopped or revoked is never
+     * shown as healthy, whatever happened before. The detail (QR, phone,
+     * last error) is the session's own state: see WhatsAppWebSessions.
+     */
+    private static function resolveWhatsAppWeb(Connection $connection): self
+    {
+        return match ($connection->webSessionState()) {
+            WhatsAppWebState::Connected => $connection->last_inbound_at !== null && $connection->last_outbound_at !== null ? self::Operational : self::Receiving,
+            WhatsAppWebState::Error => self::Error,
+            // A session WhatsApp revoked needs an administrator; one closed
+            // on purpose from ChatManager is simply not linked any more.
+            WhatsAppWebState::LoggedOut => $connection->web_session_reason === 'requested' ? self::NotConfigured : self::Error,
+            // Recovering or stopped on purpose: not healthy, not yet a problem.
+            WhatsAppWebState::Reconnecting, WhatsAppWebState::Disconnected => self::Configured,
+            default => self::NotConfigured,
+        };
     }
 
     public function label(): string

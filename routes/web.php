@@ -36,6 +36,9 @@ require __DIR__.'/attention.php';
 // Provider webhooks: public and outside the "web" group (no session, cookies or CSRF).
 Route::withoutMiddleware('web')->group(__DIR__.'/webhooks.php');
 
+// WhatsApp Web (QR): internal endpoints of the private Node service, signed and outside the "web" group.
+Route::withoutMiddleware('web')->group(__DIR__.'/whatsapp-web.php');
+
 // Embeddable web chat frame: public and outside the "web" group as well.
 Route::withoutMiddleware('web')->group(__DIR__.'/web-chat.php');
 

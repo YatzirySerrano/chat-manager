@@ -86,6 +86,22 @@ class QuickReplyPolicy
         return $this->update($actor, $quickReply);
     }
 
+    /**
+     * Erasing for good a reply that is already deleted, shared or personal
+     * (permanent-deletion.quick-replies, reserved to the root authority),
+     * within what the actor may restore.
+     */
+    public function deletePermanently(User $actor, QuickReply $quickReply): Response
+    {
+        $response = $this->restore($actor, $quickReply);
+
+        if (! $response->allowed()) {
+            return $response;
+        }
+
+        return $actor->holdsPermission(Permission::PurgeQuickReplies) ? Response::allow() : Response::deny();
+    }
+
     public function restore(User $actor, QuickReply $quickReply): Response
     {
         $response = $this->manages($actor, $quickReply);

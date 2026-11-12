@@ -29,7 +29,7 @@ class ConnectionMonitoring
      */
     public static function for(Connection $connection): array
     {
-        $usesMeta = ! $connection->isWebChat();
+        $usesMeta = $connection->usesMetaApi();
         $attempt = $connection->provider_signals[ConnectionMonitor::CHECK_SIGNAL] ?? null;
         $problem = in_array($connection->configurationHealth(), [ConnectionHealth::Error, ConnectionHealth::CredentialsInvalid], true);
 
@@ -54,7 +54,7 @@ class ConnectionMonitoring
                     ? ['at' => $attempt['at'], 'outcome' => $attempt['value']['outcome']]
                     : null,
             ],
-            'webhook' => $connection->channel !== ConnectionChannel::Whatsapp ? null : [
+            'webhook' => $connection->channel !== ConnectionChannel::Whatsapp || $connection->isWhatsAppWeb() ? null : [
                 'verified_at' => $connection->webhook_verified_at?->toIso8601String(),
                 'last_received_at' => $connection->last_webhook_at?->toIso8601String(),
                 'fresh' => self::isFresh($connection->last_webhook_at),
@@ -92,7 +92,7 @@ class ConnectionMonitoring
     {
         $warnings = [];
 
-        if (! $connection->isWebChat() && $connection->app_subscribed === false) {
+        if ($connection->usesMetaApi() && $connection->app_subscribed === false) {
             $warnings[] = [
                 'code' => 'not_subscribed',
                 'message' => $connection->channel === ConnectionChannel::Whatsapp
@@ -168,7 +168,7 @@ class ConnectionMonitoring
      */
     private static function evidence(Connection $connection, bool $problem): array
     {
-        $check = $connection->isWebChat() || filled($connection->credentials_error) ? null : $connection->credentials_verified_at;
+        $check = ! $connection->usesMetaApi() || filled($connection->credentials_error) ? null : $connection->credentials_verified_at;
         $traffic = self::latest($connection->last_inbound_at, $connection->last_outbound_at, $connection->last_webhook_at);
         $latest = self::latest($check, $traffic);
         $source = $latest === null ? null : ($check !== null && $latest->equalTo($check) ? 'check' : 'traffic');

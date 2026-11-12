@@ -5,6 +5,7 @@ namespace App\Services\Operations;
 use App\Enums\WebhookEventStatus;
 use App\Models\WebhookEvent;
 use App\Services\Storage\MediaDisk;
+use App\Services\WhatsAppWeb\WhatsAppWebMonitor;
 use App\Support\Attachments\ChannelAttachmentPolicy;
 use App\Support\Attachments\ChannelAttachmentRules;
 use App\Support\Attachments\ServerUploadLimits;
@@ -53,6 +54,8 @@ class SystemHealth
             $this->scheduler(),
             $this->webhookBacklog(),
             $this->realtime(),
+            // Only where WhatsApp Web (QR) is enabled or used; always a warning at most.
+            ...array_filter([app(WhatsAppWebMonitor::class)->healthCheck()]),
         ];
     }
 

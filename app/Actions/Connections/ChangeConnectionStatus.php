@@ -41,6 +41,7 @@ class ChangeConnectionStatus
                 throw ValidationException::withMessages([
                     'is_active' => match (true) {
                         $connection->isWebChat() => 'Para activar el chat web configura primero su widget con al menos un dominio autorizado.',
+                        $connection->isWhatsAppWeb() => 'Para activar la conexión vincula primero el teléfono: genera el código QR y escanéalo desde WhatsApp.',
                         $connection->usesMetaAuthorization() => "Para activar la conexión de {$connection->channel->label()} autoriza primero la cuenta con Meta.",
                         default => 'Para activar la conexión guarda primero el Phone number ID, el WABA ID y el token de acceso.',
                     },

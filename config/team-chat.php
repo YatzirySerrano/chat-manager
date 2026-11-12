@@ -48,9 +48,11 @@ return [
         'max_files' => (int) env('TEAM_CHAT_MAX_FILES', 5),
 
         /*
-        | Maximum size of a single file, in kilobytes.
+        | Maximum size of a single file, in kilobytes. 50 MB by default so a
+        | video recorded with a phone fits; the composer also shows this
+        | server's PHP upload limits when they are lower (ServerUploadLimits).
         */
-        'max_kilobytes' => (int) env('TEAM_CHAT_MAX_KILOBYTES', 10240),
+        'max_kilobytes' => (int) env('TEAM_CHAT_MAX_KILOBYTES', 51200),
 
         /*
         | Allowed real MIME types (detected with finfo from the content, never
@@ -75,9 +77,20 @@ return [
             'application/vnd.oasis.opendocument.text' => ['odt'],
             'application/vnd.oasis.opendocument.spreadsheet' => ['ods'],
             'audio/mpeg' => ['mp3'],
-            'audio/ogg' => ['ogg', 'oga'],
+            'audio/ogg' => ['ogg', 'oga', 'opus'],
             'audio/mp4' => ['m4a'],
-            'video/mp4' => ['mp4'],
+            'audio/aac' => ['aac'],
+            'audio/wav' => ['wav'],
+            'audio/amr' => ['amr'],
+            'video/mp4' => ['mp4', 'm4v'],
+            // What phones record and share: iPhone videos (.mov), photos in
+            // HEIC/HEIF (downloaded, not shown inline: only Safari draws them)
+            // and older Android clips (.3gp, .webm).
+            'video/quicktime' => ['mov'],
+            'video/webm' => ['webm'],
+            'video/3gpp' => ['3gp'],
+            'image/heic' => ['heic'],
+            'image/heif' => ['heif'],
         ],
 
         /*
@@ -85,6 +98,12 @@ return [
         | always downloaded.
         */
         'inline_types' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
+
+        /*
+        | Audio and video the chat plays in place (served inline with byte
+        | ranges, which Safari requires). Anything else is only downloaded.
+        */
+        'playable_types' => ['video/mp4', 'video/quicktime', 'video/webm', 'audio/mpeg', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/wav'],
     ],
 
 ];

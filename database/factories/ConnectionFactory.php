@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionProvider;
+use App\Enums\WhatsAppWebState;
 use App\Models\Connection;
 use App\Models\WebChatWidget;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -116,6 +117,46 @@ class ConnectionFactory extends Factory
             'webhook_verify_token' => null,
             'is_active' => true,
         ])->has(WebChatWidget::factory(), 'webChatWidget');
+    }
+
+    /**
+     * An active WhatsApp Web (QR) connection whose phone is linked and whose
+     * session is connected: no Meta identifiers or credentials at all.
+     */
+    public function whatsAppWeb(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'channel' => ConnectionChannel::Whatsapp,
+            'provider' => ConnectionProvider::WhatsappWeb,
+            'display_phone_number' => '+52 55 1234 5678',
+            'phone_number_id' => null,
+            'business_account_id' => null,
+            'access_token' => null,
+            'app_secret' => null,
+            'webhook_verify_token' => null,
+            'is_active' => true,
+            'web_session_state' => WhatsAppWebState::Connected,
+            'web_session_phone' => '5215512345678',
+            'web_session_linked_at' => now()->subDay(),
+            'web_session_connected_at' => now()->subHour(),
+            'web_session_event_at' => now()->subHour(),
+        ]);
+    }
+
+    /**
+     * A WhatsApp Web (QR) connection just created: inactive, no phone linked.
+     */
+    public function whatsAppWebUnlinked(): static
+    {
+        return $this->whatsAppWeb()->state(fn (array $attributes) => [
+            'display_phone_number' => null,
+            'is_active' => false,
+            'web_session_state' => WhatsAppWebState::Unconfigured,
+            'web_session_phone' => null,
+            'web_session_linked_at' => null,
+            'web_session_connected_at' => null,
+            'web_session_event_at' => null,
+        ]);
     }
 
     /**

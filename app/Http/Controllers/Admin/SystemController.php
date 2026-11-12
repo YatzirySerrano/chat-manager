@@ -13,6 +13,7 @@ use App\Services\Operations\RecentErrors;
 use App\Services\Operations\SchedulerHeartbeat;
 use App\Services\Operations\SensitiveText;
 use App\Services\Operations\SystemHealth;
+use App\Services\WhatsAppWeb\WhatsAppWebMonitor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -64,6 +65,8 @@ class SystemController extends Controller
             ],
             'recentErrors' => $recentErrors->latest(),
             'connections' => $this->connections($viewer),
+            // WhatsApp Web (QR), apart from WhatsApp Cloud API: the Node service and the real state of each session.
+            'whatsappWeb' => fn (): array => app(WhatsAppWebMonitor::class)->overview(),
             'environment' => [
                 'app_env' => (string) config('app.env'),
                 'debug' => (bool) config('app.debug'),

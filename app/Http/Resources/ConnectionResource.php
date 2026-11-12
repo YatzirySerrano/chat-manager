@@ -10,6 +10,7 @@ use App\Models\Department;
 use App\Models\WebChatWidget;
 use App\Services\Meta\ConnectionMonitoring;
 use App\Services\Meta\MetaApp;
+use App\Support\PhoneNumber;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -72,6 +73,9 @@ class ConnectionResource extends JsonResource
                 fn (): array => $this->widgetSettings(),
             ),
             'meta_account' => $this->when($this->usesMetaAuthorization(), fn (): array => $this->metaAccount()),
+            // WhatsApp Web (QR): real state of the session (null for every other
+            // modality). Never the QR nor anything of the session's credentials.
+            'whatsapp_web' => $this->whatsAppWebSummary(),
             'health' => $this->describe($health),
             'configuration_health' => $this->describe($configurationHealth),
             'checks' => [
@@ -113,6 +117,32 @@ class ConnectionResource extends JsonResource
                 'delete' => $request->user()?->can('delete', $this->resource) ?? false,
                 'restore' => $request->user()?->can('restore', $this->resource) ?? false,
             ],
+        ];
+    }
+
+    /**
+     * @return array{state: string, state_label: string, state_description: string, tone: string, can_send: bool, phone: string|null, push_name: string|null, connected_since: string|null, last_event_at: string|null, last_error: string|null, reconnects: int}|null
+     */
+    private function whatsAppWebSummary(): ?array
+    {
+        $state = $this->webSessionState();
+
+        if ($state === null) {
+            return null;
+        }
+
+        return [
+            'state' => $state->value,
+            'state_label' => $state->label(),
+            'state_description' => $state->description(),
+            'tone' => $state->tone(),
+            'can_send' => $state->canSend() && $this->isOperational(),
+            'phone' => $this->web_session_phone === null ? null : PhoneNumber::format(PhoneNumber::normalize('+'.$this->web_session_phone) ?? '+'.$this->web_session_phone),
+            'push_name' => $this->web_session_push_name,
+            'connected_since' => $this->web_session_connected_at?->toIso8601String(),
+            'last_event_at' => $this->web_session_event_at?->toIso8601String(),
+            'last_error' => $state->canSend() ? null : $this->web_session_error,
+            'reconnects' => $this->web_session_reconnects,
         ];
     }
 

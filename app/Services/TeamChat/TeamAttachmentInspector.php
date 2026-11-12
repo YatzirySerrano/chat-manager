@@ -102,9 +102,26 @@ class TeamAttachmentInspector
             return 'text/csv';
         }
 
+        // An .m4a voice note is an MP4 container: some libmagic builds only
+        // report the container.
+        if ($extension === 'm4a' && in_array($detected, ['video/mp4', 'application/mp4'], true)) {
+            return 'audio/mp4';
+        }
+
+        // HEIC/HEIF photos of older libmagic builds.
+        if ($detected === 'application/octet-stream' && in_array($extension, ['heic', 'heif'], true) && $this->isHeif($path)) {
+            return 'image/'.$extension;
+        }
+
         return match ($detected) {
             'audio/x-m4a' => 'audio/mp4',
             'audio/mp3' => 'audio/mpeg',
+            'audio/x-wav', 'audio/wave', 'audio/vnd.wave' => 'audio/wav',
+            'audio/x-hx-aac-adts', 'audio/x-aac' => 'audio/aac',
+            'audio/amr-wb' => 'audio/amr',
+            'video/x-m4v' => 'video/mp4',
+            'image/heic-sequence' => 'image/heic',
+            'image/heif-sequence' => 'image/heif',
             default => $detected,
         };
     }
@@ -130,5 +147,18 @@ class TeamAttachmentInspector
         $zip->close();
 
         return $isDocument;
+    }
+
+    /**
+     * Whether the file starts like a HEIF container (an ISO media "ftyp"
+     * box with one of the HEIF brands), not anything renamed to .heic.
+     */
+    private function isHeif(string $path): bool
+    {
+        $header = (string) @file_get_contents($path, false, null, 0, 12);
+
+        return strlen($header) === 12
+            && substr($header, 4, 4) === 'ftyp'
+            && in_array(substr($header, 8, 4), ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1'], true);
     }
 }

@@ -15,6 +15,7 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
+use App\Jobs\DownloadWhatsAppWebMedia;
 use App\Jobs\SendAwayInOpenConversation;
 use App\Models\Connection;
 use App\Models\Contact;
@@ -52,7 +53,9 @@ use Illuminate\Support\Str;
  * 5. distributes the conversation when its department does so automatically;
  * 6. registers the media it announces as a pending attachment and queues
  *    its download (DownloadInboundMedia), never inside this transaction:
- *    a WhatsApp media id, or the CDN URL of a Messenger/Instagram attachment.
+ *    a WhatsApp media id, the CDN URL of a Messenger/Instagram attachment,
+ *    or the descriptor of a WhatsApp Web (QR) file, which is kept encrypted
+ *    on the attachment and downloaded by DownloadWhatsAppWebMedia.
  *
  * Every channel (WhatsApp, Messenger, Instagram, web chat) enters through
  * here; the provider message id is unique across channels (wamid, Meta
@@ -125,7 +128,7 @@ class ReceiveInboundMessage
             'body' => $inbound->body,
             'reply_to_message_id' => $this->repliedMessageId($conversation, $inbound),
             'metadata' => array_filter([
-                'content' => $inbound->content,
+                'content' => self::storedContent($inbound->content),
                 'context' => $inbound->context,
                 'reply_to' => is_string($inbound->context['id'] ?? null) ? ['message_id' => $inbound->context['id']] : null,
                 'profile_name' => $inbound->sender->profileName,
@@ -159,12 +162,15 @@ class ReceiveInboundMessage
         // A customer writing again in an open or queued conversation may get
         // the away message once per period outside hours, only where the
         // connection's administrator turned it on.
-        if ($outcome === InboundMessageOutcome::Appended && $connection->away_in_open_conversations) {
+        if ($outcome === InboundMessageOutcome::Appended && $connection->away_in_open_conversations && ! $connection->isWhatsAppWeb()) {
             SendAwayInOpenConversation::dispatch($conversation->id, $message->id)->afterCommit();
         }
 
         if ($attachment !== null) {
-            DownloadInboundMedia::dispatch($attachment->id)->afterCommit();
+            // A WhatsApp Web file is fetched from the private service, never from Meta.
+            $attachment->provider_reference !== null
+                ? DownloadWhatsAppWebMedia::dispatch($attachment->id)->afterCommit()
+                : DownloadInboundMedia::dispatch($attachment->id)->afterCommit();
         }
 
         return new InboundMessageReceipt($registration, $conversation->refresh(), $message, $outcome);
@@ -234,9 +240,16 @@ class ReceiveInboundMessage
         $mediaId = $inbound->content['id'] ?? null;
         $sourceUrl = ($inbound->content['source'] ?? null) === 'url' && is_string($inbound->content['url'] ?? null) ? $inbound->content['url'] : null;
 
+        // WhatsApp Web (QR): what the private service needs to download and
+        // decrypt the file. It is kept encrypted on the attachment and never
+        // in the message content, which the browser may read.
+        $descriptor = ($inbound->content['source'] ?? null) === 'whatsapp_web' && is_array($inbound->content['descriptor'] ?? null) && $inbound->content['descriptor'] !== []
+            ? $inbound->content['descriptor']
+            : null;
+
         // WhatsApp announces a media id; Messenger and Instagram a URL of
         // Meta's CDN, kept in the message content for the download job.
-        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null) {
+        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null && $descriptor === null) {
             return null;
         }
 
@@ -247,6 +260,7 @@ class ReceiveInboundMessage
         $attachment->forceFill([
             'message_id' => $message->id,
             'whatsapp_media_id' => is_string($mediaId) && $mediaId !== '' ? Str::limit($mediaId, 128, '') : null,
+            'provider_reference' => $descriptor,
             'disk' => (string) config('filesystems.media_disk', 'local'),
             'path' => null,
             'mime_type' => $mime,
@@ -256,6 +270,24 @@ class ReceiveInboundMessage
         ])->save();
 
         return $attachment;
+    }
+
+    /**
+     * Content kept with the message: everything the provider sent except
+     * the download descriptor of a WhatsApp Web file (a decryption key).
+     *
+     * @param  array<array-key, mixed>|null  $content
+     * @return array<array-key, mixed>|null
+     */
+    private static function storedContent(?array $content): ?array
+    {
+        if ($content === null || ! array_key_exists('descriptor', $content)) {
+            return $content;
+        }
+
+        unset($content['descriptor']);
+
+        return $content;
     }
 
     /**

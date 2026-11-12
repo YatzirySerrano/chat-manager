@@ -5,6 +5,7 @@ use App\Http\Controllers\Conversations\ConversationCategoryController;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Http\Controllers\Conversations\ConversationMessageController;
 use App\Http\Controllers\Conversations\ConversationNoteController;
+use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Controllers\Conversations\ConversationPreviewController;
 use App\Http\Controllers\Conversations\ConversationReadController;
 use App\Http\Controllers\Conversations\ConversationReadinessController;
@@ -54,6 +55,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('conversations/{conversation}/tags', [ConversationTagController::class, 'update'])->name('conversations.tags.update');
     Route::post('conversations/{conversation}/readiness', [ConversationReadinessController::class, 'update'])->middleware('phase-two')->name('conversations.readiness.update');
     Route::put('conversations/{conversation}/category', [ConversationCategoryController::class, 'update'])->name('conversations.category.update');
+    Route::delete('conversations/{conversation}/permanent', ConversationPermanentDeletionController::class)
+        ->middleware('throttle:20,1')
+        ->name('conversations.destroy-permanently');
     Route::get('conversations/{conversation}/messages/{message}/attachments/{attachment}', [MessageAttachmentController::class, 'show'])
         ->name('conversations.messages.attachments.show');
 });

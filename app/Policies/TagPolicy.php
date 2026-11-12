@@ -41,6 +41,17 @@ class TagPolicy
         return $this->update($actor, $tag);
     }
 
+    /**
+     * Erasing for good a tag that is already deleted (permanent-deletion.tags,
+     * reserved to the root authority).
+     */
+    public function deletePermanently(User $actor, Tag $tag): bool
+    {
+        return $tag->isDeleted()
+            && $actor->holdsPermission(Permission::PurgeTags)
+            && $actor->canViewDeletedRecords();
+    }
+
     public function restore(User $actor, Tag $tag): bool
     {
         return $tag->isDeleted()

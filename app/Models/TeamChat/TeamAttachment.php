@@ -61,6 +61,14 @@ class TeamAttachment extends Model
     }
 
     /**
+     * Whether the chat may play it in place (audio and video browsers play).
+     */
+    public function isPlayable(): bool
+    {
+        return in_array($this->mime_type, (array) config('team-chat.attachments.playable_types', []), true);
+    }
+
+    /**
      * @return BelongsTo<TeamMessage, $this>
      */
     public function message(): BelongsTo

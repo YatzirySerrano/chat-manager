@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationStateGuard;
+use App\Services\Messaging\ConnectionModality;
 
 /**
  * Authorization of the conversation engine. Every ability combines the
@@ -184,6 +185,23 @@ class ConversationPolicy
     }
 
     /**
+     * «Eliminar chat definitivamente»: erasing a conversation with all its
+     * messages and files. The permission is reserved to the root authority
+     * (User::holdsPermission() refuses it to anyone else) and reaches what
+     * the viewer can open: the inbox, or the archived Whaticket history.
+     * Unlike every other operation it also covers imported conversations.
+     */
+    public function deletePermanently(User $actor, Conversation $conversation): bool
+    {
+        if (! $actor->holdsPermission(Permission::PurgeConversations)) {
+            return false;
+        }
+
+        return $this->view($actor, $conversation)
+            || ($conversation->isImported() && $actor->holdsPermission(Permission::ViewArchivedHistory));
+    }
+
+    /**
      * Read-only supervision within the viewer's reach: it widens what they
      * see (ConversationAccess::canView()) and the operational details shown,
      * never what they may do. Every operation checks its own permission.
@@ -211,7 +229,7 @@ class ConversationPolicy
     {
         if ($conversation->relationLoaded('channelConnection') && $conversation->channelConnection !== null
             && array_key_exists('channel', $conversation->channelConnection->getAttributes())) {
-            return $conversation->channelConnection->channel->supportsTemplates();
+            return $conversation->channelConnection->channel->supportsTemplates() && ! app(ConnectionModality::class)->isWhatsAppWeb($conversation);
         }
 
         $connectionId = (int) $conversation->connection_id;
@@ -221,7 +239,7 @@ class ConversationPolicy
             $this->templateChannels[$connectionId] = is_string($value) && (ConnectionChannel::tryFrom($value)?->supportsTemplates() ?? false);
         }
 
-        return $this->templateChannels[$connectionId];
+        return $this->templateChannels[$connectionId] && ! app(ConnectionModality::class)->isWhatsAppWeb($conversation);
     }
 
     /**

@@ -45,6 +45,9 @@ class MessageTemplatePolicy
         // a connection without Meta credentials.
         $supportsTemplates = ! array_key_exists('channel', $connection->getAttributes()) || $connection->channel->supportsTemplates();
 
-        return ! $connection->isDeleted() && $supportsTemplates && $actor->holdsPermission(Permission::ManageTemplates);
+        // A phone linked by QR (WhatsApp Web) has no templates to synchronize.
+        $isWeb = array_key_exists('provider', $connection->getAttributes()) && $connection->isWhatsAppWeb();
+
+        return ! $connection->isDeleted() && $supportsTemplates && ! $isWeb && $actor->holdsPermission(Permission::ManageTemplates);
     }
 }

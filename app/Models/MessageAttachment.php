@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -13,6 +14,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $message_id
  * @property string|null $whatsapp_media_id
+ * @property array<array-key, mixed>|null $provider_reference Encrypted download descriptor of a WhatsApp Web (QR) file; never serialized.
  * @property string $disk
  * @property string|null $path
  * @property string $mime_type
@@ -30,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Fillable(['message_id', 'whatsapp_media_id', 'disk', 'path', 'mime_type', 'file_name', 'size_bytes', 'sha256', 'delivery_method'])]
+#[Hidden(['provider_reference'])]
 class MessageAttachment extends Model
 {
     /**
@@ -48,6 +51,8 @@ class MessageAttachment extends Model
     {
         return [
             'status' => AttachmentStatus::class,
+            // Download descriptor of a WhatsApp Web file (it holds a media key).
+            'provider_reference' => 'encrypted:array',
             'delivery_method' => AttachmentDeliveryMethod::class,
             'size_bytes' => 'integer',
             'download_attempts' => 'integer',

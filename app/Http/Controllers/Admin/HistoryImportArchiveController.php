@@ -107,6 +107,8 @@ class HistoryImportArchiveController extends Controller
         return Inertia::render('admin/history/Show', [
             'conversation' => $archive->present($conversation, $actor),
             'timeline' => $this->decorate($conversation, $timeline->page($conversation, $request)),
+            // «Eliminar chat definitivamente» (permanent-deletion.conversations, Superadministrador).
+            'canDeletePermanently' => $actor->can('deletePermanently', $conversation),
         ]);
     }
 

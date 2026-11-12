@@ -102,6 +102,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('meta-media', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('services.meta.media_rate_limit_per_minute', 1200)))
             ->by('meta-media:'.$request->ip()));
 
+        // WhatsApp Web (QR): events and file downloads of the private service, signed in the controllers.
+        RateLimiter::for('whatsapp-web-events', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('whatsapp_web.events.rate_limit_per_minute', 1800)))
+            ->by('whatsapp-web-events:'.$request->ip()));
+        RateLimiter::for('whatsapp-web-media', fn (Request $request): Limit => Limit::perMinute(600)
+            ->by('whatsapp-web-media:'.$request->ip()));
+
         $this->configureApiRateLimiters();
 
         Gate::define('view-settings', fn (User $user): bool => $user->holdsPermission(Permission::ViewSettings));

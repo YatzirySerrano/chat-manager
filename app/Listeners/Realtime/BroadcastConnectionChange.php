@@ -4,10 +4,13 @@ namespace App\Listeners\Realtime;
 
 use App\Broadcasting\RealtimeChannels;
 use App\Broadcasting\RealtimeSignals;
+use App\Enums\Permission;
 use App\Events\Connections\ConnectionHealthChanged;
 use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Conversation;
+use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -28,6 +31,24 @@ class BroadcastConnectionChange implements ShouldQueue
     public function handle(ConnectionStatusChanged $event): void
     {
         $this->signal($event->connectionId);
+
+        // WhatsApp Web (QR): the state of the session changed (QR scanned,
+        // connected, lost). Whoever may see connections gets a signal on
+        // their personal channel with the id only; the screen then reads the
+        // state (and the QR, if allowed) from the server. Polling remains
+        // the fallback when the real-time server is off.
+        if ($event->reason === 'web_session') {
+            $this->signals->toUsers(
+                User::query()
+                    ->active()
+                    ->where(fn (Builder $query) => $query
+                        ->withPermission(Permission::ViewConnections)
+                        ->orWhere(fn (Builder $manage) => $manage->withPermission(Permission::ManageConnections)))
+                    ->pluck('id'),
+                'connection.session',
+                ['connection_id' => $event->connectionId],
+            );
+        }
     }
 
     public function handleHealthChange(ConnectionHealthChanged $event): void

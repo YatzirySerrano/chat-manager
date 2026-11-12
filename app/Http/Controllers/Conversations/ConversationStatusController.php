@@ -7,6 +7,7 @@ use App\Actions\Conversations\ReopenConversation;
 use App\Enums\ConnectionChannel;
 use App\Http\Requests\Conversations\ConversationOperationRequest;
 use App\Models\Conversation;
+use App\Services\Messaging\ConnectionModality;
 use Illuminate\Http\RedirectResponse;
 
 class ConversationStatusController extends ConversationOperationController
@@ -37,7 +38,7 @@ class ConversationStatusController extends ConversationOperationController
     {
         $channel = $conversation->channelConnection()->value('channel');
 
-        if ($channel instanceof ConnectionChannel && ! $channel->usesCustomerServiceWindow()) {
+        if (($channel instanceof ConnectionChannel && ! $channel->usesCustomerServiceWindow()) || app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
             return 'Conversación reabierta.';
         }
 

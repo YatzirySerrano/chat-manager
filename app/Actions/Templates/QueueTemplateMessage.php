@@ -58,6 +58,7 @@ class QueueTemplateMessage
             $connectionBlock = match (true) {
                 $connection === null => 'La conversación no tiene una conexión disponible para enviar mensajes.',
                 ! $connection->channel->supportsTemplates() => "Las plantillas no están disponibles en las conversaciones de {$connection->channel->label()}.",
+                $connection->isWhatsAppWeb() => 'Las plantillas solo existen en WhatsApp Cloud API: esta conversación usa WhatsApp Web (QR) y se responde con mensajes normales.',
                 default => $connection->sendingBlockReason(),
             };
 

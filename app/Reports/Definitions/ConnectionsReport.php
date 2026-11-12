@@ -5,6 +5,7 @@ namespace App\Reports\Definitions;
 use App\Actions\Connections\ConnectionListQuery;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionHealth;
+use App\Enums\ConnectionProvider;
 use App\Models\Connection;
 use App\Models\Department;
 use App\Models\User;
@@ -85,7 +86,7 @@ class ConnectionsReport extends ReportDefinition
         $this->describeSearch($descriptions, $context);
 
         if ($filters['channel'] !== null) {
-            $descriptions[] = 'Canal: '.(ConnectionChannel::tryFrom($filters['channel'])?->label() ?? $filters['channel']);
+            $descriptions[] = 'Canal: '.(ConnectionChannel::tryFrom($filters['channel'])?->label() ?? ConnectionProvider::tryFrom($filters['channel'])?->label() ?? $filters['channel']);
         }
 
         if ($filters['health'] !== null) {

@@ -7,6 +7,7 @@ use App\Events\Connections\ConnectionStatusChanged;
 use App\Models\Connection;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\WhatsAppWeb\WhatsAppWebSessions;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -38,6 +39,13 @@ class DeleteConnection
                 'was_active' => $wasActive,
                 'conversations_kept' => $locked->conversations()->count(),
             ], $actor);
+
+            // WhatsApp Web (QR): the phone is unlinked and its credentials are
+            // removed from the service once the deletion is committed; the
+            // conversations and their history stay.
+            if ($locked->isWhatsAppWeb()) {
+                DB::afterCommit(fn () => app(WhatsAppWebSessions::class)->forget($locked));
+            }
 
             return $locked;
         });

@@ -16,6 +16,7 @@ use App\Services\Automation\AutomaticMessagePlan;
 use App\Services\BusinessHours;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Messaging\ConnectionModality;
 use Carbon\CarbonInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +100,11 @@ class QueueAutomaticMessage
      */
     public function handleAwayInOpenConversation(Conversation $conversation, AutomaticMessagePlan $plan, string $period, int $triggerMessageId): ?Message
     {
+        // Second barrier: nothing automatic through WhatsApp Web (QR).
+        if (app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
+            return null;
+        }
+
         try {
             return DB::transaction(function () use ($conversation, $plan, $period, $triggerMessageId): ?Message {
                 $conversation = $this->lifecycle->lock($conversation);
@@ -135,6 +141,11 @@ class QueueAutomaticMessage
      */
     public function handle(Conversation $conversation, AutomaticMessagePlan $plan, int $cycle, ?int $triggerEventId = null): ?Message
     {
+        // Second barrier: nothing automatic through WhatsApp Web (QR).
+        if (app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
+            return null;
+        }
+
         try {
             return DB::transaction(fn (): ?Message => $this->queue($conversation, $plan, $cycle, $triggerEventId));
         } catch (UniqueConstraintViolationException) {

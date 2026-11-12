@@ -206,6 +206,8 @@ class TeamChatPresenter
             'previewable' => $attachment->isPreviewable(),
             'download_url' => route('team-chat.attachments.show', $parameters),
             'preview_url' => $attachment->isPreviewable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
+            // Audio and video played in place, with byte ranges.
+            'stream_url' => $attachment->isPlayable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
         ];
     }
 

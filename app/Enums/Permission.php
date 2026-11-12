@@ -105,6 +105,11 @@ enum Permission: string
     case ExecuteHistoryImports = 'history-import.execute';
     case ViewArchivedHistory = 'history-import.archive-view';
 
+    case PurgeConversations = 'permanent-deletion.conversations';
+    case PurgeTags = 'permanent-deletion.tags';
+    case PurgeCategories = 'permanent-deletion.categories';
+    case PurgeQuickReplies = 'permanent-deletion.quick-replies';
+
     public function group(): PermissionGroup
     {
         return PermissionGroup::from(explode('.', $this->value)[0]);
@@ -186,6 +191,10 @@ enum Permission: string
             self::ClassifyHistoryImports => 'Clasificar las conversaciones de una importación de historial',
             self::ExecuteHistoryImports => 'Ejecutar importaciones de historial de Whaticket',
             self::ViewArchivedHistory => 'Consultar el historial archivado de Whaticket',
+            self::PurgeConversations => 'Eliminar chats definitivamente',
+            self::PurgeTags => 'Eliminar definitivamente etiquetas ya eliminadas',
+            self::PurgeCategories => 'Eliminar definitivamente categorías ya eliminadas',
+            self::PurgeQuickReplies => 'Eliminar definitivamente respuestas rápidas ya eliminadas',
         };
     }
 
@@ -270,6 +279,10 @@ enum Permission: string
             self::ClassifyHistoryImports => 'Subir archivos de Whaticket y decidir qué conversaciones se importan, se archivan o no se importan.',
             self::ExecuteHistoryImports => 'Confirmar y ejecutar una importación de historial. Crea conversaciones cerradas y contactos provisionales.',
             self::ViewArchivedHistory => 'Consultar en modo de solo lectura las conversaciones de Whaticket archivadas como historial, con sus archivos.',
+            self::PurgeConversations => 'Borrar para siempre un chat con sus mensajes, archivos, notas e historial. No se puede deshacer; el contacto se conserva.',
+            self::PurgeTags => 'Borrar para siempre una etiqueta ya eliminada. Se quita de los contactos y conversaciones que la tenían. No se puede deshacer.',
+            self::PurgeCategories => 'Borrar para siempre una categoría ya eliminada. Sus conversaciones quedan sin categoría. No se puede deshacer.',
+            self::PurgeQuickReplies => 'Borrar para siempre una respuesta rápida ya eliminada, compartida o personal. No se puede deshacer.',
         };
     }
 
@@ -322,6 +335,7 @@ enum Permission: string
             self::ClassifyHistoryImports,
             self::ExecuteHistoryImports,
             self::ViewArchivedHistory,
+            ...self::permanentDeletions(),
         ], true);
     }
 
@@ -367,6 +381,7 @@ enum Permission: string
             self::ClassifyHistoryImports,
             self::ExecuteHistoryImports,
             self::ViewArchivedHistory,
+            ...self::permanentDeletions(),
         ], true);
     }
 
@@ -385,6 +400,11 @@ enum Permission: string
      *   (history-import.archive-view, consulting what was archived, is not
      *   reserved: the Administrador may hold it.)
      *
+     * - permanent-deletion.*: erasing data for good (a chat with its
+     *   messages and files, or a record that was already deleted) cannot be
+     *   undone or audited back, so only the platform owner holds it and it
+     *   is never delegated from the roles screen.
+     *
      * No other existing permission is reserved: the Administrador manages
      * everything else below the root authority, and the privilege guard
      * already keeps the root role and root users out of their reach.
@@ -396,7 +416,30 @@ enum Permission: string
             self::ViewHistoryImports,
             self::ClassifyHistoryImports,
             self::ExecuteHistoryImports,
+            ...self::permanentDeletions(),
         ], true);
+    }
+
+    /**
+     * Permissions that erase data for good (group «Eliminación definitiva»).
+     * The roles screen marks them as irreversible.
+     */
+    public function isIrreversible(): bool
+    {
+        return in_array($this, self::permanentDeletions(), true);
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function permanentDeletions(): array
+    {
+        return [
+            self::PurgeConversations,
+            self::PurgeTags,
+            self::PurgeCategories,
+            self::PurgeQuickReplies,
+        ];
     }
 
     /**
@@ -447,7 +490,7 @@ enum Permission: string
     /**
      * Catalog grouped by module for the permission matrix.
      *
-     * @return list<array{value: string, label: string, description: string, icon: string, permissions: list<array{value: string, label: string, description: string, available: bool, sensitive: bool, global_only: bool, reserved: bool}>}>
+     * @return list<array{value: string, label: string, description: string, icon: string, permissions: list<array{value: string, label: string, description: string, available: bool, sensitive: bool, global_only: bool, reserved: bool, irreversible: bool}>}>
      */
     public static function catalog(): array
     {
@@ -470,6 +513,7 @@ enum Permission: string
                 'sensitive' => $permission->isSensitive(),
                 'global_only' => $permission->requiresGlobalScope(),
                 'reserved' => $permission->isReservedToRoot(),
+                'irreversible' => $permission->isIrreversible(),
             ];
         }
 

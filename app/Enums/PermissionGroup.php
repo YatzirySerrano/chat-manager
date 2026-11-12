@@ -26,6 +26,7 @@ enum PermissionGroup: string
     case System = 'system';
     case HistoryImport = 'history-import';
     case Attention = 'attention';
+    case PermanentDeletion = 'permanent-deletion';
 
     public function label(): string
     {
@@ -52,6 +53,7 @@ enum PermissionGroup: string
             self::System => 'Sistema y operación',
             self::HistoryImport => 'Historial de Whaticket',
             self::Attention => 'Seguimiento de atención',
+            self::PermanentDeletion => 'Eliminación definitiva',
         };
     }
 
@@ -83,6 +85,7 @@ enum PermissionGroup: string
             self::System => 'Estado técnico de la plataforma y tareas automáticas.',
             self::HistoryImport => 'Importación y consulta del historial de conversaciones traído de Whaticket.',
             self::Attention => 'Supervisión de la atención de cada agente y alertas para el equipo.',
+            self::PermanentDeletion => 'Borrado irreversible de chats y de registros ya eliminados. Exclusivo del Superadministrador.',
         };
     }
 
@@ -114,6 +117,7 @@ enum PermissionGroup: string
             self::System => 'server-cog',
             self::HistoryImport => 'history',
             self::Attention => 'bell-ring',
+            self::PermanentDeletion => 'trash-2',
         };
     }
 }

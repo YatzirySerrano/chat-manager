@@ -34,6 +34,8 @@ export type QuickReplySummary = {
         update: boolean;
         delete: boolean;
         restore: boolean;
+        /** Erase for good (already deleted; Superadministrador). */
+        purge?: boolean;
     };
 };
 

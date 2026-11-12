@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PermanentRecordDeletionController;
 use App\Http\Controllers\QuickReplies\AvailableQuickReplyController;
 use App\Http\Controllers\QuickReplies\QuickReplyController;
 use Illuminate\Support\Facades\Route;
@@ -17,4 +18,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('quick-replies/{quickReply}', [QuickReplyController::class, 'update'])->name('quick-replies.update');
     Route::delete('quick-replies/{quickReply}', [QuickReplyController::class, 'destroy'])->name('quick-replies.destroy');
     Route::patch('quick-replies/{quickReply}/restore', [QuickReplyController::class, 'restore'])->name('quick-replies.restore');
+    Route::delete('quick-replies/{quickReply}/permanent', [PermanentRecordDeletionController::class, 'quickReply'])->middleware('throttle:20,1')->name('quick-replies.destroy-permanently');
 });

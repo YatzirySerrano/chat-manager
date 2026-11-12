@@ -410,6 +410,13 @@ function edit(): void {
                                                 organización»
                                             </Badge>
                                             <Badge
+                                                v-if="permission.irreversible"
+                                                variant="destructive"
+                                                class="font-normal"
+                                            >
+                                                Irreversible
+                                            </Badge>
+                                            <Badge
                                                 v-if="permission.sensitive"
                                                 variant="warning"
                                                 class="font-normal"

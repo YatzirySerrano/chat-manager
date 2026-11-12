@@ -2,6 +2,7 @@ import type {
     DeletionCopy,
     DeletionStep,
 } from '@/composables/useRecordDeletion';
+import { isWhatsAppWebProvider } from '@/lib/whatsappWeb';
 
 /*
  * Confirmation texts of the logical deletion and restoration of the records
@@ -35,9 +36,27 @@ export function departmentDeletionCopy(
 }
 
 export function connectionDeletionCopy(
-    connection: { name: string; conversations_count?: number },
+    connection: {
+        name: string;
+        conversations_count?: number;
+        provider?: { value: string };
+    },
     step: DeletionStep,
 ): DeletionCopy {
+    // WhatsApp Web (QR): no Meta identifiers; deleting ends its session.
+    if (isWhatsAppWebProvider(connection.provider?.value)) {
+        return step === 'delete'
+            ? {
+                  title: `¿Eliminar la conexión ${connection.name}?`,
+                  description: `La conexión se desactivará, su sesión de WhatsApp Web se cerrará y no enviará ni recibirá mensajes. ${possessive(connection.conversations_count, 'conversación', 'conversaciones')} y su historial se conservan. Al restaurarla quedará inactiva y habrá que vincular el teléfono de nuevo.`,
+              }
+            : {
+                  title: `¿Restaurar la conexión ${connection.name}?`,
+                  description:
+                      'Quedará inactiva y sin teléfono vinculado: escanea un código QR nuevo y actívala cuando esté lista.',
+              };
+    }
+
     return step === 'delete'
         ? {
               title: `¿Eliminar la conexión ${connection.name}?`,

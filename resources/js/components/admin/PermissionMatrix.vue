@@ -259,6 +259,13 @@ function clearSelection(): void {
                                         superadministrador
                                     </Badge>
                                     <Badge
+                                        v-if="permission.irreversible"
+                                        variant="destructive"
+                                        class="text-xs font-normal"
+                                    >
+                                        Irreversible
+                                    </Badge>
+                                    <Badge
                                         v-if="permission.sensitive"
                                         variant="warning"
                                         class="text-xs font-normal"

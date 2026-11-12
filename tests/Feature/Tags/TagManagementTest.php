@@ -79,7 +79,7 @@ test('the catalog can be searched and filtered by record state', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->has('tags.data', 1)
             ->where('tags.data.0.name', 'VIP antiguo')
-            ->where('tags.data.0.can', ['update' => false, 'delete' => false, 'restore' => true])
+            ->where('tags.data.0.can', ['update' => false, 'delete' => false, 'restore' => true, 'purge' => true])
         );
 
     $this->actingAs($admin)
@@ -177,11 +177,11 @@ test('each listed tag exposes only the operations the viewer may perform', funct
 
     $this->actingAs(User::factory()->supervisor()->create())
         ->get(route('tags.index'))
-        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => false, 'delete' => false, 'restore' => false]));
+        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => false, 'delete' => false, 'restore' => false, 'purge' => false]));
 
     $this->actingAs(User::factory()->superAdministrator()->create())
         ->get(route('tags.index'))
-        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => true, 'delete' => true, 'restore' => false]));
+        ->assertInertia(fn (Assert $page) => $page->where('tags.data.0.can', ['update' => true, 'delete' => true, 'restore' => false, 'purge' => false]));
 });
 
 test('saving a tag without effective changes writes nothing and says so', function () {

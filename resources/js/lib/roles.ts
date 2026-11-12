@@ -20,6 +20,7 @@ import {
     Settings,
     ShieldCheck,
     Tags,
+    Trash2,
     UserCog,
     UserRoundCheck,
     Users,
@@ -126,6 +127,7 @@ const groupIcons: Record<string, LucideIcon> = {
     'server-cog': ServerCog,
     history: History,
     'bell-ring': BellRing,
+    'trash-2': Trash2,
 };
 
 /** Icon of a permission module, from the name the catalog sends. */

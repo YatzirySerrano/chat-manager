@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PermanentRecordDeletionController;
 use App\Http\Controllers\Tags\ContactTagController;
 use App\Http\Controllers\Tags\TagController;
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('tags/{tag}', [TagController::class, 'update'])->name('tags.update');
     Route::delete('tags/{tag}', [TagController::class, 'destroy'])->name('tags.destroy');
     Route::patch('tags/{tag}/restore', [TagController::class, 'restore'])->name('tags.restore');
+    Route::delete('tags/{tag}/permanent', [PermanentRecordDeletionController::class, 'tag'])->middleware('throttle:20,1')->name('tags.destroy-permanently');
 
     Route::put('contacts/{contact}/tags', [ContactTagController::class, 'update'])->name('contacts.tags.sync');
 });

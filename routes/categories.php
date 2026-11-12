@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Categories\ConversationCategoryController;
 use App\Http\Controllers\Categories\ConversationCategoryRulesController;
+use App\Http\Controllers\PermanentRecordDeletionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -16,5 +17,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('categories/{category}', [ConversationCategoryController::class, 'update'])->name('categories.update');
     Route::delete('categories/{category}', [ConversationCategoryController::class, 'destroy'])->name('categories.destroy');
     Route::patch('categories/{category}/restore', [ConversationCategoryController::class, 'restore'])->name('categories.restore');
+    Route::delete('categories/{category}/permanent', [PermanentRecordDeletionController::class, 'category'])->middleware('throttle:20,1')->name('categories.destroy-permanently');
     Route::put('categories/{category}/rules', [ConversationCategoryRulesController::class, 'update'])->middleware('phase-two')->name('categories.rules.update');
 });

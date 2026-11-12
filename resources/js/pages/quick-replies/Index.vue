@@ -7,12 +7,14 @@ import {
     Pencil,
     Plus,
     Search,
+    Trash2,
     UserRound,
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
@@ -394,8 +396,28 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             onSelect: () => openEdit(reply),
         },
         ...deletion.actionsFor(reply),
+        reply.can.purge && {
+            key: 'purge',
+            label: 'Eliminar definitivamente',
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => {
+                purging.value = reply;
+            },
+        },
     );
 }
+
+/** «Eliminar definitivamente» of a record that is already deleted. */
+const purging = ref<QuickReplySummary | null>(null);
+const purgeOpen = computed({
+    get: () => purging.value !== null,
+    set: (open: boolean) => {
+        if (!open) {
+            purging.value = null;
+        }
+    },
+});
 </script>
 
 <template>
@@ -929,6 +951,22 @@ function actionsFor(reply: QuickReplySummary): RecordAction[] {
             v-model:open="deletion.open"
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
+        />
+
+        <PermanentDeleteDialog
+            v-if="purging"
+            v-model:open="purgeOpen"
+            title="Eliminar respuesta rápida definitivamente"
+            :description="`Vas a borrar para siempre la respuesta rápida /${purging.shortcut}.`"
+            :erased="[
+                'La respuesta rápida y su texto',
+                'Su asignación a departamentos; el atajo queda libre',
+            ]"
+            :kept="[
+                'Los mensajes que ya se enviaron con ella',
+                'El registro en Auditoría',
+            ]"
+            :url="`/quick-replies/${purging.id}/permanent`"
         />
     </div>
 </template>

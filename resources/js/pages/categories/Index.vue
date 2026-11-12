@@ -7,6 +7,7 @@ import {
     Plus,
     Search,
     SlidersHorizontal,
+    Trash2,
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
@@ -14,6 +15,7 @@ import { computed, reactive, ref } from 'vue';
 import CategoryFormDialog from '@/components/categories/CategoryFormDialog.vue';
 import CategoryRulesDialog from '@/components/categories/CategoryRulesDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
@@ -192,8 +194,28 @@ function actionsFor(category: ConversationCategorySummary): RecordAction[] {
                 onSelect: () => openRules(category),
             },
         ...deletion.actionsFor(category),
+        category.can.purge && {
+            key: 'purge',
+            label: 'Eliminar definitivamente',
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => {
+                purging.value = category;
+            },
+        },
     );
 }
+
+/** «Eliminar definitivamente» of a record that is already deleted. */
+const purging = ref<ConversationCategorySummary | null>(null);
+const purgeOpen = computed({
+    get: () => purging.value !== null,
+    set: (open: boolean) => {
+        if (!open) {
+            purging.value = null;
+        }
+    },
+});
 
 function usageLabel(count: number | undefined): string {
     const value = count ?? 0;
@@ -533,6 +555,22 @@ function rulesLabel(count: number): string {
             v-model:open="deletion.open"
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
+        />
+
+        <PermanentDeleteDialog
+            v-if="purging"
+            v-model:open="purgeOpen"
+            title="Eliminar categoría definitivamente"
+            :description="`Vas a borrar para siempre la categoría ${purging.name}.`"
+            :erased="[
+                'La categoría y sus reglas de servicio propias',
+                'La clasificación de las conversaciones que la tenían: quedan sin categoría',
+            ]"
+            :kept="[
+                'Las conversaciones y sus mensajes',
+                'El registro en Auditoría',
+            ]"
+            :url="`/categories/${purging.id}/permanent`"
         />
     </div>
 </template>

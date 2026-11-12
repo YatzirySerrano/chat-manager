@@ -40,6 +40,17 @@ class ConversationCategoryPolicy
         return $this->update($actor, $category);
     }
 
+    /**
+     * Erasing for good a category that is already deleted
+     * (permanent-deletion.categories, reserved to the root authority).
+     */
+    public function deletePermanently(User $actor, ConversationCategory $category): bool
+    {
+        return $category->isDeleted()
+            && $actor->holdsPermission(Permission::PurgeCategories)
+            && $actor->canViewDeletedRecords();
+    }
+
     public function restore(User $actor, ConversationCategory $category): bool
     {
         return $category->isDeleted()

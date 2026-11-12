@@ -6,12 +6,14 @@ import {
     Plus,
     Search,
     Tag as TagIcon,
+    Trash2,
     UsersRound,
     X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
@@ -163,8 +165,28 @@ function actionsFor(tag: TagSummary): RecordAction[] {
             onSelect: () => openEdit(tag),
         },
         ...deletion.actionsFor(tag),
+        tag.can.purge && {
+            key: 'purge',
+            label: 'Eliminar definitivamente',
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => {
+                purging.value = tag;
+            },
+        },
     );
 }
+
+/** «Eliminar definitivamente» of a record that is already deleted. */
+const purging = ref<TagSummary | null>(null);
+const purgeOpen = computed({
+    get: () => purging.value !== null,
+    set: (open: boolean) => {
+        if (!open) {
+            purging.value = null;
+        }
+    },
+});
 
 function usageLabel(
     count: number | undefined,
@@ -498,6 +520,22 @@ function usageLabel(
             v-model:open="deletion.open"
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
+        />
+
+        <PermanentDeleteDialog
+            v-if="purging"
+            v-model:open="purgeOpen"
+            title="Eliminar etiqueta definitivamente"
+            :description="`Vas a borrar para siempre la etiqueta ${purging.name}.`"
+            :erased="[
+                'La etiqueta',
+                'Su asignación en todos los contactos y conversaciones que todavía la tenían',
+            ]"
+            :kept="[
+                'Los contactos y las conversaciones',
+                'El registro en Auditoría',
+            ]"
+            :url="`/tags/${purging.id}/permanent`"
         />
     </div>
 </template>

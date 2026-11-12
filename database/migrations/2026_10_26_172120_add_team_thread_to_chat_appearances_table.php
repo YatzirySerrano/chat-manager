@@ -30,7 +30,12 @@ return new class extends Migration
     {
         Schema::table('chat_appearances', function (Blueprint $table) {
             $table->foreignId('team_thread_id')->nullable()->after('conversation_id')->constrained('team_threads')->cascadeOnDelete();
-            $table->unsignedBigInteger('team_thread_key')->storedAs('IFNULL(`team_thread_id`, 0)')->after('conversation_key');
+            // VIRTUAL on MySQL (CASCADE on a STORED column's base is refused),
+            // STORED on MariaDB as in production.
+            $key = $table->unsignedBigInteger('team_thread_key')->after('conversation_key');
+            Schema::getConnection()->getDriverName() === 'mysql'
+                ? $key->virtualAs('IFNULL(`team_thread_id`, 0)')
+                : $key->storedAs('IFNULL(`team_thread_id`, 0)');
             $table->unique(['user_id', 'conversation_key', 'team_thread_key'], 'chat_appearances_user_chat_unique');
         });
 

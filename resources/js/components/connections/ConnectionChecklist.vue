@@ -11,6 +11,7 @@ import { computed } from 'vue';
 import ConnectionEvidenceLabel from '@/components/connections/ConnectionEvidenceLabel.vue';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { splitTechnicalDetail } from '@/lib/metaErrors';
+import { isWhatsAppWebProvider } from '@/lib/whatsappWeb';
 import type { Connection } from '@/types';
 
 /**
@@ -28,8 +29,12 @@ const props = defineProps<{
     checks: Connection['checks'];
     monitoring: Connection['monitoring'];
     channel: Connection['channel']['value'];
+    /** Way of connecting; WhatsApp Web (QR) has no Meta identifiers to save. */
+    provider?: string;
     compact?: boolean;
 }>();
+
+const isWhatsAppWeb = computed(() => isWhatsAppWebProvider(props.provider));
 
 type CheckState = 'ok' | 'pending' | 'error' | 'muted' | 'history';
 
@@ -78,6 +83,12 @@ function isRecent(iso: string | null): boolean {
 
 const configurationDetail = computed(() => {
     const complete = props.monitoring.configuration.complete;
+
+    if (isWhatsAppWeb.value) {
+        return complete
+            ? 'Hay un teléfono vinculado por código QR.'
+            : 'Falta vincular el teléfono escaneando el código QR.';
+    }
 
     switch (props.channel) {
         case 'whatsapp':
@@ -248,11 +259,15 @@ const items = computed<Check[]>(() => {
                 ? `${capitalize(formatRelative(checks.last_outbound_at))}: ${
                       props.channel === 'web_chat'
                           ? 'se entregó una respuesta al visitante.'
-                          : 'Meta aceptó un mensaje.'
+                          : isWhatsAppWeb.value
+                            ? 'WhatsApp recibió un mensaje.'
+                            : 'Meta aceptó un mensaje.'
                   }`
                 : props.channel === 'web_chat'
                   ? 'Aún no se ha entregado ninguna respuesta.'
-                  : 'Meta aún no ha aceptado ningún mensaje enviado.',
+                  : isWhatsAppWeb.value
+                    ? 'Aún no se ha enviado ningún mensaje por esta sesión.'
+                    : 'Meta aún no ha aceptado ningún mensaje enviado.',
             title: checks.last_outbound_at
                 ? formatDateTime(checks.last_outbound_at)
                 : undefined,

@@ -40,7 +40,7 @@ export const buttonVariants = cva(
         "default": "h-(--control-h) pointer-coarse:h-(--control-h-coarse) px-4 py-2 has-[>svg]:px-3",
         "sm": "h-8 gap-1.5 px-3 has-[>svg]:px-2.5",
         "lg": "h-10 px-6 text-base has-[>svg]:px-4",
-        "icon": "size-9",
+        "icon": "size-9 pointer-coarse:size-10",
         "icon-sm": "size-8",
         "icon-lg": "size-10",
       },

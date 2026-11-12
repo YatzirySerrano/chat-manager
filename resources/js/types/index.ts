@@ -17,3 +17,4 @@ export * from './personalization';
 export * from './attention';
 export * from './service-rules';
 export * from './sla';
+export * from './whatsapp-web';

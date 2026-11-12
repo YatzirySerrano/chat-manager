@@ -13,6 +13,7 @@ import {
 import { computed, ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
+import WhatsAppWebSystemCard from '@/components/system/WhatsAppWebSystemCard.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
@@ -60,6 +61,8 @@ const LIVE_PROPS = [
     'queues',
     'scheduler',
     'checkedAt',
+    // Sessions change by themselves (reconnections, a phone signing out).
+    'whatsappWeb',
 ] as const;
 
 // Light, read-only refresh of the health summary; the failed jobs list and
@@ -501,7 +504,11 @@ function age(seconds: number | null): string {
 
         <SurfaceCard
             v-if="connections !== null"
-            title="Conexiones de WhatsApp"
+            :title="
+                whatsappWeb?.enabled
+                    ? 'WhatsApp Cloud API'
+                    : 'Conexiones de WhatsApp'
+            "
             description="Estado según lo último que pasó (avisos de Meta, envíos y verificaciones); no consulta a Meta en cada visita. «Probar» comprueba con Meta que los datos de la conexión siguen siendo válidos."
         >
             <div v-if="connections.length === 0" class="p-5">
@@ -589,6 +596,12 @@ function age(seconds: number | null): string {
                 </TableBody>
             </Table>
         </SurfaceCard>
+
+        <!-- A separate card: its state never mixes with the official API's. -->
+        <WhatsAppWebSystemCard
+            v-if="whatsappWeb?.enabled"
+            :whatsapp-web="whatsappWeb"
+        />
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <SurfaceCard

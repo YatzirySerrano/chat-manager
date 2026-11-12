@@ -554,6 +554,7 @@ async function send(): Promise<void> {
     <div
         class="border-t bg-background p-2 sm:px-5 sm:py-3"
         data-tour="team-chat.composer"
+        data-safe-bottom
     >
         <div
             v-if="replyTo"

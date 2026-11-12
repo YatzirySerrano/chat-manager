@@ -9,6 +9,7 @@ import {
     Plus,
     Power,
     PowerOff,
+    QrCode,
     Search,
     ShieldCheck,
     Unplug,
@@ -22,6 +23,7 @@ import ChannelPicker from '@/components/connections/ChannelPicker.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionEvidenceLabel from '@/components/connections/ConnectionEvidenceLabel.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
+import WhatsAppWebStateBadge from '@/components/connections/WhatsAppWebStateBadge.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
@@ -57,6 +59,7 @@ import { connectionDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { recordActions } from '@/lib/recordActions';
 import { toastFirstError } from '@/lib/toastErrors';
+import { isWhatsAppWebProvider } from '@/lib/whatsappWeb';
 import {
     destroy as destroyConnection,
     index as connectionsIndex,
@@ -93,6 +96,8 @@ const props = defineProps<{
     can: { create: boolean; manage: boolean };
     canExport?: boolean;
     metaChannels?: Record<'messenger' | 'instagram', MetaChannelAvailability>;
+    /** WhatsApp Web (QR) is enabled on the server (WHATSAPP_WEB_ENABLED). */
+    whatsappWebEnabled?: boolean;
 }>();
 
 const ALL = 'all';
@@ -214,6 +219,31 @@ function confirmDeactivation(): void {
     });
 }
 
+/** WhatsApp through WhatsApp Web (QR): a linked session instead of Meta credentials. */
+function isWhatsAppWeb(connection: Connection): boolean {
+    return isWhatsAppWebProvider(connection.provider.value);
+}
+
+/** Channel, or the way of connecting when the channel has more than one. */
+function modalityLabel(connection: Connection): string {
+    return isWhatsAppWeb(connection)
+        ? connection.provider.label
+        : connection.channel.label;
+}
+
+/** A QR session with no live socket and nothing saved to come back with. */
+function needsLinking(connection: Connection): boolean {
+    const session = connection.whatsapp_web;
+
+    return (
+        isWhatsAppWeb(connection) &&
+        !connection.is_deleted &&
+        (session === undefined ||
+            session === null ||
+            ['unconfigured', 'logged_out', 'error'].includes(session.state))
+    );
+}
+
 /**
  * Activation needs the required credentials; the server rejects it
  * otherwise, so the button is only offered when they are saved.
@@ -233,7 +263,17 @@ function actionsFor(connection: Connection): RecordAction[] {
             icon: Pencil,
             href: showConnection(connection.id),
         },
+        connection.can.update &&
+            needsLinking(connection) && {
+                key: 'link',
+                label: 'Vincular teléfono',
+                icon: QrCode,
+                href: showConnection(connection.id, {
+                    query: { vincular: 1 },
+                }),
+            },
         connection.can.verify &&
+            !isWhatsAppWeb(connection) &&
             connection.has_required_credentials && {
                 key: 'verify',
                 label: 'Verificar credenciales',
@@ -278,6 +318,14 @@ function phoneLabel(connection: Connection): string {
             : `${origins[0]} y ${origins.length - 1} más`;
     }
 
+    if (isWhatsAppWeb(connection)) {
+        return (
+            connection.whatsapp_web?.phone ??
+            connection.display_phone_number ??
+            'Sin teléfono vinculado'
+        );
+    }
+
     return (
         connection.display_phone_number ??
         (connection.phone_number_id
@@ -294,7 +342,11 @@ function phoneLabel(connection: Connection): string {
         <PageHeader
             help="conexiones"
             title="Conexiones"
-            description="Números de WhatsApp Business conectados mediante la API oficial de Meta, chats para sitios web y su estado real."
+            :description="
+                whatsappWebEnabled
+                    ? 'Números de WhatsApp (API oficial de Meta o WhatsApp Web por QR), chats para sitios web y su estado real.'
+                    : 'Números de WhatsApp Business conectados mediante la API oficial de Meta, chats para sitios web y su estado real.'
+            "
         >
             <template v-if="can.create || canExport" #actions>
                 <ExportMenu
@@ -383,8 +435,8 @@ function phoneLabel(connection: Connection): string {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full lg:w-36"
-                            aria-label="Filtrar por canal"
+                            class="w-full lg:w-44"
+                            aria-label="Filtrar por canal o modalidad"
                         >
                             <SelectValue />
                         </SelectTrigger>
@@ -538,7 +590,7 @@ function phoneLabel(connection: Connection): string {
                                     aria-hidden="true"
                                 />
                                 <span class="truncate"
-                                    >{{ connection.channel.label }} ·
+                                    >{{ modalityLabel(connection) }} ·
                                     {{ phoneLabel(connection) }}</span
                                 >
                             </span>
@@ -551,6 +603,12 @@ function phoneLabel(connection: Connection): string {
                             <ConnectionHealthBadge
                                 :health="connection.health"
                             />
+                            <WhatsAppWebStateBadge
+                                v-if="connection.whatsapp_web"
+                                :state="connection.whatsapp_web.state"
+                                :label="connection.whatsapp_web.state_label"
+                                :tone="connection.whatsapp_web.tone"
+                            />
                             <ConnectionHealthBadge
                                 v-if="!connection.is_active"
                                 :health="connection.configuration_health"
@@ -560,6 +618,7 @@ function phoneLabel(connection: Connection): string {
                             :checks="connection.checks"
                             :monitoring="connection.monitoring"
                             :channel="connection.channel.value"
+                            :provider="connection.provider.value"
                             compact
                         />
                         <template #meta>
@@ -642,7 +701,7 @@ function phoneLabel(connection: Connection): string {
                                     aria-hidden="true"
                                 />
                                 <span class="truncate"
-                                    >{{ connection.channel.label }} ·
+                                    >{{ modalityLabel(connection) }} ·
                                     {{ phoneLabel(connection) }}</span
                                 >
                             </p>
@@ -653,6 +712,12 @@ function phoneLabel(connection: Connection): string {
                                 />
                                 <ConnectionHealthBadge
                                     :health="connection.health"
+                                />
+                                <WhatsAppWebStateBadge
+                                    v-if="connection.whatsapp_web"
+                                    :state="connection.whatsapp_web.state"
+                                    :label="connection.whatsapp_web.state_label"
+                                    :tone="connection.whatsapp_web.tone"
                                 />
                             </div>
                             <!-- The status column is hidden on phones. -->
@@ -671,6 +736,12 @@ function phoneLabel(connection: Connection): string {
                                 <ConnectionHealthBadge
                                     :health="connection.health"
                                 />
+                                <WhatsAppWebStateBadge
+                                    v-if="connection.whatsapp_web"
+                                    :state="connection.whatsapp_web.state"
+                                    :label="connection.whatsapp_web.state_label"
+                                    :tone="connection.whatsapp_web.tone"
+                                />
                             </div>
                             <ConnectionEvidenceLabel
                                 class="mt-1"
@@ -683,6 +754,11 @@ function phoneLabel(connection: Connection): string {
                                 v-if="connection.channel.value === 'web_chat'"
                                 class="text-muted-foreground"
                                 >No aplica</span
+                            >
+                            <span
+                                v-else-if="isWhatsAppWeb(connection)"
+                                class="text-muted-foreground"
+                                >Vinculación por QR</span
                             >
                             <span
                                 v-else-if="
@@ -789,7 +865,9 @@ function phoneLabel(connection: Connection): string {
             :description="
                 pendingDeactivation?.channel.value === 'web_chat'
                     ? 'El widget se mostrará fuera de línea y no aceptará mensajes nuevos. La configuración y el historial se conservan.'
-                    : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
+                    : pendingDeactivation && isWhatsAppWeb(pendingDeactivation)
+                      ? 'La plataforma dejará de enviar por este número. La vinculación del teléfono, la configuración y el historial se conservan.'
+                      : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
             "
             confirm-label="Desactivar"
             destructive
@@ -800,6 +878,7 @@ function phoneLabel(connection: Connection): string {
         <ChannelPicker
             v-model:open="channelPickerOpen"
             :meta-channels="metaChannels"
+            :whatsapp-web-enabled="whatsappWebEnabled"
         />
 
         <ConfirmDialog

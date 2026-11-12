@@ -5,10 +5,12 @@ import {
     FileText,
     MoreHorizontal,
     Pencil,
+    Play,
     SmilePlus,
     Trash2,
 } from '@lucide/vue';
 import { computed, inject, nextTick, ref } from 'vue';
+import MediaLightbox from '@/components/MediaLightbox.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -28,7 +30,7 @@ import {
 } from '@/lib/chatAppearance';
 import { formatDateTime, formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { TeamMessage } from '@/types/team-chat';
+import type { TeamAttachment, TeamMessage } from '@/types/team-chat';
 
 /**
  * One message of an internal thread. Text is rendered as plain text (line
@@ -134,12 +136,52 @@ const images = computed(() =>
         (attachment) => attachment.kind === 'image' && attachment.preview_url,
     ),
 );
+/* Audio and video the server offers to play in place (byte ranges). */
+const audios = computed(() =>
+    props.message.attachments.filter(
+        (attachment) => attachment.kind === 'audio' && attachment.stream_url,
+    ),
+);
+const videos = computed(() =>
+    props.message.attachments.filter(
+        (attachment) => attachment.kind === 'video' && attachment.stream_url,
+    ),
+);
 const files = computed(() =>
     props.message.attachments.filter(
         (attachment) =>
-            !(attachment.kind === 'image' && attachment.preview_url),
+            !(attachment.kind === 'image' && attachment.preview_url) &&
+            !(
+                (attachment.kind === 'audio' || attachment.kind === 'video') &&
+                attachment.stream_url
+            ),
     ),
 );
+
+/*
+ * Images open in a viewer inside the app (an installed PWA has no tab to
+ * come back from); a modified click still opens the file in a new tab.
+ */
+const viewerOpen = ref(false);
+const viewed = ref<TeamAttachment | null>(null);
+
+function openImage(event: MouseEvent, image: TeamAttachment): void {
+    if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.button !== 0
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    viewed.value = image;
+    viewerOpen.value = true;
+}
+
+/* A video downloads nothing until the person asks to play it. */
+const playing = ref<number[]>([]);
 
 async function startEditing(): Promise<void> {
     draft.value = props.message.body ?? '';
@@ -324,6 +366,8 @@ function onEditKeydown(event: KeyboardEvent): void {
                             rel="noopener"
                             class="block overflow-hidden rounded-lg"
                             :title="image.name"
+                            :aria-label="`Ver imagen ${image.name}`"
+                            @click="openImage($event, image)"
                         >
                             <img
                                 :src="image.preview_url ?? ''"
@@ -334,8 +378,89 @@ function onEditKeydown(event: KeyboardEvent): void {
                             />
                         </a>
                     </div>
-                    <ul v-if="files.length > 0" class="mt-1.5 grid gap-1.5">
-                        <li v-for="file in files" :key="file.id">
+                    <div
+                        v-for="video in videos"
+                        :key="video.id"
+                        class="mt-1.5"
+                        data-team-video
+                    >
+                        <video
+                            v-if="playing.includes(video.id)"
+                            :src="video.stream_url ?? undefined"
+                            controls
+                            autoplay
+                            playsinline
+                            preload="auto"
+                            class="max-h-80 w-72 max-w-full rounded-lg bg-black object-contain"
+                            :aria-label="`Video ${video.name}`"
+                        />
+                        <button
+                            v-else
+                            type="button"
+                            class="flex aspect-video w-64 max-w-full flex-col items-center justify-center gap-1.5 rounded-lg bg-current/10 px-3 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            :aria-label="`Reproducir video ${video.name}`"
+                            @click="playing.push(video.id)"
+                        >
+                            <span
+                                class="flex size-11 items-center justify-center rounded-full bg-background/85 text-foreground shadow-sm"
+                            >
+                                <Play
+                                    class="size-5 translate-x-px"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                            <span class="max-w-full truncate text-xs">{{
+                                video.name
+                            }}</span>
+                            <span
+                                class="text-xs"
+                                :class="!custom && 'opacity-75'"
+                                >{{ formatFileSize(video.size_bytes) }}</span
+                            >
+                        </button>
+                        <a
+                            :href="video.download_url"
+                            class="mt-1 inline-flex min-h-8 items-center gap-1.5 text-xs underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                            :class="!custom && 'opacity-80'"
+                        >
+                            <Download class="size-3.5" aria-hidden="true" />
+                            Descargar video
+                        </a>
+                    </div>
+                    <div
+                        v-for="audio in audios"
+                        :key="audio.id"
+                        class="mt-1.5"
+                        data-team-audio
+                    >
+                        <audio
+                            :src="audio.stream_url ?? undefined"
+                            controls
+                            preload="none"
+                            class="w-64 max-w-full"
+                            :aria-label="`Audio ${audio.name}`"
+                        />
+                        <a
+                            :href="audio.download_url"
+                            class="mt-0.5 inline-flex min-h-8 max-w-full items-center gap-1.5 text-xs underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                            :class="!custom && 'opacity-80'"
+                        >
+                            <Download
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{ audio.name }}</span>
+                        </a>
+                    </div>
+                    <ul
+                        v-if="files.length > 0"
+                        class="mt-1.5 grid grid-cols-[minmax(0,1fr)] gap-1.5"
+                    >
+                        <li
+                            v-for="file in files"
+                            :key="file.id"
+                            class="min-w-0"
+                        >
                             <a
                                 :href="file.preview_url ?? file.download_url"
                                 :target="
@@ -447,7 +572,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                     <Button
                         variant="ghost"
                         size="icon"
-                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-9 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
+                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
                         :class="
                             customColors && 'border bg-background shadow-xs'
                         "
@@ -484,7 +609,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                     <Button
                         variant="ghost"
                         size="icon"
-                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-9 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
+                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
                         :class="
                             customColors && 'border bg-background shadow-xs'
                         "
@@ -517,5 +642,13 @@ function onEditKeydown(event: KeyboardEvent): void {
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
+
+        <MediaLightbox
+            v-if="viewed"
+            v-model:open="viewerOpen"
+            :src="viewed.preview_url ?? viewed.download_url"
+            :name="viewed.name"
+            :download-url="viewed.download_url"
+        />
     </div>
 </template>

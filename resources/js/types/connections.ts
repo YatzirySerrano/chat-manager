@@ -1,5 +1,6 @@
 import type { AppColor } from './admin';
 import type { RecordStateValue } from './ui';
+import type { WhatsAppWebSessionSummary } from './whatsapp-web';
 
 /** Channel a connection reaches customers through (ConnectionChannel on the server). */
 export type ConnectionChannel =
@@ -127,6 +128,11 @@ export type Connection = {
     web_chat_widget?: WebChatWidgetSettings | null;
     /** Account authorized with Meta (only Messenger and Instagram connections). */
     meta_account?: MetaAccount;
+    /**
+     * Session of a WhatsApp Web (QR) connection (provider `whatsapp_web`);
+     * absent or null for every other way of connecting.
+     */
+    whatsapp_web?: WhatsAppWebSessionSummary | null;
     health: ConnectionHealthDescriptor;
     configuration_health: ConnectionHealthDescriptor;
     checks: {

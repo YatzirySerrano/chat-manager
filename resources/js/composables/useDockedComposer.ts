@@ -121,6 +121,14 @@ function measure(): void {
             return;
         }
 
+        // A modal layer (dialog, sheet, image viewer) covers the page and
+        // turns off its pointer events, so the composer would look covered
+        // and the help button would jump over the send button and stay
+        // there after the layer closes: keep the last result meanwhile.
+        if (document.body.style.pointerEvents === 'none') {
+            return;
+        }
+
         const viewportHeight = window.innerHeight;
         const composer = dockedComposer(viewportHeight);
         const block = composer ?? dockedBar(viewportHeight);

@@ -68,7 +68,13 @@ export type ConversationCategorySummary = ConversationCategoryOption & {
     /** How many rules the category sets on its own. */
     overrides_count: number;
     created_at: string | null;
-    can: { update: boolean; delete: boolean; restore: boolean };
+    can: {
+        update: boolean;
+        delete: boolean;
+        restore: boolean;
+        /** Erase for good (already deleted; Superadministrador). */
+        purge?: boolean;
+    };
 };
 
 export type ConversationCategoryFilters = {

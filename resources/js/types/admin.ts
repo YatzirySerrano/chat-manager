@@ -81,6 +81,8 @@ export type CatalogPermission = {
     global_only: boolean;
     /** Only the root role (Superadministrador) can ever hold it. */
     reserved: boolean;
+    /** Erases data for good (group «Eliminación definitiva»). */
+    irreversible?: boolean;
 };
 
 export type PermissionGroupCatalog = {

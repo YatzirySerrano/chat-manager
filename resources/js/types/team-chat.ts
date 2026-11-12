@@ -97,6 +97,8 @@ export type TeamAttachment = {
     previewable: boolean;
     download_url: string;
     preview_url: string | null;
+    /** Audio and video played in place (served with byte ranges). */
+    stream_url?: string | null;
 };
 
 export type TeamMessage = {

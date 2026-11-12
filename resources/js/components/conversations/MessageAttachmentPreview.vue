@@ -8,6 +8,7 @@ import {
     Play,
 } from '@lucide/vue';
 import { computed, inject, ref } from 'vue';
+import MediaLightbox from '@/components/MediaLightbox.vue';
 import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
 import { formatFileSize } from '@/lib/format';
 import type { MessageAttachment } from '@/types';
@@ -206,6 +207,28 @@ const size = computed(() => formatFileSize(props.attachment.size_bytes));
 const opensInline = computed(
     () => props.attachment.mime_type === 'application/pdf',
 );
+
+/*
+ * An image opens in a viewer inside the app (an installed PWA has no tab to
+ * come back from). A sticker, or a click with a modifier key, keeps the
+ * link's own behaviour.
+ */
+const viewerOpen = ref(false);
+
+function openViewer(event: MouseEvent): void {
+    if (
+        props.sticker ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.button !== 0
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    viewerOpen.value = true;
+}
 </script>
 
 <template>
@@ -235,6 +258,7 @@ const opensInline = computed(
                 rel="noopener noreferrer"
                 class="block overflow-hidden rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 :class="sticker ? 'w-fit' : ''"
+                @click="openViewer"
                 :aria-label="
                     sticker
                         ? `Abrir ${stickerLabel.toLowerCase()} en una pestaña nueva`
@@ -363,5 +387,13 @@ const opensInline = computed(
                 <span class="sr-only">Descargar {{ name }}</span>
             </a>
         </div>
+
+        <MediaLightbox
+            v-if="viewerOpen && attachment.url"
+            v-model:open="viewerOpen"
+            :src="attachment.url"
+            :name="name"
+            :download-url="attachment.download_url"
+        />
     </div>
 </template>

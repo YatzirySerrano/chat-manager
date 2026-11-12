@@ -39,6 +39,8 @@ export type ConversationAbilities = {
     override_queue_rules: boolean;
     /** May set or clear the request category. */
     categorize: boolean;
+    /** May erase the chat for good (permanent-deletion.conversations, Superadministrador). */
+    delete_permanently?: boolean;
 };
 
 /** Request category (type). `is_active` false: deleted, kept as history. */
@@ -150,6 +152,8 @@ export type ConversationConnection = {
     /** Channel of the connection (ConnectionChannel on the server). */
     channel: ConnectionChannel;
     channel_label: string;
+    /** How the connection is operated (`meta_cloud_api`, `whatsapp_web`…), when the server sends it. */
+    provider?: string;
     /** Paused (inactive) and deleted connections are told apart. */
     state: 'active' | 'inactive' | 'deleted';
     /** Whether a reply can be sent now; the server checks it again. */

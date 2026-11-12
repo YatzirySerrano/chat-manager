@@ -7,6 +7,7 @@ import {
     watchDebounced,
 } from '@vueuse/core';
 import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
+import { toast } from 'vue-sonner';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
 import ChatTimeline from '@/components/conversations/ChatTimeline.vue';
@@ -150,6 +151,17 @@ useChannel(
         },
         '.conversation.changed': (payload) => {
             if (payload.reason === 'read') {
+                return;
+            }
+
+            /*
+             * Someone erased this chat for good: nothing of it can be read
+             * again, so the list is refreshed and the selection is dropped.
+             */
+            if (payload.reason === 'deleted') {
+                toast.info('Este chat se eliminó definitivamente.');
+                router.reload();
+
                 return;
             }
 

@@ -1,5 +1,6 @@
 import type { ConnectionHealthDescriptor } from '@/types/connections';
 import type { PaginationMeta } from '@/types/admin';
+import type { WhatsAppWebSystem } from '@/types/whatsapp-web';
 
 export type HealthStatusValue = 'ok' | 'warning' | 'fail' | 'skipped';
 
@@ -71,6 +72,8 @@ export type SystemPageProps = {
     };
     recentErrors: { file: string | null; entries: SystemRecentError[] };
     connections: SystemConnectionHealth[] | null;
+    /** WhatsApp Web (QR): the Node service and its sessions (absent when the server does not send it). */
+    whatsappWeb?: WhatsAppWebSystem | null;
     environment: {
         app_env: string;
         debug: boolean;

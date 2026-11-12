@@ -8,6 +8,7 @@ import {
     Hand,
     RotateCcw,
     ShieldAlert,
+    Trash2,
     Undo2,
     UserPlus,
     XCircle,
@@ -20,6 +21,7 @@ import {
 } from '@/components/conversations/acceptBlock';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import ConversationRouteDialog from '@/components/conversations/ConversationRouteDialog.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import {
     noQueueActions,
     QUEUE_ACTIONS,
@@ -39,6 +41,7 @@ import {
     queueConflictFromErrors,
     withoutConflictCode,
 } from '@/lib/conversations/actionErrors';
+import { isWhatsAppWebProvider } from '@/lib/whatsappWeb';
 import {
     accept,
     assign,
@@ -151,9 +154,13 @@ const reasonDialogOpen = computed({
     },
 });
 
-/* Closing never changes WhatsApp's 24 h window; other channels have none. */
+/*
+ * Closing never changes WhatsApp's 24 h window; other channels, and a
+ * number connected through WhatsApp Web (QR), have none.
+ */
 const closeEffect = computed(() =>
-    props.conversation.connection.channel === 'whatsapp'
+    props.conversation.connection.channel === 'whatsapp' &&
+    !isWhatsAppWebProvider(props.conversation.connection.provider)
         ? 'No se envía ningún mensaje al cliente ni cambia la ventana de WhatsApp.'
         : `No se envía ningún mensaje al cliente por ${props.conversation.connection.channel_label}.`,
 );
@@ -352,6 +359,9 @@ const primary = computed<Action[]>(() => {
     return actions;
 });
 
+/** «Eliminar chat definitivamente»: only with the permission, always last. */
+const permanentDeleteOpen = ref(false);
+
 /** Everything else, in a menu. */
 const secondary = computed<Action[]>(() => {
     const actions: Action[] = [];
@@ -416,6 +426,18 @@ const secondary = computed<Action[]>(() => {
             icon: XCircle,
             destructive: true,
             run: () => openReasonDialog('close'),
+        });
+    }
+
+    if (can.value.delete_permanently) {
+        actions.push({
+            key: 'delete-permanently',
+            label: 'Eliminar chat definitivamente',
+            icon: Trash2,
+            destructive: true,
+            run: () => {
+                permanentDeleteOpen.value = true;
+            },
         });
     }
 
@@ -502,6 +524,24 @@ const secondary = computed<Action[]>(() => {
             :errors="errors"
             :queue-exception="queueException"
             @submit="submitRoute"
+        />
+
+        <PermanentDeleteDialog
+            v-if="can.delete_permanently"
+            v-model:open="permanentDeleteOpen"
+            title="Eliminar chat definitivamente"
+            :description="`Vas a borrar para siempre el chat con ${conversation.contact.name}.`"
+            :erased="[
+                'Todos los mensajes del chat, enviados y recibidos',
+                'Los archivos adjuntos y sus vistas previas, también en el almacenamiento',
+                'Notas internas, historial de asignaciones y tiempos de atención',
+            ]"
+            :kept="[
+                'El contacto, sus datos y sus notas privadas',
+                'El registro en Auditoría de quién eliminó el chat y cuándo',
+            ]"
+            :url="`/conversations/${conversation.id}/permanent`"
+            confirm-label="Eliminar chat"
         />
     </div>
 </template>

@@ -755,6 +755,7 @@ defineExpose({ focus });
     -->
     <div
         class="@container border-t bg-background px-3 pt-2.5 pb-3 transition-colors duration-(--duration-base) sm:px-5 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
+        data-safe-bottom
         :class="mode === 'note' && 'bg-warning-soft/40'"
     >
         <div

@@ -11,6 +11,7 @@ import {
     ShieldCheck,
     Trash2,
     TriangleAlert,
+    UserRoundCheck,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
@@ -29,6 +30,8 @@ import type { WebChatPreviewAppearance } from '@/components/connections/WebChatP
 import WebChatSnippet from '@/components/connections/WebChatSnippet.vue';
 import WebChatWidgetCard from '@/components/connections/WebChatWidgetCard.vue';
 import type { WebChatWidgetOptions } from '@/components/connections/WebChatWidgetCard.vue';
+import WhatsAppWebRiskNotice from '@/components/connections/WhatsAppWebRiskNotice.vue';
+import WhatsAppWebSessionPanel from '@/components/connections/WhatsAppWebSessionPanel.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
@@ -48,6 +51,7 @@ import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { colorPresentations } from '@/lib/colors';
 import { connectionDeletionCopy } from '@/lib/deletionCopy';
 import { toastFirstError } from '@/lib/toastErrors';
+import { isWhatsAppWebProvider } from '@/lib/whatsappWeb';
 import {
     integerBetween,
     maxLength,
@@ -131,8 +135,24 @@ type ConnectionForm = {
 const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
 const isWebChat = computed(() => props.channel.value === 'web_chat');
-/** Only WhatsApp has Meta identifiers and secrets typed in the form. */
-const isWhatsapp = computed(() => props.channel.value === 'whatsapp');
+/**
+ * WhatsApp through WhatsApp Web (QR), the unofficial way of connecting: no
+ * Meta identifiers, secrets, webhook or templates; a session linked by
+ * scanning a code instead.
+ */
+const isWhatsappWeb = computed(
+    () =>
+        props.channel.value === 'whatsapp' &&
+        isWhatsAppWebProvider(props.provider.value),
+);
+/** Only WhatsApp Cloud API has Meta identifiers and secrets typed in the form. */
+const isWhatsapp = computed(
+    () => props.channel.value === 'whatsapp' && !isWhatsappWeb.value,
+);
+/** Arriving from "Vincular teléfono" in the list opens the code at once. */
+const autoLink =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('vincular');
 /** Messenger and Instagram are authorized with Meta (OAuth), not typed. */
 const isMeta = computed(
     () =>
@@ -161,6 +181,17 @@ const META_FIELDS = [
     'access_token',
     'app_secret',
     'webhook_verify_token',
+] as const;
+
+/** Everything a connection can send by itself (never a QR connection). */
+const AUTOMATIC_MESSAGE_FIELDS = [
+    'welcome_enabled',
+    'welcome_message',
+    'away_enabled',
+    'away_message',
+    'away_in_open_conversations',
+    'farewell_enabled',
+    'farewell_message',
 ] as const;
 
 const form = useForm<ConnectionForm>({
@@ -432,8 +463,18 @@ function submit(): void {
             META_FIELDS.forEach((field) => delete payload[field]);
         }
 
+        // WhatsApp Web (QR) sends nothing by itself: no automatic messages.
+        if (isWhatsappWeb.value) {
+            AUTOMATIC_MESSAGE_FIELDS.forEach((field) => delete payload[field]);
+        }
+
         if (!connection.value) {
             payload.channel = props.channel.value;
+
+            // The way of connecting is also chosen only when creating.
+            if (isWhatsappWeb.value) {
+                payload.provider = props.provider.value;
+            }
         }
 
         return payload;
@@ -527,6 +568,20 @@ const statusHints = computed(() => {
         return hints;
     }
 
+    // A QR connection has nothing to verify with Meta: its session is linked
+    // in the panel above.
+    if (isWhatsappWeb.value) {
+        if (
+            props.can.changeStatus &&
+            !current.is_active &&
+            !current.has_required_credentials
+        ) {
+            hints.push({ text: 'Vincula el teléfono para poder activarla.' });
+        }
+
+        return hints;
+    }
+
     if (props.can.verify && validation.hasChanges) {
         hints.push({
             text: 'Guarda los cambios antes de verificar las credenciales o registrar el número.',
@@ -588,12 +643,27 @@ const sections = computed(() => [
           ]
         : []),
     { id: 'departamentos', label: 'Departamentos' },
-    { id: 'mensajes', label: 'Mensajes automáticos' },
+    ...(isWhatsappWeb.value
+        ? []
+        : [{ id: 'mensajes', label: 'Mensajes automáticos' }]),
     { id: 'reapertura', label: 'Reapertura' },
-    ...(connection.value && props.diagnostics
+    ...(connection.value && props.diagnostics && !isWhatsappWeb.value
         ? [{ id: 'integracion', label: 'Integración' }]
         : []),
 ]);
+
+/**
+ * Whether the status section has buttons of its own. A QR connection has no
+ * credentials to verify, and its deletion sits in the session panel, next
+ * to the other two ways of ending the session.
+ */
+const showStatusActions = computed(
+    () =>
+        connection.value !== null &&
+        (props.can.changeStatus ||
+            props.can.restore ||
+            (!isWhatsappWeb.value && (props.can.verify || props.can.delete))),
+);
 
 const SECTION_FIELDS: Record<string, string[]> = {
     identificacion: ['name', 'display_phone_number'],
@@ -630,7 +700,9 @@ const flaggedSections = computed(() =>
                         ? `${channel.label} · ${provider.label}`
                         : isWebChat
                           ? 'Crea un chat para tu sitio web. Después de guardarlo configurarás sus dominios, su apariencia y el código para insertarlo.'
-                          : 'Registra un número de WhatsApp Business conectado mediante la API oficial de Meta.'
+                          : isWhatsappWeb
+                            ? 'Conecta un WhatsApp normal escaneando un código QR, sin cuenta de Meta Business. Primero guarda la conexión; después vincularás el teléfono.'
+                            : 'Registra un número de WhatsApp Business conectado mediante la API oficial de Meta.'
                 "
             >
                 <template #eyebrow>
@@ -667,6 +739,12 @@ const flaggedSections = computed(() =>
                     insertado. Sus conversaciones e historial se conservan. Al
                     restaurarla quedará inactiva hasta que la actives.
                 </template>
+                <template v-else-if="isWhatsappWeb">
+                    No envía ni recibe mensajes y su sesión de WhatsApp Web
+                    quedó cerrada. Sus conversaciones e historial se conservan.
+                    Al restaurarla quedará inactiva y habrá que vincular el
+                    teléfono de nuevo.
+                </template>
                 <template v-else-if="isMeta">
                     No envía ni recibe mensajes y su cuenta de Meta queda
                     reservada. Sus conversaciones e historial se conservan. Al
@@ -687,6 +765,23 @@ const flaggedSections = computed(() =>
             >
                 <Lock class="size-4" aria-hidden="true" />
                 Puedes consultar esta conexión, pero no modificarla.
+            </p>
+
+            <WhatsAppWebRiskNotice v-if="isWhatsappWeb" />
+
+            <p
+                v-if="isWhatsappWeb"
+                class="flex max-w-prose gap-2 text-sm text-pretty text-muted-foreground"
+                role="note"
+                data-test="whatsapp-web-manual-only"
+            >
+                <UserRoundCheck
+                    class="mt-0.5 size-4 shrink-0"
+                    aria-hidden="true"
+                />
+                En esta modalidad solo se envían mensajes escritos por una
+                persona autorizada: no hay respuestas automáticas, menús ni
+                campañas.
             </p>
 
             <SectionNav
@@ -711,7 +806,9 @@ const flaggedSections = computed(() =>
                             ? connection.configuration_health.description
                             : isWebChat
                               ? 'La conexión se creará inactiva. Después de guardarla podrás configurar el widget y activarla.'
-                              : 'La conexión se creará inactiva. Después de guardarla podrás verificar las credenciales con Meta, registrar el número y activarla.'
+                              : isWhatsappWeb
+                                ? 'La conexión se creará inactiva y sin teléfono vinculado. Después de guardarla podrás escanear el código QR desde WhatsApp y activarla.'
+                                : 'La conexión se creará inactiva. Después de guardarla podrás verificar las credenciales con Meta, registrar el número y activarla.'
                     "
                 >
                     <template v-if="connection" #aside>
@@ -728,10 +825,22 @@ const flaggedSections = computed(() =>
 
                     <template v-if="connection">
                         <div class="grid gap-5">
+                            <WhatsAppWebSessionPanel
+                                v-if="isWhatsappWeb"
+                                :connection-id="connection.id"
+                                :connection-name="connection.name"
+                                :summary="connection.whatsapp_web"
+                                :deleted="connection.is_deleted"
+                                :can-delete="can.delete"
+                                :auto-link="autoLink"
+                                @delete="deletion.ask('delete', connection)"
+                            />
                             <ConnectionChecklist
+                                :class="isWhatsappWeb && 'border-t pt-5'"
                                 :checks="connection.checks"
                                 :monitoring="connection.monitoring"
                                 :channel="connection.channel.value"
+                                :provider="connection.provider.value"
                             />
 
                             <dl
@@ -769,6 +878,11 @@ const flaggedSections = computed(() =>
                             de tu sitio, personalizar el widget y copiar el
                             código para insertarlo.
                         </span>
+                        <span v-else-if="isWhatsappWeb">
+                            Al crear la conexión podrás generar el código QR,
+                            escanearlo con el teléfono y ver aquí el estado real
+                            de la sesión.
+                        </span>
                         <span v-else>
                             Aquí verás lo que Meta haya confirmado: las
                             credenciales, el webhook, la suscripción de la app y
@@ -776,18 +890,9 @@ const flaggedSections = computed(() =>
                         </span>
                     </p>
 
-                    <template
-                        v-if="
-                            connection &&
-                            (can.verify ||
-                                can.changeStatus ||
-                                can.delete ||
-                                can.restore)
-                        "
-                        #footer
-                    >
+                    <template v-if="connection && showStatusActions" #footer>
                         <Button
-                            v-if="can.verify"
+                            v-if="can.verify && !isWhatsappWeb"
                             type="button"
                             variant="outline"
                             :disabled="
@@ -847,7 +952,7 @@ const flaggedSections = computed(() =>
                             Restaurar conexión
                         </Button>
                         <Button
-                            v-if="can.delete"
+                            v-if="can.delete && !isWhatsappWeb"
                             type="button"
                             variant="ghost"
                             class="text-destructive hover:bg-destructive/10 hover:text-destructive sm:ml-auto"
@@ -1253,6 +1358,7 @@ const flaggedSections = computed(() =>
                     </FormSection>
 
                     <FormSection
+                        v-if="!isWhatsappWeb"
                         id="mensajes"
                         class="scroll-mt-32"
                         title="Mensajes automáticos"
@@ -1525,7 +1631,7 @@ const flaggedSections = computed(() =>
                 </fieldset>
 
                 <FormSection
-                    v-if="connection && diagnostics"
+                    v-if="connection && diagnostics && !isWhatsappWeb"
                     id="integracion"
                     class="scroll-mt-32"
                     title="Integración con WhatsApp Cloud API"
@@ -1588,7 +1694,9 @@ const flaggedSections = computed(() =>
             :description="
                 isWebChat
                     ? 'El widget se mostrará fuera de línea y no aceptará mensajes nuevos. La configuración y el historial se conservan.'
-                    : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
+                    : isWhatsappWeb
+                      ? 'La plataforma dejará de enviar por este número. La vinculación del teléfono, la configuración y el historial se conservan.'
+                      : 'La plataforma dejará de procesar los mensajes de este número cuando la integración esté habilitada. La configuración y el historial se conservan.'
             "
             confirm-label="Desactivar"
             destructive

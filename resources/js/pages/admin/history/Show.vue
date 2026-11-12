@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ArrowLeft, History, Lock } from '@lucide/vue';
-import { computed } from 'vue';
+import { ArrowLeft, History, Lock, Trash2 } from '@lucide/vue';
+import { computed, ref } from 'vue';
 import HistoryTimeline from '@/components/history-import/HistoryTimeline.vue';
 import {
     ARCHIVE_LIST_KEY,
     formatNumber,
 } from '@/components/history-import/labels';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -39,7 +40,11 @@ defineOptions({
 const props = defineProps<{
     conversation: ArchivedConversation;
     timeline: ArchivedTimelinePage;
+    /** May erase this archived chat for good (Superadministrador). */
+    canDeletePermanently?: boolean;
 }>();
+
+const permanentDeleteOpen = ref(false);
 
 /** The archive list as it was left (filters and page), if known. */
 function archiveListUrl(): string {
@@ -118,8 +123,35 @@ const sourceRows = computed(() =>
                         Historial
                     </Link>
                 </Button>
+                <Button
+                    v-if="canDeletePermanently"
+                    variant="outline"
+                    class="text-destructive hover:text-destructive"
+                    data-archive-action="delete-permanently"
+                    @click="permanentDeleteOpen = true"
+                >
+                    <Trash2 />
+                    Eliminar chat definitivamente
+                </Button>
             </template>
         </PageHeader>
+
+        <PermanentDeleteDialog
+            v-if="canDeletePermanently"
+            v-model:open="permanentDeleteOpen"
+            title="Eliminar chat definitivamente"
+            :description="`Vas a borrar para siempre el historial archivado de ${contactName}.`"
+            :erased="[
+                'Todos los mensajes importados de este chat',
+                'Sus archivos, también en el almacenamiento',
+            ]"
+            :kept="[
+                'El contacto y sus datos',
+                'El registro en Auditoría de quién lo eliminó y cuándo',
+            ]"
+            :url="`/conversations/${conversation.id}/permanent`"
+            confirm-label="Eliminar chat"
+        />
 
         <StatusNote
             tone="info"

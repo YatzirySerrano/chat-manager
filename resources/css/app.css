@@ -719,6 +719,19 @@
 }
 
 /*
+  Installed on a phone (viewport-fit=cover) the page reaches under the
+  gesture bar. Whatever is docked to the bottom edge (chat composers, save
+  bars, the foot of the navigation) keeps clear of it with a transparent
+  border as tall as the inset: it works whatever padding or layout the
+  block has, and is 0 where there is no inset.
+*/
+[data-safe-bottom],
+[data-dock-bottom],
+[data-slot='sidebar-footer'] {
+    border-bottom: env(safe-area-inset-bottom, 0px) solid transparent;
+}
+
+/*
   Navigable cards and rows (RecordCard with href, linked chart cards, scope
   options): a border tinted by the palette, a 2 px lift and a tinted shadow
   on hover.

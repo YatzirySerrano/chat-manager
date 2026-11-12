@@ -16,6 +16,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -72,6 +73,98 @@ test('a reply must point to a message of the same thread', function () {
         ->assertCreated()
         ->assertJsonPath('data.reply_to.id', $local->id)
         ->assertJsonPath('data.reply_to.excerpt', 'Pregunta original');
+});
+
+test('quoted content never reaches someone outside the quoted thread, also after leaving it', function () {
+    $carla = User::factory()->agent()->create(['name' => 'Carla']);
+    $private = TeamThread::factory()->direct($this->beto, $carla)->create();
+    $secret = TeamMessage::factory()->in($private, $carla)->create(['body' => 'Solo entre Beto y Carla']);
+    $group = TeamThread::factory()->withParticipants([$this->ana, $this->beto])->create(['name' => 'Turno']);
+    $groupMessage = TeamMessage::factory()->in($group, $this->beto)->create(['body' => 'Dicho en el grupo']);
+    $group->participations()->where('user_id', $this->ana->id)->update(['left_at' => now()]);
+
+    foreach ([$secret, $groupMessage] as $quoted) {
+        $this->actingAs($this->ana)
+            ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Cito', 'reply_to_message_id' => $quoted->id])
+            ->assertJsonValidationErrors(['reply_to_message_id' => 'El mensaje al que respondes ya no está disponible.'])
+            ->assertDontSee($quoted->body);
+
+        // Nor by asking for it by id through a thread of her own.
+        $this->actingAs($this->ana)
+            ->getJson(route('team-chat.threads.messages.index', ['thread' => $this->thread, 'ids' => [$quoted->id]]))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    // A reply inside the group, shown after she left: the group is gone for her.
+    $reply = TeamMessage::factory()->in($group, $this->beto)->create(['body' => 'Respuesta', 'reply_to_message_id' => $groupMessage->id]);
+
+    $this->actingAs($this->ana)
+        ->getJson(route('team-chat.threads.messages.index', ['thread' => $group, 'ids' => [$reply->id]]))
+        ->assertNotFound()
+        ->assertDontSee('Dicho en el grupo');
+
+    expect(TeamMessage::query()->where('team_thread_id', $this->thread->id)->count())->toBe(0);
+});
+
+test('a retried send with the same client reference stores, broadcasts and notifies once', function () {
+    $reference = (string) Str::uuid();
+    $payload = ['body' => 'Mensaje con respuesta perdida', 'client_reference' => $reference];
+    Event::fake([TeamMessagePosted::class]);
+
+    $first = $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), $payload)
+        ->assertCreated()
+        ->assertJsonPath('replayed', false);
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), $payload)
+        ->assertOk()
+        ->assertJsonPath('replayed', true)
+        ->assertJsonPath('data.id', $first->json('data.id'))
+        ->assertJsonPath('data.body', 'Mensaje con respuesta perdida');
+
+    expect(TeamMessage::query()->where('client_reference', $reference)->count())->toBe(1);
+    Event::assertDispatchedTimes(TeamMessagePosted::class, 1);
+});
+
+test('a client reference is per author and cannot be reused in another thread', function () {
+    $reference = (string) Str::uuid();
+    $group = TeamThread::factory()->withParticipants([$this->ana, $this->beto])->create();
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Uno', 'client_reference' => $reference])
+        ->assertCreated();
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $group), ['body' => 'Otro chat', 'client_reference' => $reference])
+        ->assertJsonValidationErrors(['client_reference' => 'otro chat']);
+
+    // Another author choosing the same value does not see or collide with Ana's message.
+    $this->actingAs($this->beto)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'De Beto', 'client_reference' => $reference])
+        ->assertCreated()
+        ->assertJsonPath('data.body', 'De Beto');
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'x', 'client_reference' => 'no-es-uuid'])
+        ->assertJsonValidationErrors(['client_reference']);
+
+    expect(TeamMessage::query()->count())->toBe(2);
+});
+
+test('a retry of a stored message from someone who lost access is refused without revealing it', function () {
+    $group = TeamThread::factory()->withParticipants([$this->ana, $this->beto])->create();
+    $reference = (string) Str::uuid();
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $group), ['body' => 'Antes de salir', 'client_reference' => $reference])
+        ->assertCreated();
+    $group->participations()->where('user_id', $this->ana->id)->update(['left_at' => now()]);
+
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $group), ['body' => 'Antes de salir', 'client_reference' => $reference])
+        ->assertNotFound();
 });
 
 test('only the author edits a message and it is marked as edited', function () {

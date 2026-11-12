@@ -42,6 +42,7 @@ enum Permission: string
     case AcceptWithPendingConversations = 'conversations.accept-with-pending';
     case ConfirmConversationReady = 'conversations.confirm-ready';
     case OverrideQueueRules = 'conversations.override-queue-rules';
+    case InterveneConversations = 'conversations.intervene';
 
     case ViewAttention = 'attention.view';
     case SendAttentionAlerts = 'attention.alert';
@@ -140,6 +141,7 @@ enum Permission: string
             self::AcceptWithPendingConversations => 'Aceptar conversaciones nuevas aunque tenga pendientes de responder',
             self::ConfirmConversationReady => 'Confirmar que una solicitud está completa',
             self::OverrideQueueRules => 'Hacer excepciones a las reglas de la cola',
+            self::InterveneConversations => 'Responder conversaciones que atiende otra persona',
             self::ViewAttention => 'Ver el seguimiento de atención del equipo',
             self::SendAttentionAlerts => 'Enviar alertas de atención a los agentes',
             self::ViewConnections => 'Ver conexiones',
@@ -223,6 +225,7 @@ enum Permission: string
             self::AcceptWithPendingConversations => 'No se le aplica el control que impide aceptar conversaciones nuevas mientras tiene clientes esperando su respuesta.',
             self::ConfirmConversationReady => 'Marcar una solicitud como «Lista para atención» cuando ya tiene todo lo necesario, o devolverla a «Necesita información».',
             self::OverrideQueueRules => 'Tomar o entregar una solicitud saltándose el tiempo mínimo de espera o el orden de llegada, siempre con un motivo que queda registrado.',
+            self::InterveneConversations => 'Escribir al cliente en conversaciones abiertas que atiende otra persona, sin quedarse con ellas. No incluye plantillas.',
             self::ViewAttention => 'Consultar qué atiende cada agente, qué clientes esperan respuesta y desde cuándo, dentro de la información que le corresponde.',
             self::SendAttentionAlerts => 'Enviar recordatorios y alertas a uno, varios o todos los agentes que le corresponden, y consultar su historial.',
             self::ViewConnections => 'Consultar los canales conectados, como números de WhatsApp, y su estado.',
@@ -312,6 +315,7 @@ enum Permission: string
             self::ManageConnections,
             self::ManageIntegrations,
             self::OverrideQueueRules,
+            self::InterveneConversations,
             self::ViewSystem,
             self::ManageSystem,
             self::ViewHistoryImports,
@@ -319,6 +323,16 @@ enum Permission: string
             self::ExecuteHistoryImports,
             self::ViewArchivedHistory,
         ], true);
+    }
+
+    /**
+     * Permissions of the phase-two service rules (readiness confirmation and
+     * queue rule overrides): not granted while FEATURE_PHASE_TWO is off
+     * (User::holdsPermission()).
+     */
+    public function requiresPhaseTwo(): bool
+    {
+        return in_array($this, [self::ConfirmConversationReady, self::OverrideQueueRules], true);
     }
 
     /**

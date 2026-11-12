@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin;
 use App\Models\Department;
 use App\Services\PlatformSettings;
 use App\Services\ServiceRules;
+use App\Support\Features;
 use DateTimeZone;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -37,7 +38,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.pending_block_enabled' => ['sometimes', 'boolean'],
             'operations.pending_block_after_minutes' => ['sometimes', 'required', 'integer', 'min:0', 'max:1440'],
             // Service rules and automatic SLA alerts: bounds come from their definition.
-            ...app(ServiceRules::class)->validationRules(ServiceRules::LEVEL_PLATFORM),
+            // Phase one (FEATURE_PHASE_TWO off): only the two report objectives.
+            ...$this->onlyInForce(app(ServiceRules::class)->validationRules(ServiceRules::LEVEL_PLATFORM)),
         ];
 
         foreach (PlatformSettings::WEEKDAYS as $day) {
@@ -112,8 +114,31 @@ class UpdatePlatformSettingsRequest extends FormRequest
             ];
         }
 
+        // Phase one (FEATURE_PHASE_TWO off): the phase-two rules and alert
+        // settings are ignored, so their stored values stay as they are.
+        $phaseTwo = Features::phaseTwo();
+
         return [
-            ...$this->serviceRuleGroups(),
+            ...($phaseTwo ? $this->serviceRuleGroups() : []),
+            ...$this->phaseOneGroups($days),
+            'sla' => [
+                'first_response_minutes' => $this->filled('sla.first_response_minutes') ? $this->integer('sla.first_response_minutes') : null,
+                'resolution_minutes' => $this->filled('sla.resolution_minutes') ? $this->integer('sla.resolution_minutes') : null,
+                ...($phaseTwo ? $this->sentRules('sla', ['sla.first_response_minutes', 'sla.resolution_minutes']) : []),
+            ],
+        ];
+    }
+
+    /**
+     * The groups that exist in both phases (general, business hours and
+     * operations), normalized.
+     *
+     * @param  array<string, array{open: bool, start: string, end: string}>  $days
+     * @return array<string, array<string, mixed>>
+     */
+    private function phaseOneGroups(array $days): array
+    {
+        return [
             'general' => [
                 'platform_name' => $this->string('general.platform_name')->trim()->value(),
                 'timezone' => (string) $this->input('general.timezone'),
@@ -131,12 +156,19 @@ class UpdatePlatformSettingsRequest extends FormRequest
                 ...($this->has('operations.pending_block_enabled') ? ['pending_block_enabled' => $this->boolean('operations.pending_block_enabled')] : []),
                 ...($this->filled('operations.pending_block_after_minutes') ? ['pending_block_after_minutes' => $this->integer('operations.pending_block_after_minutes')] : []),
             ],
-            'sla' => [
-                'first_response_minutes' => $this->filled('sla.first_response_minutes') ? $this->integer('sla.first_response_minutes') : null,
-                'resolution_minutes' => $this->filled('sla.resolution_minutes') ? $this->integer('sla.resolution_minutes') : null,
-                ...$this->sentRules('sla', ['sla.first_response_minutes', 'sla.resolution_minutes']),
-            ],
         ];
+    }
+
+    /**
+     * The validation rules of the service rules in force: all of them in
+     * phase two, only the two report objectives in phase one.
+     *
+     * @param  array<string, list<string>>  $rules
+     * @return array<string, list<string>>
+     */
+    private function onlyInForce(array $rules): array
+    {
+        return Features::phaseTwo() ? $rules : array_intersect_key($rules, array_flip(ServiceRules::PHASE_ONE_KEYS));
     }
 
     /**

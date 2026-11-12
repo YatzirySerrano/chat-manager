@@ -13,10 +13,16 @@ class MessageStatusChanged implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
 
+    /** When the event was raised (Unix time with microseconds), to measure the real-time fan-out. */
+    public readonly float $recordedAt;
+
     public function __construct(
         public readonly int $messageId,
         public readonly int $conversationId,
         public readonly string $status,
         public readonly ?string $previousStatus = null,
-    ) {}
+        ?float $recordedAt = null,
+    ) {
+        $this->recordedAt = $recordedAt ?? microtime(true);
+    }
 }

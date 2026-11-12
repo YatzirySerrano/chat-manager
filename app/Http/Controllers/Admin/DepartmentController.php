@@ -27,6 +27,7 @@ use App\Services\Conversations\ConversationAccess;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
 use App\Services\ServiceRules;
+use App\Support\Features;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -119,7 +120,8 @@ class DepartmentController extends Controller
             ],
             'distributionModes' => DistributionMode::options(),
             'automation' => $this->automation($department, $actor),
-            'serviceRules' => $serviceRules->describe($department, null),
+            // Phase two only (FEATURE_PHASE_TWO): null while it is off.
+            'serviceRules' => Features::phaseTwo() ? $serviceRules->describe($department, null) : null,
             'can' => [
                 'update' => $actor->can('update', $department),
                 'delete' => $actor->can('delete', $department),

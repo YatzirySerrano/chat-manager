@@ -6,6 +6,7 @@ use App\Enums\ConversationOrigin;
 use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Models\User;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -266,7 +267,8 @@ class AgentProductivity
             ->get()
             ->keyBy(fn (object $row): int => (int) ($row->assigned_user_id ?? 0));
 
-        $overdue = $this->serviceLevels->overdueNow($viewer, $filters, $filters->period->asOf);
+        // Cycles past their deadline are phase two (FEATURE_PHASE_TWO): none while it is off.
+        $overdue = Features::phaseTwo() ? $this->serviceLevels->overdueNow($viewer, $filters, $filters->period->asOf) : [];
         $ids = array_values(array_filter(array_unique([...$query->keys()->all(), ...array_keys($overdue)])));
         $names = User::query()->whereKey($ids)->pluck('name', 'id');
         $protected = $viewer->hasRootAuthority() ? [] : array_flip(array_intersect($ids, $this->protectedAccounts->ids()));

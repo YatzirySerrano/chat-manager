@@ -42,6 +42,6 @@ class BroadcastConversationChange implements ShouldQueue
             ->where('conversation_id', $conversation->id)
             ->first();
 
-        $this->signals->conversationChanged($conversation, $event->reason, $record);
+        $this->signals->conversationChanged($conversation, $event->reason, $record, $event->messageId ?? null);
     }
 }

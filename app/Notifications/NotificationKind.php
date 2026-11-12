@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Enums\Permission;
 use App\Models\User;
+use App\Support\Features;
 
 /**
  * Every kind of in-app notification, with its level, its default delivery
@@ -125,9 +126,10 @@ enum NotificationKind: string
             self::ImportFinished => $user->holdsPermission(Permission::ImportContacts),
             self::ConnectionProblem => $user->holdsPermission(Permission::ViewConnections) || $user->holdsPermission(Permission::ManageConnections),
             self::AccessChanged => true,
+            // Automatic SLA alerts are phase two (FEATURE_PHASE_TWO).
             self::SlaWarning,
-            self::SlaBreach => $user->holdsPermission(Permission::ViewAttention)
-                || ($user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations)),
+            self::SlaBreach => Features::phaseTwo() && ($user->holdsPermission(Permission::ViewAttention)
+                || ($user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations))),
         };
     }
 }

@@ -20,11 +20,13 @@ class ConversationChanged implements ShouldDispatchAfterCommit
 
     /**
      * @param  string  $reason  A ConversationEventType value, or "message" / "read" / "tags" / "contact" (the contact was saved into the directory).
+     * @param  int|null  $messageId  The one message that changed, when the change concerns a single message (reason "message").
      */
     public function __construct(
         public readonly int $conversationId,
         public readonly string $reason,
         public readonly ?int $actorId = null,
         public readonly ?int $eventId = null,
+        public readonly ?int $messageId = null,
     ) {}
 }

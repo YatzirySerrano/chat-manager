@@ -19,6 +19,7 @@ use App\Services\Analytics\AnalyticsScope;
 use App\Services\Analytics\OperationalAnalytics;
 use App\Services\Exports\ReportExporter;
 use App\Services\PlatformSettings;
+use App\Services\ServiceRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -330,6 +331,10 @@ test('the exported agent table follows the screen order and its own snapshot', f
 });
 
 test('the PDF keeps the totals with the last rows and totals every section like the workbook', function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $now = CarbonImmutable::now();
     receivedConversation($this->sales, $this->ana, $now->subDay());
     receivedConversation($this->sales, $this->ana, $now->subDay());

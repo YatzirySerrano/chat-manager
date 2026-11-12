@@ -157,6 +157,48 @@ class HistoryImportBatches
     }
 
     /**
+     * Mapped source values whose target was deleted (or no longer exists)
+     * after the admin chose it: the summary blocks the confirmation with
+     * them and the execution never attaches them.
+     *
+     * @return array{connections: list<string>, departments: list<string>, agents: list<string>, tags: list<string>}
+     */
+    public static function staleMappings(DataTransfer $batch): array
+    {
+        $mappings = self::mappings($batch);
+        $stale = ['connections' => [], 'departments' => [], 'agents' => [], 'tags' => []];
+
+        $connectionTargets = [];
+
+        foreach ($mappings['connections'] as $source => $target) {
+            if ($target['target'] === self::TARGET_CONNECTION) {
+                $connectionTargets[(string) $source] = $target['connection_id'] ?? 0;
+            }
+        }
+
+        $live = $connectionTargets === [] ? [] : Connection::query()->whereKey(array_values($connectionTargets))->notDeleted()->pluck('id')->flip()->all();
+
+        foreach ($connectionTargets as $source => $connectionId) {
+            if (! isset($live[$connectionId])) {
+                $stale['connections'][] = (string) $source;
+            }
+        }
+
+        foreach (['departments' => Department::class, 'agents' => User::class, 'tags' => Tag::class] as $key => $model) {
+            $targets = array_map('intval', array_filter($mappings[$key], 'is_numeric'));
+            $live = $targets === [] ? [] : $model::query()->whereKey(array_values($targets))->notDeleted()->pluck('id')->flip()->all();
+
+            foreach ($mappings[$key] as $source => $target) {
+                if (! is_numeric($target) || ! isset($live[(int) $target])) {
+                    $stale[$key][] = (string) $source;
+                }
+            }
+        }
+
+        return $stale;
+    }
+
+    /**
      * Save the mappings (validated: existing, not deleted records). Keys
      * not present keep their current mapping; null removes one.
      *
@@ -429,7 +471,7 @@ class HistoryImportBatches
         // left by a run killed by its timeout. (A queued / processing batch
         // may be running; its lock is respected.)
         if ($ended) {
-            Cache::lock('history-import:execute:'.$batch->id)->forceRelease();
+            Cache::lock(ExecuteHistoryImport::lockName($batch->id))->forceRelease();
         }
 
         self::dispatch($batch->refresh());

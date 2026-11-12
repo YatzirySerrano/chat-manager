@@ -92,6 +92,8 @@ final class ConcurrentProcess
             'PULSE_ENABLED' => 'false',
             'TELESCOPE_ENABLED' => 'false',
             'NIGHTWATCH_ENABLED' => 'false',
+            // The worker follows the phase-two flag of the test that started it.
+            'FEATURE_PHASE_TWO' => config('features.phase_two') ? 'true' : 'false',
             ...$environment,
         ];
 

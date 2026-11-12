@@ -204,7 +204,9 @@ function leadersLabel(department: DepartmentSummary): string {
                         <TableHead class="hidden xl:table-cell"
                             >Responsables</TableHead
                         >
-                        <TableHead>Estado</TableHead>
+                        <TableHead class="hidden sm:table-cell"
+                            >Estado</TableHead
+                        >
                         <TableHead class="pr-5 text-right">
                             <span class="sr-only">Acciones</span>
                         </TableHead>
@@ -257,6 +259,10 @@ function leadersLabel(department: DepartmentSummary): string {
                                             'Sin descripción.'
                                         }}
                                     </p>
+                                    <DeletedBadge
+                                        v-if="department.is_deleted"
+                                        class="mt-1 sm:hidden"
+                                    />
                                 </div>
                             </div>
                         </TableCell>
@@ -271,7 +277,7 @@ function leadersLabel(department: DepartmentSummary): string {
                         >
                             {{ leadersLabel(department) }}
                         </TableCell>
-                        <TableCell>
+                        <TableCell class="hidden sm:table-cell">
                             <DeletedBadge v-if="department.is_deleted" />
                             <span v-else class="text-xs text-muted-foreground"
                                 >Activo</span

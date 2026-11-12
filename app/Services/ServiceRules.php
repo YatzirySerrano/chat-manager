@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Conversation;
 use App\Models\ConversationCategory;
 use App\Models\Department;
+use App\Support\Features;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
@@ -92,6 +93,28 @@ final class ServiceRules
             'label' => 'Atender en orden de llegada', 'unit' => null,
         ],
     ];
+
+    /**
+     * Values in force while phase two is off (App\Support\Features).
+     *
+     * @var array<string, int|bool|null>
+     */
+    public const PHASE_ONE_VALUES = [
+        'intake.confirmation_required' => false,
+        'queue.min_wait_minutes' => 0,
+        'queue.chronological_order' => false,
+        'sla.first_response_minutes' => null,
+        'sla.response_minutes' => null,
+    ];
+
+    /**
+     * Platform rules that exist in phase one: the two report objectives
+     * (legacy compliance of OperationalAnalytics). Every other rule and
+     * alert setting is phase two (App\Support\Features).
+     *
+     * @var list<string>
+     */
+    public const PHASE_ONE_KEYS = ['sla.first_response_minutes', 'sla.resolution_minutes'];
 
     /**
      * Platform-only settings of the automatic SLA alerts (PlatformSettings
@@ -441,6 +464,17 @@ final class ServiceRules
             foreach ($overrides as $key => $value) {
                 $values[$key] = $value;
                 $sources[$key] = $level;
+            }
+        }
+
+        // Phase one (FEATURE_PHASE_TWO off): no readiness confirmation, no
+        // queue rules and no SLA deadlines for live response cycles. Stored
+        // values are kept untouched; the legacy report objectives are read
+        // from PlatformSettings by the reports themselves.
+        if (! Features::phaseTwo()) {
+            foreach (self::PHASE_ONE_VALUES as $key => $value) {
+                $values[$key] = $value;
+                $sources[$key] = self::LEVEL_PLATFORM;
             }
         }
 

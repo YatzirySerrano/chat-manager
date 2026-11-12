@@ -133,7 +133,9 @@ class ConversationPolicy
     }
 
     /**
-     * Only the responsible agent writes to the customer, while attending.
+     * The responsible agent writes to the customer while attending; holders
+     * of conversations.intervene too, within their reach, without taking it
+     * (ConversationStateGuard).
      */
     public function reply(User $actor, Conversation $conversation): bool
     {
@@ -172,7 +174,7 @@ class ConversationPolicy
             'confirmReadiness' => $actor->holdsPermission(Permission::ConfirmConversationReady) && $this->operates($actor, $conversation),
             'categorize' => ($actor->holdsPermission(Permission::ReplyConversations)
                 || $actor->holdsPermission(Permission::AssignConversations)
-                || $actor->holdsPermission(Permission::ConfirmConversationReady))
+                || $actor->holdsStoredPermission(Permission::ConfirmConversationReady))
                 && $this->attendsOrOperates($actor, $conversation),
             'reply' => $actor->holdsPermission(Permission::ReplyConversations) && $this->attendsOrOperates($actor, $conversation),
             'sendTemplate' => $actor->holdsPermission(Permission::SendTemplates) && $this->permits($actor, 'reply', $conversation)

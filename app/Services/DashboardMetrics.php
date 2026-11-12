@@ -16,6 +16,7 @@ use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\Analytics\OperationalAnalytics;
 use App\Services\Analytics\ServiceLevelAnalytics;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -131,7 +132,7 @@ class DashboardMetrics
         $startOfToday = ($asOf ?? CarbonImmutable::now())->setTimezone((string) $this->settings->get('general.timezone'))->startOfDay()->utc();
 
         return $this->cache->remember(
-            "dashboard:{$this->scope->fingerprint($user)}:{$filters->cacheKey()}:{$startOfToday->getTimestamp()}",
+            "dashboard:{$this->scope->fingerprint($user)}:{$filters->cacheKey()}:{$startOfToday->getTimestamp()}:p".(int) Features::phaseTwo(),
             self::TTL,
             fn (): array => $this->compute($user, $filters, $startOfToday),
         );
@@ -161,7 +162,7 @@ class DashboardMetrics
         $filters ??= $this->filters($user);
 
         return $this->cache->remember(
-            "dashboard:{$this->scope->fingerprint($user)}:{$filters->cacheKey()}:charts",
+            "dashboard:{$this->scope->fingerprint($user)}:{$filters->cacheKey()}:charts:p".(int) Features::phaseTwo(),
             self::TTL,
             fn (): array => $this->computeCharts($user, $filters),
         );
@@ -209,7 +210,8 @@ class DashboardMetrics
                 ], $this->top($this->analytics->breakdown($user, $filters, 'department_id')))
                 : null,
             'response_trend' => $this->analytics->responseTrend($user, $filters, $this->activity($user, $filters)),
-            'sla' => $this->sla($user, $filters),
+            // SLA compliance from the response cycles: phase two (FEATURE_PHASE_TWO).
+            'sla' => Features::phaseTwo() ? $this->sla($user, $filters) : null,
             // Who has what right now: the same audience as the per-agent chart, or one's own load.
             'workload' => $showsAgents || $personal ? $this->workload($user, $filters) : null,
             'heatmap' => $this->analytics->heatmap($user, $filters),

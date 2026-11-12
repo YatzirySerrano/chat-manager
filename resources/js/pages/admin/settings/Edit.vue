@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { useFeatures } from '@/composables/useFeatures';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { formatTimeZone } from '@/lib/format';
 import { integerBetween, maxLength, required } from '@/lib/validation';
@@ -46,6 +47,9 @@ const props = defineProps<{
     };
     can: { update: boolean };
 }>();
+
+/* Phase two (FEATURE_PHASE_TWO): while it is off only the two report objectives are shown (and accepted). */
+const { phaseTwo } = useFeatures();
 
 const weekdayLabels: Record<Weekday, string> = {
     monday: 'Lunes',
@@ -654,13 +658,21 @@ const integrationConnected = computed(
                     <h2 id="sla-heading" class="text-base font-semibold">
                         Objetivos de servicio
                     </h2>
-                    <p class="text-sm text-muted-foreground">
+                    <p v-if="!phaseTwo" class="text-sm text-muted-foreground">
+                        Objetivos de primera respuesta y de resolución. Con un
+                        objetivo, Reportes muestra además el porcentaje de
+                        cumplimiento.
+                    </p>
+                    <p v-if="phaseTwo" class="text-sm text-muted-foreground">
                         Reglas generales de atención, en tres grupos que no
                         deben confundirse: el tiempo máximo de respuesta, la
                         confirmación de solicitud completa y la espera mínima
                         con el orden de atención.
                     </p>
-                    <p class="mt-2 text-sm text-muted-foreground">
+                    <p
+                        v-if="phaseTwo"
+                        class="mt-2 text-sm text-muted-foreground"
+                    >
                         Son los valores generales: cada departamento y cada
                         categoría de solicitud puede tener valores propios, que
                         tienen prioridad (categoría, después departamento,
@@ -686,6 +698,7 @@ const integrationConnected = computed(
             </section>
 
             <section
+                v-if="phaseTwo"
                 class="grid gap-6 lg:grid-cols-[16rem_1fr]"
                 aria-labelledby="sla-alerts-heading"
             >

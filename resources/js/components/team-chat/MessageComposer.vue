@@ -2,6 +2,7 @@
 import { useHttp } from '@inertiajs/vue3';
 import { Paperclip, SendHorizontal, Smile, X } from '@lucide/vue';
 import { computed, nextTick, ref, useId } from 'vue';
+import { newClientReference } from '@/components/conversations/messageFormat';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +32,11 @@ import type {
  * travel with the message (names are not unique) and the server keeps only
  * current participants. While writing, a "typing" signal is sent at most
  * every few seconds; it is never stored.
+ *
+ * Each message carries a `client_reference` (idempotency key). After a
+ * failure whose outcome is unknown (no response, server error) the same key
+ * is reused when the same message is sent again, so a message the server
+ * did store is answered back instead of being stored and notified twice.
  */
 const props = defineProps<{
     threadId: number;
@@ -89,13 +95,15 @@ const http = useHttp<
         reply_to_message_id: number | null;
         attachments: File[];
         mentions: number[];
+        client_reference: string;
     },
-    { data: TeamMessage }
+    { data: TeamMessage; replayed?: boolean }
 >({
     body: '',
     reply_to_message_id: null,
     attachments: [],
     mentions: [],
+    client_reference: '',
 });
 const typingHttp = useHttp<Record<string, never>>({});
 
@@ -103,6 +111,56 @@ const chosenMentions = ref<TeamMention[]>([]);
 const mentionQuery = ref<string | null>(null);
 const mentionIndex = ref(0);
 let lastTypingAt = 0;
+
+/*
+ * The idempotency key of the next send. It is kept only while the same
+ * message (text, files and reply) is retried after an uncertain failure;
+ * any change to the message makes it a new one with a new key.
+ */
+let clientReference = newClientReference();
+let referenceMessage: string | null = null;
+
+function messageFingerprint(): string {
+    return JSON.stringify([
+        http.body.trim(),
+        http.reply_to_message_id,
+        http.attachments.map((file) => [
+            file.name,
+            file.size,
+            file.lastModified,
+        ]),
+    ]);
+}
+
+/* The last attempt certainly stored nothing, or succeeded: the next is new. */
+function renewReference(): void {
+    clientReference = newClientReference();
+    referenceMessage = null;
+}
+
+/* The server's own explanation of a refusal, when it sent one. */
+function serverMessage(data: string): string | null {
+    try {
+        const parsed: unknown = JSON.parse(data);
+
+        if (
+            parsed !== null &&
+            typeof parsed === 'object' &&
+            'message' in parsed &&
+            typeof parsed.message === 'string' &&
+            parsed.message !== ''
+        ) {
+            return parsed.message;
+        }
+    } catch {
+        // Not JSON: the generic explanation is used.
+    }
+
+    return null;
+}
+
+const UNCERTAIN_SEND =
+    'No se pudo confirmar si tu mensaje se envió. Vuelve a enviarlo: si ya había llegado, no se duplicará.';
 
 function normalized(text: string): string {
     return text
@@ -408,23 +466,45 @@ async function send(): Promise<void> {
     mentionQuery.value = null;
     http.clearErrors();
 
+    const fingerprint = messageFingerprint();
+
+    if (referenceMessage !== null && referenceMessage !== fingerprint) {
+        renewReference();
+    }
+
+    referenceMessage = fingerprint;
+    http.client_reference = clientReference;
+
     try {
         const response = await http.post(storeMessage.url(props.threadId), {
             onHttpException: (response) => {
+                // 4xx: refused, nothing was stored. 5xx: it may have been.
+                if (response.status < 500) {
+                    renewReference();
+                }
+
                 const message =
                     response.status === 403
                         ? 'Ya no puedes enviar mensajes en este chat.'
-                        : response.status === 413
-                          ? (props.limits.server?.message ??
-                            'El servidor de Chat Manager no pudo recibir los archivos: su límite de subida es menor que su tamaño. Pide a un administrador que lo amplíe.')
-                          : 'No se pudo enviar el mensaje. Inténtalo de nuevo.';
+                        : response.status === 404
+                          ? 'Ya no participas en este chat. Tu mensaje no se envió.'
+                          : response.status === 413
+                            ? (props.limits.server?.message ??
+                              'El servidor de Chat Manager no pudo recibir los archivos: su límite de subida es menor que su tamaño. Pide a un administrador que lo amplíe.')
+                            : response.status === 503
+                              ? (serverMessage(response.data) ??
+                                'El almacenamiento de archivos no está disponible. Tu mensaje no se envió; inténtalo de nuevo en unos minutos.')
+                              : response.status >= 500
+                                ? UNCERTAIN_SEND
+                                : 'No se pudo enviar el mensaje. Inténtalo de nuevo.';
                 localErrors.value = [message];
 
                 return false;
             },
             onNetworkError: () => {
+                // The request may have reached the server: the key is kept.
                 localErrors.value = [
-                    'No hay conexión con la plataforma. Tu mensaje no se envió; revisa tu internet e inténtalo de nuevo.',
+                    `Se perdió la conexión con la plataforma. ${UNCERTAIN_SEND}`,
                 ];
 
                 return false;
@@ -432,10 +512,14 @@ async function send(): Promise<void> {
         });
 
         // Refused by validation: the draft and its files stay, with the
-        // errors shown (http.errors).
+        // errors shown (http.errors); nothing was stored.
         if (!response) {
+            renewReference();
+
             return;
         }
+
+        renewReference();
 
         // A successful request makes the sent values the form defaults, so
         // reset() would bring the sent text back: empty the composer instead.
@@ -444,6 +528,7 @@ async function send(): Promise<void> {
             reply_to_message_id: null,
             attachments: [],
             mentions: [],
+            client_reference: '',
         });
         http.reset();
         chosenMentions.value = [];
@@ -454,6 +539,8 @@ async function send(): Promise<void> {
         focus();
     } catch {
         if (uploadWasCancelled()) {
+            // The bytes never arrived completely: a new attempt is new.
+            renewReference();
             localErrors.value = [
                 'Se canceló el envío. Los archivos siguen adjuntos: puedes volver a enviarlos o quitarlos.',
             ];

@@ -7,6 +7,7 @@ use App\Broadcasting\RealtimeClientConfig;
 use App\Enums\Permission;
 use App\Models\User;
 use App\Services\PlatformSettings;
+use App\Support\Features;
 use App\Support\PasswordPolicy;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -64,6 +65,11 @@ class HandleInertiaRequests extends Middleware
             'teamChatUnread' => fn (): ?int => $user instanceof User && $user->holdsPermission(Permission::UseTeamChat)
                 ? app(TeamUnreadCounter::class)->total($user)
                 : null,
+            // Feature flags (config/features.php). The interface only hides
+            // what the server already refuses or masks.
+            'features' => [
+                'phaseTwo' => Features::phaseTwo(),
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             // Native form posts (the export downloads) cannot send the XSRF header.
             'csrfToken' => fn (): ?string => $request->hasSession() ? $request->session()->token() : null,

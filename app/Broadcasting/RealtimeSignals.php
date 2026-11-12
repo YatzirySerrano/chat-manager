@@ -124,11 +124,14 @@ class RealtimeSignals
      * looking at it) and, unless the change only concerns its timeline, the
      * inboxes that list it, before and after a transfer or reassignment.
      */
-    public function conversationChanged(Conversation $conversation, string $reason, ?ConversationEvent $event = null): void
+    public function conversationChanged(Conversation $conversation, string $reason, ?ConversationEvent $event = null, ?int $messageId = null): void
     {
+        // message_id (only when one message changed, e.g. its media finished
+        // downloading) lets the open chat refresh that message alone.
         $this->send([RealtimeChannels::conversation($conversation->id)], 'conversation.changed', [
             'reason' => $reason,
             'version' => $conversation->version,
+            ...($messageId === null ? [] : ['message_id' => $messageId]),
         ]);
 
         if ($reason === ConversationEventType::OutboundBlocked->value) {
@@ -149,14 +152,20 @@ class RealtimeSignals
 
     /**
      * Signal to every inbox that lists the conversation (and to the
-     * responsible agents involved) that it must be refreshed.
+     * responsible agents involved) that it must be refreshed, in one
+     * publication (the broadcaster splits long channel lists itself).
      */
     public function inboxChanged(Conversation $conversation, string $reason, ?ConversationEvent $event = null): void
     {
-        $payload = ['conversation_id' => $conversation->id, 'reason' => $reason];
+        $channels = $this->inboxChannels($conversation, $reason, $event);
 
-        $this->send($this->inboxChannels($conversation, $reason, $event), 'inbox.changed', $payload);
-        $this->toUsers([$conversation->assigned_user_id, $event?->from_user_id, $event?->to_user_id], 'inbox.changed', $payload);
+        foreach ([$conversation->assigned_user_id, $event?->from_user_id, $event?->to_user_id] as $userId) {
+            if ($userId !== null && $userId > 0) {
+                $channels[] = RealtimeChannels::user($userId);
+            }
+        }
+
+        $this->send($channels, 'inbox.changed', ['conversation_id' => $conversation->id, 'reason' => $reason]);
     }
 
     /**

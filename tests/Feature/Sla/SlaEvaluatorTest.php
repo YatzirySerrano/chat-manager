@@ -23,6 +23,7 @@ use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -33,6 +34,8 @@ use Illuminate\Support\Str;
 */
 
 beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
     Queue::fake([DeliverOutboundMessage::class]);
     $this->travelTo(CarbonImmutable::parse('2026-11-09 16:00:00', 'UTC'));
 
@@ -183,6 +186,29 @@ test('a cycle found already past its deadline is announced as breached, never as
     expect(evaluateSlaNow())->toBe(['breached' => 1, 'warned' => 0, 'reminded' => 0])
         ->and(slaKindsOf($this->agent))->toBe(['sla.breach'])
         ->and(evaluateSlaNow())->toBe(['breached' => 0, 'warned' => 0, 'reminded' => 0]);
+});
+
+test('a breach that cannot be claimed is reported and the rest of the run goes on', function () {
+    Exceptions::fake();
+    $failing = evaluatedCycle($this->department, $this->connection, $this->agent);
+    $breached = evaluatedCycle($this->department, $this->connection, $this->agent);
+    $this->travel(3)->minutes();
+    $warned = evaluatedCycle($this->department, $this->connection, $this->agent);
+
+    ConversationEvent::creating(function (ConversationEvent $event) use ($failing): void {
+        if ($event->conversation_id === $failing->conversation_id && $event->type === ConversationEventType::SlaBreached) {
+            throw new RuntimeException('Claim failed.');
+        }
+    });
+
+    $this->travel(8)->minutes();
+
+    expect(evaluateSlaNow())->toBe(['breached' => 1, 'warned' => 1, 'reminded' => 0])
+        ->and($failing->refresh()->breached_at)->toBeNull()
+        ->and($breached->refresh()->breached_at)->not->toBeNull()
+        ->and($warned->refresh()->warned_at)->not->toBeNull();
+
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'Claim failed.');
 });
 
 test('cycles without objective and cycles already ended raise nothing', function () {

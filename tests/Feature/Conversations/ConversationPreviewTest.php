@@ -14,11 +14,15 @@ use App\Models\ConversationRead;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Models\ResponseCycle;
 use App\Models\User;
 use App\Notifications\ConversationMessageNotification;
+use App\Services\ServiceRules;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 
 /*
 | The inbox preview (long press / right click on a row) shows the latest
@@ -176,6 +180,10 @@ test('previewing with personal colors creates no appearance and moves no read ma
 });
 
 test('the preview tells what the request is: stage, received time, area, category, files and availability', function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $this->travelTo(CarbonImmutable::parse('2026-11-10 16:00:00', 'UTC'));
     $category = ConversationCategory::factory()->create(['name' => 'Facturación']);
     $this->department->forceFill(['name' => 'Soporte', 'service_rules' => ['queue.min_wait_minutes' => 5]])->save();
@@ -239,6 +247,10 @@ test('a long conversation shows the message it started with apart from the lates
 });
 
 test('previewing a request restrained by every queue rule still writes nothing and keeps its place in the queue', function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $this->department->forceFill(['service_rules' => ['intake.confirmation_required' => true, 'queue.min_wait_minutes' => 5, 'queue.chronological_order' => true]])->save();
     $head = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now()->subHour()]);
     $pending = Conversation::factory()->inDepartment($this->department)->create(['queued_at' => now()->subMinutes(30)]);
@@ -258,4 +270,78 @@ test('previewing a request restrained by every queue rule still writes nothing a
         ->and(ConversationEvent::query()->count())->toBe(0);
     Event::assertNotDispatched(ConversationChanged::class);
     Event::assertNotDispatched(RealtimeSignal::class);
+});
+
+/**
+ * Rows of the tables an attention can change (SLA cycles, agent metrics,
+ * audit trail, events, read markers, notifications), to compare around a
+ * preview.
+ *
+ * @return array<string, int>
+ */
+function previewSideTableCounts(): array
+{
+    return collect(['response_cycles', 'conversation_agent_metrics', 'audit_logs', 'conversation_events', 'conversation_reads', 'notifications'])
+        ->mapWithKeys(fn (string $table): array => [$table => DB::table($table)->count()])
+        ->all();
+}
+
+test('previewing many times is never cumulative: no writes, notifications, SLA, audit or counter changes', function () {
+    Notification::fake();
+    Http::preventStrayRequests();
+    Message::factory()->count(3)->create(['conversation_id' => $this->conversation->id]);
+    $cycle = ResponseCycle::factory()->withTarget(600)->create(['conversation_id' => $this->conversation->id]);
+    $before = $this->conversation->fresh()->getAttributes();
+    $cycleBefore = $cycle->fresh()->getAttributes();
+    $tables = previewSideTableCounts();
+    $unread = previewedUnread($this, $this->agent, $this->conversation);
+    Event::fake([ConversationChanged::class, RealtimeSignal::class]);
+
+    $writes = databaseWritesDuring(function (): void {
+        foreach (range(1, 5) as $ignored) {
+            $this->actingAs($this->agent)->getJson(route('conversations.preview', $this->conversation))->assertOk();
+        }
+    });
+
+    expect($writes)->toBe([])
+        ->and($this->conversation->fresh()->getAttributes())->toEqual($before)
+        ->and($cycle->fresh()->getAttributes())->toEqual($cycleBefore)
+        ->and(previewSideTableCounts())->toBe($tables)
+        ->and(ConversationRead::query()->count())->toBe(0)
+        ->and(previewedUnread($this, $this->agent, $this->conversation))->toBe($unread)->toBe(3);
+    Notification::assertNothingSent();
+    Event::assertNotDispatched(ConversationChanged::class);
+    Event::assertNotDispatched(RealtimeSignal::class);
+});
+
+test('a preview with reactions and quotes shows them and still writes nothing', function () {
+    Notification::fake();
+    $original = Message::factory()->create(['conversation_id' => $this->conversation->id, 'body' => 'Mi pedido es el 1234', 'whatsapp_message_id' => 'wamid.original']);
+    $reaction = Message::factory()->create([
+        'conversation_id' => $this->conversation->id,
+        'type' => MessageType::Reaction,
+        'body' => null,
+        'metadata' => ['content' => ['message_id' => 'wamid.original', 'emoji' => '👍']],
+    ]);
+    $reply = Message::factory()->create([
+        'conversation_id' => $this->conversation->id,
+        'direction' => MessageDirection::Outbound,
+        'status' => MessageStatus::Sent,
+        'sender_user_id' => $this->agent->id,
+        'body' => 'Lo reviso',
+        'reply_to_message_id' => $original->id,
+    ]);
+    $tables = previewSideTableCounts();
+    $response = null;
+
+    $writes = databaseWritesDuring(function () use (&$response): void {
+        $response = $this->actingAs($this->agent)->getJson(route('conversations.preview', $this->conversation))->assertOk();
+    });
+    $messages = collect($response->json('messages'))->keyBy('id');
+
+    expect($writes)->toBe([])
+        ->and(previewSideTableCounts())->toBe($tables)
+        ->and($messages[$reaction->id]['content'])->toBe(['emoji' => '👍', 'reacted_message_id' => $original->id])
+        ->and($messages[$reply->id]['reply_to'])->toMatchArray(['id' => $original->id, 'body' => 'Mi pedido es el 1234', 'origin' => 'conversation']);
+    Notification::assertNothingSent();
 });

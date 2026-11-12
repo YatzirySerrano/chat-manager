@@ -62,6 +62,7 @@ export type PermissionName =
     | 'conversations.history'
     | 'conversations.accept'
     | 'conversations.notes'
+    | 'conversations.intervene'
     | 'team-chat.use'
     | 'team-chat.create-groups'
     | 'team-chat.manage-groups'

@@ -32,8 +32,11 @@ autentican con contraseña y, opcionalmente, verificación en dos pasos (las pas
 
 ### Autenticación y sesión
 
-- Fortify con limitador `login` (5 intentos por minuto por correo e IP) y `two-factor` (5 por minuto por sesión de
-  inicio). Cada bloqueo se audita (`auth.lockout`, una entrada por correo e IP y minuto, sin contraseña).
+- Fortify con limitador `login` (5 intentos por minuto por correo e IP, y además 30 intentos **fallidos** por minuto
+  por IP con cualquier correo, contra el rociado de contraseñas) y `two-factor` (5 por minuto por sesión de inicio).
+  Los inicios correctos (o que pasan al desafío 2FA) no consumen el cupo por IP, así que el inicio de turno de una
+  oficina detrás de una misma IP no se bloquea. Cada bloqueo se audita (`auth.lockout`, una entrada por correo e IP y
+  minuto, sin contraseña).
 - El formulario «¿Olvidaste tu contraseña?» responde exactamente igual para correos con y sin cuenta, y para un enlace
   pedido hace un momento (mensaje neutral). El broker limita un enlace por usuario cada 60 s y, además, `POST
 forgot-password` y `POST reset-password` aceptan 5 solicitudes por minuto por IP en cada ruta (limitador
@@ -125,21 +128,22 @@ private`. La privacidad no depende de ese encabezado: páginas y respuestas Iner
 
 ### Límites de frecuencia
 
-| Superficie                                                                                   | Límite                                            |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Inicio de sesión / 2FA                                                                       | 5/min por correo+IP / por sesión                  |
-| Cambio de contraseña                                                                         | 6/min                                             |
-| Recuperación de contraseña (`forgot-password`, `reset-password`)                             | 5/min por IP y ruta, más 1 enlace/60 s por cuenta |
-| Webhook WhatsApp                                                                             | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL  |
-| Envío de mensajes / plantillas / reintentos                                                  | 60/min, 30/min, 30/min                            |
-| Lectura de línea de tiempo y marcadores de lectura                                           | 120/min                                           |
-| Exportaciones, importaciones, reversión de importación                                       | 10/min                                            |
-| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta)               | 10/min (hallazgo H-6)                             |
-| `broadcasting/auth`                                                                          | 180/min                                           |
-| Importador de historial: crear lote, confirmar, reanudar / subir archivos / acciones masivas | 10/min / 30/min / 60/min                          |
-| API de integración `/api/v1` (lecturas / envíos)                                             | 600/min / 60/min por token                        |
-| Chat web: frame, sesiones, mensajes, lecturas, `broadcasting/auth` del widget                | ver [api-v1.md §8](api-v1.md#8-límites)           |
-| Sondeo `/health/ready`                                                                       | 60/min por IP y veredicto en caché 10 s           |
+| Superficie                                                                                   | Límite                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inicio de sesión / 2FA                                                                       | 5/min por correo+IP y 30 fallidos/min por IP / por sesión                                                                                                                                                            |
+| Cambio de contraseña                                                                         | 6/min                                                                                                                                                                                                                |
+| Recuperación de contraseña (`forgot-password`, `reset-password`)                             | 5/min por IP y ruta, más 1 enlace/60 s por cuenta                                                                                                                                                                    |
+| Webhook WhatsApp                                                                             | `WHATSAPP_WEBHOOK_RATE_LIMIT` (1200/min) por URL                                                                                                                                                                     |
+| Webhook de la app de Meta (`/webhooks/meta`)                                                 | 6000/min por IP (`META_WEBHOOK_RATE_LIMIT`); firmas o verify tokens inválidos: 30/min por IP (`META_WEBHOOK_INVALID_SIGNATURE_LIMIT`), contados solo tras comprobar la credencial; verificación `GET` 600/min por IP |
+| Envío de mensajes / plantillas / reintentos                                                  | 60/min, 30/min, 30/min                                                                                                                                                                                               |
+| Lectura de línea de tiempo y marcadores de lectura                                           | 120/min                                                                                                                                                                                                              |
+| Exportaciones, importaciones, reversión de importación                                       | 10/min                                                                                                                                                                                                               |
+| Verificar conexión, suscripción de app, sincronizar plantillas (llaman a Meta)               | 10/min (hallazgo H-6)                                                                                                                                                                                                |
+| `broadcasting/auth`                                                                          | 180/min                                                                                                                                                                                                              |
+| Importador de historial: crear lote, confirmar, reanudar / subir archivos / acciones masivas | 10/min / 30/min / 60/min                                                                                                                                                                                             |
+| API de integración `/api/v1` (lecturas / envíos)                                             | 600/min / 60/min por token                                                                                                                                                                                           |
+| Chat web: frame, sesiones, mensajes, lecturas, `broadcasting/auth` del widget                | ver [api-v1.md §8](api-v1.md#8-límites)                                                                                                                                                                              |
+| Sondeo `/health/ready`                                                                       | 60/min por IP y veredicto en caché 10 s                                                                                                                                                                              |
 
 Cada `throttle:N,M` cuenta por usuario (o IP) **y ruta** (`App\Http\Middleware\ThrottleRequestsPerRoute`, registrado como
 alias `throttle`): el sondeo de la campana o las autorizaciones de canales ya no agotan el límite de exportaciones o
@@ -630,7 +634,29 @@ conversación. Dos permisos pasan a tener efecto ([reglas-de-servicio.md §Regla
 - **No validado contra Meta real:** firma, handshake de verificación, descarga de multimedia y límites reales de Meta
   (pendiente de validación externa con una cuenta de WhatsApp Business real).
 - **PDF en vista previa sin `sandbox`:** los navegadores no muestran PDF en documentos con CSP `sandbox`; se sirven en línea
-  con `nosniff` y con el visor del navegador. Un PDF malicioso queda limitado por el visor del navegador.
+  con `nosniff` y con el visor del navegador. Un PDF malicioso queda limitado por el visor del navegador. Afecta a los
+  PDF **entrantes de clientes** (`MessageAttachmentController`, vista previa en la bandeja) y a los del chat interno
+  (`TeamAttachmentController`), servidos desde el mismo origen que la aplicación. Los visores integrados de los navegadores
+  ejecutan el JavaScript de un PDF, si lo admiten, en un entorno aislado sin acceso al DOM ni a las cookies del origen,
+  pero la protección depende de ese visor (no verificado aquí con PDF maliciosos). Endurecimiento posible, pendiente de decisión porque
+  cambia la experiencia: servir los PDF entrantes como descarga (`Content-Disposition: attachment`, se pierde la vista
+  previa en línea) o desde un dominio separado sin cookies de sesión. Recomendación operativa mientras tanto: navegadores
+  actualizados y sin visores de PDF de terceros como complemento.
+- **Webhooks detrás de un proxy:** los límites de `/webhooks/meta` son por IP. Los intentos con firma o token
+  inválidos solo bloquean más intentos inválidos (la firma se comprueba antes del contador), pero el tope general de
+  6000/min por IP cuenta todo; sin `TRUSTED_PROXIES` todo el tráfico parece venir del proxy y una inundación por
+  encima de ese tope también retrasaría las entregas de Meta (que las reintenta). El webhook de WhatsApp limita por URL
+  secreta de la conexión, no por IP.
+- **Suscripciones en tiempo real tras perder el acceso:** al cambiar el rol, los permisos, los departamentos o el
+  estado de una cuenta, el servidor solo envía `access.changed` a sus sesiones (`BroadcastAccessChange`) y el cliente
+  vuelve a autorizar cada canal (`RealtimeAudience`); Reverb no retira por sí mismo una suscripción ya autorizada. Un
+  cliente modificado que ignore la señal seguiría recibiendo los eventos de los canales a los que ya estaba suscrito
+  hasta desconectarse (cada recarga o reconexión vuelve a autorizar). Se acepta como riesgo residual: los eventos
+  llevan solo ids y metadatos (nunca texto de mensajes, nombres ni archivos; el contenido se pide por HTTP, que
+  autoriza cada vez) y una cuenta desactivada pierde la sesión en la siguiente petición. Mitigación posible si hiciera
+  falta: autenticación de usuario de Pusher/Reverb (`pusher:signin`) y llamar a
+  `POST /apps/{app}/users/{id}/terminate_connections` de Reverb al cambiar el acceso, que corta sus conexiones; exige
+  cambios en el cliente y no se ha implementado.
 - **Herramientas de desarrollo:** con `APP_ENV=local`, Inertia DevTools registra las props de cada página en
   `storage/inertia-devtools` y las sirve sin autenticación en `/_inertia/devtools/entries`. Nunca usar `APP_ENV=local` con
   datos reales; en producción está desactivado por defecto (`INERTIA_DEVTOOLS_ENABLED`). `laravel/boost` es dependencia de

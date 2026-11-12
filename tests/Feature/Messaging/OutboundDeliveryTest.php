@@ -189,6 +189,8 @@ test('errors proven not to have reached Meta go back to the queue with bounded a
         ->sending_started_at->toBeNull()
         ->and($message->metadata['delivery']['last_retryable_error'])->toBeString();
 
+    // The job released with the backoff runs once the backoff ended.
+    $this->travelTo(CarbonImmutable::parse($message->metadata['delivery']['retry_not_before']));
     ($this->deliver)($message);
 
     expect($message->refresh())

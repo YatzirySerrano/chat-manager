@@ -31,6 +31,18 @@ use Throwable;
  *
  * Readiness only reads configuration (cheap enough for every request);
  * the write-and-delete probe (probe()) runs only in app:preflight.
+ *
+ * Mounted disks (opt-in): a "local" disk with a "mount" section (the "nas"
+ * disk, a NAS share mounted on this server, MEDIA_DISK=nas) counts as
+ * external storage, also for MEDIA_DISK_REQUIRED, but only while the mount
+ * is verified (MountHealth): the last bounded health probe passed, the
+ * kernel mount table shows the expected filesystem at the root and the
+ * identity marker holds MEDIA_MOUNT_ID. Otherwise files are refused, so an
+ * unmounted share (an empty directory of the server) never receives them.
+ * Writes to a mount go to a temporary file in the same directory, are
+ * renamed into place only when complete and are checked again (size, and
+ * SHA-256 re-read when attachments.storage.mount.verify_hash). Disks
+ * without a "mount" section behave exactly as before.
  */
 class MediaDisk
 {
@@ -57,7 +69,16 @@ class MediaDisk
     {
         $driver = $this->driver($disk);
 
-        return $driver !== null && $driver !== 'local';
+        return $driver !== null && ($driver !== 'local' || $this->isMount($disk));
+    }
+
+    /**
+     * Whether the disk is a network share mounted on this server (a local
+     * disk with a "mount" section, see MountHealth).
+     */
+    public function isMount(?string $disk = null): bool
+    {
+        return MountHealth::settings($disk ?? $this->name()) !== null;
     }
 
     public function isRequired(): bool
@@ -68,7 +89,8 @@ class MediaDisk
     /**
      * Why new files cannot be stored right now (a short reason code, see
      * StorageUnavailable), or null when the disk is ready. Configuration
-     * only: no network call.
+     * only: no network call. A mounted disk also reads its cached health
+     * and identity marker (see mountProblem()).
      */
     public function problem(): ?string
     {
@@ -80,6 +102,10 @@ class MediaDisk
 
         if ($this->name() === 'public' || ($config['visibility'] ?? null) === 'public') {
             return 'public_disk';
+        }
+
+        if ($config['driver'] === 'local' && $this->isMount()) {
+            return $this->mountProblem();
         }
 
         if ($config['driver'] === 'local') {
@@ -142,6 +168,16 @@ class MediaDisk
             throw new StorageUnavailable('read_failed', $disk, 'No fue posible leer el archivo para guardarlo. Inténtalo de nuevo.');
         }
 
+        if ($this->isMount($disk)) {
+            try {
+                $this->putOnMount($disk, $stream, $path, $size);
+            } finally {
+                fclose($stream);
+            }
+
+            return ['disk' => $disk, 'path' => $path];
+        }
+
         $filesystem = Storage::disk($disk);
 
         try {
@@ -197,6 +233,11 @@ class MediaDisk
 
         if ($problem !== null) {
             return $problem;
+        }
+
+        if ($this->isMount()) {
+            // A fresh bounded probe in its own process (a dead share cannot hang this one).
+            return app(MountHealth::class)->refresh($this->name());
         }
 
         $disk = Storage::disk($this->name());
@@ -284,8 +325,138 @@ class MediaDisk
             'public_disk' => 'el disco de archivos es público; los adjuntos deben guardarse en un disco privado',
             'write_failed', 'probe_failed' => 'no se pudo escribir un archivo de prueba en el almacenamiento',
             'delete_failed' => 'no se pudo borrar el archivo de prueba del almacenamiento',
+            'not_mounted' => 'la carpeta compartida del NAS no está montada en el servidor (MEDIA_MOUNT_PATH); revisa el montaje CIFS/SMB y Tailscale',
+            'wrong_filesystem' => 'en MEDIA_MOUNT_PATH hay montado un sistema de archivos distinto del esperado (MEDIA_MOUNT_FSTYPES)',
+            'marker_missing' => 'no se encontró el archivo de identidad del almacenamiento (MEDIA_MOUNT_MARKER) en la carpeta montada: el NAS no está montado o es otra carpeta',
+            'marker_mismatch' => 'el archivo de identidad de la carpeta montada no coincide con MEDIA_MOUNT_ID: es otro almacenamiento',
+            'probe_timeout' => 'el NAS no respondió a tiempo a la prueba de salud (montaje caído o red lenta)',
             default => 'el almacenamiento de archivos no respondió',
         };
+    }
+
+    /**
+     * Mounted disk readiness: the cached bounded probe, then the cheap checks
+     * (mount table and identity marker), on every readiness check and so
+     * before every write.
+     */
+    private function mountProblem(): ?string
+    {
+        $health = app(MountHealth::class);
+        $disk = $this->name();
+
+        // The cached probe first: when it says the share is down, the share is not touched at all.
+        return MountHealth::configurationProblem($disk) ?? $health->cachedProblem($disk) ?? $health->cheapProblem($disk);
+    }
+
+    /**
+     * Writes the stream to a temporary file next to the final path, hashing
+     * it on the way, renames it into place (same filesystem: the final name
+     * never shows a partial file) and verifies size, hash and that the mount
+     * is still the expected storage. Nothing is left behind on failure.
+     *
+     * @param  resource  $stream
+     *
+     * @throws StorageUnavailable
+     */
+    private function putOnMount(string $disk, $stream, string $path, int $size): void
+    {
+        $root = (string) MountHealth::settings($disk)['root'];
+        $final = $root.'/'.$path;
+        $directory = dirname($final);
+        $temporary = $directory.'/.'.basename($final).'.'.Str::random(12).'.part';
+        $renamed = false;
+        $reason = 'write_failed';
+
+        try {
+            if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
+                throw new StorageUnavailable('write_failed', $disk);
+            }
+
+            $output = @fopen($temporary, 'xb');
+
+            if ($output === false) {
+                throw new StorageUnavailable('write_failed', $disk);
+            }
+
+            $context = hash_init('sha256');
+            $written = 0;
+
+            try {
+                while (! feof($stream)) {
+                    $chunk = fread($stream, 1024 * 1024);
+
+                    if ($chunk === false) {
+                        throw new StorageUnavailable('read_failed', $disk, 'No fue posible leer el archivo para guardarlo. Inténtalo de nuevo.');
+                    }
+
+                    if ($chunk === '') {
+                        continue;
+                    }
+
+                    hash_update($context, $chunk);
+
+                    if (@fwrite($output, $chunk) !== strlen($chunk)) {
+                        throw new StorageUnavailable('write_failed', $disk);
+                    }
+
+                    $written += strlen($chunk);
+                }
+
+                if (! @fflush($output)) {
+                    throw new StorageUnavailable('write_failed', $disk);
+                }
+            } finally {
+                $closed = @fclose($output);
+            }
+
+            if (! $closed || $written !== $size) {
+                throw new StorageUnavailable('write_failed', $disk);
+            }
+
+            $hash = hash_final($context);
+
+            // UUID names never collide; a file already there is never replaced.
+            if (file_exists($final) || ! @rename($temporary, $final)) {
+                throw new StorageUnavailable('write_failed', $disk);
+            }
+
+            $renamed = true;
+            $reason = 'verify_failed';
+            clearstatcache(true, $final);
+
+            if (@filesize($final) !== $size) {
+                throw new StorageUnavailable('verify_failed', $disk);
+            }
+
+            if ((bool) config('attachments.storage.mount.verify_hash', true) && @hash_file('sha256', $final) !== $hash) {
+                throw new StorageUnavailable('verify_failed', $disk);
+            }
+
+            // The share may have dropped while writing: then the file is on the server's disk.
+            $problem = app(MountHealth::class)->cheapProblem($disk);
+
+            if ($problem !== null) {
+                throw new StorageUnavailable($problem, $disk);
+            }
+        } catch (StorageUnavailable $exception) {
+            if ($renamed) {
+                @unlink($final);
+            }
+
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->logFailure($reason, $disk, $exception);
+
+            if ($renamed) {
+                @unlink($final);
+            }
+
+            throw new StorageUnavailable($reason, $disk);
+        } finally {
+            if (is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
     }
 
     private function verify(Filesystem $filesystem, string $path, int $size): bool

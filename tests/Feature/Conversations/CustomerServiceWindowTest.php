@@ -330,14 +330,17 @@ test('without the WhatsApp integration a reply is marked as not sent instead of 
         ->whatsapp_message_id->toBeNull();
 });
 
-test('only the responsible agent replies, and only while attending', function () {
+test('the responsible agent replies while attending; others only with the intervention permission', function () {
     Queue::fake();
     $conversation = attendedConversation($this->agent, $this->department, CarbonImmutable::now()->subHour());
     $supervisor = User::factory()->supervisor()->inDepartments($this->department)->create();
     $send = fn (User $user) => $this->actingAs($user)->postJson(route('conversations.messages.store', $conversation), ['body' => 'Hola', 'client_reference' => (string) Str::uuid()]);
 
     $send($supervisor)->assertForbidden();
-    $send(User::factory()->administrator()->create())->assertForbidden();
+    // The administrator holds conversations.intervene: it answers without
+    // taking the conversation (InterveneConversationsTest).
+    $send(User::factory()->administrator()->create())->assertAccepted();
+    expect($conversation->fresh()->assigned_user_id)->toBe($this->agent->id);
 
     // The responsible agent, while the attention is paused: the state, not
     // a permission, refuses it (409).
@@ -347,7 +350,7 @@ test('only the responsible agent replies, and only while attending', function ()
     $conversation->forceFill(['status' => 'open'])->save();
     $send($this->agent)->assertAccepted()->assertJsonPath('data.status', 'queued');
 
-    expect(Message::query()->count())->toBe(1);
+    expect(Message::query()->count())->toBe(2);
 });
 
 test('the reply endpoint validates its input', function (array $input, string $field) {

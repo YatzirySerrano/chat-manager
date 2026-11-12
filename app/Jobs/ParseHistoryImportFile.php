@@ -17,9 +17,10 @@ use Throwable;
  * Unique only until it starts, so a new column mapping chosen while the
  * file is being read is queued (the running reading notices the change and
  * discards its result; HistoryFileIngestor serializes both with a lock).
- * The timeout stays below the queue's retry_after, so a long file is never
- * handed to a second worker; a reading that dies anyway leaves the file
- * failed with «Reintentar», never "reading" forever.
+ * The timeout stays below the exports worker's --timeout and the queue's
+ * retry_after, so a long file is never SIGKILLed nor handed to a second
+ * worker; a reading that dies anyway leaves the file failed with
+ * «Reintentar», never "reading" forever.
  */
 class ParseHistoryImportFile implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
@@ -37,14 +38,16 @@ class ParseHistoryImportFile implements ShouldBeUniqueUntilProcessing, ShouldQue
     }
 
     /**
-     * Seconds a reading may take: up to 30 minutes, always 30 seconds below
-     * the retry_after of the queue connection.
+     * Seconds a reading may take: history-import.job_timeout (below the
+     * exports worker's --timeout), never more than 30 seconds below the
+     * retry_after of the queue connection, at least 60.
      */
     public static function timeout(): int
     {
         $retryAfter = (int) config('queue.connections.'.config('queue.default').'.retry_after', 900);
+        $configured = (int) config('history-import.job_timeout', 600);
 
-        return max(60, min(1800, ($retryAfter > 0 ? $retryAfter : 900) - 30));
+        return max(60, min($configured > 0 ? $configured : 600, ($retryAfter > 0 ? $retryAfter : 900) - 30));
     }
 
     public function uniqueId(): string

@@ -40,6 +40,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { useFeatures } from '@/composables/useFeatures';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { syncServerClock } from '@/composables/useServerNow';
 import { useTeamPresence } from '@/composables/useTeamPresence';
@@ -92,8 +93,9 @@ const props = defineProps<{
     sla?: SlaMonitorData;
     /** Deferred: breach history of the chosen period. */
     slaBreaches?: SlaBreachHistory;
-    slaFilters: SlaMonitorFilters;
-    slaOptions: SlaMonitorOptions;
+    /** Absent while phase two is off (no SLA monitor). */
+    slaFilters?: SlaMonitorFilters;
+    slaOptions?: SlaMonitorOptions;
     /** Server clock when the data was built (anchor of the countdowns). */
     serverTime: string;
     settingsUrl: string | null;
@@ -105,6 +107,9 @@ const props = defineProps<{
         body_max: number;
     };
 }>();
+
+/* The SLA monitor tab is phase two: the server answers 404 for it while it is off. */
+const { phaseTwo } = useFeatures();
 
 const LIVE_PROPS = ['agents', 'waiting', 'queue', 'generatedAt'];
 
@@ -362,6 +367,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
         </PageHeader>
 
         <div
+            v-if="phaseTwo"
             class="flex flex-wrap gap-1 border-b pb-2"
             role="tablist"
             aria-label="Secciones del seguimiento"
@@ -407,7 +413,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                         consultan en «Alertas enviadas».
                     </dd>
                 </div>
-                <div>
+                <div v-if="phaseTwo">
                     <dt class="font-medium text-foreground">
                         Alertas automáticas de SLA
                     </dt>
@@ -434,7 +440,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
         </details>
 
         <SlaMonitorPanel
-            v-if="activeTab === 'sla'"
+            v-if="phaseTwo && activeTab === 'sla' && slaFilters && slaOptions"
             role="tabpanel"
             aria-labelledby="attention-tab-sla"
             :data="sla"
@@ -672,6 +678,20 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             aria-hidden="true"
                                         />
                                         {{ presence(agent).label }}
+                                        <time
+                                            v-if="
+                                                !presence(agent).online &&
+                                                agent.last_activity_at
+                                            "
+                                            :datetime="agent.last_activity_at"
+                                            class="text-muted-foreground"
+                                            data-attention-agent-last-activity
+                                            >({{
+                                                formatDateTime(
+                                                    agent.last_activity_at,
+                                                )
+                                            }})</time
+                                        >
                                     </span>
                                     <span
                                         v-if="agent.blocked"

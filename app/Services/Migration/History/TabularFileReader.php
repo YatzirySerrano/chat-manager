@@ -156,8 +156,6 @@ class TabularFileReader
         try {
             $sample = (string) fread($handle, 65536);
             $hasBom = str_starts_with($sample, "\xEF\xBB\xBF");
-            // A cut multi-byte character at the end of the sample is not an encoding error.
-            $isUtf8 = mb_check_encoding(substr($hasBom ? substr($sample, 3) : $sample, 0, max(0, strlen($sample) - 4)), 'UTF-8');
             $firstLine = (string) strtok($hasBom ? substr($sample, 3) : $sample, "\r\n");
             $delimiter = collect([',', ';', "\t"])->sortByDesc(fn (string $candidate): int => substr_count($firstLine, $candidate))->first() ?? ',';
             $maxColumns = max(1, (int) config('history-import.max_columns', 80));
@@ -175,7 +173,7 @@ class TabularFileReader
 
             while (($row = fgetcsv($handle, $maxRecord, $delimiter, '"', '')) !== false) {
                 $record++;
-                $cells = array_map(fn (mixed $value): string => $this->text((string) $value, $isUtf8), array_slice($row, 0, $maxColumns));
+                $cells = array_map(fn (mixed $value): string => $this->text((string) $value), array_slice($row, 0, $maxColumns));
 
                 if ($this->isBlank($cells)) {
                     continue;
@@ -418,9 +416,15 @@ class TabularFileReader
         }, $cells, array_keys($cells));
     }
 
-    private function text(string $value, bool $isUtf8): string
+    /**
+     * A CSV cell as UTF-8, checked one by one: a file whose first 64 KB are
+     * plain ASCII (or UTF-8) may still carry Windows-1252 further down, and
+     * an invalid byte sequence must never reach the database (where it
+     * would be cut or rejected).
+     */
+    private function text(string $value): string
     {
-        return $isUtf8 || mb_check_encoding($value, 'UTF-8') ? $value : (string) mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
+        return mb_check_encoding($value, 'UTF-8') ? $value : (string) mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
     }
 
     /**

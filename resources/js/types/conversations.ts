@@ -350,12 +350,32 @@ export type ConversationMessage = {
     simulated: boolean;
     template: { name: string; language: string | null } | null;
     content: MessageContent | null;
-    reply_to?: {
-        id: number;
-        direction: MessageDirection;
-        type: MessageTypeValue;
-        body: string | null;
-    } | null;
+    /**
+     * The quoted message. "conversation": of this conversation (jump to it).
+     * "previous_conversation": of an earlier conversation the viewer may
+     * open (url). "restricted": of an earlier conversation the viewer may
+     * not see; nothing of it is sent.
+     */
+    reply_to?:
+        | {
+              id: number;
+              direction: MessageDirection;
+              type: MessageTypeValue;
+              body: string | null;
+              origin: 'conversation' | 'previous_conversation';
+              conversation_id: number | null;
+              url: string | null;
+          }
+        | {
+              id: null;
+              direction: null;
+              type: null;
+              body: null;
+              origin: 'restricted';
+              conversation_id: null;
+              url: null;
+          }
+        | null;
     attachments: MessageAttachment[];
     sent_at: string | null;
     created_at: string | null;

@@ -326,7 +326,7 @@ class HistoryFileIngestor
         }
 
         $timezone = HistoryImportBatches::timezone($batch);
-        $cell = fn (array $cells, string $field): ?string => isset($mapping[$field]) ? ($cells[(int) $mapping[$field]] ?? null) : null;
+        $cell = fn (array $cells, string $field): ?string => $this->cellOf($mapping, $cells, $field);
         $issues = new IssueCounter;
         $buffer = [];
         $total = 0;
@@ -428,7 +428,7 @@ class HistoryFileIngestor
         }
 
         $timezone = HistoryImportBatches::timezone($batch);
-        $cell = fn (array $cells, string $field): ?string => isset($mapping[$field]) ? ($cells[(int) $mapping[$field]] ?? null) : null;
+        $cell = fn (array $cells, string $field): ?string => $this->cellOf($mapping, $cells, $field);
         $issues = new IssueCounter;
         $buffer = [];
         $total = 0;
@@ -678,6 +678,22 @@ class HistoryFileIngestor
         $contact = $this->values->phone($identifier) ?? mb_strtolower($identifier);
 
         return Str::limit('contact:'.$contact.'|'.mb_strtolower((string) $connection), 160, '');
+    }
+
+    /**
+     * The cell of a logical field. SQL dump null markers ("\\N", "NULL")
+     * are empty in every column except the message text, which is kept as
+     * written: a customer may really have sent "NULL", and a text that is
+     * only a marker is rare enough to be reviewed rather than dropped.
+     *
+     * @param  array<string, mixed>  $mapping
+     * @param  array<int, string>  $cells
+     */
+    private function cellOf(array $mapping, array $cells, string $field): ?string
+    {
+        $value = isset($mapping[$field]) ? ($cells[(int) $mapping[$field]] ?? null) : null;
+
+        return $field === 'body' ? $value : $this->values->cell($value);
     }
 
     /**

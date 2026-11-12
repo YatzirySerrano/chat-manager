@@ -6,6 +6,7 @@ use App\Actions\Conversations\AssignAutomatically;
 use App\Enums\DistributionMode;
 use App\Models\Department;
 use App\Services\Conversations\QueueRules;
+use App\Support\Features;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -35,6 +36,14 @@ class OfferWaitingQueues extends Command
 
     public function handle(QueueRules $queueRules, AssignAutomatically $assignAutomatically): int
     {
+        // Phase two only: without minimum wait nor chronological order
+        // (FEATURE_PHASE_TWO off) nothing is ever held back to offer again.
+        if (! Features::phaseTwo()) {
+            $this->info('Reglas de la cola de la fase dos desactivadas: no hay colas que ofrecer.');
+
+            return self::SUCCESS;
+        }
+
         $assigned = 0;
 
         foreach (Department::query()->active()->where('distribution_mode', DistributionMode::Automatic)->orderBy('id')->get() as $department) {

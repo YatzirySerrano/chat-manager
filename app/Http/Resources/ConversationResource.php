@@ -10,6 +10,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Services\Conversations\QueueRules;
 use App\Services\Sla\SlaSnapshot;
+use App\Support\Features;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -95,12 +96,14 @@ class ConversationResource extends JsonResource
             // Preparation state, independent of the status: it only restrains the queue where the confirmation rule applies.
             // `tracked`: the confirmation rule applies to it right now (otherwise the state is only informative).
             'readiness' => [
-                'value' => ($readiness = $this->readiness ?? ConversationReadiness::Ready)->value,
+                // Phase one (FEATURE_PHASE_TWO off): every request is «Lista para atención».
+                'value' => ($readiness = Features::phaseTwo() ? ($this->readiness ?? ConversationReadiness::Ready) : ConversationReadiness::Ready)->value,
                 'label' => $readiness->label(),
                 'tracked' => app(QueueRules::class)->rulesFor($this->resource)->confirmationRequired(),
             ],
             // When it entered the ready queue: clock of the minimum wait and of the chronological order.
-            'queued_at' => $this->queued_at?->toIso8601String(),
+            // Masked while phase two is off (still written and used for the distribution order).
+            'queued_at' => Features::phaseTwo() ? $this->queued_at?->toIso8601String() : null,
             // Pending rows only: whether the viewer can take it now and, if not, why (QueueRules::acceptance()).
             'acceptance' => app(QueueRules::class)->acceptance($this->resource, $viewer, $viewer?->can('accept', $this->resource) ?? false),
             'messages_count' => $this->whenCounted('messages'),

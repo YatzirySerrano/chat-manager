@@ -13,6 +13,9 @@ class SummarizeDepartmentConversations
     /**
      * Real conversation counts of the department computed with a single
      * aggregate query. "Today" starts at midnight in the platform timezone.
+     * Only live conversations count: history imported from Whaticket (also
+     * archived history) is not operational work of the department, as in
+     * the dashboard, attention overview and SLA monitor.
      *
      * @return array{total: int, pending: int, open: int, unassigned: int, closed_today: int, closed_total: int}
      */
@@ -23,6 +26,8 @@ class SummarizeDepartmentConversations
 
         /** @var object{total: int|string|null, pending: int|string|null, open: int|string|null, unassigned: int|string|null, closed_today: int|string|null, closed_total: int|string|null} $counts */
         $counts = $department->conversations()
+            ->live()
+            ->notHistoryOnly()
             ->toBase()
             ->selectRaw('COUNT(*) AS total')
             ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending', [ConversationStatus::Pending->value])

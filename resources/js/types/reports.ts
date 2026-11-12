@@ -158,8 +158,10 @@ export type OperationalAnalytics = {
     by_category: AnalyticsBreakdownRow[];
     backlog: AnalyticsBacklog;
     response_trend: ResponseTrend;
-    sla: SlaCompliance;
-    productivity: AgentProductivity;
+    /** Phase two (FEATURE_PHASE_TWO): null while it is off. */
+    sla: SlaCompliance | null;
+    /** Phase two (FEATURE_PHASE_TWO): null while it is off. */
+    productivity: AgentProductivity | null;
     /** Derived from by_connection; channels without conversations left out. */
     by_channel: ChannelChartRow[];
 };

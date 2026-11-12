@@ -188,7 +188,7 @@ class AnalyticsReport extends ReportDefinition
             new Metric('Primera atención (promedio, tiempo real)', $this->duration($summary['first_attention_seconds']['value']), $this->samples($summary['first_attention_seconds']['samples'], $summary['first_attention_seconds']['previous'])),
             new Metric('Duración hasta la resolución (promedio, tiempo real)', $this->duration($summary['resolution_seconds']['value']), $this->samples($summary['resolution_seconds']['samples'], $summary['resolution_seconds']['previous'])),
             new Metric('Duración hasta la resolución (promedio, horario de atención)', $this->duration($summary['resolution_business_seconds']['value']), $this->samples($summary['resolution_business_seconds']['samples'], $summary['resolution_business_seconds']['previous'])),
-            ...$this->cycleMetrics($this->report($context)['sla']),
+            ...($this->report($context)['sla'] === null ? [] : $this->cycleMetrics($this->report($context)['sla'])),
             ...$this->slaMetrics($summary),
             new Metric('Reabiertas', $summary['reopened']['value'], 'Conversaciones reabiertas al menos una vez'),
             new Metric('Transferencias', $summary['transfers']['value'], $this->versus($summary['transfers']['previous'])),
@@ -259,7 +259,7 @@ class AnalyticsReport extends ReportDefinition
 
         $sla = $report['sla'];
 
-        if ($sla['totals']['samples'] > 0) {
+        if ($sla !== null && $sla['totals']['samples'] > 0) {
             $charts[] = new Chart(
                 ChartType::Donut,
                 'Cumplimiento de SLA',
@@ -308,14 +308,17 @@ class AnalyticsReport extends ReportDefinition
             );
         }
 
-        $sheets[] = new ReportSheet(
-            'Productividad',
-            $this->productivityColumns(),
-            array_map(fn (array $row): array => $this->productivityRow($row), $report['productivity']['rows']),
-            inPdf: true,
-            newPage: true,
-            description: 'Trabajo de cada persona en las solicitudes recibidas en el periodo. Una solicitud atendida por dos personas cuenta para ambas: la suma puede superar las '.number_format($report['productivity']['conversations']).' solicitudes distintas atendidas.'.($report['productivity']['complete'] ? '' : ' '.AgentProductivity::INCOMPLETE_NOTE),
-        );
+        // Phase two (FEATURE_PHASE_TWO): absent while it is off.
+        if ($report['productivity'] !== null) {
+            $sheets[] = new ReportSheet(
+                'Productividad',
+                $this->productivityColumns(),
+                array_map(fn (array $row): array => $this->productivityRow($row), $report['productivity']['rows']),
+                inPdf: true,
+                newPage: true,
+                description: 'Trabajo de cada persona en las solicitudes recibidas en el periodo. Una solicitud atendida por dos personas cuenta para ambas: la suma puede superar las '.number_format($report['productivity']['conversations']).' solicitudes distintas atendidas.'.($report['productivity']['complete'] ? '' : ' '.AgentProductivity::INCOMPLETE_NOTE),
+            );
+        }
 
         $sheets[] = new ReportSheet(
             'Por categoría',
@@ -325,13 +328,15 @@ class AnalyticsReport extends ReportDefinition
             description: 'Categoría actual de cada solicitud recibida en el periodo.',
         );
 
-        $sheets[] = new ReportSheet(
-            'SLA por departamento',
-            $this->slaGroupColumns('Departamento'),
-            array_map(fn (array $row): array => $this->slaGroupRow($row), $report['sla']['by_department']),
-            inPdf: $report['sla']['totals']['samples'] > 0,
-            description: $this->slaNote($report['sla']),
-        );
+        if ($report['sla'] !== null) {
+            $sheets[] = new ReportSheet(
+                'SLA por departamento',
+                $this->slaGroupColumns('Departamento'),
+                array_map(fn (array $row): array => $this->slaGroupRow($row), $report['sla']['by_department']),
+                inPdf: $report['sla']['totals']['samples'] > 0,
+                description: $this->slaNote($report['sla']),
+            );
+        }
 
         $sheets[] = new ReportSheet(
             'Acumulado sin atender',

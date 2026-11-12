@@ -26,6 +26,7 @@ use App\Services\Analytics\AnalyticsDimensions;
 use App\Services\Analytics\AnalyticsFilters;
 use App\Services\Analytics\AnalyticsScope;
 use App\Services\DashboardMetrics;
+use App\Support\Features;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -448,7 +449,8 @@ class DashboardReport extends ReportDefinition
                     new Column('name', 'Colaborador', width: 24),
                     new Column('open', 'En atención', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
                     new Column('pending', 'Pendientes de aceptar', ColumnType::Number, width: 16, total: ColumnTotal::Sum),
-                    new Column('overdue', 'Vencidas ahora', ColumnType::Number, width: 12, total: ColumnTotal::Sum),
+                    // Cycles past their deadline: phase two (FEATURE_PHASE_TWO).
+                    ...(Features::phaseTwo() ? [new Column('overdue', 'Vencidas ahora', ColumnType::Number, width: 12, total: ColumnTotal::Sum)] : []),
                 ],
                 $charts['workload']['rows'],
                 description: 'En vivo (no depende del periodo). En cola sin responsable: '.number_format($charts['workload']['unassigned']).'.',

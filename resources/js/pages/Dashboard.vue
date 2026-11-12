@@ -47,6 +47,7 @@ import {
     formatPercent,
     granularityNoun,
 } from '@/composables/useChartTheme';
+import { useFeatures } from '@/composables/useFeatures';
 import { usePermissions } from '@/composables/usePermissions';
 import { inboxLink } from '@/lib/analyticsLinks';
 import { dashboard } from '@/routes';
@@ -366,16 +367,35 @@ const workloadItems = computed<BarItem[]>(() =>
     })),
 );
 
-const workloadColumns: ChartTableColumn[] = [
+/* Requests past their SLA deadline are phase two: not counted while it is off. */
+const { phaseTwo } = useFeatures();
+
+const workloadColumns = computed<ChartTableColumn[]>(() => [
     { key: 'name', label: 'Colaborador' },
     { key: 'open', label: 'En atención', align: 'right' },
     { key: 'pending', label: 'Pendientes de aceptar', align: 'right' },
-    { key: 'overdue', label: 'Vencidas ahora', align: 'right' },
-];
+    ...(phaseTwo.value
+        ? [
+              {
+                  key: 'overdue',
+                  label: 'Vencidas ahora',
+                  align: 'right',
+              } as ChartTableColumn,
+          ]
+        : []),
+]);
 
 const workloadTotal = computed(() => {
     if (!workload.value) {
         return undefined;
+    }
+
+    if (!phaseTwo.value) {
+        return plural(
+            workload.value.unassigned,
+            'solicitud en cola sin responsable',
+            'solicitudes en cola sin responsable',
+        );
     }
 
     const overdue =

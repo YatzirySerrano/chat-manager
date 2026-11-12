@@ -2,6 +2,7 @@
 
 namespace App\Reports;
 
+use App\Support\Features;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
@@ -11,6 +12,14 @@ use InvalidArgumentException;
  */
 class ReportRegistry
 {
+    /**
+     * Reports of phase two (SLA compliance from response cycles, per-agent
+     * productivity): unknown (404) while FEATURE_PHASE_TWO is off.
+     *
+     * @var list<string>
+     */
+    public const PHASE_TWO_KEYS = ['agent-productivity', 'sla-compliance'];
+
     public function __construct(private Container $container) {}
 
     /**
@@ -22,7 +31,7 @@ class ReportRegistry
     {
         $class = $this->definitions()[$key] ?? null;
 
-        if ($class === null) {
+        if ($class === null || (! Features::phaseTwo() && in_array($key, self::PHASE_TWO_KEYS, true))) {
             return null;
         }
 
@@ -49,7 +58,10 @@ class ReportRegistry
      */
     public function keys(): array
     {
-        return array_keys($this->definitions());
+        return array_values(array_filter(
+            array_keys($this->definitions()),
+            fn (string $key): bool => Features::phaseTwo() || ! in_array($key, self::PHASE_TWO_KEYS, true),
+        ));
     }
 
     /**

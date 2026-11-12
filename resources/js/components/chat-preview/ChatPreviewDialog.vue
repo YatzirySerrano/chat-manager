@@ -145,7 +145,7 @@ watch(
 <template>
     <Dialog :open="open" @update:open="(value) => emit('update:open', value)">
         <DialogContent
-            class="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-md"
+            class="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 overflow-y-auto p-0 sm:max-w-md"
             data-chat-preview
         >
             <DialogHeader class="border-b px-5 pt-5 pb-3 text-left">
@@ -218,7 +218,7 @@ watch(
                     >
                 </p>
 
-                <ol v-else class="grid gap-2">
+                <ol v-else class="grid grid-cols-[minmax(0,1fr)] gap-2">
                     <li
                         v-if="hasMore"
                         class="text-center text-xs text-muted-foreground"

@@ -52,7 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('throttle:120,1')
         ->name('conversations.read');
     Route::put('conversations/{conversation}/tags', [ConversationTagController::class, 'update'])->name('conversations.tags.update');
-    Route::post('conversations/{conversation}/readiness', [ConversationReadinessController::class, 'update'])->name('conversations.readiness.update');
+    Route::post('conversations/{conversation}/readiness', [ConversationReadinessController::class, 'update'])->middleware('phase-two')->name('conversations.readiness.update');
     Route::put('conversations/{conversation}/category', [ConversationCategoryController::class, 'update'])->name('conversations.category.update');
     Route::get('conversations/{conversation}/messages/{message}/attachments/{attachment}', [MessageAttachmentController::class, 'show'])
         ->name('conversations.messages.attachments.show');

@@ -103,7 +103,7 @@ const help: ModuleHelp = {
         {
             name: 'En atención',
             description:
-                'Tiene un responsable. Solo esa persona puede responder al cliente; los demás la ven según su permiso.',
+                'Tiene un responsable. Responde esa persona y, sin quitársela, quien tenga el permiso «Responder conversaciones que atiende otra persona»; los demás la ven según su permiso.',
         },
         {
             name: 'Cerrada',
@@ -141,7 +141,7 @@ const help: ModuleHelp = {
             problem:
                 '«Solo X, responsable de la conversación, puede responder al cliente.»',
             solution:
-                'La atiende otra persona. Deja una nota interna o pide que te la transfieran.',
+                'La atiende otra persona y tu rol no tiene el permiso «Responder conversaciones que atiende otra persona». Deja una nota interna o pide que te la transfieran.',
         },
         {
             problem: '«La ventana de atención está cerrada…»',

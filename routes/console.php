@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Conversations\CloseInactiveConversations;
+use App\Services\Storage\MediaDisk;
+use App\Support\Features;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -13,9 +15,9 @@ Artisan::command('conversations:close-inactive', function (CloseInactiveConversa
     $this->info("Conversaciones cerradas por inactividad: {$closeInactive->handle()}");
 })->purpose('Close conversations without messages for the configured number of hours');
 
-Schedule::command('conversations:close-inactive')->hourly()->withoutOverlapping();
+Schedule::command('conversations:close-inactive')->hourly()->withoutOverlapping(60);
 
-Schedule::command('exports:prune')->hourly()->withoutOverlapping();
+Schedule::command('exports:prune')->hourly()->withoutOverlapping(60);
 
 // Whaticket history importer: files and staging rows of batches past history-import.retention_days.
 Schedule::command('history-import:prune')->dailyAt('04:50')->withoutOverlapping();
@@ -27,15 +29,18 @@ Schedule::command('analytics:rebuild --days=2')->dailyAt('03:30')->withoutOverla
 Schedule::command('notifications:prune')->dailyAt('04:10')->withoutOverlapping();
 
 // WhatsApp Cloud API (meta module): stuck deliveries, raw webhook log retention, template synchronization.
-Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes()->withoutOverlapping();
-Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping();
+Schedule::command('whatsapp:maintenance reconcile-deliveries')->everyFiveMinutes()->withoutOverlapping(15);
+Schedule::command('whatsapp:maintenance recover-webhooks')->everyTenMinutes()->withoutOverlapping(20);
 Schedule::command('whatsapp:maintenance prune-webhooks')->dailyAt('03:10')->withoutOverlapping();
-Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping();
+Schedule::command('whatsapp:maintenance sync-templates')->everySixHours()->withoutOverlapping(60);
 // Connections: asks Meta again whether credentials and webhook subscription still work (bounded; an outage of Meta raises no alarm).
 Schedule::command('whatsapp:maintenance check-connections')->everyThirtyMinutes()->withoutOverlapping(20);
 
 // Customer media whose download never finished: retried while Meta keeps it, then marked unavailable (bounded).
-Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('attachments:recover-stale')->everyFifteenMinutes()->withoutOverlapping(30);
+
+// Media disk mounted from a NAS (MEDIA_DISK=nas only): bounded health probe whose cached result gates file writes.
+Schedule::command('storage:mount-health')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => app(MediaDisk::class)->isMount());
 
 // Messenger / Instagram (meta module): Instagram Login tokens last 60 days and are renewed before they expire.
 Schedule::command('meta:refresh-instagram-tokens')->dailyAt('03:50')->withoutOverlapping();
@@ -45,12 +50,14 @@ Schedule::command('webchat:prune-sessions')->dailyAt('04:20')->withoutOverlappin
 
 // Operations (ops module): scheduler heartbeat (system health) and critical failure alerts.
 Schedule::command('ops:heartbeat')->everyMinute();
-Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('ops:check-alerts')->everyFiveMinutes()->withoutOverlapping(15);
 // Service rules: SLA warnings, breaches and reminders of the requests waiting for an answer (atomic claims; safe to overlap).
-Schedule::command('sla:evaluate')->everyMinute()->withoutOverlapping(5);
+// Phase two only (FEATURE_PHASE_TWO); the command itself is inert while it is off.
+Schedule::command('sla:evaluate')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => Features::phaseTwo());
 
 Schedule::command('queue:prune-failed --hours=2160')->dailyAt('04:30');
 Schedule::command('queue:prune-batches --hours=168')->dailyAt('04:40');
 
 // Queue rules: offers automatic queues again when the minimum wait of a request ended (cheap when nothing waits; decided under the engine's locks).
-Schedule::command('conversations:offer-waiting-queues')->everyMinute()->withoutOverlapping(5);
+// Phase two only (FEATURE_PHASE_TWO); the command itself is inert while it is off.
+Schedule::command('conversations:offer-waiting-queues')->everyMinute()->withoutOverlapping(5)->when(fn (): bool => Features::phaseTwo());

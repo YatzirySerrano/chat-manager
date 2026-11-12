@@ -30,7 +30,8 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
   configurable con `QUEUE_NAME_REALTIME` o `REALTIME_QUEUE`, que tiene prioridad; conexión con
   `REALTIME_QUEUE_CONNECTION`). Tiene workers propios, así que nunca espera detrás de notificaciones in-app,
   métricas o exportaciones. Si `BROADCAST_CONNECTION=null` no se encolan (sin costo en instalaciones sin tiempo real).
-- Las difusiones del chat interno (`TeamThreadSignal`, `TeamChatUserSignal`) usan la misma cola `realtime`.
+- Las difusiones del chat interno (`TeamThreadSignal`, `TeamChatUserSignal`) usan la misma cola `realtime` y la misma
+  conexión (`REALTIME_QUEUE_CONNECTION`, propiedad `connection` del evento, que es la que lee el gestor de difusión).
 - La señal de notificación (`NotificationSignal`) no genera un trabajo propio: `BroadcastNotificationSignal` (listener
   síncrono) la publica con `RealtimeSignals` en el mismo worker que guardó la notificación, tras el commit. Si una
   publicación falla (Reverb detenido o lento), el resto de señales `.notification` del mismo trabajo se omiten: un
@@ -42,7 +43,18 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
   `QueueTemplateMessage` ya no despachan además `ConversationChanged('message')` (solo lo hace `DownloadInboundMedia`
   cuando termina una descarga, porque no hay mensaje nuevo). Los listeners en cola que no harían nada con un evento
   (`NotifyInboundMessage` con mensajes salientes, `NotifyConversationChanges` y `SendAutomaticMessages` con cambios que
-  no notifican ni abren/cierran ciclo) lo descartan en `shouldQueue()` y no encolan trabajos vacíos.
+  no notifican ni abren/cierran ciclo, `SignalVisitorSessions` con estados distintos de `accepted`/`delivered`/`read`,
+  mensajes salientes registrados y cambios de conversación que el widget no muestra) lo descartan en `shouldQueue()`
+  sin consultar la base de datos y no encolan trabajos vacíos. `SignalVisitorSessions` todavía encola para mensajes
+  entrantes y estados `accepted`/`delivered`/`read` de cualquier canal: saber si la conversación es de chat web
+  requiere la base de datos, y eso se comprueba dentro del trabajo.
+- `.inbox.changed` sale en **una** publicación a todos sus canales (bandejas y canales personales de los responsables
+  involucrados); Laravel/Reverb reparten listas largas de canales por sí mismos.
+- `.conversation.changed` con `reason: "message"` (una descarga de medio entrante terminó o falló) incluye además
+  `message_id`, para que el chat abierto actualice solo ese mensaje; los campos `reason` y `version` no cambian.
+- Medición: `MessageRecorded` y `MessageStatusChanged` llevan `recordedAt`; `BroadcastMessageRecorded` y
+  `BroadcastMessageStatus` escriben en el log, nivel `debug`, `queue_wait_ms` (evento → listener) y `publish_ms`
+  (listener → publicado), con el contexto de identificadores del trabajo y sin contenido.
 - Publicar en Reverb es _best effort_: si Reverb está detenido o lento (timeout 5 s, conexión 2 s), se registra un
   `warning` sin datos sensibles y la operación de negocio no falla.
 

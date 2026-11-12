@@ -244,7 +244,8 @@ test('a delivery that only concerns the receiving connection is processed exactl
 
     WhatsAppFixtures::post($this, $this->receiving, whatsappWebhook($this->receiving, [whatsappTextMessage('5215512345678', 'Hola', id: 'wamid.own')]))->assertOk();
 
-    expect(WebhookEvent::query()->sole()->summary)->toBe(['messages' => 1, 'statuses' => 0, 'templates' => 0, 'signals' => 0, 'ignored' => 0])
+    // The counters exactly; the timing (timestamps and durations) is checked in Messaging/DeliveryLatencyTest.
+    expect(collect(WebhookEvent::query()->sole()->summary)->except('timing')->all())->toBe(['messages' => 1, 'statuses' => 0, 'templates' => 0, 'signals' => 0, 'ignored' => 0])
         ->and(Message::query()->where('whatsapp_message_id', 'wamid.own')->sole()->conversation->connection_id)->toBe($this->receiving->id)
         ->and($this->receiving->refresh()->provider_signals)->toBeNull();
 });

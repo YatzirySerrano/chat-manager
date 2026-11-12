@@ -14,6 +14,11 @@ use Illuminate\Support\Facades\DB;
 | level each value comes from.
 */
 
+beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
+});
+
 test('without any configuration every rule comes from the platform defaults', function () {
     $rules = app(ServiceRules::class)->resolve(null, null);
 

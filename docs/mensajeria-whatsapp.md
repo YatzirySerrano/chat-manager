@@ -262,8 +262,17 @@ Tipos admitidos y texto legible guardado en `messages.body` (el contenido origin
 | `reaction`                                   | reaction               | emoji                                        |
 | `unsupported`, `order`, otros                | unsupported            | se conserva la referencia y el error de Meta |
 
-- **Respuestas:** `context.id` enlaza `reply_to_message_id` si el mensaje citado está guardado en la misma
-  conversación del contacto; además se guarda `metadata.reply_to`.
+- **Respuestas:** `context.id` enlaza `reply_to_message_id` si el mensaje citado está guardado en alguna
+  conversación del mismo contacto y la misma conexión (también una anterior, aunque esté cerrada); además se guarda
+  `metadata.reply_to`. En el chat (`ConversationMessageResource`, `reply_to.origin`), una cita de la misma conversación
+  se muestra con su extracto (140 caracteres) y lleva al original (`conversation`). Una cita de una conversación
+  anterior muestra extracto y un enlace para abrirla (`previous_conversation`: `conversations.show`, o el
+  «Historial de Whaticket» si está archivada como historial y se tiene ese permiso) **solo** si quien mira puede ver esa
+  conversación (`ConversationPolicy::view` / `HistoryImportPolicy::viewArchived`); si no, solo el texto neutro
+  «Responde a un mensaje de una conversación anterior» (`restricted`), sin extracto, ids, enlace, departamento ni
+  datos de adjuntos. Las citas nunca incluyen adjuntos (el archivo citado se abre, si se puede, en su conversación con
+  la autorización de adjuntos de siempre). Si el original se borró, la respuesta queda sin cita. Mostrar una cita no
+  cambia lectura, contadores, asignación, SLA ni estado. La API v1 no expone citas.
 - **Referencias de anuncios** (`referral`): las registra `RegisterInboundContact` como procedencia confirmada.
 - **Duplicados:** un mensaje ya guardado se responde como duplicado **antes** de tocar el directorio de contactos, así
   que repetir un evento no altera fechas ni nombres. Si guardar el mensaje falla después de registrar el contacto, el
@@ -519,7 +528,30 @@ Reglas de `RecordMessageStatus`:
 
 Cada cambio emite `MessageStatusChanged(id, conversación, estado, anterior)`.
 
-### 5.2 Entrega (`DeliverOutboundMessage`, cola `messages`)
+### 5.2 Entrega (`DeliverOutboundMessage`, cola `messages` o `media`)
+
+**Cola.** Una entrega que primero debe subir un archivo al proveedor (adjunto nativo sin `whatsapp_media_id`, en un
+canal distinto del chat web) corre en la cola `media`, cuyos workers admiten la subida larga (`--timeout=180` >
+140 s del trabajo, en Supervisor y en systemd). Texto, plantillas, enlaces de descarga y archivos ya subidos siguen en
+`messages`: una subida nunca retrasa respuestas de texto ni webhooks entrantes. La espera por orden conserva la cola
+del mensaje.
+
+**Orden por conversación y ráfagas.** Las respuestas de una conversación salen en el orden en que se escribieron (por
+`id`). Una respuesta cuya anterior de la misma conversación sigue `queued` o `sending` espera. En cuanto una entrega
+termina (aceptada, fallida, bloqueada o sin confirmar), despacha **de inmediato** un trabajo para la siguiente
+respuesta `queued` de la conversación; la comprobación periódica (cada 3 s, sin consumir intentos) queda solo como
+respaldo. Dos trabajos para el mismo mensaje no lo envían dos veces: solo el que lo reclama (`queued` → `sending`, bajo
+bloqueo de fila) llama a Meta. Un trabajo liberado así nunca abre una segunda cadena de espera, y un mensaje devuelto a
+la cola por un error reintentable solo se reclama al vencer su espera (`delivery.retry_not_before`). Ya no retiene a
+las siguientes una anterior: `queued` sin actividad más allá de la espera más larga + 60 s (trabajo perdido), `sending`
+de texto/plantilla por más de `META_GRAPH_TIMEOUT` + conexión + 15 s (30 s por defecto; su worker murió), `sending` con
+archivo por más de 140 s, o marcada **sin confirmar** tras una respuesta ambigua (nunca se reenvía sola: o ya llegó a
+Meta o no llegará). Así, un timeout ambiguo ya no bloquea la conversación ~140 s.
+
+**Tiempos.** Un mensaje aceptado guarda en `metadata.delivery.timing` (UTC con milisegundos, sin datos personales):
+`request_received_at` (petición HTTP que lo escribió, si la hubo), `queued_at`, `started_at`, `claimed_at`,
+`graph_request_started_at`, `graph_response_at`, `accepted_at`, y `wait_ms`, `claim_ms`, `provider_ms`, `upload_ms`
+(si subió un archivo en ese intento), `total_ms`, `attempt`, `order_waits` y `released_by_previous`.
 
 1. **Reclamo:** bajo bloqueo de la fila, solo un mensaje `queued` pasa a `sending`. Dos workers con el mismo trabajo
    envían una sola vez (prueba de concurrencia incluida). Antes de reclamar se vuelve a comprobar que la conexión

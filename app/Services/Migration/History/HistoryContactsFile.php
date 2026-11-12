@@ -35,7 +35,7 @@ class HistoryContactsFile
             $values = [];
 
             foreach ($mapping as $field => $index) {
-                $values[$field] = is_int($index) ? (string) ($cells[$index] ?? '') : '';
+                $values[$field] = is_int($index) ? (string) $this->values->cell($cells[$index] ?? null) : '';
             }
 
             $normalized = $this->adapter->normalizeRow($values, $cells, $headers);

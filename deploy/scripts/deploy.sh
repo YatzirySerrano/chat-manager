@@ -18,7 +18,10 @@
 # Variables: REPOSITORY (required), APP_DIR, KEEP_RELEASES, PHP_FPM_SERVICE,
 # PHP, BACKUP_DATABASE_COMMAND, HEALTH_URL (default: APP_URL of shared/.env
 # + /health/ready), SMOKE_ATTEMPTS, SMOKE_INTERVAL, AUTO_ROLLBACK (default 1),
-# KEEP_FAILED_RELEASE (default 0).
+# KEEP_FAILED_RELEASE (default 0), SCHEDULER_MANAGER (auto|systemd|supervisor|cron,
+# default auto), ANALYTICS_FULL_REBUILD (default 0; 1 runs the full
+# `analytics:rebuild` once after a successful deployment, with the site in
+# service; needed once by releases whose upgrade checklist says so).
 #
 # Steps: build the new release apart (composer, npm), run the read-only
 # preflight, back up the database, maintenance mode, additive migrations,
@@ -57,6 +60,38 @@ SHARED_DIR="$APP_DIR/shared"
 CURRENT="$APP_DIR/current"
 switched=0
 in_maintenance=0
+
+# The scheduler (schedule:work) keeps the release it started with, so it must
+# be restarted by whichever process manager runs it (use only one; see
+# deploy/supervisor, deploy/systemd and deploy/cron). SCHEDULER_MANAGER:
+# auto (default: the systemd unit when it is active, else Supervisor), systemd,
+# supervisor or cron (schedule:run starts from `current` every minute; nothing
+# to restart). Afterwards the withoutOverlapping mutexes are cleared: a task
+# killed during the stop (stop timeout) would otherwise stay "running" until
+# its mutex expires (24 h). Trade-off: a task of the old release that is still
+# running (orphaned child) could overlap once with its next run.
+restart_scheduler() {
+    local manager="${SCHEDULER_MANAGER:-auto}"
+
+    if [ "$manager" = "auto" ]; then
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet chat-manager-scheduler.service; then
+            manager="systemd"
+        elif command -v supervisorctl >/dev/null 2>&1; then
+            manager="supervisor"
+        else
+            manager="cron"
+        fi
+    fi
+
+    case "$manager" in
+        systemd) sudo systemctl restart chat-manager-scheduler || printf 'WARNING: could not restart chat-manager-scheduler (systemd); restart it by hand.\n' >&2 ;;
+        supervisor) sudo supervisorctl restart chatmanager-scheduler || printf 'WARNING: could not restart chatmanager-scheduler (Supervisor); restart it by hand if Supervisor runs the scheduler.\n' >&2 ;;
+        cron) ;;
+        *) printf 'WARNING: unknown SCHEDULER_MANAGER=%s; the scheduler was not restarted.\n' "$manager" >&2 ;;
+    esac
+
+    "$PHP" artisan schedule:clear-cache || true
+}
 
 log() { printf '\n[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -167,7 +202,7 @@ log "Reloading PHP-FPM (clears OPcache) and restarting background processes"
 sudo systemctl reload "$PHP_FPM_SERVICE"
 "$PHP" artisan queue:restart
 "$PHP" artisan reverb:restart || true
-sudo supervisorctl restart chatmanager-scheduler || true
+restart_scheduler
 
 "$PHP" artisan up
 in_maintenance=0
@@ -209,3 +244,9 @@ log "Removing old releases (keeping $KEEP_RELEASES, never the current one)"
 APP_DIR="$APP_DIR" KEEP_RELEASES="$KEEP_RELEASES" "$RELEASE_DIR/deploy/scripts/prune-releases.sh"
 
 log "Deployed $(cat "$CURRENT/REVISION") as release $RELEASE"
+
+if [ "${ANALYTICS_FULL_REBUILD:-0}" = "1" ]; then
+    log "Full analytics rebuild (ANALYTICS_FULL_REBUILD=1; the site stays in service, safe to interrupt and repeat)"
+    (cd "$CURRENT" && "$PHP" artisan analytics:rebuild --no-interaction) \
+        || fail "the release is deployed, but analytics:rebuild failed: run cd $CURRENT && $PHP artisan analytics:rebuild again"
+fi

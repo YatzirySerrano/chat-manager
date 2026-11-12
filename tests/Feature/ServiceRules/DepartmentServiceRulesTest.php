@@ -24,6 +24,11 @@ function serviceRulesDepartmentEditor(Department $department): User
     return User::factory()->withRole($role)->inDepartments($department)->create();
 }
 
+beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
+});
+
 test('a department saves its own service rules and the change is audited per rule', function () {
     $admin = User::factory()->superAdministrator()->create();
     $department = Department::factory()->create();

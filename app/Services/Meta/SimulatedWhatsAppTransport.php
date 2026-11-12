@@ -26,6 +26,8 @@ class SimulatedWhatsAppTransport implements WhatsAppTransport
             throw new WhatsAppTransportUnavailable('El transporte simulado de WhatsApp no puede usarse en producción.');
         }
 
+        self::simulateLatency();
+
         $id = 'sim.'.Str::lower((string) Str::ulid());
 
         if (config('whatsapp.simulation.status_progression')) {
@@ -33,5 +35,23 @@ class SimulatedWhatsAppTransport implements WhatsAppTransport
         }
 
         return new SendResult($id, simulated: true);
+    }
+
+    /**
+     * Sleeps the configured simulated provider latency (whatsapp.simulation.
+     * latency_ms, "min-max" milliseconds), if any.
+     */
+    private static function simulateLatency(): void
+    {
+        if (preg_match('/^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/', (string) config('whatsapp.simulation.latency_ms'), $match) !== 1) {
+            return;
+        }
+
+        $minimum = (int) $match[1];
+        $maximum = max($minimum, (int) ($match[2] ?? $minimum));
+
+        if ($maximum > 0) {
+            usleep(random_int($minimum, $maximum) * 1000);
+        }
     }
 }

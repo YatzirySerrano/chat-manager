@@ -17,6 +17,7 @@ use App\Reports\ReportDefinition;
 use App\Reports\ReportRegistry;
 use App\Services\AuditLogger;
 use App\Services\PlatformSettings;
+use App\Support\Queues;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
@@ -287,7 +288,7 @@ class ReportExporter
             'transfer_id' => $transfer->id,
         ], $context->actor);
 
-        GenerateReport::dispatch($transfer->id)->onQueue((string) config('exports.queue'));
+        GenerateReport::dispatch($transfer->id)->onQueue(Queues::name(Queues::EXPORTS));
 
         return $transfer;
     }

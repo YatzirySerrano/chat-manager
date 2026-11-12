@@ -53,7 +53,15 @@ class ConversationStateGuard
                 default => $this->responsibleConflict($actor, $conversation),
             },
             'reopen' => $closed ? null : ConversationConflict::StateChanged,
-            'reply', 'sendTemplate' => match (true) {
+            // Intervening covers free replies only: templates (which Meta may
+            // charge) stay with the responsible agent.
+            'reply' => match (true) {
+                $closed => ConversationConflict::Closed,
+                $conversation->status === ConversationStatus::Open
+                    && ($this->isResponsible($actor, $conversation) || $this->intervenes($actor)) => null,
+                default => $this->responsibleConflict($actor, $conversation),
+            },
+            'sendTemplate' => match (true) {
                 $closed => ConversationConflict::Closed,
                 $conversation->status === ConversationStatus::Open && $this->isResponsible($actor, $conversation) => null,
                 default => $this->responsibleConflict($actor, $conversation),
@@ -127,7 +135,8 @@ class ConversationStateGuard
         }
 
         return match ($ability) {
-            'reply', 'sendTemplate' => true,
+            'reply' => ! $this->intervenes($actor),
+            'sendTemplate' => true,
             'transfer', 'close', 'release', 'tag' => ! $this->manages($actor),
             'categorize' => ! $this->managesRequests($actor),
             default => false,
@@ -169,11 +178,21 @@ class ConversationStateGuard
     }
 
     /**
+     * Users who write to the customer of an open conversation another
+     * person attends (within their reach, checked by the policy), without
+     * taking it: the responsible agent and the assignment stay as they are.
+     */
+    private function intervenes(User $actor): bool
+    {
+        return $actor->holdsPermission(Permission::InterveneConversations);
+    }
+
+    /**
      * Users who classify requests they are not responsible for: whoever
      * assigns conversations or confirms requests as complete.
      */
     private function managesRequests(User $actor): bool
     {
-        return $this->manages($actor) || $actor->holdsPermission(Permission::ConfirmConversationReady);
+        return $this->manages($actor) || $actor->holdsStoredPermission(Permission::ConfirmConversationReady);
     }
 }

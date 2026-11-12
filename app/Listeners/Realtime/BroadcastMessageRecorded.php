@@ -24,6 +24,7 @@ class BroadcastMessageRecorded implements ShouldQueue
 
     public function handle(MessageRecorded $event): void
     {
+        $startedAt = microtime(true);
         $conversation = Conversation::query()->find($event->conversationId);
 
         if ($conversation === null) {
@@ -36,5 +37,6 @@ class BroadcastMessageRecorded implements ShouldQueue
         ]);
 
         $this->signals->inboxChanged($conversation, 'message');
+        $this->logFanOut('message.recorded', $event->recordedAt ?? null, $startedAt);
     }
 }

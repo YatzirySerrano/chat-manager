@@ -46,18 +46,18 @@ Rutas: `routes/meta-connections.php` (administración, `auth` + `verified`, carg
 
 ## 2. Variables de entorno
 
-| Variable                                             | Uso                                                                                                         |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `META_APP_ID`, `META_APP_SECRET`                     | App de Meta (Facebook Login, Messenger, firma del webhook). Obligatorias para Messenger.                    |
-| `META_LOGIN_CONFIG_ID`                               | Opcional: usa Facebook Login para empresas (`config_id`) en vez de `scope`.                                 |
-| `META_INSTAGRAM_APP_ID`, `META_INSTAGRAM_APP_SECRET` | ID y clave de Instagram del panel (producto Instagram). Si faltan se usan los de Facebook.                  |
-| `META_WEBHOOK_VERIFY_TOKEN`                          | Texto aleatorio que se registra en Meta para verificar `GET /webhooks/meta`.                                |
-| `META_GRAPH_VERSION`                                 | Versión de Graph (por defecto `v26.0`).                                                                     |
-| `META_INSTAGRAM_GRAPH_BASE_URL`                      | Por defecto `https://graph.instagram.com`.                                                                  |
-| `META_HUMAN_AGENT_TAG`                               | `false` por defecto. Con `true`, ventana de 7 días para respuestas humanas. Ver [§6](#6-recepción-y-envío). |
-| `META_WEBHOOK_RATE_LIMIT`                            | Entregas firmadas por minuto y dirección en `POST /webhooks/meta` (por defecto 6000).                       |
-| `META_WEBHOOK_INVALID_SIGNATURE_LIMIT`               | Firmas inválidas por minuto y dirección antes de responder 429 (por defecto 30).                            |
-| `META_MEDIA_RATE_LIMIT`                              | Descargas por minuto y dirección de `meta/media/{id}` (por defecto 1200).                                   |
+| Variable                                             | Uso                                                                                                                                                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `META_APP_ID`, `META_APP_SECRET`                     | App de Meta (Facebook Login, Messenger, firma del webhook). Obligatorias para Messenger.                                                                      |
+| `META_LOGIN_CONFIG_ID`                               | Opcional: usa Facebook Login para empresas (`config_id`) en vez de `scope`.                                                                                   |
+| `META_INSTAGRAM_APP_ID`, `META_INSTAGRAM_APP_SECRET` | ID y clave de Instagram del panel (producto Instagram). Si faltan se usan los de Facebook.                                                                    |
+| `META_WEBHOOK_VERIFY_TOKEN`                          | Texto aleatorio que se registra en Meta para verificar `GET /webhooks/meta`.                                                                                  |
+| `META_GRAPH_VERSION`                                 | Versión de Graph (por defecto `v26.0`).                                                                                                                       |
+| `META_INSTAGRAM_GRAPH_BASE_URL`                      | Por defecto `https://graph.instagram.com`.                                                                                                                    |
+| `META_HUMAN_AGENT_TAG`                               | `false` por defecto. Con `true`, ventana de 7 días para respuestas humanas. Ver [§6](#6-recepción-y-envío).                                                   |
+| `META_WEBHOOK_RATE_LIMIT`                            | Tope general de peticiones por minuto y dirección en `POST /webhooks/meta`, firmadas o no (por defecto 6000; requiere `TRUSTED_PROXIES` detrás de Nginx).     |
+| `META_WEBHOOK_INVALID_SIGNATURE_LIMIT`               | Firmas (o verify tokens) inválidos por minuto y dirección antes de responder 429 (por defecto 30); una entrega bien firmada nunca recibe 429 por este límite. |
+| `META_MEDIA_RATE_LIMIT`                              | Descargas por minuto y dirección de `meta/media/{id}` (por defecto 1200).                                                                                     |
 
 Sin `META_APP_ID`/`META_APP_SECRET` (o los de Instagram) y `META_WEBHOOK_VERIFY_TOKEN`, el selector muestra el canal
 con el aviso «Requiere configurar la aplicación de Meta en el servidor» y la pantalla de requisitos lista las variables
@@ -145,7 +145,9 @@ negocio y no se borran.
   Facebook; `instagram` → clave de Instagram, o la de Facebook si no hay una propia: un cuerpo de Instagram firmado con
   la de Facebook se rechaza cuando existe la de Instagram). Límites por dirección IP (requiere `TRUSTED_PROXIES`
   detrás de un proxy): entregas firmadas `meta-webhooks` (generoso), firmas inválidas contadas aparte (429 al superar
-  `META_WEBHOOK_INVALID_SIGNATURE_LIMIT`, sin tocar la cuota de Meta) y `GET` de verificación 30/min. Reparto por
+  `META_WEBHOOK_INVALID_SIGNATURE_LIMIT`; la firma se comprueba **antes** de mirar ese contador, así que solo se
+  rechazan con 429 los intentos fallidos y nunca una entrega bien firmada, aunque todo llegue con la IP del proxy) y
+  `GET` de verificación con el mismo criterio (tokens erróneos contados aparte; tope general 600/min). Reparto por
   `entry.id` → conexión (`channel` + `external_account_id`); cuentas desconocidas, eliminadas o desconectadas se ignoran
   con 200. Cada parte se guarda en `webhook_events` de su conexión (idempotente) y se procesa en la cola `webhooks`
   (`ProcessWhatsAppWebhook` elige el procesador por canal).

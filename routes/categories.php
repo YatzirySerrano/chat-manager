@@ -16,5 +16,5 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('categories/{category}', [ConversationCategoryController::class, 'update'])->name('categories.update');
     Route::delete('categories/{category}', [ConversationCategoryController::class, 'destroy'])->name('categories.destroy');
     Route::patch('categories/{category}/restore', [ConversationCategoryController::class, 'restore'])->name('categories.restore');
-    Route::put('categories/{category}/rules', [ConversationCategoryRulesController::class, 'update'])->name('categories.rules.update');
+    Route::put('categories/{category}/rules', [ConversationCategoryRulesController::class, 'update'])->middleware('phase-two')->name('categories.rules.update');
 });

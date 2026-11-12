@@ -102,7 +102,7 @@ function exportAs(
                 Exportar
             </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" class="w-72">
+        <DropdownMenuContent align="end" class="w-72 max-w-[calc(100vw-2rem)]">
             <DropdownMenuGroup>
                 <DropdownMenuLabel class="flex flex-col gap-0.5">
                     <span>Reporte general</span>

@@ -27,6 +27,38 @@ PHP="${PHP:-php}"
 CURRENT="$APP_DIR/current"
 RELEASES="$APP_DIR/releases"
 
+# The scheduler (schedule:work) keeps the release it started with, so it must
+# be restarted by whichever process manager runs it (use only one; see
+# deploy/supervisor, deploy/systemd and deploy/cron). SCHEDULER_MANAGER:
+# auto (default: the systemd unit when it is active, else Supervisor), systemd,
+# supervisor or cron (schedule:run starts from `current` every minute; nothing
+# to restart). Afterwards the withoutOverlapping mutexes are cleared: a task
+# killed during the stop (stop timeout) would otherwise stay "running" until
+# its mutex expires (24 h). Trade-off: a task of the old release that is still
+# running (orphaned child) could overlap once with its next run.
+restart_scheduler() {
+    local manager="${SCHEDULER_MANAGER:-auto}"
+
+    if [ "$manager" = "auto" ]; then
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet chat-manager-scheduler.service; then
+            manager="systemd"
+        elif command -v supervisorctl >/dev/null 2>&1; then
+            manager="supervisor"
+        else
+            manager="cron"
+        fi
+    fi
+
+    case "$manager" in
+        systemd) sudo systemctl restart chat-manager-scheduler || printf 'WARNING: could not restart chat-manager-scheduler (systemd); restart it by hand.\n' >&2 ;;
+        supervisor) sudo supervisorctl restart chatmanager-scheduler || printf 'WARNING: could not restart chatmanager-scheduler (Supervisor); restart it by hand if Supervisor runs the scheduler.\n' >&2 ;;
+        cron) ;;
+        *) printf 'WARNING: unknown SCHEDULER_MANAGER=%s; the scheduler was not restarted.\n' "$manager" >&2 ;;
+    esac
+
+    "$PHP" artisan schedule:clear-cache || true
+}
+
 is_complete() {
     [ -f "$RELEASES/$1/REVISION" ] && [ -f "$RELEASES/$1/vendor/autoload.php" ] && [ -f "$RELEASES/$1/public/build/manifest.json" ]
 }
@@ -75,7 +107,7 @@ date -u "+%Y-%m-%dT%H:%M:%SZ rolled back to $target" > "$RELEASES/$current_relea
 sudo systemctl reload "$PHP_FPM_SERVICE"
 "$PHP" artisan queue:restart
 "$PHP" artisan reverb:restart || true
-sudo supervisorctl restart chatmanager-scheduler || true
+restart_scheduler
 "$PHP" artisan up
 
 echo "Active release: $target ($(cat "$CURRENT/REVISION"))"

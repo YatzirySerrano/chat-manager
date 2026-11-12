@@ -28,6 +28,8 @@ class CloseConversation
 
         return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion): Conversation {
             $conversation = $this->lifecycle->lock($conversation);
+            // Lock order step 2, before the event's foreign keys lock the user rows.
+            $this->lifecycle->lockDepartment($conversation->department_id);
             $actor = $this->lifecycle->authorize($actor, 'close', $conversation, $expectedVersion);
 
             $this->lifecycle->apply($conversation, ConversationStatus::Closed, [

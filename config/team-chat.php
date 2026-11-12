@@ -35,10 +35,13 @@ return [
     'attachments' => [
 
         /*
-        | Private disk where internal files are stored under a random name
-        | (team-chat/{yyyy}/{mm}/{uuid}). It must never be a public disk; any
-        | S3-compatible private disk works. Files are only served through the
-        | authorized download route.
+        | Legacy disk (deprecated for new files). New internal files are stored
+        | through MediaDisk on the media disk (MEDIA_DISK) under a random name
+        | (team-chat/{yyyy}/{mm}/{uuid}), with verified writes and refused when
+        | that disk is not ready. Every attachment row records its own disk, so
+        | files saved earlier on TEAM_CHAT_DISK keep being served and deleted
+        | from it: keep that disk configured (and private) while such files
+        | exist. It is only read by the preflight privacy check and factories.
         */
         'disk' => env('TEAM_CHAT_DISK', 'local'),
 

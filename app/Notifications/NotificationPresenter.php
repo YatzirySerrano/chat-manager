@@ -18,6 +18,7 @@ use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
@@ -597,7 +598,8 @@ class NotificationPresenter
                 $pending === 0
                     ? 'Aviso automático de SLA. Ya fueron respondidas o cerradas.'
                     : 'Aviso automático de SLA. '.($pending === 1 ? '1 sigue' : "{$pending} siguen").' sin respuesta. Revisa el monitoreo de SLA.',
-                $this->routeOrNull('attention.index', ['tab' => 'sla', 'sla_state' => $breach ? 'breached' : 'warning']),
+                // The SLA monitor is phase two: no link while it is off (App\Support\Features).
+                Features::phaseTwo() ? $this->routeOrNull('attention.index', ['tab' => 'sla', 'sla_state' => $breach ? 'breached' : 'warning']) : null,
                 true,
             ];
         }

@@ -35,6 +35,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
+import { useFeatures } from '@/composables/useFeatures';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
 import { useViewMode } from '@/composables/useViewMode';
 import { recordActions } from '@/lib/recordActions';
@@ -67,6 +68,9 @@ const props = defineProps<{
     colors: ColorSwatch[];
     can: { manage: boolean };
 }>();
+
+/* Category service rules are phase two (their endpoint answers 404 while it is off); the catalog is phase one. */
+const { phaseTwo } = useFeatures();
 
 const filterState = reactive({
     search: props.filters.search ?? '',
@@ -160,12 +164,13 @@ function actionsFor(category: ConversationCategorySummary): RecordAction[] {
             icon: Pencil,
             onSelect: () => openEdit(category),
         },
-        category.can.update && {
-            key: 'rules',
-            label: 'Reglas de servicio',
-            icon: SlidersHorizontal,
-            onSelect: () => openRules(category),
-        },
+        phaseTwo.value &&
+            category.can.update && {
+                key: 'rules',
+                label: 'Reglas de servicio',
+                icon: SlidersHorizontal,
+                onSelect: () => openRules(category),
+            },
         ...deletion.actionsFor(category),
     );
 }
@@ -242,7 +247,7 @@ function rulesLabel(count: number): string {
                 <TableHeader>
                     <TableRow class="hover:bg-transparent">
                         <TableHead class="pl-5">Categoría</TableHead>
-                        <TableHead class="hidden md:table-cell"
+                        <TableHead v-if="phaseTwo" class="hidden md:table-cell"
                             >Reglas de servicio</TableHead
                         >
                         <TableHead class="hidden md:table-cell">Uso</TableHead>
@@ -279,6 +284,7 @@ function rulesLabel(count: number): string {
                             </div>
                         </TableCell>
                         <TableCell
+                            v-if="phaseTwo"
                             class="hidden text-sm text-muted-foreground md:table-cell"
                         >
                             <span class="inline-flex items-center gap-1.5">
@@ -340,7 +346,10 @@ function rulesLabel(count: number): string {
                             {{ category.description || 'Sin descripción.' }}
                         </p>
                         <template #meta>
-                            <span class="inline-flex items-center gap-1">
+                            <span
+                                v-if="phaseTwo"
+                                class="inline-flex items-center gap-1"
+                            >
                                 <SlidersHorizontal
                                     class="size-3.5"
                                     aria-hidden="true"
@@ -413,7 +422,7 @@ function rulesLabel(count: number): string {
         />
 
         <CategoryRulesDialog
-            v-if="can.manage && rulesCategory"
+            v-if="phaseTwo && can.manage && rulesCategory"
             v-model:open="rulesOpen"
             :category="rulesCategory"
         />

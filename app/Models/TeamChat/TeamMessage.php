@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $body
  * @property array<string, mixed>|null $metadata
  * @property int|null $reply_to_message_id
+ * @property string|null $client_reference Idempotency key of the sender's browser (unique per author).
  * @property Carbon|null $edited_at
  * @property Carbon|null $deleted_at
  * @property Carbon|null $created_at

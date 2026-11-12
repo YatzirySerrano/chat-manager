@@ -152,6 +152,25 @@ useChannel(
                 return;
             }
 
+            /*
+             * A change of one message (its media finished downloading, a
+             * download link was revoked) names that message: only it is
+             * read again. Without the id, the whole selection is reloaded.
+             */
+            const messageId = Number(payload.message_id);
+
+            if (
+                payload.reason === 'message' &&
+                Number.isInteger(messageId) &&
+                messageId > 0
+            ) {
+                afterVisit(
+                    () => void timeline.refresh({ messages: [messageId] }),
+                );
+
+                return;
+            }
+
             reloadSelection();
             afterVisit(() => void timeline.fetchNewer());
         },

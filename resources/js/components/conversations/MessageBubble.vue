@@ -15,6 +15,7 @@ import {
     TriangleAlert,
     UserRound,
 } from '@lucide/vue';
+import { Link } from '@inertiajs/vue3';
 import { computed, inject } from 'vue';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
@@ -297,7 +298,7 @@ function linkLabel(expiresAt: string | null | undefined): string {
             </p>
 
             <button
-                v-if="message.reply_to"
+                v-if="message.reply_to?.origin === 'conversation'"
                 type="button"
                 data-layout-box="quote"
                 class="mb-1.5 block w-full rounded-md border-l-2 px-2 py-1 text-left text-sm md:text-xs"
@@ -324,6 +325,54 @@ function linkLabel(expiresAt: string | null | undefined): string {
                     message.reply_to.body ?? typeLabel(message.reply_to.type)
                 }}</span>
             </button>
+            <!-- A quote of an earlier conversation the viewer may open there. -->
+            <Link
+                v-else-if="
+                    message.reply_to?.origin === 'previous_conversation' &&
+                    message.reply_to.url
+                "
+                :href="message.reply_to.url"
+                data-layout-box="quote"
+                data-quote-origin="previous_conversation"
+                class="mb-1.5 block w-full rounded-md border-l-2 px-2 py-1 text-left text-sm md:text-xs"
+                :class="
+                    themed(
+                        'border-primary/60 bg-background/50 text-muted-foreground hover:bg-background/80',
+                        'border border-current/30 border-l-current hover:underline',
+                    )
+                "
+                aria-label="Abrir el mensaje citado en su conversación anterior"
+            >
+                <span
+                    class="block font-medium"
+                    :class="themed('text-foreground/80')"
+                >
+                    {{
+                        message.reply_to.direction === 'inbound'
+                            ? contactName
+                            : 'Equipo'
+                    }}
+                    · conversación anterior
+                </span>
+                <span class="line-clamp-2 wrap-anywhere">{{
+                    message.reply_to.body ?? typeLabel(message.reply_to.type)
+                }}</span>
+            </Link>
+            <!-- An earlier conversation the viewer may not see: nothing of it. -->
+            <p
+                v-else-if="message.reply_to"
+                data-layout-box="quote"
+                data-quote-origin="restricted"
+                class="mb-1.5 block w-full rounded-md border-l-2 px-2 py-1 text-left text-sm italic md:text-xs"
+                :class="
+                    themed(
+                        'border-primary/60 bg-background/50 text-muted-foreground',
+                        'border border-current/30 border-l-current',
+                    )
+                "
+            >
+                Responde a un mensaje de una conversación anterior
+            </p>
 
             <p
                 v-if="message.template"

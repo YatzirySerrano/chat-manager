@@ -10,6 +10,7 @@ use Illuminate\Auth\Events\Lockout;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
@@ -109,16 +110,32 @@ class FortifyServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->session()->get('login.id'));
         });
 
+        // Login: 5 attempts per minute for each e-mail and address, plus a
+        // per-address budget of failed attempts (any e-mail) against password
+        // spraying. Only failed attempts consume the per-address budget, so a
+        // shift starting behind one office NAT is never throttled.
         RateLimiter::for('login', function (Request $request) {
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
             // The named limiter replaces Fortify's own throttle, which is what
             // fires Lockout; fire it here so lockouts reach the audit log.
-            return Limit::perMinute(5)->by($throttleKey)->response(function (Request $request, array $headers): never {
+            $lockout = function (Request $request, array $headers): never {
                 event(new Lockout($request));
 
                 throw new ThrottleRequestsException('Too Many Attempts.', null, $headers);
-            });
+            };
+
+            // A pending two-factor login left in the session by an earlier
+            // request must not make later failed attempts look successful.
+            $pendingBefore = $request->session()->get('login.id');
+
+            return [
+                Limit::perMinute(5)->by($throttleKey)->response($lockout),
+                Limit::perMinute(30)
+                    ->by('login-ip|'.$request->ip())
+                    ->after(fn (): bool => ! $this->loginSucceeded($request, $pendingBefore))
+                    ->response($lockout),
+            ];
         });
 
         // Password recovery: besides the broker's one e-mail per account and
@@ -132,6 +149,23 @@ class FortifyServiceProvider extends ServiceProvider
                 ($request->input('credential.id') ?: $request->session()->getId()).'|'.$request->ip(),
             );
         });
+    }
+
+    /**
+     * Whether the login request just handled authenticated the user or
+     * moved them to the two-factor challenge (valid password). Only a
+     * challenge started by this very request counts: a login.id kept from
+     * an earlier request does not.
+     */
+    private function loginSucceeded(Request $request, mixed $pendingBefore): bool
+    {
+        if (Auth::guard(config('fortify.guard'))->check()) {
+            return true;
+        }
+
+        $pendingNow = $request->session()->get('login.id');
+
+        return $pendingNow !== null && $pendingNow !== $pendingBefore;
     }
 
     /**

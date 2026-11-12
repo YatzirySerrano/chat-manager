@@ -23,7 +23,7 @@ const state = computed(() => (block.value?.blocked ? block.value : null));
 <template>
     <div
         v-if="state"
-        class="grid gap-2 rounded-lg border border-warning/50 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
+        class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 rounded-lg border border-warning/50 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
         role="status"
         data-accept-block
     >
@@ -41,7 +41,7 @@ const state = computed(() => (block.value?.blocked ? block.value : null));
             aceptar conversaciones nuevas en cuanto les respondas.
         </p>
         <ul
-            class="grid gap-1"
+            class="grid grid-cols-[minmax(0,1fr)] gap-1"
             aria-label="Conversaciones que esperan tu respuesta"
         >
             <li v-for="item in state.conversations" :key="item.id">

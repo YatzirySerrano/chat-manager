@@ -43,6 +43,11 @@ return [
     |   attachments:recover-stale while Meta keeps it (inbound_available_days;
     |   WhatsApp media ids from webhooks expire after 7 days), at most
     |   max_download_attempts downloads in total and recover_batch rows per run.
+    | - mount (only for a mounted media disk, MEDIA_DISK=nas): the health probe
+    |   (storage:mount-health, every minute) runs in a separate process killed
+    |   after probe_timeout_seconds; its result is trusted for
+    |   health_ttl_seconds. verify_hash re-reads each written file and compares
+    |   its SHA-256 with the one computed while writing.
     */
     'storage' => [
         'media_disk_required' => (bool) env('MEDIA_DISK_REQUIRED', false),
@@ -52,6 +57,11 @@ return [
         'inbound_available_days' => 7,
         'max_download_attempts' => 12,
         'recover_batch' => 200,
+        'mount' => [
+            'health_ttl_seconds' => (int) env('MEDIA_MOUNT_HEALTH_TTL', 90),
+            'probe_timeout_seconds' => (float) env('MEDIA_MOUNT_PROBE_TIMEOUT', 10),
+            'verify_hash' => (bool) env('MEDIA_MOUNT_VERIFY_HASH', true),
+        ],
     ],
 
     /** The web chat serves the files itself: one limit for every type. */

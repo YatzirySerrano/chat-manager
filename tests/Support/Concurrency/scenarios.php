@@ -8,21 +8,27 @@
 | transaction print HOLDING and wait for COMMIT.
 */
 
+use App\Actions\Analytics\RebuildConversationMetrics;
 use App\Actions\Connections\DeleteConnection;
 use App\Actions\Conversations\AcceptConversation;
 use App\Actions\Conversations\AssignAutomatically;
+use App\Actions\Conversations\CloseConversation;
+use App\Actions\Conversations\CloseInactiveConversations;
 use App\Actions\Conversations\ProcessInboundMessages;
 use App\Actions\Conversations\QueueOutboundMessage;
 use App\Actions\Conversations\SetConversationReadiness;
 use App\Actions\Conversations\TransferConversation;
 use App\Actions\Messaging\ProcessWebhookPayload;
+use App\Actions\Messaging\RetryOutboundMessage;
 use App\Actions\Messaging\StoreWebhookDelivery;
 use App\Actions\Users\AssessRoleChange;
 use App\Actions\Users\DeleteUser;
 use App\Actions\Users\UpdateUser;
+use App\Enums\ConversationEventType;
 use App\Enums\ConversationReadiness;
 use App\Events\Broadcasts\RealtimeSignal;
 use App\Events\WebChat\VisitorSessionSignal;
+use App\Jobs\Analytics\RefreshConversationMetrics;
 use App\Jobs\DeliverOutboundMessage;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\Connection;
@@ -34,14 +40,18 @@ use App\Models\Role;
 use App\Models\User;
 use App\Notifications\ConversationPendingNotification;
 use App\Notifications\NotificationCenter;
+use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Meta\WhatsAppTransport;
+use App\Services\Sla\SlaEvaluator;
 use App\Support\ReadCommittedTransaction;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request as GraphRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -569,5 +579,115 @@ return [
         }
 
         return $statuses;
+    },
+    /*
+     * A new inbound conversation of an automatic department: the department
+     * row is locked first (ReceiveInboundMessage), and, when told to go on,
+     * the chosen agent's row (AssignAutomatically::handle()).
+     */
+    'hold-department-then-lock-user' => function (array $arguments, Closure $say, Closure $await): string {
+        return DB::transaction(function () use ($arguments, $say, $await): string {
+            Department::query()->whereKey((int) $arguments['department_id'])->lockForUpdate()->value('id');
+
+            $say('HOLDING');
+            $await('COMMIT');
+
+            app(ConversationLifecycle::class)->freshUser((int) $arguments['user_id']);
+
+            return 'assigned';
+        });
+    },
+
+    /*
+     * An agent closes a conversation.
+     */
+    'close' => function (array $arguments): string {
+        return app(CloseConversation::class)->handle(
+            Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+            User::query()->findOrFail((int) $arguments['user_id']),
+        )->status->value;
+    },
+
+    /*
+     * conversations:close-inactive.
+     */
+    'close-inactive' => function (array $arguments): int {
+        return app(CloseInactiveConversations::class)->handle();
+    },
+
+    /*
+     * sla:evaluate claiming the breach of one cycle.
+     */
+    'claim-breach' => function (array $arguments): bool {
+        return app(SlaEvaluator::class)->claimBreach((int) $arguments['cycle_id'], CarbonImmutable::now());
+    },
+    /*
+     * A refresh of one conversation's metrics in progress (its lock held
+     * until told to finish).
+     */
+    'hold-metrics-lock' => function (array $arguments, Closure $say, Closure $await): string {
+        $lock = Cache::lock('analytics:conversation:'.(int) $arguments['conversation_id'], 60);
+
+        if (! $lock->get()) {
+            return 'not acquired';
+        }
+
+        $say('HOLDING');
+        $await('COMMIT');
+        $lock->release();
+
+        return 'released';
+    },
+
+    /*
+     * analytics:rebuild of the given conversations.
+     */
+    'rebuild-metrics' => function (array $arguments): int {
+        return app(RebuildConversationMetrics::class)->handle(conversationIds: array_map('intval', (array) $arguments['conversation_ids']));
+    },
+
+    /*
+     * The queued refresh of one conversation's metrics, run several times in a row.
+     */
+    'refresh-metrics' => function (array $arguments): int {
+        $times = (int) ($arguments['times'] ?? 1);
+
+        for ($run = 0; $run < $times; $run++) {
+            // Each pass inserts the per-person rows again (removed by primary key).
+            DB::table('conversation_agent_metrics')->whereIn('id', DB::table('conversation_agent_metrics')->where('conversation_id', (int) $arguments['conversation_id'])->pluck('id'))->delete();
+            app()->call([new RefreshConversationMetrics((int) $arguments['conversation_id']), 'handle']);
+        }
+
+        return $times;
+    },
+    /*
+     * A delivery job blocking its claimed message (DeliverOutboundMessage:
+     * the message row first, then the event on its conversation), paused
+     * between both steps.
+     */
+    'hold-message-then-record-event' => function (array $arguments, Closure $say, Closure $await): string {
+        return DB::transaction(function () use ($arguments, $say, $await): string {
+            $message = Message::query()->lockForUpdate()->findOrFail((int) $arguments['message_id']);
+
+            $say('HOLDING');
+            $await('COMMIT');
+
+            app(ConversationLifecycle::class)->record(Conversation::query()->findOrFail($message->conversation_id), ConversationEventType::OutboundBlocked, null, [
+                'metadata' => ['message_id' => $message->id, 'reason' => 'connection_unavailable'],
+            ]);
+
+            return 'blocked';
+        });
+    },
+
+    /*
+     * The agent asks to send a failed message again.
+     */
+    'retry-outbound' => function (array $arguments): string {
+        return app(RetryOutboundMessage::class)->handle(
+            Conversation::query()->findOrFail((int) $arguments['conversation_id']),
+            Message::query()->findOrFail((int) $arguments['message_id']),
+            User::query()->findOrFail((int) $arguments['user_id']),
+        )->status->value;
     },
 ];

@@ -47,6 +47,19 @@ return [
             'realtime' => ['warning_pending' => 200, 'critical_pending' => 2000, 'warning_age' => 30, 'critical_age' => 120],
             'exports' => ['warning_pending' => 50, 'critical_pending' => 500, 'warning_age' => 900, 'critical_age' => 3600],
             'media' => ['warning_age' => 600, 'critical_age' => 3600],
+            // Customer messages and outbound replies are worked within a
+            // second or two; a webhook or reply waiting this long is visible
+            // to people. Critical stays above a worker restart (deployments
+            // run queue:restart), so a deploy's readiness probe never fails
+            // on its own backlog.
+            'webhooks' => [
+                'warning_age' => (int) env('OPS_QUEUE_CRITICAL_PATH_WARNING_AGE', 10),
+                'critical_age' => (int) env('OPS_QUEUE_CRITICAL_PATH_CRITICAL_AGE', 120),
+            ],
+            'messages' => [
+                'warning_age' => (int) env('OPS_QUEUE_CRITICAL_PATH_WARNING_AGE', 10),
+                'critical_age' => (int) env('OPS_QUEUE_CRITICAL_PATH_CRITICAL_AGE', 120),
+            ],
         ],
     ],
 
@@ -187,6 +200,8 @@ return [
         'min_free_disk_mb' => (int) env('OPS_PREFLIGHT_MIN_FREE_DISK_MB', 2048),
         'backup_directory' => env('OPS_BACKUP_DIR'),
         'backup_max_age_hours' => (int) env('OPS_BACKUP_MAX_AGE_HOURS', 26),
+        // --timeout of the exports queue worker (deploy/supervisor, deploy/systemd).
+        'exports_worker_timeout' => (int) env('OPS_EXPORTS_WORKER_TIMEOUT', 660),
     ],
 
     /*

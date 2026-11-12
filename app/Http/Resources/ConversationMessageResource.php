@@ -8,10 +8,13 @@ use App\Enums\MessageDirection;
 use App\Enums\MessageType;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Models\User;
+use App\Policies\HistoryImportPolicy;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 /**
@@ -34,6 +37,18 @@ class ConversationMessageResource extends JsonResource
 {
     /** Length of the quoted text shown above a reply. */
     private const QUOTE_LENGTH = 140;
+
+    /** A quoted message of the same conversation. */
+    public const QUOTE_SAME_CONVERSATION = 'conversation';
+
+    /** A quoted message of an earlier conversation the viewer may open. */
+    public const QUOTE_PREVIOUS_CONVERSATION = 'previous_conversation';
+
+    /** A quoted message of an earlier conversation the viewer may not see: nothing of it is shown. */
+    public const QUOTE_RESTRICTED = 'restricted';
+
+    /** Request attribute caching, per conversation id, where the viewer opens a quoted earlier conversation. */
+    private const QUOTE_ACCESS_KEY = 'conversation_message_resource.quote_access';
 
     /**
      * @return array<string, mixed>
@@ -61,12 +76,7 @@ class ConversationMessageResource extends JsonResource
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
             'template' => $this->template($metadata),
             'content' => $this->content($metadata),
-            'reply_to' => $this->whenLoaded('replyTo', fn (): ?array => $this->replyTo === null ? null : [
-                'id' => $this->replyTo->id,
-                'direction' => $this->replyTo->direction->value,
-                'type' => $this->replyTo->type->value,
-                'body' => $this->replyTo->body === null ? null : Str::limit($this->replyTo->body, self::QUOTE_LENGTH),
-            ]),
+            'reply_to' => $this->whenLoaded('replyTo', fn (): ?array => $this->replyTo === null ? null : $this->quote($this->replyTo, $request)),
             'attachments' => $this->whenLoaded('attachments', fn (): array => $this->attachments
                 ->map(fn (MessageAttachment $attachment): array => $this->attachment($attachment))
                 ->values()
@@ -80,6 +90,85 @@ class ConversationMessageResource extends JsonResource
             'delivery_attempts' => $this->delivery_attempts,
             'delivery_retries' => is_int($metadata['delivery']['retries'] ?? null) ? $metadata['delivery']['retries'] : 0,
         ];
+    }
+
+    /**
+     * The message this one replies to. One of the same conversation is
+     * shown as is (the viewer already sees the conversation). The customer
+     * may also reply to a message of an earlier conversation with the same
+     * contact and connection: its excerpt and a link to it are shown only
+     * when the viewer may open that conversation (in the inbox, or in the
+     * imported history archive); otherwise only that it quotes an earlier
+     * conversation, with no text, ids or link. Rendering a quote never
+     * changes any state.
+     *
+     * @return array{id: int|null, direction: string|null, type: string|null, body: string|null, origin: string, conversation_id: int|null, url: string|null}
+     */
+    private function quote(Message $quoted, Request $request): array
+    {
+        $shown = fn (string $origin, ?int $conversationId = null, ?string $url = null): array => [
+            'id' => $quoted->id,
+            'direction' => $quoted->direction->value,
+            'type' => $quoted->type->value,
+            'body' => $quoted->body === null ? null : Str::limit($quoted->body, self::QUOTE_LENGTH),
+            'origin' => $origin,
+            'conversation_id' => $conversationId,
+            'url' => $url,
+        ];
+
+        if ($quoted->conversation_id === $this->conversation_id) {
+            return $shown(self::QUOTE_SAME_CONVERSATION);
+        }
+
+        $url = $this->previousConversationUrl($quoted, $request);
+
+        if ($url !== null) {
+            return $shown(self::QUOTE_PREVIOUS_CONVERSATION, $quoted->conversation_id, $url);
+        }
+
+        return [
+            'id' => null,
+            'direction' => null,
+            'type' => null,
+            'body' => null,
+            'origin' => self::QUOTE_RESTRICTED,
+            'conversation_id' => null,
+            'url' => null,
+        ];
+    }
+
+    /**
+     * Where the viewer opens the earlier conversation of a quoted message,
+     * or null when they may not see it (or it no longer exists). Resolved
+     * once per conversation and request.
+     */
+    private function previousConversationUrl(Message $quoted, Request $request): ?string
+    {
+        $viewer = $request->user();
+
+        if (! $viewer instanceof User) {
+            return null;
+        }
+
+        /** @var array<int, string|null> $known */
+        $known = $request->attributes->get(self::QUOTE_ACCESS_KEY, []);
+
+        if (array_key_exists($quoted->conversation_id, $known)) {
+            return $known[$quoted->conversation_id];
+        }
+
+        $conversation = $quoted->loadMissing('conversation')->conversation;
+        $url = match (true) {
+            $conversation === null => null,
+            Gate::forUser($viewer)->allows('view', $conversation) => route('conversations.show', $conversation),
+            app(HistoryImportPolicy::class)->viewArchived($viewer, $conversation)->allowed() => route('admin.history.conversations.show', $conversation),
+            default => null,
+        };
+
+        $known[$quoted->conversation_id] = $url;
+        $request->attributes->set(self::QUOTE_ACCESS_KEY, $known);
+
+        return $url;
     }
 
     /**

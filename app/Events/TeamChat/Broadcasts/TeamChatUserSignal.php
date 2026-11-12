@@ -17,13 +17,23 @@ class TeamChatUserSignal implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets;
 
     /**
+     * Queue connection of the broadcast job (read by the broadcast manager):
+     * REALTIME_QUEUE_CONNECTION, like the other real-time signals; null uses
+     * the default connection.
+     */
+    public ?string $connection = null;
+
+    /**
      * @param  list<int>  $userIds
      */
     public function __construct(
         public readonly array $userIds,
         public readonly int $threadId,
         public readonly string $reason,
-    ) {}
+    ) {
+        $connection = config('broadcasting.realtime.queue_connection');
+        $this->connection = is_string($connection) && $connection !== '' ? $connection : null;
+    }
 
     /**
      * @return list<PrivateChannel>

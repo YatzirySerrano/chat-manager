@@ -34,6 +34,8 @@ use Tests\Support\WebChatFixtures;
 */
 
 beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
     Queue::fake([DeliverOutboundMessage::class]);
     // Monday 2026-11-09 at 10:00 in Mexico City.
     $this->travelTo(CarbonImmutable::parse('2026-11-09 16:00:00', 'UTC'));

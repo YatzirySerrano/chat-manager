@@ -15,6 +15,7 @@ root»). La infraestructura general está en [infraestructura-y-despliegue.md](i
 | Base de datos `chatmanager`                       | MariaDB                                                                                           | `chat-manager-backup-database` (`mariadb-dump --single-transaction`)                       | Diario + antes de cada despliegue (automático en `deploy.sh`) |
 | Archivos privados                                 | `shared/storage/app` (adjuntos de WhatsApp en `media/`, archivos del chat interno, importaciones) | `chat-manager-backup-storage` (tar.gz)                                                     | Diario                                                        |
 | Bucket de adjuntos (fase 5.2, si `MEDIA_DISK=s3`) | Bucket S3 privado o compatible (AWS, Synology C2, MinIO)                                          | Versionado y/o réplica del propio proveedor; `chat-manager-backup-storage` **no** lo copia | Continuo (versionado) o diario                                |
+| NAS montado (si `MEDIA_DISK=nas`)                 | Carpeta compartida del Synology montada en `MEDIA_MOUNT_PATH`                                     | Instantáneas y/o Hyper Backup en el NAS; `chat-manager-backup-storage` **no** la copia     | Diario (instantáneas cada hora recomendadas)                  |
 | Copia fuera del servidor                          | `/var/backups/chat-manager` completo                                                              | `chat-manager-backup-offsite` (rsync o rclone)                                             | Diario, después de los anteriores                             |
 | `.env` y `APP_KEY`                                | `shared/.env`                                                                                     | Gestor de secretos de la empresa (manual)                                                  | En cada cambio                                                |
 | Configuración del servidor                        | `/etc/nginx`, `/etc/supervisor/conf.d`, `/etc/php/8.4/fpm/pool.d`, certificados                   | Plantillas en `deploy/` + copia de `/etc`                                                  | En cada cambio                                                |
@@ -31,6 +32,12 @@ cada usuario debe volver a pulsar «Activar en este navegador».
 bucket y los anteriores siguen en `storage/app/private/media` del servidor. Para restaurar hay que recuperar **los
 dos** del mismo momento que la base. El respaldo del disco local sigue siendo necesario mientras existan filas
 antiguas en él.
+
+**Adjuntos en el NAS montado (`MEDIA_DISK=nas`).** Igual que con S3: las filas `nas` están en la carpeta compartida
+del NAS y las anteriores en `local` o `s3`. Restaurar significa recuperar la base, el disco local y la carpeta del NAS
+del mismo momento. Al restaurar la carpeta, conservar el archivo de identidad (`MEDIA_MOUNT_MARKER`, contenido
+`MEDIA_MOUNT_ID`) en su raíz; sin él la aplicación rechaza escribir (y avisa en Sistema) aunque el montaje funcione. Si
+la carpeta se restaura en otro NAS, montarla en el mismo `MEDIA_MOUNT_PATH` y copiar el mismo archivo de identidad.
 
 No se respaldan: exportaciones generadas (caducan en `EXPORTS_RETENTION_HOURS` y se pueden regenerar), cachés de
 `storage/framework` ni logs (tienen su propia rotación).

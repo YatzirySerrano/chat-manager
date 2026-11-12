@@ -5,6 +5,7 @@ use App\Http\Middleware\Api\ApiResponseHeaders;
 use App\Http\Middleware\Api\AuthenticateApiToken;
 use App\Http\Middleware\Api\EnsureApiTokenAbility;
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\EnsurePhaseTwo;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -64,6 +65,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.token' => AuthenticateApiToken::class,
             'api.ability' => EnsureApiTokenAbility::class,
             'webchat.session' => AuthenticateVisitorSession::class,
+            'phase-two' => EnsurePhaseTwo::class,
         ]);
 
         // Every response (pages, webhooks, health): correlation id and browser hardening headers.

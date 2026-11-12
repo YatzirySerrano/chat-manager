@@ -52,6 +52,9 @@ class CloseInactiveConversations
                             return 0;
                         }
 
+                        // Lock order step 2, before the event's foreign keys lock the user rows.
+                        $this->lifecycle->lockDepartment($conversation->department_id);
+
                         $this->lifecycle->apply($conversation, ConversationStatus::Closed, [
                             'closed_at' => now(),
                             'closed_by_user_id' => null,

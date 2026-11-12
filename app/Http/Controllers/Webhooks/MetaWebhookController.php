@@ -27,11 +27,14 @@ use Illuminate\Support\Facades\RateLimiter;
  *   Entries of unknown, deleted or disconnected accounts are ignored with
  *   200, so Meta does not retry them.
  *
- * Refusals never explain why, so the endpoint cannot be probed. Invalid
- * signatures are counted per source address: once
- * services.meta.webhook_invalid_signatures_per_minute is exceeded that
- * address gets 429 without HMAC work, while signed deliveries only face the
- * generous per-address "meta-webhooks" limit.
+ * Refusals never explain why, so the endpoint cannot be probed. Failed
+ * attempts (wrong verify token, invalid signature) are counted per source
+ * address and only failed attempts are ever refused with 429 once
+ * services.meta.webhook_invalid_signatures_per_minute is exceeded: the
+ * signature (or token) is always checked first, so a correctly signed
+ * delivery is never blocked by someone else's bad requests, even when every
+ * request seems to come from the same proxy address. Signed deliveries only
+ * face the generous per-address "meta-webhooks" flood limit.
  */
 class MetaWebhookController extends Controller
 {
@@ -43,6 +46,10 @@ class MetaWebhookController extends Controller
 
         if ($request->query('hub_mode') !== 'subscribe' || ! is_string($token) || $expected === '' || ! hash_equals($expected, $token)
             || ! is_string($challenge) || preg_match('/^[A-Za-z0-9_\-.]{1,256}$/', $challenge) !== 1) {
+            if ($this->failedAttemptsExceeded('meta-webhook-verify-invalid:'.$request->ip())) {
+                return $this->plain('', 429);
+            }
+
             Log::warning('Meta app webhook verification refused.');
 
             return $this->plain('', 403);
@@ -67,13 +74,6 @@ class MetaWebhookController extends Controller
             return $this->plain('', 403);
         }
 
-        $invalidKey = 'meta-webhook-invalid:'.$request->ip();
-        $invalidLimit = max(1, (int) config('services.meta.webhook_invalid_signatures_per_minute', 30));
-
-        if (RateLimiter::tooManyAttempts($invalidKey, $invalidLimit)) {
-            return $this->plain('', 429);
-        }
-
         $signature = (string) $request->header('X-Hub-Signature-256', '');
         $signedWith = null;
 
@@ -91,7 +91,10 @@ class MetaWebhookController extends Controller
         // the Instagram app secret (or the Facebook one when no separate
         // Instagram secret is configured).
         if ($signedWith === null || ($channel !== null && ! hash_equals((string) $app->clientSecret($channel), $signedWith))) {
-            RateLimiter::hit($invalidKey, 60);
+            if ($this->failedAttemptsExceeded('meta-webhook-invalid:'.$request->ip())) {
+                return $this->plain('', 429);
+            }
+
             Log::warning('Meta app webhook refused: invalid signature.');
 
             return $this->plain('', 401);
@@ -126,6 +129,25 @@ class MetaWebhookController extends Controller
         }
 
         return $this->plain('', 200);
+    }
+
+    /**
+     * Records one failed attempt for the address and tells whether its budget
+     * (services.meta.webhook_invalid_signatures_per_minute) was already spent.
+     * Only called after the credential was checked and found wrong, so valid
+     * requests never consume or hit this budget.
+     */
+    private function failedAttemptsExceeded(string $key): bool
+    {
+        $limit = max(1, (int) config('services.meta.webhook_invalid_signatures_per_minute', 30));
+
+        if (RateLimiter::tooManyAttempts($key, $limit)) {
+            return true;
+        }
+
+        RateLimiter::hit($key, 60);
+
+        return false;
     }
 
     private function plain(string $content, int $status): Response

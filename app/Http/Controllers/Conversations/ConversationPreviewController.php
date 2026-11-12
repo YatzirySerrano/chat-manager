@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\QueueRules;
 use App\Services\Personalization\ChatAppearances;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -82,7 +83,8 @@ class ConversationPreviewController extends ConversationOperationController
             ->groupBy('messages.type')
             ->pluck('total', 'type');
 
-        $readiness = $conversation->readiness ?? ConversationReadiness::Ready;
+        // Phase one (FEATURE_PHASE_TWO off): every request is «Lista para atención».
+        $readiness = Features::phaseTwo() ? ($conversation->readiness ?? ConversationReadiness::Ready) : ConversationReadiness::Ready;
 
         return [
             'id' => $conversation->id,

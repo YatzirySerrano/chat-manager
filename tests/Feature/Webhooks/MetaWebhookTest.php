@@ -283,6 +283,9 @@ test('invalid signatures are throttled per address without slowing down signed d
     postMeta($this, $payload, signature: 'sha256=deadbeef')->assertUnauthorized();
     postMeta($this, $payload, signature: 'sha256=deadbeef')->assertTooManyRequests();
 
+    // The throttled address keeps delivering correctly signed bodies.
+    postMeta($this, $payload)->assertOk();
+
     $body = (string) json_encode($payload);
     $this->call('POST', route('webhooks.meta.receive'), server: [
         'CONTENT_TYPE' => 'application/json',
@@ -296,10 +299,12 @@ test('the webhook routes use their own per-address limiters', function () {
         ->and(app('router')->getRoutes()->getByName('webhooks.meta.verify')->gatherMiddleware())->toContain('throttle:meta-webhook-verify');
 
     foreach (range(1, 30) as $attempt) {
-        $this->get(route('webhooks.meta.verify').'?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1');
+        $this->get(route('webhooks.meta.verify').'?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1')->assertForbidden();
     }
 
-    $this->get(route('webhooks.meta.verify').'?hub.mode=subscribe&hub.verify_token=verify-token-1234567890&hub.challenge=1')->assertTooManyRequests();
+    // Wrong tokens are throttled, the configured token still answers.
+    $this->get(route('webhooks.meta.verify').'?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1')->assertTooManyRequests();
+    $this->get(route('webhooks.meta.verify').'?hub.mode=subscribe&hub.verify_token=verify-token-1234567890&hub.challenge=1')->assertOk()->assertSee('1');
     postMeta($this, metaBody('page', '999', []))->assertOk();
 });
 

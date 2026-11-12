@@ -31,6 +31,7 @@ use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\Department;
 use App\Models\Message;
+use App\Models\ResponseCycle;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\WebhookEvent;
@@ -38,6 +39,8 @@ use App\Notifications\NotificationKind;
 use App\Reports\ReportRegistry;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Exports\ReportExporter;
+use App\Services\PlatformSettings;
+use App\Services\ServiceRules;
 use App\Support\Queues;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -924,10 +927,16 @@ test('replies of one conversation picked by several queue workers leave in the o
         ->and($sent)->toContain($unrelated)
         ->and($sent)->toHaveCount(4)
         ->and($messages->every(fn (Message $message): bool => $message->status === MessageStatus::Accepted && $message->delivery_attempts === 1))->toBeTrue()
-        ->and($messages[$ordered[2]]->metadata['delivery']['timing']['order_waits'])->toBeGreaterThanOrEqual(1)
+        // The last reply waited for the earlier ones, or was released by the previous delivery as soon as it ended.
+        ->and(($messages[$ordered[2]]->metadata['delivery']['timing']['order_waits'] ?? 0) >= 1 || ($messages[$ordered[2]]->metadata['delivery']['timing']['released_by_previous'] ?? 0) === 1)->toBeTrue()
         ->and($messages[$unrelated]->metadata['delivery']['timing']['order_waits'])->toBe(0)
-        // No delivery job left behind or failed (listeners of other queues may still wait).
-        ->and(committed(fn () => DB::table('jobs')->where('queue', Queues::name(Queues::MESSAGES))->count()))->toBe(0)
+        // No delivery job left behind or failed (listeners of other queues may still wait): what
+        // may remain are the delayed wait checks of replies the previous delivery already
+        // released and sent, which find them accepted and do nothing.
+        ->and(committed(fn () => DB::table('jobs')->where('queue', Queues::name(Queues::MESSAGES))->pluck('payload'))
+            ->map(fn (string $payload): DeliverOutboundMessage => unserialize(json_decode($payload, true)['data']['command']))
+            ->reject(fn (DeliverOutboundMessage $job): bool => $job->orderWaits > 0 && $messages[$job->messageId]->status === MessageStatus::Accepted)
+            ->all())->toBe([])
         ->and(committed(fn () => DB::table('failed_jobs')->count()))->toBe(0);
 });
 
@@ -1072,6 +1081,9 @@ test('the same customer writing to two numbers at once gets one contact and one 
  */
 function orderedQueue(int $agents = 2, int $requests = 3, array $rules = ['queue.chronological_order' => true]): array
 {
+    // Queue rules are phase two (FEATURE_PHASE_TWO).
+    config(['features.phase_two' => true]);
+
     return committed(function () use ($agents, $requests, $rules): array {
         $department = Department::factory()->create(['service_rules' => $rules]);
         $base = now()->subHour()->startOfMinute();
@@ -1210,6 +1222,10 @@ test('two tabs of an agent with room for one conversation, on the head and on th
 });
 
 test('an accept racing with the request being returned to needs information is either complete or refused', function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     [, $agents, $requests] = orderedQueue(rules: ['intake.confirmation_required' => true, 'queue.chronological_order' => true]);
     $supervisor = committed(fn () => User::factory()->administrator()->create());
 
@@ -1268,4 +1284,123 @@ test('an accept racing with the automatic distribution assigns the conversation 
             ->and($results[1]['value']['status'])->toBe(302)
             ->and($stored->assigned_user_id)->toBe($agents[1]->id);
     }
+});
+
+/**
+ * An agent attending a conversation of a department, and the arguments of
+ * the operation (close, inactivity close or SLA breach) that records an
+ * event on it.
+ *
+ * @return array{department: Department, agent: User, arguments: array<string, int>}
+ */
+function lockOrderEventOnAgentConversation(string $scenario): array
+{
+    return committed(function () use ($scenario): array {
+        $department = Department::factory()->create();
+        $agent = User::factory()->agent()->available()->inDepartments($department)->create();
+        $conversation = Conversation::factory()->inDepartment($department)->assignedTo($agent)->create([
+            'last_message_at' => now()->subHours(3),
+            'last_inbound_at' => now()->subHours(3),
+        ]);
+
+        $arguments = match ($scenario) {
+            'close' => ['conversation_id' => $conversation->id, 'user_id' => $agent->id],
+            'close-inactive' => [],
+            'claim-breach' => ['cycle_id' => ResponseCycle::factory()->withTarget(60)->create([
+                'conversation_id' => $conversation->id,
+                'started_at' => now()->subMinutes(10),
+            ])->id],
+        };
+
+        if ($scenario === 'close-inactive') {
+            app(PlatformSettings::class)->update(['operations' => ['auto_close_after_hours' => 1]]);
+        }
+
+        return ['department' => $department, 'agent' => $agent, 'arguments' => $arguments];
+    });
+}
+
+test('an event recorded on an agent\'s conversation while a new conversation of the department picks that agent never deadlocks', function (string $scenario) {
+    ['department' => $department, 'agent' => $agent, 'arguments' => $arguments] = lockOrderEventOnAgentConversation($scenario);
+
+    // A new customer conversation of the department holds its row...
+    $inbound = ConcurrentProcess::start('hold-department-then-lock-user', ['department_id' => $department->id, 'user_id' => $agent->id]);
+    $inbound->waitFor('READY');
+    $inbound->tell('GO');
+    $inbound->waitFor('HOLDING');
+
+    // ...while the agent's conversation records its event, and only then picks the agent.
+    $operation = ConcurrentProcess::start($scenario, $arguments);
+    $operation->waitFor('READY');
+    $operation->tell('GO');
+    $race = waitUntilBlockedOrFinished($operation);
+    $inbound->tell('COMMIT');
+
+    $results = [$inbound->result(), $operation->result()];
+
+    expect(failures($results))->toBe([], json_encode(['race' => $race]))
+        ->and($results[0]['value'])->toBe('assigned');
+})->with(['close', 'close-inactive', 'claim-breach']);
+
+test('a metrics rebuild waits for the refresh of the same conversation in progress instead of overwriting it', function () {
+    $conversation = committed(fn () => Conversation::factory()->create());
+    $environment = ['CACHE_STORE' => 'database'];
+
+    $refresh = ConcurrentProcess::start('hold-metrics-lock', ['conversation_id' => $conversation->id], $environment);
+    $refresh->waitFor('READY');
+    $refresh->tell('GO');
+    $refresh->waitFor('HOLDING');
+
+    $rebuild = ConcurrentProcess::start('rebuild-metrics', ['conversation_ids' => [$conversation->id]], $environment);
+    $rebuild->waitFor('READY');
+    $rebuild->tell('GO');
+    usleep(2_000_000);
+    $finishedWhileHeld = $rebuild->hasFinished();
+    $refresh->tell('COMMIT');
+
+    expect($finishedWhileHeld)->toBeFalse()
+        ->and($refresh->result())->toBe(['ok' => true, 'value' => 'released'])
+        ->and($rebuild->result())->toBe(['ok' => true, 'value' => 1])
+        ->and(committed(fn () => DB::table('conversation_metrics')->where('conversation_id', $conversation->id)->count()))->toBe(1);
+});
+
+test('refreshing the metrics of adjacent conversations at once, many times, never deadlocks and leaves exactly their rows', function () {
+    [$first, $second] = committed(function (): array {
+        $department = Department::factory()->create();
+
+        return collect(range(1, 2))->map(fn () => Conversation::factory()->inDepartment($department)
+            ->assignedTo(User::factory()->agent()->inDepartments($department)->create())
+            ->create())->all();
+    });
+
+    $results = ConcurrentProcess::race([
+        ConcurrentProcess::start('refresh-metrics', ['conversation_id' => $first->id, 'times' => 40]),
+        ConcurrentProcess::start('refresh-metrics', ['conversation_id' => $second->id, 'times' => 40]),
+    ]);
+
+    expect(failures($results))->toBe([])
+        ->and(committed(fn () => DB::table('conversation_agent_metrics')->orderBy('conversation_id')->get(['conversation_id', 'user_id'])->map(fn (object $row): array => [$row->conversation_id, $row->user_id])->all()))
+        ->toBe([[$first->id, $first->assigned_user_id], [$second->id, $second->assigned_user_id]]);
+});
+
+test('retrying a failed message while a delivery holds it and records an event on the conversation never deadlocks', function () {
+    ['conversation' => $conversation, 'agent' => $agent] = attendedWhatsappConversation();
+    $message = committed(fn () => WhatsAppFixtures::outbound($conversation, ['status' => MessageStatus::Failed, 'sender_user_id' => $agent->id, 'error_code' => 'graph_error', 'failed_at' => now()]));
+
+    $delivery = ConcurrentProcess::start('hold-message-then-record-event', ['message_id' => $message->id]);
+    $delivery->waitFor('READY');
+    $delivery->tell('GO');
+    $delivery->waitFor('HOLDING');
+
+    $retry = ConcurrentProcess::start('retry-outbound', ['conversation_id' => $conversation->id, 'message_id' => $message->id, 'user_id' => $agent->id], ['QUEUE_CONNECTION' => 'database']);
+    $retry->waitFor('READY');
+    $retry->tell('GO');
+    $race = waitUntilBlockedOrFinished($retry);
+    $delivery->tell('COMMIT');
+
+    $results = [$delivery->result(), $retry->result()];
+
+    expect(failures($results))->toBe([], json_encode(['race' => $race]))
+        ->and($results[1]['value'])->toBe(MessageStatus::Queued->value)
+        ->and(committed(fn () => Message::query()->findOrFail($message->id)->status))->toBe(MessageStatus::Queued);
 });

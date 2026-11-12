@@ -73,9 +73,13 @@ class TeamMessageController extends Controller
     {
         /** @var User $author */
         $author = $request->user();
-        $message = $postTeamMessage->handle($thread, $author, $request->body(), $request->replyToMessageId(), $request->attachments(), $request->mentions());
+        $message = $postTeamMessage->handle($thread, $author, $request->body(), $request->replyToMessageId(), $request->attachments(), $request->mentions(), $request->clientReference());
 
-        return response()->json(['data' => $this->present($thread, $message, $author)], 201);
+        // A retry of a message already stored answers it as it is now (200).
+        return response()->json(
+            ['data' => $this->present($thread, $message, $author), 'replayed' => ! $message->wasRecentlyCreated],
+            $message->wasRecentlyCreated ? 201 : 200,
+        );
     }
 
     public function update(UpdateTeamMessageRequest $request, TeamThread $thread, TeamMessage $message, EditTeamMessage $editTeamMessage): JsonResponse

@@ -25,6 +25,7 @@ import { useAcceptance } from '@/components/conversations/queueRules';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import { useChannel } from '@/composables/useChannel';
+import { useFeatures } from '@/composables/useFeatures';
 import { formatDateTime } from '@/lib/format';
 import { preview as previewRoute } from '@/routes/conversations';
 import type {
@@ -56,6 +57,9 @@ const props = defineProps<{
     /** The row's unread counter, shown untouched. */
     unread: number;
 }>();
+
+/* Readiness is phase two: hidden while it is off (the server reports every request as ready). */
+const { phaseTwo } = useFeatures();
 
 const emit = defineEmits<{
     close: [];
@@ -349,6 +353,7 @@ const availability = computed(() => {
                     </span>
                     <ReadinessBadge
                         v-if="
+                            phaseTwo &&
                             facts.stage.value !== 'finished' &&
                             (facts.readiness.value === 'needs_info' ||
                                 facts.acceptance !== null)

@@ -8,7 +8,6 @@ use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * Recomputes the metrics row of one conversation. While a refresh of the
@@ -44,8 +43,7 @@ class RefreshConversationMetrics implements ShouldBeUniqueUntilProcessing, Shoul
 
     public function handle(ConversationMetricsCalculator $calculator, AnalyticsCache $cache): void
     {
-        Cache::lock("analytics:conversation:{$this->conversationId}", 30)
-            ->block(10, fn () => $calculator->recompute($this->conversationId));
+        $calculator->recomputeExclusively($this->conversationId);
 
         $cache->touch();
     }

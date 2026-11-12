@@ -56,6 +56,7 @@ class StoreTeamMessageRequest extends FormRequest
             'reply_to_message_id' => ['nullable', 'integer'],
             'mentions' => ['nullable', 'array', 'max:'.(int) config('team-chat.max_mentions')],
             'mentions.*' => ['integer', 'distinct'],
+            'client_reference' => ['nullable', 'uuid'],
         ];
     }
 
@@ -116,6 +117,7 @@ class StoreTeamMessageRequest extends FormRequest
             'attachments.*.file' => 'No se pudo recibir el archivo. Inténtalo de nuevo.',
             'attachments.*.uploaded' => 'No se pudo subir el archivo; puede exceder el tamaño permitido.',
             'mentions.max' => 'Puedes mencionar como máximo a :max personas por mensaje.',
+            'client_reference.uuid' => 'La referencia del mensaje no es válida. Recarga la página.',
         ];
     }
 
@@ -167,6 +169,17 @@ class StoreTeamMessageRequest extends FormRequest
         $replyTo = $this->validated('reply_to_message_id');
 
         return $replyTo === null ? null : (int) $replyTo;
+    }
+
+    /**
+     * The browser's idempotency key of this message (kept while it retries
+     * the same message); null from clients that do not send one.
+     */
+    public function clientReference(): ?string
+    {
+        $reference = $this->validated('client_reference');
+
+        return is_string($reference) && $reference !== '' ? strtolower($reference) : null;
     }
 
     /**

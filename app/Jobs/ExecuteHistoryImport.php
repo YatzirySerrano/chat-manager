@@ -13,6 +13,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -39,8 +40,18 @@ class ExecuteHistoryImport implements ShouldBeUniqueUntilProcessing, ShouldQueue
      */
     public int $uniqueFor = 900;
 
+    /**
+     * Owner of the batch lock while this run holds it, also written to the
+     * batch (options.run_token) when the run starts: failed() of a stale
+     * run (killed, then retried after retry_after while a resumed run is
+     * working) never releases another run's lock nor fails its batch.
+     */
+    public ?string $runToken = null;
+
     public function __construct(public int $transferId)
     {
+        $this->runToken = (string) Str::uuid();
+
         // The run stops itself at job_seconds; the hard timeout stays below the queue's retry_after.
         $this->timeout = min(ParseHistoryImportFile::timeout(), max(60, (int) config('history-import.job_seconds', 240) + 120));
     }
@@ -52,7 +63,7 @@ class ExecuteHistoryImport implements ShouldBeUniqueUntilProcessing, ShouldQueue
 
     public function handle(HistoryImportExecutor $executor): void
     {
-        $lock = Cache::lock('history-import:execute:'.$this->transferId, $this->timeout);
+        $lock = Cache::lock(self::lockName($this->transferId), $this->timeout, $this->runToken);
 
         if (! $lock->get()) {
             return;
@@ -68,7 +79,11 @@ class ExecuteHistoryImport implements ShouldBeUniqueUntilProcessing, ShouldQueue
                     return null;
                 }
 
-                $batch->forceFill(['status' => DataTransferStatus::Processing, 'started_at' => $batch->started_at ?? now()])->saveQuietly();
+                $batch->forceFill([
+                    'status' => DataTransferStatus::Processing,
+                    'started_at' => $batch->started_at ?? now(),
+                    'options' => [...($batch->options ?? []), 'run_token' => $this->runToken],
+                ])->saveQuietly();
 
                 return $batch;
             });
@@ -102,19 +117,47 @@ class ExecuteHistoryImport implements ShouldBeUniqueUntilProcessing, ShouldQueue
         }
     }
 
+    public static function lockName(int $transferId): string
+    {
+        return 'history-import:execute:'.$transferId;
+    }
+
     /**
      * Unexpected errors outside one conversation end here: the batch stays
-     * resumable and nothing already imported is lost or repeated.
+     * resumable and nothing already imported is lost or repeated. Only the
+     * run that holds (or last held) the batch is allowed to do this: its own
+     * lock is released by owner, never forced, and the batch is failed only
+     * when it was this run that last started it and no other run is working.
      */
     public function failed(?Throwable $exception): void
     {
-        // A run killed by its timeout never released its lock.
-        Cache::lock('history-import:execute:'.$this->transferId)->forceRelease();
+        if ($this->runToken !== null) {
+            // A run killed by its timeout never released its lock (no-op when another run owns it).
+            Cache::restoreLock(self::lockName($this->transferId), $this->runToken)->release();
+        }
 
         $batch = DataTransfer::query()->find($this->transferId);
 
-        if ($batch !== null && $batch->status->isPending()) {
-            app(HistoryImportExecutor::class)->fail($batch, null, 'La importación se interrumpió. Lo importado se conserva; usa «Reanudar» para continuar sin duplicar.');
+        if ($batch === null || ! $batch->status->isPending()) {
+            return;
+        }
+
+        $lastRun = $batch->options['run_token'] ?? null;
+        $isLastRun = $lastRun === null || ($this->runToken !== null && hash_equals((string) $lastRun, $this->runToken));
+
+        // Held for a moment: no run is working (it would hold the lock) and none starts meanwhile.
+        $probe = Cache::lock(self::lockName($this->transferId), 30);
+
+        if (! $isLastRun || ! $probe->get()) {
+            return;
+        }
+
+        try {
+            if ($batch->refresh()->status->isPending()) {
+                app(HistoryImportExecutor::class)->fail($batch, null, 'La importación se interrumpió. Lo importado se conserva; usa «Reanudar» para continuar sin duplicar.');
+            }
+        } finally {
+            $probe->release();
         }
     }
 }

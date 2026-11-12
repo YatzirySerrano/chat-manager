@@ -35,7 +35,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('departments/{department}/operations', [DepartmentOperationsController::class, 'update'])->name('departments.operations.update');
     Route::put('departments/{department}/distribution', [DepartmentDistributionController::class, 'update'])->name('departments.distribution.update');
     Route::put('departments/{department}/hours', [DepartmentHoursController::class, 'update'])->name('departments.hours.update');
-    Route::put('departments/{department}/service-rules', [DepartmentServiceRulesController::class, 'update'])->name('departments.service-rules.update');
+    Route::put('departments/{department}/service-rules', [DepartmentServiceRulesController::class, 'update'])->middleware('phase-two')->name('departments.service-rules.update');
     Route::post('departments/{department}/members', [DepartmentMemberController::class, 'store'])->name('departments.members.store');
     Route::delete('departments/{department}/members/{member}', [DepartmentMemberController::class, 'destroy'])->name('departments.members.destroy');
 

@@ -9,6 +9,7 @@ use App\Notifications\NotificationRecipients;
 use App\Notifications\SlaAlertNotification;
 use App\Services\Conversations\ResponseClock;
 use App\Services\ServiceRules;
+use App\Support\Features;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -51,8 +52,8 @@ use Throwable;
  *
  * Notifications are sent after the claim committed. A crash in between
  * loses that notification, never the fact (the breach stays recorded and
- * shown everywhere); a failure notifying one cycle is reported and does not
- * stop the others.
+ * shown everywhere); a failure claiming or notifying one cycle is reported
+ * and does not stop the others.
  */
 class SlaEvaluator
 {
@@ -73,6 +74,14 @@ class SlaEvaluator
      */
     public function run(?CarbonImmutable $now = null): array
     {
+        // Phase two only: while FEATURE_PHASE_TWO is off nothing is warned,
+        // breached or reminded, even when the command is run by hand. Cycles
+        // without objective (all of those opened while it was off) never
+        // have a deadline, so turning it on raises no stale alerts for them.
+        if (! Features::phaseTwo()) {
+            return ['breached' => 0, 'warned' => 0, 'reminded' => 0];
+        }
+
         $now = ($now ?? CarbonImmutable::now())->startOfSecond();
 
         // Breaches first: a cycle found already past its deadline (the
@@ -222,7 +231,16 @@ class SlaEvaluator
             $ids = $this->breachCandidates($now)->pluck('id');
 
             foreach ($ids as $id) {
-                if (! $this->claimBreach((int) $id, $now)) {
+                // One cycle that cannot be claimed (a deadlock, bad data)
+                // is reported and retried next run; it never stops the
+                // other breaches, the warnings or the reminders.
+                try {
+                    if (! $this->claimBreach((int) $id, $now)) {
+                        continue;
+                    }
+                } catch (Throwable $exception) {
+                    report($exception);
+
                     continue;
                 }
 

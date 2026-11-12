@@ -62,6 +62,13 @@ return [
 
     'job_seconds' => (int) env('HISTORY_IMPORT_JOB_SECONDS', 240),
 
+    // Hard timeout (seconds) of the reading, inventory and execution jobs.
+    // It must stay below the --timeout of the exports worker (660 s in
+    // deploy/supervisor and deploy/systemd) and that below the queue's
+    // retry_after (900 s), or a long reading is SIGKILLed by the worker
+    // instead of failing cleanly. Same default as EXPORTS_JOB_TIMEOUT.
+    'job_timeout' => (int) env('HISTORY_IMPORT_JOB_TIMEOUT', env('EXPORTS_JOB_TIMEOUT', 600)),
+
     // Days a batch may stay unconfirmed (or unfinished) before its files and
     // staging rows are deleted (history-import:prune, daily).
     'retention_days' => (int) env('HISTORY_IMPORT_RETENTION_DAYS', 30),

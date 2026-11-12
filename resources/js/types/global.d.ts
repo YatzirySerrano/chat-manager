@@ -30,6 +30,8 @@ declare module '@inertiajs/core' {
             realtime: RealtimeConfig;
             /** Unread internal chat messages (null without team-chat.use). */
             teamChatUnread: number | null;
+            /** Feature flags (config/features.php); the server enforces them. */
+            features: { phaseTwo: boolean };
             sidebarOpen: boolean;
             /** CSRF token for native form posts (export downloads). */
             csrfToken: string | null;

@@ -43,6 +43,10 @@ return [
         // same status processing used for Meta webhooks.
         'status_progression' => (bool) env('WHATSAPP_SIMULATE_STATUSES', true),
         'simulate_read' => (bool) env('WHATSAPP_SIMULATE_READ', false),
+        // Simulated provider latency per send, "min-max" milliseconds (e.g.
+        // "1000-3000"), to measure the outbound path under a slow provider
+        // (tests/load). Empty: answer at once.
+        'latency_ms' => (string) env('WHATSAPP_SIMULATE_LATENCY_MS', ''),
     ],
 
     'webhooks' => [

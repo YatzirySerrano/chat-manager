@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 
 /**
@@ -14,6 +14,9 @@ import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
  * configured (pages refresh periodically, as before).
  *
  * A short "connecting" phase is not shown, so page loads never flicker.
+ *
+ * The explanation opens on hover with a mouse and on tap, click or Enter
+ * (below md only the dot is visible, so it must be reachable by touch too).
  */
 const { state, fallbackSeconds } = useRealtimeStatus();
 
@@ -81,38 +84,120 @@ const view = computed(() => {
 
     return null;
 });
+
+const detailOpen = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+let openedByHover = false;
+let pointerInside = false;
+
+function cancelClose(): void {
+    if (closeTimer !== null) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+    }
+}
+
+function hoverIn(event: PointerEvent): void {
+    pointerInside = true;
+
+    if (event.pointerType !== 'mouse') {
+        return;
+    }
+
+    cancelClose();
+
+    if (!detailOpen.value) {
+        openedByHover = true;
+        detailOpen.value = true;
+    }
+}
+
+function hoverOut(event: PointerEvent): void {
+    pointerInside = false;
+
+    if (event.pointerType !== 'mouse' || !openedByHover) {
+        return;
+    }
+
+    cancelClose();
+    closeTimer = setTimeout(() => {
+        detailOpen.value = false;
+        openedByHover = false;
+    }, 150);
+}
+
+function setDetailOpen(value: boolean): void {
+    cancelClose();
+
+    // A click on an indicator already previewed by hover keeps it open.
+    if (!value && openedByHover && pointerInside) {
+        openedByHover = false;
+
+        return;
+    }
+
+    detailOpen.value = value;
+
+    if (!value) {
+        openedByHover = false;
+    }
+}
+
+onBeforeUnmount(cancelClose);
 </script>
 
 <template>
-    <Tooltip v-if="view">
-        <TooltipTrigger as-child>
-            <span
-                role="status"
-                :aria-label="view.label"
-                class="inline-flex shrink-0 items-center gap-1.5 rounded-full text-xs font-medium"
-                :class="
-                    view.pill
-                        ? 'border border-transparent bg-warning-soft px-2.5 py-1 text-warning-soft-foreground'
-                        : 'size-9 justify-center'
-                "
-                tabindex="0"
+    <span
+        v-if="view"
+        role="status"
+        :aria-label="view.label"
+        class="inline-flex shrink-0"
+    >
+        <Popover :open="detailOpen" @update:open="setDetailOpen">
+            <PopoverTrigger as-child>
+                <button
+                    type="button"
+                    :aria-label="`${view.label}. Ver detalle`"
+                    class="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-full text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    :class="
+                        view.pill
+                            ? 'border border-transparent bg-warning-soft px-2.5 py-1 text-warning-soft-foreground'
+                            : 'size-10 justify-center'
+                    "
+                    @pointerenter="hoverIn"
+                    @pointerleave="hoverOut"
+                >
+                    <span
+                        class="size-2 rounded-full"
+                        :class="view.dot"
+                        aria-hidden="true"
+                    />
+                    <span
+                        v-if="view.short"
+                        class="hidden md:inline xl:hidden"
+                        aria-hidden="true"
+                        >{{ view.short }}</span
+                    >
+                    <span
+                        v-if="view.pill"
+                        class="hidden xl:inline"
+                        aria-hidden="true"
+                        >{{ view.label }}</span
+                    >
+                </button>
+            </PopoverTrigger>
+            <PopoverContent
+                align="end"
+                class="w-72 p-3"
+                @open-auto-focus.prevent
+                @pointerenter="hoverIn"
+                @pointerleave="hoverOut"
             >
-                <span
-                    class="size-2 rounded-full"
-                    :class="view.dot"
-                    aria-hidden="true"
-                />
-                <span v-if="view.short" class="hidden md:inline xl:hidden">{{
-                    view.short
-                }}</span>
-                <span v-if="view.pill" class="hidden xl:inline">{{
-                    view.label
-                }}</span>
-            </span>
-        </TooltipTrigger>
-        <TooltipContent class="max-w-72">
-            <p class="font-medium">{{ view.label }}</p>
-            <p class="text-xs opacity-80">{{ view.detail }}</p>
-        </TooltipContent>
-    </Tooltip>
+                <p class="text-sm font-medium">{{ view.label }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                    {{ view.detail }}
+                </p>
+            </PopoverContent>
+        </Popover>
+    </span>
 </template>

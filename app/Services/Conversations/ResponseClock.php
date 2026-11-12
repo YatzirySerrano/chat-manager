@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Analytics\BusinessHoursCalendar;
 use App\Services\AuditLogger;
 use App\Services\ServiceRules;
+use App\Support\Features;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -265,7 +266,10 @@ class ResponseClock
 
     private function end(ResponseCycle $cycle, Conversation $conversation, string $outcome, CarbonImmutable $at, ?Department $department, string $detectedOn): ResponseCycle
     {
-        $late = $cycle->due_at !== null && $at->greaterThan($cycle->due_at);
+        // While phase two is off (FEATURE_PHASE_TWO) a deadline frozen
+        // before is not judged: the cycle ends without a breach, timeline
+        // event or audit entry (nor any alert).
+        $late = Features::phaseTwo() && $cycle->due_at !== null && $at->greaterThan($cycle->due_at);
         $newBreach = $late && $cycle->breached_at === null;
 
         if ($newBreach) {

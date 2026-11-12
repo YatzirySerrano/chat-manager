@@ -1,11 +1,14 @@
 <?php
 
+use App\Exceptions\StorageUnavailable;
 use App\Models\Department;
 use App\Models\TeamChat\TeamAttachment;
+use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     Storage::fake('local');
@@ -125,4 +128,90 @@ test('a missing file answers not found instead of an error', function () {
     $this->actingAs($this->beto)
         ->get(route('team-chat.attachments.show', [$this->thread, $attachment->team_message_id, $attachment]))
         ->assertNotFound();
+});
+
+/**
+ * Points MEDIA_DISK to a private fake disk other than the legacy one.
+ */
+function teamChatUseMediaDisk(string $name = 'team_media'): void
+{
+    config([
+        "filesystems.disks.{$name}" => ['driver' => 'local', 'root' => storage_path("framework/testing/disks/{$name}")],
+        'filesystems.media_disk' => $name,
+    ]);
+    Storage::fake($name);
+}
+
+test('new files are stored on the media disk, which each attachment records', function () {
+    teamChatUseMediaDisk();
+
+    $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), ['attachments' => [teamPdfUpload()]], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    $attachment = TeamAttachment::query()->sole();
+
+    expect($attachment->disk)->toBe('team_media')
+        ->and($attachment->path)->toMatch('#^team-chat/\d{4}/\d{2}/[0-9a-f-]{36}$#')
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+    Storage::disk('team_media')->assertExists($attachment->path);
+
+    $this->actingAs($this->beto)
+        ->get(route('team-chat.attachments.show', [$this->thread, $attachment->team_message_id, $attachment]))
+        ->assertOk()
+        ->assertDownload('Reporte de turno.pdf');
+});
+
+test('files are refused with a clear error when the media storage is not ready, and nothing is stored', function () {
+    config([
+        'filesystems.disks.team_bucket' => ['driver' => 's3', 'bucket' => '', 'region' => ''],
+        'filesystems.media_disk' => 'team_bucket',
+    ]);
+
+    $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Con archivo', 'attachments' => [teamPdfUpload()]], ['Accept' => 'application/json'])
+        ->assertStatus(503)
+        ->assertJsonPath('code', 'storage_unavailable')
+        ->assertJsonPath('message', StorageUnavailable::DEFAULT_MESSAGE);
+
+    expect(TeamMessage::query()->count())->toBe(0)
+        ->and(TeamAttachment::query()->count())->toBe(0);
+
+    // Text alone does not depend on the file storage.
+    $this->actingAs($this->ana)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Solo texto'])
+        ->assertCreated();
+});
+
+test('files saved earlier on the legacy disk keep being served and are deleted from it', function () {
+    teamChatUseMediaDisk();
+    $message = TeamMessage::factory()->in($this->thread, $this->ana)->create(['body' => null]);
+    $path = 'team-chat/2026/10/'.Str::uuid();
+    Storage::disk('local')->put($path, "%PDF-1.4\n%%EOF\n");
+    $attachment = TeamAttachment::factory()->create(['team_message_id' => $message->id, 'disk' => 'local', 'path' => $path]);
+
+    $this->actingAs($this->beto)
+        ->get(route('team-chat.attachments.show', [$this->thread, $message, $attachment]))
+        ->assertOk();
+
+    $this->actingAs($this->ana)
+        ->deleteJson(route('team-chat.threads.messages.destroy', [$this->thread, $message]))
+        ->assertOk();
+
+    Storage::disk('local')->assertMissing($path);
+    expect($attachment->fresh()->purged_at)->not->toBeNull();
+});
+
+test('a retried send with files stores them only once', function () {
+    $reference = (string) Str::uuid();
+
+    foreach ([201, 200] as $status) {
+        $this->actingAs($this->ana)
+            ->post(route('team-chat.threads.messages.store', $this->thread), ['client_reference' => $reference, 'attachments' => [teamPdfUpload()]], ['Accept' => 'application/json'])
+            ->assertStatus($status)
+            ->assertJsonCount(1, 'data.attachments');
+    }
+
+    expect(TeamAttachment::query()->count())->toBe(1)
+        ->and(Storage::disk('local')->allFiles())->toHaveCount(1);
 });

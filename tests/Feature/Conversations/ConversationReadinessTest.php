@@ -23,6 +23,8 @@ use Illuminate\Testing\TestResponse;
 */
 
 beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
     $this->travelTo(CarbonImmutable::parse('2026-11-10 16:00:00', 'UTC'));
 
     $this->department = Department::factory()->create(['service_rules' => ['intake.confirmation_required' => true]]);

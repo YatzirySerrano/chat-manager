@@ -172,7 +172,11 @@ faltantes, filas rechazadas con su número de línea y sin contenido) y deja que
 
 Controles de carga (`HistoryFileIngestor`, `SafeZip`, `TabularFileReader`): tipo real con `finfo` y extensión por tipo
 de archivo («Para «Mensajes (CSV)» solo se aceptan archivos .csv.»), huella SHA-256 (el mismo archivo no se agrega
-dos veces al lote), tamaño máximo `HISTORY_IMPORT_MAX_KILOBYTES` (512 000 KB), filas (`HISTORY_IMPORT_MAX_ROWS`,
+dos veces al lote), tamaño máximo `HISTORY_IMPORT_MAX_KILOBYTES` (512 000 KB en la aplicación; **el límite efectivo
+en producción es 100 MB por archivo**, porque la carga pasa antes por Nginx `client_max_body_size 110m` y PHP-FPM
+`upload_max_filesize = 100M` / `post_max_size = 110M`, ver `deploy/nginx/chat-manager.conf` y
+`deploy/php-fpm/chat-manager.conf`: un archivo mayor lo rechaza el servidor con 413 antes de llegar a la validación;
+exporta por periodos o divide los ZIP en partes de menos de 100 MB), filas (`HISTORY_IMPORT_MAX_ROWS`,
 460 000), columnas (80), un registro de CSV de como máximo 1 MB (`HISTORY_IMPORT_MAX_RECORD_BYTES`; uno mayor se
 rechaza en vez de leerse entero), texto por mensaje (10 000 caracteres; los más largos se cortan y se señalan) y fechas
 entre 1971 y 2037 (fuera de ese rango se tratan como inválidas). Los `.xlsx` se leen en _streaming_ con `XMLReader`,
@@ -212,6 +216,22 @@ Cada campo toma la primera columna cuyo nombre coincide con un alias; una column
   `X (archivo adjunto)`; multimedia omitida (`<Multimedia omitido>`, `<Media omitted>`…) queda como mensaje con
   archivo faltante. Si el archivo no está en UTF-8 se lee como Windows-1252. Las fechas se interpretan en la zona
   horaria del lote. Todo esto es inferencia, pendiente de contrastar con exportaciones reales.
+- **Fechas.** Sin zona: se leen en la zona horaria del lote (`Y-m-d H:i:s`, con o sin fracción, día primero,
+  serial de Excel). Con zona explícita se respeta y la zona del lote no influye: ISO 8601 y volcados SQL con `T` o
+  espacio, fracción opcional y `Z`, `+hh`, `+hhmm` o `+hh:mm` (por ejemplo `timestamptz` de PostgreSQL
+  `2023-05-01 15:34:56.789+00`). El Whaticket de código abierto guarda las fechas con la zona de Sequelize (en su
+  código, `-03:00`): para un volcado de MySQL sin zona, crea el lote con la zona en que se guardaron (por ejemplo
+  `America/Sao_Paulo`), no con la de la empresa. Inferido del código público, no validado con una exportación real.
+- **Marcadores de nulo de volcados SQL.** Una celda que es exactamente `\N` (mysqldump / `SELECT … INTO OUTFILE`,
+  `COPY` de PostgreSQL en modo texto) o `NULL` (herramientas de base de datos) se lee como vacía en **todas las
+  columnas salvo el texto del mensaje** (identificadores, fechas, archivo, tipo, banderas, nombres, contactos): un
+  `mediaUrl` `\N` ya no se vuelve un archivo faltante. El texto se conserva tal cual porque un cliente puede haber
+  escrito «NULL» de verdad; un mensaje cuyo texto es solo un marcador se importa con ese texto y se revisa en la
+  vista previa. Los escapes con barra invertida (`\n`, `\t`, `\\`) de `mysqldump --tab` **no se decodifican**:
+  esos archivos no están soportados todavía (exporta como CSV estándar, con comillas dobles).
+- **Codificación.** Cada celda de un CSV se revisa por separado: UTF-8 válido se conserva y cualquier otra cosa se
+  convierte desde Windows-1252, aunque los primeros 64 KB del archivo sean ASCII. Ninguna secuencia inválida llega
+  a la base.
 - Columnas sin campo → «columnas desconocidas»; campos obligatorios sin columna → «campos faltantes». Ambos se
   muestran; nunca se inventan columnas. Corregir el mapeo de un archivo lo vuelve a leer.
 
@@ -234,7 +254,11 @@ Cada campo toma la primera columna cuyo nombre coincide con un alias; una column
    para chats de grupo.
 5. **Resumen y confirmación** (`history-import.execute`): totales por destino, contactos (existentes, nuevos, a
    guardar), mensajes, archivos recuperables y faltantes con tamaño estimado, duplicados, grupos y bloqueos
-   (archivos sin leer, conversaciones sin decidir, avisos bloqueantes, conexiones sin mapear). El resumen lleva una
+   (archivos sin leer, conversaciones sin decidir, avisos bloqueantes, conexiones sin mapear y **asignaciones
+   vencidas**: `stale_mappings`, una conexión, departamento, agente o etiqueta mapeados que se eliminaron después de
+   mapearlos; hay que reasignarlos o quitarlos). La ejecución vuelve a revisarlo: un departamento, agente o etiqueta
+   eliminado después de confirmar nunca se asigna (la conversación queda sin él) y una conexión eliminada deja esa
+   conversación `failed` con el motivo. El resumen lleva una
    huella (`confirmation_token`, SHA-256 del resumen, los mapeos, el último cambio y el número de filas); si algo
    cambió desde que se revisó, la confirmación responde **409 `summary_changed`** («El resumen cambió desde que lo
    revisaste…») y hay que revisarlo de nuevo; si todavía se están leyendo archivos o reconstruyendo el inventario,
@@ -252,7 +276,13 @@ Cada campo toma la primera columna cuyo nombre coincide con un alias; una column
    de origen y el registro del lote, o nada. Un fallo de una conversación queda aislado y reportado sin contenido (la
    fila queda `failed` con su número de intentos). Un fallo general deja el lote `failed` y reanudable; si el disco de
    adjuntos deja de responder durante la ejecución, el lote se **pausa** (`HistoryImportPaused`, `failed` con el motivo
-   en `batch.error`) y la conversación en curso queda pendiente. «Continuar» (`resume`, 409 `not_resumable` si no queda
+   en `batch.error`) y la conversación en curso queda pendiente. Cada corrida lleva un identificador propio
+   (`options.run_token`) que es el dueño del bloqueo del lote: una corrida vieja que el worker mató y que la cola da
+   por fallida más tarde (al vencer `retry_after`) nunca libera el bloqueo de otra corrida ni marca `failed` un lote
+   que otra corrida está ejecutando. Los trabajos de lectura, inventario y ejecución tienen un tope duro
+   `HISTORY_IMPORT_JOB_TIMEOUT` (600 s por defecto, como `EXPORTS_JOB_TIMEOUT`), siempre por debajo del `--timeout`
+   del worker `exports` (660 s) y de `retry_after` (900 s): un archivo que tarda más se marca fallido con
+   «Reintentar» en vez de que el worker lo mate. «Continuar» (`resume`, 409 `not_resumable` si no queda
    trabajo) se ejecuta como quien lo reanuda.
 7. **Resultado y reporte**: `result.outcome` es `completed` o **`completed_with_errors`**; importadas, archivadas,
    duplicadas, fallidas, excluidas, mensajes, archivos disponibles y faltantes, contactos creados y guardados. Si hay
@@ -402,6 +432,13 @@ demás transferencias (24 h), el lote de historial tiene su propia retención po
 - No se importan usuarios, contraseñas, colas, chatbots, campañas ni la configuración de Whaticket; agentes y
   departamentos solo se mapean a los existentes.
 - Grupos solo como historial archivado.
+- Volcados de la base del Whaticket de código abierto (tablas `Messages`, `Tickets`, `Contacts`): las columnas
+  `isGroup`, `userId`, `whatsappId`, `queueId` y `contactId` **no tienen alias todavía** y no hay unión de mensajes
+  con contactos por `contactId` (un volcado solo de mensajes no trae números). Inferido del código público, no
+  validado con la exportación real del cliente; pendiente.
+- Si el worker muere justo después de copiar un archivo al disco de adjuntos y antes de anotarlo en el mensaje de
+  preparación, la siguiente corrida lo copia de nuevo y el primero queda huérfano en el disco (pendiente: anotar la
+  intención antes de copiar).
 - No se ha medido con volúmenes reales (cientos de miles de mensajes); los límites por archivo siguen los de Whaticket
   (450 mil mensajes por CSV).
 

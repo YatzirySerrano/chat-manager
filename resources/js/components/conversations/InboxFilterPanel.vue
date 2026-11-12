@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { InboxFilterState } from '@/components/conversations/inboxFilters';
+import { useFeatures } from '@/composables/useFeatures';
 import { formatPhone } from '@/lib/phone';
 import type {
     ConnectionChannel,
@@ -51,6 +52,9 @@ const props = defineProps<{
     sortOptions: { value: ConversationSort; label: string }[];
     searchScopes: { value: ConversationSearchScope; label: string }[];
 }>();
+
+/* The readiness filter is phase two (ignored by the server while it is off). */
+const { phaseTwo } = useFeatures();
 
 const emit = defineEmits<{
     change: [patch: Partial<InboxFilterState>];
@@ -318,7 +322,7 @@ const optionClass =
                 </select>
             </div>
 
-            <div class="grid gap-1.5">
+            <div v-if="phaseTwo" class="grid gap-1.5">
                 <Label for="inbox-readiness" :class="fieldLabelClass"
                     >Preparación de la solicitud</Label
                 >

@@ -42,7 +42,7 @@ class RebuildConversationMetrics
 
         $this->query($since, $conversationIds)->chunkById(self::CHUNK, function (Collection $conversations) use (&$processed, $progress, $refreshBusinessTime): void {
             foreach ($conversations as $conversation) {
-                $this->calculator->recompute($conversation->id, $refreshBusinessTime);
+                $this->calculator->recomputeExclusively($conversation->id, $refreshBusinessTime);
             }
 
             $processed += $conversations->count();

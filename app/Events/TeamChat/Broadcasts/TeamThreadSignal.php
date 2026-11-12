@@ -21,13 +21,23 @@ class TeamThreadSignal implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets;
 
     /**
+     * Queue connection of the broadcast job (read by the broadcast manager):
+     * REALTIME_QUEUE_CONNECTION, like the other real-time signals; null uses
+     * the default connection.
+     */
+    public ?string $connection = null;
+
+    /**
      * @param  array<string, int|string|null>  $payload
      */
     public function __construct(
         public readonly int $threadId,
         public readonly string $name,
         public readonly array $payload,
-    ) {}
+    ) {
+        $connection = config('broadcasting.realtime.queue_connection');
+        $this->connection = is_string($connection) && $connection !== '' ? $connection : null;
+    }
 
     /**
      * @return list<PrivateChannel>

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Attention\AttentionOverview;
 use App\Services\Conversations\PendingAttention;
 use App\Services\Sla\SlaMonitor;
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -35,7 +36,18 @@ class AttentionController extends Controller
         /** @var User $viewer */
         $viewer = $request->user();
         $canSend = $viewer->can('send-attention-alerts');
-        $slaFilters = $sla->filters($request->validate(SlaMonitor::rules()));
+
+        // The «Monitoreo de SLA» is phase two (FEATURE_PHASE_TWO): while it
+        // is off its tab does not exist and no SLA prop is sent.
+        abort_if(! Features::phaseTwo() && $request->query('tab') === 'sla', 404);
+
+        $slaFilters = Features::phaseTwo() ? $sla->filters($request->validate(SlaMonitor::rules())) : null;
+        $slaProps = $slaFilters === null ? [] : [
+            'sla' => Inertia::defer(fn (): array => $sla->open($viewer, $slaFilters), 'sla'),
+            'slaBreaches' => Inertia::defer(fn (): array => $sla->breaches($viewer, $slaFilters), 'sla-history'),
+            'slaFilters' => fn (): array => $slaFilters,
+            'slaOptions' => fn (): array => $sla->options($viewer),
+        ];
 
         return Inertia::render('attention/Index', [
             'agents' => fn (): array => $overview->agents($viewer),
@@ -50,10 +62,7 @@ class AttentionController extends Controller
             ],
             // «Monitoreo de SLA»: open response cycles and breach history of the viewer's reach.
             'tab' => fn (): string => $request->query('tab') === 'sla' ? 'sla' : 'attention',
-            'sla' => Inertia::defer(fn (): array => $sla->open($viewer, $slaFilters), 'sla'),
-            'slaBreaches' => Inertia::defer(fn (): array => $sla->breaches($viewer, $slaFilters), 'sla-history'),
-            'slaFilters' => fn (): array => $slaFilters,
-            'slaOptions' => fn (): array => $sla->options($viewer),
+            ...$slaProps,
             // Anchor of the shared countdown clock (useServerNow).
             'serverTime' => fn (): string => now()->toIso8601String(),
             'can' => [

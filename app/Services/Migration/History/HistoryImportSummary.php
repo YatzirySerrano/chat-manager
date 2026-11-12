@@ -145,13 +145,27 @@ class HistoryImportSummary
             $blockers[] = ['code' => 'unmapped_connections', 'message' => 'Indica a qué conexión pertenece el historial de: '.implode(', ', array_map(fn (string $source): string => $source === '' ? 'sin conexión indicada' : "«{$source}»", $unmapped)).'.'];
         }
 
+        $stale = HistoryImportBatches::staleMappings($batch);
+        $staleLabels = ['connections' => 'conexión', 'departments' => 'departamento', 'agents' => 'agente', 'tags' => 'etiqueta'];
+        $staleNames = [];
+
+        foreach ($stale as $key => $sources) {
+            foreach ($sources as $source) {
+                $staleNames[] = $staleLabels[$key].' «'.($source === '' ? 'sin conexión indicada' : $source).'»';
+            }
+        }
+
+        if ($staleNames !== []) {
+            $blockers[] = ['code' => 'stale_mappings', 'message' => 'Estas asignaciones apuntan a registros que se eliminaron después de mapearlos: '.implode(', ', array_slice($staleNames, 0, 20)).(count($staleNames) > 20 ? '…' : '').'. Vuelve a asignarlas o quítalas.'];
+        }
+
         $lastChange = (string) $rows()->max('updated_at');
 
         return [
             ...$summary,
             'ready' => $blockers === [],
             'blockers' => $blockers,
-            'confirmation_token' => hash('sha256', json_encode([$summary, $mappings, $lastChange, $rows()->count()]) ?: ''),
+            'confirmation_token' => hash('sha256', json_encode([$summary, $mappings, $stale, $lastChange, $rows()->count()]) ?: ''),
         ];
     }
 }

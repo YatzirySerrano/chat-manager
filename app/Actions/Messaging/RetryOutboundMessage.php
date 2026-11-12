@@ -52,9 +52,13 @@ class RetryOutboundMessage
     public function handle(Conversation $conversation, Message $message, User $actor, bool $confirmDuplicateRisk = false): Message
     {
         return DB::transaction(function () use ($conversation, $message, $actor, $confirmDuplicateRisk): Message {
+            // The message row before the conversation row, the order of the
+            // delivery job (claim, block, fail): locking the conversation
+            // first deadlocked a second click of the retry with the delivery
+            // the first one had just queued.
+            $message = Message::query()->lockForUpdate()->findOrFail($message->id);
             $conversation = $this->lifecycle->lock($conversation);
             $actor = $this->lifecycle->authorize($actor, 'reply', $conversation);
-            $message = Message::query()->lockForUpdate()->findOrFail($message->id);
 
             if ($message->conversation_id !== $conversation->id || $message->direction !== MessageDirection::Outbound) {
                 throw new ConversationConflict('El mensaje no pertenece a esta conversación.');
@@ -115,7 +119,7 @@ class RetryOutboundMessage
             ], fn (mixed $value): bool => $value !== null);
 
             $code = $message->error_code;
-            unset($delivery['unconfirmed'], $delivery['unconfirmed_at']);
+            unset($delivery['unconfirmed'], $delivery['unconfirmed_at'], $delivery['retry_not_before']);
 
             $message->forceFill([
                 'status' => MessageStatus::Queued,

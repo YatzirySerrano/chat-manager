@@ -348,6 +348,11 @@ class ConversationTimeline
     {
         $this->resolveReactions($conversation, $messages);
 
+        // Quotes of an earlier conversation are authorized against it: its
+        // conversations are read in one query per page.
+        (new Collection($messages->pluck('replyTo')->filter(fn (?Message $quoted): bool => $quoted !== null && $quoted->conversation_id !== $conversation->id)->unique('id')->values()->all()))
+            ->loadMissing('conversation');
+
         return array_values(ConversationMessageResource::collection($messages)->resolve($request));
     }
 

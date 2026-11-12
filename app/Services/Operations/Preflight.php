@@ -3,10 +3,13 @@
 namespace App\Services\Operations;
 
 use App\Enums\ConnectionChannel;
+use App\Jobs\ExecuteHistoryImport;
+use App\Jobs\ParseHistoryImportFile;
 use App\Models\Connection;
 use App\Models\User;
 use App\Notifications\Push\Vapid;
 use App\Services\Storage\MediaDisk;
+use App\Services\Storage\MountHealth;
 use App\Support\ManualValidation;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
@@ -16,6 +19,7 @@ use Illuminate\Redis\RedisManager;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -23,7 +27,8 @@ use Throwable;
  * deployment needs, WITHOUT modifying anything (no writes to the database,
  * the cache or the disk; only reads, version queries and file checks). The
  * one exception is an external media disk: a tiny probe file is written
- * and deleted right away to prove the bucket accepts files.
+ * and deleted right away to prove the bucket (or the mounted NAS share,
+ * through the bounded probe process) accepts files.
  *
  * Every check reads configuration through config() so the result matches
  * what the application will actually use (also with config:cache). Levels:
@@ -64,7 +69,7 @@ class Preflight
             'database' => fn (): array => [$this->databaseServer(), $this->migrations()],
             'storage' => fn (): array => [$this->health->storage(), $this->privateStorage(), $this->mediaStorage(), $this->diskSpace(), $this->backups()],
             'runtime' => fn (): array => [
-                $this->cacheStore(), $this->redis(), $this->queueConfiguration(), $this->scheduledCommands(), $this->schedulerHeartbeat(),
+                $this->cacheStore(), $this->redis(), $this->queueConfiguration(), $this->exportsWorkerTimeout(), $this->scheduledCommands(), $this->schedulerHeartbeat(),
                 ...array_map($this->atMostWarning(...), [$this->health->queueBacklog(), $this->health->webhookBacklog(), $this->health->failedJobsCheck()]),
             ],
             'integrations' => fn (): array => [$this->broadcasting(), $this->browsershot(), $this->meta(), $this->demoData(), $this->mail(), $this->webPush()],
@@ -432,6 +437,10 @@ class Preflight
             return $this->productionFailure('storage.media', 'Almacenamiento de adjuntos', 'No se podrán guardar archivos adjuntos: '.MediaDisk::explain($problem).'.', [...$details, 'problem' => $problem]);
         }
 
+        if ($media->isMount()) {
+            return $this->mountedMediaStorage($media, $details);
+        }
+
         if (! $media->isExternal()) {
             return HealthCheck::ok('storage.media', 'Almacenamiento de adjuntos', 'Los adjuntos se guardan en el disco del servidor (MEDIA_DISK='.$media->name().'). Para guardarlos fuera del servidor configura un disco S3 privado.', $details);
         }
@@ -443,6 +452,30 @@ class Preflight
         }
 
         return HealthCheck::ok('storage.media', 'Almacenamiento de adjuntos', 'Los adjuntos se guardan en el almacenamiento externo privado (MEDIA_DISK='.$media->name().'); la prueba de escritura y borrado funcionó.', $details);
+    }
+
+    /**
+     * A NAS share mounted as the media disk: problem() already passed the
+     * mount table and identity marker checks; a fresh probe process (killed
+     * after its timeout) then checks the mountpoint device and a
+     * write/read/delete. Fails only because MEDIA_DISK points at the mount.
+     *
+     * @param  array<string, scalar|null>  $details
+     */
+    private function mountedMediaStorage(MediaDisk $media, array $details): HealthCheck
+    {
+        $health = app(MountHealth::class);
+        $settings = (array) MountHealth::settings($media->name());
+        $details = [...$details, 'mount' => true, 'mount_path' => (string) ($settings['root'] ?? ''), 'filesystem_types' => implode(',', (array) ($settings['filesystem_types'] ?? []))];
+        $problem = $media->probe();
+
+        if ($problem !== null) {
+            return $this->productionFailure('storage.media', 'Almacenamiento de adjuntos', 'El NAS montado para los adjuntos no pasó la verificación: '.MediaDisk::explain($problem).'. Revisa el montaje (findmnt '.$details['mount_path'].'), Tailscale y el archivo de identidad.', [...$details, 'problem' => $problem]);
+        }
+
+        $timeout = $health->timeoutSeconds();
+
+        return HealthCheck::ok('storage.media', 'Almacenamiento de adjuntos', 'Los adjuntos se guardan en el NAS montado (MEDIA_DISK='.$media->name().'): montaje, identidad y prueba de escritura, lectura y borrado correctos (prueba limitada a '.$timeout.' s).', $details);
     }
 
     public function diskSpace(): HealthCheck
@@ -641,6 +674,45 @@ class Preflight
         }
 
         return HealthCheck::ok('queue', 'Colas', "Conexión {$connection} ({$driver}), retry_after {$retryAfter} s.");
+    }
+
+    /**
+     * Jobs of the exports queue (reports, contact imports, history imports)
+     * must finish within the exports worker's --timeout
+     * (OPS_EXPORTS_WORKER_TIMEOUT, the value in deploy/supervisor and
+     * systemd), or the worker is killed in the middle of the job. A warning:
+     * it never blocks a deployment.
+     */
+    public function exportsWorkerTimeout(): HealthCheck
+    {
+        $worker = max(1, (int) config('operations.preflight.exports_worker_timeout', 660));
+        $details = ['worker_timeout' => $worker];
+
+        try {
+            $jobs = [
+                'EXPORTS_JOB_TIMEOUT (reportes e importación de contactos)' => (int) config('exports.job_timeout', 600),
+                'lectura de archivos de historial' => (new ParseHistoryImportFile(0))->timeout,
+                'ejecución de importación de historial' => (new ExecuteHistoryImport(0))->timeout,
+            ];
+        } catch (Throwable $exception) {
+            return HealthCheck::warning('queue.exports_timeout', 'Tiempo de los trabajos de exportación', 'No se pudieron leer los tiempos de los trabajos: '.class_basename($exception).'.', $details);
+        }
+
+        $over = [];
+
+        foreach ($jobs as $label => $seconds) {
+            $details[Str::slug($label, '_')] = $seconds;
+
+            if ($seconds >= $worker) {
+                $over[] = "{$label} ({$seconds} s)";
+            }
+        }
+
+        if ($over !== []) {
+            return HealthCheck::warning('queue.exports_timeout', 'Tiempo de los trabajos de exportación', 'Estos trabajos pueden durar más que el --timeout del worker de exportaciones ('.$worker.' s, OPS_EXPORTS_WORKER_TIMEOUT): '.implode(', ', $over).'. El worker se detendría a mitad del trabajo; baja su tiempo o sube el --timeout del worker (y retry_after por encima).', $details);
+        }
+
+        return HealthCheck::ok('queue.exports_timeout', 'Tiempo de los trabajos de exportación', "Los trabajos de la cola de exportaciones terminan antes del --timeout del worker ({$worker} s).", $details);
     }
 
     public function scheduledCommands(): HealthCheck

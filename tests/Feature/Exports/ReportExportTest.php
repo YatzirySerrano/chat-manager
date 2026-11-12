@@ -199,6 +199,19 @@ test('large exports are queued for the requester', function () {
         ->toMatchArray(['report' => 'tags', 'format' => 'xlsx', 'rows' => 2, 'filters' => ['Búsqueda: «Clientes»'], 'mode' => 'queued', 'transfer_id' => $transfer->id]);
 });
 
+test('an empty EXPORTS_QUEUE falls back to the exports queue name instead of the default queue', function () {
+    Queue::fake();
+    config(['exports.formats.xlsx.sync_rows' => 1, 'exports.queue' => '', 'queue.names.exports' => 'exports-fallback']);
+    Tag::factory()->count(2)->create(['description' => 'Clientes']);
+
+    $this->actingAs(tagExporter())
+        ->from(route('tags.index'))
+        ->post(route('exports.generate', ['tags', 'xlsx', 'search' => 'Clientes']))
+        ->assertRedirect(route('tags.index'));
+
+    Queue::assertPushedOn('exports-fallback', GenerateReport::class);
+});
+
 test('the job renders the file privately and only its owner can download it', function () {
     Storage::fake('local');
     $exporter = tagExporter();

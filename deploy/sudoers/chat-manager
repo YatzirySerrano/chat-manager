@@ -8,11 +8,14 @@
 # script and run anything as root): the backup script is the root-owned copy
 # in /usr/local/sbin (docs/infraestructura-y-despliegue.md §16). Adjust
 # "deploy", the PHP-FPM service and the paths of systemctl/supervisorctl
-# (command -v systemctl supervisorctl) to the server.
+# (command -v systemctl supervisorctl) to the server. Keep only the scheduler
+# line of the process manager in use (Supervisor program or systemd unit;
+# none with the cron variant).
 
 Cmnd_Alias CHATMANAGER_DEPLOY = \
     /usr/local/sbin/chat-manager-backup-database "", \
     /usr/bin/systemctl reload php8.4-fpm, \
-    /usr/bin/supervisorctl restart chatmanager-scheduler
+    /usr/bin/supervisorctl restart chatmanager-scheduler, \
+    /usr/bin/systemctl restart chat-manager-scheduler
 
 deploy ALL=(root) NOPASSWD: CHATMANAGER_DEPLOY

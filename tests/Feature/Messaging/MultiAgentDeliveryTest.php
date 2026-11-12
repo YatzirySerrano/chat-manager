@@ -117,7 +117,7 @@ test('a reply waits for the earlier reply of its conversation and then both leav
         ->delivery_attempts->toBe(0);
     Http::assertNothingSent();
     Queue::assertPushed(DeliverOutboundMessage::class, fn (DeliverOutboundMessage $retry): bool => $retry->messageId === $question->id
-        && $retry->delay === 1
+        && $retry->delay === 3
         && $retry->orderWaits === 1
         && $retry->queue === Queues::name(Queues::MESSAGES));
 
@@ -129,7 +129,12 @@ test('a reply waits for the earlier reply of its conversation and then both leav
         ->and($question->refresh()->status)->toBe(MessageStatus::Accepted)
         ->and($question->delivery_attempts)->toBe(1)
         ->and($question->metadata['delivery']['timing']['order_waits'])->toBe(1);
-    Queue::assertPushed(DeliverOutboundMessage::class, 1);
+    // The wait check, and the job the accepted first reply released at once
+    // (it finds the second reply already sent and does nothing).
+    Queue::assertPushed(DeliverOutboundMessage::class, 2);
+    Queue::assertPushed(DeliverOutboundMessage::class, fn (DeliverOutboundMessage $released): bool => $released->messageId === $question->id
+        && $released->releasedByPrevious
+        && $released->delay === null);
 });
 
 test('an earlier reply still on its way holds the next one of its conversation', function (array $earlier) {
@@ -168,7 +173,7 @@ test('a reply that keeps waiting for an earlier one keeps holding the replies wr
     Queue::assertPushed(DeliverOutboundMessage::class, 2);
 });
 
-test('a long wait for an earlier reply checks again less and less often', function (int $previousWaits, int $delay) {
+test('a reply waiting for an earlier one checks again every few seconds', function (int $previousWaits) {
     Http::fake();
     Queue::fake();
     $conversation = ($this->attended)('14155550101');
@@ -179,14 +184,13 @@ test('a long wait for an earlier reply checks again less and less often', functi
 
     deliverFromQueue($job);
 
-    Queue::assertPushed(DeliverOutboundMessage::class, fn (DeliverOutboundMessage $retry): bool => $retry->delay === $delay
+    // A flat fallback: the end of the earlier delivery normally releases it first.
+    Queue::assertPushed(DeliverOutboundMessage::class, fn (DeliverOutboundMessage $retry): bool => $retry->delay === 3
         && $retry->orderWaits === $previousWaits + 1);
 })->with([
-    'first wait' => [0, 1],
-    'second wait' => [1, 2],
-    'third wait' => [2, 4],
-    'from then on' => [3, 5],
-    'after many waits' => [40, 5],
+    'first wait' => [0],
+    'second wait' => [1],
+    'after many waits' => [40],
 ]);
 
 test('only an earlier reply still expected to leave holds the next one; other conversations of the same number never wait', function (Closure $earlier) {
@@ -206,6 +210,8 @@ test('only an earlier reply still expected to leave holds the next one; other co
     'already accepted by Meta' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'accepted', 'whatsapp_message_id' => 'wamid.earlier'])],
     'failed' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'failed', 'error_code' => 'meta_131026'])],
     'ambiguous for longer than the job timeout (left for reconciliation)' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'sending', 'sending_started_at' => now()->subSeconds(DeliverOutboundMessage::TIMEOUT + 30)])],
+    'a text "sending" for longer than one send may take (its worker died)' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'sending', 'sending_started_at' => now()->subSeconds(DeliverOutboundMessage::textSendingHold() + 1)])],
+    'left unconfirmed after an ambiguous answer (never re-sent automatically)' => [fn (Conversation $conversation) => WhatsAppFixtures::outbound($conversation, ['status' => 'sending', 'sending_started_at' => now()->subSeconds(2), 'metadata' => ['delivery' => ['unconfirmed' => 'Tiempo de espera agotado.', 'unconfirmed_at' => now()->toIso8601String()]]])],
     'queued but forgotten for longer than the longest backoff' => [fn (Conversation $conversation) => tap(WhatsAppFixtures::outbound($conversation), fn (Message $message) => Message::query()->whereKey($message->id)->update(['updated_at' => now()->subMinutes(10)]))],
 ]);
 

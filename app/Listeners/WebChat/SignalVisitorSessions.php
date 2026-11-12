@@ -49,6 +49,26 @@ class SignalVisitorSessions implements ShouldQueue
 
     public function __construct(private VisitorCursor $cursors) {}
 
+    /**
+     * Only the events this listener could act on queue a job, decided from
+     * the event alone (no database access): accepted, delivered and read
+     * statuses, inbound messages and the conversation changes above. The
+     * channel (web chat or not) is checked inside the job.
+     */
+    public function shouldQueue(object $event): bool
+    {
+        if (config('broadcasting.default') === 'null') {
+            return false;
+        }
+
+        return match (true) {
+            $event instanceof MessageStatusChanged => in_array($event->status, self::MESSAGE_STATUSES, true),
+            $event instanceof MessageRecorded => $event->direction === MessageDirection::Inbound->value,
+            $event instanceof ConversationChanged => in_array(ConversationEventType::tryFrom($event->reason), self::CONVERSATION_REASONS, true),
+            default => true,
+        };
+    }
+
     public function handleStatusChanged(MessageStatusChanged $event): void
     {
         if (! in_array($event->status, self::MESSAGE_STATUSES, true)) {

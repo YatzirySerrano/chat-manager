@@ -249,7 +249,9 @@ function roleDescription(role: ManagedRole): string {
                         <TableHead class="hidden xl:table-cell"
                             >Usuarios</TableHead
                         >
-                        <TableHead>Estado</TableHead>
+                        <TableHead class="hidden sm:table-cell"
+                            >Estado</TableHead
+                        >
                         <TableHead class="pr-5 text-right">
                             <span class="sr-only">Acciones</span>
                         </TableHead>
@@ -281,7 +283,7 @@ function roleDescription(role: ManagedRole): string {
                                         class="size-4"
                                     />
                                 </span>
-                                <div class="min-w-0">
+                                <div class="min-w-0 overflow-hidden">
                                     <p
                                         class="flex flex-wrap items-center gap-1.5 font-medium text-foreground"
                                     >
@@ -300,6 +302,10 @@ function roleDescription(role: ManagedRole): string {
                                     >
                                         {{ roleDescription(role) }}
                                     </p>
+                                    <DeletedBadge
+                                        v-if="role.is_deleted"
+                                        class="mt-1 sm:hidden"
+                                    />
                                     <p
                                         class="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5 text-xs text-muted-foreground lg:hidden"
                                     >
@@ -356,7 +362,7 @@ function roleDescription(role: ManagedRole): string {
                                 {{ usersLabel(role) }}
                             </Link>
                         </TableCell>
-                        <TableCell>
+                        <TableCell class="hidden sm:table-cell">
                             <DeletedBadge v-if="role.is_deleted" />
                             <span v-else class="text-xs text-muted-foreground"
                                 >Activo</span

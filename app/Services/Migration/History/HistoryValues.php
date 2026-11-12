@@ -6,7 +6,6 @@ use App\Enums\MessageType;
 use App\Support\PhoneNumber;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
-use Throwable;
 
 /**
  * Normalization of the values read from Whaticket and WhatsApp exports:
@@ -40,6 +39,24 @@ class HistoryValues
         'd/m/Y H:i:s', 'd/m/Y H:i', 'd/m/Y, H:i:s', 'd/m/Y, H:i', 'd/m/Y',
         'd-m-Y H:i:s', 'd-m-Y H:i', 'd-m-Y', 'd.m.Y H:i:s', 'd.m.Y H:i', 'd.m.Y',
     ];
+
+    /**
+     * SQL dump null markers (mysqldump / SELECT … INTO OUTFILE "\\N", the
+     * literal "NULL" of DB tools) that a whole cell may hold.
+     *
+     * @var list<string>
+     */
+    public const NULL_MARKERS = ['\\N', 'NULL'];
+
+    /**
+     * A non-text cell (identifiers, numbers, dates, flags, file names,
+     * names) with SQL dump null markers read as empty. Never used for the
+     * message text, where "NULL" may be what someone actually wrote.
+     */
+    public function cell(?string $value): ?string
+    {
+        return $value === null || in_array(trim($value), self::NULL_MARKERS, true) ? null : $value;
+    }
 
     /**
      * A date of the source as UTC, or null when it cannot be read reliably.
@@ -79,13 +96,19 @@ class HistoryValues
             return CarbonImmutable::createFromTimestampUTC($seconds);
         }
 
-        // ISO 8601 with an explicit offset or Z.
-        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/', $value) === 1) {
-            try {
-                return CarbonImmutable::parse($value)->utc();
-            } catch (Throwable) {
-                return null;
-            }
+        // ISO 8601 or SQL dump dates with an explicit offset or Z, "T" or a
+        // space between date and time, optional fraction: PostgreSQL
+        // timestamptz ("2023-05-01 15:34:56.789+00"), "+hhmm", "+hh:mm".
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?\s*(Z|[+-]\d{2}(?::?\d{2})?)$/i', $value, $parts) === 1) {
+            $offset = strtoupper($parts[3]);
+            $offset = $offset === 'Z' ? '+00:00' : (strlen($offset) === 3 ? $offset.':00' : substr($offset, 0, 3).':'.substr($offset, -2));
+            $time = strlen($parts[2]) === 5 ? $parts[2].':00' : $parts[2];
+            $date = \DateTimeImmutable::createFromFormat('!Y-m-d H:i:sP', $parts[1].' '.$time.$offset);
+            $errors = \DateTimeImmutable::getLastErrors();
+
+            return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
+                ? CarbonImmutable::instance($date)->utc()
+                : null;
         }
 
         $value = (string) preg_replace('/\.\d+$/', '', $value);

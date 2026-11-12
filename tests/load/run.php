@@ -6,7 +6,7 @@
 |   php tests/load/run.php <scenario[:n]>[,<scenario[:n]>...]
 |
 |   scenarios: profile | webhooks[:total] | agents[:count] | websocket[:connections] | export
-|              | transfers[:count] | reconnect[:connections] | widget[:visitors]
+|              | transfers[:count] | reconnect[:connections] | widget[:visitors] | burst[:agents]
 |   e.g.       php tests/load/run.php profile,webhooks:2000
 |              php tests/load/run.php agents:10,agents:25
 |
@@ -145,7 +145,7 @@ $environment = [
 ];
 
 foreach ([
-    'WHATSAPP_WEBHOOK_RATE_LIMIT', 'WHATSAPP_SIMULATE_STATUSES', 'DB_QUEUE_RETRY_AFTER', 'REVERB_APP_RATE_LIMITING_ENABLED',
+    'WHATSAPP_WEBHOOK_RATE_LIMIT', 'WHATSAPP_SIMULATE_STATUSES', 'WHATSAPP_SIMULATE_LATENCY_MS', 'DB_QUEUE_RETRY_AFTER', 'REVERB_APP_RATE_LIMITING_ENABLED',
 ] as $passThrough) {
     if (getenv($passThrough) !== false) {
         $environment[$passThrough] = (string) getenv($passThrough);
@@ -857,6 +857,100 @@ $verify = function (array $run) use ($summarizeSeconds): array {
         ];
     }
 
+    if (! empty($expectations['bursts'])) {
+        // Per position in a burst: request → accepted (the HTTP request time
+        // of the scenario against the accepted_at stamp of the delivery), the
+        // simulated provider time and everything else ("internal").
+        $byPosition = [];
+        $outOfOrder = 0;
+        $notAccepted = 0;
+        $attemptsAboveOne = 0;
+        $orderWaits = [];
+        $gaps = [];
+        $startAfterPrevious = [];
+        $released = 0;
+        $claims = [];
+        $sample = [];
+
+        foreach ($expectations['bursts'] as $burst) {
+            $references = array_column($burst['references'], null, 'reference');
+            $rows = DB::table('messages')->whereIn('client_reference', array_keys($references))->orderBy('id')->get(['id', 'client_reference', 'status', 'delivery_attempts', 'metadata']);
+            $previousAcceptedMs = null;
+
+            foreach ($rows as $row) {
+                $timing = json_decode((string) $row->metadata, true)['delivery']['timing'] ?? null;
+                $acceptedMs = is_string($timing['accepted_at'] ?? null) ? (int) round(strtotime($timing['accepted_at']) * 1000 + (float) substr($timing['accepted_at'], 20, 3)) : null;
+
+                if ($acceptedMs === null) {
+                    $notAccepted++;
+
+                    continue;
+                }
+
+                if ($previousAcceptedMs !== null && $acceptedMs < $previousAcceptedMs) {
+                    $outOfOrder++;
+                }
+
+                $position = (int) $references[$row->client_reference]['position'];
+                $sentAtMs = (int) $references[$row->client_reference]['sent_at_ms'];
+                $total = $acceptedMs - $sentAtMs;
+                $provider = (int) ($timing['provider_ms'] ?? 0);
+
+                // Idle time between the earliest moment this reply could start
+                // (its request and the previous reply accepted) and its send.
+                if ($previousAcceptedMs !== null) {
+                    $gaps[] = $acceptedMs - max($previousAcceptedMs, $sentAtMs) - $provider;
+
+                    // When the worker started the attempt that sent it, after the previous one was accepted.
+                    if (is_string($timing['started_at'] ?? null)) {
+                        $startAfterPrevious[] = (int) round(strtotime($timing['started_at']) * 1000 + (float) substr($timing['started_at'], 20, 3)) - $previousAcceptedMs;
+                    }
+                }
+
+                $released += (int) ($timing['released_by_previous'] ?? 0);
+                $claims[] = (int) ($timing['claim_ms'] ?? 0);
+
+                // Timing of the first two bursts, message by message (stamps and durations only).
+                if (count($sample) < 10) {
+                    $sample[] = ['position' => $position, 'sent_at_ms' => $sentAtMs, ...array_intersect_key($timing, array_flip(['queued_at', 'started_at', 'accepted_at', 'wait_ms', 'provider_ms', 'order_waits', 'released_by_previous']))];
+                }
+
+                $previousAcceptedMs = $acceptedMs;
+                $byPosition[$position]['request_to_accepted_ms'][] = $total;
+                $byPosition[$position]['provider_ms'][] = $provider;
+                $byPosition[$position]['internal_ms'][] = $total - $provider;
+                $orderWaits[] = (int) ($timing['order_waits'] ?? 0);
+                $attemptsAboveOne += (int) $row->delivery_attempts > 1 ? 1 : 0;
+            }
+        }
+
+        ksort($byPosition);
+        $all = ['request_to_accepted_ms' => [], 'provider_ms' => [], 'internal_ms' => []];
+
+        foreach ($byPosition as $position => $series) {
+            foreach ($series as $name => $values) {
+                $all[$name] = [...$all[$name], ...$values];
+                $byPosition[$position][$name] = $summarizeSeconds($values);
+            }
+        }
+
+        $checks['burst'] = [
+            'bursts' => count($expectations['bursts']),
+            'messages' => array_sum(array_map(fn (array $burst): int => count($burst['references']), $expectations['bursts'])),
+            'not_accepted' => $notAccepted,
+            'accepted_out_of_order' => $outOfOrder,
+            'with_more_than_one_attempt' => $attemptsAboveOne,
+            'order_waits' => $summarizeSeconds($orderWaits),
+            'gap_after_previous_ms' => $summarizeSeconds($gaps),
+            'start_after_previous_accepted_ms' => $summarizeSeconds($startAfterPrevious),
+            'sent_by_released_job' => $released,
+            'claim_ms' => $summarizeSeconds($claims),
+            'sample' => $sample,
+            'all' => array_map($summarizeSeconds, $all),
+            'by_position' => $byPosition,
+        ];
+    }
+
     $events = DB::table('webhook_events')->where('id', '>', $baseline['webhook_events']);
     $processing = (clone $events)->whereNotNull('processed_at')->selectRaw('TIMESTAMPDIFF(SECOND, received_at, processed_at) AS seconds')->pluck('seconds')->map(fn ($value): int => (int) $value)->all();
     $checks['webhook_events'] = [
@@ -1155,6 +1249,7 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
         'transfers' => 'transfers.mjs',
         'reconnect' => 'reconnect.mjs',
         'widget' => 'widget.mjs',
+        'burst' => 'burst.mjs',
         default => $fail("Unknown scenario [{$name}]."),
     };
 
@@ -1167,6 +1262,7 @@ foreach (array_filter(array_map('trim', explode(',', $scenarioArgument))) as $to
             'transfers' => 'LOAD_TRANSFERS',
             'reconnect' => 'LOAD_RECONNECT_CONNECTIONS',
             'widget' => 'LOAD_WIDGET_VISITORS',
+            'burst' => 'LOAD_BURST_AGENTS',
         }] = $parameter;
     }
 

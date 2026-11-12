@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\ServiceRules;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -82,6 +83,10 @@ test('the category can be cleared and setting the same one records nothing', fun
 });
 
 test('who may classify a conversation', function (string $actor, string $conversation, int $status) {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $user = match ($actor) {
         'agent' => $this->agent,
         'supervisor' => $this->supervisor,
@@ -104,6 +109,18 @@ test('who may classify a conversation', function (string $actor, string $convers
     'a reader without any of the permissions' => ['reader', 'pending', 403],
     'someone of another department' => ['outsider', 'pending', 404],
 ]);
+
+test('a custom role that classifies through the confirmation permission keeps classifying while phase two is off', function () {
+    // Categories are phase one: the phase-two flag hides the confirmation
+    // itself, never the classifying it has always allowed.
+    $confirmer = conversationUser([Permission::ViewConversations, Permission::ConfirmConversationReady], DataScope::Departments, [$this->department]);
+
+    expect($confirmer->holdsPermission(Permission::ConfirmConversationReady))->toBeFalse();
+
+    setCategory($this, $confirmer, $this->pending, $this->billing->id)->assertStatus(302);
+
+    expect($this->pending->fresh()->category_id)->toBe($this->billing->id);
+});
 
 test('only an existing, active category can be chosen', function () {
     $deleted = ConversationCategory::factory()->inactive()->create(['name' => 'Antigua']);
@@ -132,6 +149,10 @@ test('the inbox row shows the category to everyone and the page offers the activ
 });
 
 test('the inbox filters by category and by readiness, and its counters follow', function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $this->pending->forceFill(['category_id' => $this->billing->id, 'readiness' => ConversationReadiness::NeedsInfo])->save();
     $this->mine->forceFill(['category_id' => $this->billing->id])->save();
     $other = Conversation::factory()->inDepartment($this->department)->create(['category_id' => $this->returns->id]);
@@ -163,6 +184,10 @@ function categoryAssignerWithoutExceptions(Department $department): User
 }
 
 test('a category that would let a waiting request be taken sooner needs the exception permission', function (array $departmentRules, array $categoryRules, array $attributes) {
+    // Phase-two behavior (FEATURE_PHASE_TWO); rules resolved before follow it too.
+    config(['features.phase_two' => true]);
+    app(ServiceRules::class)->flush();
+
     $this->department->forceFill(['service_rules' => $departmentRules])->save();
     $express = ConversationCategory::factory()->withServiceRules($categoryRules)->create(['name' => 'Exprés']);
     $this->pending->forceFill($attributes)->save();

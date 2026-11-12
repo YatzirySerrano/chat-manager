@@ -11,6 +11,7 @@ use App\Models\ConversationCategory;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\PlatformSettings;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
@@ -60,7 +61,7 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type ActivityPoint array{key: string, label: string, received: int, attended: int, first_response_seconds: int|null, first_response_samples: int}
  * @phpstan-type Activity array{granularity: 'hour'|'day'|'week'|'month', points: list<ActivityPoint>}
  * @phpstan-type ChannelRow array{channel: string|null, label: string, received: int, attended: int}
- * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'week'|'month', points: list<TrendPoint>}, activity: Activity, heatmap: array{max: int, cells: list<list<int>>}, backlog: Backlog, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>, by_category: list<BreakdownRow>, by_channel: list<ChannelRow>, response_trend: array<string, mixed>, sla: array<string, mixed>, productivity: array<string, mixed>}
+ * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'week'|'month', points: list<TrendPoint>}, activity: Activity, heatmap: array{max: int, cells: list<list<int>>}, backlog: Backlog, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>, by_category: list<BreakdownRow>, by_channel: list<ChannelRow>, response_trend: array<string, mixed>, sla: array<string, mixed>|null, productivity: array<string, mixed>|null}
  */
 class OperationalAnalytics
 {
@@ -87,7 +88,7 @@ class OperationalAnalytics
     public function report(User $viewer, AnalyticsFilters $filters): array
     {
         return $this->cache->remember(
-            "report:{$this->scope->fingerprint($viewer)}:{$filters->cacheKey()}:sla".implode('-', array_map('intval', $this->slaTargets())),
+            "report:{$this->scope->fingerprint($viewer)}:{$filters->cacheKey()}:sla".implode('-', array_map('intval', $this->slaTargets())).':p'.(int) Features::phaseTwo(),
             self::REPORT_TTL,
             fn (): array => $this->compute($viewer, $filters),
         );
@@ -118,8 +119,11 @@ class OperationalAnalytics
             'by_category' => $this->breakdown($viewer, $filters, 'category_id'),
             'by_channel' => $this->channelsOf($byConnection),
             'response_trend' => $this->responseTrend($viewer, $filters),
-            'sla' => $this->serviceLevels->compliance($viewer, $filters),
-            'productivity' => $this->productivity->report($viewer, $filters),
+            // Phase two (FEATURE_PHASE_TWO): SLA compliance from the response
+            // cycles and per-agent productivity; null while it is off (the
+            // per-agent metrics keep being computed, only hidden).
+            'sla' => Features::phaseTwo() ? $this->serviceLevels->compliance($viewer, $filters) : null,
+            'productivity' => Features::phaseTwo() ? $this->productivity->report($viewer, $filters) : null,
         ];
     }
 

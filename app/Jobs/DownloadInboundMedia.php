@@ -200,7 +200,7 @@ class DownloadInboundMedia implements ShouldQueue
                     'downloaded_at' => now(),
                 ])->save();
 
-                ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
+                ConversationChanged::dispatch($attachment->message->conversation_id, 'message', messageId: $attachment->message_id);
 
                 return true;
             });
@@ -281,7 +281,7 @@ class DownloadInboundMedia implements ShouldQueue
                 ...$this->diagnostics,
             ]);
 
-            ConversationChanged::dispatch($attachment->message->conversation_id, 'message');
+            ConversationChanged::dispatch($attachment->message->conversation_id, 'message', messageId: $attachment->message_id);
         }
     }
 }

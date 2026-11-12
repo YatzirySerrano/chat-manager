@@ -38,6 +38,9 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
     /** Meta codes of a media id it no longer has or cannot use. */
     private const STALE_MEDIA_CODES = [100, 131053];
 
+    /** Milliseconds the media upload of the last send() took; null when nothing was uploaded. */
+    public ?int $lastUploadMs = null;
+
     public function __construct(private MetaGraphClient $graph) {}
 
     public function name(): string
@@ -47,6 +50,7 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
 
     public function send(Message $message): SendResult
     {
+        $this->lastUploadMs = null;
         $message->loadMissing(['conversation.channelConnection', 'conversation.contact', 'replyTo', 'attachments']);
         $connection = $message->conversation->channelConnection;
 
@@ -277,9 +281,13 @@ class MetaCloudWhatsAppTransport implements WhatsAppTransport
             throw self::storageUnreadable();
         }
 
+        $uploadStartedAt = microtime(true);
+
         try {
             $mediaId = $this->graph->upload((string) $connection->access_token, (string) $connection->phone_number_id, $stream, $attachment->mime_type, $attachment->file_name ?? basename($attachment->path));
         } finally {
+            $this->lastUploadMs = ($this->lastUploadMs ?? 0) + max(0, (int) round((microtime(true) - $uploadStartedAt) * 1000));
+
             if (is_resource($stream)) {
                 fclose($stream);
             }

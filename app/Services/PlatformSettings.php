@@ -151,8 +151,9 @@ class PlatformSettings
                 'transfer_reason_required' => false,
                 // Control of new conversations (PendingAttention): an agent
                 // with customers waiting for their answer longer than the
-                // tolerance cannot accept another one.
-                'pending_block_enabled' => true,
+                // tolerance cannot accept another one. Off until an
+                // administrator turns it on (a stored value always wins).
+                'pending_block_enabled' => false,
                 'pending_block_after_minutes' => 10,
             ],
             // Platform level of the service rules (App\Services\ServiceRules is

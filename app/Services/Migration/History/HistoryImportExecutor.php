@@ -80,6 +80,13 @@ class HistoryImportExecutor
     private array $connections = [];
 
     /**
+     * Mapped source values whose target was deleted after mapping (never attached).
+     *
+     * @var array{connections: list<string>, departments: list<string>, agents: list<string>, tags: list<string>}
+     */
+    private array $staleMappings = ['connections' => [], 'departments' => [], 'agents' => [], 'tags' => []];
+
+    /**
      * @var array<int, bool> File id => whether it is a ZIP (its Chat.txt media is in it).
      */
     private array $zipFiles = [];
@@ -464,8 +471,8 @@ class HistoryImportExecutor
         $conversation->forceFill([
             'connection_id' => $connectionId,
             'contact_id' => $contactId,
-            'department_id' => $mappings['departments'][(string) $row->source_department] ?? null,
-            'assigned_user_id' => $mappings['agents'][(string) $row->source_agent] ?? null,
+            'department_id' => $this->mappedTarget($mappings, 'departments', $row->source_department),
+            'assigned_user_id' => $this->mappedTarget($mappings, 'agents', $row->source_agent),
             'status' => ConversationStatus::Closed,
             'last_message_at' => $lastMessage ?? $end,
             // Never set: it would open a 24 hour window (CustomerServiceWindow ignores imported rows anyway).
@@ -671,7 +678,7 @@ class HistoryImportExecutor
         $tagIds = [];
 
         foreach ($row->source_tags ?? [] as $tag) {
-            if (isset($mapping[(string) $tag])) {
+            if (isset($mapping[(string) $tag]) && ! in_array((string) $tag, $this->staleMappings['tags'], true)) {
                 $tagIds[(int) $mapping[(string) $tag]] = true;
             }
         }
@@ -689,13 +696,32 @@ class HistoryImportExecutor
     }
 
     /**
+     * Target of a department or agent mapping, or null when the source is
+     * unmapped or its target was deleted after mapping.
+     *
+     * @param  array<string, mixed>  $mappings
+     * @param  'departments'|'agents'  $key
+     */
+    private function mappedTarget(array $mappings, string $key, ?string $source): ?int
+    {
+        $target = $mappings[$key][(string) $source] ?? null;
+
+        return is_numeric($target) && ! in_array((string) $source, $this->staleMappings[$key], true) ? (int) $target : null;
+    }
+
+    /**
      * Resolve the connection mappings to existing connections.
      */
     private function prepareConnections(DataTransfer $batch): void
     {
         $this->connections = [];
+        $this->staleMappings = HistoryImportBatches::staleMappings($batch);
 
         foreach (HistoryImportBatches::mappings($batch)['connections'] as $source => $target) {
+            if (in_array((string) $source, $this->staleMappings['connections'], true)) {
+                continue;
+            }
+
             if ($target['target'] === HistoryImportBatches::TARGET_CONNECTION && is_int($target['connection_id'] ?? null)) {
                 $this->connections[(string) $source] = $target['connection_id'];
             }
@@ -721,6 +747,10 @@ class HistoryImportExecutor
         }
 
         $mapping = HistoryImportBatches::mappings($batch)['connections'][$source] ?? null;
+
+        if (in_array($source, $this->staleMappings['connections'], true)) {
+            throw new HistoryImportRowFailed('La conexión asignada a esta conversación se eliminó después de mapearla.');
+        }
 
         if ($mapping === null || $mapping['target'] !== HistoryImportBatches::TARGET_PLACEHOLDER) {
             throw new HistoryImportRowFailed('La conexión de esta conversación no tiene asignación.');

@@ -4,6 +4,7 @@ namespace App\Services\Sla;
 
 use App\Models\Conversation;
 use App\Models\ResponseCycle;
+use App\Support\Features;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Collection;
  * null. The browser classifies it («En tiempo», «Por vencer», «Vencida»)
  * from `warn_at` and `due_at` against the shared server clock, so nothing is
  * polled for a countdown.
+ *
+ * Null while phase two is off (App\Support\Features).
  *
  * Lists call load() once for the page (one query); of() falls back to one
  * query for a single conversation.
@@ -27,6 +30,10 @@ class SlaSnapshot
      */
     public static function load(Collection $conversations): void
     {
+        if (! Features::phaseTwo()) {
+            return;
+        }
+
         $conversations->loadMissing('openResponseCycle');
     }
 
@@ -35,6 +42,11 @@ class SlaSnapshot
      */
     public static function of(Conversation $conversation): ?array
     {
+        // SLA badges are phase two (FEATURE_PHASE_TWO): null while it is off.
+        if (! Features::phaseTwo()) {
+            return null;
+        }
+
         if (! $conversation->relationLoaded('openResponseCycle')) {
             $conversation->setRelation('openResponseCycle', $conversation->openResponseCycle()->first());
         }

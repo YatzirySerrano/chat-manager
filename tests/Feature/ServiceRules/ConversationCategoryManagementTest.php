@@ -12,6 +12,11 @@ use App\Models\User;
 use App\Services\ServiceRules;
 use Inertia\Testing\AssertableInertia as Assert;
 
+beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
+});
+
 test('the catalog is reserved to people who manage categories', function (DefaultRole $role) {
     $user = User::factory()->withRole($role)->create();
     $category = ConversationCategory::factory()->create();

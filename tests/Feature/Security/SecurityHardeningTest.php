@@ -161,6 +161,46 @@ test('a sign-in lockout is audited once per e-mail and minute, without the passw
         ->and($entry->user_id)->toBeNull();
 });
 
+test('password spraying from one address is throttled across e-mails while successful sign-ins never count', function () {
+    $colleagues = User::factory()->agent()->inDepartments($this->department)->count(3)->create();
+
+    // Successful sign-ins from the same office address spend no budget.
+    foreach ($colleagues as $colleague) {
+        $this->post(route('login.store'), ['email' => $colleague->email, 'password' => 'password'])->assertRedirect();
+        $this->assertAuthenticatedAs($colleague);
+        auth()->logout();
+    }
+
+    // 30 wrong passwords, each for a different e-mail (below the per-e-mail limit).
+    foreach (range(1, 30) as $attempt) {
+        $this->post(route('login.store'), ['email' => "victim{$attempt}@example.com", 'password' => 'Spring2026!'])->assertRedirect();
+    }
+
+    $this->post(route('login.store'), ['email' => 'victim31@example.com', 'password' => 'Spring2026!'])->assertTooManyRequests();
+    $this->assertGuest();
+
+    // Another address is unaffected.
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.20'])
+        ->post(route('login.store'), ['email' => $this->owner->email, 'password' => 'password'])
+        ->assertRedirect();
+    $this->assertAuthenticatedAs($this->owner);
+});
+
+test('a two-factor challenge left pending in the session does not exempt later failed sign-ins from the address budget', function () {
+    $guarded = User::factory()->agent()->withTwoFactor()->inDepartments($this->department)->create();
+
+    // A valid password for a two-factor account starts the challenge.
+    $this->post(route('login.store'), ['email' => $guarded->email, 'password' => 'password'])->assertRedirect(route('two-factor.login'));
+    expect(session()->has('login.id'))->toBeTrue();
+
+    // From that same session, wrong passwords for other e-mails still count.
+    foreach (range(1, 30) as $attempt) {
+        $this->post(route('login.store'), ['email' => "victim{$attempt}@example.com", 'password' => 'Spring2026!'])->assertRedirect();
+    }
+
+    $this->post(route('login.store'), ['email' => 'victim31@example.com', 'password' => 'Spring2026!'])->assertTooManyRequests();
+});
+
 test('the forgot password form does not reveal which e-mails have an account', function () {
     Notification::fake();
 

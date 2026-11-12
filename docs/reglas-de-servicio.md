@@ -5,6 +5,11 @@ confirmarse como completa** antes de atenderla y **cuándo y en qué orden** pue
 describe la base sobre la que se construyen el seguimiento de SLA, las reglas de aceptación de la cola, las analíticas
 y las alertas: la jerarquía, cada regla, las tablas nuevas, los permisos y el catálogo de categorías.
 
+> **Fase dos, detrás de `FEATURE_PHASE_TWO` (apagada por defecto).** Todo lo que describe este documento salvo el
+> catálogo de categorías y los dos objetivos de reporte (primera respuesta y resolución) es fase dos: ver
+> [Fase dos detrás de FEATURE_PHASE_TWO](#fase-dos-detrás-de-feature_phase_two). Con la variable apagada nada de esto
+> restringe, alerta ni se muestra; los datos y valores guardados se conservan.
+>
 > Estado: **entregado y en vigor.** Las reglas ya miden y ya restringen:
 >
 > - **SLA:** cada espera del cliente es un ciclo de respuesta (`response_cycles`) con el objetivo vigente congelado al
@@ -21,6 +26,27 @@ y las alertas: la jerarquía, cada regla, las tablas nuevas, los permisos y el c
 >
 > §1 a §8 describen la configuración, el modelo de datos y el resolutor; las limitaciones conocidas están al final de
 > cada parte.
+
+## Fase dos detrás de FEATURE_PHASE_TWO
+
+`config/features.php` → `'phase_two' => (bool) env('FEATURE_PHASE_TWO', false)`; el único lector es
+`App\Support\Features::phaseTwo()` (compatible con `config:cache`). Tras cambiar la variable:
+`php artisan config:cache`, `php artisan queue:restart` y `php artisan schedule:clear-cache`.
+
+Con la variable **apagada** (fase uno), aplicado en el servidor:
+
+| Función                                                                                               | Comportamiento                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rutas `conversations.readiness.update`, `departments.service-rules.update`, `categories.rules.update` | 404 (middleware `phase-two`)                                                                                                                                                                                                                                                                                                                                 |
+| Permisos `conversations.confirm-ready` y `conversations.override-queue-rules`                         | No se conceden (`User::holdsPermission()`); los roles los conservan                                                                                                                                                                                                                                                                                          |
+| `ServiceRules` (resolución)                                                                           | `intake.confirmation_required=false`, `queue.min_wait_minutes=0`, `queue.chronological_order=false`, `sla.first_response_minutes=null`, `sla.response_minutes=null`; lo guardado no se toca                                                                                                                                                                  |
+| Ciclos de respuesta                                                                                   | Se registran sin objetivo; un ciclo con plazo abierto antes termina sin incumplimiento, evento, auditoría ni alerta                                                                                                                                                                                                                                          |
+| `sla:evaluate`, `conversations:offer-waiting-queues`                                                  | No se programan (`->when()`) y son inertes si se ejecutan a mano. Al encender la variable los ciclos sin objetivo nunca alertan                                                                                                                                                                                                                              |
+| Monitor de SLA (`/attention?tab=sla`)                                                                 | 404; el resto de Seguimiento de atención sigue igual                                                                                                                                                                                                                                                                                                         |
+| Notificaciones `sla.warning` / `sla.breach`                                                           | No se ofrecen en preferencias; las existentes siguen en la campana sin enlace al monitor                                                                                                                                                                                                                                                                     |
+| Payloads (`ConversationResource`, vista previa, API v1)                                               | `readiness` = `ready`, `queued_at` = null, `sla` = null; la categoría se mantiene. `queued_at` se sigue escribiendo y ordenando la cola                                                                                                                                                                                                                      |
+| Configuración                                                                                         | Solo los objetivos de primera respuesta y de resolución; las claves `intake`, `queue`, `sla_alerts` y `sla.response/warning/business_hours` se ignoran (sus valores guardados se conservan)                                                                                                                                                                  |
+| Reportes                                                                                              | Sin cumplimiento de SLA por ciclos ni productividad por colaborador (`analytics.sla`/`productivity` = null, exportaciones `sla-compliance` y `agent-productivity` 404, sin «Vencidas ahora»); las métricas por colaborador se siguen calculando. Las claves de caché incluyen la variable. El cumplimiento heredado (objetivos de la plataforma) sigue igual |
 
 ## 1. Jerarquía y precedencia
 
@@ -455,7 +481,9 @@ interfaz, y todas están apagadas por defecto. La única implementación es `App
 
 El **límite de capacidad** y el **control de conversaciones pendientes de atención** son reglas del agente, anteriores
 a esta fase, con sus propios mecanismos ([bandejas-y-asignacion.md §4](bandejas-y-asignacion.md)). Se evalúan después y
-una excepción a las reglas de la cola **nunca** las omite.
+una excepción a las reglas de la cola **nunca** las omite. El control de conversaciones pendientes es fase uno pero llega
+**apagado por defecto** (`operations.pending_block_enabled = false` hasta que un administrador lo active; un valor
+guardado se respeta), sin relación con `FEATURE_PHASE_TWO`.
 
 ### Preparación de la solicitud (`readiness`)
 

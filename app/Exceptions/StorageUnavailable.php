@@ -27,7 +27,7 @@ class StorageUnavailable extends RuntimeException
     public const DEFAULT_MESSAGE = 'No fue posible guardar el archivo porque el almacenamiento de archivos no está disponible en este momento. Inténtalo de nuevo en unos minutos; si continúa, avisa a un administrador.';
 
     /**
-     * @param  string  $reason  Short technical code: not_configured, adapter_missing, local_not_allowed, public_disk, write_failed, verify_failed, read_failed.
+     * @param  string  $reason  Short technical code: not_configured, adapter_missing, local_not_allowed, public_disk, write_failed, verify_failed, read_failed; mounted disks also not_mounted, wrong_filesystem, marker_missing, marker_mismatch, probe_timeout, probe_failed.
      * @param  string  $disk  Name of the disk (never its credentials).
      */
     public function __construct(

@@ -415,18 +415,60 @@ async function loadNewer(): Promise<void> {
     }
 }
 
+/* The server answers at most this many messages per `ids` request. */
+const REFRESH_BATCH = 50;
+
 async function refreshMessages(ids: number[]): Promise<void> {
-    try {
-        const response = await refreshHttp.get(
-            messagesIndex.url(props.thread.id, { query: { ids } }),
-            {
-                onHttpException: () => false,
-            },
-        );
-        merge(response.data);
-    } catch {
-        // Retried on the next signal.
+    for (let start = 0; start < ids.length; start += REFRESH_BATCH) {
+        try {
+            const response = await refreshHttp.get(
+                messagesIndex.url(props.thread.id, {
+                    query: { ids: ids.slice(start, start + REFRESH_BATCH) },
+                }),
+                {
+                    onHttpException: () => false,
+                },
+            );
+            merge(response.data);
+        } catch {
+            // Retried on the next signal, reconnection or interval.
+            return;
+        }
     }
+}
+
+/*
+ * Edits, deletions and reactions only arrive as signals: after a
+ * disconnection (or while real-time is unavailable) the messages already
+ * shown are asked again, so a deleted message does not stay visible.
+ */
+function refreshLoaded(latestOnly = false): void {
+    const ids = messages.value
+        .filter((message) => message.kind !== 'system')
+        .map((message) => message.id)
+        .slice(latestOnly ? -REFRESH_BATCH : 0);
+
+    if (ids.length > 0) {
+        void refreshMessages(ids);
+    }
+}
+
+/*
+ * This page's URL with `around` set (or removed), keeping the chat list's
+ * search, filter and size.
+ */
+function threadUrl(around: number | null): string {
+    const query = new URLSearchParams(window.location.search);
+
+    if (around === null) {
+        query.delete('around');
+    } else {
+        query.set('around', String(around));
+    }
+
+    const search = query.toString();
+
+    return `${window.location.pathname}${search === '' ? '' : `?${search}`}`;
 }
 
 let lastReadSent = props.thread.me.last_read_message_id ?? 0;
@@ -570,7 +612,7 @@ async function jumpTo(messageId: number): Promise<void> {
         return;
     }
 
-    router.visit(`${window.location.pathname}?around=${messageId}`, {
+    router.visit(threadUrl(messageId), {
         preserveScroll: true,
     });
 }
@@ -603,12 +645,15 @@ useChannel(channelName, {
 
 const stopReconnect = onReconnect(() => {
     void loadNewer();
+    refreshLoaded();
     reloadThread();
 });
 
 useIntervalFn(() => {
     if (realtimeState.value !== 'connected' && visibility.value === 'visible') {
         void loadNewer();
+        // Periodically only the latest page (one request); all on reconnect.
+        refreshLoaded(true);
     }
 }, FALLBACK_INTERVAL_MS);
 
@@ -836,7 +881,7 @@ onBeforeUnmount(() => {
                 "
                 @click="
                     hasMoreAfter
-                        ? router.visit(`${$page.url.split('?')[0]}`)
+                        ? router.visit(threadUrl(null))
                         : scrollToBottom(true)
                 "
             >

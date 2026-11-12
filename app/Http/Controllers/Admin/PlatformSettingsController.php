@@ -10,6 +10,7 @@ use App\Models\Connection;
 use App\Models\Department;
 use App\Services\PlatformSettings;
 use App\Services\ServiceRules;
+use App\Support\Features;
 use App\Support\SaveToast;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -26,7 +27,10 @@ class PlatformSettingsController extends Controller
 
         return Inertia::render('admin/settings/Edit', [
             'settings' => $settings->all(),
-            'serviceRules' => $serviceRules->describe(null, null),
+            // Phase one (FEATURE_PHASE_TWO off): only the two report objectives.
+            'serviceRules' => Features::phaseTwo()
+                ? $serviceRules->describe(null, null)
+                : array_intersect_key($serviceRules->describe(null, null), array_flip(ServiceRules::PHASE_ONE_KEYS)),
             'timezones' => DateTimeZone::listIdentifiers(),
             'weekdays' => PlatformSettings::WEEKDAYS,
             'departments' => Department::query()

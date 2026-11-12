@@ -35,6 +35,11 @@ import type { TeamMessage } from '@/types/team-chat';
  * breaks kept, never HTML); mentions of current participants are only
  * emphasized. Files open through the authorized route. Reactions show who
  * reacted and toggle the viewer's own one.
+ *
+ * The «Reaccionar» and actions buttons appear on hover only with a mouse
+ * (fine pointer) on wide screens; they also appear when the row has focus
+ * (keyboard) or their menu is open, and are always visible on touch screens
+ * (phones and tablets), which have no hover.
  */
 const props = defineProps<{
     message: TeamMessage;
@@ -441,7 +446,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                     <Button
                         variant="ghost"
                         size="icon"
-                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-9 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
                         :class="
                             customColors && 'border bg-background shadow-xs'
                         "
@@ -478,7 +483,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                     <Button
                         variant="ghost"
                         size="icon"
-                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        class="size-7 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-9 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100"
                         :class="
                             customColors && 'border bg-background shadow-xs'
                         "

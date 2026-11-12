@@ -306,6 +306,9 @@ test('a conversation attended by two people counts for both but once in the dist
 });
 
 test('while conversations of the period lack their per-person rows the productivity says so instead of showing zeros', function () {
+    // The productivity display and export are phase two (FEATURE_PHASE_TWO).
+    config(['features.phase_two' => true]);
+
     $conversation = attributionTimeline();
     // Nobody worked on this one: it needs no per-person row and never counts as missing.
     Conversation::factory()->for($this->connection, 'channelConnection')->inDepartment($this->department)->create();

@@ -83,8 +83,8 @@ const props = defineProps<{
         description: string;
     }[];
     automation: DepartmentAutomation;
-    /** Service rules of the department with what it inherits (ServiceRules::describe()). */
-    serviceRules: ServiceRuleSet;
+    /** Service rules of the department with what it inherits (ServiceRules::describe()); null while phase two is off. */
+    serviceRules: ServiceRuleSet | null;
     can: {
         update: boolean;
         delete: boolean;
@@ -274,6 +274,7 @@ function confirmRemoval(): void {
         </div>
 
         <DepartmentServiceRulesCard
+            v-if="serviceRules"
             data-tour="department.service-rules"
             :department="department"
             :rules="serviceRules"

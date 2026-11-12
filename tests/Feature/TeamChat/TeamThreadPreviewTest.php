@@ -1,14 +1,21 @@
 <?php
 
 use App\Enums\ChatAppearancePreset;
+use App\Enums\Permission;
 use App\Events\Broadcasts\RealtimeSignal;
+use App\Events\TeamChat\Broadcasts\TeamChatUserSignal;
+use App\Events\TeamChat\Broadcasts\TeamThreadSignal;
+use App\Events\TeamChat\TeamMessagePosted;
 use App\Events\TeamChat\TeamThreadRead;
 use App\Models\ChatAppearance;
 use App\Models\Department;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Notifications\NotificationKind;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /*
@@ -113,4 +120,100 @@ test('previewing with personal colors creates no appearance and keeps the read p
     expect($writes)->toBe([])
         ->and(ChatAppearance::query()->sole()->is($default))->toBeTrue()
         ->and($this->thread->participationOf($this->ana)->last_read_message_id)->toBe($readBefore);
+});
+
+/**
+ * The viewer's stored notifications as they are now (kind, read state, count).
+ *
+ * @return list<array{kind: string, read_at: string|null, occurrences: int}>
+ */
+function teamPreviewNotificationSnapshot(User $user): array
+{
+    return DatabaseNotification::query()
+        ->where('notifiable_id', $user->id)
+        ->where('notifiable_type', $user->getMorphClass())
+        ->orderBy('id')
+        ->get()
+        ->map(fn (DatabaseNotification $notification): array => [
+            'kind' => (string) $notification->getAttribute('kind'),
+            'read_at' => $notification->read_at?->toIso8601String(),
+            'occurrences' => (int) $notification->getAttribute('occurrences'),
+        ])
+        ->all();
+}
+
+test('previewing neither reads nor clears the team chat message and mention notifications', function () {
+    $author = conversationUser([Permission::UseTeamChat]);
+    $reader = conversationUser([Permission::UseTeamChat]);
+    $group = TeamThread::factory()->withParticipants([$author, $reader])->create(['name' => 'Ventas']);
+
+    $plain = TeamMessage::factory()->in($group, $author)->create(['body' => 'Aviso normal']);
+    TeamMessagePosted::dispatch($group->id, $plain->id, $author->id, 'message');
+    $mention = TeamMessage::factory()->in($group, $author)->create(['body' => 'Hola', 'metadata' => ['mentions' => [$reader->id]]]);
+    TeamMessagePosted::dispatch($group->id, $mention->id, $author->id, 'message');
+
+    $before = teamPreviewNotificationSnapshot($reader);
+    expect(array_column($before, 'kind'))->toEqualCanonicalizing([NotificationKind::TeamChatMessage->value, NotificationKind::TeamChatMention->value])
+        ->and(array_column($before, 'read_at'))->toBe([null, null]);
+
+    $this->actingAs($reader)->getJson(route('team-chat.threads.preview', $group))->assertOk();
+
+    expect(teamPreviewNotificationSnapshot($reader))->toBe($before);
+});
+
+test('previewing many times dispatches no signal, sends no notification and changes nothing', function () {
+    $older = TeamMessage::factory()->in($this->thread, $this->ana)->create();
+    TeamMessage::factory()->count(2)->in($this->thread, $this->beto)->create();
+    $this->thread->participations()->where('user_id', $this->ana->id)->update(['last_read_message_id' => $older->id, 'muted' => true]);
+
+    $thread = $this->thread->fresh();
+    $threadBefore = $thread->only(['updated_at', 'last_message_id', 'last_message_at', 'archived_at']);
+    $participantBefore = $thread->participationOf($this->ana)->fresh()->only(['last_read_message_id', 'muted', 'left_at', 'role', 'updated_at']);
+
+    Event::fake([TeamThreadSignal::class, TeamChatUserSignal::class, TeamThreadRead::class]);
+    Notification::fake();
+
+    $responses = [];
+
+    foreach (range(1, 3) as $attempt) {
+        $responses[] = $this->actingAs($this->ana)
+            ->getJson(route('team-chat.threads.preview', $this->thread))
+            ->assertOk()
+            ->json();
+    }
+
+    // Not cumulative: every preview answers the same.
+    expect($responses[1])->toBe($responses[0])
+        ->and($responses[2])->toBe($responses[0]);
+
+    $thread = $this->thread->fresh();
+
+    expect($thread->only(['updated_at', 'last_message_id', 'last_message_at', 'archived_at']))->toEqual($threadBefore)
+        ->and($thread->participationOf($this->ana)->fresh()->only(['last_read_message_id', 'muted', 'left_at', 'role', 'updated_at']))->toEqual($participantBefore);
+
+    Event::assertNotDispatched(TeamThreadSignal::class);
+    Event::assertNotDispatched(TeamChatUserSignal::class);
+    Event::assertNotDispatched(TeamThreadRead::class);
+    Notification::assertNothingSent();
+});
+
+test('a former participant cannot preview the group', function () {
+    $group = TeamThread::factory()->withParticipants([$this->ana, $this->beto])->create(['name' => 'Turno noche']);
+    TeamMessage::factory()->in($group, $this->beto)->create(['body' => 'Después de que Ana salió']);
+    $group->participations()->where('user_id', $this->ana->id)->update(['left_at' => now()]);
+
+    $this->actingAs($this->ana)->getJson(route('team-chat.threads.preview', $group))
+        ->assertNotFound()
+        ->assertDontSee('Después de que Ana salió');
+});
+
+test('an archived group can still be previewed, read-only', function () {
+    $group = TeamThread::factory()->archived()->withParticipants([$this->ana, $this->beto])->create(['name' => 'Archivo']);
+    TeamMessage::factory()->in($group, $this->ana)->create(['body' => 'Historial conservado']);
+
+    $this->actingAs($this->ana)->getJson(route('team-chat.threads.preview', $group))
+        ->assertOk()
+        ->assertJsonPath('data.0.body', 'Historial conservado')
+        ->assertJsonPath('data.0.can.edit', false)
+        ->assertJsonPath('data.0.can.delete', false);
 });

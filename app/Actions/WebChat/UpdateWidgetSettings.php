@@ -20,8 +20,11 @@ use Throwable;
  * Saves the widget settings of a web chat connection. Nothing is written
  * (no save, no audit entry) when the settings stay the same. The avatar is
  * kept in the private media disk (verified write, MediaDisk) and only
- * ever served inlined; avatars saved before MEDIA_DISK changed are still
- * found on "local" (avatarDisk()).
+ * ever served inlined. The widget has no disk column: an avatar stored on
+ * a disk other than "local" is recorded as "{disk}:{path}" in avatar_path
+ * (avatarLocation()), so it keeps resolving from that disk after
+ * MEDIA_DISK changes; older values (a bare path) are looked up on the
+ * media disk, then on "local" (avatarDisk()).
  */
 class UpdateWidgetSettings
 {
@@ -34,7 +37,7 @@ class UpdateWidgetSettings
     public function handle(WebChatWidget $widget, array $data, User $actor): bool
     {
         $previousAvatar = $widget->avatar_path;
-        $previousDisk = $previousAvatar !== null ? self::avatarDisk($previousAvatar) : null;
+        $previous = $previousAvatar !== null ? self::avatarLocation($previousAvatar) : null;
         $storedAvatar = null;
 
         if ($data['avatar'] !== null) {
@@ -45,7 +48,8 @@ class UpdateWidgetSettings
             };
 
             try {
-                $storedAvatar = $this->mediaDisk->putFile((string) $data['avatar']->getRealPath(), 'web-chat/avatars', $widget->id.'-'.Str::random(16).'.'.$extension)['path'];
+                $stored = $this->mediaDisk->putFile((string) $data['avatar']->getRealPath(), 'web-chat/avatars', $widget->id.'-'.Str::random(16).'.'.$extension);
+                $storedAvatar = $stored['disk'] === 'local' ? $stored['path'] : $stored['disk'].':'.$stored['path'];
             } catch (StorageUnavailable $exception) {
                 $exception->report();
 
@@ -57,18 +61,18 @@ class UpdateWidgetSettings
             $changed = $this->save($widget, $data, $actor, $storedAvatar);
         } catch (Throwable $exception) {
             if (is_string($storedAvatar)) {
-                $this->mediaDisk->discard($this->mediaDisk->name(), $storedAvatar);
+                $this->mediaDisk->discard(...self::avatarLocation($storedAvatar));
             }
 
             throw $exception;
         }
 
         if (is_string($storedAvatar) && ! $changed) {
-            $this->mediaDisk->discard($this->mediaDisk->name(), $storedAvatar);
+            $this->mediaDisk->discard(...self::avatarLocation($storedAvatar));
         }
 
-        if ($changed && $previousAvatar !== null && $previousDisk !== null && $previousAvatar !== $widget->avatar_path) {
-            $this->mediaDisk->discard($previousDisk, $previousAvatar);
+        if ($changed && $previous !== null && $previousAvatar !== $widget->avatar_path) {
+            $this->mediaDisk->discard(...$previous);
         }
 
         return $changed;
@@ -114,9 +118,25 @@ class UpdateWidgetSettings
     }
 
     /**
-     * Disk that holds an existing avatar. The widget stores no disk name:
-     * an avatar saved before MEDIA_DISK changed is still on "local", so it
-     * is looked up there when the media disk does not have it.
+     * Disk and path of a stored avatar value: "{disk}:{path}" when the disk
+     * was recorded, else the old lookup (avatarDisk()). Generated paths
+     * ("web-chat/avatars/…") never contain a colon.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public static function avatarLocation(string $value): array
+    {
+        if (preg_match('/^([A-Za-z0-9_.-]+):(.+)$/', $value, $match) === 1) {
+            return [$match[1], $match[2]];
+        }
+
+        return [self::avatarDisk($value), $value];
+    }
+
+    /**
+     * Disk that holds an avatar saved without its disk name (before it was
+     * recorded): an avatar saved before MEDIA_DISK changed is still on
+     * "local", so it is looked up there when the media disk does not have it.
      */
     public static function avatarDisk(string $path): string
     {
@@ -143,7 +163,8 @@ class UpdateWidgetSettings
         }
 
         try {
-            $disk = Storage::disk(self::avatarDisk($path));
+            [$diskName, $path] = self::avatarLocation($path);
+            $disk = Storage::disk($diskName);
 
             return $disk->exists($path) ? $disk->get($path) : null;
         } catch (Throwable) {

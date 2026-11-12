@@ -111,6 +111,7 @@ class QueueOutboundMessage
         try {
             $message = DB::transaction(function () use ($conversation, $actor, $body, $clientReference, $attachment, $replyToMessageId, $inspected, $refusal, $stored, &$duplicate): Message {
                 $conversation = $this->lifecycle->lock($conversation);
+                $this->lifecycle->lockDepartment($conversation->department_id);
                 $actor = $this->lifecycle->authorize($actor, 'reply', $conversation);
 
                 $existing = Message::query()->where('client_reference', $clientReference)->first();
@@ -241,6 +242,7 @@ class QueueOutboundMessage
 
         return DB::transaction(function () use ($conversation, $token, $text, $clientReference, $fingerprint): array {
             $conversation = $this->lifecycle->lock($conversation);
+            $this->lifecycle->lockDepartment($conversation->department_id);
 
             // The reach was checked before the lock: a transfer committed
             // meanwhile may have taken the conversation out of it.

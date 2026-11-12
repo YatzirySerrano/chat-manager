@@ -15,8 +15,12 @@ return [
     |
     */
 
+    // Off by default: deploy/scripts/deploy.sh runs `npm run build` (no SSR
+    // bundle) and no SSR process is installed (deploy/systemd, supervisor).
+    // Enable only together with `npm run build:ssr` and a running
+    // `php artisan inertia:start-ssr` service.
     'ssr' => [
-        'enabled' => (bool) env('INERTIA_SSR_ENABLED', true),
+        'enabled' => (bool) env('INERTIA_SSR_ENABLED', false),
         'url' => 'http://127.0.0.1:13714',
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 

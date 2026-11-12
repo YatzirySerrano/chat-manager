@@ -30,6 +30,7 @@ class BroadcastMessageStatus implements ShouldQueue
 
     public function handle(MessageStatusChanged $event): void
     {
+        $startedAt = microtime(true);
         $conversation = Conversation::query()->find($event->conversationId);
 
         if ($conversation === null) {
@@ -69,6 +70,8 @@ class BroadcastMessageStatus implements ShouldQueue
                 'reason' => 'message_failed',
             ]);
         }
+
+        $this->logFanOut('message.status', $event->recordedAt ?? null, $startedAt);
     }
 
     /**

@@ -21,6 +21,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 */
 
 beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
     $this->travelTo(CarbonImmutable::parse('2026-11-09 16:00:00', 'UTC'));
     app(PlatformSettings::class)->update(['general' => ['timezone' => 'UTC']]);
 

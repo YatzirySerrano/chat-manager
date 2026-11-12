@@ -89,12 +89,15 @@ class AppServiceProvider extends ServiceProvider
             ->by('whatsapp-webhook:'.(string) $request->route('webhookKey')));
 
         // Meta app webhook (Messenger/Instagram): one fixed public URL, so the
-        // limits are per source address; invalid signatures are counted apart
-        // in MetaWebhookController. The media route is fetched by Meta's few
-        // crawler addresses, already protected by the URL signature.
+        // limits are per source address. These are only generous flood caps:
+        // wrong verify tokens and invalid signatures are counted apart in
+        // MetaWebhookController after the credential is checked, so bad
+        // requests can never get valid Meta calls refused. The media route is
+        // fetched by Meta's few crawler addresses, already protected by the
+        // URL signature.
         RateLimiter::for('meta-webhooks', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('services.meta.webhook_rate_limit_per_minute', 6000)))
             ->by('meta-webhook:'.$request->ip()));
-        RateLimiter::for('meta-webhook-verify', fn (Request $request): Limit => Limit::perMinute(30)
+        RateLimiter::for('meta-webhook-verify', fn (Request $request): Limit => Limit::perMinute(600)
             ->by('meta-webhook-verify:'.$request->ip()));
         RateLimiter::for('meta-media', fn (Request $request): Limit => Limit::perMinute(max(1, (int) config('services.meta.media_rate_limit_per_minute', 1200)))
             ->by('meta-media:'.$request->ip()));

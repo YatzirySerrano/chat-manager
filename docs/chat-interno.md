@@ -14,13 +14,14 @@ muestra el total de mensajes sin leer (los chats silenciados no suman).
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `team_threads`           | `type` (`direct`/`group`), `name`, `description`, `direct_key`, `created_by_user_id`, `archived_at`, `archived_by_user_id`, `last_message_id`, `last_message_at` | `direct_key` = `"{idMenor}:{idMayor}"`, único: **un solo chat privado por pareja**, también si ambos lo abren a la vez. Los hilos nunca se borran.         |
 | `team_participants`      | `team_thread_id`, `user_id`, `role` (`member`/`admin`), `joined_at`, `left_at`, `added_by_user_id`, `removed_by_user_id`, `last_read_message_id`, `muted`        | Único por hilo y persona. Salir o ser retirado pone `left_at` (la fila queda como historial); volver a entrar la reutiliza.                                |
-| `team_messages`          | `team_thread_id`, `user_id`, `kind` (`message`/`system`), `body`, `metadata`, `reply_to_message_id`, `edited_at`, `deleted_at`                                   | Nunca se borran físicamente. `system` registra cambios del grupo visibles para todos.                                                                      |
+| `team_messages`          | `team_thread_id`, `user_id`, `kind` (`message`/`system`), `body`, `metadata`, `reply_to_message_id`, `client_reference`, `edited_at`, `deleted_at`               | Nunca se borran físicamente. `system` registra cambios del grupo visibles para todos. `client_reference`: llave de idempotencia, única por autor.          |
 | `team_attachments`       | `team_message_id`, `disk`, `path`, `original_name`, `mime_type`, `kind`, `size_bytes`, `sha256`, `purged_at`                                                     | El archivo vive en disco privado; la base solo guarda metadatos.                                                                                           |
 | `team_message_reactions` | `team_message_id`, `user_id`, `emoji`                                                                                                                            | Único por mensaje, persona y emoji (reaccionar dos veces no duplica). `emoji` con intercalación binaria (`utf8mb4_bin`). Se borran al eliminar el mensaje. |
 
 Todas las llaves foráneas son `restrictOnDelete`/`nullOnDelete`: no hay borrados en cascada. Migraciones:
 `2026_10_22_025230..025233_create_team_*_table.php` y `2026_10_22_162857_create_team_message_reactions_table.php`
-(aditivas). Las menciones se guardan en `team_messages.metadata.mentions` (ids), sin tabla propia.
+(aditivas), y `2026_11_11_181505_add_client_reference_to_team_messages_table.php` (columna nula + índice único
+`(user_id, client_reference)`). Las menciones se guardan en `team_messages.metadata.mentions` (ids), sin tabla propia.
 
 Código: `app/Models/TeamChat`, `app/Actions/TeamChat`, `app/Services/TeamChat`, `app/Policies/TeamChat`,
 `app/Http/Controllers/TeamChat`, `app/Http/Requests/TeamChat`, `app/Events/TeamChat`, `app/Listeners/TeamChat`,
@@ -86,6 +87,16 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   reactivarse. Los hilos nunca se eliminan.
 - **Mensajes**: texto multilínea (≤ `TEAM_CHAT_MESSAGE_MAX_LENGTH`, 4000), Enter envía y Shift+Enter agrega línea,
   emojis rápidos, responder a un mensaje, editar los propios (marca «Editado») y eliminarlos.
+- **Envío idempotente**: cada mensaje lleva `client_reference` (UUID generado por el navegador; opcional para clientes
+  antiguos). Si la respuesta se pierde (sin conexión, error 5xx) el compositor conserva el borrador y la misma
+  referencia y avisa «No se pudo confirmar si tu mensaje se envió. Vuelve a enviarlo: si ya había llegado, no se
+  duplicará.»; el reintento del mismo mensaje responde 200 con el mensaje guardado (`replayed: true`) sin guardarlo,
+  emitirlo ni notificarlo otra vez, y sin volver a escribir sus archivos. Cambiar el texto, los archivos o la respuesta
+  lo convierte en un mensaje nuevo con otra referencia; un rechazo (4xx, validación) o una subida cancelada también.
+  La referencia es única por autor: usarla en otro chat responde 422 en `client_reference`. Un reintento de quien ya
+  no participa responde 404, como cualquier envío.
+- **Citas aisladas por hilo**: `reply_to_message_id` solo acepta mensajes del mismo hilo y `ids[]` del historial solo
+  devuelve mensajes del hilo de la URL; quien salió de un grupo no puede citar ni pedir sus mensajes desde otro chat.
 - **Menciones (@)**, solo en grupos: al escribir `@` el compositor sugiere a los demás participantes activos (flechas,
   Enter/Tab para elegir, Esc para cerrar). Se envían los **ids** elegidos (`mentions[]`, máximo `max_mentions` = 20),
   no se interpreta el texto por nombre porque los nombres no son únicos; antes de enviar se descartan las menciones
@@ -114,7 +125,12 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - **Eliminar un mensaje** (solo su autor): borra su texto y sus archivos para todos, de forma irrecuperable; queda la
   marca «Mensaje eliminado» para no romper el orden ni las respuestas (ADR-TC-3).
 - **Historial**: paginación por cursor (`before`/`after`, 30 por página) estable aunque lleguen mensajes nuevos;
-  `?around={id}` abre el hilo centrado en un mensaje (resultados de búsqueda, saltar a la respuesta).
+  `?around={id}` abre el hilo centrado en un mensaje (resultados de búsqueda, saltar a la respuesta). Saltar a una cita
+  no cargada o «Ir al final» conservan la búsqueda, el filtro y el tamaño de la lista (`search`, `filter`, `limit`).
+- **Pantallas táctiles**: los botones «Reaccionar» y «Acciones del mensaje» solo se ocultan hasta pasar el cursor con
+  ratón en pantallas anchas; con el foco del teclado o el menú abierto se muestran, y en teléfonos y tabletas táctiles
+  están siempre visibles. En la lista, el botón «Vista previa» también es visible en pantallas táctiles (además de
+  mantener pulsado).
 - **No leídos**: por hilo y total (badge del menú y encabezado). El marcador de lectura solo avanza; se actualiza al
   ver el final del chat con la pestaña visible **y la ventana con foco** (fase 5.2.1: una ventana visible junto a otra
   aplicación ya no marca como leído). Los mensajes propios, los de sistema y los eliminados no cuentan.
@@ -136,8 +152,17 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 
 ## Adjuntos
 
-- Disco privado `TEAM_CHAT_DISK` (por omisión `local` = `storage/app/private`), ruta `team-chat/{aaaa}/{mm}/{uuid}`
-  sin extensión ni nombre original. Compatible con cualquier disco privado tipo S3.
+- **Almacenamiento (desde 2026-11-11):** los archivos nuevos se guardan con `MediaDisk`, en el mismo disco privado que
+  los adjuntos de WhatsApp (`MEDIA_DISK`), ruta `team-chat/{aaaa}/{mm}/{uuid}` sin extensión ni nombre original. Cada
+  escritura se verifica (resultado, existencia y tamaño) y el disco queda registrado en `team_attachments.disk`. Si el
+  almacenamiento no está listo (disco externo incompleto, `MEDIA_DISK_REQUIRED` con disco local, disco público) o la
+  escritura falla, el mensaje **no se guarda** y la respuesta es 503 `{code: "storage_unavailable"}` con «No fue
+  posible guardar el archivo porque el almacenamiento de archivos no está disponible…»; nunca se guarda en otro disco
+  en silencio. Un mensaje solo de texto no depende del almacenamiento. Los archivos cuentan en el uso y la cuota del
+  disco de medios.
+- **`TEAM_CHAT_DISK` (obsoleto para archivos nuevos):** solo se conserva por compatibilidad. Los archivos guardados
+  antes en ese disco se siguen sirviendo y borrando desde el disco que registra cada fila, así que ese disco debe
+  seguir configurado (y privado) mientras existan; el chequeo de privacidad de `app:preflight` lo sigue revisando.
 - Validación del **contenido real** con `finfo` (nunca el tipo que declara el navegador) y coherencia con la extensión.
   Permitidos: JPEG, PNG, GIF, WebP, PDF, TXT/LOG, CSV, Word/Excel/PowerPoint (97 y OOXML), OpenDocument texto/hoja,
   MP3, OGG, M4A y MP4. Nunca HTML, SVG, scripts ni ejecutables. Los OOXML/ODF que `finfo` reporta como ZIP se aceptan solo
@@ -160,8 +185,10 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` y CSP con `sandbox` (salvo la vista previa de PDF, porque los navegadores no muestran un PDF dentro de un documento aislado). No hay URLs públicas ni
   permanentes. Nombre mostrado saneado (sin rutas, comillas ni caracteres de control). SHA-256 guardado.
 - Si el archivo falta en disco, la descarga responde 404 y se registra una advertencia (sin datos del archivo).
-- Al eliminar el mensaje el archivo se borra del disco (después del commit) y el adjunto queda con `purged_at`.
-- Respaldo: incluir `storage/app/private/team-chat` (o el bucket configurado) junto con la base de datos.
+- Al eliminar el mensaje el archivo se borra del disco que registra el adjunto (después del commit; un fallo del
+  almacenamiento se registra y no deshace la eliminación) y el adjunto queda con `purged_at`.
+- Respaldo: incluir `team-chat/` del disco de medios (bucket o `storage/app/private`) y, si hay archivos anteriores,
+  el disco `TEAM_CHAT_DISK`, junto con la base de datos.
 
 ## Rutas (todas bajo `auth` + `verified`)
 
@@ -206,7 +233,13 @@ Las cargas útiles son solo IDs (nunca texto ni nombres de archivo). Flujo: acci
 `BroadcastTeamChatActivity` → `TeamThreadSignal` / `TeamChatUserSignal` (cola `realtime`) → el cliente vuelve a
 pedir datos a endpoints que autorizan otra vez. Los cambios de membresía emiten además `UserAccessChanged`
 (`team-chat.membership`) para que el cliente re-autorice sus canales. Sin Reverb, la lista se refresca cada 20 s y el
-chat abierto consulta mensajes nuevos cada 15 s; al reconectar se recupera lo perdido. Ver [tiempo-real.md](tiempo-real.md).
+chat abierto consulta mensajes nuevos cada 15 s; al reconectar se recupera lo perdido: los mensajes nuevos **y** el
+estado actual de los ya mostrados (ediciones, eliminaciones y reacciones ocurridas sin conexión; `ids[]` en lotes de
+50). Sin tiempo real, la consulta de cada 15 s también refresca los 50 mensajes mostrados más recientes. Ver [tiempo-real.md](tiempo-real.md).
+
+Pruebas de envío y resiliencia (2026-11-11): `tests/Feature/TeamChat/{TeamMessagesTest,TeamAttachmentsTest,TeamThreadPreviewTest}.php`
+y `tests/e2e/chat-interno-envio.mjs` (`E2E_REVERB=1`; tiempo real entre dos personas, reintento tras respuesta perdida,
+refresco al reconectar, salto a cita con filtros, tableta táctil 768 px, teléfono 390 px y ratón).
 
 ## Auditoría
 

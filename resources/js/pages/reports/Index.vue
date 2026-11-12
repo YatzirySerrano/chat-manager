@@ -53,6 +53,7 @@ import {
     formatNumber,
     granularityNoun,
 } from '@/composables/useChartTheme';
+import { useFeatures } from '@/composables/useFeatures';
 import { usePermissions } from '@/composables/usePermissions';
 import { inboxLink } from '@/lib/analyticsLinks';
 import { formatDuration } from '@/lib/format';
@@ -124,14 +125,25 @@ function changeGranularity(granularity: AnalyticsGranularity): void {
 
 /* ---------- Views of the page (kept in the URL hash, so a link opens the same view) */
 
-const views = [
+const allViews = [
     { key: 'resumen', label: 'Resumen' },
     { key: 'productividad', label: 'Productividad' },
     { key: 'sla', label: 'Cumplimiento de SLA' },
     { key: 'desgloses', label: 'Desgloses' },
 ] as const;
 
-type ViewKey = (typeof views)[number]['key'];
+type ViewKey = (typeof allViews)[number]['key'];
+
+/* Productivity and SLA compliance are phase two: the server sends neither while it is off. */
+const { phaseTwo } = useFeatures();
+
+const views = computed(() =>
+    allViews.filter(
+        (item) =>
+            phaseTwo.value ||
+            (item.key !== 'productividad' && item.key !== 'sla'),
+    ),
+);
 
 const view = ref<ViewKey>('resumen');
 
@@ -156,7 +168,8 @@ function onTabKeydown(event: KeyboardEvent, index: number): void {
     }
 
     event.preventDefault();
-    const next = views[(index + step + views.length) % views.length];
+    const next =
+        views.value[(index + step + views.value.length) % views.value.length];
 
     if (next) {
         selectView(next.key);
@@ -166,7 +179,7 @@ function onTabKeydown(event: KeyboardEvent, index: number): void {
 
 onMounted(() => {
     const hash = window.location.hash.replace('#', '');
-    const match = views.find((item) => item.key === hash);
+    const match = views.value.find((item) => item.key === hash);
 
     if (match) {
         view.value = match.key;
@@ -926,6 +939,7 @@ const loadingCards = [
                                     :data-kpi="card.key"
                                 />
                                 <KpiCard
+                                    v-if="analytics.sla"
                                     label="Tiempo de respuesta por mensaje del cliente"
                                     :icon="MessageCircleReply"
                                     :value="

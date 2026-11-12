@@ -3,6 +3,7 @@
 namespace App\Listeners\Realtime;
 
 use App\Support\Queues;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Queue settings shared by the real-time listeners: they run off the request
@@ -39,5 +40,21 @@ trait QueuesRealtimeSignals
     public function shouldQueue(object $event): bool
     {
         return config('broadcasting.default') !== 'null';
+    }
+
+    /**
+     * Debug log of the fan-out of one signal: queue_wait_ms (event raised →
+     * listener started) and publish_ms (listener started → published).
+     * Identifiers only (the job's log context); never content.
+     */
+    protected function logFanOut(string $signal, ?float $recordedAt, float $startedAt): void
+    {
+        $finishedAt = microtime(true);
+
+        Log::debug('Real-time signal published.', [
+            'signal' => $signal,
+            'queue_wait_ms' => $recordedAt === null ? null : max(0, (int) round(($startedAt - $recordedAt) * 1000)),
+            'publish_ms' => max(0, (int) round(($finishedAt - $startedAt) * 1000)),
+        ]);
     }
 }

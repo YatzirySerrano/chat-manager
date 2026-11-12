@@ -14,6 +14,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Support\Features;
 use App\Support\FullTextTerms;
 use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Builder;
@@ -233,9 +234,10 @@ class ConversationInboxQuery
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
             'category' => is_numeric($validated['category'] ?? null) ? (int) $validated['category'] : null,
-            'readiness' => ($readiness = $validated['readiness'] ?? null) instanceof ConversationReadiness
+            // Preparation state: a phase-two filter, ignored while it is off (App\Support\Features).
+            'readiness' => ! Features::phaseTwo() ? null : (($readiness = $validated['readiness'] ?? null) instanceof ConversationReadiness
                 ? $readiness->value
-                : (is_string($readiness) && ConversationReadiness::tryFrom($readiness) !== null ? $readiness : null),
+                : (is_string($readiness) && ConversationReadiness::tryFrom($readiness) !== null ? $readiness : null)),
         ];
     }
 

@@ -99,18 +99,66 @@ const badgeClass = computed(() =>
 
 const open = ref(false);
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
+/*
+ * Hovering with a mouse previews the detail; a tap, a click or Enter
+ * toggles it (PopoverTrigger). Touch and pen never open it on "hover" and
+ * focus alone does not open it, so a tap or Enter never opens and closes
+ * it in the same gesture.
+ */
+let openedByHover = false;
+let pointerInside = false;
 
-function show(): void {
+function cancelClose(): void {
     if (closeTimer !== null) {
         clearTimeout(closeTimer);
         closeTimer = null;
     }
-
-    open.value = true;
 }
 
-function hideSoon(): void {
-    closeTimer = setTimeout(() => (open.value = false), 150);
+function hoverIn(event: PointerEvent): void {
+    pointerInside = true;
+
+    if (event.pointerType !== 'mouse') {
+        return;
+    }
+
+    cancelClose();
+
+    if (!open.value) {
+        openedByHover = true;
+        open.value = true;
+    }
+}
+
+function hoverOut(event: PointerEvent): void {
+    pointerInside = false;
+
+    if (event.pointerType !== 'mouse' || !openedByHover) {
+        return;
+    }
+
+    cancelClose();
+    closeTimer = setTimeout(() => {
+        open.value = false;
+        openedByHover = false;
+    }, 150);
+}
+
+function setOpen(value: boolean): void {
+    cancelClose();
+
+    // A click on a badge already previewed by hover pins it open.
+    if (!value && openedByHover && pointerInside) {
+        openedByHover = false;
+
+        return;
+    }
+
+    open.value = value;
+
+    if (!value) {
+        openedByHover = false;
+    }
 }
 </script>
 
@@ -143,7 +191,7 @@ function hideSoon(): void {
             >SLA: {{ label }}</span
         >
 
-        <Popover v-if="variant === 'badge'" v-model:open="open">
+        <Popover v-if="variant === 'badge'" :open="open" @update:open="setOpen">
             <PopoverTrigger as-child>
                 <button
                     type="button"
@@ -154,10 +202,8 @@ function hideSoon(): void {
                         )
                     "
                     :aria-label="`SLA: ${label}. ${timeText}. Ver detalle`"
-                    @mouseenter="show"
-                    @mouseleave="hideSoon"
-                    @focus="show"
-                    @blur="hideSoon"
+                    @pointerenter="hoverIn"
+                    @pointerleave="hoverOut"
                 >
                     <component
                         :is="icon"
@@ -171,8 +217,8 @@ function hideSoon(): void {
             <PopoverContent
                 align="start"
                 class="w-72 p-3"
-                @mouseenter="show"
-                @mouseleave="hideSoon"
+                @pointerenter="hoverIn"
+                @pointerleave="hoverOut"
                 @open-auto-focus.prevent
             >
                 <p class="text-sm font-semibold">

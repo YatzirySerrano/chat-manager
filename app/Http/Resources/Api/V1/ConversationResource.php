@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources\Api\V1;
 
+use App\Enums\ConversationReadiness;
 use App\Models\Conversation;
+use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -52,8 +54,10 @@ class ConversationResource extends JsonResource
                 'id' => $this->category->id,
                 'name' => $this->category->name,
             ],
-            'readiness' => $this->readiness->value,
-            'queued_at' => $this->queued_at?->toIso8601String(),
+            // Phase two (FEATURE_PHASE_TWO): while it is off every request
+            // reads as ready and the queue clock is not exposed.
+            'readiness' => Features::phaseTwo() ? $this->readiness->value : ConversationReadiness::Ready->value,
+            'queued_at' => Features::phaseTwo() ? $this->queued_at?->toIso8601String() : null,
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

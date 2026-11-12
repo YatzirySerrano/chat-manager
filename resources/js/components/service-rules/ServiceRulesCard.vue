@@ -73,6 +73,19 @@ const blockIcons: Record<ServiceRuleBlockId, LucideIcon> = {
 
 const isPlatform = computed(() => props.level === 'platform');
 
+/*
+ * Only the rules the server sent: while phase two is off the platform
+ * level receives just the two report objectives.
+ */
+const blocks = computed(() =>
+    serviceRuleBlocks
+        .map((block) => ({
+            ...block,
+            keys: block.keys.filter((key) => key in props.rules),
+        }))
+        .filter((block) => block.keys.length > 0),
+);
+
 /**
  * Rules the level is customizing. Kept apart from the value so that
  * emptying a number while typing does not flip the row back to "inherits".
@@ -160,7 +173,7 @@ function emptyHint(key: ServiceRuleKey): string | null {
 <template>
     <div class="grid gap-4" data-service-rules :data-level="level">
         <section
-            v-for="block in serviceRuleBlocks"
+            v-for="block in blocks"
             :key="block.id"
             class="overflow-hidden rounded-lg border"
             :aria-labelledby="`${idPrefix}-block-${block.id}`"

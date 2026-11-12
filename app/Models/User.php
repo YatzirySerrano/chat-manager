@@ -6,6 +6,7 @@ use App\Concerns\DeletesLogically;
 use App\Enums\AgentAvailability;
 use App\Enums\DataScope;
 use App\Enums\Permission;
+use App\Support\Features;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -280,6 +281,22 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      * any other role.
      */
     public function holdsPermission(Permission $permission): bool
+    {
+        // Permissions of the phase-two service rules are never exercised
+        // while FEATURE_PHASE_TWO is off; roles keep them for when it is on.
+        if ($permission->requiresPhaseTwo() && ! Features::phaseTwo()) {
+            return false;
+        }
+
+        return $this->holdsStoredPermission($permission);
+    }
+
+    /**
+     * Like holdsPermission() but ignoring the phase-two flag: for phase-one
+     * abilities (categorizing) that a phase-two permission also granted
+     * before the flag existed, so custom roles keep them.
+     */
+    public function holdsStoredPermission(Permission $permission): bool
     {
         $scope = $this->dataScope();
 

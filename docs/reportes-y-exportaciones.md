@@ -12,6 +12,11 @@ Relacionados: [bandejas-y-asignacion.md](bandejas-y-asignacion.md) (ciclo de vid
 
 ## 1. Qué ofrece
 
+> **Fase dos:** la vista Productividad, la vista Cumplimiento de SLA (por ciclos), el gráfico de SLA del panel, la
+> columna «Vencidas ahora» y las exportaciones `agent-productivity` y `sla-compliance` solo existen con
+> `FEATURE_PHASE_TWO=true` ([reglas de servicio](reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two)).
+> Apagada (por defecto), el servidor no las calcula ni las exporta (404); el resto de reportes es fase uno.
+
 | Pantalla            | Ruta                                                                                   | Permiso                                                               | Contenido                                                                                                                                                                                                       |
 | ------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Reportes operativos | `GET /reports` (`reports.index`)                                                       | `reports.view`                                                        | Cuatro vistas: **Resumen** (volumen, evolución, tiempos, demanda), **Productividad** (por colaborador), **Cumplimiento de SLA** y **Desgloses** (departamento, categoría, conexión, canal, responsable actual). |

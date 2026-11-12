@@ -9,6 +9,8 @@ use App\Models\ConversationMetric;
 use App\Models\Department;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -52,10 +54,34 @@ class ConversationMetricsCalculator
      */
     public const ACCEPTED_STATUSES = ['accepted', 'sent', 'delivered', 'read'];
 
+    /**
+     * Seconds the per-conversation lock lives: longer than the refresh job
+     * may run (RefreshConversationMetrics::$timeout), so a slow
+     * recomputation never loses it to the next one.
+     */
+    public const LOCK_SECONDS = 90;
+
+    /** Seconds a recomputation waits for the one in progress. */
+    public const LOCK_WAIT_SECONDS = 10;
+
     public function __construct(
         private BusinessHoursCalendar $calendar,
         private AgentAttributionCalculator $attribution,
     ) {}
+
+    /**
+     * recompute() holding the conversation's lock, so two recomputations
+     * of the same conversation (the refresh job, a rebuild) never run at
+     * once: one that read older data could otherwise overwrite the row (and
+     * the per-person rows) written by a fresher one.
+     *
+     * @throws LockTimeoutException
+     */
+    public function recomputeExclusively(int $conversationId, bool $refreshBusinessTime = false): ?ConversationMetric
+    {
+        return Cache::lock("analytics:conversation:{$conversationId}", self::LOCK_SECONDS)
+            ->block(self::LOCK_WAIT_SECONDS, fn (): ?ConversationMetric => $this->recompute($conversationId, $refreshBusinessTime));
+    }
 
     /**
      * Recompute and store the row; returns null (and removes any stale row)

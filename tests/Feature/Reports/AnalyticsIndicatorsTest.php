@@ -34,6 +34,8 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 */
 
 beforeEach(function () {
+    // Phase-two behavior (FEATURE_PHASE_TWO): docs/reglas-de-servicio.md#fase-dos-detrás-de-feature_phase_two.
+    config(['features.phase_two' => true]);
     // Wednesday 2026-10-21 12:00 local time (18:00 UTC).
     $this->now = CarbonImmutable::parse('2026-10-21 12:00', 'America/Mexico_City');
     $this->travelTo($this->now->utc());

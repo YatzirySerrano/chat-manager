@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Enums\AttachmentDeliveryMethod;
+use App\Enums\ConnectionChannel;
 use App\Enums\ConversationEventType;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
@@ -16,6 +18,7 @@ use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Messaging\ChannelTransports;
 use App\Services\Meta\ConnectionMonitor;
+use App\Services\Meta\MetaCloudWhatsAppTransport;
 use App\Services\Meta\MetaErrorCatalog;
 use App\Services\Meta\MetaGraphException;
 use App\Services\Meta\SendResult;
@@ -61,16 +64,34 @@ use Throwable;
  * Order per conversation: replies of one conversation leave in the order they
  * were written (by id). Right before the claim, a message whose earlier
  * outbound message of the same conversation is still queued, or still being
- * sent, waits: the job is dispatched again a moment later (1, 2, 4 and then
- * every 5 seconds; a new job, so the wait never uses up the attempts of this
- * one), and the waiting message's updated_at is refreshed so it keeps holding
- * the ones written after it for as long as it waits. Only the same
- * conversation waits; other conversations of the same number are never held
- * back. The wait is bounded: an earlier message whose queued row was not
- * refreshed for longer than the longest backoff (its job was lost), or
- * "sending" for longer than the job timeout (an ambiguous outcome waiting for
- * reconciliation), no longer holds the next ones. Without an
- * asynchronous queue (sync), messages are delivered as they come.
+ * sent, waits: the job is dispatched again a moment later (every
+ * ORDER_WAIT_DELAY seconds; a new job, so the wait never uses up the
+ * attempts of this one), and the waiting message's updated_at is refreshed
+ * so it keeps holding the ones written after it for as long as it waits.
+ * That re-check is only the fallback: as soon as a delivery ends (accepted,
+ * failed, blocked or left unconfirmed) it dispatches at once a job for the
+ * next queued message of its conversation (releaseNext()), so a burst of
+ * replies leaves one right after the other instead of polling. Two jobs for
+ * the same message are harmless: only the one that claims it (queued →
+ * sending, under the row lock) sends; the other finds it claimed and stops.
+ * A job dispatched that way never starts a second wait chain, and a message
+ * put back in the queue after a retryable error is claimed only once its
+ * backoff ended (delivery.retry_not_before), whichever job of it comes first.
+ * Only the same conversation waits; other conversations of the same number
+ * are never held back. The wait is bounded: an earlier message whose queued
+ * row was not refreshed for longer than the longest backoff (its job was
+ * lost), "sending" for longer than one attempt may take (TEXT_SENDING_HOLD
+ * for messages without a file, the job timeout otherwise: its worker died),
+ * or left unconfirmed after an ambiguous answer (never re-sent
+ * automatically: it either already reached Meta or never will), no longer
+ * holds the next ones. Without an asynchronous queue (sync), messages are
+ * delivered as they come.
+ *
+ * Queue: deliveries that must upload a file to the provider first (a native
+ * attachment without an upload id, outside the web chat) run on the media
+ * queue, whose workers allow the long upload (worker --timeout 180 s >
+ * TIMEOUT); text, templates, links and already uploaded files stay on the
+ * messages queue, so an upload never holds back replies or webhooks.
  * Known limits: the order only sees messages already committed. Jobs are
  * dispatched after commit, but if two people reply to the same conversation
  * at once and the earlier row (lower id) commits after the later job has
@@ -79,8 +100,12 @@ use Throwable;
  * A wait longer than LONG_ORDER_WAITS checks is logged once to spot them.
  *
  * Timing: an accepted message keeps in metadata.delivery.timing when each
- * stage happened (UTC, milliseconds) and how long it took, to measure the
- * outbound path. It holds no personal data and no credentials.
+ * stage happened (UTC, milliseconds) and how long it took (request_received_at
+ * of the HTTP request that wrote it, queued_at, started_at, claimed_at, the
+ * provider request and answer, accepted_at; wait_ms, claim_ms, provider_ms,
+ * upload_ms for a file uploaded during the attempt, total_ms, order_waits and
+ * whether a finished earlier delivery released it), to measure the outbound
+ * path. It holds no personal data and no credentials.
  */
 class DeliverOutboundMessage implements ShouldQueue
 {
@@ -104,17 +129,73 @@ class DeliverOutboundMessage implements ShouldQueue
     /** Times this delivery waited for an earlier message of its conversation. */
     public int $orderWaits = 0;
 
-    /** Longest pause (seconds) between two checks of a delivery waiting for an earlier one. */
-    private const int MAX_ORDER_WAIT_DELAY = 5;
+    /** Start of the HTTP request that queued the message (Unix time with microseconds), when it came from one. */
+    public ?float $requestReceivedAt = null;
 
-    /** Waits (about one minute) after which a delivery held by an earlier message is logged. */
+    /**
+     * Dispatched by the end of the previous delivery of the conversation
+     * (releaseNext()): it never starts a wait chain of its own, the job
+     * queued with the message keeps that role.
+     */
+    public bool $releasedByPrevious = false;
+
+    /**
+     * Pause (seconds) between two checks of a delivery waiting for an earlier
+     * one. Only a fallback: the end of the earlier delivery releases it at once.
+     */
+    private const int ORDER_WAIT_DELAY = 3;
+
+    /** Waits (about 45 seconds) after which a delivery held by an earlier message is logged. */
     private const int LONG_ORDER_WAITS = 15;
+
+    /**
+     * Seconds a message without a file may stay "sending" (no provider id)
+     * and still hold the next ones: POST /messages (Graph timeout plus the
+     * connection timeout) and a margin. Longer means its worker died.
+     */
+    private const int TEXT_SENDING_MARGIN = 15;
+
+    /** @var list<MessageType> Types delivered with a file (uploaded before the send). */
+    private const array MEDIA_TYPES = [MessageType::Image, MessageType::Video, MessageType::Audio, MessageType::Document, MessageType::Sticker];
 
     public function __construct(public int $messageId, ?float $queuedAt = null)
     {
-        $this->onQueue(Queues::name(Queues::MESSAGES));
+        $this->onQueue(Queues::name(self::uploadsMedia($messageId) ? Queues::MEDIA : Queues::MESSAGES));
         $this->tries = self::maxAttempts() + 1;
         $this->queuedAt = $queuedAt ?? microtime(true);
+        $this->requestReceivedAt = self::requestStart();
+    }
+
+    /**
+     * Whether delivering the message starts with uploading its file to the
+     * provider: a native attachment (not a download link) that has no upload
+     * id yet, on a channel other than the web chat (whose transport only
+     * accepts the message). One indexed lookup when the job is created.
+     */
+    public static function uploadsMedia(int $messageId): bool
+    {
+        return Message::query()
+            ->whereKey($messageId)
+            ->whereIn('type', array_map(fn (MessageType $type): string => $type->value, self::MEDIA_TYPES))
+            ->whereHas('attachments', fn (Builder $attachment) => $attachment
+                ->where('delivery_method', AttachmentDeliveryMethod::Native)
+                ->whereNull('whatsapp_media_id'))
+            ->whereHas('conversation.channelConnection', fn (Builder $connection) => $connection->where('channel', '!=', ConnectionChannel::WebChat))
+            ->exists();
+    }
+
+    /**
+     * Start of the current HTTP request; null in the console and in workers.
+     */
+    private static function requestStart(): ?float
+    {
+        if (app()->runningInConsole()) {
+            return null;
+        }
+
+        $start = $_SERVER['REQUEST_TIME_FLOAT'] ?? null;
+
+        return is_float($start) || is_int($start) ? (float) $start : null;
     }
 
     public static function maxAttempts(): int
@@ -137,10 +218,21 @@ class DeliverOutboundMessage implements ShouldQueue
     {
         $startedAt = microtime(true);
         $mustWait = false;
-        $message = $this->claim($window, $lifecycle, $mustWait);
+        $blocked = false;
+        $message = $this->claim($window, $lifecycle, $mustWait, $blocked);
 
         if ($mustWait) {
-            $this->waitForEarlierMessage();
+            // A job released by the previous delivery leaves the waiting to
+            // the chain of the job queued with the message.
+            if (! $this->releasedByPrevious) {
+                $this->waitForEarlierMessage();
+            }
+
+            return;
+        }
+
+        if ($blocked) {
+            $this->releaseNext();
 
             return;
         }
@@ -160,10 +252,14 @@ class DeliverOutboundMessage implements ShouldQueue
             $result = $transport->send($message);
         } catch (WhatsAppTransportUnavailable $exception) {
             $this->failMessage($lifecycle, $message, 'transport_unavailable', $exception->getMessage());
+            $this->releaseNext($message->conversation_id);
 
             return;
         } catch (MetaGraphException $exception) {
-            $this->handleProviderFailure($lifecycle, $monitor, $message, $exception);
+            // Put back in the queue (retryable), the message still holds the next ones.
+            if ($this->handleProviderFailure($lifecycle, $monitor, $message, $exception)) {
+                $this->releaseNext($message->conversation_id);
+            }
 
             return;
         } catch (Throwable $exception) {
@@ -174,11 +270,16 @@ class DeliverOutboundMessage implements ShouldQueue
                 'exception' => $exception::class,
             ]);
             $this->leaveUnconfirmed($message, "Ocurrió un error inesperado durante el envío; se espera la confirmación de {$connection->channel->label()}.");
+            $this->releaseNext($message->conversation_id);
 
             return;
         }
 
-        $this->accept($message, $result, $monitor, $this->timing($message, $startedAt, $claimedAt, $requestStartedAt, microtime(true)));
+        $respondedAt = microtime(true);
+        $uploadMs = $transport instanceof MetaCloudWhatsAppTransport ? $transport->lastUploadMs : null;
+
+        $this->accept($message, $result, $monitor, $this->timing($message, $startedAt, $claimedAt, $requestStartedAt, $respondedAt, $uploadMs));
+        $this->releaseNext($message->conversation_id);
     }
 
     /**
@@ -196,16 +297,64 @@ class DeliverOutboundMessage implements ShouldQueue
     }
 
     /**
-     * @param  bool  $mustWait  Set when the message must wait for an earlier one of its conversation.
+     * Dispatch at once (no delay) a job for the next queued outbound message
+     * of the conversation, now that this delivery ended. It goes to that
+     * message's own queue (media or messages); its claim still checks the
+     * order and the status under the row lock, so a message is never sent
+     * twice nor before an earlier one that is still pending.
      */
-    private function claim(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, bool &$mustWait): ?Message
+    private function releaseNext(?int $conversationId = null): void
     {
-        return DB::transaction(function () use ($window, $lifecycle, &$mustWait): ?Message {
+        if (! $this->runsOnAsynchronousQueue()) {
+            return;
+        }
+
+        $conversationId ??= Message::query()->whereKey($this->messageId)->value('conversation_id');
+
+        if (! is_int($conversationId)) {
+            return;
+        }
+
+        $next = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('direction', MessageDirection::Outbound)
+            ->where('status', MessageStatus::Queued)
+            ->where('id', '>', $this->messageId)
+            ->orderBy('id')
+            ->first(['id', 'created_at']);
+
+        if ($next === null) {
+            return;
+        }
+
+        $job = new self($next->id, $next->created_at === null ? null : (float) $next->created_at->getTimestamp());
+        $job->releasedByPrevious = true;
+        $job->requestReceivedAt = null;
+
+        dispatch($job->onConnection($this->connection));
+    }
+
+    /**
+     * @param  bool  $mustWait  Set when the message must wait for an earlier one of its conversation.
+     * @param  bool  $blocked  Set when the checks refused (failed) the message.
+     */
+    private function claim(CustomerServiceWindow $window, ConversationLifecycle $lifecycle, bool &$mustWait, bool &$blocked): ?Message
+    {
+        return DB::transaction(function () use ($window, $lifecycle, &$mustWait, &$blocked): ?Message {
             $message = Message::query()->lockForUpdate()->find($this->messageId);
 
             if ($message === null || $message->status !== MessageStatus::Queued || $message->direction !== MessageDirection::Outbound) {
                 return null;
             }
+
+            // Put back after a retryable error: the job released with the
+            // backoff claims it; an earlier one (released by the previous
+            // delivery, or a wait check) leaves it alone.
+            if ($this->inRetryBackoff($message)) {
+                return null;
+            }
+
+            $blocked = true;
 
             $conversation = Conversation::query()->with('channelConnection')->findOrFail($message->conversation_id);
 
@@ -245,6 +394,8 @@ class DeliverOutboundMessage implements ShouldQueue
                 }
             }
 
+            $blocked = false;
+
             if ($this->runsOnAsynchronousQueue() && $this->hasEarlierPendingMessage($message)) {
                 // Still alive while it waits: a later message of the conversation
                 // must keep counting it as pending, however long the wait lasts.
@@ -263,7 +414,15 @@ class DeliverOutboundMessage implements ShouldQueue
                 'delivery_attempts' => $message->delivery_attempts + 1,
                 'error_code' => null,
                 'error_message' => null,
-            ])->save();
+            ]);
+
+            if (isset($message->metadata['delivery']['retry_not_before'])) {
+                $metadata = $message->metadata;
+                unset($metadata['delivery']['retry_not_before']);
+                $message->metadata = $metadata;
+            }
+
+            $message->save();
 
             MessageStatusChanged::dispatch($message->id, $message->conversation_id, MessageStatus::Sending->value, MessageStatus::Queued->value);
 
@@ -284,7 +443,9 @@ class DeliverOutboundMessage implements ShouldQueue
     {
         $backoff = array_map('intval', (array) config('whatsapp.delivery.backoff', [10, 30, 90, 300]));
         $queuedSince = now()->subSeconds(max([0, ...$backoff]) + 60);
-        $sendingSince = now()->subSeconds($this->timeout);
+        $sendingSince = now()->subSeconds(self::TIMEOUT);
+        $textSendingSince = now()->subSeconds(self::textSendingHold());
+        $mediaTypes = array_map(fn (MessageType $type): string => $type->value, self::MEDIA_TYPES);
 
         return Message::query()
             ->where('conversation_id', $message->conversation_id)
@@ -292,20 +453,60 @@ class DeliverOutboundMessage implements ShouldQueue
             ->where('id', '<', $message->id)
             ->where(fn (Builder $pending) => $pending
                 ->where(fn (Builder $queued) => $queued->where('status', MessageStatus::Queued)->where('updated_at', '>=', $queuedSince))
-                ->orWhere(fn (Builder $sending) => $sending->where('status', MessageStatus::Sending)->whereNull('whatsapp_message_id')->where('sending_started_at', '>=', $sendingSince)))
+                ->orWhere(fn (Builder $sending) => $sending
+                    ->where('status', MessageStatus::Sending)
+                    ->whereNull('whatsapp_message_id')
+                    // Left unconfirmed after an ambiguous answer: never re-sent
+                    // automatically, so it no longer holds the next ones.
+                    ->whereNull('metadata->delivery->unconfirmed_at')
+                    ->where(fn (Builder $recent) => $recent
+                        ->where(fn (Builder $media) => $media->whereIn('type', $mediaTypes)->where('sending_started_at', '>=', $sendingSince))
+                        ->orWhere(fn (Builder $text) => $text->whereNotIn('type', $mediaTypes)->where('sending_started_at', '>=', $textSendingSince)))))
             ->exists();
     }
 
     /**
+     * Longest time (seconds) a message without a file may legitimately stay
+     * "sending": one POST /messages (Graph timeout plus connection timeout)
+     * and a margin.
+     */
+    public static function textSendingHold(): int
+    {
+        $graph = max(1, (int) config('services.meta.timeout'));
+
+        return min(self::TIMEOUT, $graph + min(5, $graph) + self::TEXT_SENDING_MARGIN);
+    }
+
+    /**
+     * Whether the message was put back in the queue after a retryable error
+     * and its backoff has not ended yet (one second of tolerance for the
+     * queue's clock granularity).
+     */
+    private function inRetryBackoff(Message $message): bool
+    {
+        $notBefore = $message->metadata['delivery']['retry_not_before'] ?? null;
+
+        if (! is_string($notBefore) || $notBefore === '') {
+            return false;
+        }
+
+        try {
+            return CarbonImmutable::parse($notBefore)->subSecond()->isFuture();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Try again shortly with a new job (same message, same queue), keeping
-     * when the delivery was first queued. The pause grows with each wait
-     * (1, 2, 4 and then 5 seconds) so a long wait, such as an earlier message
-     * in backoff while Meta is degraded, does not poll every second.
+     * when the delivery was first queued. A flat, short pause: the end of the
+     * earlier delivery normally releases the message first (releaseNext()).
      */
     private function waitForEarlierMessage(): void
     {
         $next = new self($this->messageId, $this->queuedAt);
         $next->orderWaits = $this->orderWaits + 1;
+        $next->requestReceivedAt = $this->requestReceivedAt;
 
         if ($next->orderWaits === self::LONG_ORDER_WAITS) {
             Log::info('Outbound delivery held by an earlier message of its conversation.', [
@@ -314,15 +515,7 @@ class DeliverOutboundMessage implements ShouldQueue
             ]);
         }
 
-        dispatch($next->onConnection($this->connection)->onQueue($this->queue)->delay(self::orderWaitDelay($this->orderWaits)));
-    }
-
-    /**
-     * Seconds before checking again, after the given number of earlier waits.
-     */
-    private static function orderWaitDelay(int $previousWaits): int
-    {
-        return min(self::MAX_ORDER_WAIT_DELAY, 2 ** min(max(0, $previousWaits), 3));
+        dispatch($next->onConnection($this->connection)->onQueue($this->queue)->delay(self::ORDER_WAIT_DELAY));
     }
 
     /**
@@ -330,11 +523,12 @@ class DeliverOutboundMessage implements ShouldQueue
      *
      * @return array<string, int|string>
      */
-    private function timing(Message $message, float $startedAt, float $claimedAt, float $requestStartedAt, float $respondedAt): array
+    private function timing(Message $message, float $startedAt, float $claimedAt, float $requestStartedAt, float $respondedAt, ?int $uploadMs): array
     {
         $milliseconds = fn (float $from, float $to): int => max(0, (int) round(($to - $from) * 1000));
 
         return array_filter([
+            'request_received_at' => $this->requestReceivedAt === null ? null : self::stamp($this->requestReceivedAt),
             'queued_at' => $this->queuedAt === null ? null : self::stamp($this->queuedAt),
             'started_at' => self::stamp($startedAt),
             'claimed_at' => self::stamp($claimedAt),
@@ -343,8 +537,10 @@ class DeliverOutboundMessage implements ShouldQueue
             'wait_ms' => $this->queuedAt === null ? null : $milliseconds($this->queuedAt, $startedAt),
             'claim_ms' => $milliseconds($startedAt, $claimedAt),
             'provider_ms' => $milliseconds($requestStartedAt, $respondedAt),
+            'upload_ms' => $uploadMs,
             'attempt' => $message->delivery_attempts,
             'order_waits' => $this->orderWaits,
+            'released_by_previous' => $this->releasedByPrevious ? 1 : null,
         ], fn (int|string|null $value): bool => $value !== null);
     }
 
@@ -445,13 +641,16 @@ class DeliverOutboundMessage implements ShouldQueue
         }
     }
 
-    private function handleProviderFailure(ConversationLifecycle $lifecycle, ConnectionMonitor $monitor, Message $message, MetaGraphException $exception): void
+    /**
+     * @return bool Whether the delivery ended (failed or left unconfirmed), false when it was put back in the queue.
+     */
+    private function handleProviderFailure(ConversationLifecycle $lifecycle, ConnectionMonitor $monitor, Message $message, MetaGraphException $exception): bool
     {
         if ($exception->isRetryable()) {
             if (self::attemptsInCycle($message) < self::maxAttempts()) {
                 $this->requeue($message, $exception);
 
-                return;
+                return false;
             }
 
             $code = match ($exception->kind) {
@@ -462,13 +661,13 @@ class DeliverOutboundMessage implements ShouldQueue
 
             $this->failMessage($lifecycle, $message, $code, $exception->getMessage().' Se agotaron los reintentos automáticos.');
 
-            return;
+            return true;
         }
 
         if ($exception->isAmbiguous()) {
             $this->leaveUnconfirmed($message, $exception->getMessage());
 
-            return;
+            return true;
         }
 
         $connection = $message->conversation->channelConnection;
@@ -489,6 +688,8 @@ class DeliverOutboundMessage implements ShouldQueue
         };
 
         $this->failMessage($lifecycle, $message, $code, $exception->getMessage());
+
+        return true;
     }
 
     /**
@@ -497,7 +698,10 @@ class DeliverOutboundMessage implements ShouldQueue
      */
     private function requeue(Message $message, MetaGraphException $exception): void
     {
-        $requeued = DB::transaction(function () use ($message, $exception): bool {
+        $backoff = (array) config('whatsapp.delivery.backoff', [10, 30, 90, 300]);
+        $delay = (int) ($backoff[self::attemptsInCycle($message) - 1] ?? end($backoff) ?: 60);
+
+        $requeued = DB::transaction(function () use ($message, $exception, $delay): bool {
             $current = Message::query()->lockForUpdate()->find($message->id);
 
             if ($current === null || $current->status !== MessageStatus::Sending || $current->whatsapp_message_id !== null) {
@@ -511,6 +715,7 @@ class DeliverOutboundMessage implements ShouldQueue
                     ...(is_array($current->metadata['delivery'] ?? null) ? $current->metadata['delivery'] : []),
                     'last_retryable_error' => Str::limit($exception->getMessage(), 300, ''),
                     'last_retryable_at' => now()->toIso8601String(),
+                    'retry_not_before' => now()->addSeconds($delay)->toIso8601String(),
                 ]],
             ])->save();
 
@@ -520,9 +725,9 @@ class DeliverOutboundMessage implements ShouldQueue
         });
 
         if ($requeued) {
-            $backoff = (array) config('whatsapp.delivery.backoff', [10, 30, 90, 300]);
-            $delay = (int) ($backoff[self::attemptsInCycle($message) - 1] ?? end($backoff) ?: 60);
-
+            // The job now carries this message again, so it must keep its own
+            // wait chain should an earlier reply be pending when it returns.
+            $this->releasedByPrevious = false;
             $this->release($delay);
         }
     }

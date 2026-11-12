@@ -57,6 +57,9 @@ const PUBLIC_ROUTES = [
     // Meta app webhook and callbacks: authenticated by Meta's signature (signed_request / X-Hub-Signature-256).
     'webhooks.meta.verify',
     'webhooks.meta.receive',
+    // Internal endpoints of the WhatsApp Web service: authenticated by its HMAC signature (answer 401 without it).
+    'internal.whatsapp-web.events',
+    'internal.whatsapp-web.media',
     'meta.deauthorize',
     'meta.data-deletion',
     'meta.data-deletion.status',

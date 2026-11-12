@@ -1,2 +1,7 @@
+# Only the sign-in page is public; the rest of the platform requires a session.
 User-agent: *
-Disallow:
+Allow: /$
+Allow: /login$
+Allow: /og-image.png
+Allow: /build/
+Disallow: /

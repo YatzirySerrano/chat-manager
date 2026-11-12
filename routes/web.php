@@ -3,7 +3,9 @@
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/dashboard')->name('home');
+// Guests (and the crawlers that build link previews) go straight to the
+// public sign-in page instead of bouncing through the dashboard.
+Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'))->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

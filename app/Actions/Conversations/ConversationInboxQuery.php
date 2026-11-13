@@ -103,8 +103,9 @@ class ConversationInboxQuery
     public const VIEW_QUEUE = 'queue';
 
     /**
-     * Orderings of the list: latest activity (default), pending first then
-     * latest activity, or longest waiting first.
+     * Orderings of the list: longest waiting first (default: the oldest request
+     * is the one to take next), latest activity, or pending first then
+     * latest activity.
      */
     public const SORT_PRIORITY = 'priority';
 
@@ -230,7 +231,7 @@ class ConversationInboxQuery
             'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
             'tags' => $this->tagIds($validated),
             'tag_match' => ($validated['tag_match'] ?? null) === self::TAG_MATCH_ALL ? self::TAG_MATCH_ALL : self::TAG_MATCH_ANY,
-            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::SORT_RECENT,
+            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT], true) ? (string) $validated['sort'] : self::SORT_OLDEST,
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
             'category' => is_numeric($validated['category'] ?? null) ? (int) $validated['category'] : null,
@@ -394,7 +395,7 @@ class ConversationInboxQuery
     public function handle(User $actor, array $filters): Builder
     {
         $status = $filters['status'];
-        $sort = $filters['sort'] ?? self::SORT_RECENT;
+        $sort = $filters['sort'] ?? self::SORT_OLDEST;
 
         return $this->filtered($actor, $filters)
             ->when($status === 'active', fn (Builder $query) => $query->notClosed())

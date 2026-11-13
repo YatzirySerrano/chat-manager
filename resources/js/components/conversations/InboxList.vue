@@ -403,11 +403,11 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         });
     }
 
-    if (filters.sort !== 'recent') {
+    if (filters.sort !== 'oldest') {
         chips.push({
             key: 'sort',
             label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
-            clear: () => (filters.sort = 'recent'),
+            clear: () => (filters.sort = 'oldest'),
         });
     }
 
@@ -488,7 +488,7 @@ function query(): Record<string, string | string[]> {
         }
     }
 
-    if (state.sort !== 'recent') {
+    if (state.sort !== 'oldest') {
         result.sort = state.sort;
     }
 
@@ -595,7 +595,7 @@ function clearFilters(): void {
         channel: ALL,
         tags: [],
         tagMatch: 'any',
-        sort: 'recent',
+        sort: 'oldest',
         searchIn: 'contact',
         unread: false,
         category: ALL,

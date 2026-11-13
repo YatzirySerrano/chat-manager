@@ -1,9 +1,16 @@
 import type { ViewerChatAppearance } from '@/types';
 
-/** What a preview shows of a file, never the file itself. */
+/**
+ * What a preview shows of a file: its name and, for images, video and
+ * audio the viewer may already open in the chat, the file itself.
+ */
 export type ChatPreviewAttachment = {
     kind: 'image' | 'sticker' | 'audio' | 'video' | 'document' | 'other';
     label: string;
+    /** Where the image (its thumbnail), video or audio loads from; absent: only the name is shown. */
+    src?: string | null;
+    /** The full file, opened in a new tab from an image. */
+    href?: string | null;
 };
 
 /**

@@ -36,8 +36,9 @@ import type { ChatColors } from '@/types';
 
 /**
  * Floating preview of a chat (customer conversation or internal chat): its
- * latest messages, with their author, time and a safe representation of
- * each file (an icon and its name; files are never loaded here). Looking at
+ * latest messages, with their author, time and their files: images, video
+ * and audio are shown in place when the chat gives their address, anything
+ * else as an icon and its name. Looking at
  * it changes nothing: whoever shows it must only read. Closing it (Escape,
  * the close button or clicking outside) never navigates; «Abrir» opens the
  * chat normally, which is when messages count as read. With the viewer's
@@ -74,6 +75,23 @@ const ATTACHMENT_ICONS: Record<ChatPreviewAttachment['kind'], Component> = {
     document: FileText,
     other: Paperclip,
 };
+
+/** Files that failed to load fall back to their icon and name. */
+const failed = ref(new Set<string>());
+
+function shown(attachment: ChatPreviewAttachment): boolean {
+    return (
+        Boolean(attachment.src) &&
+        ['image', 'sticker', 'video', 'audio'].includes(attachment.kind) &&
+        !failed.value.has(attachment.src as string)
+    );
+}
+
+function markFailed(attachment: ChatPreviewAttachment): void {
+    if (attachment.src) {
+        failed.value = new Set(failed.value).add(attachment.src);
+    }
+}
 
 const customColors = computed(() => Boolean(props.colors));
 const chatStyle = computed(() => chatColorVariables(props.colors));
@@ -145,7 +163,7 @@ watch(
 <template>
     <Dialog :open="open" @update:open="(value) => emit('update:open', value)">
         <DialogContent
-            class="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 overflow-y-auto p-0 sm:max-w-md"
+            class="flex max-h-[min(56rem,calc(100dvh-2rem))] flex-col gap-0 overflow-y-auto p-0 sm:max-w-2xl lg:max-w-3xl"
             data-chat-preview
         >
             <DialogHeader class="border-b px-5 pt-5 pb-3 text-left">
@@ -276,25 +294,86 @@ watch(
                                             attachment, index
                                         ) in item.attachments"
                                         :key="index"
-                                        class="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs"
-                                        :class="
-                                            customBubble(item)
-                                                ? 'border border-current/30'
-                                                : 'bg-muted/60'
-                                        "
+                                        class="min-w-0"
                                     >
-                                        <component
-                                            :is="
-                                                ATTACHMENT_ICONS[
-                                                    attachment.kind
-                                                ]
+                                        <a
+                                            v-if="
+                                                shown(attachment) &&
+                                                (attachment.kind === 'image' ||
+                                                    attachment.kind ===
+                                                        'sticker')
                                             "
-                                            class="size-3.5 shrink-0"
-                                            aria-hidden="true"
+                                            :href="
+                                                attachment.href ??
+                                                attachment.src ??
+                                                undefined
+                                            "
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="block w-fit overflow-hidden rounded-lg"
+                                        >
+                                            <img
+                                                :src="attachment.src ?? ''"
+                                                :alt="attachment.label"
+                                                loading="lazy"
+                                                decoding="async"
+                                                class="w-auto max-w-full rounded-lg object-contain"
+                                                :class="
+                                                    attachment.kind ===
+                                                    'sticker'
+                                                        ? 'max-h-32'
+                                                        : 'max-h-80'
+                                                "
+                                                @error="markFailed(attachment)"
+                                            />
+                                        </a>
+                                        <video
+                                            v-else-if="
+                                                shown(attachment) &&
+                                                attachment.kind === 'video'
+                                            "
+                                            :src="attachment.src ?? ''"
+                                            :aria-label="attachment.label"
+                                            controls
+                                            playsinline
+                                            preload="metadata"
+                                            class="max-h-80 w-full max-w-md rounded-lg bg-black"
+                                            @error="markFailed(attachment)"
                                         />
-                                        <span class="truncate">{{
-                                            attachment.label
-                                        }}</span>
+                                        <audio
+                                            v-else-if="
+                                                shown(attachment) &&
+                                                attachment.kind === 'audio'
+                                            "
+                                            :src="attachment.src ?? ''"
+                                            :aria-label="attachment.label"
+                                            controls
+                                            preload="none"
+                                            class="h-10 w-64 max-w-full"
+                                            @error="markFailed(attachment)"
+                                        />
+                                        <span
+                                            v-else
+                                            class="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+                                            :class="
+                                                customBubble(item)
+                                                    ? 'border border-current/30'
+                                                    : 'bg-muted/60'
+                                            "
+                                        >
+                                            <component
+                                                :is="
+                                                    ATTACHMENT_ICONS[
+                                                        attachment.kind
+                                                    ]
+                                                "
+                                                class="size-3.5 shrink-0"
+                                                aria-hidden="true"
+                                            />
+                                            <span class="truncate">{{
+                                                attachment.label
+                                            }}</span>
+                                        </span>
                                     </li>
                                 </ul>
                                 <p

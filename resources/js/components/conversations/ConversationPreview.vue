@@ -203,6 +203,12 @@ function toItem(message: ConversationMessage): ChatPreviewItem {
         (attachment) => ({
             kind: attachmentKind(message.type),
             label: attachment.file_name ?? typeLabel(message.type),
+            src: attachment.available
+                ? message.type === 'image'
+                    ? (attachment.thumb_url ?? attachment.url)
+                    : attachment.url
+                : null,
+            href: attachment.available ? attachment.url : null,
         }),
     );
 

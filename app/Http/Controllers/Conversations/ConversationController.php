@@ -203,7 +203,7 @@ class ConversationController extends Controller
                 'search_ignored' => $inbox->searchIgnored($filters),
                 'tags' => $filters['tags'] ?? [],
                 'tag_match' => $filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY,
-                'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT,
+                'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_OLDEST,
                 'unread' => $filters['unread'] ?? false,
                 'category' => $filters['category'] ?? null,
                 'readiness' => $filters['readiness'] ?? null,
@@ -381,7 +381,7 @@ class ConversationController extends Controller
      */
     private function list(ConversationInboxQuery $inbox, User $actor, array $filters, Request $request, ?array $after = null, int $limit = self::LIST_PAGE): array
     {
-        $sort = $filters['sort'] ?? ConversationInboxQuery::SORT_RECENT;
+        $sort = $filters['sort'] ?? ConversationInboxQuery::SORT_OLDEST;
         $listed = $inbox->handle($actor, $filters);
 
         if ($after !== null) {

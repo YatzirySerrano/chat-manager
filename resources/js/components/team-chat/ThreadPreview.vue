@@ -106,6 +106,11 @@ const items = computed<ChatPreviewItem[]>(() =>
             : message.attachments.map((attachment) => ({
                   kind: attachment.kind,
                   label: attachment.name,
+                  src:
+                      attachment.kind === 'image'
+                          ? (attachment.thumb_url ?? attachment.preview_url)
+                          : (attachment.stream_url ?? null),
+                  href: attachment.preview_url,
               })),
         at: message.created_at,
         deleted: message.deleted,

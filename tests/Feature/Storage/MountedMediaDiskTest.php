@@ -91,6 +91,11 @@ function mountedDiskServedAttachment(Conversation $conversation, string $disk, s
 }
 
 beforeEach(function () {
+    // A mounted share has an absolute POSIX root and a Linux mount table.
+    if (PHP_OS_FAMILY === 'Windows') {
+        $this->markTestSkipped('The mounted media disk (NAS) only exists on Linux.');
+    }
+
     Http::preventStrayRequests();
     Storage::fake('local');
     $this->travelTo(CarbonImmutable::parse('2026-11-11 15:00:00', 'UTC'));
@@ -117,7 +122,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    if (is_dir($this->root)) {
+    if (isset($this->root) && is_dir($this->root)) {
         @chmod($this->root, 0700);
         foreach (File::directories($this->root) as $directory) {
             @chmod($directory, 0700);

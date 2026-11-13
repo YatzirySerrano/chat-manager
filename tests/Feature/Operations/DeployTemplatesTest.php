@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Process;
  */
 function releasesTree(array $releases, string $current): string
 {
+    // The release scripts are bash over symbolic links, as on the server.
+    if (PHP_OS_FAMILY === 'Windows') {
+        test()->markTestSkipped('Release rollback and pruning need symbolic links and bash (Linux).');
+    }
+
     $root = storage_path('framework/testing/deploy-'.bin2hex(random_bytes(4)));
 
     foreach ($releases as $name => $complete) {

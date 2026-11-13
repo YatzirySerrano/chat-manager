@@ -17,6 +17,9 @@ test('the suite runs on the MariaDB 11.4 testing database', function () {
 });
 
 test('destructive commands are blocked on any database but the testing one', function (string $database, string $command) {
+    // The rule under test is the database name: a developer's .env with
+    // DB_ALLOW_DESTRUCTIVE_COMMANDS=true must not switch it off here.
+    config(['database.allow_destructive_commands' => false]);
     config(['database.connections.mariadb.database' => $database]);
     app()->getProvider(AppServiceProvider::class)->boot();
 

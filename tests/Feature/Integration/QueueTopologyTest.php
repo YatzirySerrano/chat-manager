@@ -48,6 +48,11 @@ function workerQueueLists(string $template): array
  */
 function localDevCommands(): array
 {
+    // On Windows `composer run dev` runs through cmd.exe with other commands.
+    if (PHP_OS_FAMILY === 'Windows') {
+        test()->markTestSkipped('These are the Linux/macOS commands of composer run dev.');
+    }
+
     $environment = app()->environment();
     app()->detectEnvironment(fn (): string => 'local');
 

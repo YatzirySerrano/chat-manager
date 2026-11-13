@@ -1,7 +1,13 @@
 <?php
 
-test('the home page redirects to the dashboard', function () {
-    $response = $this->get(route('home'));
+use App\Models\User;
 
-    $response->assertRedirect(route('dashboard', absolute: false));
+test('the home page sends a guest to the sign-in page', function () {
+    $this->get(route('home'))->assertRedirect('/login');
+});
+
+test('the home page sends a signed-in user to the dashboard', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('home'))
+        ->assertRedirect(route('dashboard', absolute: false));
 });

@@ -74,8 +74,12 @@ test('the scenario is small, goes through the real services and can be built aga
         ->and($closed->status)->toBe(ConversationStatus::Closed)
         ->and($closed->department?->slug)->toBe(ManualValidation::DEPARTMENTS['support'])
         ->and($window->for($closed)->status)->toBe(CustomerWindowStatus::Expired)
-        ->and(file_exists($this->credentials))->toBeTrue()
-        ->and(decoct(fileperms($this->credentials) & 0777))->toBe('600');
+        ->and(file_exists($this->credentials))->toBeTrue();
+
+    // Windows has no POSIX permission bits to restrict the file with.
+    if (PHP_OS_FAMILY !== 'Windows') {
+        expect(decoct(fileperms($this->credentials) & 0777))->toBe('600');
+    }
 });
 
 test('the cleanup removes only the scenario and keeps real data and the audit trail', function () {

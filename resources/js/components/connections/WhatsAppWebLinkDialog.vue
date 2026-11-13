@@ -12,7 +12,6 @@ import {
 } from '@lucide/vue';
 import type { LucideIcon } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
-import WhatsAppWebRiskNotice from '@/components/connections/WhatsAppWebRiskNotice.vue';
 import WhatsAppWebStateBadge from '@/components/connections/WhatsAppWebStateBadge.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import { Button } from '@/components/ui/button';
@@ -530,11 +529,6 @@ function countdown(seconds: number): string {
                     <StatusNote v-if="actionError" tone="danger" live="polite">
                         {{ actionError }}
                     </StatusNote>
-
-                    <WhatsAppWebRiskNotice
-                        v-if="stage !== 'connected'"
-                        compact
-                    />
 
                     <div
                         class="flex flex-wrap items-center gap-2 border-t pt-4"

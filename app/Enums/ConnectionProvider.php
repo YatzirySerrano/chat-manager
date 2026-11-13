@@ -3,9 +3,9 @@
 namespace App\Enums;
 
 /**
- * API used to operate a connection. Every provider is an official API
- * except WhatsappWeb, the WhatsApp Web protocol of a phone linked by QR
- * (docs/whatsapp-web-qr.md): unofficial, opt-in and never the default.
+ * API used to operate a connection. WhatsappWeb is the WhatsApp Web
+ * protocol of a phone linked by QR (docs/whatsapp-web-qr.md): enabled per
+ * server and never the default.
  */
 enum ConnectionProvider: string
 {

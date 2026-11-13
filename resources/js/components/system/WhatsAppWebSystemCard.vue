@@ -55,7 +55,7 @@ const sendingCount = computed(
 <template>
     <SurfaceCard
         title="WhatsApp Web (QR)"
-        description="Integración no oficial: el servicio que mantiene las sesiones vinculadas por código QR y el estado real de cada una. Que el servicio esté en marcha no significa que una sesión pueda enviar."
+        description="El servicio que mantiene las sesiones vinculadas por código QR y el estado real de cada una. Que el servicio esté en marcha no significa que una sesión pueda enviar."
         data-test="system-whatsapp-web"
     >
         <template #actions>

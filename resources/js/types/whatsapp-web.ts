@@ -1,6 +1,6 @@
 /**
- * WhatsApp Web (QR): an unofficial way to connect a number, next to the
- * official Cloud API. Types of docs/whatsapp-web-qr-contrato.md (§3 and §8).
+ * WhatsApp Web (QR): a way to connect a number by scanning a QR code, next
+ * to the Cloud API. Types of docs/whatsapp-web-qr-contrato.md (§3 and §8).
  */
 
 /** Real state of a session (§3). Only `connected` can send. */

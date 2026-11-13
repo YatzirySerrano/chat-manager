@@ -3,7 +3,6 @@ import { Link } from '@inertiajs/vue3';
 import { ChevronRight, QrCode } from '@lucide/vue';
 import { computed } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
-import WhatsAppWebRiskNotice from '@/components/connections/WhatsAppWebRiskNotice.vue';
 import {
     Dialog,
     DialogContent,
@@ -18,9 +17,9 @@ import type { ConnectionChannel, MetaChannelAvailability } from '@/types';
 
 /**
  * First step of "Nueva conexión": choose the channel and, for WhatsApp, how
- * the number is connected (the official Cloud API, or WhatsApp Web by QR
- * when the server enables it, always with its warning in sight). WhatsApp
- * and the web chat open their creation form; Facebook Messenger and Instagram open the
+ * the number is connected (the Cloud API, or WhatsApp Web by QR when the
+ * server enables it). WhatsApp and the web chat open their creation form;
+ * Facebook Messenger and Instagram open the
  * official Meta authorization (requirements + "Autorizar acceso"). When the
  * server has no Meta app configured, those cards say so (the page explains
  * which environment variables are missing). The channel cannot be changed later.
@@ -84,7 +83,7 @@ const baseChoices: Choice[] = [
     },
 ];
 
-/* WhatsApp Web sits right after the official way of connecting WhatsApp. */
+/* WhatsApp Web sits right after WhatsApp Cloud API. */
 const choices = computed<Choice[]>(() =>
     props.whatsappWebEnabled
         ? [baseChoices[0], whatsappWeb, ...baseChoices.slice(1)]
@@ -152,11 +151,6 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
                             <span class="block text-sm text-muted-foreground">{{
                                 choice.description
                             }}</span>
-                            <WhatsAppWebRiskNotice
-                                v-if="choice.provider === WHATSAPP_WEB_PROVIDER"
-                                compact
-                                class="mt-1.5"
-                            />
                             <span
                                 v-if="needsMetaApp(choice.channel)"
                                 class="mt-1 block text-xs font-medium text-warning"

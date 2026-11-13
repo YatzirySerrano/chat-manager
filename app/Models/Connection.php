@@ -309,9 +309,9 @@ class Connection extends Model
     }
 
     /**
-     * Whether the connection is a phone linked by QR (WhatsApp Web, the
-     * unofficial modality) instead of WhatsApp Cloud API. The modality is
-     * chosen when the connection is created and never changes.
+     * Whether the connection is a phone linked by QR (WhatsApp Web)
+     * instead of WhatsApp Cloud API. The modality is chosen when the
+     * connection is created and never changes.
      */
     public function isWhatsAppWeb(): bool
     {

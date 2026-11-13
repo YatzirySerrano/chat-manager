@@ -30,7 +30,6 @@ import type { WebChatPreviewAppearance } from '@/components/connections/WebChatP
 import WebChatSnippet from '@/components/connections/WebChatSnippet.vue';
 import WebChatWidgetCard from '@/components/connections/WebChatWidgetCard.vue';
 import type { WebChatWidgetOptions } from '@/components/connections/WebChatWidgetCard.vue';
-import WhatsAppWebRiskNotice from '@/components/connections/WhatsAppWebRiskNotice.vue';
 import WhatsAppWebSessionPanel from '@/components/connections/WhatsAppWebSessionPanel.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
@@ -136,9 +135,8 @@ const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
 const isWebChat = computed(() => props.channel.value === 'web_chat');
 /**
- * WhatsApp through WhatsApp Web (QR), the unofficial way of connecting: no
- * Meta identifiers, secrets, webhook or templates; a session linked by
- * scanning a code instead.
+ * WhatsApp through WhatsApp Web (QR): no Meta identifiers, secrets, webhook
+ * or templates; a session linked by scanning a code instead.
  */
 const isWhatsappWeb = computed(
     () =>
@@ -766,8 +764,6 @@ const flaggedSections = computed(() =>
                 <Lock class="size-4" aria-hidden="true" />
                 Puedes consultar esta conexión, pero no modificarla.
             </p>
-
-            <WhatsAppWebRiskNotice v-if="isWhatsappWeb" />
 
             <p
                 v-if="isWhatsappWeb"

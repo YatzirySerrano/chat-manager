@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
+import {
+    ArrowLeft,
+    Ban,
+    Palette,
+    PanelRight,
+    PanelRightClose,
+    Paperclip,
+} from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
@@ -342,6 +349,77 @@ const { height: headerHeight } = useElementSize(header, undefined, {
 const paneStyle = computed(() => ({
     '--chat-header-h': `${Math.round(headerHeight.value)}px`,
 }));
+
+/*
+ * Files dragged over the conversation: the whole pane is the drop target
+ * and says, while the files hover, whether they can be attached. What is
+ * dropped goes to the composer, which checks it against the channel's
+ * rules exactly as a file chosen with the clip.
+ */
+const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null);
+const dragDepth = ref(0);
+const dropActive = computed(() => dragDepth.value > 0);
+const dropAllowed = computed(() => composerRef.value?.acceptsFiles ?? false);
+
+function carriesFiles(event: DragEvent): boolean {
+    return [...(event.dataTransfer?.types ?? [])].includes('Files');
+}
+
+function onDragEnter(event: DragEvent): void {
+    if (carriesFiles(event)) {
+        event.preventDefault();
+        dragDepth.value++;
+    }
+}
+
+function onDragOver(event: DragEvent): void {
+    if (!carriesFiles(event)) {
+        return;
+    }
+
+    event.preventDefault();
+
+    if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = dropAllowed.value ? 'copy' : 'none';
+    }
+}
+
+function onDragLeave(event: DragEvent): void {
+    if (carriesFiles(event)) {
+        dragDepth.value = Math.max(0, dragDepth.value - 1);
+    }
+}
+
+function onDrop(event: DragEvent): void {
+    if (!carriesFiles(event)) {
+        return;
+    }
+
+    event.preventDefault();
+    dragDepth.value = 0;
+
+    // A dragged folder has no type and no size: it is not a file to send.
+    const files = [...(event.dataTransfer?.files ?? [])].filter(
+        (file) => file.size > 0 || file.type !== '',
+    );
+
+    if (files.length === 0) {
+        toast.error(
+            'No se pudo leer lo que soltaste. Las carpetas no se pueden adjuntar: suelta los archivos.',
+        );
+
+        return;
+    }
+
+    const refusal = composerRef.value?.addFiles(files) ?? null;
+
+    if (refusal) {
+        toast.error(refusal);
+    }
+}
+
+/* A drag that ends outside the window never fires "dragleave" here. */
+watch(conversationId, () => (dragDepth.value = 0));
 </script>
 
 <template>
@@ -352,14 +430,18 @@ const paneStyle = computed(() => ({
         away and the history keeps a usable height of its own.
     -->
     <section
-        class="flex h-full min-h-0 min-w-0 flex-col bg-background [@media(max-height:20rem)]:overflow-y-auto"
+        class="relative flex h-full min-h-0 min-w-0 flex-col bg-background [@media(max-height:20rem)]:overflow-y-auto"
+        @dragenter="onDragEnter"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
         :aria-label="`Conversación con ${conversation.contact.display_name}`"
         :style="paneStyle"
         data-chat-pane
     >
         <header
             ref="header"
-            class="flex items-center gap-2 border-b px-2 py-2 sm:gap-3 sm:px-5 sm:py-2.5 [@media(max-height:32rem)]:py-0.5"
+            class="flex items-center gap-2 border-b px-2 py-2 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:py-0.5"
         >
             <Button
                 variant="ghost"
@@ -378,7 +460,7 @@ const paneStyle = computed(() => ({
             >
             <button
                 type="button"
-                class="min-w-0 flex-1 rounded-lg px-1.5 py-0.5 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
+                class="@container min-w-0 flex-1 rounded-lg px-1.5 py-0.5 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
                 :title="
                     detailsOpen
                         ? 'Ocultar detalles'
@@ -421,7 +503,7 @@ const paneStyle = computed(() => ({
                     name shows and this line is left to screen readers.
                 -->
                 <p
-                    class="flex min-w-0 flex-nowrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground sm:flex-wrap [@media(max-height:20rem)]:sr-only [@media(max-height:32rem)]:flex-nowrap"
+                    class="mt-0.5 flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-xs text-muted-foreground [@media(max-height:20rem)]:sr-only"
                 >
                     <ConversationStatusBadge
                         class="shrink-0"
@@ -477,12 +559,12 @@ const paneStyle = computed(() => ({
                     >
                     <DepartmentTag
                         v-if="conversation.department"
-                        class="min-w-0 max-sm:hidden"
+                        class="min-w-0 shrink-0 @max-md:hidden"
                         :name="conversation.department.name"
                         :color="conversation.department.color"
                         :muted="!conversation.department.is_active"
                     />
-                    <span class="hidden min-w-0 truncate md:inline">
+                    <span class="min-w-0 truncate @max-lg:hidden">
                         {{
                             conversation.assignee
                                 ? `Atiende ${conversation.assignee.name}`
@@ -548,6 +630,7 @@ const paneStyle = computed(() => ({
         />
 
         <ChatComposer
+            ref="composerRef"
             data-tour="chat.composer"
             v-model:reply-to="replyTo"
             :conversation="conversation"
@@ -557,6 +640,50 @@ const paneStyle = computed(() => ({
             @note-saved="(note) => timeline.upsertNote(note)"
             @open-templates="templatesOpen = true"
         />
+
+        <!-- Shown only while files hover over the conversation. -->
+        <div
+            v-if="dropActive"
+            class="pointer-events-none absolute inset-0 z-30 grid place-items-center drop-veil p-4"
+            data-drop-overlay
+            :data-drop-allowed="dropAllowed"
+            aria-hidden="true"
+        >
+            <div
+                class="grid w-full max-w-md justify-items-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center"
+                :class="
+                    dropAllowed
+                        ? 'border-primary bg-primary-soft/70 text-primary-soft-foreground'
+                        : 'border-border-strong bg-card text-muted-foreground'
+                "
+            >
+                <span
+                    class="grid size-12 place-items-center rounded-full"
+                    :class="
+                        dropAllowed
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted'
+                    "
+                >
+                    <Paperclip v-if="dropAllowed" class="size-5" />
+                    <Ban v-else class="size-5" />
+                </span>
+                <p class="font-display text-lg font-semibold">
+                    {{
+                        dropAllowed
+                            ? 'Suelta para adjuntar'
+                            : 'Ahora no se pueden adjuntar archivos'
+                    }}
+                </p>
+                <p class="max-w-prose text-sm">
+                    {{
+                        dropAllowed
+                            ? `Los archivos se preparan para ${conversation.contact.display_name}. Nada se envía hasta que pulses «Enviar».`
+                            : 'Para enviar archivos necesitas poder responder al cliente en esta conversación.'
+                    }}
+                </p>
+            </div>
+        </div>
 
         <TemplatePickerDialog
             v-model:open="templatesOpen"

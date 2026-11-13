@@ -280,7 +280,8 @@ export type MessageTypeValue =
     | 'interactive'
     | 'reaction'
     | 'unsupported'
-    | 'button';
+    | 'button'
+    | 'poll';
 
 /**
  * Delivery states: received (inbound), queued, sending, accepted (by the
@@ -333,7 +334,38 @@ export type MessageContent =
     | { contacts: { name: string | null; phones: string[] }[] }
     | { kind: string | null; title: string | null; description: string | null }
     | { emoji: string | null; reacted_message_id: number | null }
-    | { animated: boolean };
+    | { animated: boolean }
+    /* Media details some channels add (voice note, length, GIF playback). */
+    | {
+          voice?: boolean;
+          seconds?: number | null;
+          gif?: boolean;
+          gif_playback?: boolean;
+      }
+    /* A poll: its question and options (votes when the channel reports them). */
+    | {
+          question?: string | null;
+          name?: string | null;
+          options?: (
+              | string
+              | { name?: string | null; votes?: number | null }
+          )[];
+      }
+    /* A type this version does not draw: a readable hint of what it was. */
+    | { hint?: string | null; original_type?: string | null };
+
+/** A reaction left on a message. */
+export type MessageReaction = { emoji: string; from_me: boolean };
+
+/**
+ * The quoted message as the WhatsApp Web history exposes it: a text preview
+ * and whose it was. `id` is null when the original is not stored here.
+ */
+export type MessageQuotePreview = {
+    id: number | null;
+    preview: string;
+    from_me: boolean;
+};
 
 export type ConversationMessage = {
     id: number;
@@ -384,7 +416,16 @@ export type ConversationMessage = {
               conversation_id: null;
               url: null;
           }
+        | MessageQuotePreview
         | null;
+    /** When the sender edited the message afterwards. */
+    edited_at?: string | null;
+    /** When the sender deleted the message for everyone. */
+    revoked_at?: string | null;
+    /** Reactions left on the message. */
+    reactions?: MessageReaction[] | null;
+    /** Brought in with the history of the linked WhatsApp, not received live. */
+    is_historical?: boolean;
     attachments: MessageAttachment[];
     sent_at: string | null;
     created_at: string | null;

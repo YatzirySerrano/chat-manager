@@ -4,6 +4,7 @@ import {
     LayoutTemplate,
     Lock,
     Send,
+    Slash,
     StickyNote,
     TriangleAlert,
     X,
@@ -37,7 +38,8 @@ import type {
     AttachmentCategory,
     AttachmentState,
 } from '@/lib/conversations/attachments';
-import { formatDuration } from '@/lib/format';
+import { pastedFileName } from '@/lib/conversations/media';
+import { formatDuration, formatFileSize } from '@/lib/format';
 import { UPLOAD_CODE_FIELD, isRetryableUpload } from '@/lib/uploads';
 import { formatPhone } from '@/lib/phone';
 import { store as storeMessage } from '@/routes/conversations/messages';
@@ -85,6 +87,14 @@ import type {
  * (rejected) with the server's own explanation of the attachment (or of a
  * 413), never the "write a message" one: the draft stays marked as
  * refused until the file is removed or changed. A file alone can be sent.
+ *
+ * Files also arrive without the clip: an image pasted from the clipboard
+ * (a screenshot taken with the Snipping Tool, Ctrl+V) and files dropped on
+ * the conversation (ConversationChat hands them over through addFiles).
+ * The channel carries one file per message, so several files wait in a
+ * short queue under the draft and go out one after another, each as its own
+ * message; the text travels with the first one. The queue stops at the
+ * first file that is refused, which stays as the draft with its reason.
  */
 const props = defineProps<{
     conversation: ConversationSummary;
@@ -138,6 +148,9 @@ const linkConfirmed = ref(false);
 const attachmentNotice = ref<string | null>(null);
 /* The server refused the attached file (its explanation); cleared with the file. */
 const attachmentRejection = ref<string | null>(null);
+/* Files waiting behind the draft (pasted or dropped several at once). */
+const queued = ref<File[]>([]);
+const MAX_QUEUED = 9;
 const error = ref<string | null>(null);
 const sending = ref(false);
 let clientReference = newClientReference();
@@ -153,6 +166,7 @@ watch(
         error.value = null;
 
         if (!previous || previous[0] !== id) {
+            queued.value = [];
             clearAttachment();
             clientReference = newClientReference();
         }
@@ -383,6 +397,122 @@ function chooseFile(file: File, category: AttachmentCategory | null): void {
     clientReference = newClientReference();
 }
 
+/**
+ * Files that came without the clip (pasted or dropped). The first one
+ * becomes the draft when there is none; the rest wait their turn. Returns
+ * a sentence when nothing could be added, for the caller to show.
+ */
+function addFiles(files: File[]): string | null {
+    if (files.length === 0) {
+        return null;
+    }
+
+    if (mode.value !== 'reply') {
+        return 'Las notas internas no llevan archivos. Cambia a «Responder» para adjuntarlo.';
+    }
+
+    if (disabledReason.value !== null) {
+        return disabledReason.value;
+    }
+
+    if (sending.value) {
+        return 'Espera a que termine el envío en curso para adjuntar otro archivo.';
+    }
+
+    const known = new Set(
+        [attachment.value, ...queued.value]
+            .filter((file): file is File => file !== null)
+            .map(fileFingerprint),
+    );
+    let skipped = 0;
+
+    for (const file of files) {
+        const fingerprint = fileFingerprint(file);
+
+        if (known.has(fingerprint)) {
+            continue;
+        }
+
+        if (attachment.value === null) {
+            chooseFile(file, null);
+        } else if (queued.value.length < MAX_QUEUED) {
+            queued.value = [...queued.value, file];
+        } else {
+            skipped++;
+            continue;
+        }
+
+        known.add(fingerprint);
+    }
+
+    error.value =
+        skipped > 0
+            ? `Solo se pueden preparar ${MAX_QUEUED + 1} archivos a la vez: ${skipped === 1 ? 'uno quedó' : `${skipped} quedaron`} fuera.`
+            : null;
+
+    void nextTick(() => textarea.value?.focus());
+
+    return null;
+}
+
+function removeQueued(index: number): void {
+    queued.value = queued.value.filter((_, position) => position !== index);
+}
+
+/* The draft was removed: the next file in line takes its place. */
+function removeDraft(): void {
+    const [next, ...rest] = queued.value;
+
+    clearAttachment();
+
+    if (next) {
+        queued.value = rest;
+        chooseFile(next, null);
+    }
+}
+
+/**
+ * Ctrl+V with files in the clipboard (a screenshot, files copied from the
+ * file explorer) attaches them. A clipboard that also carries text (a cell
+ * range copied from a spreadsheet comes with a picture of itself) pastes
+ * as text, as always.
+ */
+function onPaste(event: ClipboardEvent): void {
+    const data = event.clipboardData;
+
+    if (!data) {
+        return;
+    }
+
+    const files = [...data.items]
+        .filter((item) => item.kind === 'file')
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null && file.size > 0);
+
+    if (files.length === 0 || data.getData('text/plain').trim() !== '') {
+        return;
+    }
+
+    event.preventDefault();
+
+    const refusal = addFiles(
+        files.map((file) => {
+            const name = pastedFileName(file);
+
+            return name === file.name
+                ? file
+                : new File([file], name, {
+                      type: file.type,
+                      lastModified: file.lastModified,
+                  });
+        }),
+    );
+
+    if (refusal) {
+        error.value = refusal;
+    }
+}
+
 /* Text cannot travel with some files (audio on WhatsApp, any file on Messenger and Instagram). */
 const captionBlock = computed<string | null>(() => {
     const rule = attachmentEvaluation.value?.rule;
@@ -580,6 +710,9 @@ async function submit(): Promise<void> {
         return;
     }
 
+    /* The file went out and others wait: send the next one afterwards. */
+    let continueQueue = false;
+
     sending.value = true;
     error.value = null;
     /* The mode tabs are locked while sending; this guards the draft anyway. */
@@ -673,6 +806,7 @@ async function submit(): Promise<void> {
             clearAttachment();
             emit('update:replyTo', null);
             clientReference = newClientReference();
+            continueQueue = queued.value.length > 0;
         }
     } catch (failure) {
         if (uploadWasCancelled()) {
@@ -710,6 +844,30 @@ async function submit(): Promise<void> {
         await nextTick();
         textarea.value?.focus();
     }
+
+    if (continueQueue && mode.value === 'reply') {
+        const [next, ...rest] = queued.value;
+
+        queued.value = rest;
+        chooseFile(next, null);
+        await nextTick();
+
+        // A refused file stays as the draft, with its reason, and the rest wait.
+        if (canSubmit.value) {
+            await submit();
+        }
+    }
+}
+
+/* Opens the quick replies as typing «/» would. */
+async function openQuickReplies(): Promise<void> {
+    const element = textarea.value;
+    const caret = element?.selectionStart ?? text.value.length;
+    const before = text.value.slice(0, caret);
+
+    await insertAtCaret(before === '' || /\s$/u.test(before) ? '/' : ' /');
+    dismissedAt.value = null;
+    updateTrigger();
 }
 
 const recipient = computed(() => {
@@ -745,7 +903,12 @@ function focus(): void {
     textarea.value?.focus();
 }
 
-defineExpose({ focus });
+/* Whether a file dropped on the conversation can be taken right now. */
+const acceptsFiles = computed(
+    () => mode.value === 'reply' && disabledReason.value === null,
+);
+
+defineExpose({ focus, addFiles, acceptsFiles });
 </script>
 
 <template>
@@ -913,11 +1076,43 @@ defineExpose({ focus });
                 :notice="attachmentNotice"
                 :state="attachmentState ?? 'ready'"
                 :rejection="attachmentRejection"
-                @remove="clearAttachment"
+                @remove="removeDraft"
                 @cancel="cancelUpload"
                 @confirm-link="linkConfirmed = true"
                 @undo-link="linkConfirmed = false"
             />
+
+            <ul
+                v-if="queued.length > 0 && mode === 'reply'"
+                class="flex flex-wrap items-center gap-1.5"
+                aria-label="Archivos en espera"
+                data-attachment-queue
+            >
+                <li class="text-xs text-muted-foreground">
+                    {{
+                        queued.length === 1
+                            ? 'Después se envía:'
+                            : `Después se envían, uno por mensaje:`
+                    }}
+                </li>
+                <li
+                    v-for="(file, index) in queued"
+                    :key="`${file.name}-${file.size}-${index}`"
+                    class="inline-flex max-w-56 items-center gap-1 rounded-full border bg-card py-0.5 pr-0.5 pl-2.5 text-xs"
+                    :title="`${file.name} (${formatFileSize(file.size)})`"
+                >
+                    <span class="min-w-0 truncate">{{ file.name }}</span>
+                    <button
+                        type="button"
+                        class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:size-9"
+                        :aria-label="`Quitar ${file.name} de la espera`"
+                        :disabled="sending"
+                        @click="removeQueued(index)"
+                    >
+                        <X class="size-3" aria-hidden="true" />
+                    </button>
+                </li>
+            </ul>
 
             <!--
                 One surface for the text and its tools: the ring follows the
@@ -972,6 +1167,7 @@ defineExpose({ focus });
                                 ].includes(event.key) && updateTrigger()
                         "
                         @keydown="onKeydown"
+                        @paste="onPaste"
                         @blur="trigger = null"
                     />
                     <div
@@ -1001,6 +1197,20 @@ defineExpose({ focus });
                         :disabled="sending"
                         @select="(emoji) => insertAtCaret(emoji)"
                     />
+                    <Button
+                        v-if="mode === 'reply' && canUseQuickReplies"
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        class="size-8 text-muted-foreground pointer-coarse:size-10"
+                        title="Respuestas rápidas (/)"
+                        aria-label="Abrir las respuestas rápidas"
+                        :disabled="sending"
+                        @mousedown.prevent
+                        @click="openQuickReplies"
+                    >
+                        <Slash aria-hidden="true" />
+                    </Button>
                     <label
                         class="ml-1 hidden cursor-pointer items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
                     >
@@ -1010,13 +1220,15 @@ defineExpose({ focus });
                         />
                         Enter para enviar
                     </label>
+                    <!-- The count only matters once the limit is near. -->
                     <span
-                        class="ml-auto text-xs tabular-nums"
-                        :class="
+                        class="ml-auto text-xs tabular-nums transition-opacity duration-(--duration-fast)"
+                        :class="[
                             tooLong
                                 ? 'text-destructive'
-                                : 'text-muted-foreground'
-                        "
+                                : 'text-muted-foreground',
+                            text.length < maxLength * 0.8 && 'opacity-0',
+                        ]"
                         :aria-hidden="!tooLong"
                         :role="tooLong ? 'alert' : undefined"
                     >

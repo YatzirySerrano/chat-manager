@@ -40,6 +40,7 @@ export const messageTypeLabels: Record<MessageTypeValue, string> = {
     reaction: 'Reacción',
     unsupported: 'Mensaje no compatible',
     button: 'Respuesta de botón',
+    poll: 'Encuesta',
 };
 
 /**

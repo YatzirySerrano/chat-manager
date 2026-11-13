@@ -6,9 +6,18 @@ import {
     useElementSize,
     useIntervalFn,
 } from '@vueuse/core';
-import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    inject,
+    nextTick,
+    onMounted,
+    provide,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
 import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import { groupByCalendarDay } from '@/components/conversations/dayGroups';
@@ -23,6 +32,8 @@ import {
     CUSTOM_CHAT_COLORS,
 } from '@/lib/chatAppearance';
 import { useStickToBottom } from '@/composables/useStickToBottom';
+import { MEDIA_GALLERY, viewerKind } from '@/lib/conversations/media';
+import type { ViewerItem } from '@/lib/conversations/media';
 import { platformTimezone } from '@/lib/format';
 import { retry as retryRoute } from '@/routes/conversations/messages';
 import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
@@ -121,14 +132,135 @@ watch(useDocumentVisibility(), (visibility) => {
     }
 });
 
+/*
+ * Consecutive messages of the same author, moments apart, read as one group:
+ * the name shows once and only the last bubble keeps its tail. A note, an
+ * event, a change of day or a silence of five minutes starts a new group.
+ */
+const GROUP_WINDOW_MS = 5 * 60_000;
+
+function authorKey(message: ConversationMessage): string {
+    if (message.direction === 'inbound') {
+        return 'in';
+    }
+
+    return message.automatic
+        ? 'out:auto'
+        : message.integration
+          ? `out:api:${message.integration.name}`
+          : `out:${message.sender?.id ?? message.sender?.name ?? 'team'}`;
+}
+
+function sameGroup(
+    a: TimelineItem | undefined,
+    b: TimelineItem | undefined,
+): boolean {
+    if (a?.kind !== 'message' || b?.kind !== 'message') {
+        return false;
+    }
+
+    return (
+        authorKey(a.message) === authorKey(b.message) &&
+        Boolean(a.message.is_historical) === Boolean(b.message.is_historical) &&
+        Math.abs(new Date(b.at).getTime() - new Date(a.at).getTime()) <
+            GROUP_WINDOW_MS
+    );
+}
+
 const dayGroups = computed(() =>
     groupByCalendarDay(
         props.items,
         (item) => item.at,
         today.value,
         platformTimezone(),
-    ),
+    ).map((group) => ({
+        ...group,
+        rows: group.items.map((item, index) => ({
+            item,
+            groupedWithPrevious: sameGroup(group.items[index - 1], item),
+            groupedWithNext: sameGroup(item, group.items[index + 1]),
+        })),
+    })),
 );
+
+/*
+ * Where the history brought in from the linked WhatsApp ends and what was
+ * received here begins: one discreet divider under the last imported
+ * message that is followed by a live one.
+ */
+const historyEndsAt = computed<string | number | null>(() => {
+    let last: string | number | null = null;
+
+    props.items.forEach((item, index) => {
+        const next = props.items[index + 1];
+
+        if (
+            item.kind === 'message' &&
+            item.message.is_historical === true &&
+            next !== undefined &&
+            !(next.kind === 'message' && next.message.is_historical === true)
+        ) {
+            last = item.key;
+        }
+    });
+
+    return last;
+});
+
+/*
+ * Every picture, video and PDF loaded in the history, in order: the viewer
+ * moves between them. Bubbles ask for it through MEDIA_GALLERY.
+ */
+const gallery = computed<ViewerItem[]>(() =>
+    props.items.flatMap((item) => {
+        if (item.kind !== 'message' || item.message.revoked_at) {
+            return [];
+        }
+
+        const message = item.message;
+
+        return (message.attachments ?? []).flatMap((attachment) => {
+            const kind = viewerKind(attachment, message);
+
+            return kind
+                ? [
+                      {
+                          id: attachment.id,
+                          kind,
+                          src: attachment.url,
+                          downloadUrl: attachment.download_url,
+                          name: attachment.file_name ?? 'Archivo adjunto',
+                          caption: message.body,
+                          author:
+                              message.direction === 'inbound'
+                                  ? props.conversation.contact.display_name
+                                  : (message.sender?.name ?? 'Equipo'),
+                          at: message.sent_at ?? message.created_at,
+                      },
+                  ]
+                : [];
+        });
+    }),
+);
+const viewerOpen = ref(false);
+const viewerIndex = ref(0);
+
+provide(MEDIA_GALLERY, {
+    open: (attachmentId: number): boolean => {
+        const index = gallery.value.findIndex(
+            (item) => item.id === attachmentId,
+        );
+
+        if (index < 0) {
+            return false;
+        }
+
+        viewerIndex.value = index;
+        viewerOpen.value = true;
+
+        return true;
+    },
+});
 
 function measureBottom(): void {
     const element = scroller.value;
@@ -311,11 +443,11 @@ function jumpTo(messageId: number): void {
 
     if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        target.classList.add('ring-2', 'ring-primary');
-        setTimeout(
-            () => target.classList.remove('ring-2', 'ring-primary'),
-            1500,
-        );
+        target.classList.remove('message-flash');
+        // Restart the highlight when the same message is jumped to again.
+        void target.offsetWidth;
+        target.classList.add('message-flash');
+        setTimeout(() => target.classList.remove('message-flash'), 1500);
     } else {
         toast.info(
             'El mensaje citado es más antiguo: desplázate hacia arriba para cargarlo.',
@@ -526,7 +658,7 @@ defineExpose({ scrollToBottom });
             aria-live="off"
             @scroll.passive="onScroll"
         >
-            <div class="grid grid-cols-1 gap-2">
+            <div class="grid grid-cols-1">
                 <div class="flex justify-center py-1">
                     <Button
                         v-if="hasMore"
@@ -579,7 +711,7 @@ defineExpose({ scrollToBottom });
                 <section
                     v-for="group in dayGroups"
                     :key="group.day"
-                    class="grid grid-cols-1 gap-2 pt-0.5"
+                    class="grid grid-cols-1 pt-1 pb-1.5"
                     :data-day="group.day"
                 >
                     <h3
@@ -587,11 +719,18 @@ defineExpose({ scrollToBottom });
                         data-day-separator
                     >
                         <span
-                            class="max-w-full rounded-full border bg-background/85 px-3 py-0.5 text-center text-xs font-medium text-balance break-words text-muted-foreground backdrop-blur-sm"
+                            class="max-w-full rounded-full border bg-background/90 px-3 py-1 text-center text-[0.6875rem] leading-none font-semibold text-balance break-words text-muted-foreground shadow-(--shadow-control) backdrop-blur-sm"
                             >{{ group.label }}</span
                         >
                     </h3>
-                    <template v-for="item in group.items" :key="item.key">
+                    <template
+                        v-for="{
+                            item,
+                            groupedWithPrevious,
+                            groupedWithNext,
+                        } in group.rows"
+                        :key="item.key"
+                    >
                         <MessageBubble
                             v-if="item.kind === 'message'"
                             :message="item.message"
@@ -607,6 +746,8 @@ defineExpose({ scrollToBottom });
                             "
                             :retrying="retryingId === item.message.id"
                             :can-quote="conversation.can.reply"
+                            :grouped-with-previous="groupedWithPrevious"
+                            :grouped-with-next="groupedWithNext"
                             :class="fresh.has(item.key) && 'reveal'"
                             @retry="requestRetry"
                             @quote="(message) => emit('quote', message)"
@@ -619,12 +760,28 @@ defineExpose({ scrollToBottom });
                             :note="item.note"
                             :conversation-id="conversation.id"
                             :max-length="noteMaxLength"
+                            class="mt-2.5"
                             :class="fresh.has(item.key) && 'reveal'"
                             @saved="
                                 (noteId) => emit('refresh', { notes: [noteId] })
                             "
                         />
-                        <TimelineEvent v-else :event="item.event" />
+                        <TimelineEvent
+                            v-else
+                            class="mt-2.5"
+                            :event="item.event"
+                        />
+                        <p
+                            v-if="item.key === historyEndsAt"
+                            class="mt-3 flex items-center gap-3 text-[0.6875rem] font-medium text-muted-foreground before:h-px before:flex-1 before:bg-border-strong/70 after:h-px after:flex-1 after:bg-border-strong/70"
+                            data-history-divider
+                        >
+                            <span
+                                class="rounded-full px-2 py-0.5"
+                                :class="customColors && 'bg-background'"
+                                >Historial importado de WhatsApp</span
+                            >
+                        </p>
                     </template>
                 </section>
             </div>
@@ -646,6 +803,13 @@ defineExpose({ scrollToBottom });
                     : 'Ir al final'
             }}
         </Button>
+
+        <MediaViewer
+            v-if="viewerOpen && gallery.length > 0"
+            v-model:open="viewerOpen"
+            v-model:index="viewerIndex"
+            :items="gallery"
+        />
 
         <ConfirmDialog
             v-model:open="duplicateRiskOpen"

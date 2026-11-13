@@ -279,7 +279,7 @@ const label = computed(() => {
         <div class="relative">
             <button
                 type="button"
-                class="relative flex w-full items-start gap-3 border-l-[3px] py-3 pr-11 pl-3 text-left transition-[background-color,border-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                class="relative flex w-full items-start gap-3 border-l-[3px] py-2.5 pr-11 pl-3 text-left transition-[background-color,border-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 :class="[
                     selected
                         ? 'border-l-primary bg-primary-soft'
@@ -453,19 +453,6 @@ const label = computed(() => {
                             :muted="!conversation.department.is_active"
                             data-inbox-department
                         />
-                        <span
-                            v-if="showAssignee && conversation.assignee"
-                            class="inline-flex max-w-36 min-w-0 items-center gap-1 text-xs text-muted-foreground"
-                            :title="`Responsable: ${conversation.assignee.name}`"
-                        >
-                            <UserRound
-                                class="size-3.5 shrink-0"
-                                aria-hidden="true"
-                            />
-                            <span class="truncate">{{
-                                conversation.assignee.name
-                            }}</span>
-                        </span>
                         <TagBadge
                             v-for="tag in visibleTags"
                             :key="tag.id"
@@ -482,7 +469,11 @@ const label = computed(() => {
                     </span>
 
                     <span
-                        v-if="showOperational || showChannel"
+                        v-if="
+                            showOperational ||
+                            showChannel ||
+                            (showAssignee && conversation.assignee)
+                        "
                         class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
                         :class="[
                             canAccept &&
@@ -490,9 +481,27 @@ const label = computed(() => {
                             conversation.connection.state !== 'active' &&
                                 'italic',
                         ]"
-                        :title="connectionTitle"
                     >
+                        <span
+                            v-if="showAssignee && conversation.assignee"
+                            class="inline-flex max-w-[45%] min-w-0 shrink-0 items-center gap-1"
+                            :class="
+                                (showOperational || showChannel) && 'mr-1.5'
+                            "
+                            :title="`Responsable: ${conversation.assignee.name}`"
+                            data-inbox-assignee
+                        >
+                            <UserRound
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{
+                                conversation.assignee.name
+                            }}</span>
+                        </span>
                         <ChannelIcon
+                            v-if="showOperational || showChannel"
+                            :title="connectionTitle"
                             :channel="conversation.connection.channel"
                             class="size-3.5 shrink-0"
                             aria-hidden="true"
@@ -504,7 +513,7 @@ const label = computed(() => {
                             >{{ conversation.connection.channel_label }}</span
                         >
                         <template v-if="showOperational">
-                            <span class="truncate">{{
+                            <span class="truncate" :title="connectionTitle">{{
                                 conversation.connection.name
                             }}</span>
                             <span

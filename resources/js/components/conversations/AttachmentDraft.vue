@@ -126,7 +126,7 @@ const kindIcon = computed(() => {
 <template>
     <div
         data-layout-box="attachment"
-        class="grid min-w-0 grid-cols-1 gap-2 rounded-lg border px-3 py-2"
+        class="grid min-w-0 grid-cols-1 gap-2 rounded-xl border bg-card p-2 pr-3"
         :class="
             (evaluation.error || problem || rejection) &&
             'border-destructive/60'
@@ -147,7 +147,7 @@ const kindIcon = computed(() => {
                 "
                 :src="previewUrl"
                 :alt="`Vista previa de ${file.name}`"
-                class="size-12 shrink-0 rounded object-cover"
+                class="size-16 shrink-0 rounded-lg border object-cover"
                 @error="previewFailed = true"
             />
             <video
@@ -161,7 +161,7 @@ const kindIcon = computed(() => {
                 muted
                 playsinline
                 :aria-label="`Vista previa de ${file.name}`"
-                class="size-12 shrink-0 rounded bg-muted object-cover"
+                class="size-16 shrink-0 rounded-lg border bg-muted object-cover"
                 @error="previewFailed = true"
             />
             <component

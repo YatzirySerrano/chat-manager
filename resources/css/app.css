@@ -1178,3 +1178,75 @@
         animation: none !important;
     }
 }
+
+/*
+  Chat surfaces (customer conversations and the internal chat). Bubbles and
+  the canvas read these tokens, so both chats stay in step with the palette
+  and the theme: `bg-bubble-in`, `bg-bubble-out`, `text-bubble-*-foreground`,
+  `bg-chat-canvas`, `rounded-bubble`. They are redeclared on every palette
+  scope so a nested [data-palette] preview resolves its own soft color.
+*/
+@theme inline {
+    --color-bubble-in: var(--bubble-in);
+    --color-bubble-in-foreground: var(--bubble-in-foreground);
+    --color-bubble-out: var(--bubble-out);
+    --color-bubble-out-foreground: var(--bubble-out-foreground);
+    --color-chat-canvas: var(--chat-canvas);
+    --radius-bubble: 1.125rem;
+}
+
+:root,
+[data-palette] {
+    --bubble-in: var(--card);
+    --bubble-in-foreground: var(--card-foreground);
+    --bubble-out: var(--primary-soft);
+    --bubble-out-foreground: var(--primary-soft-foreground);
+    --chat-canvas: var(--surface-sunken);
+}
+
+/*
+  Canvas of a chat history: the sunken surface with a very faint dot grid
+  tinted by the palette (bubbles read as objects resting on it).
+*/
+@utility chat-canvas {
+    background-color: var(--chat-canvas);
+    background-image: radial-gradient(
+        color-mix(in oklch, var(--primary) 9%, transparent) 1px,
+        transparent 1.5px
+    );
+    background-size: 22px 22px;
+}
+
+/*
+  Floating layer over media (time over a photo, the play button of a video,
+  the bar of the media viewer): always dark glass with white content, in both
+  themes, because it sits on pictures, not on the page.
+*/
+@utility media-scrim {
+    background-color: oklch(0.2 0.01 255 / 0.62);
+    color: oklch(0.99 0 0);
+    backdrop-filter: blur(6px);
+}
+
+/* A message that was just jumped to (quote, reaction): a brief highlight. */
+@utility message-flash {
+    animation: message-flash 1.4s var(--ease-standard);
+}
+
+@keyframes message-flash {
+    0%,
+    55% {
+        box-shadow: 0 0 0 3px
+            color-mix(in oklch, var(--primary) 55%, transparent);
+    }
+
+    100% {
+        box-shadow: 0 0 0 3px transparent;
+    }
+}
+
+/* Drop target overlay of the chat pane (files dragged over the conversation). */
+@utility drop-veil {
+    background-color: color-mix(in oklch, var(--background) 86%, transparent);
+    backdrop-filter: blur(3px);
+}

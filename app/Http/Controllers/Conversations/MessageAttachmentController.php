@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Conversations;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Storage\MediaPaths;
 use App\Services\Storage\MediaThumbnails;
 use App\Support\Attachments\RangedStream;
 use Carbon\CarbonInterface;
@@ -39,8 +40,8 @@ class MessageAttachmentController extends ConversationOperationController
     private const INLINE = [
         'image/jpeg', 'image/png', 'image/webp', 'image/gif',
         'application/pdf',
-        'audio/aac', 'audio/mp4', 'audio/mpeg', 'audio/amr', 'audio/ogg', 'audio/opus', 'video/ogg', 'application/ogg',
-        'video/mp4', 'video/3gpp',
+        'audio/aac', 'audio/mp4', 'audio/mpeg', 'audio/amr', 'audio/ogg', 'audio/opus', 'audio/wav', 'audio/webm', 'video/ogg', 'application/ogg',
+        'video/mp4', 'video/3gpp', 'video/webm', 'video/quicktime',
     ];
 
     public function show(Request $request, Conversation $conversation, Message $message, MessageAttachment $attachment, MediaThumbnails $thumbnails): Response
@@ -85,7 +86,10 @@ class MessageAttachmentController extends ConversationOperationController
         abort_unless($exists, 404, 'El archivo ya no está disponible.');
 
         $inline = in_array($mime, self::INLINE, true) && ! $request->boolean('download');
-        $name = $attachment->file_name ?? 'archivo';
+        // A file that came without a name (photos, voice notes) downloads
+        // with the readable one it was filed under, extension included.
+        $name = $attachment->file_name ?? ($variant === 'original' && ! MediaPaths::isLegacy($path) ? basename($path) : 'archivo');
+        $name = $name === '' ? 'archivo' : $name;
 
         $lastModified = Date::createFromTimestamp($modifiedAt);
         $etag = sha1(implode('|', [$attachment->getKey(), $path, $lastModified->getTimestamp(), $mime, $inline ? 'inline' : 'attachment', $variant]));

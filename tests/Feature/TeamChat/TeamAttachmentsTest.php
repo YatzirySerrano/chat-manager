@@ -96,7 +96,7 @@ test('participants download files with safe headers and only previewable types a
 
     $this->actingAs($this->beto)
         ->get(route('team-chat.attachments.show', [$this->thread, $text->team_message_id, $text, 'inline' => 1]))
-        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox")
+        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox")
         ->assertDownload('notas.txt');
 });
 
@@ -214,4 +214,66 @@ test('a retried send with files stores them only once', function () {
 
     expect(TeamAttachment::query()->count())->toBe(1)
         ->and(Storage::disk('local')->allFiles())->toHaveCount(1);
+});
+
+test('the bubble gets a small preview of a photo, authorized like the original and removed with it', function () {
+    $response = $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), [
+            'attachments' => [UploadedFile::fake()->image('foto.jpg', 1600, 1200), teamPdfUpload()],
+        ], ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->assertJsonPath('data.attachments.0.thumb_url', fn (?string $url): bool => is_string($url) && str_contains($url, 'thumb=1'))
+        ->assertJsonPath('data.attachments.1.thumb_url', null);
+
+    $photo = TeamAttachment::query()->orderBy('id')->firstOrFail();
+    $message = TeamMessage::query()->firstOrFail();
+
+    $thumbnail = $this->actingAs($this->beto)->get($response->json('data.attachments.0.thumb_url'))->assertOk();
+
+    expect($thumbnail->headers->get('Content-Type'))->toBe('image/jpeg')
+        ->and($thumbnail->headers->get('Content-Disposition'))->toStartWith('inline')
+        ->and($thumbnail->headers->get('X-Content-Type-Options'))->toBe('nosniff')
+        ->and($thumbnail->headers->get('Cache-Control'))->toContain('private')->toContain('no-store');
+
+    [$width] = getimagesizefromstring((string) $thumbnail->streamedContent());
+
+    expect($width)->toBe(640)
+        ->and(Storage::disk('local')->allFiles())->toHaveCount(3);
+
+    // Nobody outside the chat reaches the preview either.
+    $this->actingAs(User::factory()->agent()->create())->get($response->json('data.attachments.0.thumb_url'))->assertNotFound();
+
+    $this->actingAs($this->ana)->deleteJson(route('team-chat.threads.messages.destroy', [$this->thread, $message]))->assertOk();
+
+    expect(Storage::disk('local')->allFiles())->toBe([])
+        ->and($photo->fresh()->isPurged())->toBeTrue();
+    $this->actingAs($this->beto)->get($response->json('data.attachments.0.thumb_url'))->assertNotFound();
+});
+
+test('an image that needs no preview is answered itself, inline', function () {
+    $response = $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), [
+            'attachments' => [UploadedFile::fake()->image('icono.png', 20, 20)],
+        ], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    $original = $this->actingAs($this->beto)->get($response->json('data.attachments.0.thumb_url'))->assertOk();
+
+    expect($original->headers->get('Content-Type'))->toBe('image/png')
+        ->and($original->headers->get('Content-Disposition'))->toStartWith('inline')
+        ->and(Storage::disk('local')->allFiles())->toHaveCount(1);
+});
+
+test('a reply to a message without text says what it carried', function () {
+    $quoted = $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), [
+            'attachments' => [teamPdfUpload(), UploadedFile::fake()->image('foto.png', 20, 20)],
+        ], ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->json('data.id');
+
+    $this->actingAs($this->beto)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Recibido', 'reply_to_message_id' => $quoted])
+        ->assertCreated()
+        ->assertJsonPath('data.reply_to.excerpt', '2 archivos adjuntos');
 });

@@ -3,9 +3,10 @@ import { Link } from '@inertiajs/vue3';
 import { Archive, BellOff, Eye } from '@lucide/vue';
 import { computed } from 'vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
+import { listTime } from '@/components/team-chat/teamChatFormat';
 import { useLongPress } from '@/composables/useLongPress';
 import { useTeamPresence } from '@/composables/useTeamPresence';
-import { formatDateTime, formatRelative } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { show } from '@/routes/team-chat/threads';
 import type { TeamThreadSummary } from '@/types/team-chat';
@@ -20,6 +21,8 @@ import type { TeamThreadSummary } from '@/types/team-chat';
 const props = defineProps<{
     thread: TeamThreadSummary;
     active: boolean;
+    /** Being opened right now (the click already landed). */
+    opening?: boolean;
     query: Record<string, string | number>;
 }>();
 
@@ -35,6 +38,12 @@ function onClick(event: MouseEvent): void {
     }
 }
 
+const author = computed(() => {
+    const message = props.thread.last_message;
+
+    return message?.author && !message.system ? `${message.author}: ` : '';
+});
+
 const preview = computed(() => {
     const message = props.thread.last_message;
 
@@ -44,9 +53,7 @@ const preview = computed(() => {
             : 'Sin mensajes todavía';
     }
 
-    return message.author && !message.system
-        ? `${message.author}: ${message.text}`
-        : message.text;
+    return message.text;
 });
 
 const { isOnline } = useTeamPresence();
@@ -57,6 +64,7 @@ const partnerOnline = computed(
         isOnline(props.thread.partner.id),
 );
 
+const unread = computed(() => props.thread.unread > 0);
 const unreadLabel = computed(() =>
     props.thread.unread > 99 ? '99+' : String(props.thread.unread),
 );
@@ -71,9 +79,9 @@ const unreadLabel = computed(() =>
             :aria-current="active ? 'page' : undefined"
             :class="
                 cn(
-                    'flex items-center gap-3 rounded-lg py-2.5 pr-10 pl-3 transition-[background-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) select-none [-webkit-touch-callout:none] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none pointer-coarse:pr-12',
-                    active &&
-                        'bg-primary-soft shadow-[inset_3px_0_0_var(--primary)] hover:bg-primary-soft',
+                    'flex items-center gap-3 rounded-xl py-2 pr-3 pl-2.5 transition-[background-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/40 pointer-coarse:py-2.5',
+                    (active || opening) &&
+                        'bg-primary-soft hover:bg-primary-soft',
                 )
             "
             v-on="longPress.handlers"
@@ -86,14 +94,12 @@ const unreadLabel = computed(() =>
                 :online="partnerOnline"
             />
             <span class="min-w-0 flex-1">
-                <span class="flex items-center gap-2">
+                <span class="flex items-baseline gap-2">
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate font-display text-[0.975rem]',
-                                thread.unread > 0
-                                    ? 'font-semibold'
-                                    : 'font-medium',
+                                'min-w-0 flex-1 truncate font-display text-[0.95rem] leading-snug',
+                                unread ? 'font-semibold' : 'font-medium',
                             )
                         "
                     >
@@ -104,26 +110,38 @@ const unreadLabel = computed(() =>
                     </span>
                     <time
                         v-if="thread.last_activity_at"
-                        class="shrink-0 text-xs text-muted-foreground"
+                        :class="
+                            cn(
+                                'shrink-0 text-[0.7rem] tabular-nums transition-opacity group-focus-within/thread:opacity-0 group-hover/thread:opacity-0 pointer-coarse:opacity-100!',
+                                unread && !thread.muted
+                                    ? 'font-semibold text-primary'
+                                    : 'text-muted-foreground',
+                            )
+                        "
                         :datetime="thread.last_activity_at"
                         :title="formatDateTime(thread.last_activity_at)"
                     >
-                        {{ formatRelative(thread.last_activity_at) }}
+                        {{ listTime(thread.last_activity_at) }}
                     </time>
                 </span>
-                <span class="mt-0.5 flex items-center gap-1.5">
+                <span
+                    class="mt-0.5 flex items-center gap-1.5 pointer-coarse:pr-9"
+                >
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate text-xs',
-                                thread.unread > 0
+                                'min-w-0 flex-1 truncate text-[0.8rem] leading-snug',
+                                unread
                                     ? 'text-foreground'
                                     : 'text-muted-foreground',
                                 thread.last_message?.deleted && 'italic',
                             )
                         "
                     >
-                        {{ preview }}
+                        <span v-if="author" class="font-medium">{{
+                            author
+                        }}</span
+                        >{{ preview }}
                     </span>
                     <Archive
                         v-if="thread.archived"
@@ -136,12 +154,12 @@ const unreadLabel = computed(() =>
                         aria-label="Silenciado"
                     />
                     <span
-                        v-if="thread.unread > 0"
+                        v-if="unread"
                         :class="
                             cn(
-                                'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-semibold',
+                                'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[0.7rem] font-semibold tabular-nums',
                                 thread.muted
-                                    ? 'bg-muted text-muted-foreground'
+                                    ? 'bg-muted-foreground/20 text-foreground'
                                     : 'bg-primary text-primary-foreground',
                             )
                         "
@@ -154,7 +172,7 @@ const unreadLabel = computed(() =>
         </Link>
         <button
             type="button"
-            class="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none group-focus-within/thread:opacity-100 group-hover/thread:opacity-100 hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-opacity pointer-coarse:right-1 pointer-coarse:size-10 pointer-coarse:opacity-100"
+            class="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-background text-muted-foreground opacity-0 shadow-(--shadow-control) ring-1 ring-border outline-none group-focus-within/thread:opacity-100 group-hover/thread:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-opacity pointer-coarse:top-auto pointer-coarse:right-1 pointer-coarse:bottom-1 pointer-coarse:size-9 pointer-coarse:bg-transparent pointer-coarse:opacity-100 pointer-coarse:shadow-none pointer-coarse:ring-0"
             :aria-label="`Vista previa de ${thread.title}`"
             title="Vista previa sin marcar como leído"
             data-thread-preview

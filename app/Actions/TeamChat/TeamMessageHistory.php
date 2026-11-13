@@ -103,7 +103,8 @@ class TeamMessageHistory
                 'attachments',
                 'reactions' => fn ($reactions) => $reactions->orderBy('id'),
                 'reactions.user:id,name,is_active',
-                'replyTo:id,team_thread_id,user_id,body,deleted_at',
+                // A quoted message sent without text says how many files it carried.
+                'replyTo' => fn ($quoted) => $quoted->select(['id', 'team_thread_id', 'user_id', 'body', 'deleted_at'])->withCount('attachments'),
                 'replyTo.author:id,name,is_active',
             ]);
     }

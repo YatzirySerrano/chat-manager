@@ -97,6 +97,8 @@ export type TeamAttachment = {
     previewable: boolean;
     download_url: string;
     preview_url: string | null;
+    /** Small preview of an image for the bubble (the original when none can be made). */
+    thumb_url?: string | null;
     /** Audio and video played in place (served with byte ranges). */
     stream_url?: string | null;
 };

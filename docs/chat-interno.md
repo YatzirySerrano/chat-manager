@@ -135,10 +135,17 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   ver el final del chat con la pestaña visible **y la ventana con foco** (fase 5.2.1: una ventana visible junto a otra
   aplicación ya no marca como leído). Los mensajes propios, los de sistema y los eliminados no cuentan.
   Silenciar un chat lo excluye del badge global (sigue mostrando su contador en la lista).
-- **«Visto»**: en chats privados, bajo tu último mensaje cuando la otra persona ya lo leyó.
+- **«Visto»**: en chats privados, bajo tu último mensaje cuando la otra persona ya lo leyó; cada mensaje propio lleva
+  además una palomita (enviado) o dos (leído).
+- **Historial (2026-11-13)**: separadores de día fijos al desplazar («Hoy», «Ayer», fecha), mensajes seguidos de la
+  misma persona agrupados (nombre solo en el primero, avatar y esquina solo en el último; 5 min), línea «Mensajes
+  nuevos» donde quedó la lectura al abrir, botón para ir al final con el número de mensajes nuevos, enlaces web
+  detectados (se abren en otra pestaña; el texto nunca es HTML), «Copiar texto» en el menú del mensaje, y carga de
+  mensajes anteriores al acercarse al inicio sin mover lo que se lee. Al editar, el editor queda abierto con su error
+  si el servidor rechaza el cambio; las reacciones se muestran al instante y se corrigen con la respuesta.
 - **Disponibilidad**: punto de estado con la disponibilidad declarada por la persona (Disponible/No disponible, la misma
   de la atención de conversaciones). Es un estado operativo, no de conexión.
-- **En línea**: anillo alrededor del avatar (y «En línea» en el encabezado del chat privado y en la información del
+- **En línea**: punto verde en el avatar (y «En línea» en el encabezado del chat privado y en la información del
   grupo) cuando la persona tiene la aplicación abierta en cualquier página. Es independiente de la disponibilidad: se
   puede estar en línea y «No disponible». Sin conexión en tiempo real no se muestra a nadie en línea.
 - **Filtros** de la lista: Todos, No leídos, Privados, Grupos, Archivados (se recuerda el último en el navegador).
@@ -191,6 +198,23 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   reproducir) y las imágenes se abren en un visor dentro de la app. Siempre
   `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` y CSP con `sandbox` (salvo la vista previa de PDF, porque los navegadores no muestran un PDF dentro de un documento aislado). No hay URLs públicas ni
   permanentes. Nombre mostrado saneado (sin rutas, comillas ni caracteres de control). SHA-256 guardado.
+- **Vista previa y visor (2026-11-13)**: la burbuja muestra las imágenes en una cuadrícula con su miniatura
+  (`thumb_url`, `?thumb=1`: `MediaThumbnails` la genera la primera vez en `Miniaturas del sistema/` del mismo disco
+  privado, con la misma autorización y cabeceras, y `MediaDisk::discard()` la borra con el original; GIF, WebP, PNG con
+  transparencia e imágenes pequeñas responden el original en línea). El original solo se pide al abrir el visor
+  (`TeamMediaViewer`: zoom con botones, rueda, doble toque y teclas `+`/`−`/`0`, arrastre para desplazar, anterior y
+  siguiente con flechas o deslizando, descarga; recorre imágenes, videos y PDF de los mensajes cargados). El video
+  muestra su primer fotograma y su duración (solo pide el encabezado, por rangos, cuando está cerca de la pantalla) y
+  se reproduce en la burbuja o en el visor; el audio tiene reproductor propio (avance con puntero y teclado, duración,
+  velocidad 1×/1.5×/2×, uno a la vez); los demás archivos son tarjetas con tipo, nombre y tamaño.
+- **Adjuntar (2026-11-13)**: además del selector, **Ctrl+V** de una captura (recorte de Windows, Impr Pant) o de
+  archivos copiados, y **arrastrar y soltar** sobre toda la ventana del chat (capa «Suelta los archivos para
+  adjuntarlos»; las carpetas se rechazan con su motivo). Pegar texto sigue pegando texto (si el portapapeles trae texto
+  e imagen, gana el texto). Una captura pegada se llama `Captura aaaa-mm-dd hh.mm.ss.png`. Todo pasa por
+  `screenFiles()` (`teamChatFormat.ts`): tipo no permitido, archivo vacío, límite del chat, límite del servidor,
+  duplicado, máximo por mensaje y peso total, cada uno con su mensaje. Los borradores muestran miniatura (imagen y
+  video, desde el propio archivo), tipo y tamaño, y se pueden ver en grande antes de enviar. El texto en curso se
+  recuerda por chat en la pestaña (`sessionStorage`); los archivos no.
 - Si el archivo falta en disco, la descarga responde 404 y se registra una advertencia (sin datos del archivo).
 - Al eliminar el mensaje el archivo se borra del disco que registra el adjunto (después del commit; un fallo del
   almacenamiento se registra y no deshace la eliminación) y el adjunto queda con `purged_at`.
@@ -365,6 +389,10 @@ demás participantes no los ven. Detalle (alcance, migración, rutas, supervisi�
   `pest-plugin-browser`); los cubren pruebas Pest del servidor y la prueba manual.
 - La lista carga 50 hilos y amplía de 50 en 50 hasta un máximo de 500 (`limits.maxThreads`); al llegar al máximo se
   oculta «Ver más chats» y se pide usar la búsqueda o los filtros.
-- Sin vista previa de video/audio en línea (se descargan).
+- Un PDF se abre en el visor dentro de la app con el lector del navegador; en teléfonos cuyo navegador no muestra PDF
+  incrustados el visor ofrece «Abrir en una pestaña nueva» y la descarga. Los documentos de Office no tienen vista
+  previa (tarjeta con tipo, nombre y tamaño, y descarga).
+- Los adjuntos no guardan sus dimensiones: las imágenes se muestran en cuadros de tamaño fijo (recortadas en la burbuja,
+  completas en el visor) para que el historial no salte al cargarlas.
 - No se ofrece exportación de chats internos (decisión de privacidad).
 - No hay retención automática por antigüedad: los mensajes se conservan hasta que su autor los elimina.

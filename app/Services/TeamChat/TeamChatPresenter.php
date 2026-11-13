@@ -2,6 +2,7 @@
 
 namespace App\Services\TeamChat;
 
+use App\Enums\TeamChat\TeamAttachmentKind;
 use App\Enums\TeamChat\TeamChatSystemEvent;
 use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
@@ -154,9 +155,7 @@ class TeamChatPresenter
             'reply_to' => $message->replyTo === null ? null : [
                 'id' => $message->replyTo->id,
                 'author' => $this->userName($message->replyTo->author),
-                'excerpt' => $message->replyTo->isDeleted()
-                    ? 'Mensaje eliminado'
-                    : Str::limit(Str::squish((string) $message->replyTo->body), 120),
+                'excerpt' => $this->replyExcerpt($message->replyTo),
                 'deleted' => $message->replyTo->isDeleted(),
             ],
             'mentions' => $message->isSystem() || $message->isDeleted() ? [] : array_map(fn (int $userId): array => [
@@ -206,6 +205,10 @@ class TeamChatPresenter
             'previewable' => $attachment->isPreviewable(),
             'download_url' => route('team-chat.attachments.show', $parameters),
             'preview_url' => $attachment->isPreviewable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
+            // The small preview the bubble shows (the original when none can be made).
+            'thumb_url' => $attachment->isPreviewable() && $attachment->kind === TeamAttachmentKind::Image
+                ? route('team-chat.attachments.show', [...$parameters, 'thumb' => 1])
+                : null,
             // Audio and video played in place, with byte ranges.
             'stream_url' => $attachment->isPlayable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
         ];
@@ -227,6 +230,21 @@ class TeamChatPresenter
         $target = $targetId === null ? null : $this->userName($targets->get($targetId));
 
         return $event->sentence($this->userName($message->author), $target, $metadata);
+    }
+
+    /**
+     * What a quoted message says: its text, or what it carried when it was
+     * sent without text (needs `attachments_count` on the quoted message).
+     */
+    private function replyExcerpt(TeamMessage $quoted): string
+    {
+        if ($quoted->isDeleted()) {
+            return 'Mensaje eliminado';
+        }
+
+        $text = Str::limit(Str::squish((string) $quoted->body), 120);
+
+        return $text !== '' ? $text : $this->attachmentSummary(max(1, (int) $quoted->getAttribute('attachments_count')));
     }
 
     private function attachmentSummary(int $count): string

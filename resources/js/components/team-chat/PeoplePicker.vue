@@ -126,7 +126,7 @@ function choose(contact: TeamContact): void {
         </p>
 
         <div
-            class="max-h-72 overflow-y-auto rounded-lg border"
+            class="max-h-72 overflow-y-auto rounded-xl border"
             role="listbox"
             :aria-multiselectable="multiple"
             aria-label="Personas"

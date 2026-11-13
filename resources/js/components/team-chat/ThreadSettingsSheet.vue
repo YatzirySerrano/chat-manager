@@ -269,6 +269,39 @@ function restoreGroup(): void {
             </SheetHeader>
 
             <div class="grid gap-6 p-4">
+                <div class="flex items-center gap-3">
+                    <TeamAvatar
+                        :name="thread.title"
+                        :group="isGroup"
+                        :deleted="thread.partner?.deleted ?? false"
+                        :online="
+                            thread.partner !== null &&
+                            isOnline(thread.partner.id)
+                        "
+                        size="lg"
+                    />
+                    <div class="min-w-0">
+                        <p
+                            class="truncate font-display text-lg leading-tight font-semibold"
+                        >
+                            {{ thread.title }}
+                        </p>
+                        <p class="text-sm text-muted-foreground">
+                            {{
+                                isGroup
+                                    ? thread.participants.length === 1
+                                        ? 'Grupo de 1 participante'
+                                        : `Grupo de ${thread.participants.length} participantes`
+                                    : thread.partner?.deleted
+                                      ? 'Cuenta eliminada'
+                                      : isOnline(thread.partner?.id ?? 0)
+                                        ? 'En línea'
+                                        : 'Sin conexión'
+                            }}
+                        </p>
+                    </div>
+                </div>
+
                 <section
                     v-if="isGroup"
                     class="grid gap-3"
@@ -341,7 +374,7 @@ function restoreGroup(): void {
                 </section>
 
                 <section
-                    class="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    class="flex items-center justify-between gap-3 rounded-xl border bg-card p-3"
                 >
                     <div class="grid gap-0.5">
                         <Label for="team-settings-mute"
@@ -376,7 +409,10 @@ function restoreGroup(): void {
                         </Button>
                     </div>
 
-                    <div v-if="adding" class="grid gap-2 rounded-lg border p-3">
+                    <div
+                        v-if="adding"
+                        class="grid gap-2 rounded-xl border bg-card p-3"
+                    >
                         <PeoplePicker
                             v-model:selected="toAdd"
                             multiple
@@ -405,7 +441,9 @@ function restoreGroup(): void {
 
                     <InputError :message="roleError" />
 
-                    <ul class="divide-y rounded-lg border">
+                    <ul
+                        class="divide-y overflow-hidden rounded-xl border bg-card"
+                    >
                         <li
                             v-for="participant in thread.participants"
                             :key="participant.id"

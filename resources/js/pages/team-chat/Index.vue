@@ -11,7 +11,6 @@ import {
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import EmptyState from '@/components/EmptyState.vue';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
@@ -65,6 +64,10 @@ const props = defineProps<{
     can: { createGroup: boolean };
     limits: TeamChatLimits;
 }>();
+
+/* The same canvas as the open chat (ChatWindow). */
+const CHAT_CANVAS =
+    'bg-surface-sunken bg-[radial-gradient(color-mix(in_oklch,var(--primary)_14%,transparent)_1px,transparent_1.5px)] bg-size-[20px_20px]';
 
 const FILTER_STORAGE_KEY = 'team-chat.filter';
 const PAGE_STEP = 50;
@@ -279,9 +282,47 @@ const stopUnreadVisitFinish = router.on('finish', (event) => {
     }
 });
 
+/*
+ * The chat being opened: its row lights up and the pane shows the shape of
+ * a chat at once, instead of the previous chat staying on screen until the
+ * new one arrives.
+ */
+const openingThreadId = ref<number | null>(null);
+const openingVisits = new Set<object>();
+
+const stopOpeningStart = router.on('start', (event) => {
+    const visit = event.detail.visit;
+    const match = /\/team-chat\/threads\/(\d+)$/.exec(visit.url.pathname);
+
+    if (
+        !match ||
+        visit.method !== 'get' ||
+        visit.only.length > 0 ||
+        visit.prefetch
+    ) {
+        return;
+    }
+
+    const id = Number(match[1]);
+
+    // Jumping to a message of the open chat keeps it on screen.
+    if (id !== props.activeThread?.id) {
+        openingVisits.add(visit);
+        openingThreadId.value = id;
+    }
+});
+
+const stopOpeningFinish = router.on('finish', (event) => {
+    if (openingVisits.delete(event.detail.visit) && openingVisits.size === 0) {
+        openingThreadId.value = null;
+    }
+});
+
 onBeforeUnmount(() => {
     stopUnreadVisitWatch();
     stopUnreadVisitFinish();
+    stopOpeningStart();
+    stopOpeningFinish();
 });
 
 /**
@@ -397,18 +438,29 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             :class="
                 cn(
                     'min-h-0 w-full shrink-0 flex-col border-r bg-background lg:flex lg:w-80 xl:w-96 2xl:w-[26rem]',
-                    activeThread ? 'hidden' : 'flex',
+                    activeThread || openingThreadId !== null
+                        ? 'hidden'
+                        : 'flex',
                 )
             "
             aria-label="Chats internos"
         >
-            <div class="grid gap-3 border-b p-3">
-                <div class="flex items-center justify-between gap-2">
+            <div class="grid gap-2.5 px-3 pt-3 pb-2.5">
+                <div class="flex items-center justify-between gap-2 pl-1">
                     <div class="min-w-0">
-                        <h1 class="truncate font-display text-xl font-semibold">
+                        <h1
+                            class="truncate font-display text-xl leading-tight font-semibold"
+                        >
                             Chat interno
                         </h1>
-                        <p class="truncate text-xs text-muted-foreground">
+                        <p
+                            class="truncate text-xs"
+                            :class="
+                                unreadTotal > 0
+                                    ? 'font-medium text-primary'
+                                    : 'text-muted-foreground'
+                            "
+                        >
                             {{
                                 unreadTotal > 0
                                     ? `${unreadTotal} sin leer`
@@ -453,7 +505,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     <Input
                         v-model="search"
                         type="search"
-                        class="pr-9 pl-9"
+                        class="rounded-full border-transparent bg-muted/70 pr-9 pl-9 shadow-none hover:bg-muted focus-visible:bg-background [&::-webkit-search-cancel-button]:hidden"
                         placeholder="Buscar chats y mensajes"
                         aria-label="Buscar chats y mensajes"
                         maxlength="80"
@@ -462,7 +514,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     <button
                         v-if="search !== ''"
                         type="button"
-                        class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                         aria-label="Limpiar búsqueda"
                         @click="clearSearch"
                     >
@@ -482,10 +534,10 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         :aria-pressed="filter === option.value"
                         :class="
                             cn(
-                                'shrink-0 press rounded-full border px-3 py-1 text-xs font-medium focus-visible:ring-[3px] focus-visible:ring-primary/25 focus-visible:outline-none pointer-coarse:min-h-9',
+                                'shrink-0 press rounded-full px-3 py-1 text-xs font-medium focus-visible:ring-[3px] focus-visible:ring-primary/25 focus-visible:outline-none pointer-coarse:min-h-9',
                                 filter === option.value
-                                    ? 'border-primary bg-primary-soft font-semibold text-primary-soft-foreground'
-                                    : 'bg-card text-muted-foreground hover:border-border-strong hover:bg-accent hover:text-foreground',
+                                    ? 'bg-foreground text-background'
+                                    : 'bg-muted/70 text-muted-foreground hover:bg-accent hover:text-foreground',
                             )
                         "
                         @click="chooseFilter(option.value)"
@@ -496,7 +548,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             </div>
 
             <div
-                class="min-h-0 flex-1 overflow-y-auto p-2"
+                class="min-h-0 flex-1 overflow-y-auto border-t p-2"
                 :aria-busy="loadingList"
             >
                 <template v-if="loadingList && threads.threads.length === 0">
@@ -530,7 +582,11 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         v-for="thread in threads.threads"
                         :key="thread.id"
                         :thread="thread"
-                        :active="activeThread?.id === thread.id"
+                        :active="
+                            openingThreadId === null &&
+                            activeThread?.id === thread.id
+                        "
+                        :opening="openingThreadId === thread.id"
                         :query="linkQuery"
                         @preview="(row) => (previewThread = row)"
                     />
@@ -568,12 +624,17 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     >
                         En mensajes
                     </h2>
-                    <p
+                    <div
                         v-if="searchingMessages"
-                        class="px-3 py-2 text-xs text-muted-foreground"
+                        class="grid gap-2 px-3 py-2"
+                        role="status"
                     >
-                        Buscando…
-                    </p>
+                        <span class="sr-only">Buscando…</span>
+                        <Skeleton class="h-3.5 w-1/2" />
+                        <Skeleton class="h-3 w-full" />
+                        <Skeleton class="h-3.5 w-2/5" />
+                        <Skeleton class="h-3 w-4/5" />
+                    </div>
                     <p
                         v-else-if="messageResults.length === 0"
                         class="px-3 py-2 text-xs text-muted-foreground"
@@ -587,7 +648,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         >
                             <button
                                 type="button"
-                                class="grid w-full gap-0.5 rounded-lg px-3 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                                class="grid w-full gap-0.5 rounded-xl px-3 py-2 text-left transition-colors duration-(--duration-fast) hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
                                 @click="openResult(result)"
                             >
                                 <span class="flex items-center gap-2 text-xs">
@@ -629,11 +690,46 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             :class="
                 cn(
                     'min-h-0 min-w-0 flex-1 flex-col',
-                    activeThread ? 'flex' : 'hidden lg:flex',
+                    activeThread || openingThreadId !== null
+                        ? 'flex'
+                        : 'hidden lg:flex',
                 )
             "
         >
-            <template v-if="activeThread && messages">
+            <!-- A chat is on its way: its shape, at once. -->
+            <div
+                v-if="openingThreadId !== null"
+                class="flex h-full min-h-0 flex-col"
+                role="status"
+                aria-label="Abriendo el chat…"
+            >
+                <div
+                    class="flex h-14 shrink-0 items-center gap-3 border-b px-4 sm:h-16 sm:px-5"
+                >
+                    <Skeleton class="size-10 rounded-full" />
+                    <div class="grid gap-1.5">
+                        <Skeleton class="h-4 w-40" />
+                        <Skeleton class="h-3 w-24" />
+                    </div>
+                </div>
+                <div
+                    class="flex min-h-0 flex-1 flex-col justify-end gap-2 overflow-hidden bg-surface-sunken px-3 pb-4 sm:px-5"
+                >
+                    <Skeleton class="h-10 w-56 rounded-2xl" />
+                    <Skeleton class="h-10 w-80 max-w-[75%] rounded-2xl" />
+                    <Skeleton
+                        class="h-10 w-64 max-w-[70%] self-end rounded-2xl bg-primary/20"
+                    />
+                    <Skeleton class="h-16 w-72 max-w-[75%] rounded-2xl" />
+                    <Skeleton
+                        class="h-10 w-40 self-end rounded-2xl bg-primary/20"
+                    />
+                </div>
+                <div class="shrink-0 border-t px-2 py-2.5 sm:px-5 sm:py-3">
+                    <Skeleton class="h-12 w-full rounded-2xl" />
+                </div>
+            </div>
+            <template v-else-if="activeThread && messages">
                 <ChatWindow
                     :key="`${activeThread.id}-${around ?? 'latest'}`"
                     :thread="activeThread"
@@ -656,22 +752,30 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             >
                 <div class="grid reveal justify-items-start gap-2">
                     <span
-                        class="mb-2 grid size-12 place-items-center rounded-xl border bg-card text-primary"
+                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
                         aria-hidden="true"
                     >
                         <MessageCircle class="size-6" />
                     </span>
                     <h2
-                        class="font-display text-3xl font-semibold text-balance"
+                        class="font-display text-3xl font-semibold tracking-tight text-balance"
                     >
-                        Elige un chat
+                        {{
+                            unreadTotal > 0
+                                ? unreadTotal === 1
+                                    ? 'Tienes 1 mensaje sin leer'
+                                    : `Tienes ${unreadTotal} mensajes sin leer`
+                                : 'Elige un chat'
+                        }}
                     </h2>
                     <p
                         class="max-w-prose text-base text-pretty text-muted-foreground"
                     >
                         Los mensajes internos son privados entre sus
                         participantes y nunca se envían a WhatsApp ni se mezclan
-                        con las conversaciones de clientes.
+                        con las conversaciones de clientes. Puedes pegar
+                        capturas de pantalla y arrastrar archivos a cualquier
+                        chat.
                     </p>
                     <div class="mt-4 flex flex-wrap gap-2">
                         <Button @click="newDirectOpen = true">

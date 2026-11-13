@@ -16,6 +16,11 @@ use RuntimeException;
  * wait for a word from the test (e.g. COMMIT); the last line is
  * "RESULT {json}". Only the testing database is ever used: the environment
  * forces it and the worker refuses to run otherwise.
+ *
+ * On Windows the pipes of proc_open cannot be read without blocking (neither
+ * stream_select nor non-blocking mode work on them), which froze the whole
+ * suite: there the output of the worker goes to temporary files that are
+ * read as they grow.
  */
 final class ConcurrentProcess
 {
@@ -28,6 +33,9 @@ final class ConcurrentProcess
     private string $stdout = '';
 
     private string $stderr = '';
+
+    /** @var array<int, array{path: string, offset: int}> Output files by descriptor (Windows only). */
+    private array $files = [];
 
     /** @var list<string> Every line printed so far, for failure messages. */
     private array $transcript = [];
@@ -98,14 +106,28 @@ final class ConcurrentProcess
         ];
 
         $command = [PHP_BINARY, __DIR__.'/worker.php', $scenario, base64_encode((string) json_encode($arguments))];
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, base_path(), $env);
+        $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            foreach ([1, 2] as $descriptor) {
+                $path = (string) tempnam(sys_get_temp_dir(), 'cmc');
+                $this->files[$descriptor] = ['path' => $path, 'offset' => 0];
+                $descriptors[$descriptor] = ['file', $path, 'w'];
+            }
+        }
+
+        $process = proc_open($command, $descriptors, $pipes, base_path(), $env);
 
         if (! is_resource($process)) {
+            $this->removeFiles();
+
             throw new RuntimeException("The process for [{$scenario}] could not be started.");
         }
 
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
+        if ($this->files === []) {
+            stream_set_blocking($pipes[1], false);
+            stream_set_blocking($pipes[2], false);
+        }
 
         $this->process = $process;
         $this->pipes = $pipes;
@@ -204,6 +226,16 @@ final class ConcurrentProcess
         }
 
         proc_close($this->process);
+        $this->removeFiles();
+    }
+
+    private function removeFiles(): void
+    {
+        foreach ($this->files as $file) {
+            @unlink($file['path']);
+        }
+
+        $this->files = [];
     }
 
     public function __destruct()
@@ -251,6 +283,10 @@ final class ConcurrentProcess
      */
     private function read(float $wait): bool
     {
+        if ($this->files !== []) {
+            return $this->readFiles($wait);
+        }
+
         $streams = array_values(array_filter([$this->pipes[1], $this->pipes[2]], 'is_resource'));
 
         if ($streams === []) {
@@ -278,6 +314,43 @@ final class ConcurrentProcess
         }
 
         return $read;
+    }
+
+    /**
+     * Read what the worker appended to its output files, waiting up to the
+     * given time for something new; whether anything was read.
+     */
+    private function readFiles(float $wait): bool
+    {
+        $deadline = microtime(true) + $wait;
+
+        while (true) {
+            $read = false;
+
+            foreach ($this->files as $descriptor => $file) {
+                clearstatcache(true, $file['path']);
+                $chunk = (string) @file_get_contents($file['path'], false, null, $file['offset']);
+
+                if ($chunk === '') {
+                    continue;
+                }
+
+                $this->files[$descriptor]['offset'] += strlen($chunk);
+                $read = true;
+
+                if ($descriptor === 1) {
+                    $this->stdout .= $chunk;
+                } else {
+                    $this->stderr .= $chunk;
+                }
+            }
+
+            if ($read || microtime(true) >= $deadline) {
+                return $read;
+            }
+
+            usleep(10_000);
+        }
     }
 
     /**

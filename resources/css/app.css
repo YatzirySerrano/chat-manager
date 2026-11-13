@@ -1250,3 +1250,33 @@
     background-color: color-mix(in oklch, var(--background) 86%, transparent);
     backdrop-filter: blur(3px);
 }
+
+/*
+  Thin indeterminate bar on the top edge of a pane while its content is
+  being replaced (another conversation is loading). Put it on an empty
+  element that is absolutely placed inside a `relative` pane.
+*/
+@utility pane-progress {
+    height: 2px;
+    overflow: hidden;
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+
+    &::after {
+        content: '';
+        display: block;
+        width: 40%;
+        height: 100%;
+        background-color: var(--primary);
+        animation: pane-progress 1.1s var(--ease-standard) infinite;
+    }
+}
+
+@keyframes pane-progress {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(250%);
+    }
+}

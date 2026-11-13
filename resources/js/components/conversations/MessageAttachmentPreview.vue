@@ -56,6 +56,8 @@ const props = withDefaults(
         seconds?: number | null;
         /** A video the channel marks as a GIF: plays by itself, muted, in a loop. */
         gif?: boolean;
+        /** Small embedded preview (data URI) to show while the file is not here. */
+        placeholder?: string | null;
         /** Caption, author and time of the message, shown by the viewer. */
         caption?: string | null;
         author?: string | null;
@@ -67,6 +69,7 @@ const props = withDefaults(
         voice: false,
         seconds: null,
         gif: false,
+        placeholder: null,
         caption: null,
         author: null,
         at: null,
@@ -337,6 +340,13 @@ function pauseVideo(): void {
                 attachment.error_code ?? attachment.status ?? 'pending'
             "
         >
+            <img
+                v-if="placeholder"
+                :src="placeholder"
+                alt=""
+                class="size-12 shrink-0 rounded-lg object-cover"
+                data-attachment-placeholder
+            />
             <LoaderCircle
                 v-if="pending"
                 class="mt-px size-4 shrink-0 animate-spin"

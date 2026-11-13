@@ -180,6 +180,7 @@ const location = computed(() => {
     return {
         name: textOrNull(content.value?.name),
         address: textOrNull(content.value?.address),
+        live: content.value?.live === true,
         url: located ? googleMapsUrl(latitude, longitude) : null,
         coordinates: located
             ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
@@ -244,6 +245,7 @@ const poll = computed(() => {
             props.message.body ??
             'Encuesta',
         options,
+        multiple: content.value?.multiple === true,
     };
 });
 
@@ -327,6 +329,7 @@ const fallback = computed<string | null>(() => {
     }
 
     const hint =
+        textOrNull(content.value?.label) ??
         textOrNull(content.value?.hint) ??
         textOrNull(content.value?.description) ??
         textOrNull(content.value?.title);
@@ -363,6 +366,22 @@ const quote = computed(() => {
     if ('origin' in quoted) {
         if (quoted.origin === 'restricted') {
             return { mode: 'restricted' as const };
+        }
+
+        // Written before the number was linked: only its excerpt is known.
+        if (quoted.origin === 'external') {
+            return {
+                mode: 'static' as const,
+                id: null,
+                url: null,
+                author:
+                    quoted.direction === 'outbound'
+                        ? 'Equipo'
+                        : quoted.direction === 'inbound'
+                          ? props.contactName
+                          : 'Mensaje citado',
+                text: textOrNull(quoted.body) ?? 'Mensaje',
+            };
         }
 
         const previous = quoted.origin === 'previous_conversation';
@@ -429,8 +448,21 @@ const author = computed(() => {
         return `Integración: ${props.message.integration.name}`;
     }
 
-    return props.message.sender?.name ?? 'Equipo';
+    return (
+        props.message.sender?.name ??
+        (props.message.sent_from_phone ? 'Desde el teléfono' : 'Equipo')
+    );
 });
+
+/* The small preview WhatsApp embeds, for a file that is not here (yet). */
+const thumbnail = computed(() => {
+    const value = content.value?.thumbnail;
+
+    return typeof value === 'string' && value.startsWith('data:image/')
+        ? value
+        : null;
+});
+const viewOnce = computed(() => content.value?.view_once === true);
 
 /** The customer's download link can still be revoked (outbound link deliveries). */
 function canRevokeLink(attachment: MessageAttachment): boolean {
@@ -714,6 +746,7 @@ const toolButton =
                                 :voice="voice"
                                 :seconds="mediaSeconds"
                                 :gif="gif"
+                                :placeholder="thumbnail"
                                 :caption="message.body"
                                 :author="author"
                                 :at="time"
@@ -801,6 +834,15 @@ const toolButton =
                         }}
                     </p>
 
+                    <p
+                        v-if="viewOnce"
+                        class="mb-1 px-1 text-xs italic"
+                        :class="secondaryText"
+                        data-view-once
+                    >
+                        Se envió para verse una sola vez.
+                    </p>
+
                     <!-- A place: what it is called, where it is and the way there. -->
                     <div
                         v-if="location"
@@ -824,7 +866,10 @@ const toolButton =
                             <div class="min-w-0 flex-1">
                                 <p class="font-medium">
                                     {{
-                                        location.name ?? 'Ubicación compartida'
+                                        location.name ??
+                                        (location.live
+                                            ? 'Ubicación en tiempo real'
+                                            : 'Ubicación compartida')
                                     }}
                                 </p>
                                 <p
@@ -968,7 +1013,12 @@ const toolButton =
                             </li>
                         </ul>
                         <p class="mt-1 text-xs" :class="secondaryText">
-                            Encuesta · se responde desde el teléfono
+                            {{
+                                poll.multiple
+                                    ? 'Encuesta de varias respuestas.'
+                                    : 'Encuesta de una respuesta.'
+                            }}
+                            Los votos se ven en el teléfono.
                         </p>
                     </div>
 

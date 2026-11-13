@@ -165,13 +165,12 @@ const readinessOptions: AppSelectOption<string>[] = [
 ];
 
 const sectionClass =
-    'grid min-w-0 gap-3 border-t pt-3.5 first:border-t-0 first:pt-0';
-const sectionLegendClass =
-    'font-display text-base font-semibold text-foreground';
+    'grid min-w-0 gap-3 border-t pt-4 first:border-t-0 first:pt-0';
+const sectionLegendClass = 'font-display text-sm font-semibold text-foreground';
 const fieldLabelClass = 'text-xs font-medium text-muted-foreground';
 /* One option of an exclusive group shown as a chip (view, status). */
 const chipClass =
-    'inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-3 text-sm outline-none transition-[background-color,border-color,color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) hover:border-border-strong hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary/25 data-[state=checked]:border-primary data-[state=checked]:bg-primary-soft data-[state=checked]:font-semibold data-[state=checked]:text-primary-soft-foreground pointer-coarse:min-h-10';
+    'inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border bg-card px-2.5 text-sm outline-none transition-[background-color,border-color,color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) hover:border-border-strong hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary/25 data-[state=checked]:border-primary data-[state=checked]:bg-primary-soft data-[state=checked]:font-semibold data-[state=checked]:text-primary-soft-foreground pointer-coarse:min-h-10';
 </script>
 
 <template>

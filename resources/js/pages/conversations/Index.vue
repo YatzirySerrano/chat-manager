@@ -13,6 +13,7 @@ import {
 import { toast } from 'vue-sonner';
 import { ACCEPT_BLOCK } from '@/components/conversations/acceptBlock';
 import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
+import ChatSkeleton from '@/components/conversations/ChatSkeleton.vue';
 import ConversationChat from '@/components/conversations/ConversationChat.vue';
 import ConversationDetailsPanel from '@/components/conversations/ConversationDetailsPanel.vue';
 import ConversationPreview from '@/components/conversations/ConversationPreview.vue';
@@ -793,6 +794,12 @@ function onAliasSaved(): void {
             class="relative min-h-0 min-w-0"
             :aria-busy="loadingSelection"
         >
+            <div
+                v-if="loadingSelection"
+                class="absolute inset-x-0 top-0 z-20 pane-progress"
+                aria-hidden="true"
+                data-pane-progress
+            />
             <h1 v-if="!showList" class="sr-only">
                 {{
                     conversation
@@ -809,11 +816,16 @@ function onAliasSaved(): void {
                 :transfer-reason-required="transferReasonRequired"
                 :composer="composer"
                 :details-open="extraWide ? detailsOpen : sheetDetailsOpen"
-                :class="loadingSelection && 'opacity-70 transition-opacity'"
+                :class="
+                    loadingSelection &&
+                    'opacity-80 transition-opacity duration-(--duration-fast)'
+                "
                 @back="select(null)"
                 @read="onRead"
                 @toggle-details="toggleDetails"
             />
+            <!-- A conversation was chosen and is on its way. -->
+            <ChatSkeleton v-else-if="loadingSelection" />
             <!--
                 Nothing open: the pane states it at its top-left corner and
                 offers the three counters of the inbox as shortcuts.

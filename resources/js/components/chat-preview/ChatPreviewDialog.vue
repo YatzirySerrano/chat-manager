@@ -96,10 +96,10 @@ function bubbleClasses(item: ChatPreviewItem): string {
     const custom = customBubble(item);
 
     if (item.mine) {
-        return `rounded-br-md ${custom ? CUSTOM_BUBBLE_CLASSES.sent : 'bg-primary-soft text-primary-soft-foreground'}`;
+        return `rounded-br-sm ${custom ? CUSTOM_BUBBLE_CLASSES.sent : 'bg-bubble-out text-bubble-out-foreground'}`;
     }
 
-    return `rounded-bl-md ${custom ? CUSTOM_BUBBLE_CLASSES.received : 'bg-background'}`;
+    return `rounded-bl-sm border border-border-strong/60 ${custom ? CUSTOM_BUBBLE_CLASSES.received : 'bg-bubble-in text-bubble-in-foreground'}`;
 }
 
 /* Text placed on the chat background gets the theme's backdrop. */
@@ -177,7 +177,7 @@ watch(
                 ref="scroller"
                 class="min-h-40 flex-1 overflow-y-auto px-4 py-3"
                 :class="
-                    customColors ? CUSTOM_BUBBLE_CLASSES.chat : 'bg-muted/30'
+                    customColors ? CUSTOM_BUBBLE_CLASSES.chat : 'chat-canvas'
                 "
                 :style="chatStyle"
                 tabindex="0"
@@ -190,9 +190,10 @@ watch(
                     class="grid gap-3"
                     aria-hidden="true"
                 >
-                    <Skeleton class="h-10 w-3/4" />
-                    <Skeleton class="ml-auto h-10 w-2/3" />
-                    <Skeleton class="h-14 w-4/5" />
+                    <Skeleton class="h-10 w-3/5 rounded-bubble" />
+                    <Skeleton class="ml-auto h-10 w-1/2 rounded-bubble" />
+                    <Skeleton class="h-16 w-4/5 rounded-bubble" />
+                    <Skeleton class="ml-auto h-10 w-2/5 rounded-bubble" />
                 </div>
 
                 <div
@@ -211,7 +212,7 @@ watch(
 
                 <p
                     v-else-if="items.length === 0"
-                    class="flex h-full items-center justify-center py-8 text-sm text-muted-foreground"
+                    class="flex h-full items-center py-8 text-sm text-muted-foreground"
                 >
                     <span :class="onChatBackground"
                         >Todavía no hay mensajes.</span
@@ -229,7 +230,7 @@ watch(
                     <template v-for="day in days" :key="day.key">
                         <li
                             v-if="day.label"
-                            class="sticky top-0 z-10 mx-auto w-fit rounded-full bg-background/90 px-2 py-0.5 text-xs text-muted-foreground shadow-xs"
+                            class="mx-auto my-1 w-fit rounded-full border bg-background/90 px-3 py-1 text-[0.6875rem] leading-none font-semibold text-muted-foreground shadow-(--shadow-control) backdrop-blur-sm"
                         >
                             {{ day.label }}
                         </li>
@@ -241,7 +242,7 @@ watch(
                             data-chat-preview-item
                         >
                             <article
-                                class="max-w-[85%] min-w-0 rounded-2xl border px-3 py-2 text-sm shadow-xs"
+                                class="max-w-[85%] min-w-0 rounded-bubble px-3 py-1.5 text-sm/snug"
                                 :class="bubbleClasses(item)"
                             >
                                 <header

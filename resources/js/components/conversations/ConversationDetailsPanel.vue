@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import {
+    Copy,
     ExternalLink,
     History,
     Mail,
@@ -29,6 +30,7 @@ import TagBadge from '@/components/tags/TagBadge.vue';
 import TagPicker from '@/components/tags/TagPicker.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
+import { useInitials } from '@/composables/useInitials';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { save as saveContact } from '@/routes/conversations/contact';
@@ -155,6 +157,30 @@ function onAliasSaved(): void {
 /**
  * Origin links come from the provider; only web links are rendered.
  */
+const { getInitials } = useInitials();
+const initials = computed(() =>
+    getInitials(props.details.contact.display_name),
+);
+
+/* Phone and e-mail are what gets pasted elsewhere most: one click copies them. */
+async function copy(
+    value: string | null | undefined,
+    done: string,
+): Promise<void> {
+    if (!value) {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(value);
+        toast.success(done);
+    } catch {
+        toast.error(
+            'No se pudo copiar. Selecciona el texto y cópialo con Ctrl+C.',
+        );
+    }
+}
+
 function safeUrl(url: string | null): string | null {
     return url !== null && /^https?:\/\//i.test(url) ? url : null;
 }
@@ -184,16 +210,18 @@ function safeUrl(url: string | null): string | null {
         </header>
 
         <div class="min-h-0 flex-1 overflow-y-auto">
-            <section class="grid grid-cols-1 gap-3 border-b px-4 py-4">
+            <section class="grid grid-cols-1 gap-3 border-b px-4 pt-4 pb-5">
                 <div class="flex items-start gap-3">
                     <span
-                        class="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
+                        class="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary-soft font-display text-base font-semibold text-primary-soft-foreground"
+                        aria-hidden="true"
                     >
-                        <UserRound class="size-5" aria-hidden="true" />
+                        <template v-if="initials">{{ initials }}</template>
+                        <UserRound v-else class="size-5" />
                     </span>
                     <div class="min-w-0">
                         <p
-                            class="truncate font-display text-base font-semibold"
+                            class="truncate font-display text-lg leading-snug font-semibold"
                             :title="details.contact.display_name"
                         >
                             {{ details.contact.display_name }}
@@ -244,12 +272,31 @@ function safeUrl(url: string | null): string | null {
                             class="size-4 shrink-0 text-muted-foreground"
                             aria-hidden="true"
                         />
-                        <dd class="truncate">
-                            {{
-                                details.contact.phone_e164
-                                    ? formatPhone(details.contact.phone_e164)
-                                    : 'Sin teléfono'
-                            }}
+                        <dd class="min-w-0 flex-1">
+                            <button
+                                v-if="details.contact.phone_e164"
+                                type="button"
+                                class="group/copy -mx-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 tabular-nums outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10"
+                                title="Copiar el teléfono"
+                                data-copy="phone"
+                                @click="
+                                    copy(
+                                        details.contact.phone_e164,
+                                        'Teléfono copiado',
+                                    )
+                                "
+                            >
+                                <span class="truncate">{{
+                                    formatPhone(details.contact.phone_e164)
+                                }}</span>
+                                <Copy
+                                    class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-(--duration-fast) group-hover/copy:opacity-100 group-focus-visible/copy:opacity-100 pointer-coarse:opacity-100"
+                                    aria-hidden="true"
+                                />
+                            </button>
+                            <span v-else class="text-muted-foreground"
+                                >Sin teléfono</span
+                            >
                         </dd>
                     </div>
                     <div
@@ -261,8 +308,27 @@ function safeUrl(url: string | null): string | null {
                             class="size-4 shrink-0 text-muted-foreground"
                             aria-hidden="true"
                         />
-                        <dd class="truncate" :title="details.contact.email">
-                            {{ details.contact.email }}
+                        <dd class="min-w-0 flex-1">
+                            <button
+                                type="button"
+                                class="group/copy -mx-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-10"
+                                :title="`Copiar ${details.contact.email}`"
+                                data-copy="email"
+                                @click="
+                                    copy(
+                                        details.contact.email,
+                                        'Correo copiado',
+                                    )
+                                "
+                            >
+                                <span class="truncate">{{
+                                    details.contact.email
+                                }}</span>
+                                <Copy
+                                    class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-(--duration-fast) group-hover/copy:opacity-100 group-focus-visible/copy:opacity-100 pointer-coarse:opacity-100"
+                                    aria-hidden="true"
+                                />
+                            </button>
                         </dd>
                     </div>
                     <div
@@ -354,14 +420,14 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="conversation.sla"
-                class="grid gap-3 border-b px-4 py-4 text-sm"
+                class="grid gap-3 border-b px-4 pt-4 pb-5 text-sm"
                 data-sla-details
             >
                 <h3 class="section-title">Tiempo de respuesta (SLA)</h3>
                 <SlaBadge :sla="conversation.sla" variant="detail" />
             </section>
 
-            <section class="grid gap-3 border-b px-4 py-4 text-sm">
+            <section class="grid gap-3 border-b px-4 pt-4 pb-5 text-sm">
                 <h3 class="section-title">Conversación</h3>
                 <dl
                     class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2"
@@ -479,7 +545,7 @@ function safeUrl(url: string | null): string | null {
                 </div>
             </section>
 
-            <section class="grid gap-2 border-b px-4 py-4 text-sm">
+            <section class="grid gap-2.5 border-b px-4 pt-4 pb-5 text-sm">
                 <h3 class="flex items-center gap-1.5 section-title">
                     <Megaphone class="size-3.5" aria-hidden="true" />
                     Procedencia
@@ -518,12 +584,12 @@ function safeUrl(url: string | null): string | null {
                 </p>
             </section>
 
-            <section class="grid gap-2 border-b px-4 py-4 text-sm">
+            <section class="grid gap-2.5 border-b px-4 pt-4 pb-5 text-sm">
                 <h3 class="flex items-center gap-1.5 section-title">
                     <History class="size-3.5" aria-hidden="true" />
                     Conversaciones anteriores
                 </h3>
-                <ul v-if="details.history.length > 0" class="grid gap-1">
+                <ul v-if="details.history.length > 0" class="grid gap-1.5">
                     <li v-for="previous in details.history" :key="previous.id">
                         <!-- History archived as read-only opens in «Historial de Whaticket». -->
                         <component
@@ -533,7 +599,7 @@ function safeUrl(url: string | null): string | null {
                                     ? { href: previous.history_url }
                                     : { type: 'button' }
                             "
-                            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent pointer-coarse:min-h-11"
+                            class="flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-2.5 py-2 text-left transition-colors duration-(--duration-fast) outline-none hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
                             @click="
                                 previous.history_only
                                     ? undefined
@@ -581,7 +647,7 @@ function safeUrl(url: string | null): string | null {
                     <li
                         v-for="note in details.contactNotes"
                         :key="note.id"
-                        class="rounded-md border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm"
+                        class="rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm"
                     >
                         <p class="line-clamp-4 break-words whitespace-pre-line">
                             {{ note.body }}

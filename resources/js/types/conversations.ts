@@ -352,7 +352,12 @@ export type MessageContent =
           )[];
       }
     /* A type this version does not draw: a readable hint of what it was. */
-    | { hint?: string | null; original_type?: string | null };
+    | { hint?: string | null; original_type?: string | null }
+    /* What an unsupported message was, in words ("Llamada perdida"). */
+    | { kind?: string | null; label?: string | null }
+    /* Sent to be seen once, and the small preview WhatsApp embeds (data URI). */
+    | { view_once?: boolean; thumbnail?: string | null }
+    | { multiple?: boolean; live?: boolean };
 
 /** A reaction left on a message. */
 export type MessageReaction = { emoji: string; from_me: boolean };
@@ -416,6 +421,18 @@ export type ConversationMessage = {
               conversation_id: null;
               url: null;
           }
+        /* The original is not stored here: only the excerpt WhatsApp sent. */
+        | {
+              id: null;
+              direction: MessageDirection | null;
+              type: null;
+              body: string;
+              origin: 'external';
+              conversation_id: null;
+              url: null;
+              preview?: string;
+              from_me?: boolean;
+          }
         | MessageQuotePreview
         | null;
     /** When the sender edited the message afterwards. */
@@ -426,6 +443,8 @@ export type ConversationMessage = {
     reactions?: MessageReaction[] | null;
     /** Brought in with the history of the linked WhatsApp, not received live. */
     is_historical?: boolean;
+    /** Written on the phone of the linked number, not in Chat Manager. */
+    sent_from_phone?: boolean;
     attachments: MessageAttachment[];
     sent_at: string | null;
     created_at: string | null;

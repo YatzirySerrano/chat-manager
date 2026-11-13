@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Hourglass, Inbox, MailWarning, Search, X } from '@lucide/vue';
+import { Hourglass, Inbox, Search, X } from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
@@ -710,7 +710,11 @@ function onScroll(event: Event): void {
 }
 
 const indicatorClass =
-    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium whitespace-nowrap outline-none press focus-visible:ring-[3px] focus-visible:ring-primary/25 pointer-coarse:h-10';
+    'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium whitespace-nowrap outline-none transition-[background-color,color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/25 pointer-coarse:h-10';
+
+/* The view in use: the raised thumb of the track. */
+const indicatorOn = 'bg-card text-foreground shadow-(--shadow-control)';
+const indicatorOff = 'text-muted-foreground hover:text-foreground';
 
 /*
  * The rows slide in once, when the inbox opens; later changes (filters,
@@ -727,11 +731,11 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
         aria-label="Lista de conversaciones"
     >
         <header
-            class="grid min-w-0 grid-cols-1 gap-2.5 border-b px-3 pt-3 pb-2.5"
+            class="grid min-w-0 grid-cols-1 gap-2 border-b px-3 pt-2.5 pb-2.5"
         >
             <div class="flex items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-1">
-                    <h1 class="truncate font-display text-xl font-semibold">
+                    <h1 class="truncate font-display text-lg font-semibold">
                         Conversaciones
                     </h1>
                 </div>
@@ -744,8 +748,13 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             </div>
 
             <nav aria-label="Bandejas">
+                <!--
+                    One block for the three views of the inbox: the base view
+                    on its own row (its name can be long) and, under it, the
+                    two shortcuts that narrow it.
+                -->
                 <div
-                    class="flex flex-wrap gap-1.5"
+                    class="grid grid-cols-2 gap-0.5 rounded-lg bg-surface-sunken p-0.5 ring-1 ring-border ring-inset"
                     role="group"
                     aria-label="Filtrar la bandeja"
                 >
@@ -753,10 +762,8 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         type="button"
                         :class="[
                             indicatorClass,
-                            'max-w-full',
-                            generalActive
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            'col-span-2 min-w-0 justify-between',
+                            generalActive ? indicatorOn : indicatorOff,
                         ]"
                         :aria-pressed="generalActive"
                         :title="baseTitle"
@@ -773,7 +780,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                             class="shrink-0 rounded-full px-1.5 text-xs tabular-nums"
                             :class="
                                 generalActive
-                                    ? 'bg-primary-foreground/20'
+                                    ? 'bg-primary-soft text-primary-soft-foreground'
                                     : 'bg-muted'
                             "
                             aria-hidden="true"
@@ -795,11 +802,12 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         type="button"
                         :class="[
                             indicatorClass,
+                            'shrink-0',
                             pendingActive
-                                ? 'border-primary bg-primary text-primary-foreground'
+                                ? indicatorOn
                                 : pendingCount > 0
-                                  ? 'border-warning/60 bg-warning/15 font-semibold text-foreground hover:bg-warning/25'
-                                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                                  ? 'font-semibold text-foreground hover:bg-warning/15'
+                                  : indicatorOff,
                         ]"
                         :aria-pressed="pendingActive"
                         :title="pendingTitle"
@@ -809,19 +817,16 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     >
                         <Hourglass
                             v-if="pendingCount > 0"
-                            class="size-4 shrink-0"
-                            :class="pendingActive ? undefined : 'text-warning'"
+                            class="size-4 shrink-0 text-warning"
                             aria-hidden="true"
                         />
                         Pendientes
                         <span
                             class="rounded-full px-1.5 text-xs tabular-nums"
                             :class="
-                                pendingActive
-                                    ? 'bg-primary-foreground/20'
-                                    : pendingCount > 0
-                                      ? 'bg-warning/25'
-                                      : 'bg-muted'
+                                pendingCount > 0
+                                    ? 'bg-warning-soft text-warning-soft-foreground'
+                                    : 'bg-muted'
                             "
                             aria-hidden="true"
                             >{{ pendingCount }}</span
@@ -835,9 +840,8 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         type="button"
                         :class="[
                             indicatorClass,
-                            state.unread
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                            'shrink-0',
+                            state.unread ? indicatorOn : indicatorOff,
                         ]"
                         :aria-pressed="state.unread"
                         title="Solo las conversaciones con mensajes del cliente que aún no has leído"
@@ -845,16 +849,12 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         data-tour="inbox.unread"
                         @click="toggleUnread"
                     >
-                        <MailWarning
-                            class="size-4 shrink-0"
-                            aria-hidden="true"
-                        />
                         No leídas
                         <span
                             class="rounded-full px-1.5 text-xs tabular-nums"
                             :class="
-                                state.unread
-                                    ? 'bg-primary-foreground/20'
+                                unreadCount > 0
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'bg-muted'
                             "
                             aria-hidden="true"
@@ -1033,17 +1033,28 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 aria-hidden="true"
             >
                 <div
-                    v-for="index in 7"
+                    v-for="index in 8"
                     :key="index"
-                    class="flex items-start gap-3 px-3 py-3"
+                    class="flex items-start gap-3 border-l-[3px] border-l-transparent py-2.5 pr-4 pl-3"
+                    data-inbox-skeleton
                 >
                     <Skeleton class="size-10 shrink-0 rounded-full" />
                     <div class="grid flex-1 gap-2 pt-0.5">
                         <div class="flex justify-between gap-3">
-                            <Skeleton class="h-4 w-2/5" />
+                            <Skeleton
+                                class="h-4"
+                                :class="index % 3 === 0 ? 'w-1/2' : 'w-2/5'"
+                            />
                             <Skeleton class="h-3 w-10" />
                         </div>
-                        <Skeleton class="h-3.5 w-4/5" />
+                        <Skeleton
+                            class="h-3.5"
+                            :class="index % 2 === 0 ? 'w-4/5' : 'w-3/5'"
+                        />
+                        <div class="flex gap-1.5">
+                            <Skeleton class="h-4 w-20 rounded-full" />
+                            <Skeleton class="h-4 w-14 rounded-full" />
+                        </div>
                     </div>
                 </div>
             </div>

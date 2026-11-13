@@ -8,7 +8,8 @@ las credenciales cifradas, envía y recibe mensajes y avisa a Laravel de cada ev
 > **Integración no oficial.** Usa el protocolo de WhatsApp Web a través de una biblioteca de terceros. WhatsApp puede
 > cambiar el protocolo sin aviso (y dejar el servicio sin funcionar hasta actualizar la biblioteca) y puede suspender
 > números que usen clientes no oficiales. No sustituye a WhatsApp Cloud API, que sigue disponible por conexión. El
-> servicio no hace envíos masivos, campañas, extracción de contactos ni sincroniza historial.
+> servicio no hace envíos masivos ni campañas. Al vincular un número entrega a Laravel el historial de sus chats
+> individuales (`WAWEB_SYNC_HISTORY`, activo por defecto), que Laravel guarda como historial de solo lectura.
 
 ## Biblioteca y versión
 
@@ -83,9 +84,14 @@ Laravel ──(HTTP firmado, 127.0.0.1)──▶ API de control ──▶ Sessio
 - **Destinatario.** Para un número (`to` con dígitos) el servicio pregunta a WhatsApp qué JID tiene registrado y
   escribe a ese; así un número mexicano guardado como `52…` llega a la cuenta registrada como `521…`. Un número sin
   WhatsApp responde `422 invalid_recipient`. Un JID completo (`…@s.whatsapp.net`, `…@lid`) se usa tal cual.
-- **Qué se notifica.** Solo mensajes nuevos de chats individuales posteriores a la vinculación. Nunca historial,
-  grupos, estados, difusiones ni canales. Lo escrito desde el propio teléfono llega como `message.outbound_echo`; lo
-  que envió el servicio no se repite.
+- **Qué se notifica.** Mensajes de chats individuales posteriores a la vinculación, también los que WhatsApp retuvo
+  mientras el servicio estaba desconectado. Nunca grupos, estados, difusiones ni canales. Lo escrito desde el propio
+  teléfono llega como `message.outbound_echo`; lo que envió el servicio no se repite. Una edición llega como
+  `message.edited` y un «eliminar para todos» como `message.revoked`, con el identificador del mensaje original.
+- **Historial.** Una sesión vinculada con `WAWEB_SYNC_HISTORY=true` se registra como cliente de escritorio y recibe de
+  WhatsApp el historial del teléfono; cada tramo se normaliza y se encola al momento como `history.batch` (máximo
+  `WAWEB_HISTORY_BATCH_SIZE` mensajes y 200 KB por evento, del más antiguo al más reciente). La decisión se toma al
+  vincular y se guarda con la sesión: cambiar la variable no afecta a los números ya vinculados.
 - **Eventos.** Cada evento se sella en disco antes de enviarse y se borra cuando Laravel responde `2xx`. De los
   estados de sesión pendientes solo se conserva el último, de modo que un QR viejo nunca se entrega tarde. Un `404`
   descarta los eventos de esa conexión y detiene su sesión sin cerrar la sesión del dispositivo.

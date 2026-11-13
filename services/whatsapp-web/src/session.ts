@@ -8,14 +8,19 @@ import {
 import { maskJid, safeErrorMessage, type Logger } from './logger.js';
 import type { FetchedMedia, MediaFetcher } from './media-fetch.js';
 import {
+    editOf,
     isIgnoredJid,
     isUserJid,
     normalizeMessage,
     phoneOfJid,
+    protocolChange,
 } from './normalize.js';
 import type { SentStore } from './sent-store.js';
 import {
     ApiError,
+    type InboundMessage,
+    type MessageEdit,
+    type MessageRevocation,
     type OutboundKind,
     type OutboundMessage,
     type ServiceEvent,
@@ -52,6 +57,12 @@ type Meta = {
     /** A resting state that must survive a restart. */
     terminal: 'logged_out' | 'error' | null;
     last_error: SessionError | null;
+    /**
+     * The device was linked asking WhatsApp for the chat history. It is part
+     * of how the device registered, so it never changes while it stays
+     * linked (sessions linked before history existed keep it false).
+     */
+    history: boolean;
 };
 
 const emptyMeta = (): Meta => ({
@@ -62,7 +73,11 @@ const emptyMeta = (): Meta => ({
     push_name: null,
     terminal: null,
     last_error: null,
+    history: false,
 });
+
+/** Largest JSON of one history.batch event (Laravel accepts 512 KB per event). */
+const HISTORY_BATCH_BYTES = 200_000;
 
 const ACTIVE: readonly SessionState[] = [
     'starting',
@@ -107,6 +122,12 @@ export type SessionOptions = {
         qrMaxRefresh: number;
         reconnectMaxAttempts: number;
         sendTimeoutMs: number;
+        /** Import the chat history of the numbers linked from now on. */
+        syncHistory?: boolean;
+        /** Oldest history imported, in days (0: everything WhatsApp hands over). */
+        historyMaxDays?: number;
+        /** Messages per history.batch event. */
+        historyBatchSize?: number;
     };
     /** Milliseconds. */
     now?: () => number;
@@ -208,7 +229,11 @@ export class Session {
             }
 
             await this.clearCredentials();
-            this.meta = { ...emptyMeta(), desired: 'running' };
+            this.meta = {
+                ...emptyMeta(),
+                desired: 'running',
+                history: this.options.limits.syncHistory ?? false,
+            };
             this.qrCount = 0;
         }
 
@@ -406,6 +431,7 @@ export class Session {
             const connection = await this.options.factory({
                 connectionId: this.connectionId,
                 auth,
+                history: this.meta.history,
                 onEvent: (event) => {
                     if (generation !== this.generation) {
                         return;
@@ -462,6 +488,29 @@ export class Session {
                 return this.onMessages(event);
             case 'statuses':
                 return this.onStatuses(event.updates);
+            case 'edits':
+                for (const update of event.updates) {
+                    this.emitEdit(
+                        editOf(update, update.message, update.timestamp),
+                    );
+                }
+
+                return;
+            case 'revokes':
+                for (const update of event.updates) {
+                    if (!isIgnoredJid(update.remoteJid)) {
+                        this.emitRevocation({
+                            provider_message_id: update.id,
+                            remote_jid: update.remoteJid,
+                            from_me: update.fromMe,
+                            timestamp: this.seconds(),
+                        });
+                    }
+                }
+
+                return;
+            case 'history':
+                return this.onHistory(event);
         }
     }
 
@@ -652,24 +701,48 @@ export class Session {
 
     // -- messages ---------------------------------------------------------
 
+    /**
+     * Messages of the chats: "notify" are the ones arriving now, "append"
+     * the ones WhatsApp kept while the service was offline (a restart, a
+     * network drop). Both are real traffic of the linked session. Only what
+     * was written before the link is history: it is imported apart, as
+     * history, when the session was linked with it, and dropped otherwise.
+     */
     private async onMessages(
         event: Extract<WaEvent, { type: 'messages' }>,
     ): Promise<void> {
-        // Only new messages of a linked session: never history.
-        if (event.upsert !== 'notify' || !this.meta.linked) {
+        if (!this.meta.linked) {
             return;
         }
+
+        const older: InboundMessage[] = [];
 
         for (const message of event.messages) {
             const id = message.key?.id;
 
-            if (!id || (message.key.fromMe && this.options.sent.isOwn(id))) {
+            if (!id) {
                 continue;
             }
 
-            const normalized = await normalizeMessage(
-                message,
-                async (lid) => this.connection?.phoneForLid(lid) ?? null,
+            // An edit or a "delete for everyone" names the message it changes.
+            const change = protocolChange(message);
+
+            if (change !== null) {
+                if (change.kind === 'edit') {
+                    this.emitEdit(change.data);
+                } else {
+                    this.emitRevocation(change.data);
+                }
+
+                continue;
+            }
+
+            if (message.key.fromMe && this.options.sent.isOwn(id)) {
+                continue;
+            }
+
+            const normalized = await normalizeMessage(message, (lid) =>
+                this.phoneForLid(lid),
             );
 
             if (normalized === null) {
@@ -682,6 +755,8 @@ export class Session {
                 this.meta.linked_at !== null &&
                 normalized.timestamp < this.meta.linked_at - 60
             ) {
+                older.push(normalized);
+
                 continue;
             }
 
@@ -705,6 +780,137 @@ export class Session {
 
             this.lastEventAt = this.seconds();
         }
+
+        if (older.length > 0 && this.meta.history) {
+            this.emitHistory(older, null, 'replay');
+        }
+    }
+
+    /**
+     * The chat history WhatsApp hands to a newly linked device, in slices.
+     * Each slice is normalized and queued at once (the outbox is durable),
+     * oldest message first, in events small enough for Laravel; Laravel
+     * stores them as history, apart from the live traffic, and discards
+     * what it already has by the message id.
+     */
+    private async onHistory(
+        event: Extract<WaEvent, { type: 'history' }>,
+    ): Promise<void> {
+        if (!this.meta.history) {
+            return;
+        }
+
+        const maxDays = this.options.limits.historyMaxDays ?? 0;
+        const oldest = maxDays > 0 ? this.seconds() - maxDays * 86_400 : 0;
+        const messages: InboundMessage[] = [];
+
+        for (const message of event.messages) {
+            const normalized = await normalizeMessage(
+                message,
+                (lid) => this.phoneForLid(lid),
+                { historical: true },
+            ).catch(() => null);
+
+            if (normalized === null || normalized.timestamp < oldest) {
+                continue;
+            }
+
+            const name = event.names[normalized.remote_jid];
+
+            if (name !== undefined) {
+                normalized.chat_name = name;
+            }
+
+            messages.push(normalized);
+        }
+
+        this.options.logger.info(
+            {
+                connection_id: this.connectionId,
+                sync_type: event.syncType,
+                progress: event.progress,
+                received: event.messages.length,
+                kept: messages.length,
+            },
+            'History slice',
+        );
+
+        this.emitHistory(messages, event.progress, event.syncType);
+    }
+
+    private emitHistory(
+        messages: InboundMessage[],
+        progress: number | null,
+        syncType: string | null,
+    ): void {
+        const size = Math.max(1, this.options.limits.historyBatchSize ?? 50);
+        const sorted = [...messages].sort(
+            (a, b) => a.timestamp - b.timestamp,
+        );
+        let batch: InboundMessage[] = [];
+        let bytes = 0;
+
+        const flush = (): void => {
+            if (batch.length > 0) {
+                this.options.emit({
+                    type: 'history.batch',
+                    data: {
+                        sync_type: syncType,
+                        progress,
+                        messages: batch,
+                    },
+                });
+            }
+
+            batch = [];
+            bytes = 0;
+        };
+
+        for (const message of sorted) {
+            const weight = Buffer.byteLength(JSON.stringify(message));
+
+            if (
+                batch.length >= size ||
+                (batch.length > 0 && bytes + weight > HISTORY_BATCH_BYTES)
+            ) {
+                flush();
+            }
+
+            batch.push(message);
+            bytes += weight;
+        }
+
+        flush();
+        this.lastEventAt = this.seconds();
+    }
+
+    private emitEdit(edit: MessageEdit | null): void {
+        if (
+            edit === null ||
+            !this.meta.linked ||
+            !this.remember(`e:${edit.provider_message_id}:${edit.timestamp}`)
+        ) {
+            return;
+        }
+
+        this.options.emit({ type: 'message.edited', data: edit });
+        this.lastEventAt = this.seconds();
+    }
+
+    private emitRevocation(revocation: MessageRevocation): void {
+        if (
+            !this.meta.linked ||
+            !this.remember(`x:${revocation.provider_message_id}`)
+        ) {
+            return;
+        }
+
+        this.options.emit({ type: 'message.revoked', data: revocation });
+        this.lastEventAt = this.seconds();
+    }
+
+    private async phoneForLid(lid: string): Promise<string | null> {
+        return (await this.connection?.phoneForLid(lid)) ?? null;
     }
 
     private async onStatuses(

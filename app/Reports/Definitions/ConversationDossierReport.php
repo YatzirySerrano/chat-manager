@@ -357,6 +357,7 @@ class ConversationDossierReport extends ReportDefinition
             MessageType::Template => 'Plantilla',
             MessageType::Interactive => 'Interactivo',
             MessageType::Reaction => 'Reacción',
+            MessageType::Poll => 'Encuesta',
             MessageType::Unsupported => 'No compatible',
         };
     }

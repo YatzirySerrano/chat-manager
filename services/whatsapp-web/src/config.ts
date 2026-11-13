@@ -21,6 +21,12 @@ export type Config = {
     reconnectMaxAttempts: number;
     sendTimeoutMs: number;
     eventTimeoutMs: number;
+    /** Import the chat history of the numbers linked from now on. */
+    syncHistory: boolean;
+    /** Oldest history imported, in days (0: everything WhatsApp hands over). */
+    historyMaxDays: number;
+    /** Messages per history.batch event. */
+    historyBatchSize: number;
 };
 
 export class ConfigError extends Error {}
@@ -160,5 +166,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
             1000,
             120_000,
         ),
+        syncHistory: !['0', 'false', 'no', 'off'].includes(
+            (env.WAWEB_SYNC_HISTORY ?? 'true').trim().toLowerCase(),
+        ),
+        historyMaxDays: integer(env, 'WAWEB_HISTORY_MAX_DAYS', 0, 0, 36_500),
+        historyBatchSize: integer(env, 'WAWEB_HISTORY_BATCH_SIZE', 50, 1, 200),
     };
 }

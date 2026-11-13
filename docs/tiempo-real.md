@@ -50,8 +50,10 @@ RealtimeSignal (ShouldBroadcastNow) ──HTTP──▶ Reverb ──WebSocket�
   requiere la base de datos, y eso se comprueba dentro del trabajo.
 - `.inbox.changed` sale en **una** publicación a todos sus canales (bandejas y canales personales de los responsables
   involucrados); Laravel/Reverb reparten listas largas de canales por sí mismos.
-- `.conversation.changed` con `reason: "message"` (una descarga de medio entrante terminó o falló) incluye además
-  `message_id`, para que el chat abierto actualice solo ese mensaje; los campos `reason` y `version` no cambian.
+- `.conversation.changed` con `reason: "message"` (una descarga de medio entrante terminó o falló, o quien envió el
+  mensaje lo editó, lo eliminó para todos o cambió su reacción: `RecordMessageEdit`, `RecordMessageRevocation`,
+  `RecordMessageReaction`) incluye además `message_id`, para que el chat abierto actualice solo ese mensaje; los
+  campos `reason` y `version` no cambian. La importación del historial de WhatsApp Web no emite señales.
 - Medición: `MessageRecorded` y `MessageStatusChanged` llevan `recordedAt`; `BroadcastMessageRecorded` y
   `BroadcastMessageStatus` escriben en el log, nivel `debug`, `queue_wait_ms` (evento → listener) y `publish_ms`
   (listener → publicado), con el contexto de identificadores del trabajo y sin contenido.

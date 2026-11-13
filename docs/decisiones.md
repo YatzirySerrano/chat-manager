@@ -1090,3 +1090,43 @@ Un periodo en curso se compara con el mismo tramo transcurrido del anterior (`An
 un periodo completo. «Finalizadas (de las recibidas)» (cohorte) y «Finalizadas en el periodo» (primer cierre en el
 rango) son dos indicadores con nombres distintos; «Finalizadas hoy» del panel es una cifra de bandeja en vivo y se
 rotula así. Se añadió la semana ISO como granularidad, y mínimo y máximo junto a los promedios.
+
+## ADR-WWEB-1 — WhatsApp Web (QR): se importa el historial del teléfono, como historial y no como tráfico
+
+Sustituye la decisión inicial de la modalidad QR («el historial que WhatsApp ofrece al vincular no se sincroniza», en
+[whatsapp-web-qr-contrato.md](whatsapp-web-qr-contrato.md) §5 y [whatsapp-web-qr.md](whatsapp-web-qr.md) §2): el
+dueño de la operación pidió ver en ChatManager las conversaciones que el número ya tenía.
+
+- **Qué se trae.** Al vincular, el servicio pide el historial a WhatsApp (`WAWEB_SYNC_HISTORY`, activo por defecto) y lo
+  entrega a Laravel en eventos `history.batch` (50 mensajes o 200 KB como máximo, del más antiguo al más reciente). Solo
+  chats individuales: grupos, estados, canales y difusiones siguen fuera. Para que el teléfono comparta todo el
+  historial y no solo las últimas semanas, la sesión se registra como cliente de escritorio; esa forma de registro es
+  parte de la vinculación, así que **un número vinculado antes de este cambio no trae historial hasta cerrar la sesión
+  del dispositivo y vincularlo de nuevo**.
+- **Camino propio.** `ImportWhatsAppWebHistory` no pasa por `ReceiveInboundMessage`. Cada chat queda en una
+  conversación con `origin = whatsapp_history`: cerrada, de solo lectura, nunca reabierta y fuera de colas, SLA,
+  métricas, ventana de atención y contadores de no leídos (lo mismo que ya valía para el historial importado de
+  Whaticket: `Conversation::isImported()`). No se despacha `MessageRecorded`, ni notificaciones, ni mensajes
+  automáticos, ni asignación. El siguiente mensaje del cliente abre (o continúa) una conversación viva; el historial se
+  consulta desde «conversaciones anteriores» del contacto y desde la bandeja de cerradas.
+- **Idempotencia.** Cada mensaje se guarda con el mismo identificador que uno en vivo (`wweb.{conexión}.{id}`), único en
+  la base: repetir un lote, solaparlo o recibir en el historial lo que ya llegó en vivo no duplica nada.
+- **Orden.** WhatsApp entrega primero el tramo más reciente. Los mensajes importados guardan su hora original en
+  `sent_at` y `created_at`, y la línea de tiempo de una conversación importada se pagina por esa hora, no por id.
+- **Carga.** El punto interno solo encola (`ImportWhatsAppWebHistoryBatch`, cola `default`, carga cifrada): un historial
+  grande no detiene los eventos en vivo ni ocupa las colas de mensajes, tiempo real o medios.
+- **Archivos.** Solo se descargan los de mensajes de los últimos `WHATSAPP_WEB_HISTORY_MEDIA_DAYS` días (30); los
+  anteriores conservan el mensaje con el adjunto «no disponible» (`historical_missing`) y la miniatura que WhatsApp
+  incrustó, si la había.
+- **Contactos.** Quien aparece en el historial queda como contacto provisional, igual que cualquier remitente nuevo:
+  no entra al directorio comercial hasta que alguien lo guarda.
+- **Lo escrito desde el teléfono.** Antes solo se guardaba si el contacto ya tenía conversación. Ahora, si no la tiene,
+  queda en su conversación de historial (cerrada): no se pierde y no aparece en las colas como si alguien esperara.
+- **Ediciones, eliminaciones y reacciones.** Una edición actualiza el mensaje guardado (`edited_at`, textos anteriores
+  en `metadata.edits`); «eliminar para todos» lo marca (`revoked_at`) y conserva su contenido, porque la conversación es
+  el registro de lo dicho; una reacción vive en el mensaje al que reacciona (`metadata.reactions`), no como mensaje.
+
+Riesgo asumido: importar el historial trae a la plataforma conversaciones que el número tuvo antes de ChatManager, con
+el alcance de quien ve el departamento de la conexión. Para no importarlo: `WAWEB_SYNC_HISTORY=false` antes de vincular
+(o `WHATSAPP_WEB_HISTORY=false` en Laravel para descartar lo que llegue). Nada de esto se ha probado con un teléfono
+real ([whatsapp-web-qr.md](whatsapp-web-qr.md) §6).

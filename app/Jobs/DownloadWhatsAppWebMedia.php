@@ -26,9 +26,10 @@ use Throwable;
  * 1. the private Node service downloads and decrypts the file from the
  *    descriptor that came with the message (kept encrypted on the
  *    attachment) and streams it to a temporary file that is always removed;
- * 2. its real type (finfo) and size are checked against the same limits as
- *    any other WhatsApp file (MediaStorage) and it is stored under a random
- *    path of the media disk (MediaDisk), never on a public one.
+ * 2. its real type (finfo) and size are checked against the limits of this
+ *    modality (MediaStorage::whatsAppWebRules, config whatsapp_web.media.types)
+ *    and it is stored in the folder of its contact on the media disk
+ *    (MediaDisk), never on a public one.
  *
  * A media disk that is not ready or refuses the write (a NAS that is not
  * mounted, when it is required) is retried with backoff and never replaced
@@ -87,6 +88,7 @@ class DownloadWhatsAppWebMedia implements ShouldQueue
         }
 
         $kind = $attachment->message->type->value;
+        $rules = $storage->whatsAppWebRules($kind);
         $temporary = tempnam(sys_get_temp_dir(), 'wweb-media-');
 
         if ($temporary === false) {
@@ -95,8 +97,15 @@ class DownloadWhatsAppWebMedia implements ShouldQueue
 
         try {
             // The limit is enforced while streaming, whatever size was announced.
-            $client->downloadMedia($connection->id, $descriptor, $temporary, $storage->rules($kind, ConnectionChannel::Whatsapp)['max_bytes']);
-            $stored = $storage->store($temporary, $kind, ConnectionChannel::Whatsapp, $attachment);
+            $client->downloadMedia($connection->id, $descriptor, $temporary, $rules['max_bytes']);
+            $stored = $storage->store($temporary, $kind, ConnectionChannel::Whatsapp, $attachment, $rules);
+
+            // An audio in an MP4, 3GP, WebM or Ogg container is detected as
+            // video: it is still the audio the message says, and the chat
+            // picks its player by this type.
+            if ($kind === 'audio' && str_starts_with($stored['mime_type'], 'video/')) {
+                $stored['mime_type'] = 'audio/'.substr($stored['mime_type'], 6);
+            }
         } catch (MediaRejected $exception) {
             $this->markUnavailable($attachment, $exception->reason);
 

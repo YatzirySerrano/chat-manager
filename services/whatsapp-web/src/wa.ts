@@ -1,5 +1,5 @@
 import type { Readable } from 'node:stream';
-import type { WAMessage } from 'baileys';
+import type { proto, WAMessage } from 'baileys';
 import type { EncryptedAuthState } from './auth-state.js';
 import type { MediaDescriptor, OutboundKind } from './types.js';
 
@@ -14,6 +14,31 @@ export type WaEvent =
     | { type: 'open'; me: { jid: string; name: string | null } }
     | { type: 'close'; statusCode: number | null; detail: string }
     | { type: 'messages'; upsert: 'notify' | 'append'; messages: WAMessage[] }
+    /** The sender edited messages: each one with its new content. */
+    | {
+          type: 'edits';
+          updates: {
+              id: string;
+              remoteJid: string;
+              fromMe: boolean;
+              timestamp: number | null;
+              message: proto.IMessage;
+          }[];
+      }
+    /** The sender deleted messages for everyone. */
+    | {
+          type: 'revokes';
+          updates: { id: string; remoteJid: string; fromMe: boolean }[];
+      }
+    /** A slice of the history WhatsApp hands to a newly linked device. */
+    | {
+          type: 'history';
+          messages: WAMessage[];
+          /** Names of the chats in the phone's address book, by JID. */
+          names: Record<string, string>;
+          progress: number | null;
+          syncType: string | null;
+      }
     | {
           type: 'statuses';
           updates: {
@@ -60,6 +85,12 @@ export interface WaConnection {
 export type WaFactory = (options: {
     connectionId: number;
     auth: EncryptedAuthState;
+    /**
+     * Ask WhatsApp for the chat history when the device is linked. It is
+     * part of how the device registers, so a session keeps for life the
+     * value it was linked with.
+     */
+    history: boolean;
     onEvent: (event: WaEvent) => void;
 }) => Promise<WaConnection>;
 

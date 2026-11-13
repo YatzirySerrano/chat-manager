@@ -50,6 +50,8 @@ export type MessageKind =
     | 'location'
     | 'contacts'
     | 'reaction'
+    | 'poll'
+    | 'interactive'
     | 'unsupported';
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker';
@@ -73,24 +75,90 @@ export type InboundMessage = {
     timestamp: number;
     type: MessageKind;
     text: string | null;
-    quoted: { provider_message_id: string } | null;
+    /**
+     * The message being answered. `from_me` and `text` (a short excerpt, or
+     * the name of what was quoted) are only present when WhatsApp sent them:
+     * they let Laravel draw the quote even when it never stored the original.
+     */
+    quoted: {
+        provider_message_id: string;
+        from_me?: boolean;
+        text?: string | null;
+    } | null;
     media?: {
         mime: string | null;
         size: number | null;
         file_name: string | null;
         seconds: number | null;
         voice: boolean;
-        descriptor: MediaDescriptor;
+        /** Null when WhatsApp sent no download key: the message is kept, the file is not. */
+        descriptor: MediaDescriptor | null;
+        /** Video that plays as a GIF (looped, muted). */
+        gif?: boolean;
+        /** Animated sticker. */
+        animated?: boolean;
+        width?: number | null;
+        height?: number | null;
+        /** Tiny JPEG preview WhatsApp embeds in the message, in base64. */
+        thumbnail?: string | null;
     };
     location?: {
         latitude: number;
         longitude: number;
         name: string | null;
         address: string | null;
+        /** Real-time location (only the position it was shared from is known). */
+        live?: boolean;
     };
     contacts?: { name: string | null; phones: string[] }[];
     /** Reactions only: the emoji ("" when the reaction was removed). */
     reaction?: { provider_message_id: string; emoji: string };
+    poll?: { question: string | null; options: string[]; multiple: boolean };
+    /** Answer to a button, a list or a template of a business account. */
+    interactive?: {
+        kind: 'button_reply' | 'list_reply';
+        title: string | null;
+        description: string | null;
+    };
+    /** type = unsupported: what it was, in words a person understands. */
+    unsupported?: { kind: string; label: string };
+    /** The sender marked it to be seen once. */
+    view_once?: boolean;
+
+    // -- history only (history.batch) -------------------------------------
+    /** Name of the chat in the phone's address book, when the history carries it. */
+    chat_name?: string | null;
+    /** Delivery state WhatsApp recorded for a message of the business. */
+    status?: DeliveryStatus | null;
+    /** The sender deleted it for everyone before it was imported. */
+    revoked?: boolean;
+    reactions?: { emoji: string; from_me: boolean }[];
+};
+
+/** The sender edited a message: its new text (or caption). */
+export type MessageEdit = {
+    provider_message_id: string;
+    remote_jid: string;
+    from_me: boolean;
+    timestamp: number;
+    type: MessageKind;
+    text: string | null;
+};
+
+/** The sender deleted a message for everyone. */
+export type MessageRevocation = {
+    provider_message_id: string;
+    remote_jid: string;
+    from_me: boolean;
+    timestamp: number;
+};
+
+/** A slice of the history WhatsApp hands to a newly linked device. */
+export type HistoryBatch = {
+    sync_type: string | null;
+    /** 0 to 100 as WhatsApp reports it; null when unknown. */
+    progress: number | null;
+    messages: InboundMessage[];
 };
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
@@ -119,6 +187,7 @@ export type OutboundMessage = {
         provider_message_id: string;
         from_me?: boolean;
         remote_jid?: string;
+        text?: string | null;
     } | null;
     media?: {
         url: string;
@@ -135,7 +204,10 @@ export type ServiceEvent =
       }
     | { type: 'message.inbound'; data: InboundMessage }
     | { type: 'message.outbound_echo'; data: InboundMessage }
-    | { type: 'message.status'; data: StatusUpdate };
+    | { type: 'message.status'; data: StatusUpdate }
+    | { type: 'message.edited'; data: MessageEdit }
+    | { type: 'message.revoked'; data: MessageRevocation }
+    | { type: 'history.batch'; data: HistoryBatch };
 
 export type EventEnvelope = ServiceEvent & {
     event_id: string;

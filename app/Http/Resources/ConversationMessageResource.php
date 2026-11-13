@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Actions\Messaging\RecordMessageReaction;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
 use App\Enums\MessageDirection;
@@ -32,6 +33,13 @@ use Illuminate\Support\Str;
  * from another system carry "imported" (source and the sender's name as
  * that system recorded it); they have no delivery state to show.
  *
+ * What the sender did afterwards travels with the message itself:
+ * "edited_at" (the body is the latest text), "revoked_at" (deleted for
+ * everyone; the content is still sent, the chat decides how to show it) and
+ * "reactions" (one per side of the chat at most). "is_historical" marks a
+ * message imported from the history of a number linked by QR, and
+ * "sent_from_phone" one the business wrote on the linked phone.
+ *
  * @mixin Message
  */
 class ConversationMessageResource extends JsonResource
@@ -47,6 +55,27 @@ class ConversationMessageResource extends JsonResource
 
     /** A quoted message of an earlier conversation the viewer may not see: nothing of it is shown. */
     public const QUOTE_RESTRICTED = 'restricted';
+
+    /** A quoted message that is not stored here: only the excerpt the provider sent is known. */
+    public const QUOTE_EXTERNAL = 'external';
+
+    /**
+     * What a quoted message without text is called.
+     *
+     * @var array<string, string>
+     */
+    private const TYPE_LABELS = [
+        'image' => 'Imagen',
+        'video' => 'Video',
+        'audio' => 'Audio',
+        'document' => 'Documento',
+        'sticker' => 'Sticker',
+        'location' => 'Ubicación',
+        'contacts' => 'Contacto',
+        'poll' => 'Encuesta',
+        'template' => 'Plantilla',
+        'interactive' => 'Respuesta',
+    ];
 
     /** Request attribute caching, per conversation id, where the viewer opens a quoted earlier conversation. */
     private const QUOTE_ACCESS_KEY = 'conversation_message_resource.quote_access';
@@ -77,7 +106,13 @@ class ConversationMessageResource extends JsonResource
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
             'template' => $this->template($metadata),
             'content' => $this->content($metadata),
-            'reply_to' => $this->whenLoaded('replyTo', fn (): ?array => $this->replyTo === null ? null : $this->quote($this->replyTo, $request)),
+            // when(), not whenLoaded(): a loaded relation without a message still has a quote to draw.
+            'reply_to' => $this->when($this->resource->relationLoaded('replyTo'), fn (): ?array => $this->replyTo === null ? $this->externalQuote($metadata) : $this->quote($this->replyTo, $request)),
+            'reactions' => RecordMessageReaction::of($metadata),
+            'edited_at' => $this->edited_at?->toIso8601String(),
+            'revoked_at' => $this->revoked_at?->toIso8601String(),
+            'is_historical' => (bool) $this->is_historical,
+            'sent_from_phone' => ($metadata['sent_from_phone'] ?? false) === true,
             'attachments' => $this->whenLoaded('attachments', fn (): array => $this->attachments
                 ->map(fn (MessageAttachment $attachment): array => $this->attachment($attachment))
                 ->values()
@@ -103,18 +138,25 @@ class ConversationMessageResource extends JsonResource
      * conversation, with no text, ids or link. Rendering a quote never
      * changes any state.
      *
-     * @return array{id: int|null, direction: string|null, type: string|null, body: string|null, origin: string, conversation_id: int|null, url: string|null}
+     * "preview" is what to show as the quoted text (the excerpt, or the
+     * name of what was quoted when it has no text) and "from_me" whether
+     * the business wrote the quoted message.
+     *
+     * @return array{id: int|null, direction: string|null, type: string|null, body: string|null, origin: string, conversation_id: int|null, url: string|null, preview: string, from_me: bool}
      */
     private function quote(Message $quoted, Request $request): array
     {
+        $body = $quoted->body === null ? null : Str::limit($quoted->body, self::QUOTE_LENGTH);
         $shown = fn (string $origin, ?int $conversationId = null, ?string $url = null): array => [
             'id' => $quoted->id,
             'direction' => $quoted->direction->value,
             'type' => $quoted->type->value,
-            'body' => $quoted->body === null ? null : Str::limit($quoted->body, self::QUOTE_LENGTH),
+            'body' => $body,
             'origin' => $origin,
             'conversation_id' => $conversationId,
             'url' => $url,
+            'preview' => $body ?? self::TYPE_LABELS[$quoted->type->value] ?? 'Mensaje',
+            'from_me' => $quoted->direction === MessageDirection::Outbound,
         ];
 
         if ($quoted->conversation_id === $this->conversation_id) {
@@ -135,6 +177,41 @@ class ConversationMessageResource extends JsonResource
             'origin' => self::QUOTE_RESTRICTED,
             'conversation_id' => null,
             'url' => null,
+            'preview' => '',
+            'from_me' => false,
+        ];
+    }
+
+    /**
+     * A quote whose original is not stored here (it was written before the
+     * number was linked, or never reached the platform): drawn from the
+     * excerpt WhatsApp sent with the reply. There is nothing to jump to.
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array{id: null, direction: string|null, type: null, body: string, origin: string, conversation_id: null, url: null, preview: string, from_me: bool}|null
+     */
+    private function externalQuote(array $metadata): ?array
+    {
+        $quote = is_array($metadata['reply_to'] ?? null) ? $metadata['reply_to'] : [];
+        $preview = is_string($quote['preview'] ?? null) ? trim($quote['preview']) : '';
+
+        if ($preview === '') {
+            return null;
+        }
+
+        $fromMe = is_bool($quote['from_me'] ?? null) ? $quote['from_me'] : null;
+        $preview = Str::limit($preview, self::QUOTE_LENGTH);
+
+        return [
+            'id' => null,
+            'direction' => $fromMe === null ? null : ($fromMe ? MessageDirection::Outbound->value : MessageDirection::Inbound->value),
+            'type' => null,
+            'body' => $preview,
+            'origin' => self::QUOTE_EXTERNAL,
+            'conversation_id' => null,
+            'url' => null,
+            'preview' => $preview,
+            'from_me' => $fromMe ?? false,
         ];
     }
 
@@ -268,6 +345,34 @@ class ConversationMessageResource extends JsonResource
                 'longitude' => is_numeric($content['longitude'] ?? null) ? (float) $content['longitude'] : null,
                 'name' => $this->text($content['name'] ?? null),
                 'address' => $this->text($content['address'] ?? null),
+                // Shared in real time (only the position it was shared from is known); absent otherwise.
+                ...(($content['live'] ?? null) === true ? ['live' => true] : []),
+            ],
+            // A voice note is drawn as such; the length lets the player show it before loading.
+            MessageType::Audio => [
+                'voice' => ($content['voice'] ?? null) === true,
+                'seconds' => is_int($content['seconds'] ?? null) ? $content['seconds'] : null,
+            ],
+            // "gif": a video that plays looped and muted, as WhatsApp shows a GIF.
+            MessageType::Video => [
+                'gif' => ($content['gif'] ?? null) === true,
+                'seconds' => is_int($content['seconds'] ?? null) ? $content['seconds'] : null,
+                'view_once' => ($content['view_once'] ?? null) === true,
+                'thumbnail' => $this->thumbnail($content),
+            ],
+            MessageType::Image, MessageType::Document => [
+                'view_once' => ($content['view_once'] ?? null) === true,
+                'thumbnail' => $this->thumbnail($content),
+            ],
+            MessageType::Poll => [
+                'question' => $this->text($content['question'] ?? null),
+                'options' => array_values(array_filter(array_map(fn (mixed $option): ?string => $this->text($option), array_slice((array) ($content['options'] ?? []), 0, 12)))),
+                'multiple' => ($content['multiple'] ?? null) === true,
+            ],
+            // What it was, in words ("Llamada perdida"); the body carries the same text.
+            MessageType::Unsupported => [
+                'kind' => $this->text($content['kind'] ?? null),
+                'label' => $this->text($content['label'] ?? null),
             ],
             MessageType::Contacts => [
                 'contacts' => array_map(fn (mixed $contact): array => [
@@ -295,6 +400,20 @@ class ConversationMessageResource extends JsonResource
             ],
             default => null,
         };
+    }
+
+    /**
+     * The small JPEG preview WhatsApp embeds in a message, as a data URI:
+     * what the chat shows while the file downloads, or instead of it when
+     * the file can no longer be fetched (imported history).
+     *
+     * @param  array<array-key, mixed>  $content
+     */
+    private function thumbnail(array $content): ?string
+    {
+        $thumbnail = $content['thumbnail'] ?? null;
+
+        return is_string($thumbnail) && $thumbnail !== '' ? 'data:image/jpeg;base64,'.$thumbnail : null;
     }
 
     private function text(mixed $value): ?string

@@ -2,9 +2,13 @@
 
 namespace App\Services\WhatsAppWeb;
 
+use App\Actions\Contacts\RegisterInboundContact;
 use App\Actions\Conversations\ReceiveInboundMessage;
+use App\Actions\Messaging\RecordMessageEdit;
+use App\Actions\Messaging\RecordMessageReaction;
+use App\Actions\Messaging\RecordMessageRevocation;
 use App\Actions\Messaging\RecordMessageStatus;
-use App\Enums\AttachmentStatus;
+use App\Actions\WhatsAppWeb\ImportWhatsAppWebHistory;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConnectionProvider;
 use App\Enums\InboundMessageOutcome;
@@ -13,17 +17,16 @@ use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadWhatsAppWebMedia;
+use App\Jobs\ImportWhatsAppWebHistoryBatch;
 use App\Models\Connection;
+use App\Models\Contact;
 use App\Models\ContactIdentity;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\MessageAttachment;
 use App\Services\Meta\ConnectionMonitor;
-use App\Services\Meta\MediaFileName;
 use App\Services\Meta\ProviderStatus;
 use App\Support\InboundMessage;
 use App\Support\InboundSender;
-use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,12 +40,21 @@ use InvalidArgumentException;
  * - session.state: the real state of the session (WhatsAppWebSessions);
  * - message.inbound: a customer message, received exactly like one of any
  *   other channel (ReceiveInboundMessage: contact, conversation, routing,
- *   notifications, real time, automatic messages);
+ *   notifications, real time, automatic messages). A reaction is not a
+ *   message: it is kept on the message it reacts to (RecordMessageReaction);
  * - message.outbound_echo: something written on the linked phone itself,
- *   stored as an outbound message of the conversation without triggering
- *   automatic messages;
+ *   stored as an outbound message without author and without triggering
+ *   automatic messages: in the conversation being attended (or the most
+ *   recent one) of that contact and, when there is none, in the contact's
+ *   WhatsApp history, so nothing written on the phone is lost and no
+ *   request to attend is invented;
  * - message.status: delivery evidence of an outbound message
- *   (RecordMessageStatus).
+ *   (RecordMessageStatus);
+ * - message.edited / message.revoked: the sender edited a message or
+ *   deleted it for everyone; the stored message is updated or marked, never
+ *   duplicated or erased (RecordMessageEdit, RecordMessageRevocation);
+ * - history.batch: a slice of the chat history of a newly linked number,
+ *   queued and stored apart as history (ImportWhatsAppWebHistory).
  *
  * Every step is idempotent: the stored message id is unique, a status only
  * moves forward and a state older than the stored one is ignored, so the
@@ -51,19 +63,21 @@ use InvalidArgumentException;
  */
 class WhatsAppWebEvents
 {
-    /** @var list<string> */
-    private const MEDIA_TYPES = ['image', 'video', 'audio', 'document', 'sticker'];
-
     public function __construct(
         private WhatsAppWebSessions $sessions,
         private ReceiveInboundMessage $receive,
         private RecordMessageStatus $recordStatus,
+        private RecordMessageEdit $recordEdit,
+        private RecordMessageRevocation $recordRevocation,
+        private RecordMessageReaction $recordReaction,
+        private RegisterInboundContact $registerContact,
+        private ImportWhatsAppWebHistory $history,
         private ConnectionMonitor $monitor,
     ) {}
 
     /**
      * @param  array<array-key, mixed>  $data
-     * @return string What was done (for the log and the tests): applied, duplicate or ignored.
+     * @return string What was done (for the log and the tests): applied, queued, duplicate or ignored.
      */
     public function handle(Connection $connection, string $type, array $data): string
     {
@@ -72,6 +86,9 @@ class WhatsAppWebEvents
             'message.inbound' => $this->inbound($connection, $data),
             'message.outbound_echo' => $this->outboundEcho($connection, $data),
             'message.status' => $this->status($connection, $data),
+            'message.edited' => $this->edited($connection, $data),
+            'message.revoked' => $this->revoked($connection, $data),
+            'history.batch' => $this->historyBatch($connection, $data),
             default => 'ignored',
         };
     }
@@ -95,10 +112,15 @@ class WhatsAppWebEvents
             return $this->outboundEcho($connection, $data);
         }
 
-        $chat = $this->chat($data);
+        $payload = new WhatsAppWebMessagePayload($connection, $data);
+        $externalId = $payload->externalId();
 
-        if ($chat === null) {
+        if ($externalId === null) {
             return 'ignored';
+        }
+
+        if ($payload->type() === MessageType::Reaction) {
+            return $this->reaction($connection, $payload);
         }
 
         try {
@@ -107,24 +129,19 @@ class WhatsAppWebEvents
                 sender: new InboundSender(
                     channel: ConnectionChannel::Whatsapp,
                     provider: ConnectionProvider::WhatsappWeb,
-                    externalId: $chat['external_id'],
-                    profileName: is_string($data['push_name'] ?? null) ? $data['push_name'] : null,
-                    messageId: $this->storedId($connection, $data),
-                    occurredAt: $this->occurredAt($data),
+                    externalId: $externalId,
+                    profileName: $payload->profileName(),
+                    messageId: $payload->storedId(),
+                    occurredAt: $payload->occurredAt(),
                 ),
-                type: $this->type($data),
-                body: $this->body($data),
-                content: $this->content($connection, $data),
-                context: $this->context($connection, $data),
+                type: $payload->type(),
+                body: $payload->body(),
+                content: $payload->content(),
+                context: self::context($payload),
             );
         } catch (InvalidArgumentException $exception) {
             Log::warning('WhatsApp Web message ignored: '.$exception->getMessage(), ['connection_id' => $connection->id]);
 
-            return 'ignored';
-        }
-
-        // A reaction that was removed carries no emoji: nothing to show.
-        if ($inbound->type === MessageType::Reaction && ($inbound->body === null || $inbound->body === '')) {
             return 'ignored';
         }
 
@@ -140,46 +157,87 @@ class WhatsAppWebEvents
     }
 
     /**
+     * A reaction, of the customer or made on the linked phone: it joins the
+     * message it reacts to. One to a message that was never stored, or one
+     * that changes nothing, is ignored.
+     */
+    private function reaction(Connection $connection, WhatsAppWebMessagePayload $payload): string
+    {
+        $target = $payload->reactionTarget();
+
+        if ($target === null) {
+            return 'ignored';
+        }
+
+        try {
+            $at = $payload->occurredAt();
+        } catch (InvalidArgumentException) {
+            return 'ignored';
+        }
+
+        return $this->recordReaction->handle($connection, $target, $payload->fromMe(), $payload->reactionEmoji(), $at) === null ? 'ignored' : 'applied';
+    }
+
+    /**
      * A message written on the linked phone. It joins the contact's
      * conversation on this connection (the one in attention, or the most
-     * recent one) as an outbound message without an author; a chat with a
-     * person ChatManager never saw is not created from it.
+     * recent one) as an outbound message without an author. When the
+     * contact has none (the business wrote first, from the phone), it is
+     * kept in the contact's WhatsApp history conversation, which is closed
+     * and read-only: the message is not lost and nothing appears in the
+     * queues as if a customer were waiting.
      *
      * @param  array<array-key, mixed>  $data
      */
     private function outboundEcho(Connection $connection, array $data): string
     {
-        $chat = $this->chat($data);
+        $payload = new WhatsAppWebMessagePayload($connection, $data);
+        $externalId = $payload->externalId();
 
-        if ($chat === null) {
+        if ($externalId === null) {
             return 'ignored';
         }
 
+        if ($payload->type() === MessageType::Reaction) {
+            return $this->reaction($connection, $payload);
+        }
+
         try {
-            $storedId = $this->storedId($connection, $data);
-            $sentAt = $this->occurredAt($data);
-            $type = $this->type($data);
+            $storedId = $payload->storedId();
+            $sentAt = $payload->occurredAt();
         } catch (InvalidArgumentException) {
             return 'ignored';
         }
 
-        if ($type === MessageType::Reaction || Message::query()->where('whatsapp_message_id', $storedId)->exists()) {
-            return $type === MessageType::Reaction ? 'ignored' : 'duplicate';
+        if (Message::query()->where('whatsapp_message_id', $storedId)->exists()) {
+            return 'duplicate';
         }
 
         $contactId = ContactIdentity::query()
             ->where('channel', ConnectionChannel::Whatsapp)
-            ->where('external_id', $chat['external_id'])
+            ->where('external_id', $externalId)
             ->value('contact_id');
 
         if (! is_int($contactId)) {
-            Log::info('WhatsApp Web message written on the phone ignored: the recipient is not a known contact.', ['connection_id' => $connection->id]);
-
-            return 'ignored';
+            try {
+                // Someone the business wrote to first: a provisional contact, like any new sender.
+                $contactId = $this->registerContact->handle($connection, new InboundSender(
+                    channel: ConnectionChannel::Whatsapp,
+                    provider: ConnectionProvider::WhatsappWeb,
+                    externalId: $externalId,
+                    profileName: null,
+                    messageId: $storedId,
+                    occurredAt: $sentAt,
+                ))->contact->id;
+            } catch (InvalidArgumentException) {
+                return 'ignored';
+            }
         }
 
         try {
-            $stored = DB::transaction(function () use ($connection, $contactId, $data, $storedId, $sentAt, $type): ?array {
+            $stored = DB::transaction(function () use ($connection, $contactId, $payload, $storedId, $sentAt): array {
+                Contact::query()->whereKey($contactId)->lockForUpdate()->value('id');
+
                 $conversation = Conversation::query()
                     ->where('connection_id', $connection->id)
                     ->where('contact_id', $contactId)
@@ -188,54 +246,54 @@ class WhatsAppWebEvents
                     ->orderByDesc('id')
                     ->lockForUpdate()
                     ->first();
+                $live = $conversation !== null;
+                $conversation ??= $this->history->conversationFor($connection, $contactId, $sentAt, $sentAt);
 
-                if ($conversation === null) {
-                    return null;
-                }
-
-                $content = $this->content($connection, $data);
+                $content = $payload->content();
                 $descriptor = is_array($content['descriptor'] ?? null) ? $content['descriptor'] : null;
                 unset($content['descriptor']);
+                $quote = $payload->quote();
 
                 $message = new Message([
                     'conversation_id' => $conversation->id,
                     'whatsapp_message_id' => $storedId,
                     'direction' => MessageDirection::Outbound,
-                    'type' => $type,
+                    'type' => $payload->type(),
                     'status' => MessageStatus::Sent,
-                    'body' => $this->body($data),
-                    'reply_to_message_id' => $this->repliedMessageId($connection, $conversation, $data),
+                    'body' => $payload->body(),
+                    'reply_to_message_id' => $quote === null ? null : $this->repliedMessageId($connection, $contactId, $quote['message_id']),
                     'metadata' => array_filter([
                         // Written on the linked phone, not in ChatManager: it has no author here.
                         'sent_from_phone' => true,
-                        'content' => $content,
+                        'content' => $content === [] ? null : $content,
+                        'reply_to' => $quote,
                     ], fn (mixed $value): bool => $value !== null),
                 ]);
                 $message->forceFill(['sent_at' => $sentAt, 'accepted_at' => $sentAt])->save();
 
-                $attachment = $descriptor === null ? null : $this->pendingAttachment($message, $content, $descriptor);
+                $attachment = in_array($payload->rawType(), WhatsAppWebMessagePayload::MEDIA_TYPES, true)
+                    ? WhatsAppWebAttachments::create($message, $content ?? [], $descriptor)
+                    : null;
 
-                $conversation->forceFill([
-                    'last_outbound_at' => $conversation->last_outbound_at === null || $sentAt->greaterThan($conversation->last_outbound_at) ? $sentAt : $conversation->last_outbound_at,
-                    'last_message_at' => $conversation->last_message_at === null || $sentAt->greaterThan($conversation->last_message_at) ? $sentAt : $conversation->last_message_at,
-                ])->save();
+                if ($live) {
+                    $conversation->forceFill([
+                        'last_outbound_at' => $conversation->last_outbound_at === null || $sentAt->greaterThan($conversation->last_outbound_at) ? $sentAt : $conversation->last_outbound_at,
+                        'last_message_at' => $conversation->last_message_at === null || $sentAt->greaterThan($conversation->last_message_at) ? $sentAt : $conversation->last_message_at,
+                    ])->save();
+                } else {
+                    $this->history->extend($conversation, $sentAt, $sentAt);
+                }
 
                 MessageRecorded::dispatch($message->id, $conversation->id, MessageDirection::Outbound->value);
 
-                return ['attachment' => $attachment?->id];
+                return ['download' => $descriptor === null ? null : $attachment?->id];
             });
         } catch (UniqueConstraintViolationException) {
             return 'duplicate';
         }
 
-        if ($stored === null) {
-            Log::info('WhatsApp Web message written on the phone ignored: the contact has no conversation on this connection.', ['connection_id' => $connection->id]);
-
-            return 'ignored';
-        }
-
-        if ($stored['attachment'] !== null) {
-            DownloadWhatsAppWebMedia::dispatch($stored['attachment']);
+        if ($stored['download'] !== null) {
+            DownloadWhatsAppWebMedia::dispatch($stored['download']);
         }
 
         $this->monitor->outboundAccepted($connection);
@@ -261,7 +319,7 @@ class WhatsAppWebEvents
             phoneNumberId: 'wweb-'.$connection->id,
             messageId: WhatsAppWebTransport::storedId($connection->id, $id),
             status: $status,
-            occurredAt: self::timestamp($data['timestamp'] ?? null),
+            occurredAt: WhatsAppWebMessagePayload::timestamp($data['timestamp'] ?? null),
             errors: $error === null ? [] : [[
                 'code' => is_int($error['code'] ?? null) ? $error['code'] : null,
                 'title' => 'WhatsApp no pudo entregar el mensaje.',
@@ -274,281 +332,105 @@ class WhatsAppWebEvents
     }
 
     /**
-     * The 1:1 chat of the message and the identity of the other person:
-     * the digits of a phone JID, or "lid:{id}" when WhatsApp only gave a
-     * privacy identifier. Groups, broadcasts, statuses and channels: null.
-     *
-     * @param  array<array-key, mixed>  $data
-     * @return array{external_id: string}|null
-     */
-    private function chat(array $data): ?array
-    {
-        $jid = is_string($data['remote_jid'] ?? null) ? strtolower(trim($data['remote_jid'])) : '';
-
-        if ($jid === '' || ($data['is_group'] ?? false) === true) {
-            return null;
-        }
-
-        [$user, $server] = array_pad(explode('@', $jid, 2), 2, '');
-        // "5215512345678:12@s.whatsapp.net" names a device of the same account.
-        $user = explode(':', $user, 2)[0];
-
-        if ($user === '' || ! ctype_digit($user) || strlen($user) > 30) {
-            return null;
-        }
-
-        return match ($server) {
-            's.whatsapp.net', 'c.us' => ['external_id' => $user],
-            'lid' => ['external_id' => 'lid:'.$user],
-            default => null,
-        };
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $data
-     */
-    private function storedId(Connection $connection, array $data): string
-    {
-        $id = $data['provider_message_id'] ?? null;
-
-        if (! is_string($id) || $id === '' || strlen($id) > 100 || preg_match('/^[A-Za-z0-9._:-]+$/', $id) !== 1) {
-            throw new InvalidArgumentException('The message id is missing or malformed.');
-        }
-
-        return WhatsAppWebTransport::storedId($connection->id, $id);
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $data
-     */
-    private function occurredAt(array $data): CarbonImmutable
-    {
-        if (! is_int($data['timestamp'] ?? null) || $data['timestamp'] <= 0) {
-            throw new InvalidArgumentException('The message has no timestamp.');
-        }
-
-        return self::timestamp($data['timestamp']);
-    }
-
-    /**
-     * Never in the future (a phone with a wrong clock must not push the
-     * conversation ahead of everything else).
-     */
-    private static function timestamp(mixed $value): CarbonImmutable
-    {
-        $now = CarbonImmutable::now();
-        $at = is_int($value) && $value > 0 ? CarbonImmutable::createFromTimestampUTC($value) : $now;
-
-        return $at->greaterThan($now) ? $now : $at;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $data
-     */
-    private function type(array $data): MessageType
-    {
-        $type = is_string($data['type'] ?? null) ? $data['type'] : 'unsupported';
-
-        return match ($type) {
-            'text', 'image', 'video', 'audio', 'document', 'sticker', 'location', 'contacts', 'reaction' => MessageType::from($type),
-            default => MessageType::Unsupported,
-        };
-    }
-
-    /**
-     * Readable text of the message, as MetaInboundPayload builds it.
+     * The sender edited a message: its stored text is replaced.
      *
      * @param  array<array-key, mixed>  $data
      */
-    private function body(array $data): ?string
+    private function edited(Connection $connection, array $data): string
     {
-        $type = is_string($data['type'] ?? null) ? $data['type'] : 'unsupported';
+        $storedId = WhatsAppWebMessagePayload::storedIdOf($connection, $data['provider_message_id'] ?? null);
+
+        if ($storedId === null || WhatsAppWebMessagePayload::externalIdOf($data['remote_jid'] ?? null) === null) {
+            return 'ignored';
+        }
+
         $text = is_string($data['text'] ?? null) ? $data['text'] : null;
+        $message = $this->recordEdit->handle($connection, $storedId, $text, WhatsAppWebMessagePayload::timestamp($data['timestamp'] ?? null));
 
-        $body = match ($type) {
-            'text', 'image', 'video', 'document' => $text,
-            'reaction' => is_array($data['reaction'] ?? null) && is_string($data['reaction']['emoji'] ?? null) ? $data['reaction']['emoji'] : $text,
-            'location' => $this->locationText(is_array($data['location'] ?? null) ? $data['location'] : []),
-            'contacts' => $this->contactsText(is_array($data['contacts'] ?? null) ? $data['contacts'] : []),
-            default => null,
-        };
-
-        if ($body === null) {
-            return null;
-        }
-
-        $body = trim($body);
-
-        return $body === '' ? null : Str::limit($body, 4096, '');
+        return $message === null ? 'ignored' : 'applied';
     }
 
     /**
-     * Content in the shape the interface already renders for WhatsApp
-     * Cloud API (text body, media, location, contacts, reaction). For a
-     * file it carries the download descriptor, which ReceiveInboundMessage
-     * moves to the attachment (encrypted) and never stores in the message.
+     * The sender deleted a message for everyone: it is marked, not erased.
      *
      * @param  array<array-key, mixed>  $data
-     * @return array<array-key, mixed>|null
      */
-    private function content(Connection $connection, array $data): ?array
+    private function revoked(Connection $connection, array $data): string
     {
-        $type = is_string($data['type'] ?? null) ? $data['type'] : 'unsupported';
+        $storedId = WhatsAppWebMessagePayload::storedIdOf($connection, $data['provider_message_id'] ?? null);
 
-        if ($type === 'text') {
-            return is_string($data['text'] ?? null) ? ['body' => $data['text']] : null;
+        if ($storedId === null || WhatsAppWebMessagePayload::externalIdOf($data['remote_jid'] ?? null) === null) {
+            return 'ignored';
         }
 
-        if (in_array($type, self::MEDIA_TYPES, true)) {
-            $media = is_array($data['media'] ?? null) ? $data['media'] : [];
-            $descriptor = is_array($media['descriptor'] ?? null) && $media['descriptor'] !== [] ? $media['descriptor'] : null;
+        $message = $this->recordRevocation->handle($connection, $storedId, WhatsAppWebMessagePayload::timestamp($data['timestamp'] ?? null));
 
-            return array_filter([
-                'source' => 'whatsapp_web',
-                'mime_type' => is_string($media['mime'] ?? null) ? $media['mime'] : null,
-                'filename' => is_string($media['file_name'] ?? null) ? $media['file_name'] : null,
-                'caption' => is_string($data['text'] ?? null) && $data['text'] !== '' ? $data['text'] : null,
-                'voice' => ($media['voice'] ?? false) === true ? true : null,
-                'seconds' => is_int($media['seconds'] ?? null) ? $media['seconds'] : null,
-                'size' => is_int($media['size'] ?? null) ? $media['size'] : null,
-                // Without it the file cannot be fetched: the message is kept, the file is not.
-                'descriptor' => $descriptor,
-            ], fn (mixed $value): bool => $value !== null);
-        }
-
-        if ($type === 'location') {
-            $location = is_array($data['location'] ?? null) ? $data['location'] : [];
-
-            return array_filter([
-                'latitude' => is_numeric($location['latitude'] ?? null) ? (float) $location['latitude'] : null,
-                'longitude' => is_numeric($location['longitude'] ?? null) ? (float) $location['longitude'] : null,
-                'name' => is_string($location['name'] ?? null) ? Str::limit($location['name'], 255, '') : null,
-                'address' => is_string($location['address'] ?? null) ? Str::limit($location['address'], 500, '') : null,
-            ], fn (mixed $value): bool => $value !== null);
-        }
-
-        if ($type === 'contacts') {
-            $contacts = [];
-
-            foreach (array_slice(array_values(is_array($data['contacts'] ?? null) ? $data['contacts'] : []), 0, 20) as $contact) {
-                if (! is_array($contact)) {
-                    continue;
-                }
-
-                $phones = array_values(array_filter((array) ($contact['phones'] ?? []), 'is_string'));
-                $contacts[] = [
-                    'name' => ['formatted_name' => is_string($contact['name'] ?? null) ? Str::limit($contact['name'], 255, '') : ''],
-                    'phones' => array_map(fn (string $phone): array => ['phone' => Str::limit($phone, 40, '')], array_slice($phones, 0, 10)),
-                ];
-            }
-
-            return ['contacts' => $contacts];
-        }
-
-        if ($type === 'reaction') {
-            $reaction = is_array($data['reaction'] ?? null) ? $data['reaction'] : [];
-            $target = is_string($reaction['provider_message_id'] ?? null) ? $reaction['provider_message_id']
-                : (is_array($data['quoted'] ?? null) && is_string($data['quoted']['provider_message_id'] ?? null) ? $data['quoted']['provider_message_id'] : null);
-            $emoji = is_string($reaction['emoji'] ?? null) ? $reaction['emoji'] : (is_string($data['text'] ?? null) ? $data['text'] : null);
-
-            return array_filter([
-                'message_id' => $target === null || $target === '' || strlen($target) > 100 ? null : WhatsAppWebTransport::storedId($connection->id, $target),
-                'emoji' => $emoji,
-            ], fn (mixed $value): bool => $value !== null);
-        }
-
-        return null;
+        return $message === null ? 'ignored' : 'applied';
     }
 
     /**
-     * The message being replied to, as Meta's "context" (the stored id).
+     * A slice of the history of a newly linked number: queued, never
+     * processed inside the request (live events wait behind it).
      *
      * @param  array<array-key, mixed>  $data
-     * @return array{id: string}|null
      */
-    private function context(Connection $connection, array $data): ?array
+    private function historyBatch(Connection $connection, array $data): string
     {
-        // A reaction points at its message through "reaction", not as a reply.
-        if (($data['type'] ?? null) === 'reaction') {
-            return null;
+        if (! (bool) config('whatsapp_web.history.enabled', true)) {
+            return 'ignored';
         }
 
-        $quoted = is_array($data['quoted'] ?? null) ? ($data['quoted']['provider_message_id'] ?? null) : null;
+        $messages = array_values(array_filter(is_array($data['messages'] ?? null) ? $data['messages'] : [], 'is_array'));
 
-        return is_string($quoted) && $quoted !== '' && strlen($quoted) <= 100
-            ? ['id' => WhatsAppWebTransport::storedId($connection->id, $quoted)]
-            : null;
+        if ($messages === []) {
+            return 'ignored';
+        }
+
+        foreach (array_chunk($messages, max(1, (int) config('whatsapp_web.history.job_size', 100))) as $chunk) {
+            ImportWhatsAppWebHistoryBatch::dispatch($connection->id, $chunk);
+        }
+
+        return 'queued';
     }
 
     /**
-     * @param  array<array-key, mixed>  $data
+     * The quoted message as Meta's "context" (the stored id), plus who
+     * wrote it and its excerpt when WhatsApp sent them.
+     *
+     * @return array{id: string, from_me?: bool, preview?: string}|null
      */
-    private function repliedMessageId(Connection $connection, Conversation $conversation, array $data): ?int
+    private static function context(WhatsAppWebMessagePayload $payload): ?array
     {
-        $context = $this->context($connection, $data);
+        $quote = $payload->quote();
 
-        if ($context === null) {
+        if ($quote === null) {
             return null;
         }
 
-        $id = Message::query()->where('whatsapp_message_id', $context['id'])->where('conversation_id', $conversation->id)->value('id');
+        $context = ['id' => $quote['message_id']];
+
+        if (isset($quote['from_me'])) {
+            $context['from_me'] = $quote['from_me'];
+        }
+
+        if (isset($quote['preview'])) {
+            $context['preview'] = $quote['preview'];
+        }
+
+        return $context;
+    }
+
+    /**
+     * The stored message the business replied to from the phone, among the
+     * conversations of that contact on the connection.
+     */
+    private function repliedMessageId(Connection $connection, int $contactId, string $storedId): ?int
+    {
+        $id = Message::query()
+            ->where('whatsapp_message_id', $storedId)
+            ->whereHas('conversation', fn ($query) => $query->where('connection_id', $connection->id)->where('contact_id', $contactId))
+            ->value('id');
 
         return is_int($id) ? $id : null;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $content
-     * @param  array<array-key, mixed>  $descriptor
-     */
-    private function pendingAttachment(Message $message, array $content, array $descriptor): MessageAttachment
-    {
-        $attachment = new MessageAttachment;
-        $attachment->forceFill([
-            'message_id' => $message->id,
-            'whatsapp_media_id' => null,
-            'provider_reference' => $descriptor,
-            'disk' => (string) config('filesystems.media_disk', 'local'),
-            'path' => null,
-            'mime_type' => is_string($content['mime_type'] ?? null) ? Str::limit(trim(explode(';', $content['mime_type'])[0]), 127, '') : 'application/octet-stream',
-            'file_name' => is_string($content['filename'] ?? null) ? MediaFileName::sanitize($content['filename']) : null,
-            'status' => AttachmentStatus::Pending,
-        ])->save();
-
-        return $attachment;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $location
-     */
-    private function locationText(array $location): ?string
-    {
-        $parts = array_filter([
-            is_string($location['name'] ?? null) ? trim($location['name']) : null,
-            is_string($location['address'] ?? null) ? trim($location['address']) : null,
-        ], fn (?string $part): bool => $part !== null && $part !== '');
-
-        if ($parts !== []) {
-            return implode(', ', $parts);
-        }
-
-        return is_numeric($location['latitude'] ?? null) && is_numeric($location['longitude'] ?? null)
-            ? $location['latitude'].', '.$location['longitude']
-            : null;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $contacts
-     */
-    private function contactsText(array $contacts): ?string
-    {
-        $names = [];
-
-        foreach ($contacts as $contact) {
-            if (is_array($contact) && is_string($contact['name'] ?? null) && trim($contact['name']) !== '') {
-                $names[] = trim($contact['name']);
-            }
-        }
-
-        return $names === [] ? null : implode(', ', array_slice($names, 0, 10));
     }
 }

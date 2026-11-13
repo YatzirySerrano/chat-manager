@@ -79,12 +79,163 @@ describe('recepción de mensajes (§5)', () => {
         assert.equal(ofType('message.inbound').length, 1);
     });
 
-    test('historial, mensajes anteriores a la vinculación, grupos y estados no se notifican', async () => {
+    test('lo que WhatsApp guardó mientras el servicio estaba desconectado se notifica al volver', async () => {
         socket.emit({
             type: 'messages',
             upsert: 'append',
-            messages: [textMessage('H1', CUSTOMER, 'del historial')],
+            messages: [
+                textMessage('OFFLINE1', CUSTOMER, 'escrito sin conexión'),
+            ],
         });
+        await harness.settle();
+
+        const [event] = ofType('message.inbound');
+
+        assert.equal(
+            (event?.data as { provider_message_id: string })
+                .provider_message_id,
+            'OFFLINE1',
+        );
+    });
+
+    test('la edición y la eliminación de un mensaje se notifican una vez, por cualquiera de las dos vías', async () => {
+        socket.emit({
+            type: 'messages',
+            upsert: 'notify',
+            messages: [
+                {
+                    key: { id: 'E1', remoteJid: CUSTOMER, fromMe: false },
+                    message: {
+                        protocolMessage: {
+                            type: 14,
+                            key: { id: 'TARGET' },
+                            editedMessage: { conversation: 'Corregido' },
+                            timestampMs: 1_700_000_090_000,
+                        },
+                    },
+                    messageTimestamp: 1_700_000_090,
+                },
+                {
+                    key: { id: 'R1', remoteJid: CUSTOMER, fromMe: false },
+                    message: {
+                        protocolMessage: { type: 0, key: { id: 'GONE' } },
+                    },
+                    messageTimestamp: 1_700_000_095,
+                },
+            ],
+        });
+        // The library reports the same two changes on its own event too.
+        socket.emit({
+            type: 'edits',
+            updates: [
+                {
+                    id: 'TARGET',
+                    remoteJid: CUSTOMER,
+                    fromMe: false,
+                    timestamp: 1_700_000_090,
+                    message: { conversation: 'Corregido' },
+                },
+            ],
+        });
+        socket.emit({
+            type: 'revokes',
+            updates: [{ id: 'GONE', remoteJid: CUSTOMER, fromMe: false }],
+        });
+        await harness.settle();
+
+        assert.equal(ofType('message.inbound').length, 0);
+        assert.deepEqual(
+            ofType('message.edited').map((event) => event.data),
+            [
+                {
+                    provider_message_id: 'TARGET',
+                    remote_jid: CUSTOMER,
+                    from_me: false,
+                    timestamp: 1_700_000_090,
+                    type: 'text',
+                    text: 'Corregido',
+                },
+            ],
+        );
+        assert.deepEqual(
+            ofType('message.revoked').map(
+                (event) =>
+                    (event.data as { provider_message_id: string })
+                        .provider_message_id,
+            ),
+            ['GONE'],
+        );
+    });
+
+    test('el historial que WhatsApp entrega al vincular llega en lotes, del más antiguo al más reciente', async () => {
+        const GROUP = '120363025246125486@g.us';
+        const messages = [];
+
+        for (let index = 0; index < 120; index++) {
+            messages.push(
+                textMessage(`HIST${index}`, CUSTOMER, `mensaje ${index}`, {
+                    // Newest first, as the phone hands them over.
+                    timestamp: 1_690_000_000 - index * 60,
+                    fromMe: index % 2 === 0,
+                }),
+            );
+        }
+
+        messages.push(textMessage('GROUPMSG', GROUP, 'de un grupo'));
+
+        socket.emit({
+            type: 'history',
+            messages,
+            names: { [CUSTOMER]: 'María López (cliente)' },
+            progress: 40,
+            syncType: 'recent',
+        });
+        await harness.settle();
+
+        const batches = ofType('history.batch').map(
+            (event) =>
+                event.data as {
+                    sync_type: string;
+                    progress: number;
+                    messages: {
+                        provider_message_id: string;
+                        timestamp: number;
+                        chat_name: string;
+                        from_me: boolean;
+                    }[];
+                },
+        );
+
+        assert.deepEqual(
+            batches.map((batch) => batch.messages.length),
+            [50, 50, 20],
+        );
+        assert.equal(batches[0]?.sync_type, 'recent');
+        assert.equal(batches[0]?.progress, 40);
+
+        const all = batches.flatMap((batch) => batch.messages);
+
+        assert.equal(all[0]?.provider_message_id, 'HIST119');
+        assert.equal(all.at(-1)?.provider_message_id, 'HIST0');
+        assert.ok(
+            all.every(
+                (message, index) =>
+                    index === 0 ||
+                    message.timestamp >= (all[index - 1]?.timestamp ?? 0),
+            ),
+        );
+        assert.ok(
+            all.every(
+                (message) => message.chat_name === 'María López (cliente)',
+            ),
+        );
+        assert.equal(all.filter((message) => message.from_me).length, 60);
+        // History is never live traffic.
+        assert.equal(ofType('message.inbound').length, 0);
+        assert.equal(ofType('message.outbound_echo').length, 0);
+    });
+
+    test('un mensaje anterior a la vinculación que llega como nuevo se importa como historial', async () => {
         socket.emit({
             type: 'messages',
             upsert: 'notify',
@@ -92,6 +243,60 @@ describe('recepción de mensajes (§5)', () => {
                 textMessage('OLD', CUSTOMER, 'antes de vincular', {
                     timestamp: 1_699_990_000,
                 }),
+            ],
+        });
+        await harness.settle();
+
+        assert.equal(ofType('message.inbound').length, 0);
+        assert.deepEqual(
+            ofType('history.batch').map((event) =>
+                (
+                    event.data as {
+                        messages: { provider_message_id: string }[];
+                    }
+                ).messages.map((message) => message.provider_message_id),
+            ),
+            [['OLD']],
+        );
+    });
+
+    test('una sesión vinculada sin historial descarta lo anterior a la vinculación', async () => {
+        const plain = await startHarness({ config: { syncHistory: false } });
+
+        try {
+            const other = await linkSession(plain, 1);
+
+            plain.events.length = 0;
+            other.emit({
+                type: 'history',
+                messages: [textMessage('H1', CUSTOMER, 'del historial')],
+                names: {},
+                progress: 100,
+                syncType: 'recent',
+            });
+            other.emit({
+                type: 'messages',
+                upsert: 'notify',
+                messages: [
+                    textMessage('OLD', CUSTOMER, 'antes de vincular', {
+                        timestamp: 1_699_990_000,
+                    }),
+                ],
+            });
+            await plain.settle();
+
+            assert.equal(plain.events.length, 0);
+        } finally {
+            await plain.close();
+            await plain.removeData();
+        }
+    });
+
+    test('grupos, estados, canales y tráfico de protocolo no se notifican', async () => {
+        socket.emit({
+            type: 'messages',
+            upsert: 'notify',
+            messages: [
                 textMessage('G1', '120363025246125486@g.us', 'en un grupo'),
                 textMessage('S1', 'status@broadcast', 'un estado'),
                 textMessage('N1', '120363025246125486@newsletter', 'un canal'),

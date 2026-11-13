@@ -30,6 +30,7 @@ use App\Services\Conversations\ConversationRouter;
 use App\Services\Conversations\QueueRules;
 use App\Services\Conversations\ResponseClock;
 use App\Services\Meta\MediaFileName;
+use App\Services\WhatsAppWeb\WhatsAppWebAttachments;
 use App\Support\InboundContactRegistration;
 use App\Support\InboundMessage;
 use App\Support\InboundMessageReceipt;
@@ -130,7 +131,13 @@ class ReceiveInboundMessage
             'metadata' => array_filter([
                 'content' => self::storedContent($inbound->content),
                 'context' => $inbound->context,
-                'reply_to' => is_string($inbound->context['id'] ?? null) ? ['message_id' => $inbound->context['id']] : null,
+                // Who wrote the quoted message and an excerpt of it, when the provider sent them
+                // (WhatsApp Web): the quote is drawn even if the original was never stored here.
+                'reply_to' => is_string($inbound->context['id'] ?? null) ? array_filter([
+                    'message_id' => $inbound->context['id'],
+                    'from_me' => is_bool($inbound->context['from_me'] ?? null) ? $inbound->context['from_me'] : null,
+                    'preview' => is_string($inbound->context['preview'] ?? null) ? $inbound->context['preview'] : null,
+                ], fn (mixed $value): bool => $value !== null) : null,
                 'profile_name' => $inbound->sender->profileName,
                 // PSID / IGSID: scoped to this page or Instagram account, so
                 // replies of this conversation go back to this exact id.
@@ -166,7 +173,7 @@ class ReceiveInboundMessage
             SendAwayInOpenConversation::dispatch($conversation->id, $message->id)->afterCommit();
         }
 
-        if ($attachment !== null) {
+        if ($attachment !== null && $attachment->status === AttachmentStatus::Pending) {
             // A WhatsApp Web file is fetched from the private service, never from Meta.
             $attachment->provider_reference !== null
                 ? DownloadWhatsAppWebMedia::dispatch($attachment->id)->afterCommit()
@@ -247,9 +254,16 @@ class ReceiveInboundMessage
             ? $inbound->content['descriptor']
             : null;
 
+        // A WhatsApp Web file, with or without its descriptor: without one
+        // (no download key came, as with "view once" media) the message
+        // still shows that it had a file, as unavailable.
+        if (($inbound->content['source'] ?? null) === 'whatsapp_web') {
+            return WhatsAppWebAttachments::create($message, $inbound->content ?? [], $descriptor);
+        }
+
         // WhatsApp announces a media id; Messenger and Instagram a URL of
         // Meta's CDN, kept in the message content for the download job.
-        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null && $descriptor === null) {
+        if ((! is_string($mediaId) || $mediaId === '') && $sourceUrl === null) {
             return null;
         }
 
@@ -260,7 +274,7 @@ class ReceiveInboundMessage
         $attachment->forceFill([
             'message_id' => $message->id,
             'whatsapp_media_id' => is_string($mediaId) && $mediaId !== '' ? Str::limit($mediaId, 128, '') : null,
-            'provider_reference' => $descriptor,
+            'provider_reference' => null,
             'disk' => (string) config('filesystems.media_disk', 'local'),
             'path' => null,
             'mime_type' => $mime,

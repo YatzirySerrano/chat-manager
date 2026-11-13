@@ -62,6 +62,9 @@ export function testConfig(
         reconnectMaxAttempts: 3,
         sendTimeoutMs: 200,
         eventTimeoutMs: 1000,
+        syncHistory: true,
+        historyMaxDays: 0,
+        historyBatchSize: 50,
         ...overrides,
     };
 }

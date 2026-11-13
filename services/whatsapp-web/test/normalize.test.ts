@@ -6,6 +6,7 @@ import {
     normalizeMessage,
     phoneOfJid,
     phonesOfVcard,
+    protocolChange,
 } from '../src/normalize.js';
 
 const CUSTOMER = '5215511112222@s.whatsapp.net';
@@ -168,17 +169,18 @@ describe('normalización de mensajes (§5)', () => {
         );
 
         assert.equal(sticker?.type, 'sticker');
-        assert.equal(sticker?.media?.descriptor.kind, 'sticker');
+        assert.equal(sticker?.media?.descriptor?.kind, 'sticker');
     });
 
-    test('un archivo sin clave de descarga queda como no soportado, no como archivo roto', async () => {
+    test('un archivo sin clave de descarga conserva su tipo y avisa que no hay archivo', async () => {
         const broken = await normalizeMessage(
             message({ imageMessage: { mimetype: 'image/jpeg' } }),
             noLookup,
         );
 
-        assert.equal(broken?.type, 'unsupported');
-        assert.equal(broken?.media, undefined);
+        assert.equal(broken?.type, 'image');
+        assert.equal(broken?.media?.descriptor, null);
+        assert.equal(broken?.media?.mime, 'image/jpeg');
     });
 
     test('ubicación, contactos y reacción', async () => {
@@ -246,19 +248,44 @@ describe('normalización de mensajes (§5)', () => {
         });
     });
 
-    test('lo que la plataforma no entiende llega como no soportado; lo que no es un mensaje, no llega', async () => {
-        const poll = await normalizeMessage(
-            message({
-                pollCreationMessage: {
-                    name: '¿Opción?',
-                    options: [{ optionName: 'A' }],
-                },
-            }),
+    test('lo que la plataforma no dibuja dice qué era; lo que no es un mensaje, no llega', async () => {
+        const call = await normalizeMessage(
+            message({ call: { callKey: new Uint8Array(4) } }),
             noLookup,
         );
 
-        assert.equal(poll?.type, 'unsupported');
-        assert.equal(poll?.text, null);
+        assert.equal(call?.type, 'unsupported');
+        assert.deepEqual(call?.unsupported, { kind: 'call', label: 'Llamada' });
+
+        const event = await normalizeMessage(
+            message({ eventMessage: { name: 'Junta de cobranza' } }),
+            noLookup,
+        );
+
+        assert.equal(event?.type, 'unsupported');
+        assert.equal(event?.unsupported?.label, 'Evento');
+        assert.equal(event?.text, 'Junta de cobranza');
+
+        const missed = await normalizeMessage(
+            { ...message(undefined), messageStubType: 40 },
+            noLookup,
+        );
+
+        assert.equal(missed?.type, 'unsupported');
+        assert.equal(missed?.unsupported?.label, 'Llamada perdida');
+
+        // Votes of a poll, pins and encrypted side traffic are not messages.
+        for (const silent of [
+            { pollUpdateMessage: {} },
+            { pinInChatMessage: {} },
+            { keepInChatMessage: {} },
+            { secretEncryptedMessage: {} },
+        ]) {
+            assert.equal(
+                await normalizeMessage(message(silent), noLookup),
+                null,
+            );
+        }
 
         assert.equal(
             await normalizeMessage(
@@ -294,6 +321,397 @@ describe('normalización de mensajes (§5)', () => {
                     { conversation: 'x' },
                     { remoteJid: 'status@broadcast' },
                 ),
+                noLookup,
+            ),
+            null,
+        );
+    });
+
+    test('encuesta, respuestas a botones y listas, y mensajes con botones de una empresa', async () => {
+        const poll = await normalizeMessage(
+            message({
+                pollCreationMessageV3: {
+                    name: '¿Qué día te queda mejor?',
+                    options: [
+                        { optionName: 'Lunes' },
+                        { optionName: 'Martes' },
+                    ],
+                    selectableOptionsCount: 1,
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(poll?.type, 'poll');
+        assert.deepEqual(poll?.poll, {
+            question: '¿Qué día te queda mejor?',
+            options: ['Lunes', 'Martes'],
+            multiple: false,
+        });
+        assert.equal(
+            poll?.text,
+            'Encuesta: ¿Qué día te queda mejor?\n• Lunes\n• Martes',
+        );
+
+        const button = await normalizeMessage(
+            message({
+                buttonsResponseMessage: {
+                    selectedButtonId: 'yes',
+                    selectedDisplayText: 'Sí, confirmo',
+                    contextInfo: { stanzaId: 'ASKED' },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(button?.type, 'interactive');
+        assert.deepEqual(button?.interactive, {
+            kind: 'button_reply',
+            title: 'Sí, confirmo',
+            description: null,
+        });
+        assert.equal(button?.text, 'Sí, confirmo');
+        assert.equal(button?.quoted?.provider_message_id, 'ASKED');
+
+        const list = await normalizeMessage(
+            message({
+                listResponseMessage: {
+                    title: 'Plan mensual',
+                    description: '12 pagos',
+                    singleSelectReply: { selectedRowId: 'plan-12' },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.deepEqual(list?.interactive, {
+            kind: 'list_reply',
+            title: 'Plan mensual',
+            description: '12 pagos',
+        });
+
+        const template = await normalizeMessage(
+            message({
+                templateButtonReplyMessage: {
+                    selectedId: '1',
+                    selectedDisplayText: 'Quiero más información',
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(template?.interactive?.title, 'Quiero más información');
+
+        const buttons = await normalizeMessage(
+            message({
+                buttonsMessage: { contentText: 'Elige una opción' },
+            }),
+            noLookup,
+        );
+
+        assert.equal(buttons?.type, 'text');
+        assert.equal(buttons?.text, 'Elige una opción');
+    });
+
+    test('GIF, sticker animado, miniatura, medidas y ubicación en tiempo real', async () => {
+        const jpeg = new Uint8Array([0xff, 0xd8, ...new Array(30).fill(1)]);
+        const gif = await normalizeMessage(
+            message({
+                videoMessage: {
+                    mediaKey,
+                    directPath: '/v/gif',
+                    mimetype: 'video/mp4',
+                    gifPlayback: true,
+                    seconds: 3,
+                    width: 320,
+                    height: 240,
+                    jpegThumbnail: jpeg,
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(gif?.type, 'video');
+        assert.equal(gif?.media?.gif, true);
+        assert.equal(gif?.media?.width, 320);
+        assert.equal(gif?.media?.height, 240);
+        assert.equal(
+            gif?.media?.thumbnail,
+            Buffer.from(jpeg).toString('base64'),
+        );
+
+        const sticker = await normalizeMessage(
+            message({
+                stickerMessage: {
+                    mediaKey,
+                    directPath: '/v/sticker',
+                    mimetype: 'image/webp',
+                    isAnimated: true,
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(sticker?.type, 'sticker');
+        assert.equal(sticker?.media?.animated, true);
+
+        const voice = await normalizeMessage(
+            message({
+                audioMessage: {
+                    mediaKey,
+                    directPath: '/v/voice',
+                    mimetype: 'audio/ogg; codecs=opus',
+                    ptt: true,
+                    seconds: 7,
+                },
+            }),
+            noLookup,
+        );
+
+        // The codec is not part of the type the platform stores.
+        assert.equal(voice?.media?.mime, 'audio/ogg');
+        assert.equal(voice?.media?.descriptor?.mime, 'audio/ogg; codecs=opus');
+        assert.equal(voice?.media?.voice, true);
+        assert.equal(voice?.media?.seconds, 7);
+
+        const live = await normalizeMessage(
+            message({
+                liveLocationMessage: {
+                    degreesLatitude: 19.4,
+                    degreesLongitude: -99.1,
+                    caption: 'Voy en camino',
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(live?.type, 'location');
+        assert.equal(live?.location?.live, true);
+        assert.equal(live?.text, 'Voy en camino');
+    });
+
+    test('envolturas: temporales, de una sola vista y documento con pie', async () => {
+        const ephemeral = await normalizeMessage(
+            message({
+                ephemeralMessage: {
+                    message: {
+                        extendedTextMessage: { text: 'Se borra en 7 días' },
+                    },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(ephemeral?.type, 'text');
+        assert.equal(ephemeral?.text, 'Se borra en 7 días');
+
+        const once = await normalizeMessage(
+            message({
+                viewOnceMessageV2: {
+                    message: { imageMessage: { mimetype: 'image/jpeg' } },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(once?.type, 'image');
+        assert.equal(once?.view_once, true);
+        assert.equal(once?.media?.descriptor, null);
+
+        const captioned = await normalizeMessage(
+            message({
+                documentWithCaptionMessage: {
+                    message: {
+                        documentMessage: {
+                            mediaKey,
+                            directPath: '/v/doc',
+                            mimetype: 'application/pdf',
+                            fileName: 'estado.pdf',
+                            caption: 'Tu estado de cuenta',
+                        },
+                    },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.equal(captioned?.type, 'document');
+        assert.equal(captioned?.media?.file_name, 'estado.pdf');
+        assert.equal(captioned?.text, 'Tu estado de cuenta');
+    });
+
+    test('la cita lleva quién escribió el original y un extracto', async () => {
+        const reply = await normalizeMessage(
+            message({
+                extendedTextMessage: {
+                    text: 'Ese mismo',
+                    contextInfo: {
+                        stanzaId: 'ORIGINAL',
+                        participant: '5215512345678@s.whatsapp.net',
+                        quotedMessage: { conversation: '¿Cuál comprobante?' },
+                    },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.deepEqual(reply?.quoted, {
+            provider_message_id: 'ORIGINAL',
+            from_me: true,
+            text: '¿Cuál comprobante?',
+        });
+
+        const own = await normalizeMessage(
+            message({
+                extendedTextMessage: {
+                    text: 'Este',
+                    contextInfo: {
+                        stanzaId: 'MINE',
+                        participant: CUSTOMER,
+                        quotedMessage: {
+                            imageMessage: { mimetype: 'image/jpeg' },
+                        },
+                    },
+                },
+            }),
+            noLookup,
+        );
+
+        assert.deepEqual(own?.quoted, {
+            provider_message_id: 'MINE',
+            from_me: false,
+            text: 'Imagen',
+        });
+    });
+
+    test('edición y «eliminar para todos» se reportan aparte, con el mensaje que cambian', async () => {
+        const edit = protocolChange(
+            message(
+                {
+                    protocolMessage: {
+                        type: 14,
+                        key: { id: 'TARGET', remoteJid: CUSTOMER },
+                        editedMessage: { conversation: 'Texto corregido' },
+                        timestampMs: 1_700_000_300_000,
+                    },
+                },
+                { id: 'EDIT1' },
+            ),
+        );
+
+        assert.deepEqual(edit, {
+            kind: 'edit',
+            data: {
+                provider_message_id: 'TARGET',
+                remote_jid: CUSTOMER,
+                from_me: false,
+                timestamp: 1_700_000_300,
+                type: 'text',
+                text: 'Texto corregido',
+            },
+        });
+
+        // WhatsApp also wraps the edit in "editedMessage".
+        const wrapped = protocolChange(
+            message({
+                editedMessage: {
+                    message: {
+                        protocolMessage: {
+                            type: 14,
+                            key: { id: 'TARGET2' },
+                            editedMessage: {
+                                imageMessage: { caption: 'Pie corregido' },
+                            },
+                        },
+                    },
+                },
+            }),
+        );
+
+        assert.equal(wrapped?.kind, 'edit');
+        assert.equal(wrapped?.data.provider_message_id, 'TARGET2');
+        assert.equal(
+            (wrapped?.data as { text: string | null }).text,
+            'Pie corregido',
+        );
+        assert.equal(wrapped?.data.timestamp, 1_700_000_000);
+
+        // The edit itself is never a message of its own.
+        assert.equal(
+            await normalizeMessage(
+                message({
+                    editedMessage: {
+                        message: {
+                            protocolMessage: {
+                                type: 14,
+                                key: { id: 'TARGET2' },
+                                editedMessage: { conversation: 'x' },
+                            },
+                        },
+                    },
+                }),
+                noLookup,
+            ),
+            null,
+        );
+
+        const revoke = protocolChange(
+            message({
+                protocolMessage: { type: 0, key: { id: 'GONE' } },
+            }),
+        );
+
+        assert.deepEqual(revoke, {
+            kind: 'revoke',
+            data: {
+                provider_message_id: 'GONE',
+                remote_jid: CUSTOMER,
+                from_me: false,
+                timestamp: 1_700_000_000,
+            },
+        });
+
+        assert.equal(protocolChange(message({ conversation: 'Hola' })), null);
+        assert.equal(
+            protocolChange(message({ protocolMessage: { type: 5 } })),
+            null,
+        );
+    });
+
+    test('historial: estado de entrega, reacciones y mensajes ya eliminados', async () => {
+        const mine = await normalizeMessage(
+            {
+                ...message(
+                    { conversation: 'Le confirmo el pago' },
+                    { fromMe: true },
+                ),
+                status: 4,
+                reactions: [
+                    { key: { fromMe: false }, text: '👍' },
+                    { key: { fromMe: true }, text: '' },
+                ],
+            },
+            noLookup,
+            { historical: true },
+        );
+
+        assert.equal(mine?.status, 'read');
+        assert.deepEqual(mine?.reactions, [{ emoji: '👍', from_me: false }]);
+
+        const revoked = await normalizeMessage(
+            { ...message(undefined), messageStubType: 1 },
+            noLookup,
+            { historical: true },
+        );
+
+        assert.equal(revoked?.revoked, true);
+        assert.equal(revoked?.type, 'text');
+        assert.equal(revoked?.text, null);
+
+        // Outside the history a deletion stub is not a message.
+        assert.equal(
+            await normalizeMessage(
+                { ...message(undefined), messageStubType: 1 },
                 noLookup,
             ),
             null,

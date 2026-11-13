@@ -1,13 +1,17 @@
 <?php
 
+use App\Actions\Messaging\RecordMessageReaction;
 use App\Enums\AttachmentStatus;
 use App\Enums\AuditAction;
 use App\Enums\ConnectionHealth;
 use App\Enums\ConnectionProvider;
+use App\Enums\ConversationOrigin;
+use App\Enums\ConversationStatus;
 use App\Enums\MessageDirection;
 use App\Enums\MessageStatus;
 use App\Enums\MessageType;
 use App\Enums\WhatsAppWebState;
+use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
 use App\Jobs\DownloadWhatsAppWebMedia;
 use App\Models\AuditLog;
@@ -20,6 +24,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Services\WhatsAppWeb\WhatsAppWebTransport;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -248,24 +253,37 @@ test('a reply quotes the stored message of the same connection', function () {
     expect($second->reply_to_message_id)->toBe($first->id);
 });
 
-test('a reaction points at the stored message and a removed reaction is ignored', function () {
+test('a reaction is kept on the message it reacts to, never as a message of its own, and can be removed', function () {
     WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', WhatsAppWebFixtures::inbound(['provider_message_id' => '3EB0TARGET']))->assertOk();
+    $reaction = fn (string $emoji, bool $fromMe = false, int $seconds = 0): array => WhatsAppWebFixtures::inbound([
+        'type' => 'reaction', 'text' => null, 'from_me' => $fromMe, 'timestamp' => now()->getTimestamp() + $seconds - 100,
+        'reaction' => ['provider_message_id' => '3EB0TARGET', 'emoji' => $emoji],
+    ]);
+
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', $reaction('👍'))->assertOk()->assertJsonPath('result', 'applied');
+    // The business reacts from the linked phone.
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.outbound_echo', $reaction('❤️', true, 1))->assertOk()->assertJsonPath('result', 'applied');
+
+    $target = Message::query()->sole();
+
+    expect(RecordMessageReaction::of($target->metadata))->toBe([
+        ['emoji' => '👍', 'from_me' => false],
+        ['emoji' => '❤️', 'from_me' => true],
+    ]);
+
+    // The customer changes the emoji, then removes the reaction.
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', $reaction('🙏', false, 2))->assertOk()->assertJsonPath('result', 'applied');
+    expect(RecordMessageReaction::of($target->refresh()->metadata)[0])->toBe(['emoji' => '🙏', 'from_me' => false]);
+
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', $reaction('', false, 3))->assertOk()->assertJsonPath('result', 'applied');
+    // An older reaction delivered late changes nothing, and neither does one to an unknown message.
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', $reaction('👍', false, 0))->assertOk()->assertJsonPath('result', 'ignored');
     WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', WhatsAppWebFixtures::inbound([
-        'type' => 'reaction', 'text' => null,
-        'reaction' => ['provider_message_id' => '3EB0TARGET', 'emoji' => '👍'],
-    ]))->assertOk()->assertJsonPath('result', 'applied');
-    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', WhatsAppWebFixtures::inbound([
-        'type' => 'reaction', 'text' => null,
-        'reaction' => ['provider_message_id' => '3EB0TARGET', 'emoji' => ''],
+        'type' => 'reaction', 'text' => null, 'reaction' => ['provider_message_id' => '3EB0NOTHERE', 'emoji' => '👍'],
     ]))->assertOk()->assertJsonPath('result', 'ignored');
 
-    $reaction = Message::query()->where('type', MessageType::Reaction)->sole();
-
-    expect($reaction->body)->toBe('👍')
-        ->and($reaction->metadata['content'])->toBe([
-            'message_id' => WhatsAppWebTransport::storedId($this->connection->id, '3EB0TARGET'),
-            'emoji' => '👍',
-        ]);
+    expect(RecordMessageReaction::of($target->refresh()->metadata))->toBe([['emoji' => '❤️', 'from_me' => true]])
+        ->and(Message::query()->count())->toBe(1);
 });
 
 test('a message written on the linked phone joins the conversation as outbound and is never duplicated', function () {
@@ -298,14 +316,33 @@ test('a message ChatManager already sent is not stored again when the phone echo
     expect(Message::query()->count())->toBe(1);
 });
 
-test('a message written on the phone to someone ChatManager never saw creates nothing', function () {
-    WhatsAppWebFixtures::event($this, $this->connection, 'message.outbound_echo', WhatsAppWebFixtures::inbound(['from_me' => true]))
-        ->assertOk()
-        ->assertJsonPath('result', 'ignored');
+test('a message written on the phone to someone without a conversation is kept as WhatsApp history, not as a request to attend', function () {
+    Event::fake([MessageRecorded::class]);
+    $echo = WhatsAppWebFixtures::inbound(['provider_message_id' => '3EB0FIRSTCONTACT', 'from_me' => true, 'push_name' => null, 'text' => 'Buen día, le escribo de cobranza']);
 
-    expect(Message::query()->count())->toBe(0)
-        ->and(Contact::query()->count())->toBe(0)
-        ->and(Conversation::query()->count())->toBe(0);
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.outbound_echo', $echo)->assertOk()->assertJsonPath('result', 'applied');
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.outbound_echo', $echo)->assertOk()->assertJsonPath('result', 'duplicate');
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.outbound_echo', WhatsAppWebFixtures::inbound(['from_me' => true, 'push_name' => null]))->assertOk()->assertJsonPath('result', 'applied');
+
+    $conversation = Conversation::query()->sole();
+    $contact = Contact::query()->sole();
+
+    expect($conversation->origin)->toBe(ConversationOrigin::WhatsappHistory)
+        ->and($conversation->status)->toBe(ConversationStatus::Closed)
+        ->and($conversation->assigned_user_id)->toBeNull()
+        ->and($conversation->department_id)->toBe($this->department->id)
+        // A provisional contact, outside the commercial directory.
+        ->and($contact->saved_at)->toBeNull()
+        ->and($contact->phone_e164)->toBe('+525511112222')
+        ->and(Message::query()->where('conversation_id', $conversation->id)->where('direction', MessageDirection::Outbound)->count())->toBe(2)
+        ->and(Message::query()->where('is_historical', true)->count())->toBe(0);
+
+    // The customer's answer is live traffic: it opens a conversation to attend, the history stays closed.
+    WhatsAppWebFixtures::event($this, $this->connection, 'message.inbound', WhatsAppWebFixtures::inbound())->assertOk()->assertJsonPath('result', 'applied');
+
+    expect(Conversation::query()->count())->toBe(2)
+        ->and(Conversation::query()->live()->sole()->status)->toBe(ConversationStatus::Pending)
+        ->and($conversation->refresh()->status)->toBe(ConversationStatus::Closed);
 });
 
 test('delivery statuses move the outbound message of that connection forward and no other', function () {

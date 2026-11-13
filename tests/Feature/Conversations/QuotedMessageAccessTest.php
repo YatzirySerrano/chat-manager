@@ -82,6 +82,8 @@ const QUOTE_RESTRICTED = [
     'origin' => 'restricted',
     'conversation_id' => null,
     'url' => null,
+    'preview' => '',
+    'from_me' => false,
 ];
 
 test('a quote of the same conversation is shown with its excerpt and id to jump to', function () {
@@ -128,6 +130,8 @@ test('with the history permission the closed earlier conversation is quoted with
         'origin' => 'previous_conversation',
         'conversation_id' => $previous->id,
         'url' => route('conversations.show', $previous),
+        'preview' => QUOTE_SECRET,
+        'from_me' => false,
     ]);
 });
 

@@ -86,12 +86,13 @@ class MediaStorage
     /**
      * Validate and store a local file.
      *
+     * @param  array{mimes: list<string>, max_bytes: int}|null  $rules  Types and size accepted instead of the channel's own table (WhatsApp Web QR: whatsAppWebRules()).
      * @return array{disk: string, path: string, mime_type: string, size_bytes: int, sha256: string}
      *
      * @throws MediaRejected
      * @throws StorageUnavailable The media disk is not ready or the write could not be verified; nothing was kept.
      */
-    public function store(string $localPath, string $kind, ?ConnectionChannel $channel = null, ?MessageAttachment $for = null): array
+    public function store(string $localPath, string $kind, ?ConnectionChannel $channel = null, ?MessageAttachment $for = null, ?array $rules = null): array
     {
         $size = is_file($localPath) ? (int) filesize($localPath) : 0;
 
@@ -99,9 +100,21 @@ class MediaStorage
             throw new MediaRejected('empty', 'El archivo recibido está vacío.');
         }
 
-        $this->assertSize($kind, $size, $channel);
-        $mime = $this->detect($localPath);
-        $this->assertType($kind, $mime, $channel);
+        if ($rules === null) {
+            $this->assertSize($kind, $size, $channel);
+            $mime = $this->detect($localPath);
+            $this->assertType($kind, $mime, $channel);
+        } else {
+            if ($size > $rules['max_bytes']) {
+                throw new MediaRejected('too_large', 'El archivo supera el tamaño permitido ('.self::megabytes($rules['max_bytes']).' MB).');
+            }
+
+            $mime = $this->detect($localPath);
+
+            if (! in_array($mime, $rules['mimes'], true)) {
+                throw new MediaRejected('type_not_allowed', "El tipo de archivo ({$mime}) no está permitido para este mensaje.");
+            }
+        }
 
         // Filed under the contact with a readable name (MediaPaths). Without
         // a message to file it under, it goes to a dated folder of its own.
@@ -167,6 +180,29 @@ class MediaStorage
 
         if (! is_array($rules)) {
             throw new MediaRejected('type_not_allowed', 'Este tipo de mensaje no admite archivos.');
+        }
+
+        return [
+            'mimes' => array_values(array_filter((array) ($rules['mimes'] ?? []), 'is_string')),
+            'max_bytes' => max(1, (int) ($rules['max_bytes'] ?? 0)),
+        ];
+    }
+
+    /**
+     * Types and size of a file received through WhatsApp Web (QR), per
+     * message kind (config whatsapp_web.media.types). They are wider than
+     * the Cloud API table: a person's WhatsApp sends what Meta's API never
+     * relays (a photo or a video "as a document", long videos, audio in
+     * other containers), and refusing them left the message without file.
+     *
+     * @return array{mimes: list<string>, max_bytes: int}
+     */
+    public function whatsAppWebRules(string $kind): array
+    {
+        $rules = config("whatsapp_web.media.types.{$kind}");
+
+        if (! is_array($rules)) {
+            return $this->rules($kind, ConnectionChannel::Whatsapp);
         }
 
         return [

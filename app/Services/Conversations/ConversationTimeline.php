@@ -46,6 +46,13 @@ use Illuminate\Support\Facades\Gate;
  * nothing is left out or repeated), so a customer message stored very late
  * is shown in time order within its page, at the edge of an older page.
  *
+ * History is the exception: the messages of an imported conversation
+ * (Whaticket, or the history of a number linked by QR) are stored in the
+ * order they were imported, which is not the order they were written
+ * (WhatsApp hands over the newest slice first). Its pages are delimited by
+ * the time each message was written (created_at, which the import sets to
+ * it) and then by id; the cursor is still the id of a message.
+ *
  * Callers must have authorized the viewer to see the conversation.
  *
  * @phpstan-type TimelinePage array{messages: list<array<string, mixed>>, notes: list<array<string, mixed>>, events: list<array<string, mixed>>, has_more: bool, until?: string|null}
@@ -87,6 +94,7 @@ class ConversationTimeline
     public function page(Conversation $conversation, Request $request, ?int $beforeMessageId = null, ?string $until = null): array
     {
         $upper = null;
+        $byTime = $conversation->isImported();
 
         if ($beforeMessageId !== null) {
             $cursor = Message::query()->where('conversation_id', $conversation->id)->whereKey($beforeMessageId)->first(['id', 'created_at']);
@@ -99,7 +107,11 @@ class ConversationTimeline
         }
 
         $messages = $this->messages($conversation)
-            ->when($beforeMessageId !== null, fn (Builder $query) => $query->where('id', '<', $beforeMessageId))
+            ->when($beforeMessageId !== null && ! $byTime, fn (Builder $query) => $query->where('id', '<', $beforeMessageId))
+            ->when($beforeMessageId !== null && $byTime, fn (Builder $query) => $query->where(fn (Builder $older) => $older
+                ->where('created_at', '<', $upper)
+                ->orWhere(fn (Builder $same) => $same->where('created_at', $upper)->where('id', '<', $beforeMessageId))))
+            ->when($byTime, fn (Builder $query) => $query->orderByDesc('created_at'))
             ->orderByDesc('id')
             ->limit(self::PAGE_SIZE + 1)
             ->get();
@@ -178,9 +190,10 @@ class ConversationTimeline
      */
     public function preview(Conversation $conversation, Request $request, int $limit = self::PREVIEW_SIZE): array
     {
-        $messages = $this->messages($conversation)->orderByDesc('id')->limit($limit + 1)->get();
+        $byTime = $conversation->isImported();
+        $messages = $this->messages($conversation)->when($byTime, fn (Builder $query) => $query->orderByDesc('created_at'))->orderByDesc('id')->limit($limit + 1)->get();
         $hasMore = $messages->count() > $limit;
-        $first = $hasMore ? $this->messages($conversation)->orderBy('id')->first() : null;
+        $first = $hasMore ? $this->messages($conversation)->when($byTime, fn (Builder $query) => $query->orderBy('created_at'))->orderBy('id')->first() : null;
 
         return [
             'messages' => $this->presentMessages($conversation, $this->inWrittenOrder($messages->take($limit)->values()), $request),

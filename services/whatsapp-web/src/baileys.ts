@@ -11,7 +11,7 @@ import {
 } from 'baileys';
 import { pino } from 'pino';
 import type { Logger } from './logger.js';
-import { isIgnoredJid, phoneOfJid } from './normalize.js';
+import { isIgnoredJid, isUserJid, phoneOfJid } from './normalize.js';
 import type { MediaDescriptor } from './types.js';
 import type {
     MediaDownloader,
@@ -26,8 +26,12 @@ import type {
  * per call and exposes it through the WaConnection surface (src/wa.ts).
  *
  * Privacy and scope:
- * - history is never synchronized (syncFullHistory false, history
- *   notifications refused);
+ * - the chat history WhatsApp hands to a newly linked device is requested
+ *   only for sessions linked with `history` (one-to-one chats only; see
+ *   Session.onHistory). Such a session registers as a desktop client, which
+ *   is what makes the phone share the whole history and not only the last
+ *   weeks; a session linked without it keeps registering as before and
+ *   refuses every history notification;
  * - groups, statuses, broadcasts and channels are ignored at the socket;
  * - the device does not mark the account as online, so the phone keeps
  *   receiving its notifications;
@@ -37,6 +41,20 @@ import type {
 const FIRST_QR_MS = 60_000;
 const NEXT_QR_MS = 20_000;
 const VERSION_TTL_MS = 6 * 3600 * 1000;
+
+/** proto.WebMessageInfo.StubType.REVOKE. */
+const STUB_REVOKE = 1;
+
+/** proto.HistorySync.HistorySyncType, by value. */
+const HISTORY_SYNC_TYPES: Record<number, string> = {
+    0: 'initial_bootstrap',
+    1: 'initial_status_v3',
+    2: 'full',
+    3: 'recent',
+    4: 'push_name',
+    5: 'non_blocking_data',
+    6: 'on_demand',
+};
 
 let cachedVersion: { version: WAVersion; at: number } | null = null;
 
@@ -123,7 +141,7 @@ export function createBaileysFactory(options: {
         base: { component: 'baileys' },
     });
 
-    return async ({ auth, onEvent }): Promise<WaConnection> => {
+    return async ({ auth, history, onEvent }): Promise<WaConnection> => {
         const version = await currentVersion(options.logger);
         let closed = false;
         let qrCount = 0;
@@ -138,9 +156,11 @@ export function createBaileysFactory(options: {
                 ),
             },
             logger: libraryLogger,
-            browser: Browsers.ubuntu('Chrome'),
-            syncFullHistory: false,
-            shouldSyncHistoryMessage: () => false,
+            browser: history
+                ? Browsers.macOS('Desktop')
+                : Browsers.ubuntu('Chrome'),
+            syncFullHistory: history,
+            shouldSyncHistoryMessage: () => history,
             markOnlineOnConnect: false,
             emitOwnEvents: false,
             generateHighQualityLinkPreview: false,
@@ -201,9 +221,90 @@ export function createBaileysFactory(options: {
             }
         });
 
+        socket.ev.on(
+            'messaging-history.set',
+            ({ messages, contacts, progress, syncType }) => {
+                if (closed || !history) {
+                    return;
+                }
+
+                const names: Record<string, string> = {};
+
+                for (const contact of contacts ?? []) {
+                    const name = contact.name ?? contact.notify;
+
+                    if (typeof name !== 'string' || name.trim() === '') {
+                        continue;
+                    }
+
+                    for (const jid of [
+                        contact.id,
+                        contact.lid,
+                        contact.phoneNumber,
+                    ]) {
+                        if (typeof jid === 'string' && isUserJid(jid)) {
+                            names[jid] = name;
+                        }
+                    }
+                }
+
+                onEvent({
+                    type: 'history',
+                    messages: messages ?? [],
+                    names,
+                    progress: typeof progress === 'number' ? progress : null,
+                    syncType:
+                        syncType === null || syncType === undefined
+                            ? null
+                            : (HISTORY_SYNC_TYPES[Number(syncType)] ??
+                              String(syncType)),
+                });
+            },
+        );
+
         socket.ev.on('messages.update', (updates) => {
             if (closed) {
                 return;
+            }
+
+            // Baileys reports an edit as the new content of the original
+            // message, and a "delete for everyone" as that message emptied.
+            const edits = [];
+            const revokes = [];
+
+            for (const { key, update } of updates) {
+                if (!key.id || !key.remoteJid) {
+                    continue;
+                }
+
+                const target = {
+                    id: key.id,
+                    remoteJid: key.remoteJid,
+                    fromMe: Boolean(key.fromMe),
+                };
+                const edited = update.message?.editedMessage?.message;
+
+                if (edited) {
+                    edits.push({
+                        ...target,
+                        timestamp:
+                            Number(update.messageTimestamp ?? 0) || null,
+                        message: edited,
+                    });
+                } else if (
+                    update.message === null &&
+                    update.messageStubType === STUB_REVOKE
+                ) {
+                    revokes.push(target);
+                }
+            }
+
+            if (edits.length > 0) {
+                onEvent({ type: 'edits', updates: edits });
+            }
+
+            if (revokes.length > 0) {
+                onEvent({ type: 'revokes', updates: revokes });
             }
 
             const statuses = updates

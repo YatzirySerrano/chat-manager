@@ -26,22 +26,36 @@ Hasta hacer la prueba real del §6, la modalidad no debe darse por lista para pr
 
 ## 2. Qué hace y qué no
 
-Hace: vincular por QR, recibir y enviar texto, emojis, imágenes, documentos, audio, video y respuestas citadas; guardar
-los archivos con `MediaDisk` (Synology); usar las mismas conversaciones, departamentos, asignaciones, etiquetas,
-respuestas rápidas, auditoría, notificaciones y tiempo real que el resto de la plataforma; mostrar el estado real de la
-sesión en Conexiones y en Sistema.
+Hace: vincular por QR, recibir y enviar texto, emojis, imágenes, documentos, audio, video y respuestas citadas; recibir
+además notas de voz, GIF, stickers (también animados), ubicación (fija y en tiempo real), contactos, encuestas,
+respuestas a botones y listas, reacciones, ediciones y «eliminar para todos»; **importar el historial de chats
+individuales que el teléfono ya tenía al vincularlo** (ADR-WWEB-1 en [decisiones.md](decisiones.md)); guardar los
+archivos con `MediaDisk` (Synology); usar las mismas conversaciones, departamentos, asignaciones, etiquetas, respuestas
+rápidas, auditoría, notificaciones y tiempo real que el resto de la plataforma; mostrar el estado real de la sesión en
+Conexiones y en Sistema.
 
 No hace, a propósito: respuestas automáticas (bienvenida, fuera de horario, despedida), menús, mensajes programados,
-plantillas, campañas, envíos masivos, extracción de contactos, importación del historial del teléfono, grupos ni
-estados. Solo envía lo que escribe una persona con permiso en Conversaciones.
+plantillas, campañas, envíos masivos, guardar contactos en el directorio por su cuenta, grupos ni estados. Solo envía
+lo que escribe una persona con permiso en Conversaciones.
 
 Comportamientos a conocer:
 
 - Al terminar la primera vinculación la conexión **se activa sola** a nombre de quien la pidió (queda en auditoría).
-- Un mensaje escrito desde el propio teléfono vinculado se guarda en la conversación solo si ese contacto ya tiene una
-  conversación en esa conexión.
-- Límites de archivos: los mismos de WhatsApp en la plataforma (video 16 MB, imagen 5 MB). Uno mayor queda como «no
-  disponible».
+- Un mensaje escrito desde el propio teléfono vinculado se guarda como saliente en la conversación de ese contacto; si
+  el contacto no tiene ninguna, queda en su conversación de «Historial de WhatsApp» (cerrada), sin entrar a las colas.
+- **Historial.** Al vincular, WhatsApp entrega las conversaciones que el teléfono ya tenía y se importan en segundo
+  plano (puede tardar minutos con historiales grandes). Cada chat queda en una conversación «Historial de WhatsApp»:
+  cerrada, de solo lectura, con sus fechas originales, sin avisos, sin asignación y fuera de métricas. Se ve en la
+  bandeja de cerradas y en «conversaciones anteriores» del contacto. Los archivos de mensajes de más de 30 días
+  normalmente ya no se pueden descargar: el mensaje se conserva con el archivo «no disponible». **Un número vinculado
+  antes de esta versión no trae historial: hay que «Cerrar sesión del dispositivo» y vincularlo de nuevo.** Para no
+  importar historial: `WAWEB_SYNC_HISTORY=false` en el servicio antes de vincular.
+- Un mensaje editado por quien lo envió se actualiza en su lugar y queda marcado como editado; uno eliminado para todos
+  queda marcado como eliminado y conserva su contenido como registro. Las reacciones se muestran sobre el mensaje.
+- Los mensajes que llegaron mientras el servicio estuvo desconectado (reinicio, caída de red) se reciben al volver.
+- Límites de archivos recibidos, propios de esta modalidad (`config/whatsapp_web.php`): imagen 16 MB, audio 32 MB, video
+  y documento 100 MB; las fotos y videos enviados «como documento» se aceptan. Uno mayor o de un tipo no admitido queda
+  como «no disponible». Los envíos siguen con los límites de WhatsApp en la plataforma.
 - Si el NAS es obligatorio y no responde, el archivo entrante queda pendiente de reintento; nunca se guarda en el VPS.
 - Cuando un envío termina sin respuesta clara, el mensaje queda como «entrega sin confirmar» y **no** se reenvía solo.
 
@@ -231,6 +245,12 @@ Con un número de prueba vinculado y un segundo teléfono:
    Almacenamiento que se guardaron en el Synology.
 4. Responder citando un mensaje, en ambos sentidos.
 5. Escribir desde el propio teléfono vinculado a un contacto con conversación abierta → aparece como saliente.
+   Editar un mensaje ya enviado, eliminarlo para todos y reaccionar a uno → el mensaje se actualiza, se marca como
+   eliminado y muestra la reacción, sin mensajes «no compatibles». Enviar nota de voz, GIF, sticker, ubicación,
+   contacto y encuesta → cada uno se ve como lo que es.
+   Tras vincular, revisar que aparezcan las conversaciones «Historial de WhatsApp» con mensajes anteriores a la
+   vinculación, en orden, sin avisos ni no leídos (`grep "History slice" /var/log/chatmanager/whatsapp-web.log` y
+   `grep "history slice imported" storage/logs/laravel.log` muestran cuánto llegó y cuánto se guardó).
 6. `sudo supervisorctl restart chatmanager-whatsapp-web` → la sesión vuelve sola a «Conectada», sin QR y sin duplicar
    mensajes.
 7. En el teléfono, Dispositivos vinculados → cerrar la sesión → la conexión pasa a «Sesión cerrada» y pide vincular de
@@ -264,6 +284,9 @@ tail -n 50 /var/www/mensajes/storage/logs/laravel.log | grep -i whatsapp
 | «Sesión cerrada» sin haberla cerrado   | WhatsApp revocó la sesión (otro dispositivo, inactividad del teléfono, restricción). Vincula de nuevo.   |
 | «Error» tras varios minutos sin red    | Se agotaron los reintentos. Pulsa «Reconectar».                                                          |
 | Archivos «no disponibles»              | Superan el límite, el NAS no respondía o WhatsApp ya caducó la descarga.                                 |
+| Archivos «en camino» que nunca llegan  | Ningún worker atiende la cola `media`: `sudo supervisorctl status` debe mostrar `chatmanager-queue-media`. |
+| No aparece historial tras vincular     | El número se vinculó con una versión anterior o con `WAWEB_SYNC_HISTORY=false`: cerrar sesión y vincular. |
+| El historial tarda en aparecer         | Se importa por la cola `default`: revisa que haya un worker que la atienda (`php artisan queue:work`).   |
 
 Recuperar una sesión: «Reconectar» si las credenciales siguen vigentes; si WhatsApp la revocó, «Vincular teléfono».
 Las credenciales no se pueden copiar a otro servidor sin `WAWEB_SESSION_KEY` y el directorio de datos completo.

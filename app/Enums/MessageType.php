@@ -15,5 +15,6 @@ enum MessageType: string
     case Template = 'template';
     case Interactive = 'interactive';
     case Reaction = 'reaction';
+    case Poll = 'poll';
     case Unsupported = 'unsupported';
 }

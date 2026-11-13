@@ -5,7 +5,9 @@ el backend Laravel y la interfaz. La guía operativa está en [whatsapp-web-qr.m
 
 La modalidad es **no oficial** (protocolo de WhatsApp Web mediante Baileys). No sustituye a WhatsApp Cloud API: cada
 conexión elige su modalidad con `connections.provider` (`meta_cloud_api` o `whatsapp_web`), ambas con
-`channel = whatsapp`. Sin campañas, sin envíos masivos, sin extracción de contactos, sin sincronizar historial.
+`channel = whatsapp`. Sin campañas, sin envíos masivos, sin guardar contactos en el directorio por su cuenta. El
+historial de chats individuales del teléfono se importa al vincular, como historial (ADR-WWEB-1 en
+[decisiones.md](decisiones.md)).
 
 ## 1. Piezas y límites
 
@@ -138,6 +140,9 @@ descarta por `event_id` y por `provider_message_id`), `401` si la firma falla, `
 | `message.inbound`       | `InboundMessage`                                                                                                                        |
 | `message.outbound_echo` | `InboundMessage` con `from_me: true`: lo escribió alguien en el propio teléfono vinculado                                               |
 | `message.status`        | `{"provider_message_id":"…","status":"sent"\|"delivered"\|"read"\|"failed","timestamp":1700000000,"error":null}`                        |
+| `message.edited`        | `{"provider_message_id":"…(el mensaje editado)","remote_jid":"…","from_me":false,"timestamp":1700000300,"type":"text","text":"…"}`       |
+| `message.revoked`       | `{"provider_message_id":"…(el mensaje eliminado para todos)","remote_jid":"…","from_me":false,"timestamp":1700000300}`                  |
+| `history.batch`         | `{"sync_type":"recent","progress":40,"messages":[InboundMessage, …]}`: tramo del historial, del más antiguo al más reciente             |
 
 ```jsonc
 // InboundMessage
@@ -148,22 +153,47 @@ descarta por `event_id` y por `provider_message_id`), `401` si la firma falla, `
   "push_name": "María",
   "from_me": false,
   "timestamp": 1700000000,
-  "type": "text",         // text | image | video | audio | document | sticker | location | contacts | reaction | unsupported
-  "text": "Hola",         // texto o pie de foto; null si no hay
-  "quoted": { "provider_message_id": "3EB0…" },   // o null
+  "type": "text",         // text | image | video | audio | document | sticker | location | contacts | reaction | poll | interactive | unsupported
+  "text": "Hola",         // texto, pie de foto o versión legible (encuesta, respuesta a botón); null si no hay
+  "quoted": { "provider_message_id": "3EB0…", "from_me": true, "text": "extracto del citado" },   // o null; from_me y text solo si WhatsApp los dio
   "media": {              // solo tipos con archivo
     "mime": "image/jpeg", "size": 48213, "file_name": null, "seconds": null, "voice": false,
-    "descriptor": { … }   // opaco para Laravel: lo devuelve tal cual en POST /v1/sessions/{id}/media
+    "gif": true,          // video que se reproduce como GIF (opcional)
+    "animated": true,     // sticker animado (opcional)
+    "width": 320, "height": 240,   // opcionales
+    "thumbnail": "…",     // JPEG pequeño en base64 que WhatsApp incrusta (opcional, ≤ 24 KB)
+    "descriptor": { … }   // opaco para Laravel: lo devuelve tal cual en POST /v1/sessions/{id}/media; null si WhatsApp no dio clave (p. ej. «ver una vez»)
   },
-  "location": { "latitude": 19.4, "longitude": -99.1, "name": null, "address": null },
+  "location": { "latitude": 19.4, "longitude": -99.1, "name": null, "address": null, "live": true },   // live: ubicación en tiempo real (opcional)
   "contacts": [ { "name": "…", "phones": ["…"] } ],
-  "reaction": { "provider_message_id": "3EB0…", "emoji": "👍" }   // solo type = reaction
+  "reaction": { "provider_message_id": "3EB0…", "emoji": "👍" },   // solo type = reaction; emoji "" = reacción retirada
+  "poll": { "question": "…", "options": ["…"], "multiple": false },                      // solo type = poll
+  "interactive": { "kind": "button_reply"|"list_reply", "title": "…", "description": null },   // solo type = interactive
+  "unsupported": { "kind": "call_missed", "label": "Llamada perdida" },                  // solo type = unsupported: qué era
+  "view_once": true,      // opcional
+  // Solo dentro de history.batch:
+  "chat_name": "…",       // nombre del chat en la agenda del teléfono
+  "status": "read",       // estado de entrega de un mensaje propio (sent | delivered | read | failed)
+  "revoked": true,        // su autor ya lo había eliminado para todos
+  "reactions": [ { "emoji": "👍", "from_me": false } ]
 }
 ```
 
+Laravel responde `result`: `applied`, `duplicate`, `ignored` o, para `history.batch`, `queued` (el lote se guarda en
+segundo plano). Una reacción no crea un mensaje: se guarda en el mensaje al que reacciona. `message.edited` y
+`message.revoked` de un mensaje que Laravel no tiene se responden `ignored`.
+
 - Grupos, estados (`status@broadcast`), canales y difusiones **no** se notifican.
-- El historial que WhatsApp ofrece al vincular **no** se sincroniza (`syncFullHistory: false`) y los mensajes anteriores
-  a la vinculación se descartan: solo se notifican mensajes nuevos (`type = notify`).
+- Se notifican como tráfico en vivo los mensajes posteriores a la vinculación, lleguen en el momento (`notify`) o los
+  haya retenido WhatsApp mientras el servicio estaba desconectado (`append`).
+- El historial que WhatsApp ofrece al vincular se entrega aparte, en `history.batch` (como máximo
+  `WAWEB_HISTORY_BATCH_SIZE` mensajes y 200 KB por evento), solo para sesiones vinculadas con `WAWEB_SYNC_HISTORY`
+  activo; esas sesiones se registran como cliente de escritorio (`syncFullHistory: true`). Una sesión vinculada sin él
+  conserva su registro anterior y descarta lo previo a la vinculación. Laravel lo guarda como historial
+  (`ImportWhatsAppWebHistory`), nunca como mensajes entrantes en vivo.
+- Lo que no es un mensaje escrito por una persona (claves, votos de encuesta, mensajes fijados, avisos cifrados) no se
+  notifica. Lo que la plataforma no dibuja llega como `unsupported` con `unsupported.label` («Llamada perdida»,
+  «Evento», «Pedido»…).
 - `descriptor` contiene lo que Baileys necesita para descargar y descifrar (clave de medio, ruta directa, tipo). Laravel
   lo guarda cifrado junto al adjunto y nunca lo entrega al navegador.
 
@@ -255,6 +285,7 @@ automáticos; no pide credenciales de Meta. La vinculación es un paso posterior
 | —                      | `WAWEB_LARAVEL_URL`                                                | Base de Laravel para eventos y medios.               |
 | —                      | `WAWEB_DATA_DIR`, `WAWEB_SESSION_KEY`                              | Sesiones cifradas (§7).                              |
 | —                      | `WAWEB_LOG_LEVEL`, `WAWEB_QR_MAX_REFRESH`, `WAWEB_MAX_MEDIA_BYTES` | Operación.                                           |
+| `WHATSAPP_WEB_HISTORY`, `WHATSAPP_WEB_HISTORY_MEDIA_DAYS` | `WAWEB_SYNC_HISTORY`, `WAWEB_HISTORY_MAX_DAYS`, `WAWEB_HISTORY_BATCH_SIZE` | Historial al vincular (activo por defecto). |
 
 ## 10. Precisiones de la implementación
 

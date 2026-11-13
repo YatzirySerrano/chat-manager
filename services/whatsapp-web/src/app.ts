@@ -108,6 +108,9 @@ export async function createService(
             qrMaxRefresh: config.qrMaxRefresh,
             reconnectMaxAttempts: config.reconnectMaxAttempts,
             sendTimeoutMs: config.sendTimeoutMs,
+            syncHistory: config.syncHistory,
+            historyMaxDays: config.historyMaxDays,
+            historyBatchSize: config.historyBatchSize,
         },
         session: dependencies.session,
     });

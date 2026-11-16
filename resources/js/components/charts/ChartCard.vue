@@ -85,7 +85,7 @@ const barWidths = [92, 76, 64, 48, 36, 22];
 
 <template>
     <section
-        class="@container flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4 sm:p-5"
+        class="@container flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4 shadow-card sm:p-5"
         :aria-labelledby="titleId"
         :aria-busy="loading || undefined"
         data-chart-card

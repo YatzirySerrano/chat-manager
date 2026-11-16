@@ -6,12 +6,14 @@ import { syncServerClock } from '@/composables/useServerNow';
 import { useUserChannel } from '@/composables/useUserChannel';
 import { afterUserVisits } from '@/lib/realtime';
 import {
+    askNotificationPermissionOnFirstGesture,
+    browserNotificationPermission,
     notificationSoundState,
     playNotificationSound,
     showBrowserNotification,
     unlockNotificationSound,
 } from '@/lib/notifications/alerts';
-import { currentPushSubscription } from '@/lib/notifications/push';
+import { ensurePushSubscription } from '@/lib/notifications/push';
 import {
     VIEWED_THREAD_HEARTBEAT_MS,
     announceViewedThread,
@@ -343,25 +345,22 @@ export function useNotificationCenter() {
     }
 
     /**
-     * With Web Push active in this browser the service worker already shows
-     * the (generic) alert for the same notification, so the page stays
-     * silent to avoid a duplicate. The worker cannot be the one to skip it:
-     * subscriptions use userVisibleOnly, and Chrome shows its own "updated in
-     * the background" notice when a push to a hidden page shows nothing.
+     * One system notification (a Windows toast) per new message. The service
+     * worker shows the same notification under the same tag and version when
+     * a Web Push arrives, so whichever comes first wins and the other one is
+     * skipped: never two alerts for one message, and never none when the
+     * push is slow or the page's refresh is late.
      */
-    async function showUnlessPushed(item: AppNotification): Promise<void> {
-        if (await currentPushSubscription()) {
-            return;
-        }
-
+    function showSystemNotification(item: AppNotification): void {
         // A system notification can show outside the app (lock screen,
         // notification history): internal chat ones say who wrote, never
         // what they wrote.
-        showBrowserNotification(
+        void showBrowserNotification(
             item.id,
             item.title,
             isTeamChat(item) ? null : item.body,
             () => open(item),
+            { version: version(item), url: item.url },
         );
     }
 
@@ -445,12 +444,16 @@ export function useNotificationCenter() {
     function alert(fresh: AppNotification[], serverTime: string): void {
         let played = false;
         const visible = document.visibilityState === 'visible';
+        // Not looking at the platform (minimized, another tab, another app
+        // in front): the alert goes to the operating system, when allowed.
+        const systemAlerts =
+            !pageIsAttended() && browserNotificationPermission() === 'granted';
 
         for (const item of fresh) {
             const plan = notificationAlertPlan(item, {
                 viewedConversationId: viewedConversationId.value,
                 attended: pageIsAttended(),
-                hidden: document.visibilityState === 'hidden',
+                hidden: systemAlerts,
                 preference: preferences.value[item.kind],
                 soundPlayed: played,
                 viewedThreadId: viewedThreadId.value,
@@ -481,7 +484,7 @@ export function useNotificationCenter() {
             }
 
             if (plan.browser) {
-                void showUnlessPushed(item);
+                showSystemNotification(item);
             } else if (plan.toast) {
                 // One toast per notification: a new occurrence of an
                 // aggregated one replaces its toast instead of stacking.
@@ -653,6 +656,16 @@ export function useNotificationCenter() {
 
     onMounted(() => {
         unlockNotificationSound();
+        // System notifications stay on without any setup: the permission is
+        // asked once (first click) and this browser subscribes to Web Push
+        // on every sign-in, so alerts arrive even with the tab closed.
+        askNotificationPermissionOnFirstGesture(
+            () =>
+                void ensurePushSubscription(
+                    (page.props as { webPushKey?: string | null }).webPushKey ??
+                        null,
+                ),
+        );
         document.addEventListener('visibilitychange', onAttentionChange);
         window.addEventListener('focus', onAttentionChange);
         window.addEventListener('blur', onAttentionChange);

@@ -46,9 +46,7 @@ watch(state, () => window.setTimeout(update, 220));
 
 <template>
     <Sidebar collapsible="icon">
-        <SidebarHeader
-            class="h-14 justify-center border-b border-sidebar-border px-3 sm:h-16"
-        >
+        <SidebarHeader class="h-14 justify-center px-3 sm:h-16">
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton
@@ -66,12 +64,12 @@ watch(state, () => window.setTimeout(update, 220));
 
         <SidebarContent
             ref="content"
-            class="relative gap-3 py-3"
+            class="relative gap-2 pt-1 pb-3"
             data-tour="shell.nav"
         >
             <span
                 aria-hidden="true"
-                class="pointer-events-none absolute top-0 left-0 rounded-lg bg-sidebar-accent shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-primary)_22%,transparent)] before:absolute before:inset-y-2 before:left-0 before:w-0.75 before:rounded-full before:bg-sidebar-primary before:shadow-[0_0_10px_var(--sidebar-primary)]"
+                class="pointer-events-none absolute top-0 left-0 rounded-lg bg-sidebar-accent shadow-[0_0_0_1px_var(--sidebar-border),0_1px_2px_color-mix(in_oklch,var(--shadow-ink)_10%,transparent),0_4px_12px_-6px_color-mix(in_oklch,var(--shadow-ink)_14%,transparent)] before:absolute before:inset-y-2 before:-left-3 before:w-0.75 before:rounded-r-full before:bg-sidebar-primary group-data-[collapsible=icon]:before:-left-2 dark:shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-primary)_20%,transparent)]"
                 :class="
                     animated &&
                     'transition-[transform,width,height,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'
@@ -86,7 +84,7 @@ watch(state, () => window.setTimeout(update, 220));
             />
         </SidebarContent>
 
-        <SidebarFooter class="border-t border-sidebar-border">
+        <SidebarFooter class="border-t border-sidebar-border px-3 py-2.5">
             <NavUser />
         </SidebarFooter>
     </Sidebar>

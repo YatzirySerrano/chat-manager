@@ -3,9 +3,12 @@
  * public key, on the public/sw.js registration (scope '/') that
  * lib/pwa/register.ts also creates on every signed-in page (same URL and
  * scope, so it is one registration). Pushes carry no payload; the service
- * worker fetches the unread counter itself. Subscribing only runs after an
- * explicit click on the preferences page; signing out unsubscribes.
+ * worker fetches the newest unread notification itself. Once the site may
+ * show notifications, every signed-in page subscribes on its own
+ * (ensurePushSubscription); signing out unsubscribes.
  */
+
+import { store as storePushSubscription } from '@/routes/notifications/push-subscriptions';
 
 export type PushDevice = {
     id: number;
@@ -98,6 +101,13 @@ export async function subscribeToPush(
         return null;
     }
 
+    return subscribeWithKey(publicKey);
+}
+
+/**
+ * Subscribes once permission is already granted (never prompts).
+ */
+async function subscribeWithKey(publicKey: string): Promise<string> {
     const registration = await navigator.serviceWorker.register(
         SERVICE_WORKER_URL,
         { scope: '/' },
@@ -125,6 +135,61 @@ export async function subscribeToPush(
     });
 
     return subscription.endpoint;
+}
+
+function xsrfToken(): string {
+    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+/** Endpoint already confirmed by the server in this tab (one POST per load). */
+let registeredEndpoint: string | null = null;
+
+/**
+ * Keeps this browser subscribed without any click: once the person allowed
+ * notifications for the site (a permission the browser remembers), every
+ * signed-in page makes sure there is a push subscription with the current
+ * VAPID key and tells the server about it (an idempotent upsert). Signing
+ * out removes it; the next sign-in subscribes again on its own. Never
+ * prompts and never throws.
+ */
+export async function ensurePushSubscription(
+    publicKey: string | null,
+): Promise<void> {
+    if (
+        publicKey === null ||
+        pushSupport() !== 'supported' ||
+        Notification.permission !== 'granted'
+    ) {
+        return;
+    }
+
+    try {
+        const endpoint = await subscribeWithKey(publicKey);
+
+        if (endpoint === registeredEndpoint) {
+            return;
+        }
+
+        const response = await fetch(storePushSubscription.url(), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-XSRF-TOKEN': xsrfToken(),
+            },
+            body: JSON.stringify({ endpoint }),
+        });
+
+        if (response.ok) {
+            registeredEndpoint = endpoint;
+        }
+    } catch {
+        // Retried on the next page load.
+    }
 }
 
 /**

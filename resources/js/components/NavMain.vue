@@ -28,7 +28,9 @@ const { setOpenMobile } = useSidebar();
 
 <template>
     <SidebarGroup class="relative px-3 py-1.5">
-        <SidebarGroupLabel class="text-xs font-semibold text-sidebar-muted">
+        <SidebarGroupLabel
+            class="h-7 text-xs font-medium tracking-[0.01em] text-sidebar-muted"
+        >
             {{ label }}
         </SidebarGroupLabel>
         <SidebarMenu class="gap-0.5">
@@ -43,7 +45,7 @@ const { setOpenMobile } = useSidebar();
                     as-child
                     :is-active="isCurrentOrParentUrl(item.href)"
                     :tooltip="item.title"
-                    class="group/nav relative h-10 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-accent-foreground active:bg-sidebar-accent/70 data-[active=true]:bg-transparent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-sidebar-muted [&>svg]:transition-[color,scale,rotate] [&>svg]:duration-(--duration-base) [&>svg]:ease-(--ease-spring) hover:[&>svg]:scale-110 hover:[&>svg]:-rotate-6 hover:[&>svg]:text-sidebar-accent-foreground data-[active=true]:[&>svg]:text-sidebar-primary"
+                    class="group/nav relative h-9.5 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-hover data-[active=true]:bg-transparent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground data-[active=true]:hover:bg-transparent pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-sidebar-muted [&>svg]:transition-colors [&>svg]:duration-(--duration-base) hover:[&>svg]:text-sidebar-accent-foreground data-[active=true]:[&>svg]:text-sidebar-primary"
                 >
                     <Link
                         :href="item.href"

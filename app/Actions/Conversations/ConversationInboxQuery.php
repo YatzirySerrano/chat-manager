@@ -67,6 +67,12 @@ use Illuminate\Validation\ValidationException;
  * (conversation_id, tag_id) index), applied inside visibleTo, so a tag never
  * reveals a conversation outside the actor's reach.
  *
+ * `status=completed` lists the conversations closed as «Solicitud
+ * completada» (`completed_at` set): a narrowing of `closed`, with the
+ * same history permission. `awaiting=1` keeps the conversations where the
+ * customer wrote last and nobody answered yet (the row's `awaiting_reply`),
+ * never closed ones.
+ *
  * `category=<id>` narrows to one request category and
  * `readiness=ready|needs_info` to the preparation state of the request;
  * like every common filter they apply to the list and to its counters.
@@ -77,7 +83,7 @@ use Illuminate\Validation\ValidationException;
  * conversations never count, so whoever never opened a conversation does
  * not inherit its whole history as unread (docs/bandejas-y-asignacion.md).
  *
- * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, channel?: string|null, category?: int|null, readiness?: string|null}
+ * @phpstan-type InboxFilters array{view: string, views: non-empty-list<string>, personal: bool, status: string, department: string|null, agent: string|null, connection: int|null, search: string, search_in?: string, tags?: list<int>, tag_match?: string, sort?: string, unread?: bool, awaiting?: bool, channel?: string|null, category?: int|null, readiness?: string|null}
  * @phpstan-type InboxCounts array{general: int, mine: int, pending: int, attending: int}
  * @phpstan-type InboxCursor array{rank: int, at: string|null, id: int}
  */
@@ -151,7 +157,13 @@ class ConversationInboxQuery
      *
      * @var list<string>
      */
-    private const STATUS_FILTERS = ['active', 'all', 'pending', 'open', 'closed', 'on_hold'];
+    private const STATUS_FILTERS = ['active', 'all', 'pending', 'open', 'closed', self::STATUS_COMPLETED, 'on_hold'];
+
+    /**
+     * Status filter of the closed conversations closed as «Solicitud
+     * completada» (`conversations.completed_at` set).
+     */
+    public const STATUS_COMPLETED = 'completed';
 
     public function __construct(private ConversationAccess $access, private ContactSearch $contacts) {}
 
@@ -177,6 +189,7 @@ class ConversationInboxQuery
             'tag_match' => ['nullable', Rule::in([self::TAG_MATCH_ANY, self::TAG_MATCH_ALL])],
             'sort' => ['nullable', Rule::in([self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST])],
             'unread' => ['nullable', 'boolean'],
+            'awaiting' => ['nullable', 'boolean'],
             'category' => ['nullable', 'integer', 'min:1'],
             'readiness' => ['nullable', Rule::enum(ConversationReadiness::class)],
         ];
@@ -214,7 +227,7 @@ class ConversationInboxQuery
         // instead of an always empty (or legacy) list.
         if (($view === self::VIEW_MINE && $status === ConversationStatus::Pending->value)
             || $status === ConversationStatus::OnHold->value
-            || ($status === ConversationStatus::Closed->value && ! $this->access->readsClosedConversations($actor))) {
+            || (in_array($status, [ConversationStatus::Closed->value, self::STATUS_COMPLETED], true) && ! $this->access->readsClosedConversations($actor))) {
             $status = 'active';
         }
 
@@ -233,6 +246,7 @@ class ConversationInboxQuery
             'tag_match' => ($validated['tag_match'] ?? null) === self::TAG_MATCH_ALL ? self::TAG_MATCH_ALL : self::TAG_MATCH_ANY,
             'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT], true) ? (string) $validated['sort'] : self::SORT_OLDEST,
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
+            'awaiting' => filter_var($validated['awaiting'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
             'category' => is_numeric($validated['category'] ?? null) ? (int) $validated['category'] : null,
             // Preparation state: a phase-two filter, ignored while it is off (App\Support\Features).
@@ -382,7 +396,16 @@ class ConversationInboxQuery
                 // the outer row lets the status index skip them before the
                 // correlated lookup runs for each candidate.
                 ->where('conversations.status', '<>', ConversationStatus::Closed->value)
-                ->whereExists(fn (QueryBuilder $unread) => $this->unreadMessages($unread->selectRaw('1'), $actor)));
+                ->whereExists(fn (QueryBuilder $unread) => $this->unreadMessages($unread->selectRaw('1'), $actor)))
+            // The customer wrote last and nobody answered yet: the same rule as
+            // the row's `awaiting_reply` (ConversationResource), so the filter
+            // lists exactly the rows that show the dot.
+            ->when($filters['awaiting'] ?? false, fn (Builder $query) => $query
+                ->where('conversations.status', '<>', ConversationStatus::Closed->value)
+                ->whereNotNull('conversations.last_inbound_at')
+                ->where(fn (Builder $unanswered) => $unanswered
+                    ->whereNull('conversations.last_outbound_at')
+                    ->orWhereColumn('conversations.last_inbound_at', '>', 'conversations.last_outbound_at')));
     }
 
     /**
@@ -399,7 +422,8 @@ class ConversationInboxQuery
 
         return $this->filtered($actor, $filters)
             ->when($status === 'active', fn (Builder $query) => $query->notClosed())
-            ->when(! in_array($status, ['active', 'all'], true), fn (Builder $query) => $query->where('conversations.status', $status))
+            ->when($status === self::STATUS_COMPLETED, fn (Builder $query) => $query->where('conversations.status', ConversationStatus::Closed->value)->whereNotNull('conversations.completed_at'))
+            ->when(! in_array($status, ['active', 'all', self::STATUS_COMPLETED], true), fn (Builder $query) => $query->where('conversations.status', $status))
             ->when($sort === self::SORT_PRIORITY, fn (Builder $query) => $query->orderByRaw(self::PRIORITY_RANK))
             ->when($sort === self::SORT_OLDEST, fn (Builder $query) => $query->orderBy('conversations.last_message_at')->orderBy('conversations.id'))
             ->when($sort !== self::SORT_OLDEST, fn (Builder $query) => $query->orderByDesc('conversations.last_message_at')->orderByDesc('conversations.id'));
@@ -674,7 +698,7 @@ class ConversationInboxQuery
         $closed = ConversationStatus::Closed->value;
 
         match ($status) {
-            $closed => $query->where('conversations.status', $closed),
+            $closed, self::STATUS_COMPLETED => $query->where('conversations.status', $closed),
             'all' => $query->where(fn (Builder $either) => $either
                 ->where(fn (Builder $general) => $this->generalPredicate($general, $actor))
                 ->orWhere('conversations.status', $closed)),

@@ -93,9 +93,12 @@ enum NotificationKind: string
 
     /**
      * Defaults while the user has not saved preferences for the kind. The
-     * kinds announced live also sound by default; a preference the user saved
-     * always wins. Browser notifications are always off by default: they need
-     * an explicit opt-in and the browser's permission.
+     * kinds announced live also sound and show a system notification (the
+     * operating system's own alert, e.g. Windows) by default, so every
+     * customer or internal chat message reaches the desktop without the user
+     * having to turn anything on; a preference the user saved always wins.
+     * The browser's own permission is still required (asked once, on the
+     * first interaction with the platform, and remembered by the browser).
      *
      * @return array{in_app: bool, browser: bool, sound: bool}
      */
@@ -103,7 +106,7 @@ enum NotificationKind: string
     {
         return [
             'in_app' => true,
-            'browser' => false,
+            'browser' => $this->announcesInPage(),
             'sound' => $this->announcesInPage(),
         ];
     }

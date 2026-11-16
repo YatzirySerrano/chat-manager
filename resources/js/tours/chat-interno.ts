@@ -12,7 +12,7 @@ export default {
             id: 'buscar',
             target: 'team-chat.search',
             title: 'Buscar',
-            body: 'Encuentra un chat por nombre.',
+            body: 'Encuentra un chat por nombre o un mensaje. Pulsa / desde cualquier parte para escribir aquí.',
         },
         {
             id: 'chats',

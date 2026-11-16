@@ -14,7 +14,9 @@ export type ConversationStatusValue = 'pending' | 'open' | 'on_hold' | 'closed';
 export type ConversationStatusFilter =
     | ConversationStatusValue
     | 'active'
-    | 'all';
+    | 'all'
+    /** Closed as «Solicitud completada» (completed_at set). */
+    | 'completed';
 
 /** Operations the viewer may perform, resolved by the server's policy. */
 export type ConversationAbilities = {
@@ -117,6 +119,8 @@ export type ConversationSummary = {
     last_inbound_at: string | null;
     assigned_at: string | null;
     closed_at: string | null;
+    /** Closed as «Solicitud completada»: a new message enters «Pendientes». */
+    completed_at?: string | null;
     reopen_count: number;
     created_at: string | null;
     /** Request type; shown to every viewer. */
@@ -259,6 +263,8 @@ export type ConversationFilters = {
     sort: ConversationSort;
     /** Only conversations with messages unread for the viewer. */
     unread: boolean;
+    /** Only conversations where the customer wrote last and nobody answered. */
+    awaiting?: boolean;
     /** Request category id (`category=<id>`), or null for every one. */
     category: number | null;
     /** Preparation state (`readiness=ready|needs_info`), or null for both. */

@@ -21,9 +21,10 @@ use Throwable;
  * browser and keeps "Navegador" on for the kind.
  *
  * At most one push per user every `webpush.throttle_seconds` (atomic
- * Cache::add): a burst or an aggregated notification wakes each browser
- * once, and the browser shows the current unread counter, not one alert per
- * event. Sending happens in SendWebPush jobs on the notifications queue.
+ * Cache::add, 2 s by default): each message wakes the browser, which shows
+ * the newest unread notification as its own system alert; only events of
+ * the same instant fold into one. Sending happens in SendWebPush jobs on
+ * the notifications queue.
  *
  * Best-effort, like the realtime hint: the listener runs synchronously in the
  * job that fans the in-app notification out, so any failure (cache store,
@@ -63,7 +64,7 @@ class QueueWebPush
             return;
         }
 
-        $seconds = max(1, (int) config('webpush.throttle_seconds', 60));
+        $seconds = max(1, (int) config('webpush.throttle_seconds', 2));
 
         if (! Cache::add("webpush:throttle:{$user->id}", true, $seconds)) {
             return;

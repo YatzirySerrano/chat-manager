@@ -2,6 +2,8 @@
 import { Link } from '@inertiajs/vue3';
 import { Archive, BellOff, Eye } from '@lucide/vue';
 import { computed } from 'vue';
+import CountBadge from '@/components/filters/CountBadge.vue';
+import HighlightMatch from '@/components/filters/HighlightMatch.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import { listTime } from '@/components/team-chat/teamChatFormat';
 import { useLongPress } from '@/composables/useLongPress';
@@ -24,6 +26,8 @@ const props = defineProps<{
     /** Being opened right now (the click already landed). */
     opening?: boolean;
     query: Record<string, string | number>;
+    /** Applied search: its words are marked in the title. */
+    highlight?: string;
 }>();
 
 const emit = defineEmits<{ preview: [thread: TeamThreadSummary] }>();
@@ -103,7 +107,10 @@ const unreadLabel = computed(() =>
                             )
                         "
                     >
-                        {{ thread.title }}
+                        <HighlightMatch
+                            :text="thread.title"
+                            :query="highlight ?? ''"
+                        />
                         <span v-if="partnerOnline" class="sr-only"
                             >(en línea)</span
                         >
@@ -153,20 +160,18 @@ const unreadLabel = computed(() =>
                         class="size-3.5 shrink-0 text-muted-foreground"
                         aria-label="Silenciado"
                     />
-                    <span
+                    <!-- Bumps and sends one ring out when a message arrives
+                     (muted chats only bump, in a quiet tone). -->
+                    <CountBadge
                         v-if="unread"
-                        :class="
-                            cn(
-                                'inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[0.7rem] font-semibold tabular-nums',
-                                thread.muted
-                                    ? 'bg-muted-foreground/20 text-foreground'
-                                    : 'bg-primary text-primary-foreground',
-                            )
-                        "
-                        :aria-label="`${thread.unread} sin leer`"
+                        :value="thread.unread"
+                        :tone="thread.muted ? 'muted' : 'primary'"
+                        :halo="!thread.muted"
+                        class="h-5 min-w-5"
+                    />
+                    <span v-if="unread" class="sr-only"
+                        >{{ unreadLabel }} sin leer</span
                     >
-                        {{ unreadLabel }}
-                    </span>
                 </span>
             </span>
         </Link>

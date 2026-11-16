@@ -51,11 +51,8 @@ class TeamChatController extends Controller
         $viewer = $request->user();
         $validated = $request->validate([...TeamThreadListQuery::rules(), 'around' => ['nullable', 'integer', 'min:1']]);
 
-        $filters = [
-            'search' => trim((string) ($validated['search'] ?? '')),
-            'filter' => (string) ($validated['filter'] ?? 'all'),
-            'limit' => (int) ($validated['limit'] ?? TeamThreadListQuery::DEFAULT_LIMIT),
-        ];
+        // The scope (`filter`) and the «No leídos» / «Menciones» toggles.
+        $filters = TeamThreadListQuery::normalize($validated);
 
         $active = null;
         $messages = null;
@@ -85,6 +82,8 @@ class TeamChatController extends Controller
             'messages' => $messages,
             'around' => isset($validated['around']) ? (int) $validated['around'] : null,
             'unreadTotal' => fn (): int => $this->unread->total($viewer),
+            // Numbers of the quick filters («No leídos», «Menciones») in the scope.
+            'threadCounts' => fn (): array => $this->list->counts($viewer, $filters['filter']),
             'can' => [
                 'createGroup' => $viewer->can('createGroup', TeamThread::class),
             ],

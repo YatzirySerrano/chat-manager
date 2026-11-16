@@ -3,8 +3,9 @@ import type { Ref } from 'vue';
 
 /**
  * Browser-level alerts of in-app notifications: system notifications (the
- * Notification API, only after the user granted permission with an explicit
- * click) and a short sound generated with Web Audio (no audio file).
+ * Notification API; the permission is asked once on the first interaction
+ * and the browser remembers it) and a short sound generated with Web Audio
+ * (no audio file).
  */
 
 export type BrowserPermission = NotificationPermission | 'unsupported';
@@ -30,26 +31,120 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserPer
     }
 }
 
+let permissionPromptInstalled = false;
+
 /**
- * Shows a system notification when allowed. Only the title and the safe
- * summary already rendered by the server are used; clicking it focuses the
- * tab and runs `onClick`.
+ * Asks once for the permission to show system notifications (Windows,
+ * macOS...), on the first click or key press on the platform: browsers only
+ * show the prompt from a user gesture. The browser remembers the answer, so
+ * this never asks again after «Permitir» (or «Bloquear»); `onGranted` then
+ * finishes the setup (the Web Push subscription).
  */
-export function showBrowserNotification(
+export function askNotificationPermissionOnFirstGesture(
+    onGranted: () => void,
+): void {
+    if (browserNotificationPermission() === 'granted') {
+        onGranted();
+
+        return;
+    }
+
+    if (
+        browserNotificationPermission() !== 'default' ||
+        permissionPromptInstalled
+    ) {
+        return;
+    }
+
+    permissionPromptInstalled = true;
+
+    const events = ['pointerup', 'keydown'] as const;
+    const ask = (): void => {
+        events.forEach((type) =>
+            window.removeEventListener(type, ask, { capture: true }),
+        );
+
+        void requestBrowserNotificationPermission().then((permission) => {
+            permissionPromptInstalled = false;
+
+            if (permission === 'granted') {
+                onGranted();
+            }
+        });
+    };
+
+    events.forEach((type) =>
+        window.addEventListener(type, ask, { capture: true }),
+    );
+}
+
+/** Tag of the system notification of one in-app notification. */
+export function systemNotificationTag(id: string): string {
+    return `chat-manager-${id}`;
+}
+
+/**
+ * Shows a system notification (a Windows toast in Chrome on Windows) when
+ * allowed. Only the title and the safe summary already rendered by the
+ * server are used. One tag per notification: a new message in the same
+ * conversation replaces its alert and alerts again (renotify), while the
+ * same version is never shown twice (the service worker may have shown it
+ * already from a push). Shown through the service worker when there is one,
+ * so it stays in the Windows notification center and a click is handled
+ * even after the tab closed; `onClick` only runs for the page fallback.
+ */
+export async function showBrowserNotification(
     id: string,
     title: string,
     body: string | null,
     onClick: () => void,
-): void {
+    options: { version?: string; url?: string | null } = {},
+): Promise<void> {
     if (browserNotificationPermission() !== 'granted') {
         return;
+    }
+
+    const tag = systemNotificationTag(id);
+    const version = options.version ?? '';
+
+    try {
+        const registration =
+            'serviceWorker' in navigator
+                ? await navigator.serviceWorker.getRegistration('/')
+                : undefined;
+
+        if (registration?.active) {
+            const shown = await registration.getNotifications({ tag });
+
+            if (
+                version !== '' &&
+                shown.some((notification) => notification.data?.version === version)
+            ) {
+                return;
+            }
+
+            await registration.showNotification(title, {
+                body: body ?? undefined,
+                tag,
+                renotify: true,
+                icon: '/icons/icon-192.png',
+                badge: '/icons/icon-192.png',
+                data: { url: options.url ?? '/dashboard', version },
+            } as NotificationOptions);
+
+            return;
+        }
+    } catch {
+        // Fall back to a page notification.
     }
 
     try {
         const notification = new Notification(title, {
             body: body ?? undefined,
-            tag: `chat-manager-${id}`,
-        });
+            tag,
+            renotify: true,
+            icon: '/icons/icon-192.png',
+        } as NotificationOptions);
 
         notification.onclick = () => {
             window.focus();

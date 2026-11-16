@@ -28,6 +28,8 @@ declare module '@inertiajs/core' {
             auth: Auth;
             passwordPolicy: PasswordPolicy;
             realtime: RealtimeConfig;
+            /** Public VAPID key for Web Push (null when it is off). */
+            webPushKey: string | null;
             /** Unread internal chat messages (null without team-chat.use). */
             teamChatUnread: number | null;
             /** Feature flags (config/features.php); the server enforces them. */

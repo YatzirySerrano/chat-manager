@@ -14,6 +14,7 @@ export type TeamParticipantRole = 'member' | 'admin';
 export type TeamThreadFilter =
     | 'all'
     | 'unread'
+    | 'mentions'
     | 'direct'
     | 'groups'
     | 'archived';
@@ -165,8 +166,21 @@ export type TeamChatLimits = {
 
 export type TeamChatFilters = {
     search: string;
+    /** Scope of the list; the legacy 'unread' and 'mentions' arrive as toggles. */
     filter: TeamThreadFilter;
+    /** Only threads with messages unread for the viewer. */
+    unread: boolean;
+    /** Only threads with unread messages that mention the viewer. */
+    mentions: boolean;
     limit: number;
+};
+
+/** Numbers of the quick filters of the thread list (non archived threads). */
+export type TeamThreadCounts = {
+    /** Threads with messages unread for the viewer. */
+    unread: number;
+    /** Threads with unread messages that mention the viewer. */
+    mentions: number;
 };
 
 /** Someone the viewer may start a chat with or add to a group. */

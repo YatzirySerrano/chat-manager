@@ -67,6 +67,7 @@ class ReopenConversation
                 ...($returnsToAgent ? $this->lifecycle->attendedBy($previousAgent) : $this->lifecycle->queued($conversation)),
                 'closed_at' => null,
                 'closed_by_user_id' => null,
+                'completed_at' => null,
                 'reopened_at' => now(),
                 'reopen_count' => $conversation->reopen_count + 1,
             ],

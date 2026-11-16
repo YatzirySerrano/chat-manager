@@ -190,7 +190,7 @@ test('internal chat messages sound by default and a saved preference without sou
     $kind = NotificationKind::TeamChatMessage->value;
 
     expect($this->actingAs($this->reader)->getJson(route('notifications.index'))->json('preferences')[$kind])
-        ->toBe(['in_app' => true, 'browser' => false, 'sound' => true]);
+        ->toBe(['in_app' => true, 'browser' => true, 'sound' => true]);
 
     $this->actingAs($this->reader)->put(route('notifications.preferences.update'), ['preferences' => [
         ['kind' => $kind, 'in_app' => true, 'browser' => false, 'sound' => false],

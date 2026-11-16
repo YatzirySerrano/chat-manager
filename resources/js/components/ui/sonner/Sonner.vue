@@ -40,7 +40,8 @@ onBeforeUnmount(() => observer?.disconnect())
  * (muted-foreground) ≥ 5.5:1 and type icons ≥ 4.5:1 in light and dark.
  */
 const tokenClasses: ToastClasses = {
-  title: "text-popover-foreground!",
+  toast: "font-sans! shadow-elevated! border-border!",
+  title: "text-popover-foreground! font-semibold!",
   description: "text-muted-foreground!",
   icon: "text-popover-foreground",
   success: "[&_[data-icon]]:text-success",
@@ -81,7 +82,7 @@ const toastOptions = computed(() => {
       '--gray4': 'var(--border)',
       '--gray5': 'var(--border-strong)',
       '--gray2': 'var(--accent)',
-      '--border-radius': 'var(--radius)',
+      '--border-radius': 'var(--radius-xl)',
     }"
     v-bind="props"
     :theme="theme"

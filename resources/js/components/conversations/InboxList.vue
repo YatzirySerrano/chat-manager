@@ -1,18 +1,35 @@
 <script setup lang="ts">
-import { Hourglass, Inbox, Search, X } from '@lucide/vue';
+import {
+    CircleCheck,
+    Hourglass,
+    Inbox,
+    MailWarning,
+    MessageCircleReply,
+} from '@lucide/vue';
 import { useDebounceFn, useMediaQuery, watchDebounced } from '@vueuse/core';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import AcceptBlockNotice from '@/components/conversations/AcceptBlockNotice.vue';
 import InboxFilterPanel from '@/components/conversations/InboxFilterPanel.vue';
 import InboxFilterSurface from '@/components/conversations/InboxFilterSurface.vue';
-import { MAX_FILTER_TAGS } from '@/components/conversations/inboxFilters';
+import {
+    MAX_FILTER_TAGS,
+    isClosedStatus,
+} from '@/components/conversations/inboxFilters';
 import type { InboxFilterState } from '@/components/conversations/inboxFilters';
 import InboxListItem from '@/components/conversations/InboxListItem.vue';
 import InboxTagsDialog from '@/components/conversations/InboxTagsDialog.vue';
-import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import FilterToggle from '@/components/filters/FilterToggle.vue';
+import type {
+    ActiveFilterPill,
+    FilterTabOption,
+} from '@/components/filters/types';
+import { useRowMotion } from '@/components/filters/useRowMotion';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatPhone } from '@/lib/phone';
 import type {
@@ -32,16 +49,32 @@ import type {
 } from '@/types';
 
 /**
- * Left panel of the inbox. The operational indicators stay always visible
- * and recognizable: the general inbox, the pending conversations (with
- * their counter, highlighted while there is any) and the unread ones.
- * Everything else (view, status, department, responsible agent, channel,
- * connection, tags with OR/AND, order and search scope) lives in one
- * "Filtros" panel (InboxFilterSurface: a popover, or a bottom sheet on
- * phones) that edits a draft applied with «Aplicar»; the applied values
- * show as removable chips under the search box. The URL stays the source of
- * truth (query()), the list is loaded with one keyset cursor, and filters
- * only ever narrow what the server already authorized.
+ * Left panel of the inbox, built for someone who answers all day and has to
+ * narrow the list in one or two clicks (shared pattern with the internal
+ * chat, components/filters):
+ *
+ * 1. The search box, always visible: results follow the typing (debounced),
+ *    «/» or Ctrl+K jumps to it, Escape clears it and Arrow down goes to the
+ *    first row. While searching, «Contacto / Mensajes» says where it looks.
+ * 2. The views as tabs with live counters (FilterTabs): the base inbox
+ *    («Bandeja» or «Todas»), «Pendientes» (attention tone while any waits),
+ *    «En atención» (team inboxes), «Mías» and «Cerradas». They are the
+ *    view + status pairs the server already offers.
+ * 3. Quick toggles that combine with the tab: «Sin leer» and «Esperando
+ *    respuesta» (customer wrote last), each with its counter; under
+ *    «Cerradas», «Solo completadas» (closed as «Solicitud completada»).
+ * 4. Everything else (department, agent, channel, connection, category,
+ *    tags with OR/AND, order) lives in the «Filtros» panel
+ *    (InboxFilterSurface: a popover, or a bottom sheet on phones) that edits
+ *    a draft applied with «Aplicar»; applied values show as removable pills
+ *    next to the toggles, with «Limpiar filtros».
+ *
+ * The URL stays the source of truth (query(), replace visits, so a reload
+ * keeps the filters), the list is loaded with one keyset cursor and filters
+ * only ever narrow what the server already authorized. The last filters are
+ * not restored by themselves on a clean visit: an agent who opens the inbox
+ * must always see their pending work (the server remembers the list for the
+ * way back from a conversation).
  */
 const props = withDefaults(
     defineProps<{
@@ -58,6 +91,8 @@ const props = withDefaults(
         }[];
         /** Conversations with unread messages in this view and filters. */
         unreadCount: number;
+        /** Conversations where the customer waits for an answer (same filters). */
+        awaitingCount?: number;
         /** Channels of the viewer's connections (the filter needs more than one). */
         filterOptions: {
             channels: { value: ConnectionChannel; label: string }[];
@@ -72,12 +107,19 @@ const props = withDefaults(
         viewer: InboxViewer;
         selectedId: number | null;
         loading: boolean;
+        /** The loading in course only brings more rows (not a new filter). */
+        loadingMore?: boolean;
         /** Conversation being accepted from the list, if any. */
         acceptingId: number | null;
         /** Rows offer "Asignar alias personal" (PERSONALIZATION). */
         canEditAlias?: boolean;
     }>(),
-    { canEditAlias: false, categories: () => [] },
+    {
+        canEditAlias: false,
+        categories: () => [],
+        awaitingCount: 0,
+        loadingMore: false,
+    },
 );
 
 const emit = defineEmits<{
@@ -106,6 +148,7 @@ function fromFilters(filters: ConversationFilters): InboxFilterState {
         sort: filters.sort,
         searchIn: filters.search_in,
         unread: filters.unread,
+        awaiting: filters.awaiting ?? false,
         category:
             filters.category === null || filters.category === undefined
                 ? ALL
@@ -132,14 +175,15 @@ watch(
 
 const defaultView = computed(() => props.inbox.views[0]);
 /*
- * The view the indicators narrow by status: the default one. Supervisors
- * (and whoever does not attend) open on every authorized conversation;
- * other people who attend conversations on their general inbox.
+ * The view the tabs narrow by status: the default one. Supervisors (and
+ * whoever does not attend) open on every authorized conversation; other
+ * people who attend conversations on their general inbox.
  */
 const baseView = computed<InboxView>(() =>
     defaultView.value === 'general' ? 'general' : 'all',
 );
 const isGeneral = computed(() => baseView.value === 'general');
+const hasMine = computed(() => props.inbox.views.includes('mine'));
 const channels = computed(() => props.filterOptions.channels);
 const showChannels = computed(() => channels.value.length > 1);
 const showAgents = computed(
@@ -165,7 +209,7 @@ const viewLabels = computed<Record<InboxView, string>>(() => ({
     queue: isGeneral.value ? 'Bandeja general' : 'Por atender',
 }));
 
-/* What the default chip holds, in the viewer's reach. */
+/* What the base tab holds, in the viewer's reach. */
 const baseTitle = computed(() => {
     if (isGeneral.value) {
         return 'Todo lo que espera por ti: las pendientes que puedes aceptar y las que atiendes.';
@@ -201,6 +245,7 @@ const statusLabels: Record<string, string> = {
     pending: 'Pendientes',
     open: 'En atención',
     closed: 'Cerradas',
+    completed: 'Solicitudes completadas',
     all: 'Todos los estados',
 };
 
@@ -217,7 +262,7 @@ const statusOptions = computed<
     values.push('open');
 
     if (props.canSeeClosed) {
-        values.push('closed');
+        values.push('closed', 'completed');
     }
 
     return values.map((value) => ({ value, label: statusLabels[value] }));
@@ -234,17 +279,151 @@ const searchScopes: { value: ConversationSearchScope; label: string }[] = [
     { value: 'messages', label: 'Contenido de los mensajes' },
 ];
 
-/* Operational indicators: always visible, mutually exclusive with each other. */
-const generalActive = computed(
-    () => state.view === baseView.value && state.status === 'active',
-);
-const isPendingIndicator = (filters: InboxFilterState): boolean =>
-    filters.view === baseView.value && filters.status === 'pending';
-const pendingActive = computed(() => isPendingIndicator(state));
-const pendingCount = computed(() => props.counts.pending);
-
 const plural = (count: number, one: string, many: string): string =>
     `${count} ${count === 1 ? one : many}`;
+
+/* ---- Tabs: the view + status pairs the server offers. ---- */
+
+type InboxTab = 'base' | 'pending' | 'attending' | 'mine' | 'closed';
+
+/** The tab the filters belong to, or null (a combination of the panel). */
+function tabOf(filters: InboxFilterState): InboxTab | null {
+    const base = filters.view === baseView.value;
+
+    if (base && filters.status === 'active') {
+        return 'base';
+    }
+
+    if (base && filters.status === 'pending') {
+        return 'pending';
+    }
+
+    if (
+        !isGeneral.value &&
+        filters.view === 'all' &&
+        filters.status === 'open'
+    ) {
+        return 'attending';
+    }
+
+    if (
+        hasMine.value &&
+        filters.view === 'mine' &&
+        filters.status === 'active'
+    ) {
+        return 'mine';
+    }
+
+    if (props.canSeeClosed && base && isClosedStatus(filters.status)) {
+        return 'closed';
+    }
+
+    return null;
+}
+
+const activeTab = computed(() => tabOf(state));
+const pendingCount = computed(() => props.counts.pending);
+const pendingActive = computed(() => activeTab.value === 'pending');
+const generalActive = computed(() => activeTab.value === 'base');
+const closedActive = computed(() => isClosedStatus(state.status));
+
+const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
+    const options: FilterTabOption<InboxTab>[] = [
+        {
+            value: 'base',
+            label: isGeneral.value ? 'Bandeja' : 'Todas',
+            count: props.counts.general,
+            title: `${viewLabels.value[baseView.value]}. ${baseTitle.value}`,
+            srLabel: plural(
+                props.counts.general,
+                'conversación activa',
+                'conversaciones activas',
+            ),
+            attrs: { 'data-inbox-chip': 'base', 'data-tour': 'inbox.general' },
+        },
+        {
+            value: 'pending',
+            label: 'Pendientes',
+            icon: pendingCount.value > 0 ? Hourglass : undefined,
+            count: pendingCount.value,
+            attention: pendingCount.value > 0,
+            title: pendingTitle.value,
+            srLabel: `${pendingCount.value} por aceptar`,
+            attrs: {
+                'data-inbox-chip': 'pending',
+                'data-tour': 'inbox.pending',
+            },
+        },
+    ];
+
+    if (!isGeneral.value) {
+        options.push({
+            value: 'attending',
+            label: 'En atención',
+            count: props.counts.attending,
+            title: 'Conversaciones que alguien del equipo ya atiende.',
+            srLabel: plural(
+                props.counts.attending,
+                'conversación en atención',
+                'conversaciones en atención',
+            ),
+            attrs: { 'data-inbox-chip': 'attending' },
+        });
+    }
+
+    if (hasMine.value) {
+        options.push({
+            value: 'mine',
+            label: 'Mías',
+            count: props.counts.mine,
+            title: 'Las conversaciones que tienes asignadas.',
+            srLabel: plural(
+                props.counts.mine,
+                'conversación asignada a ti',
+                'conversaciones asignadas a ti',
+            ),
+            attrs: { 'data-inbox-chip': 'mine' },
+        });
+    }
+
+    if (props.canSeeClosed) {
+        options.push({
+            value: 'closed',
+            label: 'Cerradas',
+            title: 'El historial de conversaciones cerradas, incluidas las solicitudes completadas.',
+            attrs: { 'data-inbox-chip': 'closed' },
+        });
+    }
+
+    return options;
+});
+
+function chooseTab(tab: InboxTab): void {
+    const patches: Record<InboxTab, Partial<InboxFilterState>> = {
+        base: { view: baseView.value, status: 'active' },
+        pending: { view: baseView.value, status: 'pending' },
+        attending: { view: 'all', status: 'open' },
+        mine: { view: 'mine', status: 'active' },
+        // Closed conversations are never unread nor waiting for an answer.
+        closed: {
+            view: baseView.value,
+            status: 'closed',
+            unread: false,
+            awaiting: false,
+        },
+    };
+
+    // A second click on the chosen tab goes back to the base inbox.
+    if (tab === activeTab.value) {
+        if (tab !== 'base') {
+            change(patches.base);
+        }
+
+        return;
+    }
+
+    change(patches[tab]);
+}
 
 /*
  * Pending conversations that arrive while the list is on screen are
@@ -292,29 +471,29 @@ const searchTooShort = computed(
         props.filters.search === search.value.trim(),
 );
 
-type AppliedChip = { key: string; label: string; clear: () => void };
-
 /*
- * Filters as removable chips (of the applied state, or of the draft to
- * count them). The indicators already tell the general inbox, "Pendientes"
- * and "No leídas", so they get no chip.
+ * Filters as removable pills (of the applied state, or of the draft to
+ * count them). The tabs and the toggles already show the view, the status,
+ * «Sin leer», «Esperando respuesta» and the search scope, so they get no
+ * pill unless the panel chose a pair no tab holds.
  */
-function chipsOf(filters: InboxFilterState): AppliedChip[] {
-    const chips: AppliedChip[] = [];
+function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
+    const chips: ActiveFilterPill[] = [];
+    const inTab = tabOf(filters) !== null;
 
-    if (filters.view !== baseView.value) {
+    if (!inTab && filters.view !== baseView.value) {
         chips.push({
             key: 'view',
             label: `Vista: ${viewLabels.value[filters.view]}`,
-            clear: () => (filters.view = baseView.value),
+            remove: () => (filters.view = baseView.value),
         });
     }
 
-    if (filters.status !== 'active' && !isPendingIndicator(filters)) {
+    if (!inTab && filters.status !== 'active') {
         chips.push({
             key: 'status',
             label: `Estado: ${statusLabels[filters.status] ?? filters.status}`,
-            clear: () => (filters.status = 'active'),
+            remove: () => (filters.status = 'active'),
         });
     }
 
@@ -326,7 +505,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'department',
             label: `Departamento: ${filters.department === 'none' ? 'Sin departamento' : (department?.name ?? 'No disponible')}`,
-            clear: () => (filters.department = ALL),
+            remove: () => (filters.department = ALL),
         });
     }
 
@@ -338,7 +517,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'agent',
             label: `Responsable: ${filters.agent === 'none' ? 'Sin agente' : (agent?.name ?? 'No disponible')}`,
-            clear: () => (filters.agent = ALL),
+            remove: () => (filters.agent = ALL),
         });
     }
 
@@ -346,7 +525,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'channel',
             label: `Canal: ${channels.value.find((option) => option.value === filters.channel)?.label ?? filters.channel}`,
-            clear: () => (filters.channel = ALL),
+            remove: () => (filters.channel = ALL),
         });
     }
 
@@ -358,7 +537,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'category',
             label: `Categoría: ${category?.name ?? 'No disponible'}`,
-            clear: () => (filters.category = ALL),
+            remove: () => (filters.category = ALL),
         });
     }
 
@@ -369,7 +548,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
                 filters.readiness === 'needs_info'
                     ? 'Necesita información'
                     : 'Lista para atención',
-            clear: () => (filters.readiness = ALL),
+            remove: () => (filters.readiness = ALL),
         });
     }
 
@@ -381,7 +560,7 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'connection',
             label: `Conexión: ${connection ? `${connection.name}${connection.display_phone_number ? ` · ${formatPhone(connection.display_phone_number)}` : ''}` : 'No disponible'}`,
-            clear: () => (filters.connection = ALL),
+            remove: () => (filters.connection = ALL),
         });
     }
 
@@ -389,17 +568,17 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: `tag-${id}`,
             label: `Etiqueta: ${props.tags.find((tag) => tag.id === id)?.name ?? 'No disponible'}`,
-            clear: () =>
+            remove: () =>
                 (filters.tags = filters.tags.filter((tag) => tag !== id)),
         });
     }
 
-    // "At least one tag" is the default; only the AND mode is a chip.
+    // "At least one tag" is the default; only the AND mode is a pill.
     if (filters.tags.length > 1 && filters.tagMatch === 'all') {
         chips.push({
             key: 'tag-match',
             label: 'Tiene todas las etiquetas elegidas',
-            clear: () => (filters.tagMatch = 'any'),
+            remove: () => (filters.tagMatch = 'any'),
         });
     }
 
@@ -407,47 +586,54 @@ function chipsOf(filters: InboxFilterState): AppliedChip[] {
         chips.push({
             key: 'sort',
             label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
-            clear: () => (filters.sort = 'oldest'),
-        });
-    }
-
-    if (filters.searchIn !== 'contact') {
-        chips.push({
-            key: 'search-in',
-            label: 'Buscar en: mensajes',
-            clear: () => (filters.searchIn = 'contact'),
+            remove: () => (filters.sort = 'oldest'),
         });
     }
 
     return chips;
 }
 
-const appliedChips = computed<AppliedChip[]>(() => chipsOf(state));
+/* Applied pills: removing one applies at once. */
+const appliedChips = computed<ActiveFilterPill[]>(() =>
+    chipsOf(state).map((chip) => ({
+        ...chip,
+        remove: () => {
+            chip.remove();
+            apply();
+            void announceFilters();
+        },
+    })),
+);
 
-/* The tag combination mode refines the tags: it is not one more filter. */
-const countOf = (chips: AppliedChip[]): number =>
-    chips.filter((chip) => chip.key !== 'tag-match').length;
+/*
+ * What the «Filtros» button counts: the panel's own filters (the pills),
+ * plus «Sin leer» and «Esperando respuesta» that it also holds. The tag
+ * combination mode refines the tags: it is not one more filter.
+ */
+const countOf = (filters: InboxFilterState): number =>
+    chipsOf(filters).filter((chip) => chip.key !== 'tag-match').length +
+    (filters.unread ? 1 : 0) +
+    (filters.awaiting ? 1 : 0);
 
-const activeFilterCount = computed(() => countOf(appliedChips.value));
-const draftFilterCount = computed(() => countOf(chipsOf(draft)));
+const activeFilterCount = computed(() => countOf(state));
+const draftFilterCount = computed(() => countOf(draft));
 
 /**
- * A search, a filter chip or "No leídas" narrows the list: an empty result
- * then means "nothing matches", never "your inbox is up to date".
+ * A search, a pill or a toggle narrows the list: an empty result then means
+ * "nothing matches", never "your inbox is up to date".
  */
 const isNarrowed = computed(
     () =>
         appliedChips.value.length > 0 ||
         state.unread ||
+        state.awaiting ||
+        state.status === 'completed' ||
         search.value.trim() !== '',
 );
 
+/* «Limpiar filtros»: anything but the default tab with nothing else. */
 const hasFilters = computed(
-    () =>
-        appliedChips.value.length > 0 ||
-        state.unread ||
-        state.status !== 'active' ||
-        search.value.trim() !== '',
+    () => isNarrowed.value || activeTab.value !== tabOf(defaults()),
 );
 
 /*
@@ -494,6 +680,10 @@ function query(): Record<string, string | string[]> {
 
     if (state.unread) {
         result.unread = '1';
+    }
+
+    if (state.awaiting) {
+        result.awaiting = '1';
     }
 
     if (search.value.trim() !== '') {
@@ -564,29 +754,20 @@ function applyDraft(): void {
     void announceFilters();
 }
 
-function removeChip(chip: AppliedChip): void {
-    chip.clear();
-    apply();
-}
-
-function showGeneral(): void {
-    change({ view: baseView.value, status: 'active' });
-}
-
-function togglePending(): void {
-    change(
-        pendingActive.value
-            ? { status: 'active' }
-            : { view: baseView.value, status: 'pending' },
-    );
-}
-
 function toggleUnread(): void {
     change({ unread: !state.unread });
 }
 
-function clearFilters(): void {
-    Object.assign(state, {
+function toggleAwaiting(): void {
+    change({ awaiting: !state.awaiting });
+}
+
+function toggleCompleted(): void {
+    change({ status: state.status === 'completed' ? 'closed' : 'completed' });
+}
+
+function defaults(): InboxFilterState {
+    return {
         view: defaultView.value,
         status: 'active',
         department: ALL,
@@ -598,9 +779,14 @@ function clearFilters(): void {
         sort: 'oldest',
         searchIn: 'contact',
         unread: false,
+        awaiting: false,
         category: ALL,
         readiness: ALL,
-    } satisfies InboxFilterState);
+    };
+}
+
+function clearFilters(): void {
+    Object.assign(state, defaults());
     search.value = '';
     filtersOpen.value = false;
     apply();
@@ -630,7 +816,7 @@ const filtersOpen = ref(false);
  * accident (a click outside, Tab, rotating the phone) keeps an edited draft
  * and the panel says «Tienes cambios sin aplicar» when it opens again; the
  * draft only restarts from what is applied when it holds no edits, or when
- * the applied filters changed meanwhile (a chip removed, «Limpiar»…).
+ * the applied filters changed meanwhile (a pill removed, «Limpiar»…).
  */
 const sameFilters = (one: InboxFilterState, two: InboxFilterState): boolean =>
     JSON.stringify(copyOf(one)) === JSON.stringify(copyOf(two));
@@ -664,18 +850,26 @@ function manageTags(conversation: ConversationSummary): void {
 }
 
 /* Keyboard: arrows move between rows, Home/End jump to the ends. */
-const listElement = ref<HTMLElement | null>(null);
+const listElement = ref<{ $el: HTMLElement } | null>(null);
+
+function rowElements(): HTMLElement[] {
+    return [
+        ...(listElement.value?.$el.querySelectorAll<HTMLElement>(
+            '[data-inbox-item]',
+        ) ?? []),
+    ];
+}
+
+function focusFirstRow(): void {
+    rowElements()[0]?.focus();
+}
 
 function onListKeydown(event: KeyboardEvent): void {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
         return;
     }
 
-    const items = [
-        ...(listElement.value?.querySelectorAll<HTMLElement>(
-            '[data-inbox-item]',
-        ) ?? []),
-    ];
+    const items = rowElements();
     const index = items.indexOf(document.activeElement as HTMLElement);
 
     if (items.length === 0 || index === -1) {
@@ -683,6 +877,13 @@ function onListKeydown(event: KeyboardEvent): void {
     }
 
     event.preventDefault();
+
+    // Arrow up from the first row goes back to the search box.
+    if (event.key === 'ArrowUp' && index === 0) {
+        searchBox.value?.focus();
+
+        return;
+    }
 
     const next =
         event.key === 'Home'
@@ -695,6 +896,8 @@ function onListKeydown(event: KeyboardEvent): void {
 
     items[next]?.focus();
 }
+
+const searchBox = ref<InstanceType<typeof FilterSearch> | null>(null);
 
 /* Load more when the end of the list comes into view. */
 function onScroll(event: Event): void {
@@ -709,20 +912,78 @@ function onScroll(event: Event): void {
     }
 }
 
-const indicatorClass =
-    'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium whitespace-nowrap outline-none transition-[background-color,color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/25 pointer-coarse:h-10';
-
-/* The view in use: the raised thumb of the track. */
-const indicatorOn = 'bg-card text-foreground shadow-(--shadow-control)';
-const indicatorOff = 'text-muted-foreground hover:text-foreground';
+/* A new filter is loading (not just one more page). */
+const filtering = computed(() => props.loading && !props.loadingMore);
 
 /*
- * The rows slide in once, when the inbox opens; later changes (filters,
- * pages, live updates) never animate.
+ * The rows slide in once, when the inbox opens; afterwards only small live
+ * changes animate (a conversation arrives, leaves or moves), never a new
+ * filter or a new page (useRowMotion).
  */
 const firstPaint = ref(true);
+const rowMotion = useRowMotion(
+    () => props.conversations.data,
+    () => props.filters,
+);
 
 onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
+
+/* The applied contact search, marked in the rows' names. */
+const highlight = computed(() =>
+    props.filters.search_in === 'contact' ? props.filters.search : '',
+);
+
+const emptyCopy = computed(() => {
+    if (state.status === 'completed') {
+        return {
+            title: 'Aún no hay solicitudes completadas',
+            description:
+                'Aquí aparecen las conversaciones cerradas como «Solicitud completada».',
+        };
+    }
+
+    if (closedActive.value) {
+        return {
+            title: 'No hay conversaciones cerradas',
+            description:
+                'Las conversaciones que se cierren quedan aquí como historial.',
+        };
+    }
+
+    if (pendingActive.value) {
+        return {
+            title: 'No hay pendientes por aceptar',
+            description: isGeneral.value
+                ? 'Si tus departamentos distribuyen las conversaciones de forma manual, un supervisor te las asigna y aparecerán en tu bandeja al recibirlas.'
+                : 'Cuando un cliente escriba y nadie lo haya aceptado, aparecerá aquí.',
+        };
+    }
+
+    if (generalActive.value && isGeneral.value) {
+        return {
+            title: 'Tu bandeja está al día',
+            description:
+                'Aquí aparecen las pendientes que puedes aceptar y las que atiendes. Si tus departamentos distribuyen las conversaciones de forma manual, un supervisor te las asigna y aparecerán aquí al recibirlas.',
+        };
+    }
+
+    return {
+        title: 'No hay conversaciones aquí',
+        description:
+            props.inbox.scope === 'global'
+                ? 'Las conversaciones aparecen cuando un cliente escribe a cualquiera de las conexiones de la organización, sin importar quién las atienda.'
+                : 'Las conversaciones aparecen cuando un cliente escribe a una de tus conexiones. Solo ves las de tus departamentos o las asignadas a ti, según tu rol.',
+    };
+});
+
+const searchPlaceholder = computed(() =>
+    state.searchIn === 'messages'
+        ? 'Buscar en los mensajes'
+        : 'Buscar nombre, teléfono o correo',
+);
+
+const scopeButton =
+    'h-6 rounded-full px-2 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-8';
 </script>
 
 <template>
@@ -731,14 +992,12 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
         aria-label="Lista de conversaciones"
     >
         <header
-            class="grid min-w-0 grid-cols-1 gap-2 border-b px-3 pt-2.5 pb-2.5"
+            class="grid min-w-0 grid-cols-1 gap-2 border-b px-3 pt-3 pb-2.5"
         >
             <div class="flex items-center justify-between gap-2">
-                <div class="flex min-w-0 items-center gap-1">
-                    <h1 class="truncate font-display text-lg font-semibold">
-                        Conversaciones
-                    </h1>
-                </div>
+                <h1 class="truncate font-display text-lg font-semibold">
+                    Conversaciones
+                </h1>
                 <ExportMenu
                     v-if="canExport"
                     report="conversations"
@@ -747,164 +1006,21 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 />
             </div>
 
-            <nav aria-label="Bandejas">
-                <!--
-                    One block for the three views of the inbox: the base view
-                    on its own row (its name can be long) and, under it, the
-                    two shortcuts that narrow it.
-                -->
-                <div
-                    class="grid grid-cols-2 gap-0.5 rounded-lg bg-surface-sunken p-0.5 ring-1 ring-border ring-inset"
-                    role="group"
-                    aria-label="Filtrar la bandeja"
-                >
-                    <button
-                        type="button"
-                        :class="[
-                            indicatorClass,
-                            'col-span-2 min-w-0 justify-between',
-                            generalActive ? indicatorOn : indicatorOff,
-                        ]"
-                        :aria-pressed="generalActive"
-                        :title="baseTitle"
-                        data-inbox-chip="base"
-                        data-tour="inbox.general"
-                        @click="showGeneral"
-                    >
-                        <!-- The longest view name («Conversaciones de mis
-                         departamentos») is wider than a 320 px phone. -->
-                        <span class="min-w-0 truncate">{{
-                            viewLabels[baseView]
-                        }}</span>
-                        <span
-                            class="shrink-0 rounded-full px-1.5 text-xs tabular-nums"
-                            :class="
-                                generalActive
-                                    ? 'bg-primary-soft text-primary-soft-foreground'
-                                    : 'bg-muted'
-                            "
-                            aria-hidden="true"
-                            >{{ counts.general }}</span
-                        >
-                        <span class="sr-only"
-                            >:
-                            {{
-                                plural(
-                                    counts.general,
-                                    'conversación activa',
-                                    'conversaciones activas',
-                                )
-                            }}</span
-                        >
-                    </button>
-
-                    <button
-                        type="button"
-                        :class="[
-                            indicatorClass,
-                            'shrink-0',
-                            pendingActive
-                                ? indicatorOn
-                                : pendingCount > 0
-                                  ? 'font-semibold text-foreground hover:bg-warning/15'
-                                  : indicatorOff,
-                        ]"
-                        :aria-pressed="pendingActive"
-                        :title="pendingTitle"
-                        data-inbox-chip="pending"
-                        data-tour="inbox.pending"
-                        @click="togglePending"
-                    >
-                        <Hourglass
-                            v-if="pendingCount > 0"
-                            class="size-4 shrink-0 text-warning"
-                            aria-hidden="true"
-                        />
-                        Pendientes
-                        <span
-                            class="rounded-full px-1.5 text-xs tabular-nums"
-                            :class="
-                                pendingCount > 0
-                                    ? 'bg-warning-soft text-warning-soft-foreground'
-                                    : 'bg-muted'
-                            "
-                            aria-hidden="true"
-                            >{{ pendingCount }}</span
-                        >
-                        <span class="sr-only"
-                            >: {{ pendingCount }} por aceptar</span
-                        >
-                    </button>
-
-                    <button
-                        type="button"
-                        :class="[
-                            indicatorClass,
-                            'shrink-0',
-                            state.unread ? indicatorOn : indicatorOff,
-                        ]"
-                        :aria-pressed="state.unread"
-                        title="Solo las conversaciones con mensajes del cliente que aún no has leído"
-                        data-inbox-unread
-                        data-tour="inbox.unread"
-                        @click="toggleUnread"
-                    >
-                        No leídas
-                        <span
-                            class="rounded-full px-1.5 text-xs tabular-nums"
-                            :class="
-                                unreadCount > 0
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-muted'
-                            "
-                            aria-hidden="true"
-                            >{{ unreadCount }}</span
-                        >
-                        <span class="sr-only"
-                            >:
-                            {{
-                                plural(
-                                    unreadCount,
-                                    'conversación sin leer',
-                                    'conversaciones sin leer',
-                                )
-                            }}</span
-                        >
-                    </button>
-                </div>
-            </nav>
-
-            <p class="sr-only" role="status" aria-live="polite">
-                {{ pendingAnnouncement }}
-            </p>
-            <p class="sr-only" role="status" aria-live="polite">
-                {{ filtersAnnouncement }}
-            </p>
-
-            <div class="flex items-center gap-2" role="search">
-                <div class="relative min-w-0 flex-1">
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <Input
-                        v-model="search"
-                        type="search"
-                        data-tour="inbox.search"
-                        :placeholder="
-                            state.searchIn === 'messages'
-                                ? 'Buscar en mensajes'
-                                : 'Buscar'
-                        "
-                        :title="
-                            state.searchIn === 'messages'
-                                ? 'Busca palabras dentro de los mensajes'
-                                : 'Busca por nombre, teléfono o correo del cliente'
-                        "
-                        class="h-9 pl-8 pointer-coarse:h-10"
-                        aria-label="Buscar conversaciones"
-                    />
-                </div>
+            <div class="flex items-center gap-2">
+                <FilterSearch
+                    ref="searchBox"
+                    v-model="search"
+                    :placeholder="searchPlaceholder"
+                    label="Buscar conversaciones"
+                    :title="
+                        state.searchIn === 'messages'
+                            ? 'Busca palabras dentro de los mensajes. Atajo: / o Ctrl+K'
+                            : 'Busca por nombre, teléfono o correo del cliente. Atajo: / o Ctrl+K'
+                    "
+                    :loading="filtering"
+                    data-tour="inbox.search"
+                    @next="focusFirstRow"
+                />
 
                 <InboxFilterSurface
                     v-model:open="filtersOpen"
@@ -922,6 +1038,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         :view-labels="viewLabels"
                         :status-options="statusOptions"
                         :unread-count="unreadCount"
+                        :awaiting-count="awaitingCount"
                         :departments="departments"
                         :can-see-unrouted="canSeeUnrouted"
                         :show-agents="showAgents"
@@ -938,6 +1055,35 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 </InboxFilterSurface>
             </div>
 
+            <!-- Where the search looks, only while searching. -->
+            <div
+                v-if="search.trim() !== '' || state.searchIn === 'messages'"
+                class="flex items-center gap-1 text-xs text-muted-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
+                role="group"
+                aria-label="Buscar en"
+                data-inbox-search-scope
+            >
+                <span class="mr-0.5">Buscar en</span>
+                <button
+                    v-for="scope in [
+                        { value: 'contact', label: 'Contacto' },
+                        { value: 'messages', label: 'Mensajes' },
+                    ] as const"
+                    :key="scope.value"
+                    type="button"
+                    :class="[
+                        scopeButton,
+                        state.searchIn === scope.value
+                            ? 'bg-foreground text-background'
+                            : 'hover:bg-accent hover:text-foreground',
+                    ]"
+                    :aria-pressed="state.searchIn === scope.value"
+                    @click="change({ searchIn: scope.value })"
+                >
+                    {{ scope.label }}
+                </button>
+            </div>
+
             <p
                 v-if="searchTooShort"
                 class="text-xs text-muted-foreground"
@@ -948,53 +1094,99 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 no se buscan.
             </p>
 
-            <div
-                v-if="appliedChips.length > 0 || hasFilters"
-                class="flex flex-wrap items-center gap-1.5"
-                aria-label="Filtros aplicados"
-                role="group"
+            <nav aria-label="Bandejas">
+                <FilterTabs
+                    :options="tabs"
+                    :model-value="activeTab"
+                    label="Filtrar la bandeja"
+                    @update:model-value="chooseTab"
+                />
+            </nav>
+
+            <p class="sr-only" role="status" aria-live="polite">
+                {{ pendingAnnouncement }}
+            </p>
+            <p class="sr-only" role="status" aria-live="polite">
+                {{ filtersAnnouncement }}
+            </p>
+
+            <ActiveFilters
+                :pills="appliedChips"
+                :clearable="hasFilters"
+                @clear="clearFilters"
             >
-                <span
-                    v-for="chip in appliedChips"
-                    :key="chip.key"
-                    class="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded-full border border-primary/30 bg-primary-soft py-0.5 pr-0.5 pl-2.5 text-xs text-primary-soft-foreground"
-                    data-inbox-applied
-                >
-                    <span class="truncate">{{ chip.label }}</span>
-                    <button
-                        type="button"
-                        class="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-8"
-                        :aria-label="`Quitar el filtro ${chip.label}`"
-                        @click="removeChip(chip)"
-                    >
-                        <X class="size-3.5" aria-hidden="true" />
-                    </button>
-                </span>
-                <button
-                    v-if="hasFilters"
-                    type="button"
-                    class="rounded px-1.5 py-0.5 text-xs font-medium text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-8"
-                    data-inbox-clear
-                    @click="clearFilters"
-                >
-                    Limpiar filtros
-                </button>
-            </div>
+                <template v-if="closedActive">
+                    <FilterToggle
+                        :pressed="state.status === 'completed'"
+                        label="Solo completadas"
+                        :icon="CircleCheck"
+                        tone="success"
+                        title="Solo las conversaciones cerradas como «Solicitud completada»"
+                        data-inbox-completed
+                        @toggle="toggleCompleted"
+                    />
+                </template>
+                <template v-else>
+                    <FilterToggle
+                        :pressed="state.unread"
+                        label="Sin leer"
+                        :icon="MailWarning"
+                        :count="unreadCount"
+                        tone="primary"
+                        :sr-label="
+                            plural(
+                                unreadCount,
+                                'conversación sin leer',
+                                'conversaciones sin leer',
+                            )
+                        "
+                        title="Solo las conversaciones con mensajes del cliente que aún no has leído"
+                        data-inbox-unread
+                        data-tour="inbox.unread"
+                        @toggle="toggleUnread"
+                    />
+                    <FilterToggle
+                        :pressed="state.awaiting"
+                        label="Esperando respuesta"
+                        :icon="MessageCircleReply"
+                        :count="awaitingCount"
+                        tone="warning"
+                        :sr-label="
+                            plural(
+                                awaitingCount,
+                                'conversación espera respuesta',
+                                'conversaciones esperan respuesta',
+                            )
+                        "
+                        title="Solo las conversaciones donde el cliente escribió al último y nadie le ha respondido"
+                        data-inbox-awaiting
+                        @toggle="toggleAwaiting"
+                    />
+                </template>
+            </ActiveFilters>
 
             <AcceptBlockNotice @select="(id) => emit('select', id)" />
         </header>
 
         <div
-            class="min-h-0 flex-1 overflow-y-auto"
+            class="relative min-h-0 flex-1 overflow-y-auto"
             :aria-busy="loading"
             @scroll.passive="onScroll"
         >
-            <ul
+            <div
+                v-if="filtering && conversations.data.length > 0"
+                class="sticky top-0 z-10 -mb-0.5 pane-progress h-0.5"
+                aria-hidden="true"
+                data-inbox-progress
+            />
+            <TransitionGroup
                 v-if="conversations.data.length > 0"
                 ref="listElement"
-                class="divide-y motion-safe:transition-opacity"
+                tag="ul"
+                :name="rowMotion"
+                class="relative divide-y motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
                 :class="[
-                    loading && 'opacity-60',
+                    filtering && 'opacity-60',
                     firstPaint && 'reveal-stagger',
                 ]"
                 @keydown="onListKeydown"
@@ -1002,6 +1194,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 <li
                     v-for="(conversation, position) in conversations.data"
                     :key="conversation.id"
+                    class="bg-background"
                     :data-tour="position === 0 ? 'inbox.item' : undefined"
                 >
                     <InboxListItem
@@ -1017,6 +1210,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         :show-channel="showChannels"
                         :accepting-id="acceptingId"
                         :can-edit-alias="canEditAlias"
+                        :highlight="highlight"
                         @select="(id) => emit('select', id)"
                         @accept="(id) => emit('accept', id)"
                         @mark-read="(id) => emit('markRead', id)"
@@ -1025,7 +1219,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         @preview="(row) => emit('preview', row)"
                     />
                 </li>
-            </ul>
+            </TransitionGroup>
 
             <div
                 v-else-if="loading"
@@ -1059,36 +1253,28 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 </div>
             </div>
 
-            <EmptyState
+            <FilteredEmpty
                 v-else
-                class="m-3 border-none"
+                :narrowed="isNarrowed"
+                narrowed-title="No hay conversaciones con estos filtros"
+                :narrowed-description="
+                    search.trim() !== ''
+                        ? 'Revisa cómo escribiste la búsqueda, busca en los mensajes o limpia los filtros para ver toda tu bandeja.'
+                        : 'Quita algún filtro o límpialos para ver toda tu bandeja.'
+                "
                 :icon="Inbox"
-                :title="
-                    isNarrowed
-                        ? 'Ninguna conversación coincide'
-                        : pendingActive
-                          ? 'No hay pendientes por aceptar'
-                          : generalActive && isGeneral
-                            ? 'Tu bandeja está al día'
-                            : 'No hay conversaciones aquí'
-                "
-                :description="
-                    isNarrowed
-                        ? 'Prueba con otra búsqueda, cambia los filtros o límpialos para ver toda tu bandeja.'
-                        : isGeneral && (generalActive || pendingActive)
-                          ? 'Aquí aparecen las pendientes que puedes aceptar y las que atiendes. Si tus departamentos distribuyen las conversaciones de forma manual, no tienes pendientes por aceptar: un supervisor te las asigna y aparecerán aquí al recibirlas.'
-                          : inbox.scope === 'global'
-                            ? 'Las conversaciones aparecen cuando un cliente escribe a cualquiera de las conexiones de la organización, sin importar quién las atienda.'
-                            : 'Las conversaciones aparecen cuando un cliente escribe a una de tus conexiones. Solo ves las de tus departamentos o las asignadas a ti, según tu rol.'
-                "
+                :title="emptyCopy.title"
+                :description="emptyCopy.description"
+                @clear="clearFilters"
             >
                 <Button
                     v-if="hasFilters"
                     variant="outline"
+                    size="sm"
                     @click="clearFilters"
-                    >Limpiar filtros</Button
+                    >Volver a la bandeja</Button
                 >
-            </EmptyState>
+            </FilteredEmpty>
 
             <div
                 v-if="conversations.has_more"
@@ -1100,7 +1286,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     class="rounded-full"
                     :disabled="loading"
                     @click="emit('loadMore')"
-                    :loading="loading"
+                    :loading="loadingMore"
                 >
                     Cargar más conversaciones
                 </Button>

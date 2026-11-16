@@ -23,6 +23,7 @@ import {
     noAcceptBlock,
 } from '@/components/conversations/acceptBlock';
 import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
+import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
@@ -37,6 +38,8 @@ import {
     statusLabel,
 } from '@/components/conversations/messageFormat';
 import DepartmentTag from '@/components/DepartmentTag.vue';
+import CountBadge from '@/components/filters/CountBadge.vue';
+import HighlightMatch from '@/components/filters/HighlightMatch.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -96,8 +99,11 @@ const props = withDefaults(
         acceptingId: number | null;
         /** The row menu offers "Asignar alias personal". */
         canEditAlias?: boolean;
+        /** Applied contact search: its words are marked in the name. */
+        highlight?: string;
     }>(),
     {
+        highlight: '',
         showOperational: false,
         showAssignee: false,
         showChannel: false,
@@ -181,6 +187,12 @@ const preview = computed(() =>
         : null,
 );
 const pending = computed(() => props.conversation.status === 'pending');
+/* Closed as «Solicitud completada»: its badge replaces «Cerrada». */
+const completed = computed(
+    () =>
+        props.conversation.status === 'closed' &&
+        Boolean(props.conversation.completed_at),
+);
 const visibleTags = computed(() => (props.conversation.tags ?? []).slice(0, 2));
 const hiddenTags = computed(
     () => (props.conversation.tags?.length ?? 0) - visibleTags.value.length,
@@ -209,7 +221,12 @@ const label = computed(() => {
     // Whoever may accept it hears it first: the status is part of the prefix.
     const parts = canAccept.value
         ? [`Pendiente de aceptar: ${displayName.value}`]
-        : [displayName.value, props.conversation.status_label];
+        : [
+              displayName.value,
+              completed.value
+                  ? 'cerrada como solicitud completada'
+                  : props.conversation.status_label,
+          ];
 
     if (hasAlias.value && contact.value.name) {
         parts.push(`alias personal de ${contact.value.name}`);
@@ -324,8 +341,10 @@ const label = computed(() => {
                                         : 'text-foreground/90'
                                 "
                                 :title="displayName"
-                                >{{ displayName }}</span
-                            >
+                                ><HighlightMatch
+                                    :text="displayName"
+                                    :query="highlight"
+                            /></span>
                             <span
                                 v-if="hasAlias"
                                 class="inline-flex shrink-0 items-center gap-0.5 rounded border px-1 text-xs leading-4 text-muted-foreground"
@@ -390,12 +409,14 @@ const label = computed(() => {
                             class="size-3.5 shrink-0 text-warning"
                             aria-hidden="true"
                         />
-                        <span
+                        <!-- Bumps and sends one ring out when a message arrives. -->
+                        <CountBadge
                             v-if="unread > 0"
-                            class="min-w-5 shrink-0 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground tabular-nums"
-                            aria-hidden="true"
-                            >{{ unread > 99 ? '99+' : unread }}</span
-                        >
+                            :value="unread"
+                            tone="primary"
+                            halo
+                            class="h-5 min-w-5 text-xs"
+                        />
                     </span>
 
                     <!-- Response objective (SLA) of the request in course. -->
@@ -427,6 +448,10 @@ const label = computed(() => {
                             />
                             {{ conversation.status_label }}
                         </span>
+                        <CompletedBadge
+                            v-else-if="completed"
+                            :at="conversation.completed_at"
+                        />
                         <ConversationStatusBadge
                             v-else-if="
                                 showOperational ||

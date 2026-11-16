@@ -8,6 +8,7 @@ use App\Models\PushSubscription;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Inertia\Inertia;
 
 /**
@@ -18,7 +19,11 @@ use Inertia\Inertia;
  */
 class PushSubscriptionController extends Controller
 {
-    public function store(StorePushSubscriptionRequest $request): RedirectResponse
+    /**
+     * From the preferences page (an Inertia visit with a toast), or silently
+     * from any page that subscribed this browser on its own (JSON, 204).
+     */
+    public function store(StorePushSubscriptionRequest $request): RedirectResponse|Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -41,6 +46,10 @@ class PushSubscriptionController extends Controller
 
         if ($stale->isNotEmpty()) {
             PushSubscription::query()->whereKey($stale)->delete();
+        }
+
+        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            return response()->noContent();
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Notificaciones del navegador activadas. Te avisaremos aunque la plataforma no esté a la vista.']);

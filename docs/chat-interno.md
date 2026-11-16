@@ -148,7 +148,7 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - **En línea**: punto verde en el avatar (y «En línea» en el encabezado del chat privado y en la información del
   grupo) cuando la persona tiene la aplicación abierta en cualquier página. Es independiente de la disponibilidad: se
   puede estar en línea y «No disponible». Sin conexión en tiempo real no se muestra a nadie en línea.
-- **Filtros** de la lista: Todos, No leídos, Privados, Grupos, Archivados (se recuerda el último en el navegador).
+- **Filtros** de la lista: ver [Filtros de la lista](#filtros-de-la-lista).
 - **Notificaciones**: cada mensaje emite `TeamMessagePosted`; el módulo de notificaciones
   (`App\Listeners\Notifications\NotifyTeamChatMessage`) avisa a los demás participantes activos que no silenciaron el
   hilo. Desde la fase 5.2.1 el aviso se anuncia en la página con remitente y vista previa; ver
@@ -156,6 +156,28 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
   [notificaciones-y-horarios.md](notificaciones-y-horarios.md).
 - **Apariencia del chat** (fase 5.2.1): botón de paleta en el encabezado del hilo; ver
   [Personalización](#personalización-de-colores-fase-521).
+
+## Filtros de la lista
+
+Mismo patrón, componentes (`resources/js/components/filters/*`) y movimiento que la bandeja de conversaciones
+([bandejas-y-asignacion.md §Filtros rápidos](bandejas-y-asignacion.md#filtros-rápidos-de-la-lista-noviembre-2026)):
+
+- **Búsqueda** siempre visible con × para limpiar y atajo «/» o Ctrl+K; Escape limpia; flecha abajo pasa al primer
+  chat y las flechas recorren la lista. Las palabras se marcan en el título de cada chat y en los resultados «En
+  mensajes».
+- **Pestañas de alcance** (`filter`): Todos, Privados, Grupos, Archivados. Un segundo clic vuelve a «Todos».
+- **Interruptores combinables** con su contador dentro del alcance (`threadCounts`): «No leídos» (`unread=1`) y
+  «Menciones» (`mentions=1`: grupos con mensajes sin leer que te mencionan; se oculta en «Privados»). Los valores
+  antiguos `filter=unread` y `filter=mentions` siguen funcionando: el servidor los normaliza al interruptor sobre
+  «Todos» (`TeamThreadListQuery::normalize()`).
+- Las menciones se leen de `team_messages.metadata->mentions` solo entre los mensajes sin leer de la persona
+  (`TeamUnreadCounter::mentionsPerThread()`, `JSON_CONTAINS`).
+- La URL guarda los filtros y el navegador recuerda la última combinación (`team-chat.filters`, con lectura del
+  antiguo `team-chat.filter`); solo se restaura en una visita sin filtros en la URL.
+- Lista vacía por filtros: «No hay chats con estos filtros» (o «Estás al día» / «Nadie te ha mencionado») con
+  «Limpiar filtros». Cambios pequeños en vivo animan las filas; un filtro nuevo no.
+
+Pruebas: `tests/Feature/TeamChat/TeamThreadFiltersTest.php`.
 
 ## Adjuntos
 

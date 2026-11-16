@@ -1,14 +1,6 @@
 <script setup lang="ts">
 import { Link, router, useHttp } from '@inertiajs/vue3';
-import {
-    Archive,
-    ArrowDown,
-    ArrowLeft,
-    BellOff,
-    Info,
-    Palette,
-    Upload,
-} from '@lucide/vue';
+import { Archive, ArrowLeft, BellOff, Info, Palette } from '@lucide/vue';
 import {
     useDocumentVisibility,
     useEventListener,
@@ -24,7 +16,15 @@ import {
     ref,
     watch,
 } from 'vue';
+import { arriveClass } from '@/components/chat/bubble';
+import ChatDaySeparator from '@/components/chat/ChatDaySeparator.vue';
+import ChatDivider from '@/components/chat/ChatDivider.vue';
+import ChatDropOverlay from '@/components/chat/ChatDropOverlay.vue';
+import ChatHistoryStart from '@/components/chat/ChatHistoryStart.vue';
+import ChatJumpButton from '@/components/chat/ChatJumpButton.vue';
+import ChatTypingIndicator from '@/components/chat/ChatTypingIndicator.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import ChatAppearanceDialog from '@/components/personalization/ChatAppearanceDialog.vue';
 import MessageBubble from '@/components/team-chat/MessageBubble.vue';
 import MessageComposer from '@/components/team-chat/MessageComposer.vue';
@@ -39,7 +39,6 @@ import {
 import TeamMediaViewer from '@/components/team-chat/TeamMediaViewer.vue';
 import type { ViewerItem } from '@/components/team-chat/TeamMediaViewer.vue';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useChannel } from '@/composables/useChannel';
 import { useStickToBottom } from '@/composables/useStickToBottom';
 import { useTeamPresence } from '@/composables/useTeamPresence';
@@ -95,14 +94,6 @@ const emit = defineEmits<{
 }>();
 
 /*
- * Background of the history: the sunken canvas with a faint dot grid tinted
- * by the palette, so bubbles read as objects resting on a surface (the same
- * canvas as the customer conversations). Not used with personal colors.
- */
-const CHAT_CANVAS =
-    'bg-surface-sunken bg-[radial-gradient(color-mix(in_oklch,var(--primary)_14%,transparent)_1px,transparent_1.5px)] bg-size-[20px_20px]';
-
-/*
  * The viewer's own chat colors for this thread (PERSONALIZATION): CSS
  * variables on the history only, replaced right after saving without
  * reloading the page. Nobody else's colors ever reach this view.
@@ -138,6 +129,8 @@ const atBottom = ref(true);
 /* Media gets its height on load: keep the end in view while it grows. */
 const { follow } = useStickToBottom(scroller, 80);
 const newBelow = ref(0);
+/* Messages that arrived while the chat was open (they enter animated). */
+const arrived = ref<Set<number>>(new Set());
 const replyTo = ref<TeamMessage | null>(null);
 const highlightedId = ref<number | null>(props.around);
 const toDelete = ref<TeamMessage | null>(null);
@@ -667,6 +660,11 @@ async function loadNewer(): Promise<void> {
                 stopTyping(message.author.id);
             }
         });
+
+        // A few messages at a time arrive animated; a burst just appears.
+        if (fresh.length > 0 && fresh.length <= 3) {
+            arrived.value = new Set(fresh.map((message) => message.id));
+        }
         merge(page.data);
         hasMoreAfter.value = page.has_more_after;
 
@@ -797,6 +795,7 @@ function reloadThread(): void {
 
 function onSent(message: TeamMessage): void {
     replyTo.value = null;
+    arrived.value = new Set([message.id]);
     merge([message]);
     lastReadSent = Math.max(lastReadSent, message.id);
     void scrollToBottom(true);
@@ -1064,7 +1063,7 @@ onBeforeUnmount(() => {
         @drop="onDrop"
     >
         <header
-            class="flex h-14 shrink-0 items-center gap-1 border-b bg-background px-1.5 sm:h-16 sm:gap-2 sm:px-4"
+            class="chat-header relative z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/90 px-1.5 sm:h-16 sm:gap-2 sm:px-4"
         >
             <Button
                 variant="ghost"
@@ -1099,22 +1098,34 @@ onBeforeUnmount(() => {
                             aria-label="Silenciado"
                         />
                     </h2>
-                    <span
-                        class="block truncate text-xs"
-                        :class="
-                            typingLabel && thread.can.post
-                                ? 'font-medium text-primary'
-                                : partnerOnline
-                                  ? 'text-success'
-                                  : 'text-muted-foreground'
-                        "
-                    >
-                        {{
-                            typingLabel && thread.can.post
-                                ? typingLabel
-                                : subtitle
-                        }}
-                    </span>
+                    <Transition name="chat-attach" mode="out-in">
+                        <span
+                            :key="
+                                typingLabel && thread.can.post
+                                    ? 'typing'
+                                    : 'status'
+                            "
+                            class="flex items-center gap-1.5 truncate text-xs"
+                            :class="
+                                typingLabel && thread.can.post
+                                    ? 'font-medium text-primary'
+                                    : partnerOnline
+                                      ? 'text-success'
+                                      : 'text-muted-foreground'
+                            "
+                        >
+                            <span
+                                v-if="!typingLabel && partnerOnline && !isGroup"
+                                class="size-1.5 shrink-0 rounded-full bg-success"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{
+                                typingLabel && thread.can.post
+                                    ? typingLabel
+                                    : subtitle
+                            }}</span>
+                        </span>
+                    </Transition>
                 </span>
             </div>
             <Button
@@ -1172,192 +1183,129 @@ onBeforeUnmount(() => {
                 @scroll.passive="onScroll"
             >
                 <div
-                    v-if="loadingOlder"
-                    class="grid gap-2 px-3 pt-4 sm:px-5"
-                    aria-hidden="true"
+                    class="mx-auto w-full max-w-[64rem] px-3 pt-1 sm:px-6 lg:px-8"
                 >
-                    <Skeleton class="h-9 w-52 rounded-2xl" />
-                    <Skeleton class="h-9 w-72 max-w-[70%] rounded-2xl" />
-                    <Skeleton
-                        class="h-9 w-44 justify-self-end rounded-2xl bg-primary/20"
+                    <ChatHistoryStart
+                        :has-more="hasMoreBefore"
+                        :loading="loadingOlder"
+                        :has-items="messages.length > 0"
+                        :custom="customColors"
+                        @load="loadOlder"
                     />
-                </div>
-                <div v-else-if="hasMoreBefore" class="flex justify-center pt-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="rounded-full"
-                        @click="loadOlder"
-                    >
-                        Cargar mensajes anteriores
-                    </Button>
-                </div>
-                <p
-                    v-else-if="messages.length > 0"
-                    class="px-4 pt-4 text-center text-xs text-muted-foreground"
-                >
-                    <span
-                        :class="
-                            customColors &&
-                            'rounded-full bg-background px-2.5 py-0.5'
-                        "
-                        >Inicio de la conversación</span
-                    >
-                </p>
 
-                <div
-                    v-if="messages.length === 0"
-                    class="mx-3 mt-6 grid w-fit max-w-prose gap-1 rounded-2xl border bg-card px-4 py-3 sm:mx-5"
-                >
-                    <p class="font-display text-base font-semibold">
-                        {{
-                            isGroup
-                                ? 'El grupo está listo'
-                                : `Empieza la conversación con ${thread.title}`
-                        }}
-                    </p>
-                    <p class="text-sm text-pretty text-muted-foreground">
-                        Aún no hay mensajes. Escribe el primero: solo
-                        {{
-                            isGroup
-                                ? 'los participantes del grupo'
-                                : 'ustedes dos'
-                        }}
-                        pueden leerlo.
-                    </p>
-                </div>
-
-                <section
-                    v-for="day in days"
-                    :key="day.key"
-                    :aria-label="day.label"
-                >
                     <div
-                        class="pointer-events-none sticky top-0 z-10 flex justify-center py-2"
+                        v-if="messages.length === 0"
+                        class="mt-4 grid w-fit max-w-prose gap-1 rounded-2xl border bg-card px-4 py-3 shadow-(--shadow-control) motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
                     >
-                        <span
-                            class="inline-block rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border/70 backdrop-blur-sm first-letter:uppercase"
-                        >
-                            {{ day.label }}
-                        </span>
+                        <p class="font-display text-base font-semibold">
+                            {{
+                                isGroup
+                                    ? 'El grupo está listo'
+                                    : `Empieza la conversación con ${thread.title}`
+                            }}
+                        </p>
+                        <p class="text-sm text-pretty text-muted-foreground">
+                            Aún no hay mensajes. Escribe el primero: solo
+                            {{
+                                isGroup
+                                    ? 'los participantes del grupo'
+                                    : 'ustedes dos'
+                            }}
+                            pueden leerlo.
+                        </p>
                     </div>
-                    <template v-for="row in day.rows" :key="row.message.id">
-                        <div
-                            v-if="row.unreadStart"
-                            id="team-chat-unread-marker"
-                            class="flex scroll-mt-12 items-center gap-3 px-3 pt-3 sm:px-5"
-                            role="separator"
+
+                    <section
+                        v-for="day in days"
+                        :key="day.key"
+                        :aria-label="day.label"
+                    >
+                        <ChatDaySeparator
+                            :label="day.label"
+                            data-day-separator
+                        />
+                        <template v-for="row in day.rows" :key="row.message.id">
+                            <ChatDivider
+                                v-if="row.unreadStart"
+                                id="team-chat-unread-marker"
+                                class="scroll-mt-12 pt-3"
+                                label="Mensajes nuevos"
+                                accent
+                                role="separator"
+                            />
+                            <MessageBubble
+                                :class="
+                                    arrived.has(row.message.id) &&
+                                    arriveClass(
+                                        row.message.is_mine ? 'out' : 'in',
+                                    )
+                                "
+                                :message="row.message"
+                                :show-author="row.showAuthor"
+                                :first="row.first"
+                                :last="row.last"
+                                :with-avatar="isGroup"
+                                :highlighted="highlightedId === row.message.id"
+                                :seen="
+                                    row.message.id === lastOwnMessageId &&
+                                    partnerReadUpTo !== null &&
+                                    partnerReadUpTo >= row.message.id
+                                "
+                                :receipt="row.receipt"
+                                :can-reply="thread.can.post"
+                                :reactions="
+                                    thread.can.post ? limits.reactions : []
+                                "
+                                :saving="savingId === row.message.id"
+                                :edit-error="
+                                    editError?.id === row.message.id
+                                        ? editError.message
+                                        : null
+                                "
+                                @react="toggleReaction"
+                                @reply="reply"
+                                @edit="saveEdit"
+                                @delete="toDelete = $event"
+                                @jump="jumpTo"
+                                @view="openViewer"
+                            />
+                        </template>
+                    </section>
+
+                    <div v-if="hasMoreAfter" class="flex justify-center py-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="rounded-full"
+                            :disabled="loadingNewer"
+                            :loading="loadingNewer"
+                            @click="loadNewer"
                         >
-                            <span class="h-px flex-1 bg-primary/40" />
-                            <span
-                                class="rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-semibold text-primary-soft-foreground"
-                            >
-                                Mensajes nuevos
-                            </span>
-                            <span class="h-px flex-1 bg-primary/40" />
-                        </div>
-                        <MessageBubble
-                            :message="row.message"
-                            :show-author="row.showAuthor"
-                            :first="row.first"
-                            :last="row.last"
-                            :with-avatar="isGroup"
-                            :highlighted="highlightedId === row.message.id"
-                            :seen="
-                                row.message.id === lastOwnMessageId &&
-                                partnerReadUpTo !== null &&
-                                partnerReadUpTo >= row.message.id
-                            "
-                            :receipt="row.receipt"
-                            :can-reply="thread.can.post"
-                            :reactions="thread.can.post ? limits.reactions : []"
-                            :saving="savingId === row.message.id"
-                            :edit-error="
-                                editError?.id === row.message.id
-                                    ? editError.message
-                                    : null
-                            "
-                            @react="toggleReaction"
-                            @reply="reply"
-                            @edit="saveEdit"
-                            @delete="toDelete = $event"
-                            @jump="jumpTo"
-                            @view="openViewer"
-                        />
-                    </template>
-                </section>
+                            Cargar mensajes más recientes
+                        </Button>
+                    </div>
 
-                <div v-if="hasMoreAfter" class="flex justify-center py-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="rounded-full"
-                        :disabled="loadingNewer"
-                        :loading="loadingNewer"
-                        @click="loadNewer"
-                    >
-                        Cargar mensajes más recientes
-                    </Button>
-                </div>
-
-                <!-- Someone is writing: the place where their message will land. -->
-                <div
-                    v-if="typingLabel && thread.can.post"
-                    class="flex items-center gap-2 px-3 pt-2.5 sm:px-5"
-                    aria-live="polite"
-                    data-typing
-                >
-                    <span
-                        class="flex h-8 items-center gap-1 rounded-[1.15rem] rounded-bl-sm border border-border/80 bg-card px-3"
-                        aria-hidden="true"
-                    >
-                        <span
-                            v-for="dot in 3"
-                            :key="dot"
-                            class="size-1.5 animate-bounce rounded-full bg-muted-foreground/70 motion-reduce:animate-none"
-                            :style="{ animationDelay: `${(dot - 1) * 140}ms` }"
-                        />
-                    </span>
-                    <span
-                        class="truncate text-xs text-muted-foreground"
-                        :class="
-                            customColors &&
-                            'rounded-full bg-background px-2 py-0.5'
-                        "
-                        >{{ typingLabel }}</span
-                    >
+                    <!-- Someone is writing: the place where their message will land. -->
+                    <ChatTypingIndicator
+                        v-if="typingLabel && thread.can.post"
+                        class="pt-2.5"
+                        :label="typingLabel"
+                        :custom="customColors"
+                        aria-live="polite"
+                        data-typing
+                    />
                 </div>
             </div>
 
-            <button
-                v-if="!atBottom"
-                type="button"
-                class="absolute right-4 bottom-3 inline-flex h-10 items-center gap-1.5 rounded-full border bg-background px-3 text-sm font-medium text-foreground shadow-elevated transition-[scale,background-color] duration-(--duration-fast) outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/45 active:scale-95"
-                :class="newBelow === 0 && 'w-10 justify-center px-0'"
-                :aria-label="
-                    newBelow > 0
-                        ? `${newBelow} ${newBelow === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}, ir al final`
-                        : 'Ir al final'
-                "
-                :title="
-                    newBelow > 0 ? 'Ver los mensajes nuevos' : 'Ir al final'
-                "
+            <ChatJumpButton
+                :visible="!atBottom"
+                :count="newBelow"
                 @click="
                     hasMoreAfter
                         ? router.visit(threadUrl(null))
                         : scrollToBottom(true)
                 "
-            >
-                <span
-                    v-if="newBelow > 0"
-                    class="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground tabular-nums"
-                    >{{ newBelow > 99 ? '99+' : newBelow }}</span
-                >
-                <span v-if="newBelow > 0">{{
-                    newBelow === 1 ? 'nuevo' : 'nuevos'
-                }}</span>
-                <ArrowDown class="size-4" aria-hidden="true" />
-            </button>
+            />
         </div>
 
         <p
@@ -1396,37 +1344,22 @@ onBeforeUnmount(() => {
         </p>
 
         <!-- The whole pane is the drop zone. -->
-        <div
-            v-if="dropping"
-            class="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-background/80 p-4 backdrop-blur-[2px]"
+        <ChatDropOverlay
+            :visible="dropping"
+            :allowed="thread.can.post"
+            :title="
+                thread.can.post
+                    ? 'Suelta los archivos para adjuntarlos'
+                    : 'Este chat ya no acepta archivos'
+            "
+            :description="
+                thread.can.post
+                    ? `Se agregan al mensaje que estás escribiendo; tú decides cuándo enviarlo. ${dropHint}`
+                    : (thread.post_blocked_reason ??
+                      'No puedes enviar mensajes en este chat.')
+            "
             data-team-dropzone
-        >
-            <div
-                class="grid w-full max-w-md justify-items-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center"
-                :class="
-                    thread.can.post
-                        ? 'border-primary bg-primary-soft text-primary-soft-foreground'
-                        : 'border-border-strong bg-muted text-muted-foreground'
-                "
-            >
-                <Upload class="size-8" aria-hidden="true" />
-                <p class="font-display text-lg font-semibold">
-                    {{
-                        thread.can.post
-                            ? 'Suelta los archivos para adjuntarlos'
-                            : 'Este chat ya no acepta archivos'
-                    }}
-                </p>
-                <p class="text-sm text-pretty">
-                    {{
-                        thread.can.post
-                            ? `Se agregan al mensaje que estás escribiendo; tú decides cuándo enviarlo. ${dropHint}`
-                            : (thread.post_blocked_reason ??
-                              'No puedes enviar mensajes en este chat.')
-                    }}
-                </p>
-            </div>
-        </div>
+        />
 
         <TeamMediaViewer
             v-model:open="viewerOpen"

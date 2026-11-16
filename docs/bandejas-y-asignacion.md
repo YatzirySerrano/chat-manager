@@ -96,6 +96,48 @@ Ver también lo nuevo de las alertas: ver una conversación nunca hace sonar un 
   `unreadCount` sigue siendo una consulta aparte porque depende de la vista y el estado actuales (no se puede
   derivar de `counts`, que los ignora).
 
+### Filtros rápidos de la lista (noviembre 2026)
+
+La cabecera de la lista está pensada para quien contesta todo el día y debe acotar en uno o dos clics. El mismo
+patrón y los mismos componentes (`resources/js/components/filters/*`) se usan en el chat interno
+([chat-interno.md](chat-interno.md#filtros-de-la-lista)).
+
+1. **Búsqueda siempre visible** (`FilterSearch`): resultados al escribir (300 ms), botón × para limpiar, atajo **«/»
+   o Ctrl+K (⌘K)** desde cualquier parte de la página salvo mientras se escribe en otro campo; Escape limpia y un
+   segundo Escape sale; flecha abajo pasa a la primera fila (y flecha arriba desde la primera vuelve a la búsqueda).
+   Mientras hay texto aparece «Buscar en: Contacto | Mensajes» (`search_in`). Las palabras buscadas se marcan en el
+   nombre de cada fila.
+2. **Pestañas de vista** (`FilterTabs`, grupo de botones con `aria-pressed`, flechas/Inicio/Fin): la vista base
+   («Bandeja» para quien atiende, «Todas» para quien supervisa), «Pendientes» (tono de atención y halo cuando sube el
+   número), «En atención» (solo bandejas de equipo, `view=all&status=open`), «Mías» (`view=mine`) y «Cerradas»
+   (con permiso de historial). Cada una es un par vista + estado que el servidor ya ofrecía; un segundo clic en la
+   pestaña elegida vuelve a la vista base. Los números salen de `counts`.
+3. **Interruptores que se combinan con la pestaña** (`FilterToggle`): «Sin leer» (`unread=1`, `unreadCount`) y
+   **«Esperando respuesta»** (`awaiting=1`, nuevo prop `awaitingCount`): el cliente escribió al último y nadie le ha
+   respondido, la misma regla que el punto `awaiting_reply` de la fila (`last_inbound_at` posterior a
+   `last_outbound_at`, nunca cerradas). En «Cerradas» se sustituyen por **«Solo completadas»** (`status=completed`).
+4. **«Filtros»** (panel con borrador y «Aplicar», sin cambios) guarda el resto: departamento, responsable, conexión,
+   canal, categoría, preparación, etiquetas y orden; también «Solo no leídas» y «Solo las que esperan respuesta». Lo
+   aplicado que no se ve en pestañas ni interruptores aparece como píldora removible junto a «Limpiar filtros».
+
+**Solicitudes completadas.** `status=completed` lista las cerradas con `conversations.completed_at` (cerradas como
+«Solicitud completada»); exige el mismo permiso que `closed` y sin él vuelve a las activas. La fila de una
+conversación completada muestra la insignia verde «Completada» (`CompletedBadge.vue`) en lugar de «Cerrada». El
+reporte de conversaciones describe ambos filtros nuevos.
+
+**Estado en la URL.** Todos los filtros viven en la consulta (visitas `replace`), así que recargar los conserva. A
+propósito **no** se restauran solos los últimos filtros en una visita limpia: quien abre la bandeja debe ver siempre
+sus pendientes; el servidor ya recuerda la lista para volver de una conversación (`rememberedQuery()`).
+
+**Movimiento.** Solo cambios pequeños en vivo animan las filas (`TransitionGroup` + `useRowMotion`: entran desde
+arriba, salen hacia la izquierda, las demás se deslizan); un filtro nuevo, otra página o listas de más de 150 filas
+cambian sin animación. El contador sin leer de una fila rebota y emite un halo una vez al subir. Al cambiar filtros la
+lista se atenúa con una barra de progreso fina en lugar de vaciarse (sin salto de diseño); sin filas, esqueletos. Todo
+usa `transform`/`opacity` y la regla global de `prefers-reduced-motion` lo anula. Lista vacía por filtros: «No hay
+conversaciones con estos filtros» con «Limpiar filtros».
+
+Pruebas: `tests/Feature/Conversations/InboxQuickFiltersTest.php`.
+
 ### Filtro por etiquetas
 
 - `tags[]` (hasta 10 ids de etiquetas de **conversación**) y `tag_match`: `any` (por defecto, «Con al menos una de

@@ -44,9 +44,11 @@ Código: `app/Notifications/*` (tipos, canal `Channels\InAppChannel`, `Notificat
 | `sla.breach`               | Urgente                  | Una solicitud supera su plazo de respuesta, y sus recordatorios acotados (`sla_alerts.reminder_minutes` / `reminder_limit`)                                                                                              | Igual, con `sla_alerts.agent_breach` y `sla_alerts.supervisor_breach`; nunca el agente dos veces                                                                                                                         | Recibo por ciclo, etapa y número de recordatorio; el agente: una por ciclo (pliega recordatorios); supervisión: una por departamento. Resuelta, deja de pedir acción                                           |
 
 **Valores predeterminados** (mientras el usuario no guarde una preferencia para el tipo; una preferencia guardada
-siempre manda): en la app sí, navegador no, y sonido sí para los tipos que se anuncian en vivo
-(`NotificationKind::announcesInPage()`): todos los urgentes, `conversation.message` y, desde la fase 5.2.1,
-`team-chat.message`. Estos mismos tipos muestran un
+siempre manda): en la app sí, y sonido **y navegador** (aviso del sistema operativo, p. ej. Windows) sí para los
+tipos que se anuncian en vivo (`NotificationKind::announcesInPage()`): todos los urgentes, `conversation.message` y,
+desde la fase 5.2.1, `team-chat.message`. Desde el 2026-11-16 «Navegador» viene activado para estos tipos; la
+migración `2026_11_16_120000_enable_browser_notifications_for_announced_kinds` lo activó también en las
+preferencias ya guardadas de esos tipos. Estos mismos tipos muestran un
 aviso (_toast_) en la parte inferior de la página al llegar (campo `toast` de cada elemento de
 `notifications.index`, falso si el usuario ya no tiene acceso al registro). `conversation.message` y
 `team-chat.message` siguen siendo informativas: no cuentan como urgentes en la campana ni en Web Push. Detalle de los
@@ -117,13 +119,20 @@ omiten (como mucho un _timeout_ por trabajo) y la notificación nunca se pierde 
   actualización), enlace a la pantalla del registro y a las preferencias.
 - **Preferencias** en _Mi cuenta › Notificaciones_ (`/settings/notifications`): por tipo, en la app, sonido y
   navegador. Solo se listan los tipos que pueden afectar al usuario por sus permisos actuales.
-- **Navegador**: el permiso de notificaciones del sistema solo se solicita al pulsar «Permitir en este navegador».
-  Se muestran únicamente cuando la pestaña no está visible; con la pestaña visible, los tipos que se anuncian en vivo
-  (urgentes, mensajes del cliente y mensajes del chat interno) aparecen como aviso dentro de la página. Si ese navegador tiene una suscripción Web Push activa, la página no muestra su propio aviso
-  del sistema (`useNotificationCenter`, `showUnlessPushed`): el aviso lo da el _service worker_, así que no se duplica
-  pestaña + push. El sonido es un tono generado con Web Audio (sin archivos).
-- **Notificaciones push**: en la misma página, «Activar en este navegador» y la lista de dispositivos suscritos
-  (ver 1.8).
+- **Navegador (avisos de Windows), sin configurar nada**: el permiso del sistema se pide **una sola vez**, con el
+  primer clic o tecla en la plataforma (`askNotificationPermissionOnFirstGesture`; los navegadores solo muestran la
+  pregunta tras un gesto). El navegador recuerda la respuesta: tras «Permitir» no se vuelve a preguntar. Con el
+  permiso concedido, cada página con sesión suscribe ese navegador a Web Push por su cuenta
+  (`ensurePushSubscription`, `POST` JSON silencioso a `push-subscriptions.store`, 204) usando la clave pública del
+  prop compartido `webPushKey`; al cerrar sesión se da de baja y al volver a entrar se suscribe de nuevo.
+  Cada mensaje nuevo genera su propio aviso del sistema cuando la persona **no está mirando la plataforma** (pestaña
+  oculta, ventana minimizada o sin foco); con la plataforma al frente aparece como _toast_ dentro de la página.
+  El aviso se muestra con el _service worker_ (`registration.showNotification`, _tag_ `chat-manager-{id}`,
+  `renotify: true`), así un mensaje nuevo en la misma conversación vuelve a avisar en lugar de quedarse callado. La
+  página y el push usan el mismo _tag_ y la misma versión (`updated_at|occurrences`): el que llega primero lo
+  muestra y el otro lo omite, sin duplicados ni huecos. El sonido es un tono generado con Web Audio (sin archivos).
+- **Notificaciones push**: en la misma página, «Activar en este navegador» (sigue disponible a mano) y la lista de
+  dispositivos suscritos (ver 1.8).
 - Si la notificación es de la conversación que el usuario tiene abierta **en una pestaña visible y con foco**, no
   suena ni avisa: se marca leída. Si la pestaña está oculta o la ventana sin foco, avisa con normalidad y se marca
   leída al volver a ella. Lo mismo vale para el hilo interno abierto (fase 5.2.1) y, además, para un hilo que el
@@ -187,16 +196,19 @@ urgentes, `normal` el resto) y `Topic: notifications` (el servicio push sustituy
 1. `InAppChannel` guarda la notificación y emite `NotificationSignal` después del commit (sin cambios en el canal ni
    en su transacción). El listener `QueueWebPush` comprueba que haya claves VAPID, que el usuario tenga
    suscripciones, que siga activo y que tenga «Navegador» activado para ese tipo.
-2. Límite por usuario: como máximo un push cada `WEBPUSH_THROTTLE_SECONDS` (60 s) con `Cache::add` atómico. Una ráfaga
-   o una notificación agregada despierta cada navegador una sola vez.
+2. Límite por usuario: como máximo un push cada `WEBPUSH_THROTTLE_SECONDS` (2 s; antes 60 s) con `Cache::add`
+   atómico. Cada mensaje despierta el navegador; solo se pliegan los eventos del mismo instante.
 3. Un trabajo `App\Jobs\SendWebPush` por suscripción en la cola `notifications` (nunca en las críticas), con
    _timeout_ de `WEBPUSH_TIMEOUT` (5 s) y sin seguir redirecciones. 2xx actualiza `updated_at`; 404/410 borra la
    suscripción; 429/5xx o error de conexión se reintentan hasta 3 veces (respetando `Retry-After` hasta 5 min) y
    después se descartan con un aviso en el log; otros 4xx (claves VAPID incorrectas) se registran sin reintento. El
    log nunca incluye el endpoint.
-4. El _service worker_ (`public/sw.js`, alcance `/`) recibe el push y pide `GET /notifications/summary` al mismo
-   origen con la cookie de sesión del usuario. Muestra un texto genérico («Tienes 3 notificaciones sin leer (1
-   urgente).») con _tag_ único `chat-manager-push` y `renotify: false`. Siempre muestra una notificación (Safari en iOS revoca
+4. El _service worker_ (`public/sw.js`, alcance `/`) recibe el push y pide `GET /notifications?unread=1` al mismo
+   origen con la cookie de sesión del usuario. Muestra la notificación sin leer más reciente con el mismo título y
+   resumen seguro que la campana (las del chat interno sin vista previa), _tag_ `chat-manager-{id}` y
+   `renotify: true`; si la página ya mostró esa misma versión, no la repite. Sin sesión o sin datos usa el texto
+   genérico («Tienes 3 notificaciones sin leer (1 urgente).», _tag_ `chat-manager-push`). Con una ventana de la
+   plataforma enfocada solo muestra el aviso genérico silencioso. Siempre muestra una notificación (Safari en iOS revoca
    las suscripciones cuyos push no muestran nada); si hay una ventana de la plataforma visible y enfocada, es
    silenciosa y se cierra a los 4 s. Si la sesión ya no es válida (401), muestra «Tienes notificaciones nuevas. Inicia
    sesión para verlas.», sin datos. Al pulsarla enfoca una ventana que ya muestre su URL (`/dashboard`), lleva ahí una

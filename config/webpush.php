@@ -33,11 +33,12 @@ return [
     'ttl' => (int) env('WEBPUSH_TTL', 3600),
 
     /*
-    | At most one push per user within this many seconds: a burst of
-    | notifications wakes each browser once, and it then shows the current
-    | unread counter.
+    | At most one push per user within this many seconds. Short on purpose:
+    | every message should reach the desktop as its own system notification;
+    | this only folds the same instant (several recipients rows, a retried
+    | job) into one wake-up. The service worker shows the newest unread one.
     */
-    'throttle_seconds' => (int) env('WEBPUSH_THROTTLE_SECONDS', 60),
+    'throttle_seconds' => (int) env('WEBPUSH_THROTTLE_SECONDS', 2),
 
     /*
     | Short timeout of each request to a push service (seconds).

@@ -18,6 +18,7 @@ import { toast } from 'vue-sonner';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
 import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
+import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
@@ -194,7 +195,7 @@ function safeUrl(url: string | null): string | null {
         aria-label="Información del cliente y de la conversación"
     >
         <header
-            class="flex items-center justify-between gap-2 border-b px-4 py-3"
+            class="flex min-h-14 items-center justify-between gap-2 border-b px-4 py-2 sm:min-h-16"
         >
             <h2 class="font-display text-lg font-semibold">Detalles</h2>
             <Button
@@ -209,11 +210,13 @@ function safeUrl(url: string | null): string | null {
             </Button>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-y-auto">
-            <section class="grid grid-cols-1 gap-3 border-b px-4 pt-4 pb-5">
+        <div class="min-h-0 flex-1 reveal-stagger overflow-y-auto">
+            <section
+                class="grid grid-cols-1 gap-3 border-b bg-linear-to-b from-primary-soft/45 to-transparent px-4 pt-5 pb-5"
+            >
                 <div class="flex items-start gap-3">
                     <span
-                        class="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary-soft font-display text-base font-semibold text-primary-soft-foreground"
+                        class="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary-soft font-display text-lg font-semibold text-primary-soft-foreground shadow-(--shadow-control) ring-4 ring-background"
                         aria-hidden="true"
                     >
                         <template v-if="initials">{{ initials }}</template>
@@ -433,12 +436,33 @@ function safeUrl(url: string | null): string | null {
                     class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2"
                 >
                     <dt class="text-xs text-muted-foreground">Estado</dt>
-                    <dd>
+                    <dd class="flex flex-wrap items-center gap-1.5">
                         <ConversationStatusBadge
                             :status="conversation.status"
                             :label="conversation.status_label"
                         />
+                        <CompletedBadge
+                            v-if="
+                                conversation.status === 'closed' &&
+                                conversation.completed_at
+                            "
+                            class="shrink-0"
+                            :at="conversation.completed_at"
+                        />
                     </dd>
+                    <template
+                        v-if="
+                            conversation.status === 'closed' &&
+                            conversation.completed_at
+                        "
+                    >
+                        <dt class="text-xs text-muted-foreground">
+                            Completada
+                        </dt>
+                        <dd class="text-success">
+                            {{ formatDateTime(conversation.completed_at) }}
+                        </dd>
+                    </template>
                     <dt class="text-xs text-muted-foreground">Departamento</dt>
                     <dd class="min-w-0">
                         <DepartmentTag

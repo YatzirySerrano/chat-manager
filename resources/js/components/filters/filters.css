@@ -1,0 +1,130 @@
+/*
+  Motion of the list filters, shared by the inbox and the internal chat.
+  Every effect answers something that changed (a count went up, a row
+  arrived or left, a pill was added) and uses only transform and opacity,
+  so no layout is recomputed while it runs. The global reduced-motion rule
+  (resources/css/app.css) shortens all of it to nothing.
+*/
+
+/* A counter that went up: one short bump, never a loop. */
+@keyframes filter-count-bump {
+    0% {
+        transform: scale(1);
+    }
+    35% {
+        transform: scale(1.28);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* A halo that leaves the unread badge once when a new message arrives. */
+@keyframes filter-count-halo {
+    0% {
+        opacity: 0.55;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.9);
+    }
+}
+
+.filter-count-bump {
+    animation: filter-count-bump 420ms var(--ease-spring, ease-out);
+}
+
+.filter-count-halo {
+    isolation: isolate;
+}
+
+/* The badge's own color, behind its number (z-index inside the badge). */
+.filter-count-halo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: inherit;
+    pointer-events: none;
+    animation: filter-count-halo 900ms var(--ease-out-quint, ease-out) forwards;
+}
+
+/* Rows of the lists (TransitionGroup name="filter-row"). */
+.filter-row-move {
+    transition: transform var(--duration-panel, 280ms)
+        var(--ease-out-quint, ease-out);
+}
+
+.filter-row-enter-active {
+    transition:
+        opacity var(--duration-base, 200ms) var(--ease-standard, ease-out),
+        transform var(--duration-panel, 280ms) var(--ease-out-quint, ease-out);
+}
+
+.filter-row-leave-active {
+    transition:
+        opacity var(--duration-fast, 150ms) var(--ease-standard, ease-in),
+        transform var(--duration-fast, 150ms) var(--ease-standard, ease-in);
+    /* Out of the flow while it fades, so the others glide up at once. */
+    position: absolute;
+    inset-inline: 0;
+}
+
+.filter-row-enter-from {
+    opacity: 0;
+    transform: translateY(-6px);
+}
+
+.filter-row-leave-to {
+    opacity: 0;
+    transform: translateX(-12px);
+}
+
+/* Removable pills (TransitionGroup name="filter-pill"). */
+.filter-pill-enter-active,
+.filter-pill-leave-active {
+    transition:
+        opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out),
+        transform var(--duration-base, 200ms) var(--ease-spring, ease-out);
+}
+
+.filter-pill-leave-active {
+    position: absolute;
+}
+
+.filter-pill-enter-from,
+.filter-pill-leave-to {
+    opacity: 0;
+    transform: scale(0.85);
+}
+
+.filter-pill-move {
+    transition: transform var(--duration-base, 200ms)
+        var(--ease-out-quint, ease-out);
+}
+
+/* The thumb of the tabs glides to the tab chosen. */
+.filter-tabs-thumb {
+    transition:
+        transform var(--duration-panel, 280ms) var(--ease-out-quint, ease-out),
+        width var(--duration-panel, 280ms) var(--ease-out-quint, ease-out);
+}
+
+/* The tabs scroll sideways on narrow lists without a visible bar. */
+.filter-tabs-scroll {
+    scrollbar-width: none;
+}
+
+.filter-tabs-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* Matched text in a row title. */
+.filter-mark {
+    border-radius: 0.2em;
+    background: color-mix(in oklch, var(--warning) 30%, transparent);
+    color: inherit;
+    padding-inline: 0.05em;
+}

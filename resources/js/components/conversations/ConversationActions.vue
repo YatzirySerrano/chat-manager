@@ -2,6 +2,7 @@
 import { router, useHttp } from '@inertiajs/vue3';
 import {
     ArrowLeftRight,
+    BadgeCheck,
     CircleCheck,
     CircleHelp,
     EllipsisVertical,
@@ -32,6 +33,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -179,19 +181,27 @@ const reasonCopy = computed<
         label: 'Motivo',
     },
     close: {
-        title: 'Cerrar conversación',
+        title: closeAsCompleted.value
+            ? 'Solicitud completada'
+            : 'Cerrar conversación',
         description: `La atención termina y su historial se conserva. ${closeEffect.value}`,
-        confirm: 'Cerrar conversación',
+        confirm: closeAsCompleted.value
+            ? 'Completar y cerrar'
+            : 'Cerrar conversación',
         label: 'Motivo de cierre',
     },
 }));
 
-function openReasonDialog(operation: Operation): void {
+/** The close dialog opened from «Solicitud completada» (box ticked). */
+const closeAsCompleted = ref(false);
+
+function openReasonDialog(operation: Operation, completed = false): void {
     errors.value = {};
+    closeAsCompleted.value = completed;
     reasonDialog.value = operation;
 }
 
-function confirmReason(reason: string): void {
+function confirmReason(reason: string, completed = false): void {
     const operation = reasonDialog.value;
 
     if (operation === null) {
@@ -203,7 +213,11 @@ function confirmReason(reason: string): void {
         close: close.url(id.value),
     };
 
-    operate(urls[operation], { reason }, () => (reasonDialog.value = null));
+    operate(
+        urls[operation],
+        operation === 'close' ? { reason, completed } : { reason },
+        () => (reasonDialog.value = null),
+    );
 }
 
 const routeDialog = ref<'assign' | 'transfer' | null>(null);
@@ -421,6 +435,12 @@ const secondary = computed<Action[]>(() => {
 
     if (can.value.close) {
         actions.push({
+            key: 'complete',
+            label: 'Solicitud completada',
+            icon: BadgeCheck,
+            run: () => openReasonDialog('close', true),
+        });
+        actions.push({
             key: 'close',
             label: 'Cerrar conversación',
             icon: XCircle,
@@ -479,18 +499,41 @@ const secondary = computed<Action[]>(() => {
                     <EllipsisVertical aria-hidden="true" />
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-56">
-                <DropdownMenuItem
-                    v-for="action in secondary"
+            <DropdownMenuContent align="end" class="w-60">
+                <!--
+                    Three groups: moving the request (assign, transfer,
+                    readiness, release), ending it (completed / closed) and
+                    erasing it for good.
+                -->
+                <template
+                    v-for="(action, index) in secondary"
                     :key="action.key"
-                    :variant="action.destructive ? 'destructive' : 'default'"
-                    class="pointer-coarse:min-h-11"
-                    :data-conversation-action="action.key"
-                    @select="action.run"
                 >
-                    <component :is="action.icon" aria-hidden="true" />
-                    {{ action.label }}
-                </DropdownMenuItem>
+                    <DropdownMenuSeparator
+                        v-if="
+                            index > 0 &&
+                            (action.key === 'complete' ||
+                                (action.key === 'close' &&
+                                    secondary[index - 1]?.key !== 'complete') ||
+                                action.key === 'delete-permanently')
+                        "
+                    />
+                    <DropdownMenuItem
+                        :variant="
+                            action.destructive ? 'destructive' : 'default'
+                        "
+                        class="pointer-coarse:min-h-11"
+                        :class="
+                            action.key === 'complete' &&
+                            'text-success focus:bg-success-soft focus:text-success-soft-foreground [&_svg]:text-success!'
+                        "
+                        :data-conversation-action="action.key"
+                        @select="action.run"
+                    >
+                        <component :is="action.icon" aria-hidden="true" />
+                        {{ action.label }}
+                    </DropdownMenuItem>
+                </template>
             </DropdownMenuContent>
         </DropdownMenu>
 
@@ -506,7 +549,9 @@ const secondary = computed<Action[]>(() => {
             :reason-label="
                 reasonDialog ? reasonCopy[reasonDialog].label : undefined
             "
-            :destructive="reasonDialog === 'close'"
+            :destructive="reasonDialog === 'close' && !closeAsCompleted"
+            :completed-option="reasonDialog === 'close'"
+            :completed-default="closeAsCompleted"
             :processing="processing"
             :error="errors.reason ?? errors.conversation"
             @confirm="confirmReason"

@@ -1,0 +1,220 @@
+/*
+  Shared motion and surfaces of an open chat (customer conversations and the
+  internal chat). Imported by the shared chat building blocks
+  (components/chat/*), so both modules move and look the same. Colors only
+  read the global tokens of resources/css/app.css.
+
+  Everything here answers something that happened (a message arrived, a
+  file is dragged, the reader scrolled away); nothing loops on its own except
+  the «escribiendo…» dots, which only exist while someone types.
+*/
+
+/*
+  A message that arrives while the chat is open grows out of its tail
+  corner: received ones from the bottom left, own ones from the bottom
+  right. Only transform and opacity animate, so long threads stay cheap.
+*/
+.chat-arrive-in,
+.chat-arrive-out {
+    animation: chat-arrive 340ms var(--ease-out-quint) backwards;
+}
+
+.chat-arrive-in {
+    transform-origin: 0% 100%;
+}
+
+.chat-arrive-out {
+    transform-origin: 100% 100%;
+}
+
+@keyframes chat-arrive {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.94);
+    }
+
+    60% {
+        opacity: 1;
+    }
+}
+
+/* «Escribiendo…»: three dots that rise one after another. */
+.chat-typing-dot {
+    animation: chat-typing 1.25s var(--ease-standard) infinite;
+}
+
+.chat-typing-dot:nth-child(2) {
+    animation-delay: 160ms;
+}
+
+.chat-typing-dot:nth-child(3) {
+    animation-delay: 320ms;
+}
+
+@keyframes chat-typing {
+    0%,
+    60%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+
+    30% {
+        transform: translateY(-3px);
+        opacity: 1;
+    }
+}
+
+/* Floating pill («Ir al final», «N nuevos») and small floating layers. */
+.chat-float-enter-active {
+    transition:
+        opacity var(--duration-base) var(--ease-out-quint),
+        transform var(--duration-panel) var(--ease-spring);
+}
+
+.chat-float-leave-active {
+    transition:
+        opacity var(--duration-fast) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+}
+
+.chat-float-enter-from,
+.chat-float-leave-to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+}
+
+/* Something attached to the composer (a quote, a file) slides in above it. */
+.chat-attach-enter-active {
+    transition:
+        opacity var(--duration-base) var(--ease-out-quint),
+        transform var(--duration-panel) var(--ease-out-quint);
+}
+
+.chat-attach-leave-active {
+    transition:
+        opacity var(--duration-fast) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+}
+
+.chat-attach-enter-from,
+.chat-attach-leave-to {
+    opacity: 0;
+    transform: translateY(6px);
+}
+
+/* The drop veil fades in; its card rises a little. */
+.chat-veil-enter-active,
+.chat-veil-leave-active {
+    transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.chat-veil-enter-active [data-veil-card] {
+    transition: transform var(--duration-panel) var(--ease-spring);
+}
+
+.chat-veil-enter-from,
+.chat-veil-leave-to {
+    opacity: 0;
+}
+
+.chat-veil-enter-from [data-veil-card] {
+    transform: scale(0.94);
+}
+
+/*
+  Send button: it lifts when there is something to send and gives a small
+  push when pressed. While disabled it rests flat.
+*/
+.chat-send {
+    transition:
+        background-color var(--duration-base) var(--ease-standard),
+        color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-base) var(--ease-standard),
+        scale var(--duration-fast) var(--ease-standard);
+}
+
+.chat-send[data-ready='true']:hover {
+    box-shadow: var(--shadow-hover);
+}
+
+.chat-send[data-ready='true']:active {
+    scale: 0.92;
+}
+
+.chat-send [data-send-icon] {
+    transition:
+        transform var(--duration-panel) var(--ease-spring),
+        opacity var(--duration-fast) var(--ease-standard);
+}
+
+.chat-send[data-ready='false'] [data-send-icon] {
+    transform: rotate(-12deg) scale(0.92);
+    opacity: 0.75;
+}
+
+/*
+  Quick actions of a bubble (pointer with hover only): hidden until the row
+  is hovered or focused, or one of their menus is open.
+*/
+@media (hover: hover) and (pointer: fine) {
+    .chat-row-actions {
+        opacity: 0;
+        transform: scale(0.92);
+        transition:
+            opacity var(--duration-fast) var(--ease-standard),
+            transform var(--duration-base) var(--ease-out-quint);
+    }
+
+    .chat-row:hover .chat-row-actions,
+    .chat-row:focus-within .chat-row-actions,
+    .chat-row-actions:has([data-state='open']) {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/*
+  The header of an open chat: frosted (with a translucent background set
+  by the component), so the history reads under it.
+*/
+.chat-header {
+    backdrop-filter: saturate(1.4) blur(10px);
+}
+
+/*
+  The composer dock: a soft fade from the history into the composer, so
+  the last message never ends against a hard edge. Its background is set
+  by the component (Tailwind), so a mode can tint it.
+*/
+.chat-dock {
+    position: relative;
+}
+
+.chat-dock::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: 100%;
+    height: 14px;
+    pointer-events: none;
+    background: linear-gradient(
+        to top,
+        color-mix(in oklch, var(--shadow-ink) 6%, transparent),
+        transparent
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chat-arrive-in,
+    .chat-arrive-out,
+    .chat-typing-dot {
+        animation: none;
+    }
+
+    .chat-row-actions,
+    .chat-send,
+    .chat-send [data-send-icon] {
+        transition: none;
+    }
+}

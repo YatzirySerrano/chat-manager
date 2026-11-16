@@ -23,6 +23,18 @@ import {
 import { Link } from '@inertiajs/vue3';
 import { computed, inject } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+    BUBBLE_HOVER,
+    BUBBLE_META,
+    QUOTE_BASE,
+    REACTIONS_ROW,
+    ROW_ACTIONS,
+    ROW_ACTION_BUTTON,
+    bubbleShape,
+    bubbleTone,
+    quoteClasses,
+    reactionChip,
+} from '@/components/chat/bubble';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
@@ -111,12 +123,7 @@ const softBox = computed(() =>
         'border border-current/30',
     ),
 );
-const quoteBox = computed(() =>
-    themed(
-        'border-primary/70 bg-background/55 text-muted-foreground',
-        'border border-current/30 border-l-current',
-    ),
-);
+const quoteBox = computed(() => quoteClasses(customColors.value));
 /*
  * Brought from another system (Whaticket): it has no delivery state here,
  * so it shows neither ticks nor a retry, only where it came from.
@@ -513,17 +520,14 @@ async function copyText(): Promise<void> {
         );
     }
 }
-
-const toolButton =
-    'grid size-7 place-items-center rounded-full border bg-background text-muted-foreground shadow-(--shadow-control) outline-none transition-[color,scale] duration-(--duration-fast) hover:scale-110 hover:text-primary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-9';
 </script>
 
 <template>
     <div
-        class="group flex w-full"
+        class="chat-row group flex w-full"
         :class="[
             outbound ? 'justify-end' : 'justify-start',
-            groupedWithPrevious ? 'mt-0.5' : 'mt-2.5',
+            groupedWithPrevious ? 'mt-0.5' : 'mt-3',
         ]"
         :data-grouped="groupedWithPrevious ? 'true' : undefined"
     >
@@ -537,32 +541,26 @@ const toolButton =
                     bare
                         ? 'px-0 py-0'
                         : [
-                              'rounded-bubble px-2 pt-1.5 pb-1 transition-shadow duration-(--duration-base) ease-(--ease-out-quint) group-hover:shadow-hover',
-                              outbound
-                                  ? [
-                                        groupedWithPrevious && 'rounded-tr-md',
-                                        groupedWithNext
-                                            ? 'rounded-br-md'
-                                            : 'rounded-br-sm',
-                                        customColors
-                                            ? CUSTOM_BUBBLE_CLASSES.sent
-                                            : 'bg-bubble-out text-bubble-out-foreground',
-                                    ]
-                                  : [
-                                        'border border-border-strong/60',
-                                        groupedWithPrevious && 'rounded-tl-md',
-                                        groupedWithNext
-                                            ? 'rounded-bl-md'
-                                            : 'rounded-bl-sm',
-                                        customColors
-                                            ? CUSTOM_BUBBLE_CLASSES.received
-                                            : 'bg-bubble-in text-bubble-in-foreground',
-                                    ],
+                              'px-2 pt-1.5 pb-1',
+                              BUBBLE_HOVER,
+                              bubbleShape({
+                                  side: outbound ? 'out' : 'in',
+                                  joinedAbove: groupedWithPrevious,
+                                  joinedBelow: groupedWithNext,
+                              }),
+                              customColors
+                                  ? outbound
+                                      ? CUSTOM_BUBBLE_CLASSES.sent
+                                      : [
+                                            'border border-border-strong/60',
+                                            CUSTOM_BUBBLE_CLASSES.received,
+                                        ]
+                                  : bubbleTone(outbound ? 'out' : 'in'),
                           ],
                     failed &&
                         (unknownDelivery
-                            ? 'ring-1 ring-warning/60'
-                            : 'ring-1 ring-destructive/60'),
+                            ? 'ring-1 ring-warning/60 ring-inset'
+                            : 'ring-1 ring-destructive/60 ring-inset'),
                 ]"
                 :data-message-id="message.id"
                 :data-message-type="message.type"
@@ -641,10 +639,10 @@ const toolButton =
                         v-if="quote?.mode === 'jump'"
                         type="button"
                         data-layout-box="quote"
-                        class="mb-1 block w-full rounded-lg border-l-[3px] px-2 py-1 text-left text-sm transition-colors duration-(--duration-fast) md:text-xs"
                         :class="[
+                            QUOTE_BASE,
                             quoteBox,
-                            themed('hover:bg-background/80', 'hover:underline'),
+                            themed('', 'hover:underline'),
                         ]"
                         aria-label="Ir al mensaje citado"
                         @click="quote.id && emit('jump', quote.id)"
@@ -664,10 +662,10 @@ const toolButton =
                         :href="quote.url"
                         data-layout-box="quote"
                         data-quote-origin="previous_conversation"
-                        class="mb-1 block w-full rounded-lg border-l-[3px] px-2 py-1 text-left text-sm transition-colors duration-(--duration-fast) md:text-xs"
                         :class="[
+                            QUOTE_BASE,
                             quoteBox,
-                            themed('hover:bg-background/80', 'hover:underline'),
+                            themed('', 'hover:underline'),
                         ]"
                         aria-label="Abrir el mensaje citado en su conversación anterior"
                     >
@@ -685,8 +683,7 @@ const toolButton =
                         v-else-if="quote?.mode === 'static'"
                         data-layout-box="quote"
                         data-quote-origin="preview"
-                        class="mb-1 block w-full rounded-lg border-l-[3px] px-2 py-1 text-left text-sm md:text-xs"
-                        :class="quoteBox"
+                        :class="[QUOTE_BASE, quoteBox]"
                     >
                         <span
                             class="block font-semibold"
@@ -702,8 +699,8 @@ const toolButton =
                         v-else-if="quote"
                         data-layout-box="quote"
                         data-quote-origin="restricted"
-                        class="mb-1 block w-full rounded-lg border-l-[3px] px-2 py-1 text-left text-sm italic md:text-xs"
-                        :class="quoteBox"
+                        class="italic"
+                        :class="[QUOTE_BASE, quoteBox]"
                     >
                         Responde a un mensaje de una conversación anterior
                     </p>
@@ -1084,8 +1081,8 @@ const toolButton =
                 </template>
 
                 <div
-                    class="flex items-center justify-end gap-1 text-[0.6875rem] leading-4 tabular-nums"
                     :class="[
+                        BUBBLE_META,
                         secondaryText,
                         bare
                             ? 'mt-1 w-fit rounded-full border bg-background/85 px-2 py-0.5'
@@ -1173,16 +1170,17 @@ const toolButton =
             <!-- Reactions left on the message. -->
             <ul
                 v-if="reactionChips.length > 0 && !revoked"
-                class="relative z-[1] -mt-1.5 flex flex-wrap gap-1 px-2"
-                :class="outbound ? 'justify-end' : 'justify-start'"
+                :class="[
+                    REACTIONS_ROW,
+                    outbound ? 'justify-end' : 'justify-start',
+                ]"
                 aria-label="Reacciones"
                 data-message-reactions
             >
                 <li
                     v-for="chip in reactionChips"
                     :key="chip.emoji"
-                    class="inline-flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 text-xs leading-none shadow-(--shadow-control)"
-                    :class="chip.mine && 'border-primary/50 bg-primary-soft'"
+                    :class="reactionChip(chip.mine)"
                     :title="
                         chip.mine
                             ? 'Reacción enviada desde este número'
@@ -1201,18 +1199,20 @@ const toolButton =
             <!-- Quick actions, beside the bubble. -->
             <div
                 v-if="!revoked && (canQuote || copyable)"
-                class="absolute top-0 flex gap-1 opacity-0 transition-opacity duration-(--duration-fast) group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
-                :class="
+                class="absolute top-0.5"
+                :class="[
+                    ROW_ACTIONS,
+                    !canQuote && 'pointer-coarse:hidden',
                     outbound
-                        ? 'right-full mr-1.5 flex-row-reverse'
-                        : 'left-full ml-1.5'
-                "
+                        ? 'right-full mr-1.5 origin-right flex-row-reverse'
+                        : 'left-full ml-1.5 origin-left',
+                ]"
                 data-message-actions
             >
                 <button
                     v-if="canQuote"
                     type="button"
-                    :class="toolButton"
+                    :class="ROW_ACTION_BUTTON"
                     title="Responder citando este mensaje"
                     @click="emit('quote', message)"
                 >
@@ -1222,7 +1222,7 @@ const toolButton =
                 <button
                     v-if="copyable"
                     type="button"
-                    :class="toolButton"
+                    :class="ROW_ACTION_BUTTON"
                     class="pointer-coarse:hidden"
                     title="Copiar el texto"
                     @click="copyText"

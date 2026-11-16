@@ -38,6 +38,8 @@ const props = defineProps<{
     viewLabels: Record<InboxView, string>;
     statusOptions: { value: ConversationStatusFilter; label: string }[];
     unreadCount: number;
+    /** Conversations where the customer waits for an answer. */
+    awaitingCount: number;
     departments: { id: number; name: string; is_active: boolean }[];
     canSeeUnrouted: boolean;
     /** Responsible agent filter (team inboxes of supervisors only). */
@@ -243,6 +245,25 @@ const chipClass =
                     :model-value="state.unread"
                     @update:model-value="
                         (value) => emit('change', { unread: value === true })
+                    "
+                />
+            </div>
+
+            <div
+                class="flex items-center justify-between gap-3 rounded-lg bg-surface-sunken px-3 py-2 pointer-coarse:min-h-10"
+            >
+                <Label for="inbox-filter-awaiting" class="text-sm font-normal">
+                    Solo las que esperan respuesta
+                    <span class="text-xs text-muted-foreground tabular-nums"
+                        >({{ awaitingCount }})</span
+                    >
+                </Label>
+                <Switch
+                    id="inbox-filter-awaiting"
+                    :model-value="state.awaiting"
+                    data-inbox-filter-awaiting
+                    @update:model-value="
+                        (value) => emit('change', { awaiting: value === true })
                     "
                 />
             </div>

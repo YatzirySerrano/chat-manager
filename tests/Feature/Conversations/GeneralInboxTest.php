@@ -131,7 +131,7 @@ test('the counters come from a single aggregate query', function () {
     expect($queries)->toHaveCount(1);
 });
 
-test('the general inbox follows the latest activity, and its cursor reaches every row once', function () {
+test('the general inbox lists the oldest requests first by default, and its cursor reaches every row once', function () {
     $same = now()->subHour();
     Conversation::factory()->count(3)->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => $same]);
     Conversation::factory()->count(2)->inDepartment($this->sales)->create(['last_message_at' => $same]);
@@ -153,7 +153,7 @@ test('the general inbox follows the latest activity, and its cursor reaches ever
 
     expect($expected)->toHaveCount(8)
         ->and($listed)->toBe($expected)
-        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('recent');
+        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('oldest');
 });
 
 test('the closed chip needs the history permission', function () {

@@ -16,9 +16,13 @@ class ConversationStatusController extends ConversationOperationController
     {
         $this->ensureVisible($conversation);
 
-        $close->handle($conversation, $request->user(), $request->reason(), $request->version());
+        $completed = $request->boolean('completed');
 
-        return $this->done($conversation, $request->user(), 'Conversación cerrada. Su historial se conserva.');
+        $close->handle($conversation, $request->user(), $request->reason(), $request->version(), $completed);
+
+        return $this->done($conversation, $request->user(), $completed
+            ? 'Solicitud completada. Si el cliente vuelve a escribir, entrará como solicitud nueva a «Pendientes».'
+            : 'Conversación cerrada. Su historial se conserva.');
     }
 
     public function reopen(ConversationOperationRequest $request, Conversation $conversation, ReopenConversation $reopen): RedirectResponse

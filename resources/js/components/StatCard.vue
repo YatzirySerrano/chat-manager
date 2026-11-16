@@ -59,7 +59,7 @@ const decimals = computed(() => {
 
 <template>
     <div
-        class="spotlight flex min-w-0 flex-col rounded-xl border bg-card transition-[border-color] duration-(--duration-base)"
+        class="spotlight flex min-w-0 flex-col rounded-xl border bg-card shadow-card transition-[border-color] duration-(--duration-base)"
         :class="size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-3 p-5'"
         data-stat-card
     >

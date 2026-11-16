@@ -99,8 +99,8 @@ const pushText = computed(() => {
     }
 
     return currentDevice.value
-        ? 'Este navegador recibe avisos aunque la plataforma esté cerrada. Solo indican cuántas notificaciones tienes sin leer, nunca su contenido.'
-        : 'Recibe avisos aunque la plataforma esté cerrada, para los tipos con «Navegador» activado. Solo indican cuántas notificaciones tienes sin leer, nunca su contenido.';
+        ? 'Este navegador está activado: recibes un aviso de Windows por cada mensaje, aunque la plataforma esté minimizada o cerrada (con el navegador abierto). Cada aviso dice qué pasó y en qué conversación.'
+        : 'Se activan solas: el navegador pide permiso la primera vez que haces clic en la plataforma y se vuelve a suscribir en cada inicio de sesión. Si no recibes avisos de Windows, actívalas aquí.';
 });
 
 const canOfferPush = computed(
@@ -217,7 +217,7 @@ function submit(): void {
         description="El permiso para mostrar avisos, la prueba de sonido y los dispositivos que reciben notificaciones con la plataforma cerrada."
         bare
     >
-        <div class="rounded-xl border bg-card p-4 sm:p-5">
+        <div class="rounded-xl border bg-card p-4 shadow-card sm:p-5">
             <div class="flex items-start gap-3">
                 <BellRing
                     class="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -289,7 +289,7 @@ function submit(): void {
             </div>
         </div>
 
-        <div class="rounded-xl border bg-card p-4 sm:p-5">
+        <div class="rounded-xl border bg-card p-4 shadow-card sm:p-5">
             <div class="flex items-start gap-3">
                 <MonitorSmartphone
                     class="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -385,11 +385,11 @@ function submit(): void {
             <template #aside>
                 <p class="pt-1 text-xs text-pretty text-muted-foreground">
                     Si desactivas un aviso en la app tampoco sonará ni aparecerá
-                    en el navegador. Las notificaciones nunca muestran el
-                    contenido de los mensajes de los clientes. Las del chat
-                    interno muestran quién escribió y un fragmento breve solo
-                    dentro de la plataforma; las del navegador no incluyen el
-                    fragmento.
+                    en el navegador. «Navegador» viene activado para los
+                    mensajes y los avisos urgentes. Cada aviso del navegador
+                    muestra su título y un resumen seguro (quién escribió y en
+                    qué conversación), nunca el texto de los mensajes de los
+                    clientes; los del chat interno no incluyen vista previa.
                 </p>
             </template>
             <div>

@@ -340,7 +340,9 @@ class ReceiveInboundMessage
 
             $window = $connection->reopen_window_minutes;
 
-            if ($window !== null && $sentAt->lessThanOrEqualTo($lastClosed->closed_at->addMinutes($window))) {
+            // A request closed as completed is finished for good: the next
+            // message is a new request and enters the waiting list.
+            if ($window !== null && $lastClosed->completed_at === null && $sentAt->lessThanOrEqualTo($lastClosed->closed_at->addMinutes($window))) {
                 return [$this->reopenConversation->reopen($lastClosed, null, 'inbound'), InboundMessageOutcome::Reopened];
             }
         }

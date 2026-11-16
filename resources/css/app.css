@@ -8,17 +8,25 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+    /*
+      Text face: Hanken Grotesk, a compact, open grotesk that stays crisp at
+      13–15 px for a full working day and has true tabular figures (amounts,
+      folios, times line up in columns). Slightly narrower than the previous
+      face, so no label that fitted before can overflow now.
+    */
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
 
     /*
-      Display face: page titles, indicator figures, dialog and empty-state
-      titles (font-display utility). Body copy stays in Instrument Sans.
+      Display face: Familjen Grotesk, for page titles, indicator figures,
+      dialog and empty-state titles (font-display utility). Its narrow,
+      ink-trapped forms give headings a voice of their own without leaving
+      the sober register of a credit desk.
     */
     --font-display:
-        'Bricolage Grotesque', 'Instrument Sans', ui-sans-serif, system-ui,
+        'Familjen Grotesk', 'Hanken Grotesk', ui-sans-serif, system-ui,
         sans-serif;
 
     /*
@@ -63,8 +71,9 @@
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
     /*
-      Radius by hierarchy: controls 8 px (rounded-md), popovers 10 px
-      (rounded-lg), panels 14 px (rounded-xl), dialogs 18 px (rounded-2xl).
+      Radius by hierarchy, crisp like printed forms: controls 6 px
+      (rounded-md), popovers 8 px (rounded-lg), panels 12 px (rounded-xl),
+      dialogs 16 px (rounded-2xl). Chat bubbles keep their own radius.
     */
     --radius-2xl: calc(var(--radius) + 8px);
     --radius-xl: calc(var(--radius) + 4px);
@@ -115,11 +124,15 @@
     --color-border-strong: var(--border-strong);
 
     /*
-      Elevation is tinted by the palette hue (--shadow-ink). Panels rest flat
-      on a hairline (shadow-card is intentionally empty): only what floats
-      above the page (popovers, dialogs, hovered navigable cards) casts one.
+      Elevation is tinted by the palette hue (--shadow-ink). Panels rest on a
+      hairline with a "paper edge" (shadow-card): a 1 px lip under the sheet
+      and a faint contact shadow, as if the panel were a page on the desk.
+      Only what floats above the page (popovers, dialogs, hovered navigable
+      cards) casts a real shadow.
     */
-    --shadow-card: 0 0 0 0 transparent;
+    --shadow-card:
+        0 1px 0 color-mix(in oklch, var(--shadow-ink) 5%, transparent),
+        0 1px 3px -1px color-mix(in oklch, var(--shadow-ink) 7%, transparent);
     --shadow-popover:
         0 0 0 1px color-mix(in oklch, var(--shadow-ink) 4%, transparent),
         0 4px 10px -4px color-mix(in oklch, var(--shadow-ink) 12%, transparent),
@@ -162,6 +175,7 @@
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-muted: var(--sidebar-muted);
+    --color-sidebar-hover: var(--sidebar-hover);
 
     --animate-check: check-draw 220ms var(--ease-out-quint) both;
 }
@@ -184,25 +198,34 @@
     body,
     html {
         --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+            'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif,
             'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
             'Noto Color Emoji';
     }
 }
 
+/*
+  Neutrals ("Expediente"): a mist canvas, white paper panels and a deep ink
+  for text. Every neutral carries a trace of the palette hue (--brand-hue,
+  chroma ≤ 0.02), so greys lean toward the chosen color instead of fighting
+  it; text keeps a cooler, lower tint so it always reads as ink.
+  Contrast (light): foreground 15:1 on panels, muted-foreground ≥ 5:1 on the
+  canvas, the rail and panels. Dark: muted-foreground ≥ 7:1.
+*/
 :root {
-    --background: oklch(0.975 0.004 247);
-    --foreground: oklch(0.21 0.02 255);
+    --neutral-hue: var(--brand-hue);
+    --background: oklch(0.968 0.006 var(--neutral-hue));
+    --foreground: oklch(0.205 0.014 var(--neutral-hue));
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.21 0.02 255);
+    --card-foreground: oklch(0.205 0.014 var(--neutral-hue));
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.21 0.02 255);
-    --secondary: oklch(0.965 0.006 250);
-    --secondary-foreground: oklch(0.27 0.02 255);
-    --muted: oklch(0.965 0.005 247);
-    --muted-foreground: oklch(0.52 0.02 255);
-    --accent: oklch(0.96 0.007 250);
-    --accent-foreground: oklch(0.24 0.02 255);
+    --popover-foreground: oklch(0.205 0.014 var(--neutral-hue));
+    --secondary: oklch(0.952 0.008 var(--neutral-hue));
+    --secondary-foreground: oklch(0.26 0.016 var(--neutral-hue));
+    --muted: oklch(0.955 0.007 var(--neutral-hue));
+    --muted-foreground: oklch(0.495 0.018 var(--neutral-hue));
+    --accent: oklch(0.952 0.009 var(--neutral-hue));
+    --accent-foreground: oklch(0.22 0.016 var(--neutral-hue));
     --destructive: oklch(0.54 0.2 27);
     --destructive-foreground: oklch(0.99 0 0);
     --success: oklch(0.5 0.13 155);
@@ -216,11 +239,11 @@
     --destructive-soft-foreground: oklch(0.47 0.18 27);
     --info-soft: oklch(0.96 0.03 245);
     --info-soft-foreground: oklch(0.43 0.13 245);
-    --surface-sunken: oklch(0.965 0.005 247);
+    --surface-sunken: oklch(0.962 0.006 var(--neutral-hue));
     --surface-raised: oklch(1 0 0);
-    --border: oklch(0.925 0.006 250);
-    --border-strong: oklch(0.86 0.008 250);
-    --input: oklch(0.9 0.008 250);
+    --border: oklch(0.912 0.008 var(--neutral-hue));
+    --border-strong: oklch(0.85 0.011 var(--neutral-hue));
+    --input: oklch(0.885 0.01 var(--neutral-hue));
     /*
       Charts (components/charts, useChartTheme). Main series follows the
       platform palette; the second series is a neutral ink so it never clashes
@@ -248,23 +271,42 @@
     --chart-3: var(--chart-cat-3);
     --chart-4: var(--chart-cat-4);
     --chart-5: var(--chart-cat-5);
-    --radius: 0.625rem;
+    --radius: 0.5rem;
     /*
-      The sidebar is a deep ink rail tinted by the active palette
-      (--brand-hue / --ink-chroma, set per palette below), in the light theme
-      too. Everything rendered inside it reads the scoped tokens of the
+      The navigation rail is a sheet of tinted paper one step below the
+      canvas: the same light world as the page, so eyes do not re-adapt
+      every time they move between menu and work (dark theme: one step
+      deeper than the canvas). The current section is a raised white tab.
+      Everything rendered inside it reads the scoped tokens of the
       [data-sidebar='sidebar'] block further down.
     */
-    --sidebar-background: oklch(0.215 var(--ink-chroma) var(--brand-hue));
+    --sidebar-background: oklch(0.948 0.01 var(--neutral-hue));
     --sidebar: var(--sidebar-background);
-    --sidebar-foreground: oklch(0.84 0.02 var(--brand-hue));
-    --sidebar-muted: oklch(0.67 0.025 var(--brand-hue));
-    --sidebar-accent: oklch(0.275 var(--ink-chroma) var(--brand-hue));
-    --sidebar-accent-foreground: oklch(0.985 0.005 var(--brand-hue));
-    --sidebar-border: oklch(0.295 var(--ink-chroma) var(--brand-hue));
-    --sidebar-primary: oklch(0.8 var(--brand-chroma) var(--brand-hue));
-    --sidebar-primary-foreground: oklch(0.18 0.03 var(--brand-hue));
-    --sidebar-ring: oklch(0.8 var(--brand-chroma) var(--brand-hue) / 0.7);
+    --sidebar-foreground: oklch(0.36 0.018 var(--neutral-hue));
+    --sidebar-muted: oklch(0.49 0.018 var(--neutral-hue));
+    --sidebar-accent: oklch(0.995 0.002 var(--neutral-hue));
+    --sidebar-accent-foreground: oklch(0.2 0.016 var(--neutral-hue));
+    --sidebar-border: oklch(0.9 0.011 var(--neutral-hue));
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-primary-soft: var(--primary-soft);
+    --sidebar-primary-soft-foreground: var(--primary-soft-foreground);
+    --sidebar-ring: var(--ring);
+    --sidebar-hover: oklch(0.92 0.012 var(--neutral-hue));
+
+    /*
+      Ink: the deep surface tinted by the palette, kept for blocks that
+      should feel like a control desk (the stage of the sign-in screen, the
+      QR pairing panel, the storage gauge). See [data-ink] below.
+    */
+    --ink-background: oklch(0.215 var(--ink-chroma) var(--brand-hue));
+    --ink-foreground: oklch(0.84 0.02 var(--brand-hue));
+    --ink-muted: oklch(0.7 0.025 var(--brand-hue));
+    --ink-accent: oklch(0.275 var(--ink-chroma) var(--brand-hue));
+    --ink-accent-foreground: oklch(0.985 0.005 var(--brand-hue));
+    --ink-border: oklch(0.295 var(--ink-chroma) var(--brand-hue));
+    --ink-primary: oklch(0.8 var(--brand-chroma) var(--brand-hue));
+    --ink-primary-foreground: oklch(0.18 0.03 var(--brand-hue));
     --shadow-color: 220 40% 12%;
     --shadow-ink: oklch(0.25 0.06 var(--brand-hue));
 
@@ -298,18 +340,18 @@
 }
 
 .dark {
-    --background: oklch(0.16 0.01 255);
-    --foreground: oklch(0.96 0.005 250);
-    --card: oklch(0.205 0.012 255);
-    --card-foreground: oklch(0.96 0.005 250);
-    --popover: oklch(0.215 0.012 255);
-    --popover-foreground: oklch(0.96 0.005 250);
-    --secondary: oklch(0.26 0.012 255);
-    --secondary-foreground: oklch(0.94 0.005 250);
-    --muted: oklch(0.24 0.012 255);
-    --muted-foreground: oklch(0.7 0.015 255);
-    --accent: oklch(0.26 0.013 255);
-    --accent-foreground: oklch(0.96 0.005 250);
+    --background: oklch(0.165 0.012 var(--neutral-hue));
+    --foreground: oklch(0.955 0.006 var(--neutral-hue));
+    --card: oklch(0.205 0.013 var(--neutral-hue));
+    --card-foreground: oklch(0.955 0.006 var(--neutral-hue));
+    --popover: oklch(0.222 0.014 var(--neutral-hue));
+    --popover-foreground: oklch(0.955 0.006 var(--neutral-hue));
+    --secondary: oklch(0.26 0.014 var(--neutral-hue));
+    --secondary-foreground: oklch(0.94 0.006 var(--neutral-hue));
+    --muted: oklch(0.24 0.013 var(--neutral-hue));
+    --muted-foreground: oklch(0.71 0.016 var(--neutral-hue));
+    --accent: oklch(0.262 0.015 var(--neutral-hue));
+    --accent-foreground: oklch(0.955 0.006 var(--neutral-hue));
     --destructive: oklch(0.7 0.19 25);
     --destructive-foreground: oklch(0.2 0.03 25);
     --success: oklch(0.72 0.14 155);
@@ -323,11 +365,11 @@
     --destructive-soft-foreground: oklch(0.86 0.12 25);
     --info-soft: oklch(0.29 0.05 245);
     --info-soft-foreground: oklch(0.86 0.1 245);
-    --surface-sunken: oklch(0.185 0.011 255);
-    --surface-raised: oklch(0.225 0.012 255);
-    --border: oklch(0.29 0.012 255);
-    --border-strong: oklch(0.36 0.012 255);
-    --input: oklch(0.33 0.012 255);
+    --surface-sunken: oklch(0.185 0.012 var(--neutral-hue));
+    --surface-raised: oklch(0.225 0.013 var(--neutral-hue));
+    --border: oklch(0.285 0.014 var(--neutral-hue));
+    --border-strong: oklch(0.36 0.015 var(--neutral-hue));
+    --input: oklch(0.33 0.014 var(--neutral-hue));
     --chart-cat-1: #3987e5;
     --chart-cat-2: #d95926;
     --chart-cat-3: #199e70;
@@ -343,16 +385,26 @@
     --chart-5: var(--chart-cat-5);
     /* One step deeper than the canvas, still tinted by the palette. */
     --sidebar-background: oklch(
-        0.125 calc(var(--ink-chroma) * 0.6) var(--brand-hue)
+        0.138 calc(var(--ink-chroma) * 0.55) var(--brand-hue)
     );
     --sidebar: var(--sidebar-background);
-    --sidebar-foreground: oklch(0.82 0.015 var(--brand-hue));
-    --sidebar-muted: oklch(0.62 0.02 var(--brand-hue));
-    --sidebar-accent: oklch(0.2 calc(var(--ink-chroma) * 0.8) var(--brand-hue));
+    --sidebar-foreground: oklch(0.8 0.015 var(--brand-hue));
+    --sidebar-muted: oklch(0.66 0.02 var(--brand-hue));
+    --sidebar-accent: oklch(
+        0.215 calc(var(--ink-chroma) * 0.8) var(--brand-hue)
+    );
     --sidebar-accent-foreground: oklch(0.985 0.005 var(--brand-hue));
     --sidebar-border: oklch(
-        0.215 calc(var(--ink-chroma) * 0.7) var(--brand-hue)
+        0.21 calc(var(--ink-chroma) * 0.7) var(--brand-hue)
     );
+    --sidebar-hover: oklch(
+        0.185 calc(var(--ink-chroma) * 0.7) var(--brand-hue)
+    );
+    --ink-background: oklch(
+        0.125 calc(var(--ink-chroma) * 0.6) var(--brand-hue)
+    );
+    --ink-accent: oklch(0.2 calc(var(--ink-chroma) * 0.8) var(--brand-hue));
+    --ink-border: oklch(0.215 calc(var(--ink-chroma) * 0.7) var(--brand-hue));
     --shadow-color: 220 40% 2%;
     --shadow-ink: oklch(0 0 0);
 }
@@ -537,7 +589,8 @@
 
     body {
         @apply bg-background text-sm text-foreground;
-        font-feature-settings: 'cv11', 'ss01';
+        font-kerning: normal;
+        font-optical-sizing: auto;
         text-rendering: optimizeLegibility;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -698,7 +751,7 @@
 /* Display face for titles and figures. */
 @utility font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.012em;
 }
 
 /*
@@ -709,6 +762,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     background-color: var(--card);
+    box-shadow: var(--shadow-card);
 }
 
 @utility surface-raised {
@@ -1074,32 +1128,56 @@
 }
 
 /*
-  Tokens inside the ink sidebar: every component rendered in it (labels,
-  badges, the user row, focus rings) reads light-on-ink values without
-  knowing where it is. Menus opened from it are portaled and keep the
-  normal theme. [data-ink] gives the same ink surface to any other block
-  (the stage of the sign-in screen).
+  Tokens inside the navigation rail: every component rendered in it
+  (labels, badges, the user row, focus rings) reads the rail's values
+  without knowing where it is. Menus opened from it are portaled and keep
+  the normal theme.
 */
-[data-sidebar='sidebar'],
-[data-ink] {
-    color-scheme: dark;
+[data-sidebar='sidebar'] {
     --foreground: var(--sidebar-accent-foreground);
     --muted-foreground: var(--sidebar-muted);
-    --muted: var(--sidebar-accent);
+    --muted: var(--sidebar-hover);
     --border: var(--sidebar-border);
-    --accent: var(--sidebar-accent);
+    --accent: var(--sidebar-hover);
     --accent-foreground: var(--sidebar-accent-foreground);
     --card: var(--sidebar-accent);
     --primary: var(--sidebar-primary);
     --primary-foreground: var(--sidebar-primary-foreground);
-    --primary-soft: color-mix(
-        in oklch,
-        var(--sidebar-primary) 16%,
-        transparent
-    );
-    --primary-soft-foreground: oklch(0.95 0.05 var(--brand-hue));
+    --primary-soft: var(--sidebar-primary-soft);
+    --primary-soft-foreground: var(--sidebar-primary-soft-foreground);
     --ring: var(--sidebar-ring);
     --focus-ring: var(--sidebar-primary);
+}
+
+/*
+  [data-ink] turns any block into the deep ink surface (the stage of the
+  sign-in screen, the QR pairing panel, the storage gauge): light-on-ink
+  values in both themes. bg-sidebar / text-sidebar-* inside it resolve to
+  the ink, so those blocks need no classes of their own.
+*/
+[data-ink] {
+    color-scheme: dark;
+    --sidebar-background: var(--ink-background);
+    --sidebar-foreground: var(--ink-foreground);
+    --sidebar-muted: var(--ink-muted);
+    --sidebar-accent: var(--ink-accent);
+    --sidebar-accent-foreground: var(--ink-accent-foreground);
+    --sidebar-border: var(--ink-border);
+    --sidebar-primary: var(--ink-primary);
+    --sidebar-primary-foreground: var(--ink-primary-foreground);
+    --foreground: var(--ink-accent-foreground);
+    --muted-foreground: var(--ink-muted);
+    --muted: var(--ink-accent);
+    --border: var(--ink-border);
+    --accent: var(--ink-accent);
+    --accent-foreground: var(--ink-accent-foreground);
+    --card: var(--ink-accent);
+    --primary: var(--ink-primary);
+    --primary-foreground: var(--ink-primary-foreground);
+    --primary-soft: color-mix(in oklch, var(--ink-primary) 16%, transparent);
+    --primary-soft-foreground: oklch(0.95 0.05 var(--brand-hue));
+    --ring: oklch(0.8 var(--brand-chroma) var(--brand-hue) / 0.7);
+    --focus-ring: var(--ink-primary);
 }
 
 /* Thin themed scrollbars for panels that scroll inside the page. */

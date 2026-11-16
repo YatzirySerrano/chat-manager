@@ -112,7 +112,7 @@ const previousText = computed(
 <template>
     <div
         :class="[
-            'spotlight flex min-w-0 flex-col rounded-xl border bg-card transition-[border-color] duration-(--duration-base)',
+            'spotlight flex min-w-0 flex-col rounded-xl border bg-card shadow-card transition-[border-color] duration-(--duration-base)',
             size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-2 p-5',
         ]"
     >

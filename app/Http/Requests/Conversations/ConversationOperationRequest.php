@@ -26,6 +26,8 @@ class ConversationOperationRequest extends FormRequest
         return [
             'version' => ['required', 'integer', 'min:0'],
             'reason' => ['nullable', 'string', 'max:'.self::REASON_MAX_LENGTH],
+            // Closing only: «Solicitud completada» (CloseConversation).
+            'completed' => ['sometimes', 'boolean'],
         ];
     }
 

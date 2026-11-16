@@ -17,12 +17,12 @@ export default defineConfig({
             ],
             refresh: true,
             fonts: [
-                bunny('Bricolage Grotesque', {
+                bunny('Familjen Grotesk', {
                     weights: [500, 600, 700],
                     optimizedFallbacks: false,
                 }),
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                bunny('Hanken Grotesk', {
+                    weights: [400, 500, 600, 700],
                     // Metric-matched fallbacks need the optional "fontaine"
                     // package; the self-hosted font is preloaded, so the
                     // system-ui fallback is enough for this internal app.

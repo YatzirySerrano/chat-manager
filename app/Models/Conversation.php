@@ -34,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $on_hold_at
  * @property string|null $on_hold_reason
  * @property Carbon|null $closed_at
+ * @property Carbon|null $completed_at Closed as «Solicitud completada»: the next message starts a new request.
  * @property int|null $closed_by_user_id
  * @property Carbon|null $reopened_at
  * @property int $reopen_count
@@ -86,6 +87,7 @@ class Conversation extends Model
             'assigned_at' => 'datetime',
             'on_hold_at' => 'datetime',
             'closed_at' => 'datetime',
+            'completed_at' => 'datetime',
             'reopened_at' => 'datetime',
             'reopen_count' => 'integer',
             'version' => 'integer',

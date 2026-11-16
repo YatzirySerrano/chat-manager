@@ -182,7 +182,7 @@ test('the preferences page lists only kinds that concern me', function () {
             ->component('settings/Notifications')
             ->where('kinds', fn ($kinds) => collect($kinds)->pluck('value')->contains(NotificationKind::ConversationPending->value)
                 && ! collect($kinds)->pluck('value')->contains(NotificationKind::ConnectionProblem->value))
-            ->where('kinds.0.preferences', ['in_app' => true, 'browser' => false, 'sound' => true]));
+            ->where('kinds.0.preferences', ['in_app' => true, 'browser' => true, 'sound' => true]));
 });
 
 test('customer messages in my conversations sound and show a toast by default, unlike other informative kinds', function () {
@@ -195,7 +195,8 @@ test('customer messages in my conversations sound and show a toast by default, u
     $preferences = $response->json('preferences');
 
     expect($message)->toMatchArray(['level' => 'informative', 'toast' => true])
-        ->and($preferences[NotificationKind::ConversationMessage->value])->toBe(['in_app' => true, 'browser' => false, 'sound' => true])
+        // Announced kinds also reach the operating system (Windows) by default.
+        ->and($preferences[NotificationKind::ConversationMessage->value])->toBe(['in_app' => true, 'browser' => true, 'sound' => true])
         ->and($preferences[$finished->value])->toBe(['in_app' => true, 'browser' => false, 'sound' => false]);
 });
 

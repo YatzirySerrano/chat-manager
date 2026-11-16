@@ -67,7 +67,7 @@ onBeforeUnmount(() => unregister());
                 :class="
                     hideTitle
                         ? 'sr-only'
-                        : 'font-display text-[1.75rem] leading-[1.15] font-semibold break-words sm:text-3xl'
+                        : 'font-display text-[1.75rem] leading-[1.12] font-semibold tracking-[-0.018em] break-words sm:text-[2.125rem]'
                 "
             >
                 {{ title }}

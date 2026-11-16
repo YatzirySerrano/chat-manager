@@ -34,15 +34,15 @@ export default {
         {
             id: 'no-leidas',
             target: 'inbox.unread',
-            title: 'No leídas',
-            body: 'Muestra solo las conversaciones con mensajes que aún no revisas.',
+            title: 'Sin leer',
+            body: 'Muestra solo las conversaciones con mensajes que aún no revisas. Se combina con la pestaña elegida.',
             when: listVisible,
         },
         {
             id: 'buscar',
             target: 'inbox.search',
             title: 'Buscar',
-            body: 'Encuentra clientes por nombre, teléfono u otros datos permitidos.',
+            body: 'Encuentra clientes por nombre, teléfono u otros datos permitidos. Pulsa / desde cualquier parte para escribir aquí.',
             when: listVisible,
         },
         {

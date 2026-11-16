@@ -26,10 +26,12 @@
  *
  * Web Push: pushes arrive WITHOUT payload, so the browser's push service
  * never sees any content. On each push the worker asks this same origin,
- * with the user's own session cookie, for the unread counter (GET
- * /notifications/summary) and shows a generic text with no customer or
- * message data. One tag replaces the previous alert (no pile-up) and
- * renotify is off. Every push shows a notification (userVisibleOnly: Safari
+ * with the user's own session cookie, for the newest unread notification
+ * (GET /notifications?unread=1) and shows its title and safe summary (the
+ * same text the bell shows; internal chat ones without the preview) as a
+ * system notification tagged per notification, so every new message alerts
+ * again (renotify). Without a session it falls back to a generic text.
+ * Every push shows a notification (userVisibleOnly: Safari
  * on iOS revokes subscriptions whose pushes show nothing, and Chrome would
  * show its own generic notice); while a window of the app is visible and
  * focused it is silent and closed after FOCUSED_CLOSE_MS, because the open
@@ -46,7 +48,7 @@
  * to sign in), so no customer data is exposed.
  */
 
-const VERSION = '2026-10-24.3';
+const VERSION = '2026-11-16.1';
 const CACHE_PREFIX = 'chat-manager-static-';
 const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -67,6 +69,7 @@ const IMMUTABLE_PREFIX = '/build/assets/';
 const MAX_ASSET_ENTRIES = 80;
 
 const SUMMARY_URL = '/notifications/summary';
+const LIST_URL = '/notifications?unread=1';
 const OPEN_URL = '/dashboard';
 const TAG = 'chat-manager-push';
 const TITLE = 'Notificaciones nuevas';
@@ -264,24 +267,78 @@ async function summaryText() {
     }
 }
 
+/**
+ * The newest unread notification, as the bell shows it (title and safe
+ * summary rendered by the server after checking access), or null.
+ */
+async function newestUnread() {
+    try {
+        const response = await fetch(LIST_URL, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        const items = Array.isArray(data?.data) ? data.data : [];
+
+        return items.find((item) => item && item.read_at === null) ?? null;
+    } catch {
+        return null;
+    }
+}
+
 async function handlePush() {
     const focused = await hasFocusedWindow();
+    // With the app in front the page alerts in-app (and may have just
+    // marked the message read): only the brief silent notice below.
+    const item = focused ? null : await newestUnread();
 
-    // Always visible (iOS/Safari requirement); silent and short-lived when
-    // the app is already in front, since the page alerts in-app.
-    await self.registration.showNotification(TITLE, {
-        body: await summaryText(),
-        tag: TAG,
-        renotify: false,
-        silent: focused,
-        icon: '/icons/icon-192.png',
-        data: { url: OPEN_URL },
-    });
+    if (item && typeof item.id === 'string') {
+        // One system notification (Windows toast) per message, under the
+        // same tag and version the open page uses: whichever shows it first
+        // wins, and when the page already showed it that alert is the
+        // visible one (no second toast).
+        const tag = `chat-manager-${item.id}`;
+        const version = `${item.updated_at ?? ''}|${item.occurrences}`;
+        const shown = await self.registration.getNotifications({ tag });
+        const teamChat = String(item.kind ?? '').startsWith('team-chat.');
 
-    if (focused) {
-        await new Promise((resolve) => setTimeout(resolve, FOCUSED_CLOSE_MS));
-        const shown = await self.registration.getNotifications({ tag: TAG });
-        shown.forEach((notification) => notification.close());
+        if (!shown.some((notification) => notification.data?.version === version)) {
+            await self.registration.showNotification(item.title || TITLE, {
+                // Internal chat alerts say who wrote, never what they wrote.
+                body: teamChat ? undefined : (item.body ?? undefined),
+                tag,
+                renotify: true,
+                icon: '/icons/icon-192.png',
+                badge: '/icons/icon-192.png',
+                data: { url: item.url || OPEN_URL, version },
+            });
+        }
+    } else {
+        // Always visible (iOS/Safari requirement); silent and short-lived
+        // when the app is already in front, since the page alerts in-app.
+        await self.registration.showNotification(TITLE, {
+            body: await summaryText(),
+            tag: TAG,
+            renotify: false,
+            silent: focused,
+            icon: '/icons/icon-192.png',
+            data: { url: OPEN_URL },
+        });
+
+        if (focused) {
+            await new Promise((resolve) => setTimeout(resolve, FOCUSED_CLOSE_MS));
+            const shown = await self.registration.getNotifications({ tag: TAG });
+            shown.forEach((notification) => notification.close());
+        }
     }
 }
 

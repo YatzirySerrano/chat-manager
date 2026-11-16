@@ -87,6 +87,8 @@ class ConversationResource extends JsonResource
             'last_inbound_at' => $this->last_inbound_at?->toIso8601String(),
             'assigned_at' => $this->assigned_at?->toIso8601String(),
             'closed_at' => $this->closed_at?->toIso8601String(),
+            // Closed as «Solicitud completada».
+            'completed_at' => $this->completed_at?->toIso8601String(),
             'reopen_count' => $this->reopen_count,
             'created_at' => $this->created_at?->toIso8601String(),
             // Request type (kept as history when the category was deleted).

@@ -92,6 +92,8 @@ const props = defineProps<{
         display_phone_number: string | null;
     }[];
     unreadCount: number;
+    /** Conversations where the customer waits for an answer (same filters). */
+    awaitingCount?: number;
     filterOptions: {
         channels: { value: ConnectionChannel; label: string }[];
     };
@@ -124,6 +126,7 @@ const LIST_PROPS = [
     'counts',
     'inbox',
     'unreadCount',
+    'awaitingCount',
     'acceptBlock',
     'serverTime',
 ];
@@ -132,6 +135,7 @@ const LIVE_LIST_PROPS = [
     'conversations',
     'counts',
     'unreadCount',
+    'awaitingCount',
     'acceptBlock',
     'serverTime',
 ];
@@ -609,7 +613,9 @@ const { state: realtimeState } = useRealtimeStatus();
 
 function onRead(): void {
     if (realtimeState.value !== 'connected' && !loadingList.value) {
-        router.reload({ only: ['conversations', 'unreadCount'] });
+        router.reload({
+            only: ['conversations', 'unreadCount', 'awaitingCount'],
+        });
     }
 }
 
@@ -768,6 +774,7 @@ function onAliasSaved(): void {
                 :agents="agents"
                 :connections="connections"
                 :unread-count="unreadCount"
+                :awaiting-count="awaitingCount ?? 0"
                 :filter-options="filterOptions"
                 :tags="tags"
                 :categories="categories ?? []"
@@ -777,6 +784,7 @@ function onAliasSaved(): void {
                 :viewer="viewer"
                 :selected-id="selectedId"
                 :loading="loadingList || loadingMore"
+                :loading-more="loadingMore"
                 :accepting-id="acceptingId"
                 @select="select"
                 @accept="acceptFromList"

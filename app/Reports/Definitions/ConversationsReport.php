@@ -117,6 +117,7 @@ class ConversationsReport extends ReportDefinition
         $descriptions[] = 'Estado: '.match ($filters['status']) {
             'active' => 'Sin cerrar',
             'all' => 'Todos',
+            ConversationInboxQuery::STATUS_COMPLETED => 'Solicitud completada',
             default => ConversationStatus::tryFrom($filters['status'])?->label() ?? $filters['status'],
         };
 
@@ -154,6 +155,10 @@ class ConversationsReport extends ReportDefinition
             $descriptions[] = (($filters['search_in'] ?? ConversationInboxQuery::SEARCH_CONTACT) === ConversationInboxQuery::SEARCH_MESSAGES
                 ? 'Búsqueda en el contenido de los mensajes: «'
                 : 'Búsqueda: «').$filters['search'].'»';
+        }
+
+        if ($filters['awaiting'] ?? false) {
+            $descriptions[] = 'Solo las que esperan respuesta del equipo';
         }
 
         return $descriptions;

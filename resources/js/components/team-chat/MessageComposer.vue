@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
-import { CornerUpLeft, Paperclip, SendHorizontal, Smile, X } from '@lucide/vue';
+import { Paperclip, Smile } from '@lucide/vue';
 import { useDebounceFn } from '@vueuse/core';
 import {
     computed,
@@ -11,6 +11,8 @@ import {
     shallowRef,
     useId,
 } from 'vue';
+import ChatReplyPreview from '@/components/chat/ChatReplyPreview.vue';
+import ChatSendButton from '@/components/chat/ChatSendButton.vue';
 import InputError from '@/components/InputError.vue';
 import DraftAttachment from '@/components/team-chat/DraftAttachment.vue';
 import {
@@ -661,50 +663,31 @@ defineExpose({ focus, addFiles });
 
 <template>
     <div
-        class="shrink-0 border-t bg-background px-2 pt-2 pb-2 sm:px-5 sm:pt-2.5 sm:pb-3"
+        class="chat-dock shrink-0 border-t bg-background px-2 pt-2 pb-2 sm:px-5 sm:pt-2.5 sm:pb-3"
         data-tour="team-chat.composer"
         data-safe-bottom
     >
         <div
-            class="rounded-2xl border bg-card transition-[border-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20 hover:border-border-strong focus-within:hover:border-primary"
+            class="mx-auto max-w-[64rem] rounded-2xl border bg-card shadow-(--shadow-control) transition-[border-color,box-shadow] duration-(--duration-base) ease-(--ease-standard) focus-within:border-primary focus-within:shadow-hover focus-within:ring-[3px] focus-within:ring-primary/15 hover:border-border-strong focus-within:hover:border-primary"
             data-composer-surface
         >
-            <div
-                v-if="replyTo"
-                class="flex items-center gap-2 border-b px-3 py-2 text-xs"
-            >
-                <CornerUpLeft
-                    class="size-4 shrink-0 text-primary"
-                    aria-hidden="true"
+            <Transition name="chat-attach">
+                <ChatReplyPreview
+                    v-if="replyTo"
+                    :title="`Respondiendo a ${
+                        replyTo.is_mine
+                            ? 'tu mensaje'
+                            : (replyTo.author?.name ?? 'un mensaje')
+                    }`"
+                    :excerpt="
+                        replyTo.body ??
+                        (attachmentSummary(replyTo.attachments) ||
+                            'Archivo adjunto')
+                    "
+                    cancel-label="Cancelar respuesta"
+                    @cancel="emit('cancelReply')"
                 />
-                <div class="min-w-0 flex-1 border-l-2 border-primary pl-2">
-                    <p class="truncate font-semibold">
-                        Respondiendo a
-                        {{
-                            replyTo.is_mine
-                                ? 'tu mensaje'
-                                : replyTo.author?.name
-                        }}
-                    </p>
-                    <p class="truncate text-muted-foreground">
-                        {{
-                            replyTo.body ??
-                            (attachmentSummary(replyTo.attachments) ||
-                                'Archivo adjunto')
-                        }}
-                    </p>
-                </div>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="size-7 shrink-0 rounded-full pointer-coarse:size-9"
-                    aria-label="Cancelar respuesta"
-                    title="Cancelar respuesta (Esc)"
-                    @click="emit('cancelReply')"
-                >
-                    <X class="size-3.5" />
-                </Button>
-            </div>
+            </Transition>
 
             <ul
                 v-if="http.attachments.length > 0"
@@ -848,20 +831,18 @@ defineExpose({ focus, addFiles });
                         @blur="mentionQuery = null"
                     />
                 </div>
-                <Button
-                    size="icon"
-                    class="shrink-0 rounded-full"
-                    :disabled="!canSend"
-                    aria-label="Enviar mensaje"
+                <ChatSendButton
+                    :ready="canSend"
+                    :sending="http.processing"
+                    label="Enviar mensaje"
                     title="Enviar (Enter). Nueva línea: Shift + Enter"
-                    :loading="http.processing"
                     @click="send"
-                >
-                    <SendHorizontal />
-                </Button>
+                />
             </div>
         </div>
-        <div class="mt-1 flex min-h-4 items-start justify-between gap-3 px-2">
+        <div
+            class="mx-auto mt-1 flex min-h-4 max-w-[64rem] items-start justify-between gap-3 px-2"
+        >
             <div class="min-w-0 space-y-0.5">
                 <InputError
                     v-for="entry in errors"

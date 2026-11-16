@@ -40,7 +40,7 @@ watch(() => page.url, update, { flush: 'post' });
     <div class="page-shell">
         <header class="space-y-1.5">
             <h1
-                class="font-display text-[1.75rem] leading-[1.15] font-semibold sm:text-3xl"
+                class="font-display text-[1.75rem] leading-[1.12] font-semibold tracking-[-0.018em] sm:text-[2.125rem]"
             >
                 Mi cuenta
             </h1>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { router, useHttp, usePage } from '@inertiajs/vue3';
 import {
+    BadgeCheck,
     LayoutTemplate,
     Lock,
     Send,
@@ -10,6 +11,9 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
+import ChatReplyPreview from '@/components/chat/ChatReplyPreview.vue';
+import ChatSendButton from '@/components/chat/ChatSendButton.vue';
+import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import AttachmentDraft from '@/components/conversations/AttachmentDraft.vue';
 import AttachmentMenu from '@/components/conversations/AttachmentMenu.vue';
 import EmojiPicker from '@/components/conversations/EmojiPicker.vue';
@@ -264,6 +268,14 @@ const replyBlock = computed<string | null>(() => {
 
     return null;
 });
+
+/* Closed as «Solicitud completada»: the end of the request, told in green. */
+const completedClosed = computed(
+    () =>
+        mode.value === 'reply' &&
+        props.conversation.status === 'closed' &&
+        Boolean(props.conversation.completed_at),
+);
 
 const windowClosed = computed(
     () =>
@@ -917,15 +929,15 @@ defineExpose({ focus, addFiles, acceptsFiles });
         short labels («Responder» / «Nota») and stays on one row.
     -->
     <div
-        class="@container border-t bg-background px-3 pt-2.5 pb-3 transition-colors duration-(--duration-base) sm:px-5 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
+        class="chat-dock @container border-t px-3 pt-2.5 pb-3 transition-colors duration-(--duration-base) *:mx-auto *:max-w-[64rem] sm:px-5 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
         data-safe-bottom
-        :class="mode === 'note' && 'bg-warning-soft/40'"
+        :class="mode === 'note' ? 'bg-warning-soft/40' : 'bg-background'"
     >
         <div
             class="mb-2 flex flex-wrap items-center justify-between gap-2 [@media(max-height:32rem)]:mb-1 [@media(max-height:32rem)]:flex-nowrap"
         >
             <div
-                class="inline-flex shrink-0 rounded-lg bg-surface-sunken p-0.5 text-sm ring-1 ring-border ring-inset"
+                class="inline-flex shrink-0 rounded-full bg-surface-sunken p-0.5 text-sm ring-1 ring-border ring-inset"
                 role="group"
                 aria-label="Tipo de mensaje"
             >
@@ -934,7 +946,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                     :aria-pressed="mode === 'reply'"
                     aria-label="Responder al cliente"
                     :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-[color,background-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'reply'
                             ? 'bg-card text-foreground shadow-(--shadow-control)'
@@ -955,7 +967,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                     :aria-pressed="mode === 'note'"
                     aria-label="Nota interna"
                     :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-[color,background-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                     :class="
                         mode === 'note'
                             ? 'bg-warning-soft text-warning-soft-foreground shadow-(--shadow-control)'
@@ -1001,10 +1013,27 @@ defineExpose({ focus, addFiles, acceptsFiles });
 
         <div
             v-if="disabledReason"
-            class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground [@media(max-height:32rem)]:gap-2 [@media(max-height:32rem)]:py-1.5"
+            class="flex flex-wrap items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm motion-safe:animate-in motion-safe:fade-in [@media(max-height:32rem)]:gap-2 [@media(max-height:32rem)]:py-1.5"
+            :class="
+                completedClosed
+                    ? 'border-success/30 bg-card text-muted-foreground'
+                    : 'border-dashed bg-surface-sunken/60 text-muted-foreground'
+            "
             role="status"
+            :data-composer-completed="completedClosed || undefined"
         >
-            <Lock class="size-4 shrink-0" aria-hidden="true" />
+            <span
+                class="grid size-8 shrink-0 place-items-center rounded-full"
+                :class="
+                    completedClosed
+                        ? 'bg-success text-background'
+                        : 'bg-background ring-1 ring-border'
+                "
+                aria-hidden="true"
+            >
+                <BadgeCheck v-if="completedClosed" class="size-4" />
+                <Lock v-else class="size-4" />
+            </span>
             <div class="min-w-0 flex-1">
                 <!-- A refused send (the state changed meanwhile) stays explained. -->
                 <p
@@ -1014,7 +1043,14 @@ defineExpose({ focus, addFiles, acceptsFiles });
                 >
                     {{ error }}
                 </p>
-                <p>{{ disabledReason }}</p>
+                <CompletedBadge
+                    v-if="completedClosed"
+                    class="mb-1"
+                    :at="conversation.completed_at"
+                />
+                <p :class="completedClosed && 'text-xs'">
+                    {{ disabledReason }}
+                </p>
             </div>
             <Button
                 v-if="mode === 'reply' && canUseTemplates"
@@ -1033,35 +1069,6 @@ defineExpose({ focus, addFiles, acceptsFiles });
             class="grid grid-cols-1 gap-2 [@media(max-height:32rem)]:gap-1"
             @submit.prevent="submit"
         >
-            <div
-                v-if="replyTo && mode === 'reply'"
-                data-layout-box="quote"
-                class="flex items-start gap-2 rounded-lg border-l-2 border-primary bg-muted/50 px-3 py-1.5 text-sm md:text-xs"
-            >
-                <div class="min-w-0 flex-1">
-                    <p class="font-medium">
-                        Respondiendo a
-                        {{
-                            replyTo.direction === 'inbound'
-                                ? conversation.contact.name
-                                : 'un mensaje del equipo'
-                        }}
-                    </p>
-                    <p class="line-clamp-2 wrap-anywhere text-muted-foreground">
-                        {{ replyTo.body ?? typeLabel(replyTo.type) }}
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    class="-my-1 -mr-2 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-10"
-                    aria-label="Quitar la cita"
-                    title="Quitar la cita"
-                    @click="emit('update:replyTo', null)"
-                >
-                    <X class="size-3.5" aria-hidden="true" />
-                </button>
-            </div>
-
             <AttachmentDraft
                 v-if="attachment && attachmentEvaluation && mode === 'reply'"
                 :file="attachment"
@@ -1119,14 +1126,27 @@ defineExpose({ focus, addFiles, acceptsFiles });
                 focus of the text field.
             -->
             <div
-                class="rounded-xl border bg-card transition-[border-color,box-shadow,background-color] duration-(--duration-fast) ease-(--ease-standard) hover:border-border-strong"
+                class="rounded-2xl border bg-card shadow-(--shadow-control) transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-(--ease-standard) hover:border-border-strong"
                 :class="
                     mode === 'note'
                         ? 'border-warning/60 bg-warning-soft/60 focus-within:border-warning focus-within:ring-[3px] focus-within:ring-warning/25'
-                        : 'focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20'
+                        : 'focus-within:border-primary focus-within:shadow-hover focus-within:ring-[3px] focus-within:ring-primary/15'
                 "
                 data-composer-surface
             >
+                <Transition name="chat-attach">
+                    <ChatReplyPreview
+                        v-if="replyTo && mode === 'reply'"
+                        :title="`Respondiendo a ${
+                            replyTo.direction === 'inbound'
+                                ? conversation.contact.name
+                                : 'un mensaje del equipo'
+                        }`"
+                        :excerpt="replyTo.body ?? typeLabel(replyTo.type)"
+                        data-layout-box="quote"
+                        @cancel="emit('update:replyTo', null)"
+                    />
+                </Transition>
                 <div class="relative">
                     <label for="chat-composer" class="sr-only">{{
                         mode === 'reply'
@@ -1234,26 +1254,26 @@ defineExpose({ focus, addFiles, acceptsFiles });
                     >
                         {{ text.length }}/{{ maxLength }}
                     </span>
-                    <Button
+                    <ChatSendButton
                         type="submit"
-                        :disabled="!canSubmit"
-                        :variant="mode === 'note' ? 'outline' : 'default'"
-                        class="pointer-coarse:h-10"
-                        :class="mode === 'note' && 'border-warning/60'"
-                        :loading="sending"
+                        :ready="canSubmit"
+                        :sending="sending"
+                        :tone="mode === 'note' ? 'note' : 'primary'"
+                        :label="mode === 'note' ? 'Guardar nota' : 'Enviar'"
+                        :sending-label="
+                            mode === 'note' ? 'Guardando…' : 'Enviando…'
+                        "
+                        :title="
+                            mode === 'note'
+                                ? 'Guardar la nota interna'
+                                : `Enviar a ${conversation.contact.name}`
+                        "
+                        show-label
                     >
-                        <StickyNote v-if="mode === 'note'" aria-hidden="true" />
-                        <Send v-else aria-hidden="true" />
-                        {{
-                            sending
-                                ? mode === 'note'
-                                    ? 'Guardando…'
-                                    : 'Enviando…'
-                                : mode === 'note'
-                                  ? 'Guardar nota'
-                                  : 'Enviar'
-                        }}
-                    </Button>
+                        <template v-if="mode === 'note'" #icon>
+                            <StickyNote class="size-4" aria-hidden="true" />
+                        </template>
+                    </ChatSendButton>
                 </div>
             </div>
             <p

@@ -138,14 +138,15 @@ function onOpenChange(value: boolean): void {
                             >
                                 <BellRing
                                     v-if="urgent"
-                                    class="size-4 text-foreground"
+                                    class="bell-ring size-4 text-foreground"
                                 />
                                 <Bell v-else class="size-4" />
                                 <span
                                     v-if="count > 0"
+                                    :key="badge"
                                     :class="
                                         cn(
-                                            'absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-xs leading-none font-semibold tabular-nums',
+                                            'badge-pop absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[0.6875rem] leading-none font-semibold tabular-nums ring-2 ring-background',
                                             urgent
                                                 ? 'bg-destructive text-destructive-foreground'
                                                 : 'bg-primary text-primary-foreground',
@@ -173,7 +174,11 @@ function onOpenChange(value: boolean): void {
                 class="flex items-center justify-between gap-2 border-b px-4 py-3"
             >
                 <div>
-                    <h2 class="text-sm font-semibold">Notificaciones</h2>
+                    <h2
+                        class="font-display text-base leading-tight font-semibold"
+                    >
+                        Notificaciones
+                    </h2>
                     <p
                         class="text-xs text-muted-foreground"
                         aria-live="polite"
@@ -193,7 +198,10 @@ function onOpenChange(value: boolean): void {
                 </Button>
             </div>
 
-            <div class="flex gap-1 border-b px-3 py-2" role="tablist">
+            <div
+                class="flex gap-1 border-b px-3 py-2 [&>[aria-selected=true]]:shadow-(--shadow-control)"
+                role="tablist"
+            >
                 <Button
                     v-for="option in [
                         { value: false, label: 'Todas' },
@@ -306,10 +314,11 @@ function onOpenChange(value: boolean): void {
                     v-else-if="center.items.value.length === 0"
                     class="flex flex-col items-start gap-2 p-8"
                 >
-                    <Bell
-                        class="size-5 text-muted-foreground"
-                        aria-hidden="true"
-                    />
+                    <span
+                        class="mb-1 grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground"
+                    >
+                        <Bell class="size-5" aria-hidden="true" />
+                    </span>
                     <p class="text-sm font-medium">
                         {{
                             center.onlyUnread.value
@@ -327,9 +336,9 @@ function onOpenChange(value: boolean): void {
                     <li v-for="item in center.items.value" :key="item.id">
                         <button
                             type="button"
-                            class="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                            class="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
                             :class="
-                                item.read_at === null && 'bg-primary-soft/30'
+                                item.read_at === null && 'bg-primary-soft/35'
                             "
                             @click="select(item)"
                         >
@@ -448,3 +457,50 @@ function onOpenChange(value: boolean): void {
         </PopoverContent>
     </Popover>
 </template>
+
+<style scoped>
+/* The count pops when it changes (the span is keyed by its text). */
+.badge-pop {
+    animation: badge-pop var(--duration-panel) var(--ease-spring);
+}
+
+/* An urgent notification rings the bell once, briefly. */
+.bell-ring {
+    transform-origin: 50% 10%;
+    animation: bell-ring 700ms var(--ease-standard);
+}
+
+@keyframes badge-pop {
+    from {
+        transform: scale(0.4);
+        opacity: 0;
+    }
+}
+
+@keyframes bell-ring {
+    0%,
+    100% {
+        rotate: 0deg;
+    }
+
+    15% {
+        rotate: 14deg;
+    }
+
+    30% {
+        rotate: -12deg;
+    }
+
+    45% {
+        rotate: 8deg;
+    }
+
+    60% {
+        rotate: -5deg;
+    }
+
+    75% {
+        rotate: 2deg;
+    }
+}
+</style>

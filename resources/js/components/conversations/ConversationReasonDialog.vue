@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import { BadgeCheck } from '@lucide/vue';
+import { ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -29,14 +31,19 @@ const props = defineProps<{
     destructive?: boolean;
     processing?: boolean;
     error?: string;
+    /** Offers «La solicitud fue completada» (closing only). */
+    completedOption?: boolean;
+    /** Opens with «La solicitud fue completada» already ticked. */
+    completedDefault?: boolean;
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
 
-const emit = defineEmits<{ confirm: [reason: string] }>();
+const emit = defineEmits<{ confirm: [reason: string, completed: boolean] }>();
 
 /** Local draft: the parent sends the request and passes back its error. */
 const form = useForm({ reason: '' });
+const completed = ref(false);
 
 const validation = useFormValidation(form, {
     rules: () => ({
@@ -53,6 +60,7 @@ const validation = useFormValidation(form, {
 watch(open, (isOpen) => {
     if (isOpen) {
         validation.load({ reason: '' });
+        completed.value = Boolean(props.completedDefault);
     }
 });
 
@@ -72,7 +80,7 @@ function submit(): void {
         return;
     }
 
-    emit('confirm', form.reason.trim());
+    emit('confirm', form.reason.trim(), props.completedOption ? completed.value : false);
 }
 </script>
 
@@ -106,6 +114,32 @@ function submit(): void {
                         "
                     />
                 </FormField>
+                <label
+                    v-if="completedOption"
+                    for="conversation-completed"
+                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 has-[[data-state=checked]]:border-emerald-500/60 has-[[data-state=checked]]:bg-emerald-500/10"
+                >
+                    <Checkbox
+                        id="conversation-completed"
+                        v-model="completed"
+                        class="mt-0.5"
+                        data-conversation-completed
+                    />
+                    <span class="grid gap-1">
+                        <span class="flex items-center gap-1.5 text-sm font-medium">
+                            <BadgeCheck
+                                class="size-4 text-emerald-600 dark:text-emerald-400"
+                                aria-hidden="true"
+                            />
+                            La solicitud fue completada
+                        </span>
+                        <span class="text-xs text-muted-foreground">
+                            Si este número vuelve a escribir, no se reabre esta
+                            conversación: entra como solicitud nueva a la lista
+                            de espera («Pendientes»).
+                        </span>
+                    </span>
+                </label>
                 <DialogFooter class="gap-2 pointer-coarse:*:h-10">
                     <Button
                         type="button"

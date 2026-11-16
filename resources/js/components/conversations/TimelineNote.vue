@@ -67,7 +67,7 @@ function save(): void {
 <template>
     <article
         data-layout-box="note"
-        class="ml-auto w-full max-w-[min(85%,44rem)] rounded-2xl rounded-br-md border border-dashed border-warning/60 bg-warning-soft px-3 py-2 text-sm"
+        class="ml-auto w-full max-w-[min(85%,44rem)] rounded-bubble rounded-br-[0.2rem] border border-dashed border-warning/60 bg-warning-soft px-3 py-2 text-sm shadow-[0_1px_1px_color-mix(in_oklch,var(--shadow-ink)_6%,transparent)]"
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
         <header

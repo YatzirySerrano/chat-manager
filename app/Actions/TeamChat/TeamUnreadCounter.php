@@ -44,6 +44,30 @@ class TeamUnreadCounter
             ->all();
     }
 
+    /**
+     * Unread messages that mention the person, per thread id (muted ones
+     * included). Mentions live in the message metadata (`mentions`, group
+     * messages only); the lookup only reads the person's unread messages.
+     *
+     * @param  list<int>  $threadIds
+     * @return array<int, int>
+     */
+    public function mentionsPerThread(User $user, array $threadIds): array
+    {
+        if ($threadIds === []) {
+            return [];
+        }
+
+        return $this->unreadMessages($user)
+            ->whereIn('m.team_thread_id', $threadIds)
+            ->whereNotNull('m.metadata')
+            ->whereRaw("JSON_CONTAINS(m.metadata, ?, '$.mentions')", [(string) $user->id])
+            ->groupBy('m.team_thread_id')
+            ->pluck(DB::raw('count(*) as mentions'), 'm.team_thread_id')
+            ->mapWithKeys(fn (mixed $count, int|string $threadId): array => [(int) $threadId => (int) $count])
+            ->all();
+    }
+
     private function unreadMessages(User $user): Builder
     {
         return DB::table('team_messages as m')

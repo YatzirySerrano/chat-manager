@@ -22,11 +22,17 @@ class CloseConversation
         private AssignAutomatically $assignAutomatically,
     ) {}
 
-    public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null): Conversation
+    /**
+     * `$completed` («Solicitud completada»): the request was resolved, so the
+     * customer's next message never reopens this conversation, even inside
+     * the connection's reopening window; it starts a new request in the
+     * waiting list (ReceiveInboundMessage).
+     */
+    public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $completed = false): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
-        return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion): Conversation {
+        return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion, $completed): Conversation {
             $conversation = $this->lifecycle->lock($conversation);
             // Lock order step 2, before the event's foreign keys lock the user rows.
             $this->lifecycle->lockDepartment($conversation->department_id);
@@ -35,6 +41,7 @@ class CloseConversation
             $this->lifecycle->apply($conversation, ConversationStatus::Closed, [
                 'closed_at' => now(),
                 'closed_by_user_id' => $actor->id,
+                'completed_at' => $completed ? now() : null,
                 'on_hold_at' => null,
                 'on_hold_reason' => null,
             ]);
@@ -42,6 +49,7 @@ class CloseConversation
                 'from_user_id' => $conversation->assigned_user_id,
                 'from_department_id' => $conversation->department_id,
                 'note' => $reason,
+                ...($completed ? ['metadata' => ['completed' => true]] : []),
             ]);
 
             $this->assignAutomatically->distributeForAgentAfterCommit($conversation->assigned_user_id);

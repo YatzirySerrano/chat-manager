@@ -81,7 +81,7 @@ class ConversationController extends Controller
      *
      * @var list<string>
      */
-    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount', 'acceptBlock', 'serverTime'];
+    public const LIST_PROPS = ['conversations', 'filters', 'counts', 'inbox', 'unreadCount', 'awaitingCount', 'acceptBlock', 'serverTime'];
 
     /**
      * Props of the selected conversation (chat and details panel).
@@ -205,6 +205,7 @@ class ConversationController extends Controller
                 'tag_match' => $filters['tag_match'] ?? ConversationInboxQuery::TAG_MATCH_ANY,
                 'sort' => $filters['sort'] ?? ConversationInboxQuery::SORT_OLDEST,
                 'unread' => $filters['unread'] ?? false,
+                'awaiting' => $filters['awaiting'] ?? false,
                 'category' => $filters['category'] ?? null,
                 'readiness' => $filters['readiness'] ?? null,
             ],
@@ -224,6 +225,10 @@ class ConversationController extends Controller
             // view, filters and status (never closed ones): what the "Unread"
             // filter would list.
             'unreadCount' => fn (): int => $inbox->handle($actor, [...$filters, 'unread' => true])->reorder()->count(),
+            // Conversations where the customer wrote last and nobody answered
+            // yet, in the same view, filters and status: what the «Esperando
+            // respuesta» filter would list.
+            'awaitingCount' => fn (): int => $inbox->handle($actor, [...$filters, 'awaiting' => true])->reorder()->count(),
             // The control of pending conversations for whoever may accept
             // (PendingAttention): why "Aceptar" is disabled and when the state
             // changes by itself. Reloaded with the list after every signal.

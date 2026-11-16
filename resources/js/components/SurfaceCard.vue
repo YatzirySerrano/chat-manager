@@ -32,7 +32,12 @@ const props = withDefaults(
     <component
         :is="props.as"
         data-slot="surface-card"
-        :class="cn('overflow-hidden rounded-xl border bg-card', props.class)"
+        :class="
+            cn(
+                'overflow-hidden rounded-xl border bg-card shadow-card',
+                props.class,
+            )
+        "
     >
         <header
             v-if="title || $slots.actions"

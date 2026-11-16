@@ -94,7 +94,8 @@ test('accepting from the general inbox uses the chat\'s route and leaves the row
     $queued = Conversation::factory()->inDepartment($this->sales)->create(['last_message_at' => now()->subHour()]);
     $newer = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => now()]);
 
-    expect(collect(inboxRows($this->agent))->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id]);
+    // Oldest first by default: the request waiting longest is taken next.
+    expect(collect(inboxRows($this->agent))->pluck('id')->all())->toBe([$older->id, $queued->id, $newer->id]);
 
     $this->actingAs($this->agent)
         ->from(route('conversations.index'))
@@ -104,7 +105,7 @@ test('accepting from the general inbox uses the chat\'s route and leaves the row
 
     $rows = collect(inboxRows($this->agent));
 
-    expect($rows->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id])
+    expect($rows->pluck('id')->all())->toBe([$older->id, $queued->id, $newer->id])
         ->and($rows->firstWhere('id', $queued->id)['status'])->toBe('open')
         ->and($rows->firstWhere('id', $queued->id)['can']['accept'])->toBeFalse();
 });

@@ -23,6 +23,8 @@ export type InboxFilterState = {
     sort: ConversationSort;
     searchIn: ConversationSearchScope;
     unread: boolean;
+    /** The customer wrote last and nobody answered yet (`awaiting`). */
+    awaiting: boolean;
     /** Request category id, as a string (`category`). */
     category: string;
     /** `ready`, `needs_info` or empty for both (`readiness`). */
@@ -31,3 +33,7 @@ export type InboxFilterState = {
 
 /** Tags one filter may combine (ConversationInboxQuery::MAX_TAGS). */
 export const MAX_FILTER_TAGS = 10;
+
+/** The closed statuses of the filter: every closed one, or the completed ones. */
+export const isClosedStatus = (status: ConversationStatusFilter): boolean =>
+    status === 'closed' || status === 'completed';

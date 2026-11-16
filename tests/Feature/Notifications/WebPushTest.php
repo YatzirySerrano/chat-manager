@@ -129,6 +129,20 @@ test('the key command prints a usable pair without writing it anywhere', functio
         ->assertSuccessful();
 });
 
+test('a page subscribes its browser on its own with a silent JSON request', function () {
+    $user = User::factory()->agent()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('notifications.push-subscriptions.store'), ['endpoint' => PUSH_ENDPOINT])
+        ->assertNoContent();
+
+    $this->actingAs($user)
+        ->postJson(route('notifications.push-subscriptions.store'), ['endpoint' => PUSH_ENDPOINT])
+        ->assertNoContent();
+
+    expect(PushSubscription::query()->sole()->user_id)->toBe($user->id);
+});
+
 test('guests cannot subscribe a browser', function () {
     $this->post(route('notifications.push-subscriptions.store'), ['endpoint' => PUSH_ENDPOINT])
         ->assertRedirect(route('login'));

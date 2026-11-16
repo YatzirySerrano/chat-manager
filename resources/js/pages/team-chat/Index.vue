@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { Head, router, useHttp } from '@inertiajs/vue3';
 import {
+    AtSign,
+    MailWarning,
     MessageCircle,
     MessagesSquare,
     Plus,
-    Search,
     UserRound,
     UsersRound,
-    X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import EmptyState from '@/components/EmptyState.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import FilterToggle from '@/components/filters/FilterToggle.vue';
+import HighlightMatch from '@/components/filters/HighlightMatch.vue';
+import type { FilterTabOption } from '@/components/filters/types';
+import { useRowMotion } from '@/components/filters/useRowMotion';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
@@ -25,7 +32,6 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
@@ -42,6 +48,7 @@ import type {
     TeamChatLimits,
     TeamMessagePage,
     TeamSearchResult,
+    TeamThreadCounts,
     TeamThreadDetail,
     TeamThreadFilter,
     TeamThreadList,
@@ -61,6 +68,8 @@ const props = defineProps<{
     messages: TeamMessagePage | null;
     around: number | null;
     unreadTotal: number;
+    /** Numbers of «No leídos» and «Menciones» in the scope. */
+    threadCounts?: TeamThreadCounts;
     can: { createGroup: boolean };
     limits: TeamChatLimits;
 }>();
@@ -69,19 +78,76 @@ const props = defineProps<{
 const CHAT_CANVAS =
     'bg-surface-sunken bg-[radial-gradient(color-mix(in_oklch,var(--primary)_14%,transparent)_1px,transparent_1.5px)] bg-size-[20px_20px]';
 
-const FILTER_STORAGE_KEY = 'team-chat.filter';
+/*
+ * The list's filters follow the inbox pattern (components/filters): the
+ * search box («/» or Ctrl+K), the scope as tabs (Todos, Privados, Grupos,
+ * Archivados) and the toggles that combine with it («No leídos»,
+ * «Menciones») with their counters. The URL holds them (replace visits) and
+ * the last choice is remembered on this device, restored only on a clean
+ * visit (no filter in the URL).
+ */
+const FILTER_STORAGE_KEY = 'team-chat.filters';
+/** Before the toggles existed only the chosen chip was remembered. */
+const LEGACY_FILTER_STORAGE_KEY = 'team-chat.filter';
 const PAGE_STEP = 50;
 
-const filterOptions: { value: TeamThreadFilter; label: string }[] = [
-    { value: 'all', label: 'Todos' },
-    { value: 'unread', label: 'No leídos' },
-    { value: 'direct', label: 'Privados' },
-    { value: 'groups', label: 'Grupos' },
-    { value: 'archived', label: 'Archivados' },
-];
+type TeamScope = Exclude<TeamThreadFilter, 'unread' | 'mentions'>;
+
+const SCOPES: TeamScope[] = ['all', 'direct', 'groups', 'archived'];
+
+const scopeOf = (value: TeamThreadFilter): TeamScope =>
+    (SCOPES as string[]).includes(value) ? (value as TeamScope) : 'all';
 
 const search = ref(props.filters.search);
-const filter = ref<TeamThreadFilter>(props.filters.filter);
+const filter = ref<TeamScope>(scopeOf(props.filters.filter));
+const unreadOnly = ref(
+    props.filters.unread === true || props.filters.filter === 'unread',
+);
+const mentionsOnly = ref(
+    props.filters.mentions === true || props.filters.filter === 'mentions',
+);
+
+/* Follow the server when it normalizes the filters. */
+watch(
+    () => props.filters,
+    (filters) => {
+        filter.value = scopeOf(filters.filter);
+        unreadOnly.value =
+            filters.unread === true || filters.filter === 'unread';
+        mentionsOnly.value =
+            filters.mentions === true || filters.filter === 'mentions';
+    },
+);
+
+const scopeTabs = computed<FilterTabOption<TeamScope>[]>(() => [
+    { value: 'all', label: 'Todos', title: 'Todos tus chats sin archivar' },
+    {
+        value: 'direct',
+        label: 'Privados',
+        title: 'Chats uno a uno con alguien del equipo',
+    },
+    { value: 'groups', label: 'Grupos', title: 'Los grupos en los que estás' },
+    {
+        value: 'archived',
+        label: 'Archivados',
+        title: 'Grupos archivados, con su historial',
+    },
+]);
+
+/* Mentions only exist in groups. */
+const showMentions = computed(() => filter.value !== 'direct');
+const counts = computed<TeamThreadCounts>(
+    () => props.threadCounts ?? { unread: 0, mentions: 0 },
+);
+
+/** A search or a toggle narrows the list: an empty result means "nothing matches". */
+const narrowed = computed(
+    () =>
+        search.value.trim() !== '' ||
+        unreadOnly.value ||
+        (mentionsOnly.value && showMentions.value),
+);
+const hasFilters = computed(() => narrowed.value || filter.value !== 'all');
 const loadingList = ref(false);
 const newDirectOpen = ref(false);
 const newGroupOpen = ref(false);
@@ -120,6 +186,14 @@ function listQuery(
         query.filter = filter.value;
     }
 
+    if (unreadOnly.value) {
+        query.unread = 1;
+    }
+
+    if (mentionsOnly.value && showMentions.value) {
+        query.mentions = 1;
+    }
+
     return query;
 }
 
@@ -148,7 +222,7 @@ function openFromPreview(id: number): void {
 
 function reloadList(limit?: number): void {
     router.get(currentPath(), listQuery(limit ? { limit } : {}), {
-        only: ['threads', 'filters'],
+        only: ['threads', 'filters', 'threadCounts'],
         preserveState: true,
         preserveScroll: true,
         replace: true,
@@ -157,43 +231,105 @@ function reloadList(limit?: number): void {
     });
 }
 
-function rememberFilter(value: TeamThreadFilter): void {
+type RememberedFilters = {
+    filter: TeamScope;
+    unread: boolean;
+    mentions: boolean;
+};
+
+function rememberFilters(): void {
     try {
-        window.localStorage.setItem(FILTER_STORAGE_KEY, value);
+        window.localStorage.setItem(
+            FILTER_STORAGE_KEY,
+            JSON.stringify({
+                filter: filter.value,
+                unread: unreadOnly.value,
+                mentions: mentionsOnly.value,
+            } satisfies RememberedFilters),
+        );
     } catch {
-        // Storage may be unavailable (private mode): the filter is not remembered.
+        // Storage may be unavailable (private mode): the filters are not remembered.
     }
 }
 
-function chooseFilter(value: TeamThreadFilter): void {
-    if (filter.value === value) {
-        return;
-    }
-
-    filter.value = value;
-    rememberFilter(value);
+function chooseScope(value: TeamScope): void {
+    // A second click on the chosen tab goes back to «Todos».
+    filter.value = filter.value === value ? 'all' : value;
+    rememberFilters();
     reloadList();
 }
 
+function toggleUnread(): void {
+    unreadOnly.value = !unreadOnly.value;
+    rememberFilters();
+    reloadList();
+}
+
+function toggleMentions(): void {
+    mentionsOnly.value = !mentionsOnly.value;
+    rememberFilters();
+    reloadList();
+}
+
+function clearFilters(): void {
+    filter.value = 'all';
+    unreadOnly.value = false;
+    mentionsOnly.value = false;
+    rememberFilters();
+
+    if (search.value !== '') {
+        // The debounced search watcher reloads the list.
+        search.value = '';
+    } else {
+        reloadList();
+    }
+}
+
+/* A clean visit restores the filters this device used last. */
+function rememberedFilters(): RememberedFilters | null {
+    const saved = window.localStorage.getItem(FILTER_STORAGE_KEY);
+
+    if (saved !== null) {
+        const value = JSON.parse(saved) as Partial<RememberedFilters>;
+
+        return {
+            filter: scopeOf((value.filter ?? 'all') as TeamThreadFilter),
+            unread: value.unread === true,
+            mentions: value.mentions === true,
+        };
+    }
+
+    const legacy = window.localStorage.getItem(LEGACY_FILTER_STORAGE_KEY);
+
+    return legacy === null
+        ? null
+        : {
+              filter: scopeOf(legacy as TeamThreadFilter),
+              unread: legacy === 'unread',
+              mentions: false,
+          };
+}
+
 try {
-    const remembered = window.localStorage.getItem(
-        FILTER_STORAGE_KEY,
-    ) as TeamThreadFilter | null;
-    const isUrlFiltered = new URLSearchParams(window.location.search).has(
-        'filter',
+    const parameters = new URLSearchParams(window.location.search);
+    const isUrlFiltered = ['filter', 'unread', 'mentions'].some((key) =>
+        parameters.has(key),
     );
+    const remembered = isUrlFiltered ? null : rememberedFilters();
 
     if (
         remembered &&
-        remembered !== filter.value &&
-        !isUrlFiltered &&
-        filterOptions.some((option) => option.value === remembered)
+        (remembered.filter !== filter.value ||
+            remembered.unread !== unreadOnly.value ||
+            remembered.mentions !== mentionsOnly.value)
     ) {
-        filter.value = remembered;
+        filter.value = remembered.filter;
+        unreadOnly.value = remembered.unread;
+        mentionsOnly.value = remembered.mentions;
         reloadList();
     }
 } catch {
-    // Storage may be unavailable: use the default filter.
+    // Storage may be unavailable or hold something else: use the defaults.
 }
 
 watchDebounced(
@@ -232,8 +368,49 @@ async function runMessageSearch(): Promise<void> {
     }
 }
 
-function clearSearch(): void {
-    search.value = '';
+/* Arrow down from the search box: the first chat of the list. */
+const threadList = ref<{ $el: HTMLElement } | null>(null);
+
+function focusFirstThread(): void {
+    threadList.value?.$el.querySelector<HTMLElement>('a[href]')?.focus();
+}
+
+/* Arrow keys move between the chats; up from the first one returns to the search. */
+const searchBox = ref<InstanceType<typeof FilterSearch> | null>(null);
+
+function onThreadsKeydown(event: KeyboardEvent): void {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        return;
+    }
+
+    const links = [
+        ...(threadList.value?.$el.querySelectorAll<HTMLElement>('a[href]') ??
+            []),
+    ];
+    const index = links.indexOf(document.activeElement as HTMLElement);
+
+    if (index === -1) {
+        return;
+    }
+
+    event.preventDefault();
+
+    if (event.key === 'ArrowUp' && index === 0) {
+        searchBox.value?.focus();
+
+        return;
+    }
+
+    const next =
+        event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? links.length - 1
+              : event.key === 'ArrowDown'
+                ? Math.min(links.length - 1, index + 1)
+                : Math.max(0, index - 1);
+
+    links[next]?.focus();
 }
 
 function openResult(result: TeamSearchResult): void {
@@ -378,24 +555,42 @@ const liveReload = useLiveReload({
 
         return user ? [{ name: user, events: ['team-chat.changed'] }] : [];
     },
-    only: ['threads', 'unreadTotal', 'teamChatUnread'],
+    only: ['threads', 'unreadTotal', 'teamChatUnread', 'threadCounts'],
     fallbackIntervalMs: 20_000,
 });
 
-const emptyListCopy = computed(() => {
+/* Empty because of the filters: say which ones, offer to clear them. */
+const narrowedCopy = computed(() => {
     if (search.value.trim() !== '') {
         return {
-            title: 'Ningún chat coincide',
+            title: 'No hay chats con estos filtros',
             description:
-                'Prueba con otro nombre o revisa los resultados en mensajes.',
+                'Prueba con otro nombre, revisa los resultados en mensajes o limpia los filtros.',
+        };
+    }
+
+    if (mentionsOnly.value && showMentions.value) {
+        return {
+            title: 'Nadie te ha mencionado',
+            description:
+                'Aquí aparecen los grupos con mensajes sin leer que te mencionan (@).',
         };
     }
 
     return {
-        unread: {
-            title: 'Estás al día',
-            description: 'No tienes mensajes internos sin leer.',
-        },
+        title: 'Estás al día',
+        description: 'No tienes mensajes internos sin leer con estos filtros.',
+    };
+});
+
+/* Rows animate only on small live changes (a chat moves up, a new one). */
+const threadMotion = useRowMotion(
+    () => props.threads.threads,
+    () => props.filters,
+);
+
+const emptyListCopy = computed(() => {
+    return {
         archived: {
             title: 'Sin grupos archivados',
             description:
@@ -493,64 +688,73 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </Button>
                 </div>
 
-                <div
-                    class="relative"
-                    role="search"
+                <FilterSearch
+                    ref="searchBox"
+                    v-model="search"
+                    placeholder="Buscar chats y mensajes"
+                    label="Buscar chats y mensajes"
+                    title="Busca por nombre de la persona o del grupo, y en los mensajes. Atajo: / o Ctrl+K"
+                    :maxlength="80"
+                    :loading="loadingList || searchingMessages"
                     data-tour="team-chat.search"
-                >
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <Input
-                        v-model="search"
-                        type="search"
-                        class="rounded-full border-transparent bg-muted/70 pr-9 pl-9 shadow-none hover:bg-muted focus-visible:bg-background [&::-webkit-search-cancel-button]:hidden"
-                        placeholder="Buscar chats y mensajes"
-                        aria-label="Buscar chats y mensajes"
-                        maxlength="80"
-                        @keydown.esc="clearSearch"
-                    />
-                    <button
-                        v-if="search !== ''"
-                        type="button"
-                        class="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                        aria-label="Limpiar búsqueda"
-                        @click="clearSearch"
-                    >
-                        <X class="size-3.5" />
-                    </button>
-                </div>
+                    @next="focusFirstThread"
+                />
 
-                <div
-                    class="flex gap-1 overflow-x-auto pb-0.5"
-                    role="group"
-                    aria-label="Filtrar chats"
+                <FilterTabs
+                    :options="scopeTabs"
+                    :model-value="filter"
+                    label="Filtrar chats"
+                    @update:model-value="chooseScope"
+                />
+
+                <ActiveFilters
+                    :pills="[]"
+                    :clearable="hasFilters"
+                    @clear="clearFilters"
                 >
-                    <button
-                        v-for="option in filterOptions"
-                        :key="option.value"
-                        type="button"
-                        :aria-pressed="filter === option.value"
-                        :class="
-                            cn(
-                                'shrink-0 press rounded-full px-3 py-1 text-xs font-medium focus-visible:ring-[3px] focus-visible:ring-primary/25 focus-visible:outline-none pointer-coarse:min-h-9',
-                                filter === option.value
-                                    ? 'bg-foreground text-background'
-                                    : 'bg-muted/70 text-muted-foreground hover:bg-accent hover:text-foreground',
-                            )
+                    <FilterToggle
+                        :pressed="unreadOnly"
+                        label="No leídos"
+                        :icon="MailWarning"
+                        :count="counts.unread"
+                        tone="primary"
+                        :sr-label="
+                            counts.unread === 1
+                                ? '1 chat con mensajes sin leer'
+                                : `${counts.unread} chats con mensajes sin leer`
                         "
-                        @click="chooseFilter(option.value)"
-                    >
-                        {{ option.label }}
-                    </button>
-                </div>
+                        title="Solo los chats con mensajes que aún no has leído"
+                        data-team-filter="unread"
+                        @toggle="toggleUnread"
+                    />
+                    <FilterToggle
+                        v-if="showMentions"
+                        :pressed="mentionsOnly"
+                        label="Menciones"
+                        :icon="AtSign"
+                        :count="counts.mentions"
+                        tone="warning"
+                        :sr-label="
+                            counts.mentions === 1
+                                ? '1 grupo te menciona'
+                                : `${counts.mentions} grupos te mencionan`
+                        "
+                        title="Solo los grupos con mensajes sin leer que te mencionan (@)"
+                        data-team-filter="mentions"
+                        @toggle="toggleMentions"
+                    />
+                </ActiveFilters>
             </div>
 
             <div
-                class="min-h-0 flex-1 overflow-y-auto border-t p-2"
+                class="relative min-h-0 flex-1 overflow-y-auto border-t p-2"
                 :aria-busy="loadingList"
             >
+                <div
+                    v-if="loadingList && threads.threads.length > 0"
+                    class="sticky top-0 z-10 -mx-2 -mt-2 mb-1.5 pane-progress"
+                    aria-hidden="true"
+                />
                 <template v-if="loadingList && threads.threads.length === 0">
                     <div
                         v-for="index in 5"
@@ -564,32 +768,54 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         </div>
                     </div>
                 </template>
-                <EmptyState
+                <FilteredEmpty
                     v-else-if="threads.threads.length === 0"
+                    :narrowed="narrowed"
+                    :narrowed-title="narrowedCopy.title"
+                    :narrowed-description="narrowedCopy.description"
                     :icon="MessagesSquare"
                     :title="emptyListCopy.title"
                     :description="emptyListCopy.description"
-                    class="m-1 py-10"
-                />
+                    @clear="clearFilters"
+                >
+                    <Button
+                        v-if="filter !== 'all'"
+                        variant="outline"
+                        size="sm"
+                        @click="clearFilters"
+                        >Ver todos los chats</Button
+                    >
+                </FilteredEmpty>
                 <nav
                     v-else
                     aria-label="Lista de chats"
                     data-tour="team-chat.threads"
-                    class="grid grid-cols-1 gap-0.5"
-                    :class="firstPaint && 'reveal-stagger'"
+                    @keydown="onThreadsKeydown"
                 >
-                    <ThreadListItem
-                        v-for="thread in threads.threads"
-                        :key="thread.id"
-                        :thread="thread"
-                        :active="
-                            openingThreadId === null &&
-                            activeThread?.id === thread.id
-                        "
-                        :opening="openingThreadId === thread.id"
-                        :query="linkQuery"
-                        @preview="(row) => (previewThread = row)"
-                    />
+                    <TransitionGroup
+                        ref="threadList"
+                        tag="div"
+                        :name="threadMotion"
+                        class="relative grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
+                        :class="[
+                            firstPaint && 'reveal-stagger',
+                            loadingList && 'opacity-60',
+                        ]"
+                    >
+                        <ThreadListItem
+                            v-for="thread in threads.threads"
+                            :key="thread.id"
+                            :thread="thread"
+                            :active="
+                                openingThreadId === null &&
+                                activeThread?.id === thread.id
+                            "
+                            :opening="openingThreadId === thread.id"
+                            :query="linkQuery"
+                            :highlight="filters.search"
+                            @preview="(row) => (previewThread = row)"
+                        />
+                    </TransitionGroup>
                 </nav>
 
                 <p
@@ -669,7 +895,10 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                                     <span class="font-medium text-foreground"
                                         >{{ result.author }}:</span
                                     >
-                                    {{ result.excerpt }}
+                                    <HighlightMatch
+                                        :text="result.excerpt"
+                                        :query="search"
+                                    />
                                 </span>
                             </button>
                         </li>

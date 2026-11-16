@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import {
-    ArrowLeft,
-    Ban,
-    Palette,
-    PanelRight,
-    PanelRightClose,
-    Paperclip,
-} from '@lucide/vue';
+import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
@@ -15,10 +8,12 @@ import {
 } from '@vueuse/core';
 import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import ChatDropOverlay from '@/components/chat/ChatDropOverlay.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
 import ChatTimeline from '@/components/conversations/ChatTimeline.vue';
 import ConversationActions from '@/components/conversations/ConversationActions.vue';
+import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
@@ -441,7 +436,7 @@ watch(conversationId, () => (dragDepth.value = 0));
     >
         <header
             ref="header"
-            class="flex items-center gap-2 border-b px-2 py-2 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:py-0.5"
+            class="chat-header relative z-20 flex min-h-14 items-center gap-2 border-b px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
         >
             <Button
                 variant="ghost"
@@ -453,11 +448,24 @@ watch(conversationId, () => (dragDepth.value = 0));
             >
                 <ArrowLeft aria-hidden="true" />
             </Button>
+            <!-- The customer, with the channel they write from on the avatar. -->
             <span
-                class="hidden size-10 shrink-0 place-items-center rounded-full bg-primary-soft text-sm font-semibold text-primary-soft-foreground sm:grid [@media(max-height:32rem)]:hidden!"
+                class="relative hidden size-10 shrink-0 sm:block [@media(max-height:32rem)]:hidden!"
                 aria-hidden="true"
-                >{{ getInitials(conversation.contact.display_name) }}</span
             >
+                <span
+                    class="grid size-full place-items-center rounded-full bg-primary-soft font-display text-sm font-semibold text-primary-soft-foreground ring-2 ring-background"
+                    >{{ getInitials(conversation.contact.display_name) }}</span
+                >
+                <span
+                    class="absolute -right-0.5 -bottom-0.5 grid size-[1.125rem] place-items-center rounded-full bg-background text-muted-foreground shadow-(--shadow-control) ring-1 ring-border"
+                >
+                    <ChannelIcon
+                        :channel="conversation.connection.channel"
+                        class="size-2.5"
+                    />
+                </span>
+            </span>
             <button
                 type="button"
                 class="@container min-w-0 flex-1 rounded-lg px-1.5 py-0.5 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
@@ -509,6 +517,14 @@ watch(conversationId, () => (dragDepth.value = 0));
                         class="shrink-0"
                         :status="conversation.status"
                         :label="conversation.status_label"
+                    />
+                    <CompletedBadge
+                        v-if="
+                            conversation.status === 'closed' &&
+                            conversation.completed_at
+                        "
+                        class="shrink-0"
+                        :at="conversation.completed_at"
                     />
                     <!-- Not the interactive variant: this line lives inside
                      the button that opens the details (which show the
@@ -642,48 +658,22 @@ watch(conversationId, () => (dragDepth.value = 0));
         />
 
         <!-- Shown only while files hover over the conversation. -->
-        <div
-            v-if="dropActive"
-            class="pointer-events-none absolute inset-0 z-30 grid place-items-center drop-veil p-4"
+        <ChatDropOverlay
+            :visible="dropActive"
+            :allowed="dropAllowed"
+            :title="
+                dropAllowed
+                    ? 'Suelta para adjuntar'
+                    : 'Ahora no se pueden adjuntar archivos'
+            "
+            :description="
+                dropAllowed
+                    ? `Los archivos se preparan para ${conversation.contact.display_name}. Nada se envía hasta que pulses «Enviar».`
+                    : 'Para enviar archivos necesitas poder responder al cliente en esta conversación.'
+            "
             data-drop-overlay
             :data-drop-allowed="dropAllowed"
-            aria-hidden="true"
-        >
-            <div
-                class="grid w-full max-w-md justify-items-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center"
-                :class="
-                    dropAllowed
-                        ? 'border-primary bg-primary-soft/70 text-primary-soft-foreground'
-                        : 'border-border-strong bg-card text-muted-foreground'
-                "
-            >
-                <span
-                    class="grid size-12 place-items-center rounded-full"
-                    :class="
-                        dropAllowed
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted'
-                    "
-                >
-                    <Paperclip v-if="dropAllowed" class="size-5" />
-                    <Ban v-else class="size-5" />
-                </span>
-                <p class="font-display text-lg font-semibold">
-                    {{
-                        dropAllowed
-                            ? 'Suelta para adjuntar'
-                            : 'Ahora no se pueden adjuntar archivos'
-                    }}
-                </p>
-                <p class="max-w-prose text-sm">
-                    {{
-                        dropAllowed
-                            ? `Los archivos se preparan para ${conversation.contact.display_name}. Nada se envía hasta que pulses «Enviar».`
-                            : 'Para enviar archivos necesitas poder responder al cliente en esta conversación.'
-                    }}
-                </p>
-            </div>
-        </div>
+        />
 
         <TemplatePickerDialog
             v-model:open="templatesOpen"

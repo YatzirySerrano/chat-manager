@@ -6,6 +6,7 @@ use App\Actions\TeamChat\TeamUnreadCounter;
 use App\Broadcasting\RealtimeClientConfig;
 use App\Enums\Permission;
 use App\Models\User;
+use App\Notifications\Push\Vapid;
 use App\Services\PlatformSettings;
 use App\Support\Features;
 use App\Support\PasswordPolicy;
@@ -62,6 +63,10 @@ class HandleInertiaRequests extends Middleware
             ],
             'passwordPolicy' => fn (): array => PasswordPolicy::current(),
             'realtime' => fn (): array => app(RealtimeClientConfig::class)->for($user instanceof User ? $user : null),
+            // Public VAPID key (null = Web Push off): every signed-in page
+            // subscribes this browser on its own once notifications are
+            // allowed, so system notifications never need turning on by hand.
+            'webPushKey' => fn (): ?string => $user instanceof User ? app(Vapid::class)->publicKey() : null,
             'teamChatUnread' => fn (): ?int => $user instanceof User && $user->holdsPermission(Permission::UseTeamChat)
                 ? app(TeamUnreadCounter::class)->total($user)
                 : null,

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
-import { ArrowDown, History, MessagesSquare } from '@lucide/vue';
+import { MessagesSquare } from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
     useIntervalFn,
+    useMediaQuery,
 } from '@vueuse/core';
 import {
     computed,
@@ -16,6 +17,11 @@ import {
     watch,
 } from 'vue';
 import { toast } from 'vue-sonner';
+import { arriveClass } from '@/components/chat/bubble';
+import ChatDaySeparator from '@/components/chat/ChatDaySeparator.vue';
+import ChatDivider from '@/components/chat/ChatDivider.vue';
+import ChatHistoryStart from '@/components/chat/ChatHistoryStart.vue';
+import ChatJumpButton from '@/components/chat/ChatJumpButton.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
@@ -26,7 +32,6 @@ import TimelineEvent from '@/components/conversations/TimelineEvent.vue';
 import TimelineNote from '@/components/conversations/TimelineNote.vue';
 import type { TimelineItem } from '@/components/conversations/useConversationTimeline';
 import EmptyState from '@/components/EmptyState.vue';
-import { Button } from '@/components/ui/button';
 import {
     CUSTOM_BUBBLE_CLASSES,
     CUSTOM_CHAT_COLORS,
@@ -107,6 +112,7 @@ const showJumpButton = computed(
         (unseen.value > 0 || !atBottom.value) &&
         scrollerSize.height.value >= MIN_JUMP_HEIGHT,
 );
+const compactJump = useMediaQuery('(max-height: 20rem)');
 
 /*
  * One group per calendar day of the platform time zone, keyed by the same
@@ -645,7 +651,7 @@ defineExpose({ scrollToBottom });
     >
         <div
             ref="scroller"
-            class="h-full overflow-y-auto overscroll-contain px-3 pt-4 sm:px-6 [@media(max-height:20rem)]:overscroll-auto [@media(max-height:20rem)]:pt-2"
+            class="h-full overflow-y-auto overscroll-contain px-3 pt-3 sm:px-6 lg:px-8 [@media(max-height:20rem)]:overscroll-auto [@media(max-height:20rem)]:pt-2"
             :class="[
                 showJumpButton
                     ? 'pb-16 [@media(max-height:20rem)]:pb-10'
@@ -658,30 +664,14 @@ defineExpose({ scrollToBottom });
             aria-live="off"
             @scroll.passive="onScroll"
         >
-            <div class="grid grid-cols-1">
-                <div class="flex justify-center py-1">
-                    <Button
-                        v-if="hasMore"
-                        variant="outline"
-                        size="sm"
-                        class="rounded-full pointer-coarse:h-10"
-                        :loading="loadingOlder"
-                        @click="loadOlder"
-                    >
-                        <History v-if="!loadingOlder" aria-hidden="true" />
-                        Cargar mensajes anteriores
-                    </Button>
-                    <p
-                        v-else-if="items.length > 0"
-                        class="text-xs text-muted-foreground"
-                        :class="
-                            customColors &&
-                            'rounded-full bg-background px-2.5 py-0.5'
-                        "
-                    >
-                        Inicio de la conversación
-                    </p>
-                </div>
+            <div class="mx-auto grid w-full max-w-[64rem] grid-cols-1">
+                <ChatHistoryStart
+                    :has-more="hasMore"
+                    :loading="loadingOlder"
+                    :has-items="items.length > 0"
+                    :custom="customColors"
+                    @load="loadOlder"
+                />
                 <p
                     v-if="failed"
                     class="text-center text-xs text-destructive"
@@ -714,15 +704,11 @@ defineExpose({ scrollToBottom });
                     class="grid grid-cols-1 pt-1 pb-1.5"
                     :data-day="group.day"
                 >
-                    <h3
-                        class="pointer-events-none sticky top-0 z-10 flex justify-center py-1"
+                    <ChatDaySeparator
+                        as="h3"
+                        :label="group.label"
                         data-day-separator
-                    >
-                        <span
-                            class="max-w-full rounded-full border bg-background/90 px-3 py-1 text-center text-[0.6875rem] leading-none font-semibold text-balance break-words text-muted-foreground shadow-(--shadow-control) backdrop-blur-sm"
-                            >{{ group.label }}</span
-                        >
-                    </h3>
+                    />
                     <template
                         v-for="{
                             item,
@@ -748,7 +734,14 @@ defineExpose({ scrollToBottom });
                             :can-quote="conversation.can.reply"
                             :grouped-with-previous="groupedWithPrevious"
                             :grouped-with-next="groupedWithNext"
-                            :class="fresh.has(item.key) && 'reveal'"
+                            :class="
+                                fresh.has(item.key) &&
+                                arriveClass(
+                                    item.message.direction === 'outbound'
+                                        ? 'out'
+                                        : 'in',
+                                )
+                            "
                             @retry="requestRetry"
                             @quote="(message) => emit('quote', message)"
                             :revoking-attachment-id="revokingAttachmentId"
@@ -761,7 +754,7 @@ defineExpose({ scrollToBottom });
                             :conversation-id="conversation.id"
                             :max-length="noteMaxLength"
                             class="mt-2.5"
-                            :class="fresh.has(item.key) && 'reveal'"
+                            :class="fresh.has(item.key) && arriveClass('out')"
                             @saved="
                                 (noteId) => emit('refresh', { notes: [noteId] })
                             "
@@ -771,38 +764,25 @@ defineExpose({ scrollToBottom });
                             class="mt-2.5"
                             :event="item.event"
                         />
-                        <p
+                        <ChatDivider
                             v-if="item.key === historyEndsAt"
-                            class="mt-3 flex items-center gap-3 text-[0.6875rem] font-medium text-muted-foreground before:h-px before:flex-1 before:bg-border-strong/70 after:h-px after:flex-1 after:bg-border-strong/70"
+                            class="mt-3"
+                            label="Historial importado de WhatsApp"
+                            :custom="customColors"
+                            role="separator"
                             data-history-divider
-                        >
-                            <span
-                                class="rounded-full px-2 py-0.5"
-                                :class="customColors && 'bg-background'"
-                                >Historial importado de WhatsApp</span
-                            >
-                        </p>
+                        />
                     </template>
                 </section>
             </div>
         </div>
 
-        <Button
-            v-if="showJumpButton"
-            size="sm"
-            variant="secondary"
-            class="absolute right-4 bottom-4 pop rounded-full shadow-elevated pointer-coarse:h-10 [@media(max-height:20rem)]:right-2 [@media(max-height:20rem)]:bottom-2 [@media(max-height:20rem)]:h-7 [@media(max-height:20rem)]:px-2.5"
+        <ChatJumpButton
+            :visible="showJumpButton"
+            :count="unseen"
+            :compact="compactJump"
             @click="scrollToBottom(true)"
-        >
-            <ArrowDown aria-hidden="true" />
-            {{
-                unseen > 0
-                    ? unseen === 1
-                        ? '1 nuevo'
-                        : `${unseen} nuevos`
-                    : 'Ir al final'
-            }}
-        </Button>
+        />
 
         <MediaViewer
             v-if="viewerOpen && gallery.length > 0"

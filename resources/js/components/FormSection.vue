@@ -52,7 +52,10 @@ const props = withDefaults(
         <div v-if="bare" class="min-w-0 space-y-4">
             <slot />
         </div>
-        <div v-else class="min-w-0 overflow-hidden rounded-xl border bg-card">
+        <div
+            v-else
+            class="min-w-0 overflow-hidden rounded-xl border bg-card shadow-card"
+        >
             <div :class="flush ? undefined : 'p-4 sm:p-6'">
                 <slot />
             </div>

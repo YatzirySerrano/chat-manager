@@ -14,10 +14,17 @@ use Illuminate\Validation\Rule;
 /**
  * The thread list of a person: only threads where they currently
  * participate, most recent activity first, with unread counters.
+ *
+ * `filter` is the scope: all, direct, groups or archived. Two toggles
+ * combine with it: `unread` (threads with messages unread for the person)
+ * and `mentions` (threads with unread messages that mention them). The
+ * legacy `filter=unread` and `filter=mentions` still work: they are the
+ * toggle over every thread that is not archived (normalize()). counts()
+ * gives the quick filters their numbers within the scope.
  */
 class TeamThreadListQuery
 {
-    public const FILTERS = ['all', 'unread', 'direct', 'groups', 'archived'];
+    public const FILTERS = ['all', 'unread', 'mentions', 'direct', 'groups', 'archived'];
 
     public const DEFAULT_LIMIT = 50;
 
@@ -36,26 +43,40 @@ class TeamThreadListQuery
         return [
             'search' => ['nullable', 'string', 'max:80'],
             'filter' => ['nullable', 'string', Rule::in(self::FILTERS)],
+            'unread' => ['nullable', 'boolean'],
+            'mentions' => ['nullable', 'boolean'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:'.self::MAX_LIMIT],
         ];
     }
 
     /**
-     * @param  array{search: string, filter: string, limit: int}  $filters
+     * The filters of the list from validated input: the scope and the
+     * toggles, the legacy `filter=unread|mentions` turned into its toggle.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{search: string, filter: string, unread: bool, mentions: bool, limit: int}
+     */
+    public static function normalize(array $validated): array
+    {
+        $filter = is_string($validated['filter'] ?? null) ? $validated['filter'] : 'all';
+
+        return [
+            'search' => trim(is_string($validated['search'] ?? null) ? $validated['search'] : ''),
+            'filter' => in_array($filter, ['unread', 'mentions'], true) ? 'all' : $filter,
+            'unread' => $filter === 'unread' || filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
+            'mentions' => $filter === 'mentions' || filter_var($validated['mentions'] ?? false, FILTER_VALIDATE_BOOL),
+            'limit' => is_numeric($validated['limit'] ?? null) ? (int) $validated['limit'] : self::DEFAULT_LIMIT,
+        ];
+    }
+
+    /**
+     * @param  array{search: string, filter: string, unread?: bool, mentions?: bool, limit: int}  $filters
      * @return array{threads: list<array<string, mixed>>, has_more: bool}
      */
     public function handle(User $viewer, array $filters): array
     {
-        $query = TeamThread::query()
-            ->withActiveParticipant($viewer)
+        $query = $this->scoped($viewer, $filters['filter'])
             ->select('team_threads.*');
-
-        match ($filters['filter']) {
-            'archived' => $query->whereNotNull('archived_at'),
-            'direct' => $query->whereNull('archived_at')->where('type', TeamThreadType::Direct),
-            'groups' => $query->whereNull('archived_at')->where('type', TeamThreadType::Group),
-            default => $query->whereNull('archived_at'),
-        };
 
         if ($filters['search'] !== '') {
             $term = '%'.addcslashes($filters['search'], '\\%_').'%';
@@ -69,9 +90,18 @@ class TeamThreadListQuery
                     ->whereHas('user', fn (Builder $users) => $users->where('is_active', true)->withoutProtectedFor($viewer)->where('name', 'like', $term))));
         }
 
-        if ($filters['filter'] === 'unread') {
-            $unreadThreadIds = array_keys(array_filter($this->unread->perThread($viewer, $this->allThreadIds($viewer))));
-            $query->whereKey($unreadThreadIds === [] ? [0] : $unreadThreadIds);
+        // The toggles narrow to the threads of the scope with unread messages
+        // (or unread mentions) for the person; both together mean both.
+        if (($filters['unread'] ?? false) || ($filters['mentions'] ?? false)) {
+            $ids = $this->threadIds($viewer, $filters['filter']);
+
+            foreach (['unread' => 'perThread', 'mentions' => 'mentionsPerThread'] as $toggle => $counter) {
+                if ($filters[$toggle] ?? false) {
+                    $ids = array_keys(array_filter($this->unread->{$counter}($viewer, $ids)));
+                }
+            }
+
+            $query->whereKey($ids === [] ? [0] : $ids);
         }
 
         $threads = $query
@@ -124,10 +154,44 @@ class TeamThreadListQuery
     }
 
     /**
+     * Numbers of the quick filters, over the person's threads that are not
+     * archived: threads with unread messages and threads with unread
+     * messages that mention them (muted ones included, as the rows show).
+     *
+     * @return array{unread: int, mentions: int}
+     */
+    public function counts(User $viewer, string $scope = 'all'): array
+    {
+        $ids = $this->threadIds($viewer, $scope);
+
+        return [
+            'unread' => count(array_filter($this->unread->perThread($viewer, $ids))),
+            'mentions' => count(array_filter($this->unread->mentionsPerThread($viewer, $ids))),
+        ];
+    }
+
+    /**
+     * The person's threads within the scope (all, direct, groups, archived).
+     *
+     * @return Builder<TeamThread>
+     */
+    private function scoped(User $viewer, string $scope): Builder
+    {
+        $query = TeamThread::query()->withActiveParticipant($viewer);
+
+        return match ($scope) {
+            'archived' => $query->whereNotNull('archived_at'),
+            'direct' => $query->whereNull('archived_at')->where('type', TeamThreadType::Direct),
+            'groups' => $query->whereNull('archived_at')->where('type', TeamThreadType::Group),
+            default => $query->whereNull('archived_at'),
+        };
+    }
+
+    /**
      * @return list<int>
      */
-    private function allThreadIds(User $viewer): array
+    private function threadIds(User $viewer, string $scope): array
     {
-        return array_values(array_map('intval', TeamThread::query()->withActiveParticipant($viewer)->whereNull('archived_at')->pluck('id')->all()));
+        return array_values(array_map('intval', $this->scoped($viewer, $scope)->pluck('team_threads.id')->all()));
     }
 }

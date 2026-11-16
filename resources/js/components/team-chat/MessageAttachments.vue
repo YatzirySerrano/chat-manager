@@ -104,7 +104,7 @@ const cardSurface = computed(() =>
     props.custom
         ? 'border border-current/30'
         : props.mine
-          ? 'bg-primary-foreground/12 hover:bg-primary-foreground/20'
+          ? 'bg-background/60 hover:bg-background/85'
           : 'bg-muted/70 hover:bg-accent',
 );
 </script>

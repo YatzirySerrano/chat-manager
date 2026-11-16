@@ -12,6 +12,18 @@ import {
 } from '@lucide/vue';
 import { computed, inject, nextTick, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import {
+    BUBBLE_HOVER,
+    BUBBLE_META,
+    QUOTE_BASE,
+    REACTIONS_ROW,
+    ROW_ACTIONS,
+    ROW_ACTION_BUTTON,
+    bubbleShape,
+    bubbleTone,
+    quoteClasses,
+    reactionChip,
+} from '@/components/chat/bubble';
 import MessageAttachments from '@/components/team-chat/MessageAttachments.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import {
@@ -216,9 +228,6 @@ function onEditKeydown(event: KeyboardEvent): void {
         saveEdit();
     }
 }
-
-const actionButton =
-    'size-7 shrink-0 rounded-full text-muted-foreground opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-9 sm:pointer-fine:opacity-0 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:group-hover:opacity-100';
 </script>
 
 <template>
@@ -239,9 +248,9 @@ const actionButton =
         :id="`team-message-${message.id}`"
         :class="
             cn(
-                'group flex items-end gap-2 px-3 sm:px-5',
+                'chat-row group flex items-end gap-2',
                 message.is_mine ? 'justify-end' : 'justify-start',
-                first ? 'pt-2.5' : 'pt-0.5',
+                first ? 'pt-3' : 'pt-0.5',
             )
         "
         :data-mine="message.is_mine || undefined"
@@ -273,25 +282,23 @@ const actionButton =
                 <div
                     :class="
                         cn(
-                            'max-w-full min-w-0 rounded-[1.15rem] p-1 text-sm transition-[box-shadow] duration-(--duration-base) ease-(--ease-out-quint)',
-                            message.is_mine
-                                ? [
-                                      !first && 'rounded-tr-md',
-                                      last ? 'rounded-br-sm' : 'rounded-br-md',
-                                      custom
-                                          ? CUSTOM_BUBBLE_CLASSES.sent
-                                          : 'bg-primary text-primary-foreground',
-                                  ]
-                                : [
-                                      !first && 'rounded-tl-md',
-                                      last ? 'rounded-bl-sm' : 'rounded-bl-md',
-                                      'border border-border/80',
-                                      custom
-                                          ? CUSTOM_BUBBLE_CLASSES.received
-                                          : 'bg-card text-card-foreground',
-                                  ],
+                            'max-w-full min-w-0 p-1 text-sm',
+                            BUBBLE_HOVER,
+                            bubbleShape({
+                                side: message.is_mine ? 'out' : 'in',
+                                joinedAbove: !first,
+                                joinedBelow: !last,
+                            }),
+                            custom
+                                ? message.is_mine
+                                    ? CUSTOM_BUBBLE_CLASSES.sent
+                                    : [
+                                          'border border-border/80',
+                                          CUSTOM_BUBBLE_CLASSES.received,
+                                      ]
+                                : bubbleTone(message.is_mine ? 'out' : 'in'),
                             message.deleted &&
-                                'border border-border/80 bg-muted text-muted-foreground',
+                                'bg-muted text-muted-foreground shadow-none ring-1 ring-border ring-inset',
                             editing && 'w-[min(32rem,100%)]',
                             highlighted &&
                                 'ring-2 ring-warning ring-offset-2 ring-offset-background',
@@ -316,18 +323,19 @@ const actionButton =
                         type="button"
                         :class="
                             cn(
-                                'mt-0.5 mb-1 block w-full min-w-40 rounded-xl border-l-[3px] px-2.5 py-1.5 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-current',
-                                custom
-                                    ? 'border-current/60'
-                                    : message.is_mine
-                                      ? 'border-primary-foreground/70 bg-primary-foreground/12 hover:bg-primary-foreground/18'
-                                      : 'border-primary/70 bg-muted/80 hover:bg-accent',
+                                QUOTE_BASE,
+                                'mt-0.5',
+                                quoteClasses(custom),
+                                custom && 'hover:underline',
                             )
                         "
                         title="Ir al mensaje citado"
                         @click="emit('jump', message.reply_to.id)"
                     >
-                        <span class="block truncate font-semibold">
+                        <span
+                            class="block truncate font-semibold"
+                            :class="!custom && 'text-primary'"
+                        >
                             {{ message.reply_to.author }}
                         </span>
                         <span
@@ -384,11 +392,6 @@ const actionButton =
                                 </Button>
                                 <Button
                                     size="sm"
-                                    :variant="
-                                        message.is_mine && !custom
-                                            ? 'outline'
-                                            : 'default'
-                                    "
                                     :loading="saving"
                                     @click="saveEdit"
                                 >
@@ -414,11 +417,11 @@ const actionButton =
                                     :class="
                                         cn(
                                             'rounded px-0.5 font-semibold',
-                                            message.is_mine
-                                                ? custom
-                                                    ? 'underline underline-offset-2'
-                                                    : 'bg-primary-foreground/20'
-                                                : 'bg-primary-soft text-primary-soft-foreground',
+                                            custom
+                                                ? 'underline underline-offset-2'
+                                                : message.is_mine
+                                                  ? 'bg-primary/15'
+                                                  : 'bg-primary-soft text-primary-soft-foreground',
                                         )
                                     "
                                     >{{ segment.text }}</span
@@ -454,12 +457,9 @@ const actionButton =
                         v-if="!editing"
                         :class="
                             cn(
-                                'flex items-center justify-end gap-1 px-2 pt-0.5 pb-0.5 text-[0.68rem] leading-none tabular-nums',
-                                custom
-                                    ? ''
-                                    : message.is_mine && !message.deleted
-                                      ? 'text-primary-foreground/75'
-                                      : 'text-muted-foreground',
+                                BUBBLE_META,
+                                'px-2 pb-0.5',
+                                !custom && 'text-muted-foreground',
                             )
                         "
                         :title="fullDate"
@@ -475,9 +475,9 @@ const actionButton =
                                 v-if="receipt === 'read'"
                                 class="size-3.5"
                                 :class="
-                                    !custom &&
-                                    message.is_mine &&
-                                    'text-primary-foreground'
+                                    custom
+                                        ? 'stroke-3'
+                                        : 'text-sky-600 dark:text-sky-400'
                                 "
                                 aria-hidden="true"
                             />
@@ -492,12 +492,7 @@ const actionButton =
 
                 <ul
                     v-if="message.reactions.length > 0"
-                    :class="
-                        cn(
-                            'relative -mt-1.5 flex flex-wrap gap-1 px-1.5',
-                            message.is_mine && 'justify-end',
-                        )
-                    "
+                    :class="cn(REACTIONS_ROW, message.is_mine && 'justify-end')"
                     aria-label="Reacciones"
                 >
                     <li
@@ -508,10 +503,8 @@ const actionButton =
                             type="button"
                             :class="
                                 cn(
-                                    'inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs text-foreground shadow-(--shadow-control) transition-[background-color,border-color,scale] duration-(--duration-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring active:not-disabled:scale-95 pointer-coarse:h-8 pointer-coarse:px-2',
-                                    reaction.mine
-                                        ? 'border-primary bg-primary-soft text-primary-soft-foreground'
-                                        : 'border-border bg-background',
+                                    reactionChip(reaction.mine),
+                                    'active:not-disabled:scale-95 pointer-coarse:h-8 pointer-coarse:px-2',
                                     canReact &&
                                         reactions.includes(reaction.emoji)
                                         ? 'hover:border-primary/60 hover:bg-accent'
@@ -545,26 +538,25 @@ const actionButton =
                 v-if="!editing && (canReact || hasActions)"
                 :class="
                     cn(
-                        'flex shrink-0 items-center pointer-coarse:flex-col',
-                        message.is_mine && 'flex-row-reverse',
+                        ROW_ACTIONS,
+                        'pointer-coarse:flex-col',
+                        message.is_mine
+                            ? 'origin-right flex-row-reverse'
+                            : 'origin-left',
                     )
                 "
+                data-message-actions
             >
                 <Popover v-if="canReact" v-model:open="reactionsOpen">
                     <PopoverTrigger as-child>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            :class="[
-                                actionButton,
-                                customColors &&
-                                    'border bg-background shadow-xs',
-                            ]"
+                        <button
+                            type="button"
+                            :class="ROW_ACTION_BUTTON"
                             aria-label="Reaccionar"
                             title="Reaccionar"
                         >
-                            <SmilePlus class="size-4" />
-                        </Button>
+                            <SmilePlus class="size-4" aria-hidden="true" />
+                        </button>
                     </PopoverTrigger>
                     <PopoverContent
                         class="w-auto rounded-full p-1"
@@ -577,10 +569,10 @@ const actionButton =
                             aria-label="Reacciones"
                         >
                             <button
-                                v-for="emoji in reactions"
+                                v-for="(emoji, index) in reactions"
                                 :key="emoji"
                                 type="button"
-                                class="grid size-9 place-items-center rounded-full text-xl transition-[scale,background-color] duration-(--duration-fast) outline-none hover:scale-125 hover:bg-accent focus-visible:bg-accent pointer-coarse:size-10"
+                                class="grid size-9 place-items-center rounded-full text-xl transition-[scale,background-color] duration-(--duration-fast) ease-(--ease-spring) outline-none hover:scale-125 hover:bg-accent focus-visible:bg-accent motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:fade-in pointer-coarse:size-10"
                                 :class="
                                     message.reactions.some(
                                         (reaction) =>
@@ -588,6 +580,7 @@ const actionButton =
                                             reaction.mine,
                                     ) && 'bg-primary-soft'
                                 "
+                                :style="{ animationDelay: `${index * 25}ms` }"
                                 :aria-label="`Reaccionar con ${emoji}`"
                                 @click="react(emoji)"
                             >
@@ -596,36 +589,26 @@ const actionButton =
                         </div>
                     </PopoverContent>
                 </Popover>
-                <Button
+                <button
                     v-if="canReply && !message.deleted"
-                    variant="ghost"
-                    size="icon"
-                    :class="[
-                        actionButton,
-                        'pointer-coarse:hidden',
-                        customColors && 'border bg-background shadow-xs',
-                    ]"
+                    type="button"
+                    :class="[ROW_ACTION_BUTTON, 'pointer-coarse:hidden']"
                     aria-label="Responder"
                     title="Responder"
                     @click="emit('reply', message)"
                 >
-                    <CornerUpLeft class="size-4" />
-                </Button>
+                    <CornerUpLeft class="size-4" aria-hidden="true" />
+                </button>
                 <DropdownMenu v-if="hasActions">
                     <DropdownMenuTrigger as-child>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            :class="[
-                                actionButton,
-                                customColors &&
-                                    'border bg-background shadow-xs',
-                            ]"
+                        <button
+                            type="button"
+                            :class="ROW_ACTION_BUTTON"
                             aria-label="Acciones del mensaje"
                             title="Acciones del mensaje"
                         >
-                            <MoreHorizontal class="size-4" />
-                        </Button>
+                            <MoreHorizontal class="size-4" aria-hidden="true" />
+                        </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                         :align="message.is_mine ? 'end' : 'start'"

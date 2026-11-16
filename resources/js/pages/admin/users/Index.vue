@@ -308,7 +308,6 @@ function actionsFor(user: AdminUser): RecordAction[] {
                 />
                 <Button
                     v-if="can.create"
-                    class="shadow-glow"
                     data-tour="users.new"
                     @click="openCreate"
                 >
@@ -370,20 +369,18 @@ function actionsFor(user: AdminUser): RecordAction[] {
 
         <SurfaceCard class="admin-list overflow-clip">
             <div
-                class="admin-toolbar grid gap-3 p-3 sm:p-4"
+                class="admin-toolbar grid gap-2 px-3 py-2.5"
                 role="search"
                 data-tour="users.search"
             >
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                     <FilterSearch
                         v-model="filterState.search"
                         placeholder="Buscar por nombre o correo"
                         label="Buscar usuarios"
                         :loading="loading"
+                        class="max-sm:basis-full sm:min-w-60"
                     />
-                    <ViewModeToggle v-model="viewMode" />
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
                     <FilterTabs
                         v-if="recordTabs.length > 0"
                         class="max-sm:w-full"
@@ -392,15 +389,13 @@ function actionsFor(user: AdminUser): RecordAction[] {
                         label="Mostrar activos o eliminados"
                         @update:model-value="chooseRecord"
                     />
-                    <div
-                        class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
-                    >
+                    <div class="grid w-full grid-cols-2 gap-2 sm:contents">
                         <Select
                             v-model="filterState.role"
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-40"
+                                class="w-full bg-card sm:w-36"
                                 aria-label="Filtrar por rol"
                             >
                                 <SelectValue />
@@ -423,7 +418,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-44"
+                                class="w-full bg-card sm:w-40"
                                 aria-label="Filtrar por departamento"
                             >
                                 <SelectValue />
@@ -446,7 +441,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="col-span-2 w-full rounded-full bg-card sm:w-44"
+                                class="col-span-2 w-full bg-card sm:w-40"
                                 aria-label="Ordenar por"
                             >
                                 <SelectValue />
@@ -462,6 +457,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                             </SelectContent>
                         </Select>
                     </div>
+                    <ViewModeToggle v-model="viewMode" class="max-sm:ml-auto" />
                 </div>
                 <ActiveFilters
                     v-if="pills.length > 0 || hasFilters"
@@ -513,7 +509,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
                                     'bg-primary-soft/70',
                             ]"
                         >
-                            <TableCell class="w-full max-w-0 py-3 pl-5">
+                            <TableCell class="w-full max-w-0 py-2 pl-5">
                                 <div class="flex min-w-0 items-center gap-3">
                                     <ListAvatar
                                         :name="user.name"

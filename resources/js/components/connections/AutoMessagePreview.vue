@@ -26,7 +26,7 @@ defineProps<{
     >
         <div class="flex items-center gap-2 border-b glass-card px-4 py-3">
             <span
-                class="flex size-8 items-center justify-center rounded-full accent-gradient"
+                class="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground"
             >
                 <Bot class="size-4" aria-hidden="true" />
             </span>

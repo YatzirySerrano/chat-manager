@@ -26,7 +26,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "accent-gradient text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.22),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-control)] hover:brightness-[1.07] hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.26),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-glow)] active:not-disabled:brightness-[0.97]",
+          "bg-primary text-primary-foreground shadow-(--shadow-control) hover:bg-[color-mix(in_oklch,var(--primary)_90%,black)] active:not-disabled:bg-[color-mix(in_oklch,var(--primary)_84%,black)]",
         destructive:
           "bg-destructive text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-control)] hover:bg-[color-mix(in_oklch,var(--destructive)_90%,black)] hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.2),0_6px_16px_-6px_color-mix(in_oklch,var(--destructive)_70%,transparent)] focus-visible:ring-destructive/35 dark:bg-destructive/70 dark:text-white",
         outline:

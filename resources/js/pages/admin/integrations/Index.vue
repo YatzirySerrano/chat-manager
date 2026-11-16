@@ -243,11 +243,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
             description="Claves de acceso (tokens) para que otros sistemas (por ejemplo, tu CRM) consulten conversaciones o envíen mensajes. Cada clave tiene permisos, conexiones permitidas y fecha de vencimiento."
         >
             <template v-if="can.manage" #actions>
-                <Button
-                    class="shadow-glow"
-                    data-tour="integrations.new"
-                    @click="openCreate"
-                >
+                <Button data-tour="integrations.new" @click="openCreate">
                     <Plus />
                     Nueva clave de acceso
                 </Button>

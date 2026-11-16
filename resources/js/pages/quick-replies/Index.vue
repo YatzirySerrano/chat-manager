@@ -459,7 +459,6 @@ const purgeOpen = computed({
                 />
                 <Button
                     v-if="canCreateHere"
-                    class="accent-gradient glow"
                     data-tour="quick-replies.new"
                     @click="openCreate"
                 >
@@ -474,18 +473,19 @@ const purgeOpen = computed({
         <div class="split-layout reveal [--aside-w:24rem]">
             <DirectoryPanel
                 :busy="loading && !showSkeleton"
-                toolbar-class="grid gap-3 max-sm:static"
+                toolbar-class="grid gap-2"
             >
                 <template #toolbar>
                     <div
-                        v-if="segments.length > 1"
                         ref="segmentBar"
-                        class="grid scroll-mt-20 gap-1.5"
+                        class="flex scroll-mt-20 flex-wrap items-center gap-2"
+                        data-tour="quick-replies.search"
                     >
                         <div
+                            v-if="segments.length > 1"
                             data-tour="quick-replies.segments"
                             :aria-busy="loadingSegment !== null"
-                            class="min-w-0 sm:w-fit"
+                            class="min-w-0 max-sm:w-full"
                         >
                             <FilterTabs
                                 :model-value="filterState.segment"
@@ -496,36 +496,25 @@ const purgeOpen = computed({
                         </div>
                         <!--
                             The live region is the stable wrapper: a region
-                            inserted fresh on every change (the keyed hint
-                            inside the transition) is often not announced.
+                            inserted fresh on every change is often not
+                            announced. The hint is also each tab's title.
                         -->
-                        <div aria-live="polite" data-segment-hint class="px-1">
-                            <Transition
-                                mode="out-in"
-                                enter-active-class="transition-opacity duration-200 ease-standard"
-                                enter-from-class="opacity-0"
-                                leave-active-class="transition-opacity duration-100 ease-standard"
-                                leave-to-class="opacity-0"
-                            >
-                                <p
-                                    :key="filterState.segment"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    {{ segmentHint(filterState.segment) }}
-                                </p>
-                            </Transition>
+                        <div
+                            v-if="segments.length > 1"
+                            aria-live="polite"
+                            data-segment-hint
+                            class="sr-only"
+                        >
+                            <p :key="filterState.segment">
+                                {{ segmentHint(filterState.segment) }}
+                            </p>
                         </div>
-                    </div>
-
-                    <div
-                        class="flex items-center gap-2"
-                        data-tour="quick-replies.search"
-                    >
                         <FilterSearch
                             v-model="filterState.search"
                             label="Buscar respuestas rápidas"
                             placeholder="Buscar por título, atajo o texto"
                             :loading="loading"
+                            class="max-sm:basis-full sm:min-w-48"
                         />
                         <ViewModeToggle v-model="viewMode" />
                     </div>
@@ -620,7 +609,7 @@ const purgeOpen = computed({
                                 @update:model-value="applyFilters"
                             >
                                 <SelectTrigger
-                                    class="w-full sm:w-48"
+                                    class="w-full sm:w-36"
                                     aria-label="Ordenar respuestas"
                                 >
                                     <SelectValue />
@@ -638,7 +627,7 @@ const purgeOpen = computed({
                             <RecordStateFilter
                                 v-model="filterState.record"
                                 :options="recordStates"
-                                class="sm:w-36"
+                                class="sm:w-32"
                                 @change="applyFilters"
                             />
                         </div>
@@ -710,30 +699,70 @@ const purgeOpen = computed({
                                         v-if="reply.is_deleted"
                                         feminine
                                     />
-                                    <span
-                                        v-if="
-                                            reply.is_personal || reply.is_global
-                                        "
-                                        class="inline-flex max-w-full items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                                    >
-                                        <component
-                                            :is="availabilityIcon(reply)"
-                                            class="size-3 shrink-0"
-                                            aria-hidden="true"
-                                        />
-                                        <span class="truncate">{{
-                                            availabilityLabel(reply)
-                                        }}</span>
+                                    <span class="contents md:hidden">
+                                        <span
+                                            v-if="
+                                                reply.is_personal ||
+                                                reply.is_global
+                                            "
+                                            class="inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground"
+                                        >
+                                            <component
+                                                :is="availabilityIcon(reply)"
+                                                class="size-3.5 shrink-0"
+                                                aria-hidden="true"
+                                            />
+                                            <span class="truncate">{{
+                                                availabilityLabel(reply)
+                                            }}</span>
+                                        </span>
+                                        <span
+                                            v-else
+                                            class="flex min-w-0 flex-wrap justify-end gap-1"
+                                        >
+                                            <DepartmentTag
+                                                v-for="department in reply.departments"
+                                                :key="department.id"
+                                                :name="department.name"
+                                                :color="department.color"
+                                                :muted="!department.is_active"
+                                            />
+                                        </span>
                                     </span>
-                                    <template v-else>
-                                        <DepartmentTag
-                                            v-for="department in reply.departments"
-                                            :key="department.id"
-                                            :name="department.name"
-                                            :color="department.color"
-                                            :muted="!department.is_active"
-                                        />
-                                    </template>
+                                </template>
+                                <template #aside>
+                                    <span
+                                        class="flex w-44 justify-end text-right"
+                                    >
+                                        <span
+                                            v-if="
+                                                reply.is_personal ||
+                                                reply.is_global
+                                            "
+                                            class="inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground"
+                                        >
+                                            <component
+                                                :is="availabilityIcon(reply)"
+                                                class="size-3.5 shrink-0"
+                                                aria-hidden="true"
+                                            />
+                                            <span class="truncate">{{
+                                                availabilityLabel(reply)
+                                            }}</span>
+                                        </span>
+                                        <span
+                                            v-else
+                                            class="flex min-w-0 flex-wrap justify-end gap-1"
+                                        >
+                                            <DepartmentTag
+                                                v-for="department in reply.departments"
+                                                :key="department.id"
+                                                :name="department.name"
+                                                :color="department.color"
+                                                :muted="!department.is_active"
+                                            />
+                                        </span>
+                                    </span>
                                 </template>
                                 <template #actions>
                                     <RecordActions

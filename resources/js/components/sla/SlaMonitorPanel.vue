@@ -290,18 +290,18 @@ function aftermath(row: SlaBreachRow): string {
         >
             <div class="grid gap-3 px-5 pb-5">
                 <div
-                    class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+                    class="flex flex-wrap items-center gap-2"
                     role="group"
                     aria-label="Filtros del monitoreo de SLA"
                 >
                     <div
                         v-for="select in selects"
                         :key="select.key"
-                        class="grid min-w-0 gap-1"
+                        class="min-w-0 basis-[calc(50%-0.25rem)] sm:basis-44"
                     >
                         <Label
                             :for="`sla-filter-${select.key}`"
-                            class="text-xs text-muted-foreground"
+                            class="sr-only"
                             >{{ select.label }}</Label
                         >
                         <Select
@@ -316,7 +316,12 @@ function aftermath(row: SlaBreachRow): string {
                         >
                             <SelectTrigger
                                 :id="`sla-filter-${select.key}`"
+                                size="sm"
                                 class="w-full"
+                                :class="
+                                    select.value !== null &&
+                                    'border-primary/45 bg-primary-soft font-medium text-primary-soft-foreground'
+                                "
                             >
                                 <SelectValue />
                             </SelectTrigger>
@@ -333,10 +338,12 @@ function aftermath(row: SlaBreachRow): string {
                             </SelectContent>
                         </Select>
                     </div>
-                </div>
-
-                <div v-if="hasFilters">
-                    <Button variant="ghost" size="sm" @click="clearFilters">
+                    <Button
+                        v-if="hasFilters"
+                        variant="ghost"
+                        size="sm"
+                        @click="clearFilters"
+                    >
                         <X aria-hidden="true" />
                         Quitar filtros
                     </Button>

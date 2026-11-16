@@ -236,7 +236,7 @@ const steps = [
                     <div class="flex justify-end md:col-span-3 xl:col-span-1">
                         <Button
                             type="submit"
-                            class="shadow-glow pointer-coarse:h-11"
+                            class="pointer-coarse:h-11"
                             :disabled="form.processing"
                             :loading="form.processing"
                         >

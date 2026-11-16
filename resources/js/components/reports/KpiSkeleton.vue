@@ -14,7 +14,7 @@ const figureWidths = ['w-16', 'w-20', 'w-14', 'w-24'];
 
 <template>
     <div
-        class="flex min-w-0 enter-fade flex-col gap-2.5 rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card p-4 shadow-float"
+        class="flex min-w-0 enter-fade flex-col gap-2.5 rounded-xl border bg-card p-4 shadow-(--shadow-control)"
         :style="{ '--i': index }"
         aria-hidden="true"
         data-kpi-skeleton

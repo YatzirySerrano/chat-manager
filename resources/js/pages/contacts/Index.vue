@@ -403,7 +403,7 @@ function contactSubtitle(contact: Contact): string | null {
             >
                 <Button
                     v-if="can.create"
-                    class="accent-gradient glow max-sm:w-full lg:order-last"
+                    class="max-sm:w-full lg:order-last"
                     data-tour="contacts.new"
                     @click="openCreate"
                 >
@@ -518,14 +518,50 @@ function contactSubtitle(contact: Contact): string | null {
 
         <DirectoryPanel class="reveal" :busy="loading">
             <template #toolbar>
-                <div class="grid gap-3" data-tour="contacts.search">
-                    <div class="flex items-center gap-2">
+                <div class="grid gap-2" data-tour="contacts.search">
+                    <div class="flex flex-wrap items-center gap-2">
                         <FilterSearch
                             v-model="filterState.search"
                             label="Buscar contactos"
                             placeholder="Buscar por nombre, teléfono o correo"
                             :loading="loading"
+                            class="max-sm:basis-full"
                         />
+
+                        <FilterTabs
+                            v-if="recordTabs.length > 0"
+                            :model-value="filterState.record"
+                            :options="recordTabs"
+                            label="Mostrar activos o eliminados"
+                            class="max-sm:w-full"
+                            @update:model-value="setRecord"
+                        />
+
+                        <Select
+                            v-model="filterState.sort"
+                            @update:model-value="applyFilters"
+                        >
+                            <SelectTrigger
+                                class="border-transparent bg-transparent shadow-none hover:bg-accent *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate max-sm:flex-1 sm:w-auto"
+                                aria-label="Ordenar por"
+                            >
+                                <ArrowDownUp
+                                    class="size-4 text-muted-foreground"
+                                    aria-hidden="true"
+                                />
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent align="end">
+                                <SelectItem
+                                    v-for="option in SORT_OPTIONS"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >
+                                    {{ option.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+
                         <ViewModeToggle
                             v-model="viewMode"
                             class="max-sm:hidden"
@@ -535,20 +571,11 @@ function contactSubtitle(contact: Contact): string | null {
                     <div
                         class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center"
                     >
-                        <FilterTabs
-                            v-if="recordTabs.length > 0"
-                            :model-value="filterState.record"
-                            :options="recordTabs"
-                            label="Mostrar activos o eliminados"
-                            class="col-span-2 sm:col-span-1"
-                            @update:model-value="setRecord"
-                        />
-
                         <DropdownMenu v-if="tags !== null">
                             <DropdownMenuTrigger as-child>
                                 <Button
                                     variant="outline"
-                                    class="w-full justify-between rounded-full font-normal sm:w-auto sm:max-w-48"
+                                    class="w-full justify-between font-normal sm:w-auto sm:max-w-48"
                                     :class="
                                         filterState.tags.length > 0 &&
                                         'border-primary/40 text-foreground'
@@ -612,7 +639,7 @@ function contactSubtitle(contact: Contact): string | null {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate sm:w-auto sm:max-w-52"
+                                class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate sm:w-auto sm:max-w-52"
                                 :class="
                                     filterState.source !== ALL &&
                                     'border-primary/40'
@@ -640,7 +667,7 @@ function contactSubtitle(contact: Contact): string | null {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate sm:w-auto sm:max-w-52"
+                                class="w-full *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate sm:w-auto sm:max-w-52"
                                 :class="
                                     filterState.origin !== ALL &&
                                     'border-primary/40'
@@ -675,31 +702,6 @@ function contactSubtitle(contact: Contact): string | null {
                             class="justify-center max-sm:h-9"
                             @toggle="toggleProvisional"
                         />
-
-                        <Select
-                            v-model="filterState.sort"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full rounded-full border-transparent bg-transparent shadow-none hover:bg-accent *:data-[slot=select-value]:block! *:data-[slot=select-value]:truncate sm:ml-auto sm:w-auto"
-                                aria-label="Ordenar por"
-                            >
-                                <ArrowDownUp
-                                    class="size-4 text-muted-foreground"
-                                    aria-hidden="true"
-                                />
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent align="end">
-                                <SelectItem
-                                    v-for="option in SORT_OPTIONS"
-                                    :key="option.value"
-                                    :value="option.value"
-                                >
-                                    {{ option.label }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
                     </div>
 
                     <ActiveFilters
@@ -720,8 +722,6 @@ function contactSubtitle(contact: Contact): string | null {
                 <DirectoryRow
                     v-for="(contact, position) in contacts.data"
                     :key="contact.id"
-                    class="enter-fade"
-                    :style="{ '--i': Math.min(position, 10) }"
                     :href="
                         contact.can?.view === false
                             ? undefined
@@ -782,22 +782,18 @@ function contactSubtitle(contact: Contact): string | null {
                         />
                     </template>
                     <template #aside>
-                        <span class="grid w-32 justify-items-end text-right">
-                            <span class="text-[0.7rem] text-muted-foreground"
-                                >Última interacción</span
-                            >
+                        <span class="w-32 truncate text-right text-xs">
+                            <span class="sr-only">Última interacción: </span>
                             <time
                                 v-if="contact.last_interaction_at"
-                                class="text-sm font-medium text-foreground/80 tabular-nums"
+                                class="text-foreground/80 tabular-nums"
                                 :datetime="contact.last_interaction_at"
-                                :title="
-                                    formatDateTime(contact.last_interaction_at)
-                                "
+                                :title="`Última interacción: ${formatDateTime(contact.last_interaction_at)}`"
                                 >{{
                                     formatRelative(contact.last_interaction_at)
                                 }}</time
                             >
-                            <span v-else class="text-sm">Sin interacción</span>
+                            <span v-else>Sin interacción</span>
                         </span>
                     </template>
                     <template #actions>
@@ -915,11 +911,7 @@ function contactSubtitle(contact: Contact): string | null {
                 :icon="ContactIcon"
                 @clear="clearFilters"
             >
-                <Button
-                    v-if="can.create"
-                    class="rounded-full accent-gradient glow"
-                    @click="openCreate"
-                >
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo contacto
                 </Button>

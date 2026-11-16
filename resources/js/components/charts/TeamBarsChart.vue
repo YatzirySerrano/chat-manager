@@ -9,7 +9,8 @@ import type { BarItem, BarSeries, ChartTableColumn } from './types';
 
 /**
  * Received vs. a second figure (attended or resolved) per agent or
- * department, as grouped horizontal bars on one scale, plus the table with
+ * department, as one overlaid bar per row (the received as a light track,
+ * the second figure solid inside it) on one scale, plus the table with
  * the first response average and how many conversations it measures.
  */
 type TeamRow = {
@@ -41,7 +42,7 @@ const series = computed<BarSeries[]>(() => [
     {
         key: props.second,
         name: secondLabel.value,
-        color: chartTokens.secondary,
+        color: chartTokens.primary,
     },
 ]);
 
@@ -58,14 +59,20 @@ const empty = computed(() =>
     items.value.every((item) => item.values.every((value) => value === 0)),
 );
 
-const legend = computed(() =>
-    series.value.map((item) => ({
-        key: item.key,
-        label: item.name,
-        color: item.color ?? chartTokens.primary,
+const legend = computed(() => [
+    {
+        key: props.second,
+        label: secondLabel.value,
+        color: chartTokens.primary,
         shape: 'square' as const,
-    })),
-);
+    },
+    {
+        key: 'received',
+        label: 'Recibidas',
+        color: `color-mix(in oklch, ${chartTokens.primary} 28%, transparent)`,
+        shape: 'square' as const,
+    },
+]);
 
 const columns = computed<ChartTableColumn[]>(() => [
     { key: 'name', label: props.dimension },
@@ -97,6 +104,7 @@ const columns = computed<ChartTableColumn[]>(() => [
         <BarChart
             :items="items"
             :series="series"
+            overlay
             :description="`${title}: ${rows.map((row) => `${row.name} ${row.received} recibidas`).join(', ')}`"
         />
         <template #legend>

@@ -5,7 +5,6 @@ import {
     ChevronRight,
     History,
     MessagesSquare,
-    SlidersHorizontal,
     Upload,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
@@ -258,11 +257,6 @@ const pills = computed<ActiveFilterPill[]>(() => {
     return result;
 });
 
-/* Filters chosen in the side panel (the counter of its header). */
-const panelCount = computed(
-    () => pills.value.length + (state.destination !== 'archive' ? 1 : 0),
-);
-
 function contactName(conversation: ArchivedConversation): string {
     return (
         conversation.contact?.name ??
@@ -319,353 +313,287 @@ watch(
             aquí.
         </StatusNote>
 
-        <div class="split-layout-start [--aside-w:21rem]">
-            <section
-                class="admin-section grid gap-4 self-start p-4 sm:p-5 xl:sticky xl:top-20"
-                aria-labelledby="history-filters-title"
+        <SurfaceCard
+            class="admin-list reveal overflow-clip"
+            data-tour="history.list"
+        >
+            <div
+                class="admin-toolbar grid gap-2 px-3 py-2.5"
                 data-tour="history.filters"
             >
-                <header class="flex items-center gap-3">
-                    <span class="admin-icon-tile size-9">
-                        <SlidersHorizontal class="size-4" aria-hidden="true" />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                        <h2
-                            id="history-filters-title"
-                            class="font-display text-lg leading-tight font-semibold"
-                        >
-                            Filtros
-                        </h2>
-                        <p class="text-xs text-muted-foreground">
-                            {{
-                                panelCount === 0
-                                    ? 'Sin filtros aplicados'
-                                    : plural(
-                                          panelCount,
-                                          'filtro aplicado',
-                                          'filtros aplicados',
-                                      )
-                            }}
-                        </p>
-                    </div>
-                </header>
-
-                <div class="grid gap-1.5">
-                    <span class="text-sm font-medium" aria-hidden="true"
-                        >Mostrar</span
-                    >
-                    <FilterTabs
-                        :options="destinationTabs"
-                        :model-value="state.destination"
-                        label="Mostrar"
-                        @update:model-value="
-                            (value) => (state.destination = value)
-                        "
-                    />
-                </div>
-
-                <fieldset class="grid gap-1.5">
-                    <legend class="mb-1.5 text-sm font-medium">
-                        Con actividad entre
-                    </legend>
-                    <DateRangePicker
-                        id="history-from"
-                        v-model:from="state.date_from"
-                        v-model:to="state.date_to"
-                        placeholder="Cualquier fecha"
-                        aria-label="Con actividad entre"
-                        aria-describedby="history-dates-hint"
-                    />
-                    <p
-                        id="history-dates-hint"
-                        class="text-xs text-pretty text-muted-foreground"
-                    >
-                        Muestra las conversaciones que tuvieron mensajes en
-                        algún momento de ese periodo, aunque hayan empezado
-                        antes o terminado después.
-                    </p>
-                </fieldset>
-
-                <div class="field-grid [--col-min:15rem]">
-                    <div
-                        v-for="field in selects"
-                        :key="field.key"
-                        class="grid gap-1.5"
-                    >
-                        <span
-                            :id="`history-${field.key}-label`"
-                            class="text-sm font-medium"
-                            >{{ field.label }}</span
-                        >
-                        <Select v-model="state[field.key]">
-                            <SelectTrigger
-                                :aria-labelledby="`history-${field.key}-label`"
-                                class="w-full bg-card"
-                                :class="
-                                    state[field.key] !== ALL &&
-                                    'border-primary/40 ring-1 ring-primary/15'
-                                "
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="ALL">{{
-                                    field.all
-                                }}</SelectItem>
-                                <SelectItem
-                                    v-for="item in field.items"
-                                    :key="item.id"
-                                    :value="String(item.id)"
-                                >
-                                    {{ item.name }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-                <div v-if="hasFilters" class="flex justify-end">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        class="rounded-full pointer-coarse:h-10"
-                        @click="clear"
-                    >
-                        Quitar filtros
-                    </Button>
-                </div>
-            </section>
-
-            <SurfaceCard
-                class="admin-list reveal overflow-clip"
-                data-tour="history.list"
-            >
-                <div class="admin-toolbar grid gap-3 p-3 sm:p-4">
+                <div class="flex flex-wrap items-center gap-2">
                     <FilterSearch
                         id="history-search"
                         v-model="state.search"
                         placeholder="Nombre o número del contacto"
                         label="Buscar"
                         :loading="filtering"
+                        class="max-sm:basis-full sm:min-w-60"
                     />
-                    <div
-                        v-if="conversations || pills.length > 0 || hasFilters"
-                        class="flex flex-wrap items-center gap-2"
-                    >
-                        <p
-                            v-if="conversations"
-                            class="text-sm font-medium text-muted-foreground tabular-nums"
-                        >
-                            <span data-history-total>{{
-                                plural(
-                                    conversations.meta.total,
-                                    'conversación',
-                                    'conversaciones',
-                                )
-                            }}</span>
-                        </p>
-                        <ActiveFilters
-                            v-if="pills.length > 0 || hasFilters"
-                            class="min-w-0 flex-1"
-                            :pills="pills"
-                            :clearable="hasFilters"
-                            @clear="clear"
+                    <FilterTabs
+                        :options="destinationTabs"
+                        :model-value="state.destination"
+                        label="Mostrar"
+                        class="max-sm:w-full"
+                        @update:model-value="
+                            (value) => (state.destination = value)
+                        "
+                    />
+                    <div class="w-full sm:w-56">
+                        <DateRangePicker
+                            id="history-from"
+                            v-model:from="state.date_from"
+                            v-model:to="state.date_to"
+                            placeholder="Cualquier fecha"
+                            aria-label="Con actividad entre"
+                            aria-describedby="history-dates-hint"
                         />
+                        <p id="history-dates-hint" class="sr-only">
+                            Muestra las conversaciones que tuvieron mensajes en
+                            algún momento de ese periodo, aunque hayan empezado
+                            antes o terminado después.
+                        </p>
                     </div>
                 </div>
-
-                <div class="relative" :aria-busy="filtering || !conversations">
-                    <div
-                        v-if="filtering"
-                        class="absolute inset-x-0 top-0 z-10 pane-progress h-0.5"
-                        aria-hidden="true"
-                    />
-
-                    <div
-                        v-if="!conversations"
-                        role="status"
-                        aria-label="Cargando historial"
+                <div
+                    class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center"
+                >
+                    <Select
+                        v-for="field in selects"
+                        :key="field.key"
+                        v-model="state[field.key]"
                     >
-                        <TableSkeleton :rows="6" />
-                    </div>
-                    <FilteredEmpty
-                        v-else-if="conversations.data.length === 0"
-                        :narrowed="hasFilters"
-                        narrowed-title="Sin resultados para estos filtros"
-                        narrowed-description="Cambia o quita los filtros para ver otras conversaciones."
-                        :icon="MessagesSquare"
-                        title="Todavía no hay historial importado"
-                        description="Cuando se confirme una importación de Whaticket, sus conversaciones aparecerán aquí."
-                        @clear="clear"
-                    />
-                    <ul
-                        v-else
-                        class="grid reveal-stagger gap-0.5 p-1.5"
-                        :class="filtering && 'admin-loading'"
-                        aria-label="Conversaciones importadas"
-                    >
-                        <li
-                            v-for="conversation in conversations.data"
-                            :key="conversation.id"
+                        <SelectTrigger
+                            :aria-label="field.label"
+                            class="w-full bg-card sm:w-44"
+                            :class="
+                                state[field.key] !== ALL && 'border-primary/40'
+                            "
                         >
-                            <Link
-                                :href="conversationShow(conversation.id)"
-                                class="list-row group/row grid gap-x-4 gap-y-2 px-3 py-3 outline-none sm:px-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center"
-                                :data-history-conversation="conversation.id"
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem :value="ALL">{{
+                                field.all
+                            }}</SelectItem>
+                            <SelectItem
+                                v-for="item in field.items"
+                                :key="item.id"
+                                :value="String(item.id)"
                             >
-                                <span class="flex min-w-0 items-center gap-3">
-                                    <ListAvatar
-                                        :name="contactName(conversation)"
-                                        channel="whatsapp"
-                                    />
-                                    <span class="min-w-0 space-y-0.5">
-                                        <span
-                                            class="flex flex-wrap items-center gap-2 font-medium"
-                                        >
-                                            <span class="wrap-anywhere">{{
-                                                contactName(conversation)
-                                            }}</span>
-                                            <StatusPill
-                                                :label="
-                                                    conversation.destination ===
-                                                    'archive'
-                                                        ? 'Archivada'
-                                                        : 'Importada'
-                                                "
-                                                :tone="
-                                                    conversation.destination ===
-                                                    'archive'
-                                                        ? 'info'
-                                                        : 'success'
-                                                "
-                                            />
-                                        </span>
-                                        <span
-                                            v-if="
-                                                conversation.contact?.name &&
-                                                conversation.contact.phone
+                                {{ item.name }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <p
+                        v-if="conversations"
+                        class="text-xs text-muted-foreground tabular-nums max-sm:col-span-2 sm:ml-auto"
+                    >
+                        <span data-history-total>{{
+                            plural(
+                                conversations.meta.total,
+                                'conversación',
+                                'conversaciones',
+                            )
+                        }}</span>
+                    </p>
+                </div>
+                <ActiveFilters
+                    v-if="pills.length > 0 || hasFilters"
+                    :pills="pills"
+                    :clearable="hasFilters"
+                    @clear="clear"
+                />
+            </div>
+
+            <div class="relative" :aria-busy="filtering || !conversations">
+                <div
+                    v-if="filtering"
+                    class="absolute inset-x-0 top-0 z-10 pane-progress h-0.5"
+                    aria-hidden="true"
+                />
+
+                <div
+                    v-if="!conversations"
+                    role="status"
+                    aria-label="Cargando historial"
+                >
+                    <TableSkeleton :rows="6" />
+                </div>
+                <FilteredEmpty
+                    v-else-if="conversations.data.length === 0"
+                    :narrowed="hasFilters"
+                    narrowed-title="Sin resultados para estos filtros"
+                    narrowed-description="Cambia o quita los filtros para ver otras conversaciones."
+                    :icon="MessagesSquare"
+                    title="Todavía no hay historial importado"
+                    description="Cuando se confirme una importación de Whaticket, sus conversaciones aparecerán aquí."
+                    @clear="clear"
+                />
+                <ul
+                    v-else
+                    class="grid divide-y"
+                    :class="filtering && 'admin-loading'"
+                    aria-label="Conversaciones importadas"
+                >
+                    <li
+                        v-for="conversation in conversations.data"
+                        :key="conversation.id"
+                    >
+                        <Link
+                            :href="conversationShow(conversation.id)"
+                            class="group/row grid gap-x-4 gap-y-1 px-3 py-2.5 outline-none hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:px-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center"
+                            :data-history-conversation="conversation.id"
+                        >
+                            <span class="flex min-w-0 items-center gap-3">
+                                <ListAvatar
+                                    :name="contactName(conversation)"
+                                    channel="whatsapp"
+                                />
+                                <span class="min-w-0 space-y-0.5">
+                                    <span
+                                        class="flex flex-wrap items-center gap-2 font-medium"
+                                    >
+                                        <span class="wrap-anywhere">{{
+                                            contactName(conversation)
+                                        }}</span>
+                                        <StatusPill
+                                            :label="
+                                                conversation.destination ===
+                                                'archive'
+                                                    ? 'Archivada'
+                                                    : 'Importada'
                                             "
-                                            class="block text-xs text-muted-foreground tabular-nums"
-                                        >
-                                            {{
-                                                displayPhone(
-                                                    conversation.contact.phone,
-                                                )
-                                            }}
-                                        </span>
+                                            :tone="
+                                                conversation.destination ===
+                                                'archive'
+                                                    ? 'info'
+                                                    : 'success'
+                                            "
+                                        />
                                     </span>
-                                </span>
-                                <span
-                                    class="text-xs text-muted-foreground max-lg:pl-13"
-                                >
-                                    <span class="block">
+                                    <span
+                                        v-if="
+                                            conversation.contact?.name &&
+                                            conversation.contact.phone
+                                        "
+                                        class="block text-xs text-muted-foreground tabular-nums"
+                                    >
                                         {{
-                                            formatDate(conversation.started_at)
-                                        }}
-                                        –
-                                        <time
-                                            :datetime="
-                                                conversation.last_message_at ??
-                                                undefined
-                                            "
-                                            :title="
-                                                formatDateTime(
-                                                    conversation.last_message_at,
-                                                )
-                                            "
-                                        >
-                                            {{
-                                                formatDate(
-                                                    conversation.last_message_at,
-                                                )
-                                            }}
-                                        </time>
-                                    </span>
-                                    <span class="block tabular-nums">
-                                        {{
-                                            plural(
-                                                conversation.messages_count,
-                                                'mensaje',
+                                            displayPhone(
+                                                conversation.contact.phone,
                                             )
                                         }}
                                     </span>
                                 </span>
-                                <span
-                                    class="text-xs text-muted-foreground max-lg:pl-13"
-                                >
-                                    <span class="block wrap-anywhere">
-                                        {{
-                                            conversation.department?.name ??
-                                            'Sin departamento'
-                                        }}
-                                        ·
-                                        {{
-                                            conversation.agent?.name ??
-                                            (typeof conversation.source
-                                                .agent === 'string'
-                                                ? conversation.source.agent
-                                                : 'Sin agente')
-                                        }}
-                                    </span>
-                                    <span
-                                        v-if="conversation.tags.length > 0"
-                                        class="mt-1 flex flex-wrap gap-1"
+                            </span>
+                            <span
+                                class="text-xs text-muted-foreground max-lg:pl-13"
+                            >
+                                <span class="block">
+                                    {{ formatDate(conversation.started_at) }}
+                                    –
+                                    <time
+                                        :datetime="
+                                            conversation.last_message_at ??
+                                            undefined
+                                        "
+                                        :title="
+                                            formatDateTime(
+                                                conversation.last_message_at,
+                                            )
+                                        "
                                     >
-                                        <span
-                                            v-for="(
-                                                tag, tagIndex
-                                            ) in conversation.tags"
-                                            :key="tagIndex"
-                                            class="rounded-full bg-muted px-1.5 py-px text-[0.6875rem] text-muted-foreground"
-                                            >{{ tag.name }}</span
-                                        >
-                                    </span>
+                                        {{
+                                            formatDate(
+                                                conversation.last_message_at,
+                                            )
+                                        }}
+                                    </time>
+                                </span>
+                                <span class="block tabular-nums">
+                                    {{
+                                        plural(
+                                            conversation.messages_count,
+                                            'mensaje',
+                                        )
+                                    }}
+                                </span>
+                            </span>
+                            <span
+                                class="text-xs text-muted-foreground max-lg:pl-13"
+                            >
+                                <span class="block wrap-anywhere">
+                                    {{
+                                        conversation.department?.name ??
+                                        'Sin departamento'
+                                    }}
+                                    ·
+                                    {{
+                                        conversation.agent?.name ??
+                                        (typeof conversation.source.agent ===
+                                        'string'
+                                            ? conversation.source.agent
+                                            : 'Sin agente')
+                                    }}
                                 </span>
                                 <span
-                                    class="inline-flex items-center gap-1 text-sm font-medium text-primary max-lg:pl-13"
+                                    v-if="conversation.tags.length > 0"
+                                    class="mt-1 flex flex-wrap gap-1"
                                 >
-                                    Ver historial
-                                    <ChevronRight
-                                        class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:translate-x-0.5"
-                                        aria-hidden="true"
-                                    />
+                                    <span
+                                        v-for="(
+                                            tag, tagIndex
+                                        ) in conversation.tags"
+                                        :key="tagIndex"
+                                        class="rounded-full bg-muted px-1.5 py-px text-[0.6875rem] text-muted-foreground"
+                                        >{{ tag.name }}</span
+                                    >
                                 </span>
-                            </Link>
-                        </li>
-                    </ul>
-                </div>
-                <nav
-                    v-if="meta && meta.last_page > 1"
-                    class="flex items-center justify-between gap-2 border-t px-4 py-3 sm:px-5"
-                    aria-label="Paginación del historial"
+                            </span>
+                            <span
+                                class="inline-flex items-center gap-1 text-sm font-medium text-primary max-lg:pl-13"
+                            >
+                                Ver historial
+                                <ChevronRight
+                                    class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:translate-x-0.5"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                        </Link>
+                    </li>
+                </ul>
+            </div>
+            <nav
+                v-if="meta && meta.last_page > 1"
+                class="flex items-center justify-between gap-2 border-t px-4 py-2.5"
+                aria-label="Paginación del historial"
+            >
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
+                    :disabled="meta.current_page <= 1 || filtering"
+                    @click="apply(meta.current_page - 1)"
                 >
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="rounded-full pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
-                        :disabled="meta.current_page <= 1 || filtering"
-                        @click="apply(meta.current_page - 1)"
-                    >
-                        <ChevronLeft />
-                        <span class="max-sm:sr-only">Anterior</span>
-                    </Button>
-                    <span class="text-sm text-muted-foreground tabular-nums">
-                        Página {{ formatNumber(meta.current_page) }} de
-                        {{ formatNumber(meta.last_page) }}
-                    </span>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="rounded-full pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
-                        :disabled="
-                            meta.current_page >= meta.last_page || filtering
-                        "
-                        @click="apply(meta.current_page + 1)"
-                    >
-                        <span class="max-sm:sr-only">Siguiente</span>
-                        <ChevronRight />
-                    </Button>
-                </nav>
-            </SurfaceCard>
-        </div>
+                    <ChevronLeft />
+                    <span class="max-sm:sr-only">Anterior</span>
+                </Button>
+                <span class="text-sm text-muted-foreground tabular-nums">
+                    Página {{ formatNumber(meta.current_page) }} de
+                    {{ formatNumber(meta.last_page) }}
+                </span>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    class="pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
+                    :disabled="meta.current_page >= meta.last_page || filtering"
+                    @click="apply(meta.current_page + 1)"
+                >
+                    <span class="max-sm:sr-only">Siguiente</span>
+                    <ChevronRight />
+                </Button>
+            </nav>
+        </SurfaceCard>
     </div>
 </template>

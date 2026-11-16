@@ -13,112 +13,47 @@
 
 @layer components {
     /* ───────────────────────── Lists and tables ─────────────────────────
-  `.admin-list` goes on the card that holds a table (SurfaceCard with
-  `overflow-clip`, never `overflow-hidden`, so the header can stick).
-  On wide screens the table header sticks under the app's top bar as a
-  glass strip; on phones the table keeps its sideways scroll.
+  `.admin-list` goes on the card that holds a table. The header row stays in
+  the table's flow; on phones the table keeps its sideways scroll.
 */
     .admin-list {
-        --admin-sticky-top: 4rem;
         overflow: clip;
     }
 
-    @media (max-width: 39.99rem) {
-        .admin-list {
-            --admin-sticky-top: 3.5rem;
-        }
-    }
-
-    @media (max-height: 32rem) {
-        .admin-list {
-            --admin-sticky-top: 3rem;
-        }
-    }
-
-    @media (min-width: 64rem) {
-        .admin-list [data-slot='table-container'] {
-            overflow: visible;
-        }
-
-        .admin-list thead[data-slot='table-header'] th {
-            position: sticky;
-            top: var(--admin-sticky-top);
-            z-index: 5;
-            background-color: color-mix(in oklch, var(--card) 78%, transparent);
-            backdrop-filter: blur(14px) saturate(1.5);
-            -webkit-backdrop-filter: blur(14px) saturate(1.5);
-            box-shadow: inset 0 -1px 0
-                color-mix(
-                    in oklch,
-                    var(--border-strong, var(--border)) 70%,
-                    transparent
-                );
-        }
+    /* The header stays in the table's flow: a header stuck under the top bar
+       slid over the rows and the page summary. */
+    .admin-list thead[data-slot='table-header'] {
+        background-color: color-mix(in oklch, var(--muted) 40%, transparent);
     }
 
     .admin-list thead[data-slot='table-header'] th {
+        height: 2.25rem;
         font-size: 0.75rem;
-        letter-spacing: 0.01em;
+        font-weight: 500;
+        letter-spacing: 0;
     }
 
-    /* Rows: a soft wash and a sliver of the accent at the left edge on hover. */
-    .admin-list tbody tr[data-slot='table-row'] {
-        position: relative;
+    /* Dense rows: 44-48px with a one-line cell, a neutral wash on hover. */
+    .admin-list tbody td[data-slot='table-cell'] {
+        padding-block: 0.5rem;
     }
 
-    .admin-list tbody tr[data-slot='table-row'] > td:first-child {
-        position: relative;
-    }
-
-    .admin-list tbody tr[data-slot='table-row'] > td:first-child::after {
-        content: '';
-        position: absolute;
-        top: 25%;
-        bottom: 25%;
-        left: 0;
-        width: 3px;
-        border-radius: 0 3px 3px 0;
-        background: linear-gradient(
-            180deg,
-            color-mix(in oklch, var(--primary) 60%, white),
-            var(--primary)
-        );
-        opacity: 0;
-        transform: scaleY(0.4);
-        transition:
-            opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out),
-            transform var(--duration-base, 200ms) var(--ease-spring, ease-out);
-        pointer-events: none;
-    }
-
-    .admin-list tbody tr[data-slot='table-row']:hover > td:first-child::after,
-    .admin-list
-        tbody
-        tr[data-slot='table-row']:focus-within
-        > td:first-child::after {
-        opacity: 1;
-        transform: none;
-    }
-
-    /* Row actions: quiet at rest, fully there on hover or keyboard focus. */
+    /* Row actions: hidden at rest on a mouse, there on hover or keyboard focus
+       and always on touch screens. */
     @media (hover: hover) and (pointer: fine) {
         .admin-row-actions {
-            opacity: 0.38;
-            transform: translateX(3px);
-            transition:
-                opacity var(--duration-fast, 150ms)
-                    var(--ease-standard, ease-out),
-                transform var(--duration-base, 200ms)
-                    var(--ease-spring-soft, ease-out);
+            opacity: 0;
+            transition: opacity var(--duration-fast, 150ms)
+                var(--ease-standard, ease-out);
         }
 
         tr:hover .admin-row-actions,
         tr:focus-within .admin-row-actions,
         .admin-card:hover .admin-row-actions,
         .admin-card:focus-within .admin-row-actions,
+        .admin-row-actions:focus-within,
         .admin-row-actions:has([data-state='open']) {
             opacity: 1;
-            transform: none;
         }
     }
 
@@ -129,86 +64,55 @@
             var(--ease-standard, ease-out);
     }
 
-    /* The toolbar above a list: search, tabs and selects on a faint glass strip. */
+    /* The toolbar above a list: one dense row of filters, no fill. */
     .admin-toolbar {
-        background-color: color-mix(
-            in oklch,
-            var(--surface-sunken, var(--muted)) 45%,
-            transparent
-        );
         border-bottom: 1px solid
             color-mix(in oklch, var(--border) 80%, transparent);
     }
 
     /* ───────────────────────── Cards ─────────────────────────
-  `.admin-card` is a floating record card (grid views, connection cards):
-  a lip of light on top, lifts on hover.
+  `.admin-card` is a record card (grid views, connection cards): a flat
+  surface with a hairline; the border darkens on hover.
 */
     .admin-card {
         position: relative;
-        border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-        border-radius: var(--radius-xl, 0.875rem);
-        background: linear-gradient(
-            180deg,
-            color-mix(in oklch, var(--card) 100%, white 3%) 0%,
-            var(--card) 40%
-        );
-        box-shadow: var(--shadow-float, var(--shadow-card));
-        transition:
-            translate var(--duration-base, 200ms) var(--ease-spring, ease-out),
-            box-shadow var(--duration-base, 200ms)
-                var(--ease-out-quint, ease-out),
-            border-color var(--duration-fast, 150ms)
-                var(--ease-standard, ease-out);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg, 0.625rem);
+        background: var(--card);
+        box-shadow: none;
+        transition: border-color var(--duration-fast, 150ms)
+            var(--ease-standard, ease-out);
     }
 
     @media (hover: hover) {
         .admin-card[data-interactive]:hover,
         .admin-card:has(a[data-card-link]:hover) {
-            translate: 0 -2px;
-            box-shadow: var(--shadow-lift, var(--shadow-hover));
-            border-color: color-mix(
-                in oklch,
-                var(--primary) 22%,
-                var(--border)
-            );
+            border-color: var(--border-strong, var(--border));
         }
     }
 
     .admin-card[data-highlighted] {
         border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
-        box-shadow:
-            0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent),
-            var(--shadow-float, var(--shadow-card));
     }
 
-    /* Glass section card of a settings form (SettingsSection). */
+    /* Section card of a settings form (SettingsSection). */
     .admin-section {
         position: relative;
-        border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-        border-radius: var(--radius-2xl, 1.125rem);
-        background-color: color-mix(in oklch, var(--card) 86%, transparent);
-        backdrop-filter: blur(14px) saturate(1.4);
-        -webkit-backdrop-filter: blur(14px) saturate(1.4);
-        box-shadow: var(--shadow-float, var(--shadow-card));
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl, 0.875rem);
+        background-color: var(--card);
+        box-shadow: var(--shadow-card, none);
     }
 
-    /* The icon tile of a section or a card header. */
+    /* The icon of a section or a card header: a quiet neutral square. */
     .admin-icon-tile {
         display: inline-flex;
         flex-shrink: 0;
         align-items: center;
         justify-content: center;
-        border-radius: 0.75rem;
-        background: linear-gradient(
-            140deg,
-            color-mix(in oklch, var(--primary) 18%, var(--card)),
-            color-mix(in oklch, var(--primary) 7%, var(--card))
-        );
-        color: color-mix(in oklch, var(--primary) 85%, var(--foreground));
-        box-shadow:
-            inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent),
-            inset 0 1px 0 oklch(1 0 0 / 0.25);
+        border-radius: var(--radius-md, 0.5rem);
+        background-color: var(--muted);
+        color: var(--muted-foreground);
     }
 
     /* ───────────────────────── Status pills ─────────────────────────
@@ -275,48 +179,23 @@
 */
     [data-channel-theme] {
         --channel-bg: var(--primary);
-        --channel-glow: color-mix(in oklch, var(--primary) 60%, transparent);
         --channel-ink: var(--primary-foreground);
     }
 
     [data-channel-theme='whatsapp'],
     [data-channel-theme='whatsapp_web'] {
-        --channel-bg: linear-gradient(
-            140deg,
-            oklch(0.7 0.16 150),
-            oklch(0.55 0.14 160)
-        );
-        --channel-glow: oklch(0.6 0.15 152 / 0.65);
+        --channel-bg: oklch(0.62 0.15 152);
         --channel-ink: white;
     }
 
     [data-channel-theme='messenger'] {
-        --channel-bg: linear-gradient(
-            140deg,
-            oklch(0.64 0.2 250),
-            oklch(0.56 0.24 300)
-        );
-        --channel-glow: oklch(0.58 0.22 270 / 0.65);
+        --channel-bg: oklch(0.58 0.2 262);
         --channel-ink: white;
     }
 
     [data-channel-theme='instagram'] {
-        --channel-bg: linear-gradient(
-            45deg,
-            oklch(0.74 0.17 70),
-            oklch(0.6 0.24 15) 50%,
-            oklch(0.52 0.23 310)
-        );
-        --channel-glow: oklch(0.6 0.24 15 / 0.55);
+        --channel-bg: oklch(0.6 0.22 0);
         --channel-ink: white;
-    }
-
-    [data-channel-theme='web_chat'] {
-        --channel-bg: linear-gradient(
-            140deg,
-            color-mix(in oklch, var(--primary) 75%, white),
-            var(--primary)
-        );
     }
 
     .channel-tile {
@@ -324,28 +203,14 @@
         flex-shrink: 0;
         align-items: center;
         justify-content: center;
-        border-radius: 0.875rem;
+        border-radius: var(--radius-md, 0.5rem);
         background: var(--channel-bg, var(--primary));
         color: var(--channel-ink, white);
-        box-shadow:
-            inset 0 1px 0 oklch(1 0 0 / 0.3),
-            inset 0 -1px 2px oklch(0 0 0 / 0.15),
-            0 6px 16px -8px var(--channel-glow, transparent);
     }
 
-    /* A faint wash of the channel color across the top of a connection card. */
+    /* Kept for old markup: the channel wash is gone. */
     .channel-wash {
-        position: absolute;
-        inset: 0 0 auto;
-        height: 6rem;
-        border-radius: inherit;
-        background: radial-gradient(
-            120% 100% at 0% 0%,
-            var(--channel-glow, transparent),
-            transparent 70%
-        );
-        opacity: 0.22;
-        pointer-events: none;
+        display: none;
     }
 
     /* ───────────────────────── Skeletons ───────────────────────── */

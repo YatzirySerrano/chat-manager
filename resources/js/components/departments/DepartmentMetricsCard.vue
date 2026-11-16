@@ -67,7 +67,7 @@ defineProps<{
         >
             <div class="flex flex-1 items-start gap-3">
                 <span
-                    class="flex size-10 shrink-0 items-center justify-center rounded-xl accent-gradient"
+                    class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
                 >
                     <MessagesSquare class="size-4" aria-hidden="true" />
                 </span>

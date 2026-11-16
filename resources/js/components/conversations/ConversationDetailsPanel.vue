@@ -253,16 +253,11 @@ function safeUrl(url: string | null): string | null {
             one after another when the panel opens.
         -->
         <div
-            class="grid min-h-0 flex-1 reveal-stagger content-start gap-3 overflow-y-auto p-3"
+            class="grid min-h-0 flex-1 reveal-stagger auto-rows-max content-start gap-3 overflow-y-auto p-3"
         >
             <section
-                class="relative grid grid-cols-1 gap-3 overflow-hidden rounded-2xl border border-border/70 accent-gradient-soft px-4 pt-5 pb-4 shadow-(--shadow-card)"
+                class="relative grid grid-cols-1 gap-3 rounded-xl border bg-card px-4 pt-4 pb-4"
             >
-                <!-- A faint halo of the palette behind the avatar. -->
-                <span
-                    class="pointer-events-none absolute -top-16 -left-12 size-48 rounded-full bg-primary/15 blur-3xl"
-                    aria-hidden="true"
-                />
                 <div class="relative flex items-start gap-3.5">
                     <component
                         :is="photo ? 'button' : 'span'"
@@ -275,11 +270,8 @@ function safeUrl(url: string | null): string | null {
                                   }
                                 : { 'aria-hidden': 'true' }
                         "
-                        class="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full accent-gradient font-display text-xl font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-glow)] ring-4 ring-card outline-none focus-visible:ring-ring"
-                        :class="
-                            photo &&
-                            'cursor-zoom-in transition-transform duration-(--duration-base) ease-(--ease-spring) hover:scale-[1.04]'
-                        "
+                        class="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft text-lg font-semibold text-primary-soft-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        :class="photo && 'cursor-zoom-in'"
                         data-details-avatar
                         @click="photo ? (photoOpen = true) : undefined"
                     >
@@ -299,7 +291,7 @@ function safeUrl(url: string | null): string | null {
                     </component>
                     <div class="min-w-0 pt-1">
                         <p
-                            class="truncate font-display text-xl leading-snug font-semibold"
+                            class="truncate text-lg leading-snug font-semibold"
                             :title="details.contact.display_name"
                         >
                             {{ details.contact.display_name }}
@@ -506,7 +498,7 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="conversation.sla"
-                class="grid gap-3 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+                class="grid gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
                 data-sla-details
             >
                 <h3 class="section-title">Tiempo de respuesta (SLA)</h3>
@@ -514,7 +506,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section
-                class="grid gap-3 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+                class="grid gap-3 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
             >
                 <h3 class="section-title">Conversación</h3>
                 <dl
@@ -655,7 +647,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section
-                class="grid gap-2.5 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+                class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <Megaphone class="size-3.5" aria-hidden="true" />
@@ -696,7 +688,7 @@ function safeUrl(url: string | null): string | null {
             </section>
 
             <section
-                class="grid gap-2.5 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+                class="grid gap-2.5 rounded-xl border bg-card px-4 pt-4 pb-5 text-sm"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <History class="size-3.5" aria-hidden="true" />
@@ -712,7 +704,7 @@ function safeUrl(url: string | null): string | null {
                                     ? { href: previous.history_url }
                                     : { type: 'button' }
                             "
-                            class="flex w-full hover-lift items-center justify-between gap-2 rounded-xl border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                            class="flex w-full items-center justify-between gap-2 rounded-lg border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
                             @click="
                                 previous.history_only
                                     ? undefined
@@ -750,7 +742,7 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="details.contactNotes !== null"
-                class="grid gap-2 rounded-2xl border border-border/70 bg-card px-4 py-4 text-sm shadow-(--shadow-card)"
+                class="grid gap-2 rounded-xl border bg-card px-4 py-4 text-sm"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <NotebookPen class="size-3.5" aria-hidden="true" />

@@ -86,7 +86,7 @@ const emptyHeights = [30, 48, 38, 62, 44, 70, 52];
 
 <template>
     <section
-        class="@container flex min-w-0 flex-col gap-4 rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card p-4 shadow-float sm:p-5"
+        class="@container flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-(--shadow-control)"
         :aria-labelledby="titleId"
         :aria-busy="loading || undefined"
         data-chart-card
@@ -94,29 +94,25 @@ const emptyHeights = [30, 48, 38, 62, 44, 70, 52];
         <header
             class="flex flex-wrap items-start justify-between gap-x-3 gap-y-2"
         >
-            <div class="min-w-0 flex-1 basis-64 space-y-1">
+            <div class="min-w-0 flex-1 basis-56 space-y-0.5">
                 <h3
                     :id="titleId"
-                    class="font-display text-[1.0625rem] leading-6 font-semibold tracking-tight text-balance"
+                    class="text-sm leading-5 font-semibold tracking-tight text-balance"
                 >
                     {{ title }}
                 </h3>
                 <p
                     v-if="description"
-                    class="text-sm text-pretty text-muted-foreground"
+                    class="text-xs leading-5 text-pretty text-muted-foreground"
                 >
                     {{ description }}
                 </p>
                 <p
                     v-if="total && ready"
-                    class="inline-flex max-w-full items-center gap-1.5 pt-1 font-display text-[0.9375rem] font-semibold text-foreground tabular-nums"
+                    class="max-w-full pt-1 text-[0.8125rem] font-medium text-foreground tabular-nums"
                     data-chart-total
                 >
-                    <span
-                        class="size-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--primary)_18%,transparent)]"
-                        aria-hidden="true"
-                    />
-                    <span class="min-w-0 text-pretty">{{ total }}</span>
+                    <span class="text-pretty">{{ total }}</span>
                 </p>
             </div>
             <div class="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -124,7 +120,7 @@ const emptyHeights = [30, 48, 38, 62, 44, 70, 52];
                 <button
                     v-if="ready && $slots.table"
                     type="button"
-                    class="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-2.5 text-xs font-medium text-muted-foreground shadow-(--shadow-control) transition-[color,border-color,background-color,transform] duration-(--duration-fast) ease-(--ease-spring-soft) outline-none hover:-translate-y-px hover:border-border-strong hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.95] aria-pressed:border-primary/30 aria-pressed:bg-primary-soft aria-pressed:text-primary-soft-foreground pointer-coarse:h-10"
+                    class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors duration-(--duration-fast) outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground pointer-coarse:h-10"
                     :aria-pressed="showTable"
                     :title="showTable ? 'Ver como gráfica' : 'Ver como tabla'"
                     data-chart-toggle
@@ -177,7 +173,7 @@ const emptyHeights = [30, 48, 38, 62, 44, 70, 52];
 
         <div
             v-else-if="empty"
-            class="relative flex min-h-[180px] flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-dashed bg-surface-sunken/50 px-4 py-6 text-center"
+            class="relative flex min-h-[160px] flex-col items-center justify-center gap-3 overflow-hidden rounded-lg bg-surface-sunken/50 px-4 py-6 text-center"
             data-chart-empty
         >
             <div
@@ -215,7 +211,7 @@ const emptyHeights = [30, 48, 38, 62, 44, 70, 52];
 
         <p
             v-if="footnote && ready"
-            class="border-t border-dashed pt-3 text-xs text-pretty text-muted-foreground"
+            class="text-xs text-pretty text-muted-foreground"
         >
             {{ footnote }}
         </p>

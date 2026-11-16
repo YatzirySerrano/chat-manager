@@ -10,6 +10,7 @@ use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactIdentity;
 use App\Models\Conversation;
+use Throwable;
 
 /**
  * The WhatsApp profile of a contact (picture, "about", business profile),
@@ -145,6 +146,49 @@ class WhatsAppWebContactProfiles
     }
 
     /**
+     * Sets `whatsappIdentity` (the newest WhatsApp identity, or null) on the
+     * given contacts with one plain query, the same identity the relation
+     * picks. The picture is an extra of the inbox: when the lookup fails
+     * (a schema not migrated yet, a database quirk) it is reported and the
+     * rows keep their initials, the inbox itself never fails because of it.
+     *
+     * @param  iterable<Contact|null>  $contacts
+     */
+    public static function loadIdentities(iterable $contacts): void
+    {
+        $byId = [];
+
+        foreach ($contacts as $contact) {
+            if ($contact instanceof Contact && ! $contact->relationLoaded('whatsappIdentity')) {
+                $byId[$contact->getKey()][] = $contact;
+            }
+        }
+
+        if ($byId === []) {
+            return;
+        }
+
+        try {
+            $identities = ContactIdentity::query()
+                ->whereIn('contact_id', array_keys($byId))
+                ->where('channel', ConnectionChannel::Whatsapp->value)
+                ->orderBy('id')
+                ->get()
+                // The newest one of each contact wins (ofMany max id).
+                ->keyBy('contact_id');
+        } catch (Throwable $exception) {
+            report($exception);
+            $identities = collect();
+        }
+
+        foreach ($byId as $contactId => $models) {
+            foreach ($models as $contact) {
+                $contact->setRelation('whatsappIdentity', $identities->get($contactId));
+            }
+        }
+    }
+
+    /**
      * URL of the stored picture through the conversation (inbox rows, open
      * conversation, details panel), or null when there is none.
      */
@@ -154,7 +198,7 @@ class WhatsAppWebContactProfiles
         $identity = $contact?->relationLoaded('whatsappIdentity') ? $contact->getRelation('whatsappIdentity') : null;
 
         return $identity instanceof ContactIdentity && $identity->hasAvatar()
-            ? route('conversations.contact-avatar', ['conversation' => $conversation->id, 'v' => $identity->avatarVersion()])
+            ? self::url('conversations.contact-avatar', ['conversation' => $conversation->id, 'v' => $identity->avatarVersion()])
             : null;
     }
 
@@ -166,8 +210,25 @@ class WhatsAppWebContactProfiles
         $identity = $contact->relationLoaded('whatsappIdentity') ? $contact->getRelation('whatsappIdentity') : null;
 
         return $identity instanceof ContactIdentity && $identity->hasAvatar()
-            ? route('contacts.avatar', ['contact' => $contact->id, 'v' => $identity->avatarVersion()])
+            ? self::url('contacts.avatar', ['contact' => $contact->id, 'v' => $identity->avatarVersion()])
             : null;
+    }
+
+    /**
+     * A route URL, or null (reported) when it cannot be built, e.g. a route
+     * cache older than the code: a missing picture never breaks a page.
+     *
+     * @param  array<string, mixed>  $parameters
+     */
+    public static function url(string $name, array $parameters): ?string
+    {
+        try {
+            return route($name, $parameters);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
     }
 
     private static function text(mixed $value): ?string

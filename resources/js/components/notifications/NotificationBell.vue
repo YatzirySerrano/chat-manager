@@ -149,7 +149,7 @@ function onOpenChange(value: boolean): void {
                                             'badge-pop absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[0.6875rem] leading-none font-semibold tabular-nums ring-2 ring-background',
                                             urgent
                                                 ? 'bg-destructive text-destructive-foreground shadow-[0_2px_8px_-2px_color-mix(in_oklch,var(--destructive)_70%,transparent)]'
-                                                : 'accent-gradient shadow-[0_2px_8px_-2px_color-mix(in_oklch,var(--primary)_70%,transparent)]',
+                                                : 'bg-primary',
                                         )
                                     "
                                     aria-hidden="true"
@@ -349,7 +349,7 @@ function onOpenChange(value: boolean): void {
                                         ? 'bg-transparent'
                                         : item.level === 'urgent'
                                           ? 'live-dot bg-destructive text-destructive'
-                                          : 'bg-primary shadow-[0_0_8px_color-mix(in_oklch,var(--primary)_60%,transparent)]'
+                                          : 'bg-primary'
                                 "
                                 aria-hidden="true"
                             />

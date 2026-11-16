@@ -58,7 +58,7 @@ use Illuminate\Support\Facades\DB;
  * @phpstan-type Summary array{received: Comparable, closed_in_period: Comparable, first_response_range: Range, resolution_range: Range, attended: Comparable, responded: Comparable, resolved: Comparable, reopened: Comparable, transfers: Comparable, out_of_hours: Comparable, out_of_hours_measurable: int, first_attention_seconds: Duration, first_response_seconds: Duration, resolution_seconds: Duration, first_response_business_seconds: Duration, resolution_business_seconds: Duration, first_response_sla: Sla|null, resolution_sla: Sla|null, messages_in: Comparable, messages_out: Comparable, failed_out: Comparable, failure_rate: Comparable}
  * @phpstan-type Snapshot array{pending: int, open: int, agents: int|null}
  * @phpstan-type TrendPoint array{key: string, label: string, received: int, resolved: int, previous_received: int}
- * @phpstan-type ActivityPoint array{key: string, label: string, received: int, attended: int, first_response_seconds: int|null, first_response_samples: int}
+ * @phpstan-type ActivityPoint array{key: string, label: string, received: int, attended: int, resolved: int, first_response_seconds: int|null, first_response_samples: int}
  * @phpstan-type Activity array{granularity: 'hour'|'day'|'week'|'month', points: list<ActivityPoint>}
  * @phpstan-type ChannelRow array{channel: string|null, label: string, received: int, attended: int}
  * @phpstan-type Analytics array{summary: Summary, current: Snapshot, statuses: list<array{status: string, label: string, count: int}>, trend: array{granularity: 'day'|'week'|'month', points: list<TrendPoint>}, activity: Activity, heatmap: array{max: int, cells: list<list<int>>}, backlog: Backlog, by_agent: list<BreakdownRow>, by_department: list<BreakdownRow>, by_connection: list<BreakdownRow>, by_category: list<BreakdownRow>, by_channel: list<ChannelRow>, response_trend: array<string, mixed>, sla: array<string, mixed>|null, productivity: array<string, mixed>|null}
@@ -282,6 +282,8 @@ class OperationalAnalytics
             ->selectRaw("{$bucket} AS bucket", $bindings)
             ->selectRaw('COUNT(*) AS received')
             ->selectRaw('SUM(CASE WHEN first_assigned_at IS NOT NULL THEN 1 ELSE 0 END) AS attended')
+            // Of the ones received in the bucket, closed at least once (same definition as the breakdown).
+            ->selectRaw('SUM(CASE WHEN resolved_at IS NOT NULL THEN 1 ELSE 0 END) AS resolved')
             ->selectRaw('AVG(seconds_to_first_human_response) AS first_response_avg, COUNT(seconds_to_first_human_response) AS first_response_samples')
             ->groupBy('bucket')
             ->get()
@@ -297,6 +299,7 @@ class OperationalAnalytics
                 'label' => $label,
                 'received' => (int) ($row->received ?? 0),
                 'attended' => (int) ($row->attended ?? 0),
+                'resolved' => (int) ($row->resolved ?? 0),
                 'first_response_seconds' => $samples > 0 && $row->first_response_avg !== null ? (int) round((float) $row->first_response_avg) : null,
                 'first_response_samples' => $samples,
             ];

@@ -1088,7 +1088,7 @@ async function copyText(): Promise<void> {
                         BUBBLE_META,
                         secondaryText,
                         bare
-                            ? 'mt-1 w-fit rounded-full border border-border/70 glass px-2 py-0.5'
+                            ? 'mt-1 w-fit rounded-md border bg-background/90 px-2 py-0.5'
                             : 'mt-0.5 px-1',
                         bare && (outbound ? 'ml-auto' : ''),
                     ]"

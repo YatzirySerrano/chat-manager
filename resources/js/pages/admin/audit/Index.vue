@@ -211,7 +211,7 @@ function openDetail(entry: AuditLogEntry): void {
 
         <SurfaceCard class="admin-list reveal overflow-clip">
             <div
-                class="admin-toolbar grid gap-3 p-3 sm:p-4"
+                class="admin-toolbar grid gap-2 px-3 py-2.5"
                 data-tour="audit.filters"
             >
                 <div
@@ -222,7 +222,7 @@ function openDetail(entry: AuditLogEntry): void {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full rounded-full bg-card lg:w-64 lg:shrink-0"
+                            class="w-full bg-card lg:w-56 lg:shrink-0"
                             aria-label="Filtrar por acción"
                         >
                             <SelectValue />
@@ -245,7 +245,7 @@ function openDetail(entry: AuditLogEntry): void {
                         @update:model-value="applyFilters"
                     >
                         <SelectTrigger
-                            class="w-full rounded-full bg-card lg:w-60 lg:shrink-0"
+                            class="w-full bg-card lg:w-56 lg:shrink-0"
                             aria-label="Filtrar por responsable"
                         >
                             <SelectValue />
@@ -263,14 +263,16 @@ function openDetail(entry: AuditLogEntry): void {
                             </SelectItem>
                         </SelectContent>
                     </Select>
-                    <DateRangePicker
-                        v-model:from="filterState.from"
-                        v-model:to="filterState.to"
-                        class="w-full rounded-full bg-card sm:col-span-2 lg:w-72 lg:shrink-0"
-                        placeholder="Cualquier fecha"
-                        aria-label="Filtrar por fecha"
-                        @change="applyFilters"
-                    />
+                    <div class="sm:col-span-2 lg:w-64 lg:shrink-0">
+                        <DateRangePicker
+                            v-model:from="filterState.from"
+                            v-model:to="filterState.to"
+                            class="bg-card"
+                            placeholder="Cualquier fecha"
+                            aria-label="Filtrar por fecha"
+                            @change="applyFilters"
+                        />
+                    </div>
                 </div>
                 <ActiveFilters
                     v-if="hasFilters"

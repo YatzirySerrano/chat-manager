@@ -1115,7 +1115,7 @@ onBeforeUnmount(() => {
                     />
                     <span class="min-w-0 flex-1">
                         <h2
-                            class="flex items-center gap-1.5 font-display text-[1.05rem] leading-tight font-semibold"
+                            class="flex items-center gap-1.5 text-base leading-tight font-semibold"
                         >
                             <span class="truncate">{{ thread.title }}</span>
                             <BellOff
@@ -1363,7 +1363,7 @@ onBeforeUnmount(() => {
         />
         <p
             v-else
-            class="mx-2 mt-1.5 mb-2.5 shrink-0 rounded-[1.4rem] border border-dashed border-border-strong/70 glass-card px-4 py-3 text-sm text-muted-foreground sm:mx-5 sm:mb-4"
+            class="mx-2 mt-1.5 mb-2.5 shrink-0 rounded-xl border border-dashed border-border-strong/70 bg-card px-4 py-3 text-sm text-muted-foreground sm:mx-5 sm:mb-4"
         >
             {{
                 thread.post_blocked_reason ??

@@ -6,7 +6,6 @@ import {
     Plus,
     Tag as TagIcon,
     Trash2,
-    TrendingUp,
     UsersRound,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
@@ -219,7 +218,7 @@ function usageLabel(
                 <ExportMenu v-if="canExport" report="tags" :filters="filters" />
                 <Button
                     v-if="can.manage"
-                    class="accent-gradient glow max-sm:w-full"
+                    class="max-sm:w-full"
                     data-tour="tags.new"
                     @click="openCreate"
                 >
@@ -252,7 +251,7 @@ function usageLabel(
                         <RecordStateFilter
                             v-model="filterState.record"
                             :options="recordStates"
-                            class="h-10 flex-1 rounded-xl sm:w-36 sm:flex-none"
+                            class="flex-1 sm:w-36 sm:flex-none"
                             @change="applyFilters"
                         />
                         <ViewModeToggle v-model="viewMode" />
@@ -480,13 +479,7 @@ function usageLabel(
                 class="overflow-clip surface-float lg:sticky lg:top-20"
                 aria-labelledby="tag-usage-title"
             >
-                <header class="flex items-start gap-3 px-5 pt-5 pb-4">
-                    <span
-                        class="flex size-9 shrink-0 items-center justify-center rounded-xl accent-gradient"
-                        aria-hidden="true"
-                    >
-                        <TrendingUp class="size-4" />
-                    </span>
+                <header class="px-5 pt-4 pb-3">
                     <div class="min-w-0">
                         <h2
                             id="tag-usage-title"

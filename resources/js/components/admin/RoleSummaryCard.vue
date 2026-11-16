@@ -59,7 +59,7 @@ const description = computed(() =>
                     role.is_deleted
                         ? 'bg-muted text-muted-foreground'
                         : role.is_root
-                          ? 'accent-gradient shadow-glow'
+                          ? 'bg-primary text-primary-foreground'
                           : 'admin-icon-tile'
                 "
                 aria-hidden="true"

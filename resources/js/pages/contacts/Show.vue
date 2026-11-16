@@ -179,11 +179,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                     </div>
                 </template>
                 <template #actions>
-                    <Button
-                        v-if="contact.can?.save"
-                        class="accent-gradient glow"
-                        @click="saveOpen = true"
-                    >
+                    <Button v-if="contact.can?.save" @click="saveOpen = true">
                         <UserPlus />
                         Guardar contacto
                     </Button>

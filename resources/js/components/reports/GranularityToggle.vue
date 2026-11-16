@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import FilterTabs from '@/components/filters/FilterTabs.vue';
-import type { FilterTabOption } from '@/components/filters/types';
 import type { AnalyticsGranularity } from '@/types';
 
 /**
- * Day / week / month switch of the volume charts: the pill track of the
- * inbox tabs, whose thumb glides to the chosen grain. Only the
+ * Day / week / month switch of the volume charts: a small segmented
+ * control in the language of the period filter. Only the
  * granularities the server allows for the period are offered; the choice
  * travels in the URL like every other filter.
  */
@@ -23,14 +20,6 @@ const names: Record<AnalyticsGranularity, string> = {
     month: 'Mes',
 };
 
-const tabs = computed<FilterTabOption<AnalyticsGranularity>[]>(() =>
-    props.options.map((option) => ({
-        value: option,
-        label: names[option],
-        attrs: { 'data-granularity': option },
-    })),
-);
-
 function choose(option: AnalyticsGranularity): void {
     if (option !== props.value) {
         emit('change', option);
@@ -39,12 +28,27 @@ function choose(option: AnalyticsGranularity): void {
 </script>
 
 <template>
-    <FilterTabs
-        :options="tabs"
-        :model-value="value"
-        label="Agrupar por"
-        class="[&_[data-filter-tab]]:h-7 [&_[data-filter-tab]]:px-2.5 [&_[data-filter-tab]]:text-xs"
+    <div
+        class="inline-flex h-7 items-center gap-0.5 rounded-md border bg-card p-0.5"
+        role="group"
+        aria-label="Agrupar por"
         data-granularity-toggle
-        @update:model-value="choose"
-    />
+    >
+        <button
+            v-for="option in options"
+            :key="option"
+            type="button"
+            class="inline-flex h-full items-center rounded-[5px] px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors"
+            :class="
+                option === value
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+            "
+            :aria-pressed="option === value"
+            :data-granularity="option"
+            @click="choose(option)"
+        >
+            {{ names[option] }}
+        </button>
+    </div>
 </template>

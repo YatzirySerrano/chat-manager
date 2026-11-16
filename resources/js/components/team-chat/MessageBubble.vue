@@ -238,7 +238,7 @@ function onEditKeydown(event: KeyboardEvent): void {
         class="flex justify-center px-4 py-1.5"
     >
         <p
-            class="max-w-md rounded-full glass px-3 py-1 text-center text-xs text-pretty text-muted-foreground shadow-(--shadow-control) ring-1 ring-border/70"
+            class="max-w-md rounded-md border bg-background/90 px-2.5 py-1 text-center text-xs text-pretty text-muted-foreground"
             :title="fullDate"
         >
             {{ message.system_text }}

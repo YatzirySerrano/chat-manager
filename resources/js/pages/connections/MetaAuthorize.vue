@@ -106,7 +106,6 @@ async function copy(value: string, label: string): Promise<void> {
                 </Button>
                 <Button
                     type="button"
-                    class="shadow-glow"
                     :disabled="!configured"
                     :loading="processing"
                     @click="start"

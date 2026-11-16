@@ -16,9 +16,9 @@ const props = defineProps<{ class?: HTMLAttributes['class'] }>();
 </script>
 
 <template>
-    <section :class="cn('dir-hero enter-spring', props.class)">
+    <section :class="cn('dir-hero', props.class)">
         <div
-            class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:gap-6 sm:p-6 lg:p-7"
+            class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5"
         >
             <div v-if="$slots.avatar" class="shrink-0">
                 <slot name="avatar" />
@@ -29,7 +29,7 @@ const props = defineProps<{ class?: HTMLAttributes['class'] }>();
         </div>
         <div
             v-if="$slots.footer"
-            class="flex flex-wrap items-center gap-2 border-t border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[color-mix(in_oklch,var(--card)_55%,transparent)] px-5 py-3 sm:px-6 lg:px-7"
+            class="flex flex-wrap items-center gap-2 border-t px-4 py-2.5 sm:px-5"
         >
             <slot name="footer" />
         </div>

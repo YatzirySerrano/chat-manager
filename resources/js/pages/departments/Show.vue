@@ -218,11 +218,7 @@ function confirmRemoval(): void {
                         <RotateCcw />
                         Restaurar
                     </Button>
-                    <Button
-                        v-if="can.manageMembers"
-                        class="accent-gradient glow"
-                        @click="addOpen = true"
-                    >
+                    <Button v-if="can.manageMembers" @click="addOpen = true">
                         <UserPlus />
                         Agregar miembros
                     </Button>
@@ -381,11 +377,7 @@ function confirmRemoval(): void {
                     "
                     :icon="Users"
                 >
-                    <Button
-                        v-if="can.manageMembers"
-                        class="rounded-full accent-gradient glow"
-                        @click="addOpen = true"
-                    >
+                    <Button v-if="can.manageMembers" @click="addOpen = true">
                         <UserPlus />
                         Agregar miembros
                     </Button>

@@ -11,7 +11,6 @@ import {
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import ActiveFilters from '@/components/filters/ActiveFilters.vue';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FilterSearch from '@/components/filters/FilterSearch.vue';
 import FilterTabs from '@/components/filters/FilterTabs.vue';
@@ -658,34 +657,35 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             aria-label="Chats internos"
         >
             <div
-                class="list-header grid gap-2.5 glass-bar px-3 pt-3 pb-3"
+                class="list-header grid gap-2 border-b border-border/60 bg-background px-3 pt-2.5 pb-2"
                 :data-scrolled="listScrolled ? '' : undefined"
             >
-                <div class="flex items-center justify-between gap-2 pl-0.5">
-                    <div class="min-w-0">
-                        <h1
-                            class="truncate font-display text-xl leading-tight font-semibold tracking-tight"
-                        >
-                            Chat interno
-                        </h1>
-                        <p
-                            class="truncate text-xs"
-                            :class="
-                                unreadTotal > 0
-                                    ? 'font-medium text-primary'
-                                    : 'text-muted-foreground'
-                            "
-                        >
-                            {{
-                                unreadTotal > 0
-                                    ? `${unreadTotal} sin leer`
-                                    : 'Mensajes entre el equipo'
-                            }}
-                        </p>
-                    </div>
+                <!-- The page header already names the module: this title is for screen readers. -->
+                <h1 class="sr-only">
+                    Chat interno<template v-if="unreadTotal > 0"
+                        >, {{ unreadTotal }} sin leer</template
+                    >
+                </h1>
+
+                <div class="flex items-center gap-1.5">
+                    <FilterSearch
+                        ref="searchBox"
+                        v-model="search"
+                        placeholder="Buscar chats y mensajes"
+                        label="Buscar chats y mensajes"
+                        title="Busca por nombre de la persona o del grupo, y en los mensajes. Atajo: / o Ctrl+K"
+                        :maxlength="80"
+                        :loading="loadingList || searchingMessages"
+                        data-tour="team-chat.search"
+                        @next="focusFirstThread"
+                    />
+
                     <DropdownMenu v-if="can.createGroup">
                         <DropdownMenuTrigger as-child>
-                            <Button size="sm" data-tour="team-chat.new">
+                            <Button
+                                class="h-9 shrink-0 gap-1.5 px-2.5"
+                                data-tour="team-chat.new"
+                            >
                                 <Plus /> Nuevo
                             </Button>
                         </DropdownMenuTrigger>
@@ -700,7 +700,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </DropdownMenu>
                     <Button
                         v-else
-                        size="sm"
+                        class="h-9 shrink-0 gap-1.5 px-2.5"
                         data-tour="team-chat.new"
                         @click="newDirectOpen = true"
                     >
@@ -708,62 +708,70 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </Button>
                 </div>
 
-                <FilterSearch
-                    ref="searchBox"
-                    v-model="search"
-                    placeholder="Buscar chats y mensajes"
-                    label="Buscar chats y mensajes"
-                    title="Busca por nombre de la persona o del grupo, y en los mensajes. Atajo: / o Ctrl+K"
-                    :maxlength="80"
-                    :loading="loadingList || searchingMessages"
-                    data-tour="team-chat.search"
-                    @next="focusFirstThread"
-                />
-
-                <FilterTabs
-                    :options="scopeTabs"
-                    :model-value="filter"
-                    label="Filtrar chats"
-                    @update:model-value="chooseScope"
-                />
-
-                <ActiveFilters
-                    :pills="[]"
-                    :clearable="hasFilters"
-                    @clear="clearFilters"
-                >
-                    <FilterToggle
-                        :pressed="unreadOnly"
-                        label="No leídos"
-                        :icon="MailWarning"
-                        :count="counts.unread"
-                        tone="primary"
-                        :sr-label="
-                            counts.unread === 1
-                                ? '1 chat con mensajes sin leer'
-                                : `${counts.unread} chats con mensajes sin leer`
-                        "
-                        title="Solo los chats con mensajes que aún no has leído"
-                        data-team-filter="unread"
-                        @toggle="toggleUnread"
-                    />
-                    <FilterToggle
-                        v-if="showMentions"
-                        :pressed="mentionsOnly"
-                        label="Menciones"
-                        :icon="AtSign"
-                        :count="counts.mentions"
-                        tone="warning"
-                        :sr-label="
-                            counts.mentions === 1
-                                ? '1 grupo te menciona'
-                                : `${counts.mentions} grupos te mencionan`
-                        "
-                        title="Solo los grupos con mensajes sin leer que te mencionan (@)"
-                        data-team-filter="mentions"
-                        @toggle="toggleMentions"
-                    />
-                </ActiveFilters>
+                <!-- One strip: the scopes as tabs, then the quick toggles. -->
+                <div class="-mx-1 min-w-0">
+                    <FilterTabs
+                        :options="scopeTabs"
+                        :model-value="filter"
+                        label="Filtrar chats"
+                        class="px-1"
+                        @update:model-value="chooseScope"
+                    >
+                        <template #after>
+                            <span
+                                class="mx-0.5 h-4 w-px shrink-0 bg-border"
+                                aria-hidden="true"
+                            />
+                            <div
+                                class="flex shrink-0 items-center gap-1"
+                                role="group"
+                                aria-label="Filtros rápidos"
+                            >
+                                <FilterToggle
+                                    :pressed="unreadOnly"
+                                    label="No leídos"
+                                    :icon="MailWarning"
+                                    :count="counts.unread"
+                                    tone="primary"
+                                    :sr-label="
+                                        counts.unread === 1
+                                            ? '1 chat con mensajes sin leer'
+                                            : `${counts.unread} chats con mensajes sin leer`
+                                    "
+                                    title="Solo los chats con mensajes que aún no has leído"
+                                    data-team-filter="unread"
+                                    @toggle="toggleUnread"
+                                />
+                                <FilterToggle
+                                    v-if="showMentions"
+                                    :pressed="mentionsOnly"
+                                    label="Menciones"
+                                    :icon="AtSign"
+                                    :count="counts.mentions"
+                                    tone="warning"
+                                    :sr-label="
+                                        counts.mentions === 1
+                                            ? '1 grupo te menciona'
+                                            : `${counts.mentions} grupos te mencionan`
+                                    "
+                                    title="Solo los grupos con mensajes sin leer que te mencionan (@)"
+                                    data-team-filter="mentions"
+                                    @toggle="toggleMentions"
+                                />
+                                <button
+                                    v-if="hasFilters"
+                                    type="button"
+                                    class="inline-flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                                    data-inbox-clear
+                                    data-filter-clear
+                                    @click="clearFilters"
+                                >
+                                    Limpiar
+                                </button>
+                            </div>
+                        </template>
+                    </FilterTabs>
+                </div>
             </div>
 
             <div
@@ -818,7 +826,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         ref="threadList"
                         tag="div"
                         :name="threadMotion"
-                        class="relative z-[1] grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
+                        class="relative z-[1] grid grid-cols-1 gap-px motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
                         :class="[
                             firstPaint && 'reveal-stagger',
                             loadingList && 'opacity-60',

@@ -239,7 +239,6 @@ function roleDescription(role: ManagedRole): string {
                 />
                 <Button
                     v-if="can.create"
-                    class="shadow-glow"
                     data-tour="roles.new"
                     @click="openCreate"
                 >
@@ -255,7 +254,7 @@ function roleDescription(role: ManagedRole): string {
         >
             <SurfaceCard class="admin-list overflow-clip">
                 <div
-                    class="admin-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                    class="admin-toolbar flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
                 >
                     <p class="text-sm text-muted-foreground">
                         <span
@@ -334,7 +333,7 @@ function roleDescription(role: ManagedRole): string {
                                             role.is_deleted
                                                 ? 'bg-muted text-muted-foreground'
                                                 : role.is_root
-                                                  ? 'accent-gradient shadow-glow'
+                                                  ? 'bg-primary text-primary-foreground'
                                                   : 'admin-icon-tile'
                                         "
                                         aria-hidden="true"
@@ -503,7 +502,7 @@ function roleDescription(role: ManagedRole): string {
                             aria-hidden="true"
                         >
                             <div
-                                class="role-bar h-full rounded-full accent-gradient"
+                                class="role-bar h-full rounded-full bg-primary"
                                 :style="{
                                     width: `${item.share}%`,
                                     '--i': position,

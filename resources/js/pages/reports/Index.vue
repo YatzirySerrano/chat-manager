@@ -538,15 +538,24 @@ const slaEmptyText = computed(() =>
 
 const breakdownSeries: BarSeries[] = [
     { key: 'received', name: 'Recibidas', color: chartTokens.primary },
-    { key: 'attended', name: 'Atendidas', color: chartTokens.secondary },
+    { key: 'attended', name: 'Atendidas', color: chartTokens.primary },
 ];
 
-const breakdownLegend = breakdownSeries.map((series) => ({
-    key: series.key,
-    label: series.name,
-    color: series.color ?? chartTokens.primary,
-    shape: 'square' as const,
-}));
+/* Overlaid bars: the received as a light track, the attended solid inside. */
+const breakdownLegend = [
+    {
+        key: 'attended',
+        label: 'Atendidas',
+        color: chartTokens.primary,
+        shape: 'square' as const,
+    },
+    {
+        key: 'received',
+        label: 'Recibidas',
+        color: `color-mix(in oklch, ${chartTokens.primary} 28%, transparent)`,
+        shape: 'square' as const,
+    },
+];
 
 function breakdownBars(rows: AnalyticsBreakdownRow[]): BarItem[] {
     return rows.slice(0, BAR_LIMIT).map((row, index) => ({
@@ -728,10 +737,10 @@ const loadingCards = [
                             id="kpis-heading"
                             :icon="Inbox"
                             title="Volumen"
-                            :description="`Solicitudes recibidas ${period.label}; cada una cuenta una sola vez, sin importar reasignaciones ni mensajes. Comparado con ${comparisonText}.`"
+                            :description="`Cada solicitud cuenta una sola vez. Comparado con ${comparisonText}.`"
                         />
                         <div
-                            class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 min-[112rem]:grid-cols-6"
+                            class="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 min-[112rem]:grid-cols-6"
                             data-tour="reports.kpis"
                         >
                             <KpiCard
@@ -890,71 +899,61 @@ const loadingCards = [
                         </div>
                     </section>
 
-                    <SurfaceCard
-                        title="Tiempos de atención"
-                        :description="`Promedios del periodo comparados con ${comparisonText}. Solo se promedian las solicitudes que tienen el dato.`"
-                        body-class="flex flex-col gap-5 p-4 sm:p-5"
+                    <section
+                        aria-labelledby="times-heading"
+                        class="flex flex-col gap-3"
                         data-tour="reports.times"
                     >
-                        <div class="space-y-3">
-                            <h3 class="text-sm font-semibold">
-                                Tiempo real (todas las horas)
-                            </h3>
-                            <div class="auto-grid [--col-min:17rem]">
-                                <KpiCard
-                                    v-for="card in calendarTimes"
-                                    :key="card.key"
-                                    :label="card.label"
-                                    :icon="card.icon"
-                                    :value="duration(card.figure)"
-                                    :current="card.figure.value"
-                                    :previous="card.figure.previous"
-                                    :previous-label="
-                                        previousDuration(card.figure)
-                                    "
-                                    better="lower"
-                                    :hint="card.hint"
-                                    :data-kpi="card.key"
-                                />
-                                <KpiCard
-                                    v-if="analytics.sla"
-                                    label="Tiempo de respuesta por mensaje del cliente"
-                                    :icon="MessageCircleReply"
-                                    :value="
-                                        analytics.sla.response_time.avg === null
-                                            ? null
-                                            : formatDuration(
-                                                  analytics.sla.response_time
-                                                      .avg,
-                                              )
-                                    "
-                                    live
-                                    unavailable-label="Sin datos"
-                                    :hint="
-                                        analytics.sla.response_time.avg === null
-                                            ? analytics.sla.available_since ===
-                                              null
-                                                ? 'Se mide por ciclo de respuesta desde esta versión: aún no hay registros'
-                                                : `Sin respuestas medidas en el periodo. Disponible desde ${formatBucket(analytics.sla.available_since, 'day').long}`
-                                            : `Entre cada mensaje del cliente y la respuesta de una persona. Mínimo ${formatDuration(analytics.sla.response_time.min ?? 0)} · máximo ${formatDuration(analytics.sla.response_time.max ?? 0)} · n = ${formatNumber(analytics.sla.response_time.samples)} ciclos`
-                                    "
-                                    data-kpi="cycle_response"
-                                />
-                            </div>
+                        <InsightHeading
+                            id="times-heading"
+                            title="Tiempos de atención"
+                            description="Promedios de las solicitudes que tienen el dato, en tiempo real (todas las horas)."
+                        />
+                        <div class="auto-grid [--col-min:17rem]">
+                            <KpiCard
+                                v-for="card in calendarTimes"
+                                :key="card.key"
+                                :label="card.label"
+                                :icon="card.icon"
+                                :value="duration(card.figure)"
+                                :current="card.figure.value"
+                                :previous="card.figure.previous"
+                                :previous-label="previousDuration(card.figure)"
+                                better="lower"
+                                :hint="card.hint"
+                                :data-kpi="card.key"
+                            />
+                            <KpiCard
+                                v-if="analytics.sla"
+                                label="Tiempo de respuesta por mensaje del cliente"
+                                :icon="MessageCircleReply"
+                                :value="
+                                    analytics.sla.response_time.avg === null
+                                        ? null
+                                        : formatDuration(
+                                              analytics.sla.response_time.avg,
+                                          )
+                                "
+                                live
+                                unavailable-label="Sin datos"
+                                :hint="
+                                    analytics.sla.response_time.avg === null
+                                        ? analytics.sla.available_since === null
+                                            ? 'Se mide por ciclo de respuesta desde esta versión: aún no hay registros'
+                                            : `Sin respuestas medidas en el periodo. Disponible desde ${formatBucket(analytics.sla.available_since, 'day').long}`
+                                        : `Entre cada mensaje del cliente y la respuesta de una persona. Mínimo ${formatDuration(analytics.sla.response_time.min ?? 0)} · máximo ${formatDuration(analytics.sla.response_time.max ?? 0)} · n = ${formatNumber(analytics.sla.response_time.samples)} ciclos`
+                                "
+                                data-kpi="cycle_response"
+                            />
                         </div>
 
-                        <div class="space-y-3">
-                            <div class="space-y-0.5">
-                                <h3 class="text-sm font-semibold">
-                                    Solo horario de atención
-                                </h3>
-                                <p class="text-sm text-muted-foreground">
-                                    Solo cuentan las horas de atención del
-                                    departamento que recibió la solicitud; sin
-                                    horario configurado, la atención es continua
-                                    y coincide con el tiempo real.
-                                </p>
-                            </div>
+                        <div class="flex flex-col gap-2 pt-1">
+                            <h3
+                                class="text-[0.8125rem] font-medium text-muted-foreground"
+                                title="Solo cuentan las horas de atención del departamento que recibió la solicitud; sin horario configurado, la atención es continua y coincide con el tiempo real."
+                            >
+                                Solo horario de atención
+                            </h3>
                             <div class="auto-grid [--col-min:17rem]">
                                 <KpiCard
                                     v-for="card in businessTimes"
@@ -973,7 +972,7 @@ const loadingCards = [
                                 />
                             </div>
                         </div>
-                    </SurfaceCard>
+                    </section>
 
                     <section
                         aria-labelledby="quality-heading"
@@ -1273,6 +1272,7 @@ const loadingCards = [
                             <BarChart
                                 :items="breakdownBars(breakdown.rows)"
                                 :series="breakdownSeries"
+                                overlay
                                 :description="`${breakdown.title}: recibidas y atendidas de los ${Math.min(BAR_LIMIT, breakdown.rows.length)} con más solicitudes`"
                             />
                             <ChartLegend :items="breakdownLegend" />

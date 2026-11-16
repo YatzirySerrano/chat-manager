@@ -20,16 +20,16 @@ const previewWidths = ['w-4/5', 'w-3/5', 'w-11/12', 'w-2/3'];
 </script>
 
 <template>
-    <div class="grid gap-0.5 p-1.5" aria-hidden="true">
+    <div class="grid gap-px p-1.5" aria-hidden="true">
         <div
             v-for="index in rows"
             :key="index"
-            class="flex items-start gap-3 rounded-xl px-3 py-2.5"
+            class="flex items-start gap-2.5 rounded-lg px-3 py-2"
             :style="{ '--i': index, opacity: 1 - (index - 1) * 0.08 }"
             data-inbox-skeleton
         >
-            <span class="list-shimmer size-10 shrink-0 rounded-full" />
-            <div class="grid flex-1 gap-2 pt-1">
+            <span class="list-shimmer size-9 shrink-0 rounded-full" />
+            <div class="grid flex-1 gap-1.5 pt-0.5">
                 <div class="flex justify-between gap-3">
                     <span
                         class="list-shimmer h-3.5 rounded-full"

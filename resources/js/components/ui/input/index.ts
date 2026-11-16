@@ -12,8 +12,8 @@ export const fieldControl = [
   "placeholder:text-muted-foreground/80 selection:bg-primary selection:text-primary-foreground",
   "transition-[color,background-color,border-color,box-shadow] duration-(--duration-base) ease-(--ease-standard) outline-none",
   "hover:border-border-strong hover:bg-[color-mix(in_oklch,var(--surface-sunken)_55%,var(--card))]",
-  "focus-visible:border-[color-mix(in_oklch,var(--primary)_70%,var(--border))] focus-visible:bg-card focus-visible:shadow-(--shadow-glow-ring)",
-  "data-[state=open]:border-[color-mix(in_oklch,var(--primary)_70%,var(--border))] data-[state=open]:bg-card data-[state=open]:shadow-(--shadow-glow-ring)",
+  "focus-visible:border-[color-mix(in_oklch,var(--primary)_70%,var(--border))] focus-visible:bg-card focus-visible:ring-3 focus-visible:ring-ring/25",
+  "data-[state=open]:border-[color-mix(in_oklch,var(--primary)_70%,var(--border))] data-[state=open]:bg-card data-[state=open]:ring-3 data-[state=open]:ring-ring/25",
   "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
   "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
 ].join(" ")

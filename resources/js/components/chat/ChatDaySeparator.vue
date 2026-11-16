@@ -24,7 +24,7 @@ withDefaults(
         class="pointer-events-none sticky top-(--chat-sticky-top,0px) z-10 flex justify-center py-2"
     >
         <span
-            class="max-w-full rounded-full glass px-3 py-1.5 text-center text-[0.6875rem] leading-none font-semibold text-balance break-words text-foreground/75 shadow-(--shadow-control) ring-1 ring-border/70 first-letter:uppercase motion-safe:animate-in motion-safe:zoom-in-95 motion-safe:fade-in"
+            class="max-w-full rounded-md border bg-background/95 px-2.5 py-1 text-center text-[0.6875rem] leading-none font-medium text-balance break-words text-muted-foreground first-letter:uppercase"
             >{{ label }}</span
         >
     </component>

@@ -955,18 +955,18 @@ defineExpose({ focus, addFiles, acceptsFiles });
                 class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-2.5 pt-2.5 [@media(max-height:32rem)]:flex-nowrap [@media(max-height:32rem)]:pt-1.5"
             >
                 <div
-                    class="relative grid shrink-0 rounded-full bg-surface-sunken p-0.5 text-sm ring-1 ring-border/80 ring-inset"
+                    class="relative grid shrink-0 rounded-lg bg-muted p-0.5 text-[0.8125rem]"
                     :class="canNote ? 'grid-cols-2' : 'grid-cols-1'"
                     role="group"
                     aria-label="Tipo de mensaje"
                 >
                     <span
-                        class="chat-mode-thumb pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full"
+                        class="chat-mode-thumb pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md"
                         :class="[
                             canNote ? 'w-[calc(50%-0.125rem)]' : 'right-0.5',
                             mode === 'note'
-                                ? 'translate-x-full bg-warning text-background shadow-[inset_0_1px_0_rgb(255_255_255/0.22),var(--shadow-control)]'
-                                : 'bg-card shadow-(--shadow-control) ring-1 ring-border/70',
+                                ? 'translate-x-full bg-warning text-background'
+                                : 'bg-background shadow-(--shadow-control)',
                         ]"
                         aria-hidden="true"
                     />
@@ -975,7 +975,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         :aria-pressed="mode === 'reply'"
                         aria-label="Responder al cliente"
                         :disabled="sending"
-                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                         :class="
                             mode === 'reply'
                                 ? 'text-foreground'
@@ -996,7 +996,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         :aria-pressed="mode === 'note'"
                         aria-label="Nota interna"
                         :disabled="sending"
-                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                         :class="
                             mode === 'note'
                                 ? 'text-background'
@@ -1061,7 +1061,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                     class="grid size-9 shrink-0 place-items-center rounded-full"
                     :class="
                         completedClosed
-                            ? 'bg-success text-background shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-control)] motion-safe:animate-in motion-safe:duration-500 motion-safe:zoom-in-50'
+                            ? 'bg-success text-background'
                             : 'bg-card ring-1 ring-border'
                     "
                     aria-hidden="true"
@@ -1149,7 +1149,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         <li
                             v-for="(file, index) in queued"
                             :key="`${file.name}-${file.size}-${index}`"
-                            class="inline-flex max-w-56 items-center gap-1 rounded-full border bg-card py-0.5 pr-0.5 pl-2.5 text-xs shadow-(--shadow-control) motion-safe:animate-in motion-safe:zoom-in-90 motion-safe:fade-in"
+                            class="inline-flex max-w-56 items-center gap-1 rounded-md border bg-card py-0.5 pr-0.5 pl-2 text-xs"
                             :title="`${file.name} (${formatFileSize(file.size)})`"
                         >
                             <span class="min-w-0 truncate">{{

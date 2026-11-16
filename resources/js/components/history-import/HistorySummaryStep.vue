@@ -407,7 +407,6 @@ async function confirm(): Promise<void> {
                 <div class="flex justify-end">
                     <Button
                         class="pointer-coarse:h-11"
-                        :class="summary.ready && reviewed && 'shadow-glow'"
                         :disabled="
                             !summary.ready || !reviewed || executing || loading
                         "

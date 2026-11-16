@@ -718,7 +718,7 @@ defineExpose({ focus, addFiles });
                     :aria-valuenow="uploadProgress"
                 >
                     <div
-                        class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-base) ease-(--ease-out-quint) motion-reduce:transition-none"
+                        class="h-full rounded-full bg-primary transition-[width] duration-(--duration-base) ease-(--ease-out-quint) motion-reduce:transition-none"
                         :style="{ width: `${uploadProgress}%` }"
                     />
                 </div>
@@ -783,7 +783,7 @@ defineExpose({ focus, addFiles });
                         :id="`${textareaId}-mentions`"
                         role="listbox"
                         aria-label="Mencionar a"
-                        class="absolute bottom-full left-0 z-10 mb-3 grid w-64 max-w-full gap-0.5 rounded-xl border glass p-1 text-popover-foreground shadow-popover motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
+                        class="absolute bottom-full left-0 z-10 mb-3 grid w-64 max-w-full gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
                     >
                         <li
                             v-for="(person, index) in suggestions"

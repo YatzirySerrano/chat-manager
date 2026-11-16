@@ -4,18 +4,20 @@ import { ArrowDownRight, ArrowRight, ArrowUpRight, Minus } from '@lucide/vue';
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { NumberTicker } from '@/components/ui/number-ticker';
+import Sparkline from './Sparkline.vue';
 import { formatPercent } from '@/composables/useChartTheme';
 import './insights.css';
 
 /**
  * A headline figure with its comparison against the previous period.
  *
- * Anatomy: a gradient icon tile and the label on top, the figure in the
+ * Anatomy: the label (with a small muted icon) on top, the figure in the
  * display face (a count, a grouped count like «1,245» or a percentage like
  * «85 %» counts up to its number; a duration is shown as is), then the
- * change as a soft pill (green when it improved, red when it got worse,
- * gray when the direction means nothing) with the previous figure beside
- * it, the hint and the drill-down link.
+ * change as a colored figure with an arrow (green when it improved, red
+ * when it got worse, gray when the direction means nothing) with the
+ * previous figure beside it, an optional sparkline (`trend`), the hint and
+ * the drill-down link. Calm surface: no gradient, glow or lift.
  *
  * `value === null` renders the unavailable label, never a fake zero, and
  * the comparison only shows when both periods have data. Label and hint
@@ -48,6 +50,8 @@ const props = withDefaults(
         href?: string;
         /** Text of the drill-down link. */
         hrefLabel?: string;
+        /** Values of the period for a sparkline under the figure. */
+        trend?: number[] | null;
     }>(),
     {
         current: null,
@@ -63,6 +67,7 @@ const props = withDefaults(
         tone: 'primary',
         href: undefined,
         hrefLabel: 'Ver en la bandeja',
+        trend: null,
     },
 );
 
@@ -179,35 +184,34 @@ const compact = computed(() => props.size === 'compact');
 <template>
     <div
         :class="[
-            'kpi-card spotlight flex min-w-0 hover-lift flex-col rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float',
-            compact ? 'gap-2 p-4' : 'gap-3 p-5',
+            'kpi-card flex min-w-0 flex-col rounded-xl border bg-card shadow-(--shadow-control)',
+            compact ? 'gap-1.5 p-4' : 'gap-2 p-5',
         ]"
         :data-tone="props.tone === 'primary' ? undefined : props.tone"
         data-kpi-card
     >
-        <div class="flex min-w-0 items-start gap-2.5">
-            <span
+        <div class="flex min-w-0 items-start gap-1.5">
+            <component
+                :is="icon"
                 v-if="icon"
-                class="insight-tile"
-                :data-size="compact ? 'sm' : undefined"
-                :data-tone="props.tone === 'primary' ? undefined : props.tone"
+                class="mt-px size-3.5 shrink-0"
+                :class="
+                    tone === 'warning'
+                        ? 'text-warning'
+                        : tone === 'destructive'
+                          ? 'text-destructive'
+                          : 'text-muted-foreground'
+                "
                 aria-hidden="true"
-            >
-                <component
-                    :is="icon"
-                    :class="compact ? 'size-3.5' : 'size-4.5'"
-                />
-            </span>
+            />
             <span
-                class="min-w-0 flex-1 font-medium text-pretty break-words hyphens-auto text-muted-foreground"
-                :class="[compact ? 'pt-1 text-xs' : 'pt-2 text-sm']"
+                class="min-w-0 flex-1 text-[0.8125rem] font-medium text-pretty break-words hyphens-auto text-muted-foreground"
                 data-kpi-label
                 >{{ label }}</span
             >
-            <!-- Live figures breathe: they follow the inbox in real time. -->
             <span
                 v-if="live"
-                class="mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft px-2 py-0.5 text-[0.6875rem] font-semibold text-success-soft-foreground"
+                class="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground"
                 title="Cifra en vivo: no depende del periodo"
             >
                 <span
@@ -222,7 +226,7 @@ const compact = computed(() => props.size === 'compact');
             v-if="value !== null"
             :class="[
                 'font-display font-semibold tracking-tight tabular-nums',
-                compact ? 'text-[1.75rem] leading-8' : 'text-4xl leading-10',
+                compact ? 'text-[1.625rem] leading-8' : 'text-3xl leading-9',
             ]"
             data-kpi-value
         >
@@ -244,7 +248,7 @@ const compact = computed(() => props.size === 'compact');
 
         <p
             v-if="change"
-            class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
+            class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs"
             data-kpi-change
         >
             <span class="kpi-delta" :data-tone="deltaTone">
@@ -267,12 +271,7 @@ const compact = computed(() => props.size === 'compact');
                 <span v-if="toneWord" class="sr-only">({{ toneWord }})</span>
             </span>
             <span class="text-muted-foreground tabular-nums">
-                {{
-                    change.direction === 'flat'
-                        ? 'que el periodo anterior'
-                        : 'vs. periodo anterior'
-                }}
-                · antes {{ previousText }}
+                vs. {{ previousText }} antes
             </span>
         </p>
         <p
@@ -288,6 +287,13 @@ const compact = computed(() => props.size === 'compact');
             Antes: {{ previousText }}
         </p>
 
+        <Sparkline
+            v-if="trend && trend.length > 1"
+            class="-mx-0.5 mt-1"
+            :values="trend"
+            :label="`Tendencia de ${label}`"
+        />
+
         <p
             v-if="hint"
             class="text-xs text-pretty break-words hyphens-auto text-muted-foreground"
@@ -298,12 +304,12 @@ const compact = computed(() => props.size === 'compact');
         <Link
             v-if="href"
             :href="href"
-            class="group/kpi-link mt-auto inline-flex items-center gap-1 self-start rounded-sm pt-1 text-xs font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            class="group/kpi-link mt-auto inline-flex items-center gap-1 self-start rounded-sm pt-0.5 text-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             data-kpi-link
         >
             {{ hrefLabel }}
             <ArrowRight
-                class="size-3.5 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/kpi-link:translate-x-0.5"
+                class="size-3.5 transition-transform duration-(--duration-base) group-hover/kpi-link:translate-x-0.5"
                 aria-hidden="true"
             />
         </Link>

@@ -236,14 +236,18 @@ function sync(connection: TemplateConnectionOption): void {
                     : 'grid reveal'
             "
         >
-            <DirectoryPanel :busy="loading" toolbar-class="max-sm:static">
+            <DirectoryPanel :busy="loading">
                 <template #toolbar>
-                    <div class="grid gap-3" data-tour="templates.search">
+                    <div
+                        class="flex flex-wrap items-center gap-2"
+                        data-tour="templates.search"
+                    >
                         <FilterSearch
                             v-model="filterState.search"
                             label="Buscar plantillas"
                             placeholder="Buscar por nombre"
                             :loading="loading"
+                            class="max-sm:basis-full sm:min-w-56"
                         />
                         <ActiveFilters
                             :pills="[]"

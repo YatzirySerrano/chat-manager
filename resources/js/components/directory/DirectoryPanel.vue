@@ -29,7 +29,7 @@ const props = withDefaults(
     >
         <div
             v-if="$slots.toolbar"
-            :class="cn('dir-toolbar p-3 sm:p-4', props.toolbarClass)"
+            :class="cn('dir-toolbar px-3 py-2.5', props.toolbarClass)"
         >
             <slot name="toolbar" />
             <span v-if="busy" class="dir-progress" aria-hidden="true" />
@@ -37,7 +37,7 @@ const props = withDefaults(
         <div class="dir-body" :aria-busy="busy">
             <slot />
         </div>
-        <footer v-if="$slots.footer" class="dir-footer px-4 py-3">
+        <footer v-if="$slots.footer" class="dir-footer px-4 py-2.5">
             <slot name="footer" />
         </footer>
     </component>

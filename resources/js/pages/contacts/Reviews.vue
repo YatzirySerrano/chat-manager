@@ -382,7 +382,7 @@ function phone(summary: ContactReviewSummary): string {
                                         'ambiguous_identity_match'
                                     "
                                     size="sm"
-                                    class="rounded-full accent-gradient max-sm:w-full"
+                                    class="max-sm:w-full"
                                     @click="
                                         decide(
                                             reviewCase,

@@ -11,44 +11,16 @@
     0% {
         transform: scale(1);
     }
-    35% {
-        transform: scale(1.28);
+    40% {
+        transform: scale(1.16);
     }
     100% {
         transform: scale(1);
-    }
-}
-
-/* A halo that leaves the unread badge once when a new message arrives. */
-@keyframes filter-count-halo {
-    0% {
-        opacity: 0.55;
-        transform: scale(1);
-    }
-    100% {
-        opacity: 0;
-        transform: scale(1.9);
     }
 }
 
 .filter-count-bump {
-    animation: filter-count-bump 420ms var(--ease-spring, ease-out);
-}
-
-.filter-count-halo {
-    isolation: isolate;
-}
-
-/* The badge's own color, behind its number (z-index inside the badge). */
-.filter-count-halo::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    background-color: inherit;
-    pointer-events: none;
-    animation: filter-count-halo 900ms var(--ease-out-quint, ease-out) forwards;
+    animation: filter-count-bump 320ms var(--ease-out-quint, ease-out);
 }
 
 /* Rows of the lists (TransitionGroup name="filter-row"). */
@@ -108,8 +80,8 @@
 /* The thumb of the tabs glides to the tab chosen. */
 .filter-tabs-thumb {
     transition:
-        transform 420ms var(--ease-spring-soft, ease-out),
-        width 320ms var(--ease-out-quint, ease-out);
+        transform 300ms var(--ease-out-quint, ease-out),
+        width 300ms var(--ease-out-quint, ease-out);
 }
 
 /* The tabs scroll sideways on narrow lists without a visible bar. */
@@ -121,6 +93,25 @@
     display: none;
 }
 
+/* The hidden part of the strip fades out at the edge it hides behind. */
+.filter-tabs-scroll[data-fade='right'] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.filter-tabs-scroll[data-fade='left'] {
+    mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+.filter-tabs-scroll[data-fade='left right'] {
+    mask-image: linear-gradient(
+        to right,
+        transparent,
+        #000 28px,
+        #000 calc(100% - 28px),
+        transparent
+    );
+}
+
 /* Matched text in a row title. */
 .filter-mark {
     border-radius: 0.2em;
@@ -130,10 +121,10 @@
 }
 
 /* ───────────────────────── List column ─────────────────────────
-  Shared anatomy of the inbox and the internal chat lists: rows float on
-  the column (rounded, no dividers), lift a little on hover and press in on
-  click; the selected row sits on one glider that springs from row to row.
-  Everything moves with transform/opacity only.
+  Shared anatomy of the inbox and the internal chat lists: flat rows on
+  the column (rounded, no dividers) with a quiet hover; the selected row
+  sits on one tinted slab that slides from row to row. Only transform and
+  opacity move.
 */
 
 /* The rail: the rows' container. The glider is placed inside it. */
@@ -147,16 +138,10 @@
     position: absolute;
     top: 0;
     z-index: 0;
-    border-radius: var(--radius-xl, 0.875rem);
-    background: linear-gradient(
-        100deg,
-        color-mix(in oklch, var(--primary) 17%, var(--card)) 0%,
-        color-mix(in oklch, var(--primary) 8%, var(--card)) 55%,
-        color-mix(in oklch, var(--primary) 4%, var(--card)) 100%
-    );
-    box-shadow:
-        0 0 0 1px color-mix(in oklch, var(--primary) 26%, transparent),
-        var(--shadow-float, var(--shadow-control));
+    border-radius: var(--radius-lg, 0.625rem);
+    background: color-mix(in oklch, var(--primary) 9%, var(--background));
+    box-shadow: inset 0 0 0 1px
+        color-mix(in oklch, var(--primary) 16%, transparent);
     pointer-events: none;
     will-change: transform;
 }
@@ -164,70 +149,55 @@
 .list-glider::before {
     content: '';
     position: absolute;
-    top: 12px;
-    bottom: 12px;
-    left: 3px;
-    width: 3px;
-    border-radius: 3px;
-    background: linear-gradient(
-        180deg,
-        color-mix(in oklch, var(--primary) 65%, white),
-        var(--primary)
-    );
-    box-shadow: 0 0 10px color-mix(in oklch, var(--primary) 60%, transparent);
+    top: 10px;
+    bottom: 10px;
+    left: 0;
+    width: 2.5px;
+    border-radius: 0 2px 2px 0;
+    background: var(--primary);
 }
 
 .list-glider[data-placed] {
     transition:
-        transform 460ms
-            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)),
-        height 320ms var(--ease-out-quint, ease-out),
+        transform 260ms var(--ease-out-quint, ease-out),
+        height 260ms var(--ease-out-quint, ease-out),
         opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out);
 }
 
 /* One row: the clickable surface (button or link). */
 .list-row {
     position: relative;
-    border-radius: var(--radius-xl, 0.875rem);
-    transition:
-        background-color var(--duration-fast, 150ms)
-            var(--ease-standard, ease-out),
-        box-shadow var(--duration-base, 200ms) var(--ease-out-quint, ease-out),
-        transform var(--duration-base, 200ms) var(--ease-spring-soft, ease-out);
+    border-radius: var(--radius-lg, 0.625rem);
+    transition: background-color var(--duration-fast, 150ms)
+        var(--ease-standard, ease-out);
 }
 
 @media (hover: hover) {
     .list-row:not([data-selected]):hover {
-        background-color: color-mix(in oklch, var(--card) 50%, var(--accent));
-        box-shadow:
-            0 0 0 1px color-mix(in oklch, var(--border) 75%, transparent),
-            var(--shadow-control);
+        background-color: color-mix(
+            in oklch,
+            var(--foreground) 4.5%,
+            transparent
+        );
     }
 }
 
-.list-row:active {
-    transform: scale(0.988);
-}
-
 .list-row:focus-visible {
-    outline: none;
-    box-shadow:
-        0 0 0 2px var(--ring),
-        var(--shadow-glow-ring, 0 0 0 4px transparent);
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
 }
 
-/* The bold unread dot at the row's edge. */
+/* The unread dot at the row's edge. */
 .list-unread-dot {
     position: absolute;
     top: 50%;
-    left: 4px;
-    width: 7px;
-    height: 7px;
-    margin-top: -3.5px;
+    left: 3px;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
     border-radius: 9999px;
     background: var(--primary);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
-    animation: list-dot-in 360ms var(--ease-spring, ease-out) backwards;
+    animation: list-dot-in 240ms var(--ease-out-quint, ease-out) backwards;
     pointer-events: none;
 }
 
@@ -237,13 +207,11 @@
     }
 }
 
-/* Hover quick actions: a small floating bar over the row's top right. */
+/* Hover quick actions: a small bar over the row's top right. */
 .list-quick {
     opacity: 0;
-    transform: translateY(2px) scale(0.96);
-    transition:
-        opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out),
-        transform var(--duration-base, 200ms) var(--ease-spring-soft, ease-out);
+    transition: opacity var(--duration-fast, 150ms)
+        var(--ease-standard, ease-out);
     pointer-events: none;
 }
 
@@ -251,7 +219,6 @@
 .list-item:focus-within .list-quick,
 .list-quick:has([data-state='open']) {
     opacity: 1;
-    transform: none;
     pointer-events: auto;
 }
 
@@ -271,62 +238,41 @@
 @media (pointer: coarse) {
     .list-quick {
         opacity: 1;
-        transform: none;
         pointer-events: auto;
     }
 }
 
-/* Avatar gradients (ListAvatar). --h is the person's hue. */
+/* Avatar initials on a flat tint (ListAvatar). --h is the person's hue. */
 .list-avatar {
-    background: linear-gradient(
-        140deg,
-        oklch(0.7 0.13 var(--h, 250)) 0%,
-        oklch(0.53 0.15 calc(var(--h, 250) + 38)) 100%
-    );
-    color: white;
-    text-shadow: 0 1px 1px oklch(0 0 0 / 0.2);
-    box-shadow:
-        inset 0 1px 0 oklch(1 0 0 / 0.28),
-        inset 0 -1px 2px oklch(0 0 0 / 0.12);
+    background: oklch(0.93 0.035 var(--h, 250));
+    color: oklch(0.42 0.09 var(--h, 250));
 }
 
 .dark .list-avatar {
-    background: linear-gradient(
-        140deg,
-        oklch(0.64 0.12 var(--h, 250)) 0%,
-        oklch(0.46 0.13 calc(var(--h, 250) + 38)) 100%
-    );
+    background: oklch(0.34 0.045 var(--h, 250));
+    color: oklch(0.9 0.05 var(--h, 250));
 }
 
 /* A request waiting to be taken: a dashed warning ring. */
 .list-avatar-pending::after {
     content: '';
     position: absolute;
-    inset: -4px;
+    inset: -3px;
     border-radius: 9999px;
-    border: 2px dashed color-mix(in oklch, var(--warning) 90%, transparent);
+    border: 1.5px dashed var(--warning);
     pointer-events: none;
 }
 
 .list-channel-whatsapp {
-    background: oklch(0.6 0.15 152);
+    background: oklch(0.62 0.15 152);
 }
 
 .list-channel-messenger {
-    background: linear-gradient(
-        140deg,
-        oklch(0.6 0.2 255),
-        oklch(0.56 0.24 300)
-    );
+    background: oklch(0.58 0.19 262);
 }
 
 .list-channel-instagram {
-    background: linear-gradient(
-        45deg,
-        oklch(0.72 0.17 70),
-        oklch(0.6 0.24 15) 50%,
-        oklch(0.52 0.23 310)
-    );
+    background: oklch(0.6 0.2 5);
 }
 
 .list-channel-web_chat {
@@ -371,70 +317,7 @@
     }
 }
 
-/* Empty states: a small floating composition behind the icon. */
-.list-empty-stage {
-    position: relative;
-    width: 8rem;
-    height: 6.5rem;
-}
-
-.list-empty-stage::before {
-    content: '';
-    position: absolute;
-    inset: -1.75rem;
-    border-radius: 9999px;
-    background: radial-gradient(
-        closest-side,
-        color-mix(in oklch, var(--primary) 18%, transparent),
-        transparent
-    );
-}
-
-.list-empty-stage[data-tone='filtered']::before {
-    background: radial-gradient(
-        closest-side,
-        color-mix(in oklch, var(--muted-foreground) 14%, transparent),
-        transparent
-    );
-}
-
-.list-empty-card {
-    position: absolute;
-    border-radius: 0.875rem;
-    background: var(--card);
-    box-shadow:
-        0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent),
-        var(--shadow-float, var(--shadow-control));
-    transform: rotate(var(--r, 0deg));
-    animation: list-empty-rise 640ms var(--ease-spring-soft, ease-out) backwards;
-    animation-delay: calc(var(--i, 0) * 70ms);
-}
-
-.list-empty-card[data-tone='filtered'] {
-    background: var(--surface-sunken, var(--muted));
-}
-
-.list-empty-card[data-tone='accent'] {
-    background: linear-gradient(
-        140deg,
-        color-mix(in oklch, var(--primary) 80%, white),
-        var(--primary) 55%,
-        color-mix(in oklch, var(--primary) 78%, black)
-    );
-    color: var(--primary-foreground);
-    box-shadow:
-        inset 0 1px 0 oklch(1 0 0 / 0.25),
-        var(--shadow-glow, var(--shadow-control));
-}
-
-@keyframes list-empty-rise {
-    from {
-        opacity: 0;
-        transform: translateY(12px) rotate(var(--r, 0deg)) scale(0.9);
-    }
-}
-
-/* Header shadow while the list is scrolled under it. */
+/* Hairline under the list header while rows pass under it. */
 .list-header {
     position: relative;
     z-index: 2;
@@ -443,8 +326,7 @@
 }
 
 .list-header[data-scrolled] {
-    box-shadow: 0 12px 20px -18px
-        color-mix(in oklch, var(--shadow-ink, black) 60%, transparent);
+    box-shadow: 0 1px 0 var(--border);
 }
 
 /* Smooth counters: the number rolls up or down (CountBadge). */
@@ -453,8 +335,8 @@
 .count-down-enter-active,
 .count-down-leave-active {
     transition:
-        transform 280ms var(--ease-spring-soft, ease-out),
-        opacity 180ms var(--ease-standard, ease-out);
+        transform 220ms var(--ease-out-quint, ease-out),
+        opacity 160ms var(--ease-standard, ease-out);
 }
 
 .count-up-leave-active,

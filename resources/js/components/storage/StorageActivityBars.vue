@@ -79,7 +79,7 @@ function showTick(index: number): boolean {
                         hour.files === 0
                             ? 'bg-muted'
                             : active === index
-                              ? 'accent-gradient shadow-glow'
+                              ? 'bg-primary text-primary-foreground'
                               : 'bg-primary/55 group-hover/bar:bg-primary'
                     "
                     :style="{

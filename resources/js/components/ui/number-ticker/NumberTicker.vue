@@ -4,8 +4,11 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 /**
  * A figure that counts to its value: from zero on first render and from the
  * previous value when it changes. With reduced motion it simply shows the
- * value. The text is formatted for es-MX (`decimals`, `prefix`, `suffix`);
- * screen readers always get the final value.
+ * value. The text is formatted for es-MX (`decimals`, `prefix`, `suffix`).
+ *
+ * The DOM holds the figure once: the rolling layer is aria-hidden and cannot
+ * be selected, and the final value is the only real text (sr-only), so
+ * screen readers and copy-paste both get «2», never «22».
  *
  *   <NumberTicker :value="128" />
  *   <NumberTicker :value="87.5" :decimals="1" suffix=" %" />
@@ -87,7 +90,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame))
 
 <template>
   <span data-slot="number-ticker" class="tabular-nums">
-    <span aria-hidden="true">{{ shown }}</span>
+    <span aria-hidden="true" class="select-none">{{ shown }}</span>
     <span class="sr-only">{{ format(value) }}</span>
   </span>
 </template>

@@ -42,6 +42,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 /**
  * The messaging inbox: one page with the conversation list, the chat of the
@@ -180,8 +181,10 @@ class ConversationController extends Controller
                 $resolved = true;
                 $candidate = isset($validated['c']) ? Conversation::query()->find((int) $validated['c']) : null;
                 $cached = $candidate !== null && $actor->can('view', $candidate) ? $candidate : null;
-                $cached?->load(['contact.whatsappIdentity', 'channelConnection.webChatWidget', 'department', 'assignee', 'category:id,name,color,is_active', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
+                $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'category:id,name,color,is_active', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
                 if ($cached !== null) {
+                    // The stored WhatsApp profile picture (never fails the page).
+                    WhatsAppWebContactProfiles::loadIdentities([$cached->contact]);
                     // The viewer's private alias of the contact (PERSONALIZATION).
                     ViewerAlias::load($cached, $actor);
                 }
@@ -397,8 +400,6 @@ class ConversationController extends Controller
         $rows = $inbox->withListColumns($listed, $actor)
             ->with([
                 'contact',
-                // The stored WhatsApp profile picture of each row (avatar_url).
-                'contact.whatsappIdentity',
                 // The web chat's sending state reads its widget (Connection::isConfigured()).
                 'channelConnection.webChatWidget',
                 'department',
@@ -414,6 +415,9 @@ class ConversationController extends Controller
         $last = $rows->last();
 
         $this->attachLastMessages($rows);
+        // The stored WhatsApp profile picture of each row (avatar_url), in
+        // one query that never fails the list.
+        WhatsAppWebContactProfiles::loadIdentities($rows->pluck('contact'));
         // The viewer's private aliases of the page's contacts, in one query (PERSONALIZATION).
         ViewerAlias::load($rows, $actor);
         // The open response cycle (SLA badge) of every row, in one query.
@@ -478,6 +482,32 @@ class ConversationController extends Controller
     }
 
     /**
+     * The «Perfil de WhatsApp» section of the details panel. It is an extra:
+     * when it cannot be built it is reported and the panel goes without it,
+     * the conversation still opens.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function whatsappProfile(WhatsAppWebContactProfiles $profiles, Conversation $conversation, ?string $avatarUrl): ?array
+    {
+        try {
+            $contact = $conversation->contact;
+
+            return $profiles->present(
+                $contact,
+                $profiles->connectionFor($contact, $conversation),
+                $avatarUrl,
+                true,
+                route('conversations.contact.whatsapp-profile.refresh', $conversation),
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
+    }
+
+    /**
      * The details panel: contact, verified origin, tags, previous
      * conversations the viewer may see and the contact's latest notes.
      *
@@ -518,13 +548,7 @@ class ConversationController extends Controller
                 'avatar_url' => $avatarUrl = WhatsAppWebContactProfiles::conversationAvatarUrl($conversation),
             ],
             // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).
-            'whatsappProfile' => $profiles->present(
-                $contact,
-                $profiles->connectionFor($contact, $conversation),
-                $avatarUrl,
-                true,
-                route('conversations.contact.whatsapp-profile.refresh', $conversation),
-            ),
+            'whatsappProfile' => $this->whatsappProfile($profiles, $conversation, $avatarUrl),
             'origin' => ContactAttributionResource::collection($conversation->attributions()->with('recorder')->orderBy('captured_at')->get())->resolve($request),
             'history' => array_values($history->map(fn (Conversation $previous): array => [
                 'id' => $previous->id,

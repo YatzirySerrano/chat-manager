@@ -573,7 +573,6 @@ function chooseDecision(value: DecisionTab): void {
                 </Select>
                 <Button
                     class="pointer-coarse:h-10"
-                    :class="selected.size > 0 && 'shadow-glow'"
                     :disabled="selected.size === 0 || bulkProcessing"
                     @click="applyBulk('selection')"
                     :loading="bulkProcessing"

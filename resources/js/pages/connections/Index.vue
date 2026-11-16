@@ -436,7 +436,6 @@ function phoneLabel(connection: Connection): string {
                 />
                 <Button
                     v-if="can.create"
-                    class="shadow-glow"
                     data-tour="connections.new"
                     @click="channelPickerOpen = true"
                 >
@@ -484,28 +483,22 @@ function phoneLabel(connection: Connection): string {
             title="Aún no hay conexiones"
             description="Registra tu número de WhatsApp Business con los datos de tu app de Meta o crea un chat para tu sitio web. Podrás guardar la configuración aunque todavía no esté completa; ningún indicador se marcará como funcionando hasta que exista evidencia real."
         >
-            <Button
-                v-if="can.create"
-                class="shadow-glow"
-                @click="channelPickerOpen = true"
-            >
+            <Button v-if="can.create" @click="channelPickerOpen = true">
                 <Plus />
                 Nueva conexión
             </Button>
         </EmptyState>
 
         <SurfaceCard v-else class="admin-list overflow-clip">
-            <div class="admin-toolbar grid gap-3 p-3 sm:p-4" role="search">
-                <div class="flex items-center gap-2">
+            <div class="admin-toolbar grid gap-2 px-3 py-2.5" role="search">
+                <div class="flex flex-wrap items-center gap-2">
                     <FilterSearch
                         v-model="filterState.search"
                         placeholder="Buscar por nombre, número o identificador"
                         label="Buscar conexiones"
                         :loading="loading"
+                        class="max-sm:basis-full sm:min-w-56"
                     />
-                    <ViewModeToggle v-model="viewMode" />
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
                     <FilterTabs
                         v-if="recordTabs.length > 0"
                         class="max-sm:w-full"
@@ -514,6 +507,9 @@ function phoneLabel(connection: Connection): string {
                         label="Mostrar activas o eliminadas"
                         @update:model-value="chooseRecord"
                     />
+                    <ViewModeToggle v-model="viewMode" class="max-sm:ml-auto" />
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
                     <div
                         class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
                     >
@@ -522,7 +518,7 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-44"
+                                class="w-full bg-card sm:w-44"
                                 aria-label="Filtrar por canal o modalidad"
                             >
                                 <SelectValue />
@@ -545,7 +541,7 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-52"
+                                class="w-full bg-card sm:w-52"
                                 aria-label="Filtrar por estado de salud"
                             >
                                 <SelectValue />
@@ -568,7 +564,7 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-48"
+                                class="w-full bg-card sm:w-48"
                                 aria-label="Filtrar por departamento"
                             >
                                 <SelectValue />
@@ -591,7 +587,7 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card sm:w-36"
+                                class="w-full bg-card sm:w-36"
                                 aria-label="Filtrar por activación"
                             >
                                 <SelectValue />

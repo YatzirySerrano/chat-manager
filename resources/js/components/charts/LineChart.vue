@@ -10,6 +10,7 @@ import {
     useChartTheme,
 } from '@/composables/useChartTheme';
 import type { BucketLabel } from '@/composables/useChartTheme';
+import { useTweenedValues } from '@/composables/useTweenedValues';
 import ChartTooltip from './ChartTooltip.vue';
 import type { ChartTooltipRow, LineSeries } from './types';
 import '@/components/reports/insights.css';
@@ -30,8 +31,10 @@ const props = withDefaults(
         description: string;
         /** Text of a missing value in the readout. */
         nullLabel?: string;
+        /** `tall` for the hero chart of a page. */
+        size?: 'default' | 'tall';
     }>(),
-    { yFormat: 'number', nullLabel: 'Sin datos' },
+    { yFormat: 'number', nullLabel: 'Sin datos', size: 'default' },
 );
 
 const { duration, reducedMotion } = useChartTheme();
@@ -44,7 +47,20 @@ const { width: measuredWidth } = useElementSize(root);
 const width = computed(() =>
     Math.max(240, Math.round(measuredWidth.value || 640)),
 );
-const height = computed(() => (width.value < 560 ? 180 : 220));
+const height = computed(() =>
+    props.size === 'tall'
+        ? width.value < 560
+            ? 200
+            : 280
+        : width.value < 560
+          ? 180
+          : 220,
+);
+
+/* Live updates and new filters morph the lines instead of jumping. */
+const tweened = useTweenedValues(() =>
+    props.series.map((series) => series.values),
+);
 
 const seriesColor = (series: LineSeries, index: number): string =>
     series.color ??
@@ -173,7 +189,7 @@ function runs(values: (number | null)[]): { index: number; value: number }[][] {
 
 const drawnSeries = computed(() =>
     props.series.map((series, index) => {
-        const pieces = runs(series.values);
+        const pieces = runs(tweened.value[index] ?? series.values);
         const lines = pieces.filter((piece) => piece.length > 1);
 
         return {

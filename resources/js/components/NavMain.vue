@@ -60,7 +60,7 @@ const { setOpenMobile } = useSidebar();
                 <SidebarMenuBadge
                     v-if="item.badge"
                     :key="item.badge"
-                    class="bump rounded-full accent-gradient px-1.5 text-xs font-semibold text-sidebar-primary-foreground shadow-[0_2px_6px_-2px_color-mix(in_oklch,var(--sidebar-primary)_60%,transparent)] peer-hover/menu-button:text-sidebar-primary-foreground peer-data-[active=true]/menu-button:text-sidebar-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
+                    class="bump rounded-full bg-sidebar-primary px-1.5 text-xs font-semibold text-sidebar-primary-foreground peer-hover/menu-button:text-sidebar-primary-foreground peer-data-[active=true]/menu-button:text-sidebar-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
                     :aria-label="`${item.badge} sin leer`"
                 >
                     {{ item.badge > 99 ? '99+' : item.badge }}

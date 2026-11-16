@@ -41,22 +41,17 @@ const emit = defineEmits<{ toggle: [] }>();
         :title="title"
         :class="
             cn(
-                'group/toggle inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border pr-1.5 pl-2.5 text-xs font-medium whitespace-nowrap outline-none select-none',
-                'transition-[background-color,border-color,color,box-shadow,transform,translate] duration-(--duration-base) ease-(--ease-spring-soft) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.94] pointer-coarse:h-9',
-                count === null && 'pr-2.5',
+                'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium whitespace-nowrap outline-none select-none',
+                'transition-colors duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:h-9',
                 pressed
-                    ? 'border-transparent accent-gradient glow'
-                    : 'border-border bg-card text-muted-foreground shadow-(--shadow-control) hover:-translate-y-px hover:border-border-strong hover:text-foreground',
+                    ? 'border-primary/35 bg-primary-soft text-primary-soft-foreground'
+                    : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
             )
         "
         data-filter-toggle
         @click="emit('toggle')"
     >
-        <Check
-            v-if="pressed"
-            class="size-3.5 shrink-0 motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:fade-in"
-            aria-hidden="true"
-        />
+        <Check v-if="pressed" class="size-3.5 shrink-0" aria-hidden="true" />
         <component
             :is="icon"
             v-else-if="icon"
@@ -67,8 +62,13 @@ const emit = defineEmits<{ toggle: [] }>();
         <CountBadge
             v-if="count !== null"
             :value="count"
-            :tone="pressed ? 'inverse' : count > 0 ? tone : 'muted'"
-            :halo="tone === 'primary' || tone === 'warning'"
+            :tone="
+                pressed || count === 0
+                    ? 'plain'
+                    : tone === 'primary'
+                      ? 'soft'
+                      : tone
+            "
         />
         <span v-if="srLabel" class="sr-only">: {{ srLabel }}</span>
     </button>

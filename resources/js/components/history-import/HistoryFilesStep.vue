@@ -358,7 +358,7 @@ function hasColumns(file: HistoryBatchFile): boolean {
                         aria-hidden="true"
                     >
                         <div
-                            class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-base) ease-(--ease-standard)"
+                            class="h-full rounded-full bg-primary transition-[width] duration-(--duration-base) ease-(--ease-standard)"
                             :style="{
                                 width: `${upload.progress.percentage ?? 0}%`,
                             }"
@@ -381,7 +381,6 @@ function hasColumns(file: HistoryBatchFile): boolean {
                         <Button
                             type="submit"
                             class="pointer-coarse:h-11"
-                            :class="upload.file !== null && 'shadow-glow'"
                             :disabled="upload.file === null"
                             :loading="upload.processing"
                         >

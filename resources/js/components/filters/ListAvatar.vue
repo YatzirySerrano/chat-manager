@@ -9,8 +9,8 @@ import './filters.css';
 
 /**
  * The avatar of a list row (inbox and internal chat): the initials on a
- * gradient whose hue comes from the name, so each person always keeps the
- * same colors. Its corner says where the row comes from (the channel badge:
+ * flat tint whose hue comes from the name, so each person always keeps the
+ * same color. Its corner says where the row comes from (the channel badge:
  * WhatsApp, Messenger, Instagram, web chat) or, for teammates, that they
  * are online. A request waiting to be taken gets a dashed warning ring; a
  * closed one fades a little. Decorative: the row says all of it in words.
@@ -75,11 +75,11 @@ const hue = computed(() => {
     <span
         :class="
             cn(
-                'relative inline-flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold tracking-tight transition-transform duration-(--duration-base) ease-(--ease-spring) select-none group-hover/row:scale-[1.04]',
+                'relative inline-flex size-9 shrink-0 items-center justify-center rounded-full text-[0.8125rem] font-semibold select-none',
                 deleted
                     ? 'bg-muted text-muted-foreground'
                     : group
-                      ? 'bg-primary-soft text-primary-soft-foreground ring-1 ring-primary/20'
+                      ? 'bg-muted text-muted-foreground'
                       : 'list-avatar',
                 pending && 'list-avatar-pending',
             )
@@ -110,18 +110,18 @@ const hue = computed(() => {
             v-if="channel"
             :class="
                 cn(
-                    'absolute -right-1 -bottom-1 flex size-[1.125rem] items-center justify-center rounded-full text-white ring-2 ring-background',
+                    'absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full text-white ring-2 ring-background',
                     `list-channel-${channel}`,
                 )
             "
             :title="channelTitle"
             data-list-channel
         >
-            <ChannelIcon :channel="channel" class="size-2.5" />
+            <ChannelIcon :channel="channel" class="size-[0.5625rem]" />
         </span>
         <span
             v-else-if="online && !group && !deleted"
-            class="absolute right-0 bottom-0 size-3 rounded-full bg-success ring-2 ring-background"
+            class="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-background"
             title="En línea"
         />
     </span>

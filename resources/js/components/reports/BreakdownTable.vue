@@ -12,8 +12,10 @@ import { formatDuration } from '@/lib/format';
 import type { AnalyticsBreakdownRow } from '@/types';
 
 /**
- * Figures of the period per agent, department or connection. A missing
- * average shows "—" (not enough data), never zero.
+ * Figures of the period per agent, department or connection: compact rows,
+ * right-aligned tabular figures and zeros dimmed so the real values stand
+ * out. A
+ * missing average shows "—" (not enough data), never zero.
  */
 const props = withDefaults(
     defineProps<{
@@ -26,6 +28,13 @@ const props = withDefaults(
 );
 
 const hasRows = computed(() => props.rows.length > 0);
+
+/** Zeros recede: the eye goes to the figures that carry information. */
+function tone(value: number | null): string | undefined {
+    return value === 0 || value === null
+        ? 'text-muted-foreground/70'
+        : undefined;
+}
 
 function duration(seconds: number | null): string {
     return seconds === null ? '—' : formatDuration(seconds);
@@ -44,7 +53,9 @@ function percent(part: number, total: number): string {
     <div class="overflow-x-auto">
         <Table v-if="hasRows">
             <TableHeader>
-                <TableRow class="hover:bg-transparent">
+                <TableRow
+                    class="bg-surface-sunken/60 hover:bg-surface-sunken/60 [&>th]:h-9 [&>th]:text-xs [&>th]:font-medium [&>th]:text-muted-foreground"
+                >
                     <TableHead class="pl-5">{{ dimension }}</TableHead>
                     <TableHead class="text-right">Recibidas</TableHead>
                     <TableHead class="text-right">Atendidas</TableHead>
@@ -59,7 +70,9 @@ function percent(part: number, total: number): string {
                     <TableHead class="hidden text-right md:table-cell"
                         >Reabiertas</TableHead
                     >
-                    <TableHead class="hidden text-right xl:table-cell"
+                    <TableHead
+                        class="hidden text-right xl:table-cell"
+                        :class="!showLoad && 'pr-5'"
                         >Errores de envío</TableHead
                     >
                     <TableHead v-if="showLoad" class="pr-5 text-right"
@@ -68,25 +81,37 @@ function percent(part: number, total: number): string {
                 </TableRow>
             </TableHeader>
             <TableBody>
-                <TableRow v-for="row in rows" :key="row.id ?? 'none'">
+                <TableRow
+                    v-for="row in rows"
+                    :key="row.id ?? 'none'"
+                    class="[&>td]:py-2"
+                >
                     <TableCell
                         class="pl-5 font-medium"
                         :class="{ 'text-muted-foreground': row.id === null }"
                     >
                         {{ row.name }}
                     </TableCell>
-                    <TableCell class="text-right tabular-nums">{{
-                        number(row.received)
-                    }}</TableCell>
                     <TableCell class="text-right tabular-nums">
+                        <span :class="tone(row.received)">{{
+                            number(row.received)
+                        }}</span>
+                    </TableCell>
+                    <TableCell
+                        class="text-right tabular-nums"
+                        :class="tone(row.attended)"
+                    >
                         {{ number(row.attended)
-                        }}<span class="text-muted-foreground">{{
+                        }}<span class="text-xs text-muted-foreground">{{
                             percent(row.attended, row.received)
                         }}</span>
                     </TableCell>
-                    <TableCell class="text-right tabular-nums">
+                    <TableCell
+                        class="text-right tabular-nums"
+                        :class="tone(row.resolved)"
+                    >
                         {{ number(row.resolved)
-                        }}<span class="text-muted-foreground">{{
+                        }}<span class="text-xs text-muted-foreground">{{
                             percent(row.resolved, row.received)
                         }}</span>
                     </TableCell>
@@ -99,15 +124,22 @@ function percent(part: number, total: number): string {
                     >
                     <TableCell
                         class="hidden text-right tabular-nums md:table-cell"
+                        :class="tone(row.transfers)"
                         >{{ number(row.transfers) }}</TableCell
                     >
                     <TableCell
                         class="hidden text-right tabular-nums md:table-cell"
+                        :class="tone(row.reopened)"
                         >{{ number(row.reopened) }}</TableCell
                     >
                     <TableCell
                         class="hidden text-right tabular-nums xl:table-cell"
-                        :class="{ 'text-destructive': row.failed_out > 0 }"
+                        :class="[
+                            row.failed_out > 0
+                                ? 'text-destructive'
+                                : tone(row.failed_out),
+                            !showLoad && 'pr-5',
+                        ]"
                     >
                         {{ number(row.failed_out) }}
                     </TableCell>

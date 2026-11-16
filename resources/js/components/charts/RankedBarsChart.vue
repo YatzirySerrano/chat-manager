@@ -32,6 +32,10 @@ const props = withDefaults(
         storageKey: string;
         footnote?: string;
         valueFormat?: ValueFormat;
+        /** Two series where the second is part of the first: one overlaid bar per item. */
+        overlay?: boolean;
+        /** Series that add up: one bar per item, segments end to end. */
+        summed?: boolean;
     }>(),
     {
         description: undefined,
@@ -39,6 +43,8 @@ const props = withDefaults(
         emptyText: 'Sin datos en este periodo',
         footnote: undefined,
         valueFormat: 'number',
+        overlay: false,
+        summed: false,
     },
 );
 
@@ -47,14 +53,21 @@ const empty = computed(() =>
 );
 
 const legend = computed(() =>
-    props.series.map((item, index) => ({
-        key: item.key,
-        label: item.name,
-        color:
+    props.series.map((item, index) => {
+        const color =
             item.color ??
-            (index === 0 ? chartTokens.primary : chartTokens.secondary),
-        shape: 'square' as const,
-    })),
+            (index === 0 ? chartTokens.primary : chartTokens.secondary);
+
+        return {
+            key: item.key,
+            label: item.name,
+            color:
+                props.overlay && index === 0
+                    ? `color-mix(in oklch, ${color} 28%, transparent)`
+                    : color,
+            shape: 'square' as const,
+        };
+    }),
 );
 </script>
 
@@ -73,6 +86,8 @@ const legend = computed(() =>
             :items="items"
             :series="series"
             :value-format="valueFormat"
+            :overlay="overlay"
+            :summed="summed"
             :description="`${title}: ${items.map((item) => `${item.label} ${item.values.join(' / ')}`).join(', ')}`"
         />
         <template v-if="series.length > 1" #legend>

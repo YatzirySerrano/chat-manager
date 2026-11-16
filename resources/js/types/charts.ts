@@ -24,6 +24,8 @@ export type ActivityPoint = {
     received: number;
     /** Of the ones received in the bucket, how many were accepted/assigned. */
     attended: number;
+    /** Of the ones received in the bucket, how many were closed at least once (absent in older cached payloads). */
+    resolved?: number;
     /** Average first human response; null when no response was measured (break the line, never draw 0). */
     first_response_seconds: number | null;
     first_response_samples: number;

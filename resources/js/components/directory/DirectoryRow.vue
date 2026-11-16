@@ -32,7 +32,7 @@ const props = defineProps<{
     <li
         :class="
             cn(
-                'dir-row flex min-w-0 items-center gap-3 py-2.5 pr-2 pl-3.5 sm:gap-4 sm:pr-3',
+                'dir-row flex min-h-12 min-w-0 items-center gap-3 py-2 pr-2 pl-4 sm:gap-4 sm:pr-3',
                 props.class,
             )
         "
@@ -42,7 +42,7 @@ const props = defineProps<{
         <slot name="leading" />
         <div class="min-w-0 flex-1">
             <div
-                class="flex min-w-0 items-center gap-2 font-display text-[0.95rem] leading-snug font-semibold text-foreground"
+                class="flex min-w-0 items-center gap-2 text-sm leading-5 font-medium text-foreground"
                 :class="muted && 'text-muted-foreground'"
             >
                 <Link
@@ -59,13 +59,13 @@ const props = defineProps<{
             </div>
             <div
                 v-if="$slots.subtitle"
-                class="mt-0.5 min-w-0 truncate text-[0.8125rem] text-muted-foreground"
+                class="min-w-0 truncate text-xs leading-5 text-muted-foreground"
             >
                 <slot name="subtitle" />
             </div>
             <div
                 v-if="$slots.badges"
-                class="mt-1.5 flex min-w-0 flex-wrap items-center gap-1"
+                class="mt-1 flex min-w-0 flex-wrap items-center gap-1"
             >
                 <slot name="badges" />
             </div>

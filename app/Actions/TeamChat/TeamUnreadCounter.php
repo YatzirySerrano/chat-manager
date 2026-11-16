@@ -6,6 +6,7 @@ use App\Enums\TeamChat\TeamMessageKind;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -58,14 +59,23 @@ class TeamUnreadCounter
             return [];
         }
 
-        return $this->unreadMessages($user)
-            ->whereIn('m.team_thread_id', $threadIds)
-            ->whereNotNull('m.metadata')
-            ->whereRaw("JSON_CONTAINS(m.metadata, ?, '$.mentions')", [(string) $user->id])
-            ->groupBy('m.team_thread_id')
-            ->pluck(DB::raw('count(*) as mentions'), 'm.team_thread_id')
-            ->mapWithKeys(fn (mixed $count, int|string $threadId): array => [(int) $threadId => (int) $count])
-            ->all();
+        // A counter of the quick filter: if the JSON lookup fails on some
+        // database (old MariaDB, a malformed row) it is reported and the
+        // list shows no mentions instead of failing.
+        try {
+            return $this->unreadMessages($user)
+                ->whereIn('m.team_thread_id', $threadIds)
+                ->whereNotNull('m.metadata')
+                ->whereRaw("JSON_CONTAINS(m.metadata, ?, '$.mentions')", [(string) $user->id])
+                ->groupBy('m.team_thread_id')
+                ->pluck(DB::raw('count(*) as mentions'), 'm.team_thread_id')
+                ->mapWithKeys(fn (mixed $count, int|string $threadId): array => [(int) $threadId => (int) $count])
+                ->all();
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return [];
+        }
     }
 
     private function unreadMessages(User $user): Builder

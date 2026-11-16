@@ -41,6 +41,8 @@ const props = defineProps<{
     label?: string;
     /** Title of the menu (default "Exportar con los filtros actuales"). */
     heading?: string;
+    /** Icon-only button (dense list headers); the label stays its name. */
+    compact?: boolean;
 }>();
 
 const formats: {
@@ -128,9 +130,16 @@ function exportAs(format: ExportFormat, label: string): void {
     <Tooltip v-if="disabled">
         <TooltipTrigger as-child>
             <span tabindex="0">
-                <Button variant="outline" disabled>
+                <Button
+                    variant="outline"
+                    disabled
+                    :size="compact ? 'icon' : 'default'"
+                    :aria-label="compact ? (label ?? 'Exportar') : undefined"
+                >
                     <Download />
-                    {{ label ?? 'Exportar' }}
+                    <template v-if="!compact">{{
+                        label ?? 'Exportar'
+                    }}</template>
                 </Button>
             </span>
         </TooltipTrigger>
@@ -141,9 +150,14 @@ function exportAs(format: ExportFormat, label: string): void {
 
     <DropdownMenu v-else>
         <DropdownMenuTrigger as-child>
-            <Button variant="outline">
+            <Button
+                variant="outline"
+                :size="compact ? 'icon' : 'default'"
+                :aria-label="compact ? (label ?? 'Exportar') : undefined"
+                :title="compact ? (label ?? 'Exportar') : undefined"
+            >
                 <Download />
-                {{ label ?? 'Exportar' }}
+                <template v-if="!compact">{{ label ?? 'Exportar' }}</template>
             </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="w-64">

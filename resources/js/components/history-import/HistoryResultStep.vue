@@ -116,7 +116,7 @@ async function resume(): Promise<void> {
                 aria-valuemax="100"
             >
                 <div
-                    class="import-bar h-full rounded-full accent-gradient transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
+                    class="import-bar h-full rounded-full bg-primary transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
                     :style="{ width: `${percent}%` }"
                 />
             </div>

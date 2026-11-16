@@ -25,23 +25,23 @@ export function bubbleShape({
 }: BubbleShape): string[] {
     if (side === 'out') {
         return [
-            'chat-bubble rounded-[1.25rem]',
-            joinedAbove ? 'rounded-tr-[0.45rem]' : '',
-            joinedBelow ? 'rounded-br-[0.45rem]' : 'rounded-br-[0.25rem]',
+            'chat-bubble rounded-2xl',
+            joinedAbove ? 'rounded-tr-md' : '',
+            joinedBelow ? 'rounded-br-md' : 'rounded-br-sm',
         ];
     }
 
     return [
-        'chat-bubble rounded-[1.25rem]',
-        joinedAbove ? 'rounded-tl-[0.45rem]' : '',
-        joinedBelow ? 'rounded-bl-[0.45rem]' : 'rounded-bl-[0.25rem]',
+        'chat-bubble rounded-2xl',
+        joinedAbove ? 'rounded-tl-md' : '',
+        joinedBelow ? 'rounded-bl-md' : 'rounded-bl-sm',
     ];
 }
 
 /**
  * Theme colors of a bubble (not used with the viewer's personal colors,
  * which bring their own classes). Received bubbles are paper resting on the
- * canvas; own bubbles carry the palette as a deep gradient with white ink,
+ * canvas; own bubbles carry the palette as a solid fill with white ink,
  * and re-declare the theme tokens for their content (chat.css), so quotes,
  * links, ticks and file cards inside read light on color.
  */
@@ -81,10 +81,10 @@ export const QUOTE_BASE =
 export const BUBBLE_META =
     'flex items-center justify-end gap-1 text-[0.6875rem] leading-4 tabular-nums';
 
-/** One reaction under a bubble (pops in, grows under the pointer). */
+/** One reaction under a bubble (fades in, grows a little under the pointer). */
 export function reactionChip(mine: boolean): string {
     return [
-        'chat-reaction inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs leading-none text-foreground shadow-(--shadow-control) outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'chat-reaction inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs leading-none text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring',
         mine
             ? 'border-primary/45 bg-primary-soft text-primary-soft-foreground'
             : 'border-border bg-card',
@@ -95,15 +95,15 @@ export function reactionChip(mine: boolean): string {
 export const REACTIONS_ROW = 'relative z-[1] -mt-1.5 flex flex-wrap gap-1 px-2';
 
 /**
- * Quick actions beside a bubble: one floating glass pill of icon buttons.
+ * Quick actions beside a bubble: one small bar of icon buttons.
  * Hidden until hover or focus where a fine pointer exists (chat.css),
  * always visible on touch screens.
  */
 export const ROW_ACTIONS =
-    'chat-row-actions flex shrink-0 items-center gap-0.5 rounded-full border border-border/70 glass p-0.5 text-muted-foreground shadow-popover';
+    'chat-row-actions flex shrink-0 items-center gap-px rounded-lg border bg-popover p-0.5 text-muted-foreground shadow-(--shadow-control)';
 
 export const ROW_ACTION_BUTTON =
-    'grid size-7 shrink-0 place-items-center rounded-full outline-none transition-[color,background-color,scale] duration-(--duration-fast) hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:size-9';
+    'grid size-7 shrink-0 place-items-center rounded-md outline-none transition-colors duration-(--duration-fast) hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:size-9';
 
 /*
  * Pane chrome shared by both chats: the frosted header that floats over
@@ -117,18 +117,17 @@ export const CHAT_TOPBAR = 'chat-topbar glass-bar';
 /** The history scroller under that bar (room for it, sticky labels below it). */
 export const CHAT_UNDER_HEADER = 'chat-under-header';
 
-/** The avatar of the other side in a chat header. */
+/** The avatar of the other side in a chat header (initials on a quiet tint). */
 export const CHAT_HEADER_AVATAR =
-    'grid size-full place-items-center rounded-full accent-gradient font-display text-sm font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-control)] ring-2 ring-background';
+    'grid size-full place-items-center rounded-full bg-primary-soft text-sm font-semibold text-primary-soft-foreground';
 
 /** The dock that holds the composer: transparent, so the canvas shows. */
 export const COMPOSER_DOCK =
     'chat-dock relative shrink-0 px-2 pt-1.5 pb-2.5 sm:px-5 sm:pb-4';
 
 /** The floating composer card (chat.css `.chat-composer`). */
-export const COMPOSER_CARD =
-    'chat-composer mx-auto max-w-[60rem] rounded-[1.4rem]';
+export const COMPOSER_CARD = 'chat-composer mx-auto max-w-[60rem] rounded-xl';
 
 /** A round icon tool of the composer toolbar. */
 export const COMPOSER_TOOL =
-    'size-9 shrink-0 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-10';
+    'size-8 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-10';

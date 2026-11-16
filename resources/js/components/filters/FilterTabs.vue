@@ -7,16 +7,19 @@ import type { FilterTabOption } from '@/components/filters/types';
 import './filters.css';
 
 /**
- * The views of a list as one track of mutually exclusive tabs (Bandeja,
- * Pendientes, Mías, Cerradas… or Todos, Privados, Grupos…). The chosen tab
- * sits on a raised thumb that glides to the new one, the only motion of the
- * header, so the eye follows what changed. Each tab may carry a live counter
- * (CountBadge, bumps when it goes up).
+ * The views of a list as one compact row of mutually exclusive tabs
+ * (Bandeja, Pendientes, Mías, Cerradas… or Todos, Privados, Grupos…). The
+ * chosen tab sits on a quiet tinted thumb that slides to the new one, the
+ * only motion of the header, so the eye follows what changed. Each tab may
+ * carry a live counter (CountBadge, bumps when it goes up).
+ *
+ * The `after` slot goes on the same row, after the tabs and outside their
+ * group (the quick toggles of a list), so the whole strip scrolls sideways
+ * as one on narrow lists, keeping the chosen tab in view.
  *
  * Accessibility: a group of toggle buttons (aria-pressed), each one reached
  * with Tab; the arrow keys, Home and End also move between them. When no tab
- * matches the applied filters (`modelValue` null) none is pressed. On narrow
- * lists the track scrolls sideways and keeps the chosen tab in view.
+ * matches the applied filters (`modelValue` null) none is pressed.
  */
 const props = defineProps<{
     options: FilterTabOption<T>[];
@@ -28,6 +31,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: T] }>();
 
+const scroller = ref<HTMLElement | null>(null);
 const track = ref<HTMLElement | null>(null);
 const thumb = ref({ x: 0, width: 0, visible: false });
 /* No glide on the first placement: the thumb appears where it belongs. */
@@ -50,20 +54,22 @@ function measure(): void {
         visible: true,
     };
 
-    // Keep the chosen tab in view when the track scrolls.
-    const scroller = track.value;
+    // Keep the chosen tab in view when the strip scrolls.
+    const strip = scroller.value;
+    const left = (track.value?.offsetLeft ?? 0) + element.offsetLeft;
 
     if (
-        scroller &&
-        (element.offsetLeft < scroller.scrollLeft ||
-            element.offsetLeft + element.offsetWidth >
-                scroller.scrollLeft + scroller.clientWidth)
+        strip &&
+        (left < strip.scrollLeft ||
+            left + element.offsetWidth > strip.scrollLeft + strip.clientWidth)
     ) {
-        scroller.scrollTo({
-            left: element.offsetLeft - 8,
+        strip.scrollTo({
+            left: left - 8,
             behavior: placed.value ? 'smooth' : 'auto',
         });
     }
+
+    updateFade();
 }
 
 onMounted(() => {
@@ -77,6 +83,25 @@ watch(
 );
 
 useResizeObserver(track, () => measure());
+
+/* Which edges hide more of the strip: those fade out, so it reads as scrollable. */
+const fade = ref('');
+
+function updateFade(): void {
+    const strip = scroller.value;
+
+    if (!strip) {
+        return;
+    }
+
+    const left = strip.scrollLeft > 2;
+    const right = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2;
+
+    fade.value = [left && 'left', right && 'right'].filter(Boolean).join(' ');
+}
+
+useResizeObserver(scroller, updateFade);
+onMounted(updateFade);
 
 function onKeydown(event: KeyboardEvent): void {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
@@ -118,18 +143,21 @@ const thumbStyle = computed(() => ({
 
 <template>
     <div
-        class="rounded-full bg-surface-sunken p-1 shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_8%,transparent)] ring-1 ring-border/70 ring-inset"
+        ref="scroller"
+        class="filter-tabs-scroll flex min-w-0 items-center gap-1 overflow-x-auto"
+        :data-fade="fade || undefined"
+        @scroll.passive="updateFade"
     >
         <div
             ref="track"
-            class="filter-tabs-scroll relative flex gap-0.5 overflow-x-auto"
+            class="relative flex shrink-0 items-center gap-px"
             role="group"
             :aria-label="label"
             @keydown="onKeydown"
         >
-            <!-- The thumb: a raised pill tinted by the palette. -->
+            <!-- The thumb: a quiet tint under the chosen tab. -->
             <span
-                class="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-linear-to-b from-card to-[color-mix(in_oklch,var(--primary)_7%,var(--card))] shadow-(--shadow-float,var(--shadow-control)) ring-1 ring-primary/25"
+                class="pointer-events-none absolute inset-y-0 left-0 rounded-md bg-foreground/[0.07] dark:bg-foreground/10"
                 :class="placed && 'filter-tabs-thumb'"
                 :style="thumbStyle"
                 aria-hidden="true"
@@ -141,13 +169,11 @@ const thumbStyle = computed(() => ({
                 v-bind="option.attrs"
                 :class="
                     cn(
-                        'relative z-[1] inline-flex h-8 min-w-0 flex-auto shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-[0.8125rem] font-medium whitespace-nowrap outline-none',
-                        'transition-[color] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.95] motion-safe:transition-[color,transform] pointer-coarse:h-10',
+                        'relative z-[1] inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[0.8125rem] whitespace-nowrap outline-none',
+                        'transition-colors duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:h-9',
                         modelValue === option.value
                             ? 'font-semibold text-foreground'
-                            : option.attention
-                              ? 'font-semibold text-foreground hover:bg-warning/10'
-                              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                            : 'font-medium text-muted-foreground hover:text-foreground',
                     )
                 "
                 :aria-pressed="modelValue === option.value"
@@ -158,31 +184,21 @@ const thumbStyle = computed(() => ({
                 <component
                     :is="option.icon"
                     v-if="option.icon"
-                    class="size-3.5 shrink-0 transition-colors duration-(--duration-fast)"
-                    :class="
-                        option.attention
-                            ? 'text-warning'
-                            : modelValue === option.value && 'text-primary'
-                    "
+                    class="size-3.5 shrink-0"
+                    :class="option.attention && 'text-warning'"
                     aria-hidden="true"
                 />
                 <span class="truncate">{{ option.label }}</span>
                 <CountBadge
                     v-if="option.count !== undefined && option.count !== null"
                     :value="option.count"
-                    :tone="
-                        option.attention
-                            ? 'warning'
-                            : modelValue === option.value
-                              ? 'primary'
-                              : 'muted'
-                    "
-                    :halo="option.attention"
+                    :tone="option.attention ? 'warning' : 'plain'"
                 />
                 <span v-if="option.srLabel" class="sr-only"
                     >: {{ option.srLabel }}</span
                 >
             </button>
         </div>
+        <slot name="after" />
     </div>
 </template>

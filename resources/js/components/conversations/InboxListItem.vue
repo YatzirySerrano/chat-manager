@@ -15,31 +15,26 @@ import {
     UserRound,
 } from '@lucide/vue';
 import { computed, inject } from 'vue';
-import CategoryBadge from '@/components/categories/CategoryBadge.vue';
 import {
     ACCEPT_BLOCK,
     noAcceptBlock,
 } from '@/components/conversations/acceptBlock';
 import AcceptanceNotice from '@/components/conversations/AcceptanceNotice.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
-import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import {
     noQueueActions,
     QUEUE_ACTIONS,
     useAcceptance,
 } from '@/components/conversations/queueRules';
-import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import {
     listTime,
     previewText,
     statusLabel,
 } from '@/components/conversations/messageFormat';
-import DepartmentTag from '@/components/DepartmentTag.vue';
 import CountBadge from '@/components/filters/CountBadge.vue';
 import HighlightMatch from '@/components/filters/HighlightMatch.vue';
 import ListAvatar from '@/components/filters/ListAvatar.vue';
-import TagBadge from '@/components/tags/TagBadge.vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -49,9 +44,11 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useLongPress } from '@/composables/useLongPress';
+import { colorPresentations } from '@/lib/colors';
+import type { ColorPresentation } from '@/lib/colors';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
-import type { ConversationSummary } from '@/types';
+import type { AppColor, ConversationSummary } from '@/types';
 
 /**
  * One row of the inbox list. Every viewer sees the essentials: the contact
@@ -213,6 +210,29 @@ const connectionTitle = computed(() =>
         .filter(Boolean)
         .join(' · '),
 );
+/* A small colour mark (category, department, tag) in the row's meta line. */
+function dotOf(color: AppColor | null | undefined): ColorPresentation {
+    return colorPresentations(color).dot;
+}
+
+/* The supervision line (responsible, channel, connection) is shown. */
+const operationalLine = computed(
+    () =>
+        props.showOperational ||
+        props.showChannel ||
+        (props.showAssignee && Boolean(props.conversation.assignee)),
+);
+
+const statusDot = computed(
+    () =>
+        ({
+            pending: 'bg-warning',
+            open: 'bg-success',
+            on_hold: 'bg-primary',
+            closed: 'bg-muted-foreground/50',
+        })[props.conversation.status] ?? 'bg-muted-foreground/50',
+);
+
 const label = computed(() => {
     // Whoever may accept it hears it first: the status is part of the prefix.
     const parts = canAccept.value
@@ -296,8 +316,7 @@ const label = computed(() => {
         <div class="relative">
             <button
                 type="button"
-                class="list-row flex w-full items-start gap-3 py-2.5 pr-3 pl-3.5 text-left outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
-                :class="pending && !selected && 'bg-warning/[0.06]'"
+                class="list-row flex w-full items-start gap-2.5 py-2 pr-2.5 pl-3 text-left outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
                 :data-selected="selected ? '' : undefined"
                 :aria-current="selected ? 'true' : undefined"
                 :aria-label="label"
@@ -317,17 +336,19 @@ const label = computed(() => {
                     :channel-title="connectionTitle"
                     :pending="pending"
                     :dimmed="conversation.status === 'closed'"
+                    class="mt-0.5"
                 />
 
                 <span class="min-w-0 flex-1">
+                    <!-- Name and time. -->
                     <span class="flex items-baseline justify-between gap-2">
                         <span class="flex min-w-0 items-center gap-1.5">
                             <span
-                                class="truncate font-display text-[0.95rem] leading-snug"
+                                class="truncate text-sm leading-5"
                                 :class="
                                     unread > 0
-                                        ? 'font-bold text-foreground'
-                                        : 'font-semibold text-foreground/90'
+                                        ? 'font-semibold text-foreground'
+                                        : 'font-medium text-foreground/90'
                                 "
                                 :title="displayName"
                                 ><HighlightMatch
@@ -336,17 +357,17 @@ const label = computed(() => {
                             /></span>
                             <span
                                 v-if="hasAlias"
-                                class="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-muted px-1.5 text-[0.7rem] leading-4 font-medium text-muted-foreground"
+                                class="inline-flex shrink-0 text-muted-foreground"
                                 :title="aliasTitle"
                                 data-inbox-alias
                             >
                                 <UserPen class="size-3" aria-hidden="true" />
-                                alias
+                                <span class="sr-only">alias</span>
                             </span>
                         </span>
                         <time
                             v-if="conversation.last_message_at"
-                            class="list-time shrink-0 text-[0.7rem] tabular-nums"
+                            class="list-time shrink-0 text-[0.6875rem] tabular-nums"
                             :class="
                                 unread > 0
                                     ? 'font-semibold text-primary'
@@ -360,12 +381,13 @@ const label = computed(() => {
                         >
                     </span>
 
-                    <span class="mt-0.5 flex items-center gap-1.5">
+                    <!-- Latest message, waiting dot and unread counter. -->
+                    <span class="flex items-center gap-1.5">
                         <span
-                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-[0.8125rem] leading-snug"
+                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-[0.8125rem] leading-5"
                             :class="
                                 unread > 0
-                                    ? 'font-medium text-foreground'
+                                    ? 'text-foreground'
                                     : 'text-muted-foreground'
                             "
                         >
@@ -393,26 +415,25 @@ const label = computed(() => {
                                     : 'Sin mensajes'
                             }}</span>
                         </span>
-                        <!-- The customer wrote last and waits: a chip, not a lone icon. -->
+                        <!-- The customer wrote last and waits. -->
                         <span
                             v-if="conversation.awaiting_reply && unread === 0"
-                            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-soft px-1.5 text-[0.7rem] leading-[1.125rem] font-semibold text-warning-soft-foreground"
+                            class="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] leading-4 font-medium text-warning-soft-foreground"
                             aria-hidden="true"
                             data-inbox-awaiting-chip
                         >
                             <span class="size-1.5 rounded-full bg-warning" />
                             Espera
                         </span>
-                        <!-- Bumps, rolls and sends one ring out when a message arrives. -->
+                        <!-- Bumps and rolls when a message arrives. -->
                         <CountBadge
                             v-if="unread > 0"
                             :value="unread"
                             tone="primary"
-                            halo
-                            class="h-5 min-w-5 text-[0.7rem]"
                         />
                     </span>
 
+                    <!-- State, request and labels on one line. -->
                     <span
                         v-if="
                             conversation.sla ||
@@ -423,19 +444,20 @@ const label = computed(() => {
                             conversation.category ||
                             visibleTags.length > 0
                         "
-                        class="mt-2 flex flex-wrap items-center gap-1"
+                        class="mt-1 flex min-w-0 items-center gap-x-2.5 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
+                        :class="canAccept && !operationalLine && 'pr-[6.25rem]'"
                     >
                         <!-- Response objective (SLA) of the request in course. -->
                         <SlaBadge
                             v-if="conversation.sla"
                             :sla="conversation.sla"
                             variant="compact"
+                            class="shrink-0"
                         />
-                        <!-- Pending: text and icon on the soft warning pair
-                         (≥4.5:1 in both themes), never color alone. -->
+                        <!-- Pending: text and icon, never color alone. -->
                         <span
                             v-if="pending"
-                            class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-warning-soft-foreground"
+                            class="inline-flex shrink-0 items-center gap-1 font-semibold text-warning-soft-foreground"
                             data-inbox-pending
                         >
                             <Hourglass
@@ -447,58 +469,115 @@ const label = computed(() => {
                         <CompletedBadge
                             v-else-if="completed"
                             :at="conversation.completed_at"
+                            class="shrink-0"
                         />
-                        <ConversationStatusBadge
+                        <span
                             v-else-if="
                                 showOperational ||
                                 conversation.status === 'closed'
                             "
-                            :status="conversation.status"
-                            :label="conversation.status_label"
-                        />
-                        <ReadinessBadge
+                            class="inline-flex shrink-0 items-center gap-1"
+                            :class="
+                                conversation.status === 'open' &&
+                                'text-foreground/80'
+                            "
+                            data-inbox-status
+                        >
+                            <span
+                                class="size-1.5 rounded-full"
+                                :class="statusDot"
+                                aria-hidden="true"
+                            />
+                            {{ conversation.status_label }}
+                        </span>
+                        <span
                             v-if="showReadiness && readiness"
-                            :value="readiness.value"
-                            :label="readiness.label"
-                        />
-                        <CategoryBadge
+                            class="inline-flex shrink-0 items-center gap-1"
+                            :class="
+                                readiness.value === 'needs_info'
+                                    ? 'text-info-soft-foreground'
+                                    : 'text-success-soft-foreground'
+                            "
+                            :data-readiness="readiness.value"
+                        >
+                            <component
+                                :is="
+                                    readiness.value === 'needs_info'
+                                        ? CircleHelp
+                                        : CircleCheck
+                                "
+                                class="size-3 shrink-0"
+                                aria-hidden="true"
+                            />
+                            {{ readiness.label }}
+                        </span>
+                        <span
                             v-if="conversation.category"
-                            :name="conversation.category.name"
-                            :color="conversation.category.color"
-                            :deleted="conversation.category.is_active === false"
-                        />
-                        <DepartmentTag
+                            class="inline-flex max-w-36 min-w-0 shrink items-center gap-1"
+                            :class="
+                                conversation.category.is_active === false &&
+                                'line-through'
+                            "
+                            :title="`Categoría: ${conversation.category.name}`"
+                            data-category
+                        >
+                            <span
+                                class="size-2 shrink-0 rounded-[3px]"
+                                v-bind="dotOf(conversation.category.color)"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{
+                                conversation.category.name
+                            }}</span>
+                        </span>
+                        <span
                             v-if="showOperational && conversation.department"
-                            :name="conversation.department.name"
-                            :color="conversation.department.color"
-                            :muted="!conversation.department.is_active"
+                            class="inline-flex max-w-32 min-w-0 shrink items-center gap-1"
+                            :class="
+                                !conversation.department.is_active &&
+                                'line-through'
+                            "
+                            :title="`Departamento: ${conversation.department.name}`"
                             data-inbox-department
-                        />
-                        <TagBadge
+                        >
+                            <span
+                                class="size-1.5 shrink-0 rounded-full"
+                                v-bind="dotOf(conversation.department.color)"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{
+                                conversation.department.name
+                            }}</span>
+                        </span>
+                        <span
                             v-for="tag in visibleTags"
                             :key="tag.id"
-                            :name="tag.name"
-                            :color="tag.color"
-                            :deleted="!tag.is_active"
-                        />
+                            class="inline-flex max-w-28 min-w-0 shrink items-center gap-1"
+                            :class="!tag.is_active && 'line-through'"
+                            :title="`Etiqueta: ${tag.name}`"
+                        >
+                            <span
+                                class="size-1.5 shrink-0 rounded-full"
+                                v-bind="dotOf(tag.color)"
+                                aria-hidden="true"
+                            />
+                            <span class="truncate">{{ tag.name }}</span>
+                        </span>
                         <span
                             v-if="hiddenTags > 0"
-                            class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
+                            class="shrink-0 tabular-nums"
                             :title="`${hiddenTags} etiquetas más`"
                             >+{{ hiddenTags }}</span
                         >
                     </span>
 
+                    <!-- Who attends it and where it came in (supervision). -->
                     <span
-                        v-if="
-                            showOperational ||
-                            showChannel ||
-                            (showAssignee && conversation.assignee)
-                        "
-                        class="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+                        v-if="operationalLine"
+                        class="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-[0.6875rem] leading-4 whitespace-nowrap text-muted-foreground"
                         :class="[
                             canAccept &&
-                                'min-h-8 pr-24 pointer-coarse:min-h-10',
+                                'min-h-7 pr-[6.25rem] pointer-coarse:min-h-10',
                             conversation.connection.state !== 'active' &&
                                 'italic',
                         ]"
@@ -506,14 +585,12 @@ const label = computed(() => {
                         <span
                             v-if="showAssignee && conversation.assignee"
                             class="inline-flex max-w-[45%] min-w-0 shrink-0 items-center gap-1"
-                            :class="
-                                (showOperational || showChannel) && 'mr-1.5'
-                            "
+                            :class="(showOperational || showChannel) && 'mr-1'"
                             :title="`Responsable: ${conversation.assignee.name}`"
                             data-inbox-assignee
                         >
                             <UserRound
-                                class="size-3.5 shrink-0"
+                                class="size-3 shrink-0"
                                 aria-hidden="true"
                             />
                             <span class="truncate">{{
@@ -522,11 +599,17 @@ const label = computed(() => {
                         </span>
                         <span
                             v-if="showChannel"
-                            class="shrink-0 rounded-full bg-muted px-1.5 leading-4 font-medium text-foreground/80"
+                            class="shrink-0 font-medium text-foreground/70"
                             data-inbox-channel
                             >{{ conversation.connection.channel_label }}</span
                         >
                         <template v-if="showOperational">
+                            <span
+                                v-if="showChannel"
+                                class="shrink-0"
+                                aria-hidden="true"
+                                >·</span
+                            >
                             <span class="truncate" :title="connectionTitle">{{
                                 conversation.connection.name
                             }}</span>
@@ -539,20 +622,20 @@ const label = computed(() => {
                     </span>
                     <span
                         v-else-if="canAccept"
-                        class="block min-h-8 pointer-coarse:min-h-10"
+                        class="block min-h-7 pointer-coarse:min-h-10"
                         aria-hidden="true"
                     />
                 </span>
             </button>
 
-            <!-- Hover quick actions: a floating bar over the time. -->
+            <!-- Hover quick actions over the time. -->
             <div
-                class="list-quick absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-full glass p-0.5 shadow-(--shadow-lift,var(--shadow-hover)) ring-1 ring-border/80 pointer-coarse:bg-transparent pointer-coarse:shadow-none pointer-coarse:ring-0"
+                class="list-quick absolute top-1 right-1.5 flex items-center gap-px rounded-md border bg-popover p-px shadow-(--shadow-control) pointer-coarse:border-transparent pointer-coarse:bg-transparent pointer-coarse:shadow-none"
             >
                 <Button
                     variant="ghost"
                     size="icon-sm"
-                    class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:hidden"
+                    class="size-6 rounded text-muted-foreground hover:text-foreground pointer-coarse:hidden [&_svg]:size-3.5"
                     :aria-label="`Vista previa de la conversación con ${displayName}`"
                     title="Vista previa sin marcar como leída"
                     data-inbox-quick-preview
@@ -564,7 +647,7 @@ const label = computed(() => {
                     v-if="unread > 0"
                     variant="ghost"
                     size="icon-sm"
-                    class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:hidden"
+                    class="size-6 rounded text-muted-foreground hover:text-foreground pointer-coarse:hidden [&_svg]:size-3.5"
                     :aria-label="`Marcar como leída la conversación con ${displayName}`"
                     title="Marcar como leída"
                     data-inbox-quick-read
@@ -577,7 +660,7 @@ const label = computed(() => {
                         <Button
                             variant="ghost"
                             size="icon-sm"
-                            class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:size-10"
+                            class="size-6 rounded text-muted-foreground hover:text-foreground pointer-coarse:size-10 [&_svg]:size-3.5"
                             :aria-label="`Acciones de la conversación con ${displayName}`"
                             data-inbox-row-menu
                         >
@@ -657,10 +740,10 @@ const label = computed(() => {
                 </DropdownMenu>
             </div>
 
-            <span v-if="canAccept" class="absolute right-3 bottom-2.5">
+            <span v-if="canAccept" class="absolute right-2.5 bottom-2">
                 <Button
                     size="sm"
-                    class="rounded-full accent-gradient glow pointer-coarse:h-10"
+                    class="h-7 gap-1 rounded-md px-2.5 text-xs pointer-coarse:h-10 [&_svg]:size-3.5"
                     :disabled="acceptingId !== null || acceptBlocked"
                     :aria-label="
                         acceptBlocked
@@ -692,7 +775,7 @@ const label = computed(() => {
             v-if="pending"
             :id="acceptanceId"
             :conversation="conversation"
-            class="relative -mt-1 pr-3 pb-3 pl-[4.125rem]"
+            class="relative -mt-0.5 pr-3 pb-2.5 pl-[3.5rem]"
         />
     </div>
 </template>

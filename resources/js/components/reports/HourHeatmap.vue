@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { MousePointer2, Sparkles } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import './insights.css';
 
@@ -105,7 +104,7 @@ function isBusiest(day: number, hour: number): boolean {
                         <td
                             v-for="(count, hour) in row"
                             :key="hour"
-                            class="heat-cell relative h-7 rounded-[5px] bg-[color-mix(in_oklch,var(--muted)_80%,transparent)] transition-[scale,box-shadow] duration-(--duration-fast) ease-(--ease-spring) hover:z-10 hover:scale-[1.25] hover:shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--ring)]"
+                            class="heat-cell relative h-6 rounded-[4px] bg-[color-mix(in_oklch,var(--muted)_80%,transparent)] transition-shadow duration-(--duration-fast) hover:z-10 hover:shadow-[0_0_0_2px_var(--card),0_0_0_3.5px_var(--foreground)]"
                             :class="
                                 isBusiest(day, hour) &&
                                 'shadow-[0_0_0_2px_var(--card),0_0_0_3.5px_var(--primary)]'
@@ -116,7 +115,7 @@ function isBusiest(day: number, hour: number): boolean {
                             @pointerdown="hovered = { day, hour, count }"
                         >
                             <span
-                                class="absolute inset-0 rounded-[5px] bg-primary"
+                                class="absolute inset-0 rounded-[4px] bg-primary"
                                 :style="{ opacity: opacity(count) }"
                                 aria-hidden="true"
                             />
@@ -137,10 +136,6 @@ function isBusiest(day: number, hour: number): boolean {
                 data-heatmap-readout
             >
                 <template v-if="hovered">
-                    <MousePointer2
-                        class="size-3.5 shrink-0 text-primary"
-                        aria-hidden="true"
-                    />
                     <span>
                         <span
                             class="font-semibold text-foreground capitalize"
@@ -155,10 +150,6 @@ function isBusiest(day: number, hour: number): boolean {
                     </span>
                 </template>
                 <template v-else-if="busiest">
-                    <Sparkles
-                        class="size-3.5 shrink-0 text-primary"
-                        aria-hidden="true"
-                    />
                     <span>
                         Mayor demanda:
                         <span class="font-semibold text-foreground">{{

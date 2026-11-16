@@ -21,7 +21,7 @@ const emit = defineEmits<{ clear: [] }>();
 
 <template>
     <div
-        class="relative flex flex-wrap items-center gap-1.5"
+        class="relative flex flex-wrap items-center gap-1"
         role="group"
         aria-label="Filtros aplicados"
     >
@@ -30,18 +30,18 @@ const emit = defineEmits<{ clear: [] }>();
             <span
                 v-for="pill in pills"
                 :key="pill.key"
-                class="inline-flex h-7 max-w-full min-w-0 items-center gap-0.5 rounded-full border border-primary/30 bg-primary-soft pr-0.5 pl-2.5 text-xs font-medium text-primary-soft-foreground shadow-(--shadow-control) pointer-coarse:h-9"
+                class="inline-flex h-6 max-w-full min-w-0 items-center gap-0.5 rounded-md border bg-muted/60 pr-0.5 pl-2 text-xs font-medium text-foreground pointer-coarse:h-9"
                 data-inbox-applied
                 data-filter-pill
             >
                 <span class="truncate">{{ pill.label }}</span>
                 <button
                     type="button"
-                    class="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-primary-soft-foreground/70 outline-none hover:bg-primary/15 hover:text-primary-soft-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 motion-safe:transition-colors pointer-coarse:size-8"
+                    class="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-8"
                     :aria-label="`Quitar el filtro ${pill.label}`"
                     @click="pill.remove()"
                 >
-                    <X class="size-3.5" aria-hidden="true" />
+                    <X class="size-3" aria-hidden="true" />
                 </button>
             </span>
         </TransitionGroup>
@@ -54,7 +54,7 @@ const emit = defineEmits<{ clear: [] }>();
             <button
                 v-if="clearable"
                 type="button"
-                class="ml-auto inline-flex h-7 items-center rounded-full px-2 text-xs font-medium text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                class="ml-auto inline-flex h-6 shrink-0 items-center rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
                 data-inbox-clear
                 data-filter-clear
                 @click="emit('clear')"

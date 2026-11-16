@@ -85,7 +85,7 @@ const unreadLabel = computed(() =>
             preserve-scroll
             :aria-current="active ? 'page' : undefined"
             :data-selected="active || opening ? '' : undefined"
-            class="list-row flex items-center gap-3 py-2.5 pr-3 pl-3.5 outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
+            class="list-row flex items-center gap-2.5 py-2 pr-2.5 pl-3 outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
             v-on="longPress.handlers"
             @click.capture="onClick"
         >
@@ -105,10 +105,10 @@ const unreadLabel = computed(() =>
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate font-display text-[0.95rem] leading-snug',
+                                'min-w-0 flex-1 truncate text-sm leading-5',
                                 unread
-                                    ? 'font-bold text-foreground'
-                                    : 'font-semibold text-foreground/90',
+                                    ? 'font-semibold text-foreground'
+                                    : 'font-medium text-foreground/90',
                             )
                         "
                     >
@@ -124,7 +124,7 @@ const unreadLabel = computed(() =>
                         v-if="thread.last_activity_at"
                         :class="
                             cn(
-                                'list-time shrink-0 text-[0.7rem] tabular-nums',
+                                'list-time shrink-0 text-[0.6875rem] tabular-nums',
                                 unread && !thread.muted
                                     ? 'font-semibold text-primary'
                                     : 'text-muted-foreground',
@@ -136,19 +136,19 @@ const unreadLabel = computed(() =>
                         {{ listTime(thread.last_activity_at) }}
                     </time>
                 </span>
-                <span class="mt-0.5 flex items-center gap-1.5">
+                <span class="flex items-center gap-1.5">
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate text-[0.8125rem] leading-snug',
+                                'min-w-0 flex-1 truncate text-[0.8125rem] leading-5',
                                 unread
-                                    ? 'font-medium text-foreground'
+                                    ? 'text-foreground'
                                     : 'text-muted-foreground',
                                 thread.last_message?.deleted && 'italic',
                             )
                         "
                     >
-                        <span v-if="author" class="font-semibold">{{
+                        <span v-if="author" class="font-medium">{{
                             author
                         }}</span
                         >{{ preview }}
@@ -169,8 +169,6 @@ const unreadLabel = computed(() =>
                         v-if="unread"
                         :value="thread.unread"
                         :tone="thread.muted ? 'muted' : 'primary'"
-                        :halo="!thread.muted"
-                        class="h-5 min-w-5"
                     />
                     <span v-if="unread" class="sr-only"
                         >{{ unreadLabel }} sin leer</span
@@ -180,17 +178,17 @@ const unreadLabel = computed(() =>
         </Link>
         <!-- Hover quick actions: the same floating bar as the inbox rows. -->
         <div
-            class="list-quick absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-full glass p-0.5 shadow-(--shadow-lift,var(--shadow-hover)) ring-1 ring-border/80 pointer-coarse:top-auto pointer-coarse:right-1 pointer-coarse:bottom-1 pointer-coarse:bg-transparent pointer-coarse:shadow-none pointer-coarse:ring-0"
+            class="list-quick absolute top-1 right-1.5 flex items-center rounded-md border bg-popover p-px shadow-(--shadow-control) pointer-coarse:top-auto pointer-coarse:right-1 pointer-coarse:bottom-1 pointer-coarse:border-transparent pointer-coarse:bg-transparent pointer-coarse:shadow-none"
         >
             <button
                 type="button"
-                class="flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 motion-safe:transition-[color,background-color,scale] pointer-coarse:size-9"
+                class="flex size-6 items-center justify-center rounded text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-9"
                 :aria-label="`Vista previa de ${thread.title}`"
                 title="Vista previa sin marcar como leído"
                 data-thread-preview
                 @click="emit('preview', thread)"
             >
-                <Eye class="size-4" aria-hidden="true" />
+                <Eye class="size-3.5" aria-hidden="true" />
             </button>
         </div>
     </div>

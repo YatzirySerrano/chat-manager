@@ -517,7 +517,7 @@ watch(conversationId, () => (dragDepth.value = 0));
                     @click="emit('toggleDetails')"
                 >
                     <h2
-                        class="flex min-w-0 items-center gap-2 font-display text-lg leading-snug font-semibold"
+                        class="flex min-w-0 items-center gap-2 text-base leading-snug font-semibold"
                     >
                         <!-- On phones the channel shows here, next to the name. -->
                         <ChannelIcon

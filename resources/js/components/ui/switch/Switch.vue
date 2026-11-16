@@ -28,7 +28,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       'bg-border-strong shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink)_14%,transparent)]',
       'transition-[background-color,box-shadow] duration-(--duration-base) ease-(--ease-standard)',
       'hover:bg-[color-mix(in_oklch,var(--border-strong)_80%,var(--foreground))]',
-      'data-[state=checked]:accent-gradient data-[state=checked]:shadow-[inset_0_1px_2px_rgb(0_0_0/0.12),0_2px_8px_-2px_color-mix(in_oklch,var(--primary)_55%,transparent)] data-[state=checked]:hover:brightness-[1.06]',
+      'data-[state=checked]:bg-primary',
       'focus-visible:ring-[3px] focus-visible:ring-primary/30 focus-visible:ring-offset-1 focus-visible:ring-offset-background',
       'disabled:cursor-not-allowed disabled:opacity-50',
       props.class,

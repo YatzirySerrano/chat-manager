@@ -453,7 +453,7 @@ const progress = computed(() => {
                     <span
                         :class="
                             cn(
-                                'block h-full origin-left rounded-full accent-gradient transition-transform duration-(--duration-panel) ease-(--ease-out-quint)',
+                                'block h-full origin-left rounded-full bg-primary transition-transform duration-(--duration-panel) ease-(--ease-out-quint)',
                                 index <= currentStep
                                     ? 'scale-x-100'
                                     : 'scale-x-0',
@@ -467,7 +467,7 @@ const progress = computed(() => {
                             cn(
                                 'grid size-8 shrink-0 place-items-center rounded-full border font-display text-sm font-semibold tabular-nums transition-[color,background-color,box-shadow] duration-(--duration-base)',
                                 index === currentStep &&
-                                    'border-transparent accent-gradient glow',
+                                    'border-transparent bg-primary text-primary-foreground',
                                 index < currentStep &&
                                     'border-transparent bg-success-soft text-success-soft-foreground',
                                 index > currentStep &&
@@ -570,7 +570,7 @@ const progress = computed(() => {
                             </div>
                             <Button
                                 type="submit"
-                                class="accent-gradient glow pointer-coarse:h-10"
+                                class="pointer-coarse:h-10"
                                 :disabled="upload.file === null"
                                 :loading="upload.processing"
                             >
@@ -1067,7 +1067,6 @@ const progress = computed(() => {
                 </Button>
                 <div class="flex flex-col gap-1 sm:items-end">
                     <Button
-                        class="accent-gradient glow"
                         :disabled="!canConfirm || configuration.processing"
                         :loading="confirming"
                         @click="confirm"
@@ -1118,7 +1117,7 @@ const progress = computed(() => {
                         aria-valuemax="100"
                     >
                         <div
-                            class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-panel) ease-(--ease-out-quint)"
+                            class="h-full rounded-full bg-primary transition-[width] duration-(--duration-panel) ease-(--ease-out-quint)"
                             :style="{ width: `${progress}%` }"
                         />
                     </div>

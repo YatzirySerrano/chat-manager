@@ -997,7 +997,7 @@ const searchPlaceholder = computed(() =>
 );
 
 const scopeButton =
-    'h-6 rounded-full px-2.5 text-xs font-medium outline-none transition-[color,background-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring-soft) focus-visible:ring-2 focus-visible:ring-ring active:scale-95 pointer-coarse:h-8';
+    'h-6 rounded-md px-2 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-8';
 </script>
 
 <template>
@@ -1006,24 +1006,13 @@ const scopeButton =
         aria-label="Lista de conversaciones"
     >
         <header
-            class="list-header grid min-w-0 grid-cols-1 gap-2.5 glass-bar px-3 pt-3 pb-3"
+            class="list-header grid min-w-0 grid-cols-1 gap-2 border-b border-border/60 bg-background px-3 pt-2.5 pb-2"
             :data-scrolled="scrolled ? '' : undefined"
         >
-            <div class="flex items-center justify-between gap-2 pl-0.5">
-                <h1
-                    class="truncate font-display text-xl leading-tight font-semibold tracking-tight"
-                >
-                    Conversaciones
-                </h1>
-                <ExportMenu
-                    v-if="canExport"
-                    report="conversations"
-                    :filters="exportFilters"
-                    label="Exportar"
-                />
-            </div>
+            <!-- The page header already names the module: this title is for screen readers. -->
+            <h1 class="sr-only">Conversaciones</h1>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5">
                 <FilterSearch
                     ref="searchBox"
                     v-model="search"
@@ -1070,12 +1059,20 @@ const scopeButton =
                         @change="changeDraft"
                     />
                 </InboxFilterSurface>
+
+                <ExportMenu
+                    v-if="canExport"
+                    report="conversations"
+                    :filters="exportFilters"
+                    label="Exportar"
+                    compact
+                />
             </div>
 
             <!-- Where the search looks, only while searching. -->
             <div
                 v-if="search.trim() !== '' || state.searchIn === 'messages'"
-                class="flex w-fit items-center gap-1 rounded-full bg-surface-sunken py-0.5 pr-0.5 pl-2.5 text-xs text-muted-foreground ring-1 ring-border/60 ring-inset motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
+                class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
                 role="group"
                 aria-label="Buscar en"
                 data-inbox-search-scope
@@ -1091,8 +1088,8 @@ const scopeButton =
                     :class="[
                         scopeButton,
                         state.searchIn === scope.value
-                            ? 'bg-card text-foreground shadow-(--shadow-control) ring-1 ring-primary/30'
-                            : 'hover:bg-accent hover:text-foreground',
+                            ? 'bg-foreground/[0.07] text-foreground'
+                            : 'hover:text-foreground',
                     ]"
                     :aria-pressed="state.searchIn === scope.value"
                     @click="change({ searchIn: scope.value })"
@@ -1111,13 +1108,85 @@ const scopeButton =
                 no se buscan.
             </p>
 
-            <nav aria-label="Bandejas">
+            <!-- One strip: the views as tabs, then the quick toggles. -->
+            <nav aria-label="Bandejas" class="-mx-1 min-w-0">
                 <FilterTabs
                     :options="tabs"
                     :model-value="activeTab"
                     label="Filtrar la bandeja"
+                    class="px-1"
                     @update:model-value="chooseTab"
-                />
+                >
+                    <template #after>
+                        <span
+                            class="mx-0.5 h-4 w-px shrink-0 bg-border"
+                            aria-hidden="true"
+                        />
+                        <div
+                            class="flex shrink-0 items-center gap-1"
+                            role="group"
+                            aria-label="Filtros rápidos"
+                        >
+                            <FilterToggle
+                                v-if="closedActive"
+                                :pressed="state.status === 'completed'"
+                                label="Solo completadas"
+                                :icon="CircleCheck"
+                                tone="success"
+                                title="Solo las conversaciones cerradas como «Solicitud completada»"
+                                data-inbox-completed
+                                @toggle="toggleCompleted"
+                            />
+                            <template v-else>
+                                <FilterToggle
+                                    :pressed="state.unread"
+                                    label="Sin leer"
+                                    :icon="MailWarning"
+                                    :count="unreadCount"
+                                    tone="primary"
+                                    :sr-label="
+                                        plural(
+                                            unreadCount,
+                                            'conversación sin leer',
+                                            'conversaciones sin leer',
+                                        )
+                                    "
+                                    title="Solo las conversaciones con mensajes del cliente que aún no has leído"
+                                    data-inbox-unread
+                                    data-tour="inbox.unread"
+                                    @toggle="toggleUnread"
+                                />
+                                <FilterToggle
+                                    :pressed="state.awaiting"
+                                    label="Esperando respuesta"
+                                    :icon="MessageCircleReply"
+                                    :count="awaitingCount"
+                                    tone="warning"
+                                    :sr-label="
+                                        plural(
+                                            awaitingCount,
+                                            'conversación espera respuesta',
+                                            'conversaciones esperan respuesta',
+                                        )
+                                    "
+                                    title="Solo las conversaciones donde el cliente escribió al último y nadie le ha respondido"
+                                    data-inbox-awaiting
+                                    @toggle="toggleAwaiting"
+                                />
+                            </template>
+                            <button
+                                v-if="hasFilters && appliedChips.length === 0"
+                                type="button"
+                                class="inline-flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                                data-inbox-clear
+                                data-filter-clear
+                                @click="clearFilters"
+                            >
+                                Limpiar
+                            </button>
+                        </div>
+                    </template>
+                </FilterTabs>
             </nav>
 
             <p class="sr-only" role="status" aria-live="polite">
@@ -1127,60 +1196,13 @@ const scopeButton =
                 {{ filtersAnnouncement }}
             </p>
 
+            <!-- The panel's own filters as removable pills, only when there are some. -->
             <ActiveFilters
+                v-if="appliedChips.length > 0"
                 :pills="appliedChips"
                 :clearable="hasFilters"
                 @clear="clearFilters"
-            >
-                <template v-if="closedActive">
-                    <FilterToggle
-                        :pressed="state.status === 'completed'"
-                        label="Solo completadas"
-                        :icon="CircleCheck"
-                        tone="success"
-                        title="Solo las conversaciones cerradas como «Solicitud completada»"
-                        data-inbox-completed
-                        @toggle="toggleCompleted"
-                    />
-                </template>
-                <template v-else>
-                    <FilterToggle
-                        :pressed="state.unread"
-                        label="Sin leer"
-                        :icon="MailWarning"
-                        :count="unreadCount"
-                        tone="primary"
-                        :sr-label="
-                            plural(
-                                unreadCount,
-                                'conversación sin leer',
-                                'conversaciones sin leer',
-                            )
-                        "
-                        title="Solo las conversaciones con mensajes del cliente que aún no has leído"
-                        data-inbox-unread
-                        data-tour="inbox.unread"
-                        @toggle="toggleUnread"
-                    />
-                    <FilterToggle
-                        :pressed="state.awaiting"
-                        label="Esperando respuesta"
-                        :icon="MessageCircleReply"
-                        :count="awaitingCount"
-                        tone="warning"
-                        :sr-label="
-                            plural(
-                                awaitingCount,
-                                'conversación espera respuesta',
-                                'conversaciones esperan respuesta',
-                            )
-                        "
-                        title="Solo las conversaciones donde el cliente escribió al último y nadie le ha respondido"
-                        data-inbox-awaiting
-                        @toggle="toggleAwaiting"
-                    />
-                </template>
-            </ActiveFilters>
+            />
 
             <AcceptBlockNotice @select="(id) => emit('select', id)" />
         </header>
@@ -1212,7 +1234,7 @@ const scopeButton =
                     ref="listElement"
                     tag="ul"
                     :name="rowMotion"
-                    class="relative z-[1] grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
+                    class="relative z-[1] grid grid-cols-1 gap-px motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
                     :class="[
                         filtering && 'opacity-60',
                         firstPaint && 'reveal-stagger',
@@ -1276,9 +1298,8 @@ const scopeButton =
 
             <div v-if="conversations.has_more" class="flex justify-center p-3">
                 <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    class="rounded-full"
                     :disabled="loading"
                     @click="emit('loadMore')"
                     :loading="loadingMore"

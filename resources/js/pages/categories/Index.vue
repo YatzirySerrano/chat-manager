@@ -7,7 +7,6 @@ import {
     Plus,
     SlidersHorizontal,
     Trash2,
-    TrendingUp,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onUnmounted, reactive, ref } from 'vue';
@@ -248,7 +247,7 @@ function rulesLabel(count: number): string {
         >
             <template v-if="can.manage" #actions>
                 <Button
-                    class="accent-gradient glow max-sm:w-full"
+                    class="max-sm:w-full"
                     data-tour="categories.new"
                     @click="openCreate"
                 >
@@ -281,7 +280,7 @@ function rulesLabel(count: number): string {
                         <RecordStateFilter
                             v-model="filterState.record"
                             :options="recordStates"
-                            class="h-10 flex-1 rounded-xl sm:w-36 sm:flex-none"
+                            class="flex-1 sm:w-36 sm:flex-none"
                             @change="applyFilters"
                         />
                         <ViewModeToggle v-model="viewMode" />
@@ -499,13 +498,7 @@ function rulesLabel(count: number): string {
                 class="overflow-clip surface-float lg:sticky lg:top-20"
                 aria-labelledby="category-usage-title"
             >
-                <header class="flex items-start gap-3 px-5 pt-5 pb-4">
-                    <span
-                        class="flex size-9 shrink-0 items-center justify-center rounded-xl accent-gradient"
-                        aria-hidden="true"
-                    >
-                        <TrendingUp class="size-4" />
-                    </span>
+                <header class="px-5 pt-4 pb-3">
                     <div class="min-w-0">
                         <h2
                             id="category-usage-title"

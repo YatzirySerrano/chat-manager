@@ -96,7 +96,7 @@ const describedBy = computed(() =>
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
                 :class="[
                     selected
-                        ? 'accent-gradient shadow-glow'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground',
                     disabled && 'opacity-60',
                 ]"

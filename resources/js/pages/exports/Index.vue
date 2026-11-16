@@ -151,7 +151,7 @@ function detail(transfer: DataTransfer): string {
 
         <section
             v-if="transfers.data.length > 0"
-            class="overflow-hidden rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float"
+            class="overflow-hidden rounded-xl border bg-card shadow-(--shadow-control)"
             aria-label="Tus archivos preparados"
             data-tour="exports.list"
         >
@@ -173,7 +173,7 @@ function detail(transfer: DataTransfer): string {
                 <li
                     v-for="transfer in transfers.data"
                     :key="transfer.id"
-                    class="grid gap-3 px-4 py-4 transition-colors duration-(--duration-fast) hover:bg-[color-mix(in_oklch,var(--accent)_45%,transparent)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_14rem_8rem_8rem_9rem] lg:items-center lg:gap-4"
+                    class="grid gap-3 px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-muted/40 sm:px-5 lg:grid-cols-[minmax(0,1fr)_14rem_8rem_8rem_9rem] lg:items-center lg:gap-4"
                     :data-transfer-status="transfer.status.value"
                     data-transfer
                 >
@@ -277,7 +277,8 @@ function detail(transfer: DataTransfer): string {
                         <Button
                             v-if="transfer.download_url"
                             size="sm"
-                            class="w-full rounded-full sm:w-auto"
+                            variant="outline"
+                            class="w-full sm:w-auto"
                             :data-tour="
                                 transfer.id === firstDownloadable
                                     ? 'exports.download'

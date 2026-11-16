@@ -101,7 +101,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         <Button
             variant="outline"
             size="sm"
-            class="h-9 shrink-0 pointer-coarse:h-10"
+            class="h-9 shrink-0 gap-1.5 px-2.5 pointer-coarse:h-10"
             :aria-label="
                 (appliedCount > 0
                     ? `Filtros (${appliedCount} aplicados)`
@@ -112,10 +112,10 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
             data-tour="inbox.filters"
         >
             <SlidersHorizontal aria-hidden="true" />
-            Filtros
+            <span class="max-[22rem]:sr-only">Filtros</span>
             <span
                 v-if="appliedCount > 0"
-                class="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums"
+                class="rounded bg-primary-soft px-1 text-xs leading-4 font-semibold text-primary-soft-foreground tabular-nums"
                 aria-hidden="true"
                 >{{ appliedCount }}</span
             >

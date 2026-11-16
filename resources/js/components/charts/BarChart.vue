@@ -19,17 +19,28 @@ import type { BarItem, BarSeries, ChartTooltipRow, ValueFormat } from './types';
  * but still reads «0». Pointer and keyboard (↑/↓ or ←/→) show a readout.
  * An item with `href` is a drill-down: its label is a real link (reachable
  * with Tab) to the list behind the bar.
+ *
+ * `overlay` (two series where the second is part of the first, e.g.
+ * received and attended): one bar per item, the whole as a light track and
+ * the part solid inside it, labelled «part / whole». Half the ink of two
+ * grouped bars, and the gap between them reads at a glance.
+ *
+ * `summed` (series that add up, e.g. in attention + pending): one bar per
+ * item whose segments sit end to end on the shared scale, labelled with
+ * the total; the readout lists each part.
  */
 const props = withDefaults(
     defineProps<{
         items: BarItem[];
         series: BarSeries[];
         stacked?: boolean;
+        overlay?: boolean;
+        summed?: boolean;
         valueFormat?: ValueFormat;
         /** Accessible summary of the chart. */
         description: string;
     }>(),
-    { stacked: false, valueFormat: 'number' },
+    { stacked: false, overlay: false, summed: false, valueFormat: 'number' },
 );
 
 const root = useTemplateRef<HTMLElement>('root');
@@ -68,7 +79,9 @@ function format(value: number): string {
 }
 
 const largest = computed(() =>
-    Math.max(0, ...props.items.flatMap((item) => item.values)),
+    props.summed
+        ? Math.max(0, ...props.items.map((item) => total(item)))
+        : Math.max(0, ...props.items.flatMap((item) => item.values)),
 );
 
 function ratio(value: number): number {
@@ -260,11 +273,13 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                 <li
                     v-for="(item, itemIndex) in items"
                     :key="item.key"
-                    class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md px-1.5 py-1 transition-colors duration-(--duration-fast) sm:grid-cols-[minmax(6rem,32%)_1fr] sm:items-center"
-                    :class="
-                        active === itemIndex &&
-                        'bg-[color-mix(in_oklch,var(--primary)_6%,transparent)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_14%,transparent)]'
-                    "
+                    class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md px-1.5 py-1 transition-colors duration-(--duration-fast) sm:items-center"
+                    :class="[
+                        overlay || summed
+                            ? 'sm:grid-cols-[minmax(6rem,40%)_1fr]'
+                            : 'sm:grid-cols-[minmax(6rem,32%)_1fr]',
+                        active === itemIndex && 'bg-muted/70',
+                    ]"
                     :data-unit="itemIndex"
                     :data-bar-row="item.key"
                     @pointerenter="hover(itemIndex)"
@@ -291,7 +306,96 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                     >
                         {{ item.label }}
                     </span>
-                    <div class="flex min-w-0 flex-col gap-0.5">
+                    <div v-if="summed" class="flex min-w-0 items-center gap-2">
+                        <span
+                            class="bar-grow flex h-2.5 min-w-0 gap-0.5"
+                            :style="{
+                                '--i': Math.min(itemIndex, 10),
+                                width: `calc((100% - 3rem) * ${ratio(total(item))})`,
+                            }"
+                            aria-hidden="true"
+                        >
+                            <template
+                                v-for="(seriesItem, seriesIndex) in series"
+                                :key="seriesItem.key"
+                            >
+                                <span
+                                    v-if="(item.values[seriesIndex] ?? 0) > 0"
+                                    class="h-full first:rounded-l-full last:rounded-r-full"
+                                    :style="{
+                                        flexGrow: item.values[seriesIndex],
+                                        flexBasis: 0,
+                                        minWidth: '2px',
+                                        backgroundColor: seriesColor(
+                                            seriesItem,
+                                            seriesIndex,
+                                            item,
+                                        ),
+                                    }"
+                                />
+                            </template>
+                        </span>
+                        <span
+                            class="shrink-0 text-xs whitespace-nowrap tabular-nums"
+                            :class="
+                                active === itemIndex
+                                    ? 'font-semibold text-foreground'
+                                    : 'text-muted-foreground'
+                            "
+                            data-bar-value="total"
+                        >
+                            {{ format(total(item)) }}
+                        </span>
+                    </div>
+                    <div
+                        v-else-if="overlay"
+                        class="flex min-w-0 items-center gap-2"
+                    >
+                        <span
+                            class="relative h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--muted-foreground)_8%,transparent)]"
+                            aria-hidden="true"
+                        >
+                            <span
+                                v-if="(item.values[0] ?? 0) > 0"
+                                class="bar-grow absolute inset-y-0 left-0 rounded-full"
+                                :style="{
+                                    '--i': Math.min(itemIndex, 10),
+                                    width: `${ratio(item.values[0] ?? 0) * 100}%`,
+                                    minWidth: '2px',
+                                    backgroundColor: `color-mix(in oklch, ${seriesColor(series[0], 0, item)} 28%, transparent)`,
+                                }"
+                            />
+                            <span
+                                v-if="(item.values[1] ?? 0) > 0"
+                                class="bar-grow absolute inset-y-0 left-0 rounded-full"
+                                :style="{
+                                    '--i': Math.min(itemIndex, 10) + 1,
+                                    width: `${ratio(item.values[1] ?? 0) * 100}%`,
+                                    minWidth: '2px',
+                                    backgroundColor: seriesColor(
+                                        series[1],
+                                        1,
+                                        item,
+                                    ),
+                                }"
+                            />
+                        </span>
+                        <span
+                            class="w-[4.5rem] shrink-0 text-right text-xs whitespace-nowrap tabular-nums"
+                            :class="
+                                active === itemIndex
+                                    ? 'font-semibold text-foreground'
+                                    : 'text-muted-foreground'
+                            "
+                            data-bar-value="overlay"
+                        >
+                            <span class="text-foreground">{{
+                                format(item.values[1] ?? 0)
+                            }}</span>
+                            / {{ format(item.values[0] ?? 0) }}
+                        </span>
+                    </div>
+                    <div v-else class="flex min-w-0 flex-col gap-0.5">
                         <div
                             v-for="(seriesItem, seriesIndex) in series"
                             :key="seriesItem.key"

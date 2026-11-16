@@ -492,7 +492,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                                 cn(
                                     'grid size-7 shrink-0 place-items-center rounded-full border font-display text-sm font-semibold tabular-nums transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/step:scale-110',
                                     item.key === step &&
-                                        'border-transparent accent-gradient glow',
+                                        'border-transparent bg-primary text-primary-foreground',
                                     item.key !== step &&
                                         isStepDone(item.key) &&
                                         'border-success bg-success-soft text-success-soft-foreground',
@@ -528,7 +528,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                 aria-hidden="true"
             >
                 <div
-                    class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
+                    class="h-full rounded-full bg-primary transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
                     :style="{ width: `${stepProgress}%` }"
                 />
             </div>

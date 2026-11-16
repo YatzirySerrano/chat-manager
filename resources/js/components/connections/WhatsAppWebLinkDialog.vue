@@ -346,7 +346,7 @@ function countdown(seconds: number): string {
                                     class="grid place-items-center gap-3 text-center"
                                 >
                                     <span
-                                        class="grid size-20 enter-spring place-items-center rounded-full accent-gradient shadow-glow"
+                                        class="grid size-20 enter-spring place-items-center rounded-full bg-primary text-primary-foreground"
                                     >
                                         <svg
                                             class="size-10"

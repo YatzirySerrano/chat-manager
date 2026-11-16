@@ -6,8 +6,8 @@ import { formatDateTime } from '@/lib/format';
 /**
  * «Completada»: the conversation was closed as «Solicitud completada»
  * (`completed_at`), so the customer's next message starts a new request.
- * Text and icon on the soft success pair, never color alone. Meant for the
- * list rows and any header that shows the conversation's state.
+ * Text and icon in the success color, never color alone; quiet enough for
+ * the dense list rows and any header that shows the conversation's state.
  */
 const props = defineProps<{
     /** When it was completed (ISO 8601), for the tooltip. */
@@ -23,7 +23,7 @@ const title = computed(() =>
 
 <template>
     <span
-        class="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success-soft px-2 py-0.5 text-xs font-semibold whitespace-nowrap text-success-soft-foreground"
+        class="inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap text-success-soft-foreground"
         :title="title"
         data-completed-badge
     >

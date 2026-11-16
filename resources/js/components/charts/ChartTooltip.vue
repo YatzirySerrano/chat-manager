@@ -46,7 +46,7 @@ const left = computed(() => {
         ref="tooltip"
         role="tooltip"
         data-chart-tooltip
-        class="chart-tooltip-pop pointer-events-none absolute z-20 max-w-[16rem] min-w-[9.5rem] rounded-xl border border-[color-mix(in_oklch,var(--border)_80%,transparent)] glass px-3 py-2.5 text-xs text-popover-foreground shadow-popover transition-[left,top] duration-(--duration-fast) ease-(--ease-standard)"
+        class="chart-tooltip-pop pointer-events-none absolute z-20 max-w-[16rem] min-w-[9.5rem] rounded-xl border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-popover transition-[left,top] duration-(--duration-fast) ease-(--ease-standard)"
         :style="{
             left: `${left}px`,
             top: `${Math.max(0, y)}px`,

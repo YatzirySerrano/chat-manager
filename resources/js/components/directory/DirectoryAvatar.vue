@@ -77,9 +77,9 @@ const tile = computed(() => {
 
 const sizes = {
     sm: 'size-8 text-xs [&_svg]:size-4',
-    md: 'size-10 text-sm [&_svg]:size-[1.125rem]',
-    lg: 'size-14 text-lg [&_svg]:size-6',
-    xl: 'size-20 text-2xl sm:size-24 sm:text-3xl [&_svg]:size-9',
+    md: 'size-9 text-[0.8125rem] [&_svg]:size-4',
+    lg: 'size-12 text-base [&_svg]:size-5',
+    xl: 'size-14 text-lg sm:size-16 sm:text-xl [&_svg]:size-7',
 } as const;
 
 const radius = computed(() => {
@@ -88,10 +88,10 @@ const radius = computed(() => {
     }
 
     return props.size === 'xl'
-        ? 'rounded-3xl'
+        ? 'rounded-2xl'
         : props.size === 'lg'
-          ? 'rounded-2xl'
-          : 'rounded-xl';
+          ? 'rounded-xl'
+          : 'rounded-lg';
 });
 </script>
 

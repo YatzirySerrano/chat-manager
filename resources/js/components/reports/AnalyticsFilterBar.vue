@@ -1,12 +1,6 @@
 <script setup lang="ts">
-import { CalendarRange, Globe2, SlidersHorizontal } from '@lucide/vue';
+import { CalendarRange } from '@lucide/vue';
 import { computed, reactive, watch } from 'vue';
-import ActiveFilters from '@/components/filters/ActiveFilters.vue';
-import FilterTabs from '@/components/filters/FilterTabs.vue';
-import type {
-    ActiveFilterPill,
-    FilterTabOption,
-} from '@/components/filters/types';
 import { AppSelect } from '@/components/ui/app-select';
 import type { AppSelectOption } from '@/components/ui/app-select';
 import { DateRangePicker } from '@/components/ui/date-picker';
@@ -21,10 +15,11 @@ import './insights.css';
 
 /**
  * Period and dimension filters shared by the reports page and the
- * dashboard, in the language of the inbox filters: the period as a pill
- * track (the thumb glides to the chosen one), the dimensions as selects in
- * one grid, and every applied dimension as a removable pill with «Limpiar
- * filtros». It only emits the new query; the page navigates, so filters
+ * dashboard, as one dense toolbar row that wraps on narrow screens: the
+ * period as a segmented control, every dimension as a small select whose
+ * empty option names it («Todos los agentes»); an applied dimension turns
+ * into a tinted pill with its own ✕ (removable in place). «Limpiar» and the
+ * compared range close the row. It only emits the new query; the page navigates, so filters
  * stay in the URL. Options come from the server already limited to the
  * viewer's reach (an empty list hides the filter).
  */
@@ -148,14 +143,15 @@ type Dimension = {
     options: AppSelectOption<string | number>[];
 };
 
-function withAll(
-    all: string,
+/**
+ * The values of a dimension. There is no «Todos» option: an unset select
+ * shows the dimension's name (placeholder) and an applied one is removed
+ * with its ✕.
+ */
+function toOptions(
     items: { id: string | number; name: string }[] | undefined,
 ): AppSelectOption<string | number>[] {
-    return [
-        { value: '', label: all },
-        ...(items ?? []).map((item) => ({ value: item.id, label: item.name })),
-    ];
+    return (items ?? []).map((item) => ({ value: item.id, label: item.name }));
 }
 
 /** The dimension filters the viewer can use (an empty list hides one). */
@@ -165,37 +161,37 @@ const dimensions = computed<Dimension[]>(() => {
         {
             key: 'department',
             label: 'Departamento',
-            options: withAll('Todos los que puedes ver', options.departments),
+            options: toOptions(options.departments),
             show: options.departments.length > 0,
         },
         {
             key: 'agent',
-            label: 'Agente responsable',
-            options: withAll('Todos', options.agents),
+            label: 'Agente',
+            options: toOptions(options.agents),
             show: options.agents.length > 0,
         },
         {
             key: 'connection',
             label: 'Conexión',
-            options: withAll('Todas', options.connections),
+            options: toOptions(options.connections),
             show: options.connections.length > 1,
         },
         {
             key: 'channel',
             label: 'Canal',
-            options: withAll('Todos', options.channels),
+            options: toOptions(options.channels),
             show: (options.channels?.length ?? 0) > 1,
         },
         {
             key: 'category',
             label: 'Categoría',
-            options: withAll('Todas', options.categories),
+            options: toOptions(options.categories),
             show: (options.categories?.length ?? 0) > 0,
         },
         {
             key: 'status',
-            label: 'Estado actual',
-            options: withAll('Todos', options.statuses),
+            label: 'Estado',
+            options: toOptions(options.statuses),
             show: (options.statuses?.length ?? 0) > 0,
         },
     ];
@@ -203,43 +199,44 @@ const dimensions = computed<Dimension[]>(() => {
     return list.filter((dimension) => dimension.show);
 });
 
-const periodTabs = computed<FilterTabOption<AnalyticsPreset>[]>(() =>
+/** Short labels of the segmented control («7 días» for «Últimos 7 días»). */
+const shortLabels: Record<string, string> = {
+    today: 'Hoy',
+    yesterday: 'Ayer',
+    '7d': '7 días',
+    '30d': '30 días',
+    '90d': '90 días',
+    custom: 'Rango',
+};
+
+const periodOptions = computed(() =>
     props.presets.map((preset) => ({
-        value: preset.value,
-        label: preset.label,
-        icon: preset.value === 'custom' ? CalendarRange : undefined,
-        attrs: { 'data-period': preset.value },
+        ...preset,
+        short: shortLabels[preset.value] ?? preset.label,
     })),
 );
 
-/** Every applied dimension as a removable pill («Canal: WhatsApp»). */
-const pills = computed<ActiveFilterPill[]>(() =>
-    dimensions.value.flatMap((dimension) => {
-        const value = state[dimension.key];
+/** An applied dimension: its select becomes a pill with a ✕. */
+function isSet(key: DimensionKey): boolean {
+    return state[key] !== '' && state[key] !== undefined;
+}
 
-        if (value === '' || value === undefined) {
-            return [];
-        }
-
-        const option = dimension.options.find(
-            (item) => String(item.value) === String(value),
-        );
-
-        return [
-            {
-                key: dimension.key,
-                label: `${dimension.label}: ${option?.label ?? value}`,
-                remove: () => {
-                    state[dimension.key] = '';
-                    apply();
-                },
-            },
-        ];
-    }),
+const appliedCount = computed(
+    () => dimensions.value.filter((dimension) => isSet(dimension.key)).length,
 );
 
 const narrowed = computed(
-    () => pills.value.length > 0 || state.period !== DEFAULT_PERIOD,
+    () => appliedCount.value > 0 || state.period !== DEFAULT_PERIOD,
+);
+
+/** The compared range and the time zone, in words (tooltip and readers). */
+const comparisonDetail = computed(
+    () =>
+        `${props.period.label}, comparado con ${
+            props.period.comparison.partial
+                ? `el mismo tramo transcurrido del periodo anterior (${props.period.comparison.label})`
+                : props.period.comparison.label
+        }, ${zoneLabel(props.period.timezone)}`,
 );
 
 function clearAll(): void {
@@ -255,105 +252,122 @@ function clearAll(): void {
 </script>
 
 <template>
-    <!--
-      Full-width filter bar: the period on one pill track, every dimension a
-      column of the same grid (fills the workspace on wide screens, stacks on
-      phones) and the applied filters as pills under them.
-    -->
     <div
-        class="flex flex-col gap-3.5 rounded-2xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] glass-card p-3 shadow-float sm:p-4"
+        class="flex flex-wrap items-center gap-2"
+        role="toolbar"
+        aria-label="Filtros del periodo"
         data-analytics-filters
     >
-        <div class="flex flex-col gap-2">
-            <span
-                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+        <div
+            class="inline-flex h-9 max-w-full shrink-0 [scrollbar-width:none] items-center gap-0.5 overflow-x-auto rounded-lg border bg-card p-0.5 shadow-(--shadow-control)"
+            role="group"
+            aria-label="Periodo"
+            data-filter="period"
+        >
+            <button
+                v-for="option in periodOptions"
+                :key="option.value"
+                type="button"
+                class="inline-flex h-full shrink-0 items-center gap-1 rounded-md px-2.5 text-[0.8125rem] font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors"
+                :class="
+                    state.period === option.value
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                "
+                :aria-pressed="state.period === option.value"
+                :title="option.label"
+                :data-period="option.value"
+                @click="changePeriod(option.value)"
             >
-                <CalendarRange class="size-3.5" aria-hidden="true" />
-                Periodo
-            </span>
-            <FilterTabs
-                :options="periodTabs"
-                :model-value="state.period"
-                label="Periodo"
-                data-filter="period"
-                @update:model-value="changePeriod"
-            />
+                <CalendarRange
+                    v-if="option.value === 'custom'"
+                    class="size-3.5"
+                    aria-hidden="true"
+                />
+                {{ option.short }}
+            </button>
         </div>
 
         <div
             v-if="state.period === 'custom'"
-            class="grid enter-spring gap-1.5 sm:max-w-md"
+            class="w-full sm:w-64"
+            :title="maxDays ? `Hasta ${maxDays} días` : undefined"
         >
-            <span class="text-xs font-medium text-muted-foreground"
-                >Rango de fechas<template v-if="maxDays">
-                    (hasta {{ maxDays }} días)</template
-                ></span
-            >
             <DateRangePicker
                 v-model:from="state.from"
                 v-model:to="state.to"
+                size="sm"
                 required
-                aria-label="Rango de fechas"
+                :aria-label="
+                    maxDays
+                        ? `Rango de fechas (hasta ${maxDays} días)`
+                        : 'Rango de fechas'
+                "
                 @change="applyRange"
             />
         </div>
 
-        <div v-if="dimensions.length > 0" class="flex flex-col gap-2">
-            <span
-                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-            >
-                <SlidersHorizontal class="size-3.5" aria-hidden="true" />
-                Filtrar por
-            </span>
-            <div class="auto-grid [--col-min:13rem] [--grid-gap:0.625rem]">
-                <label
-                    v-for="dimension in dimensions"
-                    :key="dimension.key"
-                    class="grid gap-1"
-                >
-                    <span
-                        class="text-[0.6875rem] font-medium text-muted-foreground"
-                        >{{ dimension.label }}</span
-                    >
-                    <AppSelect
-                        v-model="state[dimension.key]"
-                        :options="dimension.options"
-                        :aria-label="dimension.label"
-                        :data-filter="dimension.key"
-                        @change="apply"
-                    />
-                </label>
-            </div>
+        <span
+            v-if="dimensions.length > 0"
+            class="mx-0.5 hidden h-5 w-px bg-border sm:block"
+            aria-hidden="true"
+        />
+
+        <div
+            v-for="dimension in dimensions"
+            :key="dimension.key"
+            class="analytics-filter min-w-0 basis-[calc(50%-0.25rem)] sm:max-w-56 sm:basis-auto"
+            :data-applied="isSet(dimension.key) || undefined"
+        >
+            <AppSelect
+                v-model="state[dimension.key]"
+                :options="dimension.options"
+                :placeholder="dimension.label"
+                size="sm"
+                clearable
+                clear-value=""
+                :aria-label="dimension.label"
+                :data-filter="dimension.key"
+                @change="apply"
+            />
         </div>
 
         <div
-            class="flex flex-col gap-2 border-t border-dashed pt-3 sm:flex-row sm:items-center sm:justify-between"
+            class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground sm:ml-auto"
         >
+            <button
+                v-if="narrowed"
+                type="button"
+                class="inline-flex h-7 items-center rounded-md px-2 font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                data-filter-clear
+                @click="clearAll"
+            >
+                Limpiar
+            </button>
             <p
-                class="flex min-w-0 items-start gap-1.5 text-xs text-pretty text-muted-foreground"
+                class="min-w-0 truncate tabular-nums"
+                :title="comparisonDetail"
                 data-analytics-period
             >
-                <Globe2 class="mt-px size-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                    <span class="font-medium text-foreground">{{
-                        period.label
-                    }}</span
-                    >, comparado con
-                    <template v-if="period.comparison.partial"
-                        >el mismo tramo transcurrido del periodo anterior ({{
-                            period.comparison.label
-                        }})</template
-                    ><template v-else>{{ period.comparison.label }}</template
-                    >, {{ zoneLabel(period.timezone) }}
-                </span>
+                <span class="font-medium text-foreground">{{
+                    period.label
+                }}</span>
+                <span class="hidden 2xl:inline">
+                    · vs. {{ period.comparison.label }}</span
+                >
+                <span class="sr-only">. {{ comparisonDetail }}</span>
             </p>
-            <ActiveFilters
-                v-if="narrowed"
-                class="sm:justify-end"
-                :pills="pills"
-                :clearable="narrowed"
-                @clear="clearAll"
-            />
         </div>
     </div>
 </template>
+
+<style scoped>
+/* An applied dimension reads as a pill: tinted, with its ✕ in place. */
+.analytics-filter[data-applied] :deep(button[data-slot='select-trigger']),
+.analytics-filter[data-applied] :deep(button.group\/select-trigger) {
+    border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+    background: var(--primary-soft);
+    color: var(--primary-soft-foreground);
+    font-weight: 500;
+}
+</style>

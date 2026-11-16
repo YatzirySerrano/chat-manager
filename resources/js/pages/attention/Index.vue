@@ -452,7 +452,6 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                 <Button
                     v-if="can.send && agents.length > 0"
                     size="sm"
-                    class="glow"
                     data-attention-alert-all
                     @click="compose([], 'everyone')"
                 >
@@ -492,7 +491,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
             class="flex flex-col gap-(--section-gap)"
         >
             <div
-                class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+                class="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4"
                 data-attention-summary
             >
                 <KpiCard
@@ -552,39 +551,45 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                         description="Ordenados por acumulación: primero quienes tienen clientes esperando más tiempo."
                     >
                         <div class="grid gap-3 px-4 pb-5 sm:px-5">
+                            <!-- One dense row: search, department, the toggle; applied pills inline. -->
                             <div
-                                class="flex flex-col gap-2 md:flex-row md:items-center"
+                                class="flex flex-wrap items-center gap-2"
                                 data-attention-filters
                             >
-                                <FilterSearch
-                                    v-model="search"
-                                    placeholder="Buscar agente por nombre o correo"
-                                    label="Buscar agente"
-                                />
-                                <AppSelect
+                                <div class="min-w-[12rem] flex-1 basis-60">
+                                    <FilterSearch
+                                        v-model="search"
+                                        placeholder="Buscar agente por nombre o correo"
+                                        label="Buscar agente"
+                                    />
+                                </div>
+                                <div
                                     v-if="departments.length > 0"
-                                    v-model="department"
-                                    :options="departmentOptions"
-                                    aria-label="Filtrar por departamento"
-                                    class="md:w-56"
-                                />
+                                    class="w-full sm:w-60 sm:shrink-0"
+                                >
+                                    <AppSelect
+                                        v-model="department"
+                                        :options="departmentOptions"
+                                        size="sm"
+                                        aria-label="Filtrar por departamento"
+                                    />
+                                </div>
+                                <ActiveFilters
+                                    :pills="pills"
+                                    :clearable="narrowed"
+                                    @clear="clearFilters"
+                                >
+                                    <FilterToggle
+                                        :pressed="onlyWaiting"
+                                        label="Solo con clientes esperando"
+                                        :icon="Hourglass"
+                                        :count="withWaiting"
+                                        tone="warning"
+                                        :sr-label="`${withWaiting} ${withWaiting === 1 ? 'agente' : 'agentes'}`"
+                                        @toggle="onlyWaiting = !onlyWaiting"
+                                    />
+                                </ActiveFilters>
                             </div>
-
-                            <ActiveFilters
-                                :pills="pills"
-                                :clearable="narrowed"
-                                @clear="clearFilters"
-                            >
-                                <FilterToggle
-                                    :pressed="onlyWaiting"
-                                    label="Solo con clientes esperando"
-                                    :icon="Hourglass"
-                                    :count="withWaiting"
-                                    tone="warning"
-                                    :sr-label="`${withWaiting} ${withWaiting === 1 ? 'agente' : 'agentes'}`"
-                                    @toggle="onlyWaiting = !onlyWaiting"
-                                />
-                            </ActiveFilters>
 
                             <div
                                 v-if="can.send && shownAgents.length > 0"
@@ -668,7 +673,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                         cn(
                                             'group/agent relative grid enter-spring gap-3 rounded-xl border bg-card p-3.5 shadow-(--shadow-control) transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-(--ease-out-quint) hover:border-border-strong hover:shadow-lift sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start',
                                             selected.includes(agent.id) &&
-                                                'border-primary/60 bg-[color-mix(in_oklch,var(--primary)_5%,var(--card))] shadow-[0_0_0_1px_var(--primary),var(--shadow-float)]',
+                                                'border-primary/60 bg-[color-mix(in_oklch,var(--primary)_5%,var(--card))] shadow-[0_0_0_1px_var(--primary)]',
                                             agent.blocked &&
                                                 !selected.includes(agent.id) &&
                                                 'border-warning/50 bg-[color-mix(in_oklch,var(--warning)_6%,var(--card))]',
@@ -926,7 +931,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                 >
                     <div
                         v-if="oldestWaiting"
-                        class="relative flex flex-col gap-3 overflow-hidden rounded-xl border border-warning/40 bg-[color-mix(in_oklch,var(--warning)_7%,var(--card))] px-4 py-4 shadow-float sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                        class="relative flex flex-col gap-3 overflow-hidden rounded-xl border border-warning/40 bg-[color-mix(in_oklch,var(--warning)_7%,var(--card))] px-4 py-4 shadow-(--shadow-control) sm:flex-row sm:items-center sm:justify-between sm:px-5"
                         data-attention-oldest
                     >
                         <p class="flex min-w-0 items-start gap-3 text-sm">
@@ -1106,7 +1111,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 <li v-for="alert in alerts" :key="alert.id">
                                     <button
                                         type="button"
-                                        class="grid w-full interactive-surface hover-lift gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left shadow-(--shadow-control) outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                                        class="grid w-full interactive-surface gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left shadow-(--shadow-control) outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
                                         data-attention-history
                                         @click="openDetail(alert)"
                                     >
@@ -1237,7 +1242,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
         </div>
 
         <details
-            class="group/glossary rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card px-4 py-3 text-sm shadow-float transition-colors duration-(--duration-fast) hover:border-border-strong"
+            class="group/glossary rounded-xl border bg-card px-4 py-3 text-sm shadow-(--shadow-control) transition-colors duration-(--duration-fast) hover:border-border-strong"
             data-attention-glossary
         >
             <summary

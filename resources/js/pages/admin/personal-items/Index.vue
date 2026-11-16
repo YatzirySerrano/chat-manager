@@ -336,7 +336,7 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
         </p>
 
         <SurfaceCard class="admin-list overflow-clip">
-            <div class="admin-toolbar grid gap-3 p-3 sm:p-4">
+            <div class="admin-toolbar grid gap-2 px-3 py-2.5">
                 <div
                     class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between"
                 >
@@ -355,7 +355,7 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card lg:w-56"
+                                class="w-full bg-card lg:w-56"
                                 aria-label="Filtrar por usuario"
                             >
                                 <SelectValue />
@@ -378,7 +378,7 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full rounded-full bg-card lg:w-56"
+                                class="w-full bg-card lg:w-56"
                                 aria-label="Filtrar por departamento"
                             >
                                 <SelectValue />

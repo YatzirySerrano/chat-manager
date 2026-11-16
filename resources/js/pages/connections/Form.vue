@@ -1674,7 +1674,6 @@ const flaggedSections = computed(() =>
         >
             <Button
                 type="submit"
-                class="shadow-glow"
                 :disabled="validation.requiresChanges && !validation.hasChanges"
                 :loading="form.processing"
             >

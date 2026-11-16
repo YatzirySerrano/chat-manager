@@ -7,149 +7,69 @@
   reduced-motion rule of app.css turns it off.
 */
 
-/* ───────────── Icon tile: the gradient square that heads a figure ───────────── */
+/* ───────────── Icon tile: a quiet square that heads a figure ───────────── */
 
 .insight-tile {
-    position: relative;
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 0.75rem;
-    color: var(--tile-ink, var(--primary));
-    background: linear-gradient(
-        140deg,
-        color-mix(in oklch, var(--tile, var(--primary)) 24%, var(--card)) 0%,
-        color-mix(in oklch, var(--tile, var(--primary)) 9%, var(--card)) 100%
-    );
-    box-shadow:
-        inset 0 1px 0 color-mix(in oklch, white 55%, transparent),
-        inset 0 0 0 1px
-            color-mix(in oklch, var(--tile, var(--primary)) 22%, transparent),
-        0 6px 14px -8px
-            color-mix(in oklch, var(--tile, var(--primary)) 55%, transparent);
-    transition:
-        transform var(--duration-base, 200ms) var(--ease-spring, ease-out),
-        box-shadow var(--duration-base, 200ms) var(--ease-standard, ease-out);
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    color: var(--tile-ink, var(--muted-foreground));
+    background: var(--surface-sunken, var(--muted));
+    box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.dark .insight-tile {
-    box-shadow:
-        inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
-        inset 0 0 0 1px
-            color-mix(in oklch, var(--tile, var(--primary)) 30%, transparent),
-        0 6px 16px -8px
-            color-mix(in oklch, var(--tile, var(--primary)) 60%, transparent);
-}
-
-/* The solid version, for the one hero figure of a view. */
+/* The one hero figure of a view may use the accent. */
 .insight-tile[data-solid] {
     color: var(--primary-foreground);
-    background: linear-gradient(
-        140deg,
-        color-mix(in oklch, var(--tile, var(--primary)) 78%, white) 0%,
-        var(--tile, var(--primary)) 60%,
-        color-mix(in oklch, var(--tile, var(--primary)) 82%, black) 100%
-    );
+    background: var(--primary);
+    box-shadow: none;
 }
 
 .insight-tile[data-size='sm'] {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 0.6rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.375rem;
 }
 
 .insight-tile[data-tone='warning'] {
-    --tile: var(--warning);
     --tile-ink: var(--warning);
 }
 
 .insight-tile[data-tone='success'] {
-    --tile: var(--success);
     --tile-ink: var(--success);
 }
 
 .insight-tile[data-tone='destructive'] {
-    --tile: var(--destructive);
     --tile-ink: var(--destructive);
-}
-
-.insight-tile[data-tone='muted'] {
-    --tile: var(--muted-foreground);
-    --tile-ink: var(--muted-foreground);
 }
 
 /* ───────────── Metric card ───────────── */
 
-.kpi-card {
-    /* A faint wash of the tile color in the top corner: depth, not decoration.
-       (Painted on the card itself: ::before and ::after belong to spotlight.) */
-    background-image: radial-gradient(
-        120% 90% at 100% 0%,
-        color-mix(in oklch, var(--tile, var(--primary)) 7%, transparent) 0%,
-        transparent 55%
-    );
-}
-
-.kpi-card[data-tone='warning'] {
-    --tile: var(--warning);
-}
-
-.kpi-card[data-tone='success'] {
-    --tile: var(--success);
-}
-
-.kpi-card[data-tone='destructive'] {
-    --tile: var(--destructive);
-}
-
-.kpi-card[data-tone='muted'] {
-    --tile: var(--muted-foreground);
-}
-
-@media (hover: hover) {
-    .kpi-card:hover .insight-tile {
-        transform: translateY(-1px) scale(1.06) rotate(-3deg);
-    }
-}
-
-/* The change against the previous period: a soft pill. */
+/* The change against the previous period: colored figure, no chip. */
 .kpi-delta {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    height: 1.375rem;
-    padding-inline: 0.4rem 0.5rem;
-    border-radius: 9999px;
+    gap: 0.125rem;
     font-size: 0.75rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    animation: kpi-delta-in 520ms var(--ease-spring, ease-out) 240ms backwards;
 }
 
 .kpi-delta[data-tone='good'] {
-    background: var(--success-soft);
-    color: var(--success-soft-foreground);
+    color: var(--success);
 }
 
 .kpi-delta[data-tone='bad'] {
-    background: var(--destructive-soft);
-    color: var(--destructive-soft-foreground);
+    color: var(--destructive);
 }
 
 .kpi-delta[data-tone='neutral'] {
-    background: var(--muted);
     color: var(--muted-foreground);
-}
-
-@keyframes kpi-delta-in {
-    from {
-        opacity: 0;
-        transform: translateY(3px) scale(0.85);
-    }
 }
 
 /* ───────────── Pill tabs of a page (role="tablist") ───────────── */
@@ -179,14 +99,10 @@
     top: 0;
     left: 0;
     border-radius: 9999px;
-    background: linear-gradient(
-        180deg,
-        var(--card),
-        color-mix(in oklch, var(--primary) 7%, var(--card))
-    );
+    background: var(--card);
     box-shadow:
-        0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent),
-        var(--shadow-float, var(--shadow-control));
+        0 0 0 1px var(--border),
+        var(--shadow-control, 0 1px 2px rgb(0 0 0 / 0.06));
     pointer-events: none;
 }
 
@@ -282,13 +198,7 @@
     left: 0;
     width: 40%;
     border-radius: inherit;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        var(--primary) 40%,
-        color-mix(in oklch, var(--primary) 60%, white) 70%,
-        transparent
-    );
+    background: var(--primary);
     animation: insight-progress 1.4s var(--ease-standard, ease-in-out) infinite;
 }
 

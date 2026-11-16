@@ -10,13 +10,14 @@
   then the frosted header and the floating composer card above both.
 
   Motion answers something that happened (a message arrived, a reaction was
-  added, a file is dragged, the reader scrolled away). Nothing loops on its
-  own except the «escribiendo…» dots, which exist only while someone types.
-  Only transform, opacity and shadows animate, so long threads stay cheap.
+  added, a file is dragged, the reader scrolled away), short and without
+  overshoot. Nothing loops on its own except the «escribiendo…» dots, which
+  exist only while someone types. Only transform and opacity animate, so
+  long threads stay cheap.
 */
 
 /* ------------------------------------------------------------------ */
-/* Own messages: a deep palette gradient with white ink.               */
+/* Own messages: a solid palette fill with white ink.                  */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -27,10 +28,7 @@
   bring their own classes.
 */
 .chat-bubble-out {
-    --chat-out-from: oklch(
-        0.535 calc(var(--brand-chroma, 0.13) * 1.05)
-            calc(var(--brand-hue, 160) - 16)
-    );
+    --chat-out-from: oklch(0.5 var(--brand-chroma, 0.13) var(--brand-hue, 160));
     --chat-out-to: oklch(
         0.455 var(--brand-chroma, 0.13) calc(var(--brand-hue, 160) + 18)
     );
@@ -74,27 +72,18 @@
     --destructive-soft-foreground: var(--chat-out-ink);
 
     color: var(--chat-out-ink);
-    background-color: var(--chat-out-to);
-    background-image: linear-gradient(
-        155deg,
-        var(--chat-out-from) 0%,
-        var(--chat-out-to) 100%
-    );
+    background-color: var(--chat-out-from);
     box-shadow:
         var(--tw-inset-ring-shadow, 0 0 #0000),
         var(--tw-ring-offset-shadow, 0 0 #0000),
         var(--tw-ring-shadow, 0 0 #0000),
-        inset 0 1px 0 oklch(1 0 0 / 0.14),
-        0 1px 1.5px oklch(0.25 0.06 var(--brand-hue, 160) / 0.2),
-        0 8px 18px -12px
-            oklch(0.42 var(--brand-chroma, 0.13) var(--brand-hue, 160) / 0.7);
+        0 1px 1px oklch(0.25 0.06 var(--brand-hue, 160) / 0.18);
 }
 
 .dark .chat-bubble-out,
 .chat-bubble-out:is(.dark *) {
     --chat-out-from: oklch(
-        0.5 calc(var(--brand-chroma, 0.13) * 0.95)
-            calc(var(--brand-hue, 160) - 16)
+        0.45 calc(var(--brand-chroma, 0.13) * 0.9) var(--brand-hue, 160)
     );
     --chat-out-to: oklch(
         0.405 calc(var(--brand-chroma, 0.13) * 0.9)
@@ -107,22 +96,18 @@
         var(--tw-inset-ring-shadow, 0 0 #0000),
         var(--tw-ring-offset-shadow, 0 0 #0000),
         var(--tw-ring-shadow, 0 0 #0000),
-        inset 0 1px 0 oklch(1 0 0 / 0.1),
-        0 1px 2px oklch(0 0 0 / 0.35),
-        0 10px 22px -14px
-            oklch(0.5 var(--brand-chroma, 0.13) var(--brand-hue, 160) / 0.55);
+        0 1px 1px oklch(0 0 0 / 0.3);
 }
 
-/* Received messages: paper resting on the canvas (hairline + two shadows). */
+/* Received messages: paper on the canvas (a hairline and a 1 px shadow). */
 .chat-bubble-in {
     box-shadow:
         var(--tw-inset-ring-shadow, 0 0 #0000),
         var(--tw-ring-offset-shadow, 0 0 #0000),
         var(--tw-ring-shadow, 0 0 #0000),
         inset 0 0 0 1px
-            color-mix(in oklch, var(--border-strong) 50%, transparent),
-        0 1px 1.5px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
-        0 6px 16px -12px color-mix(in oklch, var(--shadow-ink) 28%, transparent);
+            color-mix(in oklch, var(--border-strong) 45%, transparent),
+        0 1px 1px color-mix(in oklch, var(--shadow-ink) 6%, transparent);
 }
 
 .dark .chat-bubble-in,
@@ -133,38 +118,7 @@
         var(--tw-ring-shadow, 0 0 #0000),
         inset 0 0 0 1px
             color-mix(in oklch, var(--border-strong) 55%, transparent),
-        inset 0 1px 0 oklch(1 0 0 / 0.04),
-        0 1px 2px oklch(0 0 0 / 0.3);
-}
-
-/*
-  Hover lift (pointer that hovers only): the bubble rises a pixel and its
-  shadow deepens, so the row being pointed at reads as the one the quick
-  actions belong to.
-*/
-.chat-bubble {
-    transition:
-        translate var(--duration-base, 200ms)
-            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)),
-        box-shadow var(--duration-base, 200ms) var(--ease-standard);
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .chat-row:hover .chat-bubble {
-        translate: 0 -1px;
-    }
-
-    .chat-row:hover .chat-bubble-in {
-        box-shadow:
-            var(--tw-inset-ring-shadow, 0 0 #0000),
-            var(--tw-ring-offset-shadow, 0 0 #0000),
-            var(--tw-ring-shadow, 0 0 #0000),
-            inset 0 0 0 1px
-                color-mix(in oklch, var(--border-strong) 70%, transparent),
-            0 2px 4px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
-            0 12px 24px -14px
-                color-mix(in oklch, var(--shadow-ink) 34%, transparent);
-    }
+        0 1px 1px oklch(0 0 0 / 0.25);
 }
 
 /* Read ticks: a cool blue that reads on the canvas and on the own gradient. */
@@ -186,14 +140,13 @@
 /* ------------------------------------------------------------------ */
 
 /*
-  A message that arrives while the chat is open grows out of its tail
-  corner with a soft spring: received ones from the bottom left, own ones
-  from the bottom right.
+  A message that arrives while the chat is open rises a little out of its
+  tail corner: received ones from the bottom left, own ones from the bottom
+  right.
 */
 .chat-arrive-in,
 .chat-arrive-out {
-    animation: chat-arrive 460ms
-        var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)) backwards;
+    animation: chat-arrive 260ms var(--ease-out-quint, ease-out) backwards;
 }
 
 .chat-arrive-in {
@@ -207,26 +160,22 @@
 @keyframes chat-arrive {
     from {
         opacity: 0;
-        transform: translateY(14px) scale(0.86);
-    }
-
-    45% {
-        opacity: 1;
+        transform: translateY(6px) scale(0.97);
     }
 }
 
 /* A reaction that appears pops in; chips grow a little under the pointer. */
 .chat-reaction {
-    animation: chat-pop 380ms var(--ease-spring) backwards;
+    animation: chat-pop 220ms var(--ease-out-quint, ease-out) backwards;
     transition:
-        scale 220ms var(--ease-spring),
+        scale 160ms var(--ease-standard),
         background-color var(--duration-fast) var(--ease-standard),
         border-color var(--duration-fast) var(--ease-standard);
 }
 
 @media (hover: hover) and (pointer: fine) {
     .chat-reaction:is(button:not(:disabled), li):hover {
-        scale: 1.08;
+        scale: 1.04;
     }
 }
 
@@ -238,7 +187,7 @@
 @keyframes chat-pop {
     from {
         opacity: 0;
-        transform: scale(0.4);
+        transform: scale(0.7);
     }
 }
 
@@ -313,7 +262,7 @@
 .chat-float-enter-active {
     transition:
         opacity var(--duration-base) var(--ease-out-quint),
-        transform var(--duration-panel) var(--ease-spring);
+        transform var(--duration-base) var(--ease-out-quint);
 }
 
 .chat-float-leave-active {
@@ -325,15 +274,14 @@
 .chat-float-enter-from,
 .chat-float-leave-to {
     opacity: 0;
-    transform: translateY(10px) scale(0.85);
+    transform: translateY(6px);
 }
 
 /* Something attached to the composer (a quote, a file) slides in above it. */
 .chat-attach-enter-active {
     transition:
         opacity var(--duration-base) var(--ease-out-quint),
-        transform var(--duration-panel)
-            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1));
+        transform var(--duration-base) var(--ease-out-quint);
 }
 
 .chat-attach-leave-active {
@@ -355,7 +303,7 @@
 }
 
 .chat-veil-enter-active [data-veil-card] {
-    transition: transform var(--duration-panel) var(--ease-spring);
+    transition: transform var(--duration-base) var(--ease-out-quint);
 }
 
 .chat-veil-enter-from,
@@ -364,7 +312,7 @@
 }
 
 .chat-veil-enter-from [data-veil-card] {
-    transform: scale(0.94);
+    transform: scale(0.98);
 }
 
 /* ------------------------------------------------------------------ */
@@ -372,22 +320,17 @@
 /* ------------------------------------------------------------------ */
 
 /*
-  The floating composer card: it sits on the canvas with a layered shadow,
-  and the focus brings a palette halo. In «Nota» mode the whole card turns
-  to the note colour so nobody types a note thinking it goes to the customer.
+  The composer card: a plain card on the canvas with a light shadow; the
+  focus only sharpens its border. In «Nota» mode the whole card turns to
+  the note colour so nobody types a note thinking it goes to the customer.
 */
 .chat-composer {
     position: relative;
-    border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-    background-color: color-mix(in oklch, var(--card) 94%, transparent);
-    backdrop-filter: blur(14px) saturate(1.4);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    box-shadow: var(
-        --shadow-float,
-        0 1px 2px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
-        0 12px 32px -16px
-            color-mix(in oklch, var(--shadow-ink) 30%, transparent)
-    );
+    border: 1px solid var(--border);
+    background-color: var(--card);
+    box-shadow:
+        0 1px 2px color-mix(in oklch, var(--shadow-ink) 6%, transparent),
+        0 4px 12px -8px color-mix(in oklch, var(--shadow-ink) 18%, transparent);
     transition:
         border-color var(--duration-base) var(--ease-standard),
         box-shadow var(--duration-panel) var(--ease-standard),
@@ -395,14 +338,7 @@
 }
 
 .chat-composer:focus-within {
-    border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
-    box-shadow:
-        0 0 0 4px color-mix(in oklch, var(--primary) 14%, transparent),
-        var(
-            --shadow-float,
-            0 12px 32px -16px
-                color-mix(in oklch, var(--shadow-ink) 30%, transparent)
-        );
+    border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
 }
 
 .chat-composer[data-mode='note'] {
@@ -412,13 +348,6 @@
 
 .chat-composer[data-mode='note']:focus-within {
     border-color: var(--warning);
-    box-shadow:
-        0 0 0 4px color-mix(in oklch, var(--warning) 20%, transparent),
-        var(
-            --shadow-float,
-            0 12px 32px -16px
-                color-mix(in oklch, var(--shadow-ink) 30%, transparent)
-        );
 }
 
 /* The text grows smoothly where its height is set by script. */
@@ -454,16 +383,14 @@
 */
 .chat-mode-thumb {
     transition:
-        translate 380ms
-            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)),
+        translate 240ms var(--ease-out-quint, ease-out),
         background-color var(--duration-base) var(--ease-standard),
         box-shadow var(--duration-base) var(--ease-standard);
 }
 
 /*
   Send button: flat and muted while there is nothing to send; once there is,
-  it fills with the palette gradient, its arrow springs upright and a halo
-  follows the pointer. Pressing it gives a small push.
+  it fills with the palette colour. Pressing it gives a small push.
 */
 .chat-send {
     transition:
@@ -471,37 +398,23 @@
         color var(--duration-base) var(--ease-standard),
         box-shadow var(--duration-base) var(--ease-standard),
         filter var(--duration-fast) var(--ease-standard),
-        scale 320ms var(--ease-spring);
+        scale 120ms var(--ease-standard);
 }
 
 .chat-send[data-ready='true']:hover {
-    filter: brightness(1.06);
-    box-shadow:
-        inset 0 1px 0 rgb(255 255 255 / 0.25),
-        var(
-            --shadow-glow,
-            0 6px 18px -6px color-mix(in oklch, var(--primary) 60%, transparent)
-        );
+    filter: brightness(1.08);
 }
 
 .chat-send[data-ready='true']:active {
-    scale: 0.9;
-    transition-duration: 90ms;
+    scale: 0.95;
 }
 
 .chat-send [data-send-icon] {
-    transition:
-        transform 420ms var(--ease-spring),
-        opacity var(--duration-fast) var(--ease-standard);
+    transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .chat-send[data-ready='false'] [data-send-icon] {
-    transform: rotate(-24deg) scale(0.88);
     opacity: 0.7;
-}
-
-.chat-send[data-ready='true']:hover [data-send-icon] {
-    transform: translateX(1.5px) rotate(-8deg);
 }
 
 /* ------------------------------------------------------------------ */
@@ -510,23 +423,18 @@
 
 /*
   Quick actions of a bubble (pointer with hover only): hidden until the row
-  is hovered or focused, or one of their menus is open; they spring out of
-  the bubble's side.
+  is hovered or focused, or one of their menus is open; then they fade in.
 */
 @media (hover: hover) and (pointer: fine) {
     .chat-row-actions {
         opacity: 0;
-        transform: scale(0.85);
-        transition:
-            opacity var(--duration-fast) var(--ease-standard),
-            transform 260ms var(--ease-spring);
+        transition: opacity var(--duration-fast) var(--ease-standard);
     }
 
     .chat-row:hover .chat-row-actions,
     .chat-row:focus-within .chat-row-actions,
     .chat-row-actions:has([data-state='open']) {
         opacity: 1;
-        transform: none;
     }
 }
 
@@ -541,9 +449,7 @@
 .chat-note {
     position: relative;
     overflow: hidden;
-    box-shadow:
-        0 1px 1.5px color-mix(in oklch, var(--shadow-ink) 7%, transparent),
-        0 8px 20px -14px color-mix(in oklch, var(--warning) 50%, transparent);
+    box-shadow: 0 1px 1px color-mix(in oklch, var(--shadow-ink) 6%, transparent);
 }
 
 .chat-note::before {
@@ -575,9 +481,5 @@
     .chat-mode-thumb,
     .chat-composer textarea {
         transition: none;
-    }
-
-    .chat-row:hover .chat-bubble {
-        translate: none;
     }
 }

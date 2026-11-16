@@ -212,7 +212,7 @@ function leadersLabel(department: DepartmentSummary): string {
                 />
                 <Button
                     v-if="can.create"
-                    class="accent-gradient glow max-sm:w-full"
+                    class="max-sm:w-full"
                     data-tour="departments.new"
                     @click="openCreate"
                 >
@@ -267,7 +267,7 @@ function leadersLabel(department: DepartmentSummary): string {
                     <RecordStateFilter
                         v-model="record"
                         :options="recordStates"
-                        class="h-10 flex-1 rounded-xl sm:w-36 sm:flex-none"
+                        class="flex-1 sm:w-36 sm:flex-none"
                         @change="applyRecordState"
                     />
                     <ViewModeToggle v-model="viewMode" />
@@ -510,11 +510,7 @@ function leadersLabel(department: DepartmentSummary): string {
                         : 'Un administrador debe agregarte a un departamento.'
                 "
             >
-                <Button
-                    v-if="can.create"
-                    class="accent-gradient glow"
-                    @click="openCreate"
-                >
+                <Button v-if="can.create" @click="openCreate">
                     <Plus />
                     Nuevo departamento
                 </Button>

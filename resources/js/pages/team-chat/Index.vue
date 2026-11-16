@@ -18,7 +18,9 @@ import FilterTabs from '@/components/filters/FilterTabs.vue';
 import FilterToggle from '@/components/filters/FilterToggle.vue';
 import HighlightMatch from '@/components/filters/HighlightMatch.vue';
 import type { FilterTabOption } from '@/components/filters/types';
+import ListSkeleton from '@/components/filters/ListSkeleton.vue';
 import { useRowMotion } from '@/components/filters/useRowMotion';
+import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
@@ -614,6 +616,21 @@ const emptyListCopy = computed(() => {
 /* The chat list slides in once, when the screen opens. */
 const firstPaint = ref(true);
 
+/* The header casts a shadow while chats pass under it. */
+const listScrolled = ref(false);
+
+function onListScroll(event: Event): void {
+    listScrolled.value = (event.target as HTMLElement).scrollTop > 2;
+}
+
+/* The open chat sits on one glider that springs between rows. */
+const threadRail = ref<HTMLElement | null>(null);
+const glider = useSelectionGlider(threadRail, () => [
+    props.activeThread?.id,
+    openingThreadId.value,
+    props.threads.threads.map((thread) => thread.id),
+]);
+
 onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
 </script>
 
@@ -640,11 +657,14 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             "
             aria-label="Chats internos"
         >
-            <div class="grid gap-2.5 px-3 pt-3 pb-2.5">
-                <div class="flex items-center justify-between gap-2 pl-1">
+            <div
+                class="list-header grid gap-2.5 glass-bar px-3 pt-3 pb-3"
+                :data-scrolled="listScrolled ? '' : undefined"
+            >
+                <div class="flex items-center justify-between gap-2 pl-0.5">
                     <div class="min-w-0">
                         <h1
-                            class="truncate font-display text-xl leading-tight font-semibold"
+                            class="truncate font-display text-xl leading-tight font-semibold tracking-tight"
                         >
                             Chat interno
                         </h1>
@@ -747,27 +767,20 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             </div>
 
             <div
-                class="relative min-h-0 flex-1 overflow-y-auto border-t p-2"
+                class="relative min-h-0 flex-1 overflow-y-auto p-1.5"
                 :aria-busy="loadingList"
+                @scroll.passive="onListScroll"
             >
                 <div
                     v-if="loadingList && threads.threads.length > 0"
-                    class="sticky top-0 z-10 -mx-2 -mt-2 mb-1.5 pane-progress"
+                    class="sticky top-0 z-10 -mx-1.5 -mt-1.5 mb-1 pane-progress"
                     aria-hidden="true"
                 />
-                <template v-if="loadingList && threads.threads.length === 0">
-                    <div
-                        v-for="index in 5"
-                        :key="index"
-                        class="flex items-center gap-3 px-3 py-2.5"
-                    >
-                        <Skeleton class="size-10 rounded-full" />
-                        <div class="grid flex-1 gap-1.5">
-                            <Skeleton class="h-3.5 w-2/3" />
-                            <Skeleton class="h-3 w-full" />
-                        </div>
-                    </div>
-                </template>
+                <ListSkeleton
+                    v-if="loadingList && threads.threads.length === 0"
+                    :rows="6"
+                    class="-m-1.5"
+                />
                 <FilteredEmpty
                     v-else-if="threads.threads.length === 0"
                     :narrowed="narrowed"
@@ -788,15 +801,24 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 </FilteredEmpty>
                 <nav
                     v-else
+                    ref="threadRail"
+                    class="list-rail"
                     aria-label="Lista de chats"
                     data-tour="team-chat.threads"
                     @keydown="onThreadsKeydown"
                 >
+                    <span
+                        class="list-glider"
+                        :data-placed="glider.placed.value ? '' : undefined"
+                        :style="glider.style.value"
+                        aria-hidden="true"
+                        data-list-glider
+                    />
                     <TransitionGroup
                         ref="threadList"
                         tag="div"
                         :name="threadMotion"
-                        class="relative grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
+                        class="relative z-[1] grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
                         :class="[
                             firstPaint && 'reveal-stagger',
                             loadingList && 'opacity-60',
@@ -842,24 +864,33 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
 
                 <section
                     v-if="search.trim().length >= 2"
-                    class="mt-3 border-t pt-3"
+                    class="mt-3 border-t border-border/70 pt-3"
                     aria-label="Resultados en mensajes"
                 >
                     <h2
-                        class="px-3 pb-1 text-xs font-semibold text-muted-foreground"
+                        class="px-3.5 pb-1.5 text-xs font-semibold text-muted-foreground"
                     >
                         En mensajes
                     </h2>
                     <div
                         v-if="searchingMessages"
-                        class="grid gap-2 px-3 py-2"
+                        class="grid gap-2 px-3.5 py-2"
                         role="status"
                     >
                         <span class="sr-only">Buscando…</span>
-                        <Skeleton class="h-3.5 w-1/2" />
-                        <Skeleton class="h-3 w-full" />
-                        <Skeleton class="h-3.5 w-2/5" />
-                        <Skeleton class="h-3 w-4/5" />
+                        <span class="list-shimmer h-3.5 w-1/2 rounded-full" />
+                        <span
+                            class="list-shimmer h-3 w-full rounded-full"
+                            style="--i: 1"
+                        />
+                        <span
+                            class="list-shimmer h-3.5 w-2/5 rounded-full"
+                            style="--i: 2"
+                        />
+                        <span
+                            class="list-shimmer h-3 w-4/5 rounded-full"
+                            style="--i: 3"
+                        />
                     </div>
                     <p
                         v-else-if="messageResults.length === 0"
@@ -874,7 +905,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         >
                             <button
                                 type="button"
-                                class="grid w-full gap-0.5 rounded-xl px-3 py-2 text-left transition-colors duration-(--duration-fast) hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                                class="list-row grid w-full gap-0.5 px-3.5 py-2 text-left outline-none"
                                 @click="openResult(result)"
                             >
                                 <span class="flex items-center gap-2 text-xs">

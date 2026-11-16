@@ -38,7 +38,7 @@ watch(() => page.url, update, { flush: 'post' });
       left, controls on the right).
     -->
     <div class="page-shell">
-        <header class="space-y-1.5">
+        <header class="enter-spring space-y-1.5">
             <h1
                 class="font-display text-[1.75rem] leading-[1.12] font-semibold tracking-[-0.018em] sm:text-[2.125rem]"
             >
@@ -73,10 +73,10 @@ watch(() => page.url, update, { flush: 'post' });
             </Link>
             <span
                 aria-hidden="true"
-                class="pointer-events-none absolute top-0 left-0 border-b-2 border-primary"
+                class="pointer-events-none absolute top-0 left-0 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:accent-gradient after:shadow-[0_0_10px_-1px_color-mix(in_oklch,var(--primary)_60%,transparent)]"
                 :class="
                     animated &&
-                    'transition-[transform,width,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'
+                    'transition-[transform,width,opacity] duration-[380ms] ease-(--ease-spring-soft)'
                 "
                 :style="style"
             />

@@ -23,7 +23,12 @@ defineProps<{ platform: string }>();
         aria-hidden="true"
         class="auth-stage relative hidden min-w-0 flex-col justify-between overflow-hidden bg-sidebar p-12 text-sidebar-foreground lg:flex xl:p-16"
     >
-        <!-- Ruled lines of a control desk: a quiet structure, no decoration. -->
+        <!--
+          Ruled lines of a control desk and a slow glow of the palette
+          drifting behind the conversation (the one ambient motion of the
+          sign-in screen; still under reduced motion).
+        -->
+        <div class="auth-glow pointer-events-none absolute inset-0" />
         <div class="auth-rules pointer-events-none absolute inset-0" />
 
         <p
@@ -39,7 +44,7 @@ defineProps<{ platform: string }>();
                     >MR</span
                 >
                 <div
-                    class="max-w-[30rem] rounded-2xl rounded-bl-md bg-sidebar-accent px-4 py-3 text-foreground"
+                    class="max-w-[30rem] rounded-2xl rounded-bl-md border border-white/8 bg-[color-mix(in_oklch,var(--sidebar-accent)_75%,transparent)] px-4 py-3 text-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_12px_32px_-12px_rgb(0_0_0/0.6)] backdrop-blur-md"
                 >
                     <p class="text-xs font-medium text-muted-foreground">
                         María Robles
@@ -77,7 +82,7 @@ defineProps<{ platform: string }>();
                 style="--step: 3.4"
             >
                 <div
-                    class="max-w-[30rem] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground"
+                    class="max-w-[30rem] rounded-2xl rounded-br-md accent-gradient px-4 py-3 shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_14px_36px_-12px_color-mix(in_oklch,var(--primary)_70%,transparent)]"
                 >
                     <p class="text-lg">
                         Hola, María. Claro que sí: ya tengo tu solicitud a la
@@ -117,8 +122,42 @@ defineProps<{ platform: string }>();
     mask-image: linear-gradient(to right, transparent, #000 35%);
 }
 
+.auth-glow {
+    background:
+        radial-gradient(
+            38rem 30rem at var(--gx, 70%) var(--gy, 75%),
+            color-mix(in oklch, var(--sidebar-primary) 26%, transparent),
+            transparent 70%
+        ),
+        radial-gradient(
+            30rem 24rem at 15% 10%,
+            color-mix(in oklch, var(--sidebar-primary) 12%, transparent),
+            transparent 70%
+        );
+    animation: auth-drift 18s ease-in-out infinite alternate;
+}
+
+@property --gx {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 70%;
+}
+
+@property --gy {
+    syntax: '<percentage>';
+    inherits: false;
+    initial-value: 75%;
+}
+
+@keyframes auth-drift {
+    to {
+        --gx: 45%;
+        --gy: 60%;
+    }
+}
+
 .auth-step {
-    animation: auth-in 520ms var(--ease-out-quint) backwards;
+    animation: auth-in 620ms var(--ease-spring-soft) backwards;
     animation-delay: calc(500ms + var(--step) * 650ms);
 }
 

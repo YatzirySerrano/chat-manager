@@ -43,7 +43,7 @@ const {
                     </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
-                    class="w-(--reka-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+                    class="w-(--reka-dropdown-menu-trigger-width) min-w-56"
                     :side="
                         isMobile
                             ? 'bottom'

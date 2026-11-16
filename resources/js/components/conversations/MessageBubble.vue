@@ -26,6 +26,7 @@ import { toast } from 'vue-sonner';
 import {
     BUBBLE_HOVER,
     BUBBLE_META,
+    BUBBLE_TOMBSTONE,
     QUOTE_BASE,
     REACTIONS_ROW,
     ROW_ACTIONS,
@@ -555,7 +556,9 @@ async function copyText(): Promise<void> {
                                             'border border-border-strong/60',
                                             CUSTOM_BUBBLE_CLASSES.received,
                                         ]
-                                  : bubbleTone(outbound ? 'out' : 'in'),
+                                  : revoked
+                                    ? BUBBLE_TOMBSTONE
+                                    : bubbleTone(outbound ? 'out' : 'in'),
                           ],
                     failed &&
                         (unknownDelivery
@@ -1085,7 +1088,7 @@ async function copyText(): Promise<void> {
                         BUBBLE_META,
                         secondaryText,
                         bare
-                            ? 'mt-1 w-fit rounded-full border bg-background/85 px-2 py-0.5'
+                            ? 'mt-1 w-fit rounded-full border border-border/70 glass px-2 py-0.5'
                             : 'mt-0.5 px-1',
                         bare && (outbound ? 'ml-auto' : ''),
                     ]"

@@ -34,7 +34,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       v-bind="{ ...$attrs, ...forwarded }"
       :class="
         cn(
-          'bg-card text-card-foreground dialog-motion fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto overscroll-contain translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border p-6 shadow-elevated sm:max-w-lg',
+          'bg-card text-card-foreground dialog-motion fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto overscroll-contain translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-[color-mix(in_oklch,var(--border)_80%,transparent)] p-6 shadow-[inset_0_1px_0_var(--edge-highlight),var(--shadow-elevated)] sm:max-w-lg',
           props.class,
         )"
     >

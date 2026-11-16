@@ -42,11 +42,11 @@ const emit = defineEmits<{ toggle: [] }>();
         :class="
             cn(
                 'group/toggle inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border pr-1.5 pl-2.5 text-xs font-medium whitespace-nowrap outline-none select-none',
-                'transition-[background-color,border-color,color,transform] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.96] pointer-coarse:h-9',
+                'transition-[background-color,border-color,color,box-shadow,transform,translate] duration-(--duration-base) ease-(--ease-spring-soft) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.94] pointer-coarse:h-9',
                 count === null && 'pr-2.5',
                 pressed
-                    ? 'border-primary bg-primary-soft text-primary-soft-foreground'
-                    : 'border-border bg-card text-muted-foreground hover:border-border-strong hover:bg-accent hover:text-foreground',
+                    ? 'border-transparent accent-gradient glow'
+                    : 'border-border bg-card text-muted-foreground shadow-(--shadow-control) hover:-translate-y-px hover:border-border-strong hover:text-foreground',
             )
         "
         data-filter-toggle
@@ -67,7 +67,7 @@ const emit = defineEmits<{ toggle: [] }>();
         <CountBadge
             v-if="count !== null"
             :value="count"
-            :tone="pressed ? 'primary' : count > 0 ? tone : 'muted'"
+            :tone="pressed ? 'inverse' : count > 0 ? tone : 'muted'"
             :halo="tone === 'primary' || tone === 'warning'"
         />
         <span v-if="srLabel" class="sr-only">: {{ srLabel }}</span>

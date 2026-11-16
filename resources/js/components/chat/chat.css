@@ -1,22 +1,199 @@
 /*
-  Shared motion and surfaces of an open chat (customer conversations and the
+  Shared look and motion of an open chat (customer conversations and the
   internal chat). Imported by the shared chat building blocks
-  (components/chat/*), so both modules move and look the same. Colors only
-  read the global tokens of resources/css/app.css.
+  (components/chat/*), so both modules look and move the same. Colours only
+  read the global tokens of resources/css/app.css (palette hue and chroma,
+  theme surfaces), so every palette, both themes and nested [data-palette]
+  previews resolve their own values.
 
-  Everything here answers something that happened (a message arrived, a
-  file is dragged, the reader scrolled away); nothing loops on its own except
-  the «escribiendo…» dots, which only exist while someone types.
+  Layers, back to front: the canvas (history), the bubbles resting on it,
+  then the frosted header and the floating composer card above both.
+
+  Motion answers something that happened (a message arrived, a reaction was
+  added, a file is dragged, the reader scrolled away). Nothing loops on its
+  own except the «escribiendo…» dots, which exist only while someone types.
+  Only transform, opacity and shadows animate, so long threads stay cheap.
 */
+
+/* ------------------------------------------------------------------ */
+/* Own messages: a deep palette gradient with white ink.               */
+/* ------------------------------------------------------------------ */
+
+/*
+  The bubble re-declares the theme tokens for everything inside it (quotes,
+  links, ticks, file cards, audio players, buttons), the same way [data-ink]
+  does for the ink surfaces: the content keeps its own classes and reads
+  light-on-colour values. Not used with the viewer's personal colours, which
+  bring their own classes.
+*/
+.chat-bubble-out {
+    --chat-out-from: oklch(
+        0.535 calc(var(--brand-chroma, 0.13) * 1.05)
+            calc(var(--brand-hue, 160) - 16)
+    );
+    --chat-out-to: oklch(
+        0.455 var(--brand-chroma, 0.13) calc(var(--brand-hue, 160) + 18)
+    );
+    --chat-out-ink: oklch(0.99 0.004 var(--brand-hue, 160));
+
+    --foreground: var(--chat-out-ink);
+    --card-foreground: var(--chat-out-ink);
+    --accent-foreground: var(--chat-out-ink);
+    --secondary-foreground: var(--chat-out-ink);
+    --muted-foreground: color-mix(
+        in oklch,
+        var(--chat-out-ink) 80%,
+        transparent
+    );
+    --primary: var(--chat-out-ink);
+    --primary-foreground: var(--chat-out-to);
+    --primary-soft: color-mix(in oklch, var(--chat-out-ink) 18%, transparent);
+    --primary-soft-foreground: var(--chat-out-ink);
+    --background: oklch(0.2 0.05 var(--brand-hue, 160) / 0.3);
+    --card: oklch(0.2 0.05 var(--brand-hue, 160) / 0.24);
+    --muted: color-mix(in oklch, var(--chat-out-ink) 14%, transparent);
+    --accent: color-mix(in oklch, var(--chat-out-ink) 16%, transparent);
+    --secondary: color-mix(in oklch, var(--chat-out-ink) 16%, transparent);
+    --input: color-mix(in oklch, var(--chat-out-ink) 32%, transparent);
+    --border: color-mix(in oklch, var(--chat-out-ink) 28%, transparent);
+    --border-strong: color-mix(in oklch, var(--chat-out-ink) 42%, transparent);
+    --ring: color-mix(in oklch, var(--chat-out-ink) 75%, transparent);
+    --focus-ring: var(--chat-out-ink);
+    --success: oklch(0.92 0.1 158);
+    --warning: oklch(0.93 0.12 92);
+    --destructive: oklch(0.9 0.08 22);
+    --success-soft: color-mix(in oklch, var(--chat-out-ink) 16%, transparent);
+    --success-soft-foreground: var(--chat-out-ink);
+    --warning-soft: color-mix(in oklch, var(--chat-out-ink) 16%, transparent);
+    --warning-soft-foreground: var(--chat-out-ink);
+    --destructive-soft: color-mix(
+        in oklch,
+        var(--chat-out-ink) 16%,
+        transparent
+    );
+    --destructive-soft-foreground: var(--chat-out-ink);
+
+    color: var(--chat-out-ink);
+    background-color: var(--chat-out-to);
+    background-image: linear-gradient(
+        155deg,
+        var(--chat-out-from) 0%,
+        var(--chat-out-to) 100%
+    );
+    box-shadow:
+        var(--tw-inset-ring-shadow, 0 0 #0000),
+        var(--tw-ring-offset-shadow, 0 0 #0000),
+        var(--tw-ring-shadow, 0 0 #0000),
+        inset 0 1px 0 oklch(1 0 0 / 0.14),
+        0 1px 1.5px oklch(0.25 0.06 var(--brand-hue, 160) / 0.2),
+        0 8px 18px -12px
+            oklch(0.42 var(--brand-chroma, 0.13) var(--brand-hue, 160) / 0.7);
+}
+
+.dark .chat-bubble-out,
+.chat-bubble-out:is(.dark *) {
+    --chat-out-from: oklch(
+        0.5 calc(var(--brand-chroma, 0.13) * 0.95)
+            calc(var(--brand-hue, 160) - 16)
+    );
+    --chat-out-to: oklch(
+        0.405 calc(var(--brand-chroma, 0.13) * 0.9)
+            calc(var(--brand-hue, 160) + 18)
+    );
+    --background: oklch(0.12 0.03 var(--brand-hue, 160) / 0.32);
+    --card: oklch(0.12 0.03 var(--brand-hue, 160) / 0.26);
+
+    box-shadow:
+        var(--tw-inset-ring-shadow, 0 0 #0000),
+        var(--tw-ring-offset-shadow, 0 0 #0000),
+        var(--tw-ring-shadow, 0 0 #0000),
+        inset 0 1px 0 oklch(1 0 0 / 0.1),
+        0 1px 2px oklch(0 0 0 / 0.35),
+        0 10px 22px -14px
+            oklch(0.5 var(--brand-chroma, 0.13) var(--brand-hue, 160) / 0.55);
+}
+
+/* Received messages: paper resting on the canvas (hairline + two shadows). */
+.chat-bubble-in {
+    box-shadow:
+        var(--tw-inset-ring-shadow, 0 0 #0000),
+        var(--tw-ring-offset-shadow, 0 0 #0000),
+        var(--tw-ring-shadow, 0 0 #0000),
+        inset 0 0 0 1px
+            color-mix(in oklch, var(--border-strong) 50%, transparent),
+        0 1px 1.5px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
+        0 6px 16px -12px color-mix(in oklch, var(--shadow-ink) 28%, transparent);
+}
+
+.dark .chat-bubble-in,
+.chat-bubble-in:is(.dark *) {
+    box-shadow:
+        var(--tw-inset-ring-shadow, 0 0 #0000),
+        var(--tw-ring-offset-shadow, 0 0 #0000),
+        var(--tw-ring-shadow, 0 0 #0000),
+        inset 0 0 0 1px
+            color-mix(in oklch, var(--border-strong) 55%, transparent),
+        inset 0 1px 0 oklch(1 0 0 / 0.04),
+        0 1px 2px oklch(0 0 0 / 0.3);
+}
+
+/*
+  Hover lift (pointer that hovers only): the bubble rises a pixel and its
+  shadow deepens, so the row being pointed at reads as the one the quick
+  actions belong to.
+*/
+.chat-bubble {
+    transition:
+        translate var(--duration-base, 200ms)
+            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)),
+        box-shadow var(--duration-base, 200ms) var(--ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .chat-row:hover .chat-bubble {
+        translate: 0 -1px;
+    }
+
+    .chat-row:hover .chat-bubble-in {
+        box-shadow:
+            var(--tw-inset-ring-shadow, 0 0 #0000),
+            var(--tw-ring-offset-shadow, 0 0 #0000),
+            var(--tw-ring-shadow, 0 0 #0000),
+            inset 0 0 0 1px
+                color-mix(in oklch, var(--border-strong) 70%, transparent),
+            0 2px 4px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
+            0 12px 24px -14px
+                color-mix(in oklch, var(--shadow-ink) 34%, transparent);
+    }
+}
+
+/* Read ticks: a cool blue that reads on the canvas and on the own gradient. */
+.chat-tick-read {
+    color: oklch(0.58 0.16 245);
+}
+
+.dark .chat-tick-read,
+.chat-tick-read:is(.dark *) {
+    color: oklch(0.76 0.13 235);
+}
+
+.chat-bubble-out .chat-tick-read {
+    color: oklch(0.9 0.1 210);
+}
+
+/* ------------------------------------------------------------------ */
+/* Arrivals                                                            */
+/* ------------------------------------------------------------------ */
 
 /*
   A message that arrives while the chat is open grows out of its tail
-  corner: received ones from the bottom left, own ones from the bottom
-  right. Only transform and opacity animate, so long threads stay cheap.
+  corner with a soft spring: received ones from the bottom left, own ones
+  from the bottom right.
 */
 .chat-arrive-in,
 .chat-arrive-out {
-    animation: chat-arrive 340ms var(--ease-out-quint) backwards;
+    animation: chat-arrive 460ms
+        var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)) backwards;
 }
 
 .chat-arrive-in {
@@ -30,11 +207,38 @@
 @keyframes chat-arrive {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.94);
+        transform: translateY(14px) scale(0.86);
     }
 
-    60% {
+    45% {
         opacity: 1;
+    }
+}
+
+/* A reaction that appears pops in; chips grow a little under the pointer. */
+.chat-reaction {
+    animation: chat-pop 380ms var(--ease-spring) backwards;
+    transition:
+        scale 220ms var(--ease-spring),
+        background-color var(--duration-fast) var(--ease-standard),
+        border-color var(--duration-fast) var(--ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .chat-reaction:is(button:not(:disabled), li):hover {
+        scale: 1.08;
+    }
+}
+
+.chat-reaction:is(button):active:not(:disabled) {
+    scale: 0.9;
+    transition-duration: 90ms;
+}
+
+@keyframes chat-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.4);
     }
 }
 
@@ -65,6 +269,46 @@
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* The pane: frosted header over the history                           */
+/* ------------------------------------------------------------------ */
+
+/*
+  The header floats over the top of the history (glass), so messages scroll
+  beneath it. The history leaves room for it and its sticky day labels stop
+  right under it. --chat-header-h is the measured height of the header
+  (set by the pane). On very short windows (the pane scrolls as a whole)
+  the header goes back into the flow.
+*/
+.chat-topbar {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    z-index: 20;
+}
+
+.chat-under-header {
+    --chat-sticky-top: var(--chat-header-h, 4rem);
+    padding-top: calc(var(--chat-header-h, 4rem) + 0.75rem);
+    scroll-padding-top: calc(var(--chat-header-h, 4rem) + 2.5rem);
+}
+
+@media (max-height: 20rem) {
+    .chat-topbar {
+        position: relative;
+    }
+
+    .chat-under-header {
+        --chat-sticky-top: 0px;
+        padding-top: 0.5rem;
+        scroll-padding-top: 2rem;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Floating layers                                                     */
+/* ------------------------------------------------------------------ */
+
 /* Floating pill («Ir al final», «N nuevos») and small floating layers. */
 .chat-float-enter-active {
     transition:
@@ -81,14 +325,15 @@
 .chat-float-enter-from,
 .chat-float-leave-to {
     opacity: 0;
-    transform: translateY(8px) scale(0.9);
+    transform: translateY(10px) scale(0.85);
 }
 
 /* Something attached to the composer (a quote, a file) slides in above it. */
 .chat-attach-enter-active {
     transition:
         opacity var(--duration-base) var(--ease-out-quint),
-        transform var(--duration-panel) var(--ease-out-quint);
+        transform var(--duration-panel)
+            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1));
 }
 
 .chat-attach-leave-active {
@@ -100,7 +345,7 @@
 .chat-attach-enter-from,
 .chat-attach-leave-to {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
 }
 
 /* The drop veil fades in; its card rises a little. */
@@ -122,70 +367,68 @@
     transform: scale(0.94);
 }
 
+/* ------------------------------------------------------------------ */
+/* Composer                                                            */
+/* ------------------------------------------------------------------ */
+
 /*
-  Send button: it lifts when there is something to send and gives a small
-  push when pressed. While disabled it rests flat.
+  The floating composer card: it sits on the canvas with a layered shadow,
+  and the focus brings a palette halo. In «Nota» mode the whole card turns
+  to the note colour so nobody types a note thinking it goes to the customer.
 */
-.chat-send {
+.chat-composer {
+    position: relative;
+    border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+    background-color: color-mix(in oklch, var(--card) 94%, transparent);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    box-shadow: var(
+        --shadow-float,
+        0 1px 2px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
+        0 12px 32px -16px
+            color-mix(in oklch, var(--shadow-ink) 30%, transparent)
+    );
     transition:
-        background-color var(--duration-base) var(--ease-standard),
-        color var(--duration-base) var(--ease-standard),
-        box-shadow var(--duration-base) var(--ease-standard),
-        scale var(--duration-fast) var(--ease-standard);
+        border-color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-panel) var(--ease-standard),
+        background-color var(--duration-base) var(--ease-standard);
 }
 
-.chat-send[data-ready='true']:hover {
-    box-shadow: var(--shadow-hover);
+.chat-composer:focus-within {
+    border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+    box-shadow:
+        0 0 0 4px color-mix(in oklch, var(--primary) 14%, transparent),
+        var(
+            --shadow-float,
+            0 12px 32px -16px
+                color-mix(in oklch, var(--shadow-ink) 30%, transparent)
+        );
 }
 
-.chat-send[data-ready='true']:active {
-    scale: 0.92;
+.chat-composer[data-mode='note'] {
+    border-color: color-mix(in oklch, var(--warning) 55%, transparent);
+    background-color: color-mix(in oklch, var(--warning-soft) 92%, var(--card));
 }
 
-.chat-send [data-send-icon] {
-    transition:
-        transform var(--duration-panel) var(--ease-spring),
-        opacity var(--duration-fast) var(--ease-standard);
+.chat-composer[data-mode='note']:focus-within {
+    border-color: var(--warning);
+    box-shadow:
+        0 0 0 4px color-mix(in oklch, var(--warning) 20%, transparent),
+        var(
+            --shadow-float,
+            0 12px 32px -16px
+                color-mix(in oklch, var(--shadow-ink) 30%, transparent)
+        );
 }
 
-.chat-send[data-ready='false'] [data-send-icon] {
-    transform: rotate(-12deg) scale(0.92);
-    opacity: 0.75;
-}
-
-/*
-  Quick actions of a bubble (pointer with hover only): hidden until the row
-  is hovered or focused, or one of their menus is open.
-*/
-@media (hover: hover) and (pointer: fine) {
-    .chat-row-actions {
-        opacity: 0;
-        transform: scale(0.92);
-        transition:
-            opacity var(--duration-fast) var(--ease-standard),
-            transform var(--duration-base) var(--ease-out-quint);
-    }
-
-    .chat-row:hover .chat-row-actions,
-    .chat-row:focus-within .chat-row-actions,
-    .chat-row-actions:has([data-state='open']) {
-        opacity: 1;
-        transform: none;
-    }
+/* The text grows smoothly where its height is set by script. */
+.chat-composer textarea {
+    transition: height 160ms var(--ease-out-quint);
 }
 
 /*
-  The header of an open chat: frosted (with a translucent background set
-  by the component), so the history reads under it.
-*/
-.chat-header {
-    backdrop-filter: saturate(1.4) blur(10px);
-}
-
-/*
-  The composer dock: a soft fade from the history into the composer, so
-  the last message never ends against a hard edge. Its background is set
-  by the component (Tailwind), so a mode can tint it.
+  The dock under the composer: the canvas shows through, with a soft fade
+  from the history so the last message never ends against a hard edge.
 */
 .chat-dock {
     position: relative;
@@ -196,25 +439,145 @@
     position: absolute;
     inset-inline: 0;
     bottom: 100%;
-    height: 14px;
+    height: 18px;
     pointer-events: none;
     background: linear-gradient(
         to top,
-        color-mix(in oklch, var(--shadow-ink) 6%, transparent),
+        color-mix(in oklch, var(--shadow-ink) 5%, transparent),
         transparent
     );
+}
+
+/*
+  «Responder / Nota»: a two-option switch whose thumb slides between the
+  options with a soft spring.
+*/
+.chat-mode-thumb {
+    transition:
+        translate 380ms
+            var(--ease-spring-soft, cubic-bezier(0.22, 1.25, 0.36, 1)),
+        background-color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-base) var(--ease-standard);
+}
+
+/*
+  Send button: flat and muted while there is nothing to send; once there is,
+  it fills with the palette gradient, its arrow springs upright and a halo
+  follows the pointer. Pressing it gives a small push.
+*/
+.chat-send {
+    transition:
+        background-color var(--duration-base) var(--ease-standard),
+        color var(--duration-base) var(--ease-standard),
+        box-shadow var(--duration-base) var(--ease-standard),
+        filter var(--duration-fast) var(--ease-standard),
+        scale 320ms var(--ease-spring);
+}
+
+.chat-send[data-ready='true']:hover {
+    filter: brightness(1.06);
+    box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 0.25),
+        var(
+            --shadow-glow,
+            0 6px 18px -6px color-mix(in oklch, var(--primary) 60%, transparent)
+        );
+}
+
+.chat-send[data-ready='true']:active {
+    scale: 0.9;
+    transition-duration: 90ms;
+}
+
+.chat-send [data-send-icon] {
+    transition:
+        transform 420ms var(--ease-spring),
+        opacity var(--duration-fast) var(--ease-standard);
+}
+
+.chat-send[data-ready='false'] [data-send-icon] {
+    transform: rotate(-24deg) scale(0.88);
+    opacity: 0.7;
+}
+
+.chat-send[data-ready='true']:hover [data-send-icon] {
+    transform: translateX(1.5px) rotate(-8deg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Row actions                                                         */
+/* ------------------------------------------------------------------ */
+
+/*
+  Quick actions of a bubble (pointer with hover only): hidden until the row
+  is hovered or focused, or one of their menus is open; they spring out of
+  the bubble's side.
+*/
+@media (hover: hover) and (pointer: fine) {
+    .chat-row-actions {
+        opacity: 0;
+        transform: scale(0.85);
+        transition:
+            opacity var(--duration-fast) var(--ease-standard),
+            transform 260ms var(--ease-spring);
+    }
+
+    .chat-row:hover .chat-row-actions,
+    .chat-row:focus-within .chat-row-actions,
+    .chat-row-actions:has([data-state='open']) {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Internal notes                                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+  A note is a card across the history, never a bubble: a hatched band on
+  its edge says «interno» at a glance.
+*/
+.chat-note {
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 1px 1.5px color-mix(in oklch, var(--shadow-ink) 7%, transparent),
+        0 8px 20px -14px color-mix(in oklch, var(--warning) 50%, transparent);
+}
+
+.chat-note::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 5px;
+    background: repeating-linear-gradient(
+        -45deg,
+        var(--warning) 0 4px,
+        color-mix(in oklch, var(--warning) 35%, transparent) 4px 8px
+    );
+    pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .chat-arrive-in,
     .chat-arrive-out,
-    .chat-typing-dot {
+    .chat-typing-dot,
+    .chat-reaction {
         animation: none;
     }
 
+    .chat-bubble,
     .chat-row-actions,
     .chat-send,
-    .chat-send [data-send-icon] {
+    .chat-send [data-send-icon],
+    .chat-mode-thumb,
+    .chat-composer textarea {
         transition: none;
+    }
+
+    .chat-row:hover .chat-bubble {
+        translate: none;
     }
 }

@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * Panel used by every module for tables, lists and settings sections: a
- * flat surface on a hairline (no resting shadow) that spans the width it is
- * given. Wide tables scroll inside it, never the page.
+ * floating surface (hairline plus the layered shadow-float) that spans the
+ * width it is given. Wide tables scroll inside it, never the page.
  *
  * Slots: `actions` (header, right side), default (body) and `footer`
  * (separated by a top border, e.g. the section's save button).
@@ -34,7 +34,7 @@ const props = withDefaults(
         data-slot="surface-card"
         :class="
             cn(
-                'overflow-hidden rounded-xl border bg-card shadow-card',
+                'overflow-hidden rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float',
                 props.class,
             )
         "

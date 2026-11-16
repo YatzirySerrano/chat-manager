@@ -4,7 +4,7 @@ import { Archive, BellOff, Eye } from '@lucide/vue';
 import { computed } from 'vue';
 import CountBadge from '@/components/filters/CountBadge.vue';
 import HighlightMatch from '@/components/filters/HighlightMatch.vue';
-import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
 import { listTime } from '@/components/team-chat/teamChatFormat';
 import { useLongPress } from '@/composables/useLongPress';
 import { useTeamPresence } from '@/composables/useTeamPresence';
@@ -75,23 +75,26 @@ const unreadLabel = computed(() =>
 </script>
 
 <template>
-    <div class="group/thread relative">
+    <div
+        class="group/row relative list-item"
+        :data-selected="active || opening ? '' : undefined"
+    >
         <Link
             :href="show(thread.id, { query })"
             preserve-state
             preserve-scroll
             :aria-current="active ? 'page' : undefined"
-            :class="
-                cn(
-                    'flex items-center gap-3 rounded-xl py-2 pr-3 pl-2.5 transition-[background-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/40 pointer-coarse:py-2.5',
-                    (active || opening) &&
-                        'bg-primary-soft hover:bg-primary-soft',
-                )
-            "
+            :data-selected="active || opening ? '' : undefined"
+            class="list-row flex items-center gap-3 py-2.5 pr-3 pl-3.5 outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
             v-on="longPress.handlers"
             @click.capture="onClick"
         >
-            <TeamAvatar
+            <span
+                v-if="unread && !thread.muted"
+                class="list-unread-dot"
+                aria-hidden="true"
+            />
+            <ListAvatar
                 :name="thread.title"
                 :group="thread.type === 'group'"
                 :deleted="thread.partner?.deleted ?? false"
@@ -103,7 +106,9 @@ const unreadLabel = computed(() =>
                         :class="
                             cn(
                                 'min-w-0 flex-1 truncate font-display text-[0.95rem] leading-snug',
-                                unread ? 'font-semibold' : 'font-medium',
+                                unread
+                                    ? 'font-bold text-foreground'
+                                    : 'font-semibold text-foreground/90',
                             )
                         "
                     >
@@ -119,7 +124,7 @@ const unreadLabel = computed(() =>
                         v-if="thread.last_activity_at"
                         :class="
                             cn(
-                                'shrink-0 text-[0.7rem] tabular-nums transition-opacity group-focus-within/thread:opacity-0 group-hover/thread:opacity-0 pointer-coarse:opacity-100!',
+                                'list-time shrink-0 text-[0.7rem] tabular-nums',
                                 unread && !thread.muted
                                     ? 'font-semibold text-primary'
                                     : 'text-muted-foreground',
@@ -131,21 +136,19 @@ const unreadLabel = computed(() =>
                         {{ listTime(thread.last_activity_at) }}
                     </time>
                 </span>
-                <span
-                    class="mt-0.5 flex items-center gap-1.5 pointer-coarse:pr-9"
-                >
+                <span class="mt-0.5 flex items-center gap-1.5">
                     <span
                         :class="
                             cn(
-                                'min-w-0 flex-1 truncate text-[0.8rem] leading-snug',
+                                'min-w-0 flex-1 truncate text-[0.8125rem] leading-snug',
                                 unread
-                                    ? 'text-foreground'
+                                    ? 'font-medium text-foreground'
                                     : 'text-muted-foreground',
                                 thread.last_message?.deleted && 'italic',
                             )
                         "
                     >
-                        <span v-if="author" class="font-medium">{{
+                        <span v-if="author" class="font-semibold">{{
                             author
                         }}</span
                         >{{ preview }}
@@ -160,8 +163,8 @@ const unreadLabel = computed(() =>
                         class="size-3.5 shrink-0 text-muted-foreground"
                         aria-label="Silenciado"
                     />
-                    <!-- Bumps and sends one ring out when a message arrives
-                     (muted chats only bump, in a quiet tone). -->
+                    <!-- Bumps, rolls and sends one ring out when a message
+                     arrives (muted chats only bump, in a quiet tone). -->
                     <CountBadge
                         v-if="unread"
                         :value="thread.unread"
@@ -175,15 +178,20 @@ const unreadLabel = computed(() =>
                 </span>
             </span>
         </Link>
-        <button
-            type="button"
-            class="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-background text-muted-foreground opacity-0 shadow-(--shadow-control) ring-1 ring-border outline-none group-focus-within/thread:opacity-100 group-hover/thread:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-opacity pointer-coarse:top-auto pointer-coarse:right-1 pointer-coarse:bottom-1 pointer-coarse:size-9 pointer-coarse:bg-transparent pointer-coarse:opacity-100 pointer-coarse:shadow-none pointer-coarse:ring-0"
-            :aria-label="`Vista previa de ${thread.title}`"
-            title="Vista previa sin marcar como leído"
-            data-thread-preview
-            @click="emit('preview', thread)"
+        <!-- Hover quick actions: the same floating bar as the inbox rows. -->
+        <div
+            class="list-quick absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-full glass p-0.5 shadow-(--shadow-lift,var(--shadow-hover)) ring-1 ring-border/80 pointer-coarse:top-auto pointer-coarse:right-1 pointer-coarse:bottom-1 pointer-coarse:bg-transparent pointer-coarse:shadow-none pointer-coarse:ring-0"
         >
-            <Eye class="size-4" aria-hidden="true" />
-        </button>
+            <button
+                type="button"
+                class="flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 motion-safe:transition-[color,background-color,scale] pointer-coarse:size-9"
+                :aria-label="`Vista previa de ${thread.title}`"
+                title="Vista previa sin marcar como leído"
+                data-thread-preview
+                @click="emit('preview', thread)"
+            >
+                <Eye class="size-4" aria-hidden="true" />
+            </button>
+        </div>
     </div>
 </template>

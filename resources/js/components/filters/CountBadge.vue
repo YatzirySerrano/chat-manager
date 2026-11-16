@@ -14,7 +14,7 @@ const props = withDefaults(
     defineProps<{
         value: number;
         /** Color pair: muted, the brand, attention (pending) or done. */
-        tone?: 'muted' | 'primary' | 'warning' | 'success';
+        tone?: 'muted' | 'primary' | 'warning' | 'success' | 'inverse';
         /** Larger numbers read as «99+». */
         max?: number;
         /** One ring leaves the badge when the number goes up. */
@@ -25,11 +25,15 @@ const props = withDefaults(
 );
 
 const bumping = ref(false);
+/* The number rolls up when it grows and down when it shrinks. */
+const direction = ref<'count-up' | 'count-down'>('count-up');
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 watch(
     () => props.value,
     (value, previous) => {
+        direction.value = value < previous ? 'count-down' : 'count-up';
+
         if (value <= previous) {
             return;
         }
@@ -53,6 +57,8 @@ const tones: Record<NonNullable<typeof props.tone>, string> = {
     primary: 'bg-primary text-primary-foreground',
     warning: 'bg-warning-soft text-warning-soft-foreground',
     success: 'bg-success-soft text-success-soft-foreground',
+    /* On a filled accent surface (a pressed toggle). */
+    inverse: 'bg-primary-foreground/20 text-primary-foreground',
 };
 </script>
 
@@ -62,6 +68,7 @@ const tones: Record<NonNullable<typeof props.tone>, string> = {
             cn(
                 'relative inline-flex h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-full px-1.5 text-[0.7rem] leading-none font-semibold tabular-nums transition-[background-color,color] duration-(--duration-fast)',
                 tones[tone],
+                tone === 'primary' && 'shadow-(--shadow-glow)',
                 bumping && 'filter-count-bump',
                 bumping && halo && 'filter-count-halo',
                 props.class,
@@ -69,6 +76,12 @@ const tones: Record<NonNullable<typeof props.tone>, string> = {
         "
         aria-hidden="true"
         data-count-badge
-        >{{ text }}</span
+        ><span class="relative inline-grid overflow-hidden"
+            ><Transition :name="direction"
+                ><span :key="text" class="col-start-1 row-start-1">{{
+                    text
+                }}</span></Transition
+            ></span
+        ></span
     >
 </template>

@@ -118,7 +118,7 @@ const thumbStyle = computed(() => ({
 
 <template>
     <div
-        class="rounded-lg bg-surface-sunken p-0.5 ring-1 ring-border ring-inset"
+        class="rounded-full bg-surface-sunken p-1 shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_8%,transparent)] ring-1 ring-border/70 ring-inset"
     >
         <div
             ref="track"
@@ -127,8 +127,9 @@ const thumbStyle = computed(() => ({
             :aria-label="label"
             @keydown="onKeydown"
         >
+            <!-- The thumb: a raised pill tinted by the palette. -->
             <span
-                class="pointer-events-none absolute inset-y-0 left-0 rounded-md bg-card shadow-(--shadow-control) ring-1 ring-border/60"
+                class="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-linear-to-b from-card to-[color-mix(in_oklch,var(--primary)_7%,var(--card))] shadow-(--shadow-float,var(--shadow-control)) ring-1 ring-primary/25"
                 :class="placed && 'filter-tabs-thumb'"
                 :style="thumbStyle"
                 aria-hidden="true"
@@ -140,13 +141,13 @@ const thumbStyle = computed(() => ({
                 v-bind="option.attrs"
                 :class="
                     cn(
-                        'relative z-[1] inline-flex h-8 min-w-0 flex-auto shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[0.8125rem] font-medium whitespace-nowrap outline-none',
-                        'transition-[color] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.97] motion-safe:transition-[color,transform] pointer-coarse:h-10',
+                        'relative z-[1] inline-flex h-8 min-w-0 flex-auto shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-[0.8125rem] font-medium whitespace-nowrap outline-none',
+                        'transition-[color] duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.95] motion-safe:transition-[color,transform] pointer-coarse:h-10',
                         modelValue === option.value
-                            ? 'text-foreground'
+                            ? 'font-semibold text-foreground'
                             : option.attention
                               ? 'font-semibold text-foreground hover:bg-warning/10'
-                              : 'text-muted-foreground hover:text-foreground',
+                              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
                     )
                 "
                 :aria-pressed="modelValue === option.value"
@@ -157,8 +158,12 @@ const thumbStyle = computed(() => ({
                 <component
                     :is="option.icon"
                     v-if="option.icon"
-                    class="size-3.5 shrink-0"
-                    :class="option.attention && 'text-warning'"
+                    class="size-3.5 shrink-0 transition-colors duration-(--duration-fast)"
+                    :class="
+                        option.attention
+                            ? 'text-warning'
+                            : modelValue === option.value && 'text-primary'
+                    "
                     aria-hidden="true"
                 />
                 <span class="truncate">{{ option.label }}</span>

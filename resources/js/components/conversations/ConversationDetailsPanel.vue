@@ -33,6 +33,7 @@ import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/composables/useInitials';
 import { formatDate, formatDateTime } from '@/lib/format';
+import '@/components/chat/chat.css';
 import { formatPhone } from '@/lib/phone';
 import { save as saveContact } from '@/routes/conversations/contact';
 import { update as updateCategory } from '@/routes/conversations/category';
@@ -191,17 +192,17 @@ function safeUrl(url: string | null): string | null {
     <aside
         ref="panel"
         tabindex="-1"
-        class="flex h-full min-h-0 flex-col border-l bg-background outline-none"
+        class="flex h-full min-h-0 flex-col border-l bg-surface-sunken outline-none motion-safe:animate-in motion-safe:duration-300 motion-safe:ease-(--ease-out-quint) motion-safe:fade-in motion-safe:slide-in-from-right-4"
         aria-label="Información del cliente y de la conversación"
     >
         <header
-            class="flex min-h-14 items-center justify-between gap-2 border-b px-4 py-2 sm:min-h-16"
+            class="relative z-10 flex min-h-14 shrink-0 items-center justify-between gap-2 glass-bar px-4 py-2 sm:min-h-16"
         >
             <h2 class="font-display text-lg font-semibold">Detalles</h2>
             <Button
                 variant="ghost"
                 size="icon-sm"
-                class="pointer-coarse:size-10"
+                class="rounded-full text-muted-foreground transition-[rotate,background-color,color] hover:rotate-90 pointer-coarse:size-10"
                 title="Cerrar el panel de detalles"
                 aria-label="Cerrar el panel de detalles"
                 @click="emit('close')"
@@ -210,21 +211,32 @@ function safeUrl(url: string | null): string | null {
             </Button>
         </header>
 
-        <div class="min-h-0 flex-1 reveal-stagger overflow-y-auto">
+        <!--
+            Each part of the panel is a card on the sunken canvas; they rise
+            one after another when the panel opens.
+        -->
+        <div
+            class="grid min-h-0 flex-1 reveal-stagger content-start gap-3 overflow-y-auto p-3"
+        >
             <section
-                class="grid grid-cols-1 gap-3 border-b bg-linear-to-b from-primary-soft/45 to-transparent px-4 pt-5 pb-5"
+                class="relative grid grid-cols-1 gap-3 overflow-hidden rounded-2xl border border-border/70 accent-gradient-soft px-4 pt-5 pb-4 shadow-(--shadow-card)"
             >
-                <div class="flex items-start gap-3">
+                <!-- A faint halo of the palette behind the avatar. -->
+                <span
+                    class="pointer-events-none absolute -top-16 -left-12 size-48 rounded-full bg-primary/15 blur-3xl"
+                    aria-hidden="true"
+                />
+                <div class="relative flex items-start gap-3.5">
                     <span
-                        class="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary-soft font-display text-lg font-semibold text-primary-soft-foreground shadow-(--shadow-control) ring-4 ring-background"
+                        class="flex size-16 shrink-0 items-center justify-center rounded-full accent-gradient font-display text-xl font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-glow)] ring-4 ring-card"
                         aria-hidden="true"
                     >
                         <template v-if="initials">{{ initials }}</template>
                         <UserRound v-else class="size-5" />
                     </span>
-                    <div class="min-w-0">
+                    <div class="min-w-0 pt-1">
                         <p
-                            class="truncate font-display text-lg leading-snug font-semibold"
+                            class="truncate font-display text-xl leading-snug font-semibold"
                             :title="details.contact.display_name"
                         >
                             {{ details.contact.display_name }}
@@ -268,7 +280,9 @@ function safeUrl(url: string | null): string | null {
                         </p>
                     </div>
                 </div>
-                <dl class="grid gap-1.5 text-sm">
+                <dl
+                    class="relative grid gap-1 rounded-xl bg-card/70 p-2 text-sm ring-1 ring-border/60"
+                >
                     <div class="flex items-center gap-2">
                         <dt class="sr-only">Teléfono</dt>
                         <Phone
@@ -353,11 +367,11 @@ function safeUrl(url: string | null): string | null {
                     Los datos técnicos de esta conversación (teléfono o
                     identificador del canal) se conservan aunque no lo guardes.
                 </p>
-                <div class="flex flex-wrap gap-2">
+                <div class="relative flex flex-wrap gap-2">
                     <Button
                         variant="outline"
                         size="sm"
-                        class="pointer-coarse:h-10"
+                        class="rounded-full pointer-coarse:h-10"
                         :title="
                             details.contact.alias
                                 ? 'Cambiar o quitar tu alias personal'
@@ -375,7 +389,7 @@ function safeUrl(url: string | null): string | null {
                     <Button
                         v-if="details.contact.can_save"
                         size="sm"
-                        class="pointer-coarse:h-10"
+                        class="rounded-full pointer-coarse:h-10"
                         @click="saveContactOpen = true"
                     >
                         <UserPlus aria-hidden="true" />
@@ -385,7 +399,7 @@ function safeUrl(url: string | null): string | null {
                         v-if="contactUrl"
                         variant="outline"
                         size="sm"
-                        class="pointer-coarse:h-10"
+                        class="rounded-full pointer-coarse:h-10"
                         as-child
                     >
                         <Link :href="contactUrl" data-contact-link>
@@ -423,14 +437,16 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="conversation.sla"
-                class="grid gap-3 border-b px-4 pt-4 pb-5 text-sm"
+                class="grid gap-3 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
                 data-sla-details
             >
                 <h3 class="section-title">Tiempo de respuesta (SLA)</h3>
                 <SlaBadge :sla="conversation.sla" variant="detail" />
             </section>
 
-            <section class="grid gap-3 border-b px-4 pt-4 pb-5 text-sm">
+            <section
+                class="grid gap-3 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+            >
                 <h3 class="section-title">Conversación</h3>
                 <dl
                     class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2"
@@ -569,7 +585,9 @@ function safeUrl(url: string | null): string | null {
                 </div>
             </section>
 
-            <section class="grid gap-2.5 border-b px-4 pt-4 pb-5 text-sm">
+            <section
+                class="grid gap-2.5 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+            >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <Megaphone class="size-3.5" aria-hidden="true" />
                     Procedencia
@@ -608,7 +626,9 @@ function safeUrl(url: string | null): string | null {
                 </p>
             </section>
 
-            <section class="grid gap-2.5 border-b px-4 pt-4 pb-5 text-sm">
+            <section
+                class="grid gap-2.5 rounded-2xl border border-border/70 bg-card px-4 pt-4 pb-5 text-sm shadow-(--shadow-card)"
+            >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <History class="size-3.5" aria-hidden="true" />
                     Conversaciones anteriores
@@ -623,7 +643,7 @@ function safeUrl(url: string | null): string | null {
                                     ? { href: previous.history_url }
                                     : { type: 'button' }
                             "
-                            class="flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-2.5 py-2 text-left transition-colors duration-(--duration-fast) outline-none hover:border-border-strong hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+                            class="flex w-full hover-lift items-center justify-between gap-2 rounded-xl border bg-surface-sunken/50 px-2.5 py-2 text-left outline-none hover:border-border-strong hover:bg-card focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
                             @click="
                                 previous.history_only
                                     ? undefined
@@ -661,7 +681,7 @@ function safeUrl(url: string | null): string | null {
 
             <section
                 v-if="details.contactNotes !== null"
-                class="grid gap-2 px-4 py-4 text-sm"
+                class="grid gap-2 rounded-2xl border border-border/70 bg-card px-4 py-4 text-sm shadow-(--shadow-card)"
             >
                 <h3 class="flex items-center gap-1.5 section-title">
                     <NotebookPen class="size-3.5" aria-hidden="true" />
@@ -671,7 +691,7 @@ function safeUrl(url: string | null): string | null {
                     <li
                         v-for="note in details.contactNotes"
                         :key="note.id"
-                        class="rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm"
+                        class="chat-note rounded-xl border border-warning/35 bg-warning-soft/70 py-2 pr-3 pl-4 text-sm"
                     >
                         <p class="line-clamp-4 break-words whitespace-pre-line">
                             {{ note.body }}

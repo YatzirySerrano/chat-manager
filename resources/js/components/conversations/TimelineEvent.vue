@@ -86,11 +86,19 @@ const detail = computed(() => {
 
 <template>
     <div class="flex items-center gap-3 px-2">
-        <span class="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
+        <span
+            class="h-px min-w-4 flex-1 bg-linear-to-r from-transparent to-border-strong/70"
+            aria-hidden="true"
+        />
         <p
-            class="inline-flex max-w-[min(100%,48rem)] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border bg-background/80 px-3 py-1 text-center text-xs wrap-anywhere text-muted-foreground backdrop-blur-sm"
+            class="inline-flex max-w-[min(100%,48rem)] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border border-border/70 glass py-1 pr-3 pl-1 text-center text-xs wrap-anywhere text-muted-foreground shadow-(--shadow-control)"
         >
-            <History class="size-3.5 shrink-0" aria-hidden="true" />
+            <span
+                class="grid size-5 shrink-0 place-items-center rounded-full bg-primary-soft text-primary-soft-foreground"
+                aria-hidden="true"
+            >
+                <History class="size-3" />
+            </span>
             <span class="font-medium text-foreground/80">{{ label }}</span>
             <span v-if="detail">· {{ detail }}</span>
             <span v-if="event.note" class="min-w-0 wrap-anywhere"
@@ -103,6 +111,9 @@ const detail = computed(() => {
                 >· {{ formatTime(event.created_at) }}</time
             >
         </p>
-        <span class="h-px min-w-4 flex-1 bg-border" aria-hidden="true" />
+        <span
+            class="h-px min-w-4 flex-1 bg-linear-to-l from-transparent to-border-strong/70"
+            aria-hidden="true"
+        />
     </div>
 </template>

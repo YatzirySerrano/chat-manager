@@ -11,6 +11,7 @@ import {
     DELIVERY_UNKNOWN,
     statusLabel,
 } from '@/components/conversations/messageFormat';
+import '@/components/chat/chat.css';
 import type { MessageStatusValue } from '@/types';
 
 /**
@@ -71,7 +72,7 @@ const tone = computed(() => {
 
     switch (props.status) {
         case 'read':
-            return 'text-sky-600 dark:text-sky-400';
+            return 'chat-tick-read';
         case 'failed':
             return 'text-destructive';
         case 'accepted':

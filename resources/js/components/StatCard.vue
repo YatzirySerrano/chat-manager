@@ -59,7 +59,7 @@ const decimals = computed(() => {
 
 <template>
     <div
-        class="spotlight flex min-w-0 flex-col rounded-xl border bg-card shadow-card transition-[border-color] duration-(--duration-base)"
+        class="spotlight flex min-w-0 hover-lift flex-col rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float"
         :class="size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-3 p-5'"
         data-stat-card
     >
@@ -87,7 +87,7 @@ const decimals = computed(() => {
             >
             <span
                 v-if="icon"
-                class="flex size-9 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                class="flex size-9 items-center justify-center rounded-[0.7rem] accent-gradient shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_4px_10px_-4px_color-mix(in_oklch,var(--primary)_60%,transparent)]"
             >
                 <component :is="icon" class="size-4.5" aria-hidden="true" />
             </span>

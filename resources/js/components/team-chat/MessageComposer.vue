@@ -11,6 +11,11 @@ import {
     shallowRef,
     useId,
 } from 'vue';
+import {
+    COMPOSER_CARD,
+    COMPOSER_DOCK,
+    COMPOSER_TOOL,
+} from '@/components/chat/bubble';
 import ChatReplyPreview from '@/components/chat/ChatReplyPreview.vue';
 import ChatSendButton from '@/components/chat/ChatSendButton.vue';
 import InputError from '@/components/InputError.vue';
@@ -662,15 +667,9 @@ defineExpose({ focus, addFiles });
 </script>
 
 <template>
-    <div
-        class="chat-dock shrink-0 border-t bg-background px-2 pt-2 pb-2 sm:px-5 sm:pt-2.5 sm:pb-3"
-        data-tour="team-chat.composer"
-        data-safe-bottom
-    >
-        <div
-            class="mx-auto max-w-[64rem] rounded-2xl border bg-card shadow-(--shadow-control) transition-[border-color,box-shadow] duration-(--duration-base) ease-(--ease-standard) focus-within:border-primary focus-within:shadow-hover focus-within:ring-[3px] focus-within:ring-primary/15 hover:border-border-strong focus-within:hover:border-primary"
-            data-composer-surface
-        >
+    <div :class="COMPOSER_DOCK" data-tour="team-chat.composer" data-safe-bottom>
+        <!-- One floating card: the quote, the files and the text with its tools. -->
+        <div :class="COMPOSER_CARD" data-composer-surface>
             <Transition name="chat-attach">
                 <ChatReplyPreview
                     v-if="replyTo"
@@ -691,7 +690,7 @@ defineExpose({ focus, addFiles });
 
             <ul
                 v-if="http.attachments.length > 0"
-                class="flex gap-1.5 overflow-x-auto p-2 pb-1"
+                class="flex gap-1.5 overflow-x-auto px-2.5 pt-2.5 pb-1"
                 aria-label="Archivos adjuntos sin enviar"
             >
                 <DraftAttachment
@@ -719,7 +718,7 @@ defineExpose({ focus, addFiles });
                     :aria-valuenow="uploadProgress"
                 >
                     <div
-                        class="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
+                        class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-base) ease-(--ease-out-quint) motion-reduce:transition-none"
                         :style="{ width: `${uploadProgress}%` }"
                     />
                 </div>
@@ -738,7 +737,7 @@ defineExpose({ focus, addFiles });
                 </Button>
             </div>
 
-            <div class="flex items-end gap-0.5 p-1.5">
+            <div class="flex items-end gap-0.5 p-2">
                 <input
                     ref="fileInput"
                     type="file"
@@ -750,7 +749,7 @@ defineExpose({ focus, addFiles });
                 <Button
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 rounded-full text-muted-foreground"
+                    :class="COMPOSER_TOOL"
                     aria-label="Adjuntar archivos"
                     title="Adjuntar archivos (imágenes, PDF, documentos de Office, texto, audio o video). También puedes pegarlos o arrastrarlos al chat."
                     :disabled="
@@ -766,7 +765,7 @@ defineExpose({ focus, addFiles });
                         <Button
                             variant="ghost"
                             size="icon"
-                            class="hidden shrink-0 rounded-full text-muted-foreground sm:inline-flex"
+                            :class="[COMPOSER_TOOL, 'hidden sm:inline-flex']"
                             aria-label="Insertar emoji"
                             title="Insertar emoji"
                         >
@@ -784,7 +783,7 @@ defineExpose({ focus, addFiles });
                         :id="`${textareaId}-mentions`"
                         role="listbox"
                         aria-label="Mencionar a"
-                        class="absolute bottom-full left-0 z-10 mb-2 grid w-64 max-w-full gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground shadow-popover"
+                        class="absolute bottom-full left-0 z-10 mb-3 grid w-64 max-w-full gap-0.5 rounded-xl border glass p-1 text-popover-foreground shadow-popover motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
                     >
                         <li
                             v-for="(person, index) in suggestions"
@@ -810,7 +809,7 @@ defineExpose({ focus, addFiles });
                         ref="textarea"
                         v-model="http.body"
                         rows="1"
-                        class="max-h-[200px] min-h-9 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2 text-base leading-snug outline-none placeholder:text-muted-foreground md:text-sm md:leading-5"
+                        class="max-h-[200px] min-h-10 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2.5 text-base leading-snug outline-none placeholder:text-muted-foreground md:text-sm md:leading-5"
                         placeholder="Escribe un mensaje interno…"
                         :aria-invalid="errors.length > 0"
                         :aria-expanded="suggestions.length > 0"
@@ -841,7 +840,7 @@ defineExpose({ focus, addFiles });
             </div>
         </div>
         <div
-            class="mx-auto mt-1 flex min-h-4 max-w-[64rem] items-start justify-between gap-3 px-2"
+            class="mx-auto mt-1.5 flex min-h-4 max-w-[60rem] items-start justify-between gap-3 px-3"
         >
             <div class="min-w-0 space-y-0.5">
                 <InputError

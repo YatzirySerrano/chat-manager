@@ -30,14 +30,14 @@ const emit = defineEmits<{ clear: [] }>();
             <span
                 v-for="pill in pills"
                 :key="pill.key"
-                class="inline-flex h-7 max-w-full min-w-0 items-center gap-0.5 rounded-full border border-primary/30 bg-primary-soft pr-0.5 pl-2.5 text-xs text-primary-soft-foreground pointer-coarse:h-9"
+                class="inline-flex h-7 max-w-full min-w-0 items-center gap-0.5 rounded-full border border-primary/30 bg-primary-soft pr-0.5 pl-2.5 text-xs font-medium text-primary-soft-foreground shadow-(--shadow-control) pointer-coarse:h-9"
                 data-inbox-applied
                 data-filter-pill
             >
                 <span class="truncate">{{ pill.label }}</span>
                 <button
                     type="button"
-                    class="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-primary-soft-foreground/70 outline-none hover:bg-primary/15 hover:text-primary-soft-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-8"
+                    class="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-primary-soft-foreground/70 outline-none hover:bg-primary/15 hover:text-primary-soft-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 motion-safe:transition-colors pointer-coarse:size-8"
                     :aria-label="`Quitar el filtro ${pill.label}`"
                     @click="pill.remove()"
                 >

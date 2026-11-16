@@ -28,9 +28,10 @@ import type {
     ActiveFilterPill,
     FilterTabOption,
 } from '@/components/filters/types';
+import ListSkeleton from '@/components/filters/ListSkeleton.vue';
 import { useRowMotion } from '@/components/filters/useRowMotion';
+import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { formatPhone } from '@/lib/phone';
 import type {
     ConnectionChannel,
@@ -899,9 +900,22 @@ function onListKeydown(event: KeyboardEvent): void {
 
 const searchBox = ref<InstanceType<typeof FilterSearch> | null>(null);
 
+/* The header casts a shadow while rows pass under it. */
+const scrolled = ref(false);
+
+/* The selected row sits on one glider that springs between rows. */
+const rail = ref<HTMLElement | null>(null);
+const glider = useSelectionGlider(rail, () => [
+    props.selectedId,
+    props.conversations.data.map((row) => row.id),
+    props.acceptingId,
+]);
+
 /* Load more when the end of the list comes into view. */
 function onScroll(event: Event): void {
     const element = event.target as HTMLElement;
+
+    scrolled.value = element.scrollTop > 2;
 
     if (
         props.conversations.has_more &&
@@ -983,7 +997,7 @@ const searchPlaceholder = computed(() =>
 );
 
 const scopeButton =
-    'h-6 rounded-full px-2 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-8';
+    'h-6 rounded-full px-2.5 text-xs font-medium outline-none transition-[color,background-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring-soft) focus-visible:ring-2 focus-visible:ring-ring active:scale-95 pointer-coarse:h-8';
 </script>
 
 <template>
@@ -992,10 +1006,13 @@ const scopeButton =
         aria-label="Lista de conversaciones"
     >
         <header
-            class="grid min-w-0 grid-cols-1 gap-2 border-b px-3 pt-3 pb-2.5"
+            class="list-header grid min-w-0 grid-cols-1 gap-2.5 glass-bar px-3 pt-3 pb-3"
+            :data-scrolled="scrolled ? '' : undefined"
         >
-            <div class="flex items-center justify-between gap-2">
-                <h1 class="truncate font-display text-lg font-semibold">
+            <div class="flex items-center justify-between gap-2 pl-0.5">
+                <h1
+                    class="truncate font-display text-xl leading-tight font-semibold tracking-tight"
+                >
                     Conversaciones
                 </h1>
                 <ExportMenu
@@ -1058,7 +1075,7 @@ const scopeButton =
             <!-- Where the search looks, only while searching. -->
             <div
                 v-if="search.trim() !== '' || state.searchIn === 'messages'"
-                class="flex items-center gap-1 text-xs text-muted-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
+                class="flex w-fit items-center gap-1 rounded-full bg-surface-sunken py-0.5 pr-0.5 pl-2.5 text-xs text-muted-foreground ring-1 ring-border/60 ring-inset motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
                 role="group"
                 aria-label="Buscar en"
                 data-inbox-search-scope
@@ -1074,7 +1091,7 @@ const scopeButton =
                     :class="[
                         scopeButton,
                         state.searchIn === scope.value
-                            ? 'bg-foreground text-background'
+                            ? 'bg-card text-foreground shadow-(--shadow-control) ring-1 ring-primary/30'
                             : 'hover:bg-accent hover:text-foreground',
                     ]"
                     :aria-pressed="state.searchIn === scope.value"
@@ -1179,79 +1196,60 @@ const scopeButton =
                 aria-hidden="true"
                 data-inbox-progress
             />
-            <TransitionGroup
-                v-if="conversations.data.length > 0"
-                ref="listElement"
-                tag="ul"
-                :name="rowMotion"
-                class="relative divide-y motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
-                :class="[
-                    filtering && 'opacity-60',
-                    firstPaint && 'reveal-stagger',
-                ]"
-                @keydown="onListKeydown"
-            >
-                <li
-                    v-for="(conversation, position) in conversations.data"
-                    :key="conversation.id"
-                    class="bg-background"
-                    :data-tour="position === 0 ? 'inbox.item' : undefined"
-                >
-                    <InboxListItem
-                        :conversation="conversation"
-                        :selected="conversation.id === selectedId"
-                        :unread="
-                            conversation.id === selectedId
-                                ? 0
-                                : (conversation.unread_count ?? 0)
-                        "
-                        :show-operational="viewer.can_supervise"
-                        :show-assignee="showAgents"
-                        :show-channel="showChannels"
-                        :accepting-id="acceptingId"
-                        :can-edit-alias="canEditAlias"
-                        :highlight="highlight"
-                        @select="(id) => emit('select', id)"
-                        @accept="(id) => emit('accept', id)"
-                        @mark-read="(id) => emit('markRead', id)"
-                        @manage-tags="manageTags"
-                        @edit-alias="(row) => emit('editAlias', row)"
-                        @preview="(row) => emit('preview', row)"
-                    />
-                </li>
-            </TransitionGroup>
-
             <div
-                v-else-if="loading"
-                class="grid gap-0 divide-y"
-                aria-hidden="true"
+                v-if="conversations.data.length > 0"
+                ref="rail"
+                class="list-rail p-1.5"
             >
-                <div
-                    v-for="index in 8"
-                    :key="index"
-                    class="flex items-start gap-3 border-l-[3px] border-l-transparent py-2.5 pr-4 pl-3"
-                    data-inbox-skeleton
+                <span
+                    class="list-glider"
+                    :data-placed="glider.placed.value ? '' : undefined"
+                    :style="glider.style.value"
+                    aria-hidden="true"
+                    data-list-glider
+                />
+                <TransitionGroup
+                    ref="listElement"
+                    tag="ul"
+                    :name="rowMotion"
+                    class="relative z-[1] grid grid-cols-1 gap-0.5 motion-safe:transition-opacity motion-safe:duration-(--duration-fast)"
+                    :class="[
+                        filtering && 'opacity-60',
+                        firstPaint && 'reveal-stagger',
+                    ]"
+                    @keydown="onListKeydown"
                 >
-                    <Skeleton class="size-10 shrink-0 rounded-full" />
-                    <div class="grid flex-1 gap-2 pt-0.5">
-                        <div class="flex justify-between gap-3">
-                            <Skeleton
-                                class="h-4"
-                                :class="index % 3 === 0 ? 'w-1/2' : 'w-2/5'"
-                            />
-                            <Skeleton class="h-3 w-10" />
-                        </div>
-                        <Skeleton
-                            class="h-3.5"
-                            :class="index % 2 === 0 ? 'w-4/5' : 'w-3/5'"
+                    <li
+                        v-for="(conversation, position) in conversations.data"
+                        :key="conversation.id"
+                        :data-tour="position === 0 ? 'inbox.item' : undefined"
+                    >
+                        <InboxListItem
+                            :conversation="conversation"
+                            :selected="conversation.id === selectedId"
+                            :unread="
+                                conversation.id === selectedId
+                                    ? 0
+                                    : (conversation.unread_count ?? 0)
+                            "
+                            :show-operational="viewer.can_supervise"
+                            :show-assignee="showAgents"
+                            :show-channel="showChannels"
+                            :accepting-id="acceptingId"
+                            :can-edit-alias="canEditAlias"
+                            :highlight="highlight"
+                            @select="(id) => emit('select', id)"
+                            @accept="(id) => emit('accept', id)"
+                            @mark-read="(id) => emit('markRead', id)"
+                            @manage-tags="manageTags"
+                            @edit-alias="(row) => emit('editAlias', row)"
+                            @preview="(row) => emit('preview', row)"
                         />
-                        <div class="flex gap-1.5">
-                            <Skeleton class="h-4 w-20 rounded-full" />
-                            <Skeleton class="h-4 w-14 rounded-full" />
-                        </div>
-                    </div>
-                </div>
+                    </li>
+                </TransitionGroup>
             </div>
+
+            <ListSkeleton v-else-if="loading" :rows="8" chips />
 
             <FilteredEmpty
                 v-else
@@ -1276,10 +1274,7 @@ const scopeButton =
                 >
             </FilteredEmpty>
 
-            <div
-                v-if="conversations.has_more"
-                class="flex justify-center border-t p-3"
-            >
+            <div v-if="conversations.has_more" class="flex justify-center p-3">
                 <Button
                     variant="outline"
                     size="sm"

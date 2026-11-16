@@ -68,7 +68,7 @@ const toastOptions = {
 <template>
     <AppShell>
         <AppSidebar />
-        <AppContent class="min-w-0 overflow-x-clip">
+        <AppContent class="min-w-0 overflow-x-clip canvas-ambient">
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />
             <!--
               The page itself. It is the only part that changes on navigation:

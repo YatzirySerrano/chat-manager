@@ -373,6 +373,19 @@ const primary = computed<Action[]>(() => {
     return actions;
 });
 
+/*
+ * «Solicitud completada» is the step that ends an agent's work on a
+ * request: while there is no other main step (accept, reopen) it is a
+ * button of its own in the header instead of a menu entry.
+ */
+const completeAsButton = computed(
+    () => can.value.close && primary.value.length === 0,
+);
+
+function openCompleted(): void {
+    openReasonDialog('close', true);
+}
+
 /** «Eliminar chat definitivamente»: only with the permission, always last. */
 const permanentDeleteOpen = ref(false);
 
@@ -434,12 +447,14 @@ const secondary = computed<Action[]>(() => {
     }
 
     if (can.value.close) {
-        actions.push({
-            key: 'complete',
-            label: 'Solicitud completada',
-            icon: BadgeCheck,
-            run: () => openReasonDialog('close', true),
-        });
+        if (!completeAsButton.value) {
+            actions.push({
+                key: 'complete',
+                label: 'Solicitud completada',
+                icon: BadgeCheck,
+                run: openCompleted,
+            });
+        }
         actions.push({
             key: 'close',
             label: 'Cerrar conversación',
@@ -467,7 +482,7 @@ const secondary = computed<Action[]>(() => {
 
 <template>
     <div
-        v-if="primary.length + secondary.length > 0"
+        v-if="primary.length + secondary.length > 0 || completeAsButton"
         class="flex shrink-0 items-center gap-1.5"
         role="group"
         aria-label="Operaciones de la conversación"
@@ -476,7 +491,7 @@ const secondary = computed<Action[]>(() => {
             v-for="action in primary"
             :key="action.key"
             size="sm"
-            class="pointer-coarse:h-10"
+            class="h-9 rounded-full px-3.5 pointer-coarse:h-10"
             :disabled="processing || action.disabled"
             :aria-describedby="action.describedBy"
             :data-conversation-action="action.key"
@@ -486,12 +501,32 @@ const secondary = computed<Action[]>(() => {
             <component :is="action.icon" aria-hidden="true" />
             {{ action.label }}
         </Button>
+        <!--
+            The end of the request: success tone, the icon springs on hover.
+            Below small screens only the icon shows (the name stays).
+        -->
+        <button
+            v-if="completeAsButton"
+            type="button"
+            class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:px-3.5 pointer-coarse:h-10"
+            :disabled="processing"
+            aria-label="Solicitud completada"
+            title="Cerrar la conversación como solicitud completada"
+            data-conversation-action="complete"
+            @click="openCompleted"
+        >
+            <BadgeCheck
+                class="size-4 shrink-0 transition-transform duration-(--duration-panel) ease-(--ease-spring) group-hover/complete:scale-115 group-hover/complete:-rotate-8"
+                aria-hidden="true"
+            />
+            <span class="hidden sm:inline"> Solicitud completada </span>
+        </button>
         <DropdownMenu v-if="secondary.length > 0">
             <DropdownMenuTrigger as-child>
                 <Button
                     variant="outline"
                     size="icon"
-                    class="pointer-coarse:size-10"
+                    class="rounded-full pointer-coarse:size-10"
                     :disabled="processing"
                     title="Más acciones"
                     aria-label="Más acciones de la conversación"

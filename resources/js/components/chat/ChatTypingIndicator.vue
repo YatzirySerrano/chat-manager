@@ -20,7 +20,7 @@ withDefaults(
         class="flex items-center gap-2 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1"
     >
         <span
-            class="flex h-8 items-center gap-1 rounded-bubble rounded-bl-[0.2rem] bg-bubble-in px-3.5 ring-1 ring-border-strong/55 ring-inset"
+            class="chat-bubble-in flex h-9 items-center gap-1 rounded-[1.25rem] rounded-bl-[0.25rem] bg-bubble-in px-4 motion-safe:animate-in motion-safe:duration-300 motion-safe:zoom-in-75"
             aria-hidden="true"
         >
             <span
@@ -31,7 +31,9 @@ withDefaults(
         </span>
         <span
             class="truncate text-xs text-muted-foreground"
-            :class="custom && 'rounded-full bg-background px-2 py-0.5'"
+            :class="
+                custom && 'rounded-full glass px-2 py-0.5 ring-1 ring-border/70'
+            "
             >{{ label }}</span
         >
     </div>

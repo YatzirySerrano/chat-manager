@@ -12,8 +12,9 @@ export { default as Button } from "./Button.vue"
 export const buttonVariants = cva(
   [
     "group/button relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium outline-none select-none",
-    "transition-[color,background-color,border-color,box-shadow,scale,opacity] duration-(--duration-fast) ease-(--ease-standard)",
-    "active:not-disabled:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
+    // Colours ease; scale springs back after a press (Pulso press-spring).
+    "[transition:color_var(--duration-fast)_var(--ease-standard),background-color_var(--duration-fast)_var(--ease-standard),border-color_var(--duration-fast)_var(--ease-standard),box-shadow_var(--duration-base)_var(--ease-standard),filter_var(--duration-fast)_var(--ease-standard),opacity_var(--duration-fast)_var(--ease-standard),scale_320ms_var(--ease-spring)]",
+    "active:not-disabled:scale-[0.96] active:not-disabled:[transition-duration:90ms] disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     "[&_svg]:transition-transform [&_svg]:duration-(--duration-base) [&_svg]:ease-(--ease-out-quint)",
     "hover:[&>svg:last-child:not(:first-child)]:translate-x-0.5 hover:[&>svg:only-child]:scale-110",
@@ -25,11 +26,11 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.2),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-control)] hover:bg-[color-mix(in_oklch,var(--primary)_90%,black)] hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.24),inset_0_-1px_0_rgb(0_0_0/0.12),0_6px_16px_-6px_color-mix(in_oklch,var(--primary)_70%,transparent)] dark:hover:bg-[color-mix(in_oklch,var(--primary)_88%,white)]",
+          "accent-gradient text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.22),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-control)] hover:brightness-[1.07] hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.26),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-glow)] active:not-disabled:brightness-[0.97]",
         destructive:
           "bg-destructive text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),inset_0_-1px_0_rgb(0_0_0/0.12),var(--shadow-control)] hover:bg-[color-mix(in_oklch,var(--destructive)_90%,black)] hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.2),0_6px_16px_-6px_color-mix(in_oklch,var(--destructive)_70%,transparent)] focus-visible:ring-destructive/35 dark:bg-destructive/70 dark:text-white",
         outline:
-          "border border-input bg-card text-foreground shadow-(--shadow-control) hover:border-[color-mix(in_oklch,var(--primary)_40%,var(--border-strong))] hover:bg-accent hover:text-accent-foreground dark:bg-input/25 dark:hover:bg-input/45",
+          "border border-input bg-card text-foreground shadow-(--shadow-control) hover:border-[color-mix(in_oklch,var(--primary)_40%,var(--border-strong))] hover:bg-accent hover:text-accent-foreground hover:shadow-(--shadow-lift) dark:bg-input/25 dark:hover:bg-input/45",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary)_88%,var(--foreground))]",
         ghost:

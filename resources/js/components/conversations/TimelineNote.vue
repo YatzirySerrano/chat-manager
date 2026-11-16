@@ -8,14 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { formatDateTime } from '@/lib/format';
+import '@/components/chat/chat.css';
 import { maxLength, required } from '@/lib/validation';
 import { update as updateNote } from '@/routes/conversations/notes';
 import type { ConversationNote } from '@/types';
 
 /**
- * An internal note inside the chat. It is laid out across the timeline (not
- * as a bubble), in the warning color and with an explicit label, so it can
- * never be mistaken for something the customer received.
+ * An internal note inside the chat. It is laid out as a card across the
+ * timeline (not as a bubble), in the note color, with a hatched edge and an
+ * explicit label, so it can never be mistaken for something the customer
+ * received.
  */
 const props = defineProps<{
     note: ConversationNote;
@@ -67,14 +69,21 @@ function save(): void {
 <template>
     <article
         data-layout-box="note"
-        class="ml-auto w-full max-w-[min(85%,44rem)] rounded-bubble rounded-br-[0.2rem] border border-dashed border-warning/60 bg-warning-soft px-3 py-2 text-sm shadow-[0_1px_1px_color-mix(in_oklch,var(--shadow-ink)_6%,transparent)]"
+        class="chat-note ml-auto w-full max-w-[min(85%,44rem)] rounded-2xl border border-warning/45 bg-warning-soft py-2.5 pr-3 pl-4.5 text-sm text-warning-soft-foreground"
         :aria-label="`Nota interna de ${note.author?.name ?? 'usuario eliminado'}`"
     >
         <header
-            class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-warning"
+            class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold"
         >
-            <Lock class="size-3.5" aria-hidden="true" />
-            Nota interna — no se envía al cliente
+            <span
+                class="inline-flex items-center gap-1 rounded-full bg-warning px-2 py-0.5 text-background shadow-(--shadow-control)"
+            >
+                <Lock class="size-3" aria-hidden="true" />
+                Nota interna
+            </span>
+            <span class="text-warning-soft-foreground/80"
+                >— no se envía al cliente</span
+            >
         </header>
         <form
             v-if="editing"
@@ -115,7 +124,9 @@ function save(): void {
             </div>
         </form>
         <template v-else>
-            <p class="wrap-anywhere whitespace-pre-line">{{ note.body }}</p>
+            <p class="wrap-anywhere whitespace-pre-line text-foreground">
+                {{ note.body }}
+            </p>
             <footer
                 class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground"
             >

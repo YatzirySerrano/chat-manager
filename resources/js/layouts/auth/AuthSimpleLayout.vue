@@ -23,7 +23,7 @@ const platform = computed(
       tablets only the form is shown.
     -->
     <div
-        class="grid min-h-svh bg-background lg:grid-cols-[minmax(26rem,34rem)_minmax(0,1fr)]"
+        class="grid min-h-svh canvas-ambient lg:grid-cols-[minmax(26rem,34rem)_minmax(0,1fr)]"
     >
         <main
             class="flex min-w-0 flex-col px-6 py-7 sm:px-10 lg:px-14 lg:py-10"
@@ -33,7 +33,7 @@ const platform = computed(
                 class="group/logo flex w-fit items-center gap-2.5 rounded-lg"
             >
                 <span
-                    class="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_6px_16px_-6px_var(--primary)] transition-transform duration-(--duration-panel) ease-(--ease-spring) group-hover/logo:scale-105 group-hover/logo:-rotate-6"
+                    class="grid size-9 place-items-center rounded-[0.8rem] accent-gradient shadow-[inset_0_1px_0_rgb(255_255_255/0.3),0_6px_16px_-6px_var(--primary)] transition-transform duration-(--duration-panel) ease-(--ease-spring) group-hover/logo:scale-105 group-hover/logo:-rotate-6"
                 >
                     <MessagesSquare class="size-5" aria-hidden="true" />
                 </span>
@@ -42,7 +42,7 @@ const platform = computed(
                 }}</span>
             </Link>
 
-            <div class="my-auto w-full max-w-md reveal py-12">
+            <div class="my-auto w-full max-w-md enter-spring py-12">
                 <div class="mb-8 space-y-2">
                     <h1
                         class="font-display text-3xl leading-tight font-semibold sm:text-4xl"

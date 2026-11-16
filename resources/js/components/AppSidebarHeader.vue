@@ -29,7 +29,7 @@ const role = computed(() => page.props.auth?.role);
     -->
     <header
         data-shell-topbar
-        class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border/80 bg-background/75 px-3 backdrop-blur-md backdrop-saturate-150 sm:h-16 sm:gap-3 sm:px-4 md:px-6 lg:px-8 min-[100rem]:px-10 [@media(max-height:32rem)]:h-12! [@media(max-height:32rem)]:gap-1.5! [@media(max-height:32rem)]:px-2! [@media(max-height:32rem)]:sm:px-3!"
+        class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 glass-bar px-3 sm:h-16 sm:gap-3 sm:px-4 md:px-6 lg:px-8 min-[100rem]:px-10 [@media(max-height:32rem)]:h-12! [@media(max-height:32rem)]:gap-1.5! [@media(max-height:32rem)]:px-2! [@media(max-height:32rem)]:sm:px-3!"
     >
         <SidebarTrigger
             data-tour="shell.menu"

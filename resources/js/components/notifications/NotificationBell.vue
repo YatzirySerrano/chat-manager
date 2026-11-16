@@ -148,8 +148,8 @@ function onOpenChange(value: boolean): void {
                                         cn(
                                             'badge-pop absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[0.6875rem] leading-none font-semibold tabular-nums ring-2 ring-background',
                                             urgent
-                                                ? 'bg-destructive text-destructive-foreground'
-                                                : 'bg-primary text-primary-foreground',
+                                                ? 'bg-destructive text-destructive-foreground shadow-[0_2px_8px_-2px_color-mix(in_oklch,var(--destructive)_70%,transparent)]'
+                                                : 'accent-gradient shadow-[0_2px_8px_-2px_color-mix(in_oklch,var(--primary)_70%,transparent)]',
                                         )
                                     "
                                     aria-hidden="true"
@@ -199,7 +199,7 @@ function onOpenChange(value: boolean): void {
             </div>
 
             <div
-                class="flex gap-1 border-b px-3 py-2 [&>[aria-selected=true]]:shadow-(--shadow-control)"
+                class="flex gap-1 border-b px-3 py-2 [&>[aria-selected=true]]:bg-card [&>[aria-selected=true]]:shadow-(--shadow-control) [&>[aria-selected=true]]:ring-1 [&>[aria-selected=true]]:ring-border"
                 role="tablist"
             >
                 <Button
@@ -332,11 +332,11 @@ function onOpenChange(value: boolean): void {
                     </p>
                 </div>
 
-                <ul v-else class="divide-y">
+                <ul v-else class="reveal-stagger divide-y">
                     <li v-for="item in center.items.value" :key="item.id">
                         <button
                             type="button"
-                            class="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
+                            class="group/notification flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
                             :class="
                                 item.read_at === null && 'bg-primary-soft/35'
                             "
@@ -348,8 +348,8 @@ function onOpenChange(value: boolean): void {
                                     item.read_at !== null
                                         ? 'bg-transparent'
                                         : item.level === 'urgent'
-                                          ? 'bg-destructive'
-                                          : 'bg-primary'
+                                          ? 'live-dot bg-destructive text-destructive'
+                                          : 'bg-primary shadow-[0_0_8px_color-mix(in_oklch,var(--primary)_60%,transparent)]'
                                 "
                                 aria-hidden="true"
                             />

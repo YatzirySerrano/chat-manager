@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
 import { BadgeCheck } from '@lucide/vue';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,6 +44,10 @@ const emit = defineEmits<{ confirm: [reason: string, completed: boolean] }>();
 /** Local draft: the parent sends the request and passes back its error. */
 const form = useForm({ reason: '' });
 const completed = ref(false);
+/* Closing as completed: the confirmation takes the success tone. */
+const completing = computed(
+    () => Boolean(props.completedOption) && completed.value,
+);
 
 const validation = useFormValidation(form, {
     rules: () => ({
@@ -80,7 +84,11 @@ function submit(): void {
         return;
     }
 
-    emit('confirm', form.reason.trim(), props.completedOption ? completed.value : false);
+    emit(
+        'confirm',
+        form.reason.trim(),
+        props.completedOption ? completed.value : false,
+    );
 }
 </script>
 
@@ -117,7 +125,7 @@ function submit(): void {
                 <label
                     v-if="completedOption"
                     for="conversation-completed"
-                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 has-[[data-state=checked]]:border-emerald-500/60 has-[[data-state=checked]]:bg-emerald-500/10"
+                    class="group/done flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-[background-color,border-color,box-shadow] duration-(--duration-base) hover:bg-muted/50 has-[[data-state=checked]]:border-success/50 has-[[data-state=checked]]:bg-success-soft/70 has-[[data-state=checked]]:shadow-(--shadow-control)"
                 >
                     <Checkbox
                         id="conversation-completed"
@@ -126,9 +134,11 @@ function submit(): void {
                         data-conversation-completed
                     />
                     <span class="grid gap-1">
-                        <span class="flex items-center gap-1.5 text-sm font-medium">
+                        <span
+                            class="flex items-center gap-1.5 text-sm font-medium"
+                        >
                             <BadgeCheck
-                                class="size-4 text-emerald-600 dark:text-emerald-400"
+                                class="size-4 text-success transition-transform duration-(--duration-panel) ease-(--ease-spring) group-has-[[data-state=checked]]/done:scale-125"
                                 aria-hidden="true"
                             />
                             La solicitud fue completada
@@ -151,7 +161,15 @@ function submit(): void {
                     </Button>
                     <Button
                         type="submit"
-                        :variant="destructive ? 'destructive' : 'default'"
+                        :variant="
+                            destructive && !completing
+                                ? 'destructive'
+                                : 'default'
+                        "
+                        :class="
+                            completing &&
+                            'bg-success bg-none text-background hover:shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_6px_16px_-6px_color-mix(in_oklch,var(--success)_70%,transparent)]'
+                        "
                         :disabled="processing"
                         :loading="processing"
                     >

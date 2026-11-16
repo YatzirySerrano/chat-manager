@@ -69,10 +69,10 @@ watch(state, () => window.setTimeout(update, 220));
         >
             <span
                 aria-hidden="true"
-                class="pointer-events-none absolute top-0 left-0 rounded-lg bg-sidebar-accent shadow-[0_0_0_1px_var(--sidebar-border),0_1px_2px_color-mix(in_oklch,var(--shadow-ink)_10%,transparent),0_4px_12px_-6px_color-mix(in_oklch,var(--shadow-ink)_14%,transparent)] before:absolute before:inset-y-2 before:-left-3 before:w-0.75 before:rounded-r-full before:bg-sidebar-primary group-data-[collapsible=icon]:before:-left-2 dark:shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-primary)_20%,transparent)]"
+                class="pointer-events-none absolute top-0 left-0 rounded-lg bg-sidebar-accent shadow-[0_0_0_1px_var(--sidebar-border),0_1px_2px_color-mix(in_oklch,var(--shadow-ink)_10%,transparent),0_6px_16px_-8px_color-mix(in_oklch,var(--shadow-ink)_18%,transparent)] before:absolute before:inset-y-2 before:-left-3 before:w-0.75 before:rounded-r-full before:bg-sidebar-primary before:shadow-[0_0_10px_1px_color-mix(in_oklch,var(--sidebar-primary)_55%,transparent)] group-data-[collapsible=icon]:before:-left-2 dark:shadow-[inset_0_1px_0_var(--edge-highlight),inset_0_0_0_1px_color-mix(in_oklch,var(--sidebar-primary)_22%,transparent),0_6px_16px_-8px_rgb(0_0_0/0.5)]"
                 :class="
                     animated &&
-                    'transition-[transform,width,height,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'
+                    'transition-[transform,width,height,opacity] duration-[420ms] ease-(--ease-spring-soft)'
                 "
                 :style="style"
             />

@@ -8,10 +8,12 @@ import {
 } from '@vueuse/core';
 import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import { CHAT_HEADER_AVATAR, CHAT_TOPBAR } from '@/components/chat/bubble';
 import ChatDropOverlay from '@/components/chat/ChatDropOverlay.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChatComposer from '@/components/conversations/ChatComposer.vue';
 import ChatTimeline from '@/components/conversations/ChatTimeline.vue';
+import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import ConversationActions from '@/components/conversations/ConversationActions.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
@@ -28,7 +30,11 @@ import { Button } from '@/components/ui/button';
 import { useChannel } from '@/composables/useChannel';
 import { useInitials } from '@/composables/useInitials';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
-import { CUSTOM_CHAT_COLORS, chatColorVariables } from '@/lib/chatAppearance';
+import {
+    CUSTOM_BUBBLE_CLASSES,
+    CUSTOM_CHAT_COLORS,
+    chatColorVariables,
+} from '@/lib/chatAppearance';
 import { afterUserVisits, onReconnect } from '@/lib/realtime';
 import { formatPhone } from '@/lib/phone';
 import { read as markRead } from '@/routes/conversations';
@@ -341,9 +347,11 @@ const header = ref<HTMLElement | null>(null);
 const { height: headerHeight } = useElementSize(header, undefined, {
     box: 'border-box',
 });
-const paneStyle = computed(() => ({
-    '--chat-header-h': `${Math.round(headerHeight.value)}px`,
-}));
+const paneStyle = computed(() =>
+    headerHeight.value > 0
+        ? { '--chat-header-h': `${Math.round(headerHeight.value)}px` }
+        : {},
+);
 
 /*
  * Files dragged over the conversation: the whole pane is the drop target
@@ -425,215 +433,223 @@ watch(conversationId, () => (dragDepth.value = 0));
         away and the history keeps a usable height of its own.
     -->
     <section
-        class="relative flex h-full min-h-0 min-w-0 flex-col bg-background [@media(max-height:20rem)]:overflow-y-auto"
+        class="relative isolate flex h-full min-h-0 min-w-0 flex-col [@media(max-height:20rem)]:overflow-y-auto"
+        :class="customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS"
         @dragenter="onDragEnter"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
         @drop="onDrop"
         :aria-label="`Conversación con ${conversation.contact.display_name}`"
-        :style="paneStyle"
+        :style="[paneStyle, chatStyle]"
         data-chat-pane
     >
-        <header
-            ref="header"
-            class="chat-header relative z-20 flex min-h-14 items-center gap-2 border-b px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
-        >
-            <Button
-                variant="ghost"
-                size="icon"
-                class="shrink-0 lg:hidden pointer-coarse:size-10"
-                title="Volver a la lista"
-                aria-label="Volver a la lista de conversaciones"
-                @click="emit('back')"
+        <!--
+            The header floats over the top of the history (frosted glass):
+            the messages scroll beneath it. The notice of a pending request
+            belongs to it, so both stay above the history.
+        -->
+        <div ref="header" :class="CHAT_TOPBAR">
+            <header
+                class="chat-header flex min-h-14 items-center gap-2 px-2 py-2 sm:min-h-16 sm:gap-3 sm:px-4 [@media(max-height:32rem)]:min-h-0 [@media(max-height:32rem)]:py-0.5"
             >
-                <ArrowLeft aria-hidden="true" />
-            </Button>
-            <!-- The customer, with the channel they write from on the avatar. -->
-            <span
-                class="relative hidden size-10 shrink-0 sm:block [@media(max-height:32rem)]:hidden!"
-                aria-hidden="true"
-            >
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 lg:hidden pointer-coarse:size-10"
+                    title="Volver a la lista"
+                    aria-label="Volver a la lista de conversaciones"
+                    @click="emit('back')"
+                >
+                    <ArrowLeft aria-hidden="true" />
+                </Button>
+                <!-- The customer, with the channel they write from on the avatar. -->
                 <span
-                    class="grid size-full place-items-center rounded-full bg-primary-soft font-display text-sm font-semibold text-primary-soft-foreground ring-2 ring-background"
-                    >{{ getInitials(conversation.contact.display_name) }}</span
+                    class="relative hidden size-10 shrink-0 sm:block [@media(max-height:32rem)]:hidden!"
+                    aria-hidden="true"
                 >
-                <span
-                    class="absolute -right-0.5 -bottom-0.5 grid size-[1.125rem] place-items-center rounded-full bg-background text-muted-foreground shadow-(--shadow-control) ring-1 ring-border"
-                >
-                    <ChannelIcon
-                        :channel="conversation.connection.channel"
-                        class="size-2.5"
-                    />
-                </span>
-            </span>
-            <button
-                type="button"
-                class="@container min-w-0 flex-1 rounded-lg px-1.5 py-0.5 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
-                :title="
-                    detailsOpen
-                        ? 'Ocultar detalles'
-                        : 'Ver detalles del cliente'
-                "
-                @click="emit('toggleDetails')"
-            >
-                <h2
-                    class="flex min-w-0 items-center gap-2 font-display text-lg leading-snug font-semibold"
-                >
-                    <!-- On phones the channel shows here, next to the name. -->
-                    <ChannelIcon
-                        :channel="conversation.connection.channel"
-                        class="size-4 shrink-0 text-muted-foreground sm:hidden"
-                        aria-hidden="true"
-                    />
+                    <span :class="CHAT_HEADER_AVATAR">{{
+                        getInitials(conversation.contact.display_name)
+                    }}</span>
                     <span
-                        class="truncate"
-                        :title="conversation.contact.display_name"
-                        >{{ conversation.contact.display_name }}</span
+                        class="absolute -right-1 -bottom-1 grid size-5 place-items-center rounded-full bg-card text-muted-foreground shadow-(--shadow-control) ring-2 ring-background"
                     >
-                    <span
-                        v-if="conversation.contact.alias"
-                        class="shrink-0 rounded-full border px-1.5 py-px text-xs font-medium text-muted-foreground"
-                        :title="`Alias personal: solo tú lo ves. Nombre oficial: ${conversation.contact.name}`"
-                        data-alias-badge
-                    >
-                        Alias personal
-                        <span class="sr-only"
-                            >. Nombre oficial:
-                            {{ conversation.contact.name }}</span
-                        >
+                        <ChannelIcon
+                            :channel="conversation.connection.channel"
+                            class="size-2.5"
+                        />
                     </span>
-                </h2>
-                <!--
+                </span>
+                <button
+                    type="button"
+                    class="@container min-w-0 flex-1 rounded-xl px-2 py-1 text-left transition-colors duration-(--duration-fast) outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
+                    :title="
+                        detailsOpen
+                            ? 'Ocultar detalles'
+                            : 'Ver detalles del cliente'
+                    "
+                    @click="emit('toggleDetails')"
+                >
+                    <h2
+                        class="flex min-w-0 items-center gap-2 font-display text-lg leading-snug font-semibold"
+                    >
+                        <!-- On phones the channel shows here, next to the name. -->
+                        <ChannelIcon
+                            :channel="conversation.connection.channel"
+                            class="size-4 shrink-0 text-muted-foreground sm:hidden"
+                            aria-hidden="true"
+                        />
+                        <span
+                            class="truncate"
+                            :title="conversation.contact.display_name"
+                            >{{ conversation.contact.display_name }}</span
+                        >
+                        <span
+                            v-if="conversation.contact.alias"
+                            class="shrink-0 rounded-full border px-1.5 py-px text-xs font-medium text-muted-foreground"
+                            :title="`Alias personal: solo tú lo ves. Nombre oficial: ${conversation.contact.name}`"
+                            data-alias-badge
+                        >
+                            Alias personal
+                            <span class="sr-only"
+                                >. Nombre oficial:
+                                {{ conversation.contact.name }}</span
+                            >
+                        </span>
+                    </h2>
+                    <!--
                     One line on phones and short screens: the state, then
                     the phone (cut with an ellipsis); the channel moves next
                     to the name and the department and agent stay in
                     «Detalles». On very short windows (400 % zoom) only the
                     name shows and this line is left to screen readers.
                 -->
-                <p
-                    class="mt-0.5 flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-xs text-muted-foreground [@media(max-height:20rem)]:sr-only"
-                >
-                    <ConversationStatusBadge
-                        class="shrink-0"
-                        :status="conversation.status"
-                        :label="conversation.status_label"
-                    />
-                    <CompletedBadge
-                        v-if="
-                            conversation.status === 'closed' &&
-                            conversation.completed_at
-                        "
-                        class="shrink-0"
-                        :at="conversation.completed_at"
-                    />
-                    <!-- Not the interactive variant: this line lives inside
+                    <p
+                        class="mt-0.5 flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-xs text-muted-foreground [@media(max-height:20rem)]:sr-only"
+                    >
+                        <ConversationStatusBadge
+                            class="shrink-0"
+                            :status="conversation.status"
+                            :label="conversation.status_label"
+                        />
+                        <CompletedBadge
+                            v-if="
+                                conversation.status === 'closed' &&
+                                conversation.completed_at
+                            "
+                            class="shrink-0"
+                            :at="conversation.completed_at"
+                        />
+                        <!-- Not the interactive variant: this line lives inside
                      the button that opens the details (which show the
                      full SLA detail), and a button cannot hold another. -->
-                    <SlaBadge
-                        v-if="conversation.sla"
-                        :sla="conversation.sla"
-                        variant="compact"
-                        announce
-                    />
-                    <ReadinessBadge
-                        v-if="
-                            conversation.readiness &&
-                            conversation.status !== 'closed' &&
-                            (conversation.readiness.value === 'needs_info' ||
-                                (conversation.readiness.tracked &&
-                                    conversation.status === 'pending'))
-                        "
-                        class="shrink-0"
-                        :value="conversation.readiness.value"
-                        :label="conversation.readiness.label"
-                    />
-                    <CategoryBadge
-                        v-if="conversation.category"
-                        class="shrink-0 max-sm:hidden"
-                        :name="conversation.category.name"
-                        :color="conversation.category.color"
-                        :deleted="conversation.category.is_active === false"
-                    />
-                    <span
-                        class="inline-flex shrink-0 items-center gap-1 max-sm:sr-only"
-                        :title="`Canal: ${conversation.connection.channel_label}`"
-                        data-channel-indicator
-                    >
-                        <ChannelIcon
-                            :channel="conversation.connection.channel"
-                            class="size-3.5 shrink-0"
-                            aria-hidden="true"
+                        <SlaBadge
+                            v-if="conversation.sla"
+                            :sla="conversation.sla"
+                            variant="compact"
+                            announce
                         />
-                        <span class="sr-only">Canal:</span>
-                        {{ conversation.connection.channel_label }}
-                    </span>
-                    <span
-                        v-if="phone"
-                        class="min-w-0 truncate tabular-nums"
-                        :title="phone"
-                        >{{ phone }}</span
-                    >
-                    <DepartmentTag
-                        v-if="conversation.department"
-                        class="min-w-0 shrink-0 @max-md:hidden"
-                        :name="conversation.department.name"
-                        :color="conversation.department.color"
-                        :muted="!conversation.department.is_active"
-                    />
-                    <span class="min-w-0 truncate @max-lg:hidden">
-                        {{
-                            conversation.assignee
-                                ? `Atiende ${conversation.assignee.name}`
-                                : 'Sin agente'
-                        }}
-                    </span>
-                </p>
-            </button>
-            <ConversationActions
-                data-tour="chat.actions"
-                :conversation="conversation"
-                :transfer-reason-required="transferReasonRequired"
-            />
-            <Button
-                v-if="appearance"
-                variant="ghost"
-                size="icon"
-                class="shrink-0 pointer-coarse:size-10"
-                title="Apariencia del chat"
-                aria-label="Cambiar los colores de tu chat"
-                @click="appearanceOpen = true"
-            >
-                <Palette aria-hidden="true" />
-            </Button>
-            <Button
-                variant="ghost"
-                size="icon"
-                class="shrink-0 pointer-coarse:size-10"
-                :title="detailsOpen ? 'Ocultar detalles' : 'Mostrar detalles'"
-                :aria-label="
-                    detailsOpen
-                        ? 'Ocultar el panel de detalles'
-                        : 'Mostrar el panel de detalles'
-                "
-                :aria-pressed="detailsOpen"
-                data-tour="chat.details"
-                @click="emit('toggleDetails')"
-            >
-                <PanelRightClose v-if="detailsOpen" aria-hidden="true" />
-                <PanelRight v-else aria-hidden="true" />
-            </Button>
-        </header>
+                        <ReadinessBadge
+                            v-if="
+                                conversation.readiness &&
+                                conversation.status !== 'closed' &&
+                                (conversation.readiness.value ===
+                                    'needs_info' ||
+                                    (conversation.readiness.tracked &&
+                                        conversation.status === 'pending'))
+                            "
+                            class="shrink-0"
+                            :value="conversation.readiness.value"
+                            :label="conversation.readiness.label"
+                        />
+                        <CategoryBadge
+                            v-if="conversation.category"
+                            class="shrink-0 max-sm:hidden"
+                            :name="conversation.category.name"
+                            :color="conversation.category.color"
+                            :deleted="conversation.category.is_active === false"
+                        />
+                        <span
+                            class="inline-flex shrink-0 items-center gap-1 max-sm:sr-only"
+                            :title="`Canal: ${conversation.connection.channel_label}`"
+                            data-channel-indicator
+                        >
+                            <ChannelIcon
+                                :channel="conversation.connection.channel"
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span class="sr-only">Canal:</span>
+                            {{ conversation.connection.channel_label }}
+                        </span>
+                        <span
+                            v-if="phone"
+                            class="min-w-0 truncate tabular-nums"
+                            :title="phone"
+                            >{{ phone }}</span
+                        >
+                        <DepartmentTag
+                            v-if="conversation.department"
+                            class="min-w-0 shrink-0 @max-md:hidden"
+                            :name="conversation.department.name"
+                            :color="conversation.department.color"
+                            :muted="!conversation.department.is_active"
+                        />
+                        <span class="min-w-0 truncate @max-lg:hidden">
+                            {{
+                                conversation.assignee
+                                    ? `Atiende ${conversation.assignee.name}`
+                                    : 'Sin agente'
+                            }}
+                        </span>
+                    </p>
+                </button>
+                <ConversationActions
+                    data-tour="chat.actions"
+                    :conversation="conversation"
+                    :transfer-reason-required="transferReasonRequired"
+                />
+                <Button
+                    v-if="appearance"
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-10"
+                    title="Apariencia del chat"
+                    aria-label="Cambiar los colores de tu chat"
+                    @click="appearanceOpen = true"
+                >
+                    <Palette aria-hidden="true" />
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 rounded-full text-muted-foreground aria-pressed:bg-primary-soft aria-pressed:text-primary-soft-foreground pointer-coarse:size-10"
+                    :title="
+                        detailsOpen ? 'Ocultar detalles' : 'Mostrar detalles'
+                    "
+                    :aria-label="
+                        detailsOpen
+                            ? 'Ocultar el panel de detalles'
+                            : 'Mostrar el panel de detalles'
+                    "
+                    :aria-pressed="detailsOpen"
+                    data-tour="chat.details"
+                    @click="emit('toggleDetails')"
+                >
+                    <PanelRightClose v-if="detailsOpen" aria-hidden="true" />
+                    <PanelRight v-else aria-hidden="true" />
+                </Button>
+            </header>
 
-        <!-- Why this pending request cannot be taken yet (describes «Aceptar»). -->
-        <AcceptanceNotice
-            v-if="conversation.status === 'pending'"
-            :id="`acceptance-chat-${conversation.id}`"
-            :conversation="conversation"
-            class="border-b bg-muted/40 px-3 py-2 sm:px-4"
-        />
+            <!-- Why this pending request cannot be taken yet (describes «Aceptar»). -->
+            <AcceptanceNotice
+                v-if="conversation.status === 'pending'"
+                :id="`acceptance-chat-${conversation.id}`"
+                :conversation="conversation"
+                class="border-t border-border/60 px-3 py-2 sm:px-4"
+            />
+        </div>
 
         <ChatTimeline
-            :style="chatStyle"
             :conversation="conversation"
             :items="timeline.items.value"
             :has-more="timeline.hasMore.value"

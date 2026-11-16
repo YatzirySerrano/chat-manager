@@ -58,7 +58,7 @@ onBeforeUnmount(() => unregister());
 
 <template>
     <header
-        class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3"
+        class="flex enter-spring flex-wrap items-end justify-between gap-x-6 gap-y-3"
         data-slot="page-header"
     >
         <div class="min-w-0 grow basis-80 space-y-1.5">

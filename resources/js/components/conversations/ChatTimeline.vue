@@ -17,7 +17,7 @@ import {
     watch,
 } from 'vue';
 import { toast } from 'vue-sonner';
-import { arriveClass } from '@/components/chat/bubble';
+import { CHAT_UNDER_HEADER, arriveClass } from '@/components/chat/bubble';
 import ChatDaySeparator from '@/components/chat/ChatDaySeparator.vue';
 import ChatDivider from '@/components/chat/ChatDivider.vue';
 import ChatHistoryStart from '@/components/chat/ChatHistoryStart.vue';
@@ -25,17 +25,13 @@ import ChatJumpButton from '@/components/chat/ChatJumpButton.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
-import { CHAT_CANVAS } from '@/components/conversations/chatCanvas';
 import { groupByCalendarDay } from '@/components/conversations/dayGroups';
 import { todayKey } from '@/components/conversations/messageFormat';
 import TimelineEvent from '@/components/conversations/TimelineEvent.vue';
 import TimelineNote from '@/components/conversations/TimelineNote.vue';
 import type { TimelineItem } from '@/components/conversations/useConversationTimeline';
 import EmptyState from '@/components/EmptyState.vue';
-import {
-    CUSTOM_BUBBLE_CLASSES,
-    CUSTOM_CHAT_COLORS,
-} from '@/lib/chatAppearance';
+import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
 import { useStickToBottom } from '@/composables/useStickToBottom';
 import { MEDIA_GALLERY, viewerKind } from '@/lib/conversations/media';
 import type { ViewerItem } from '@/lib/conversations/media';
@@ -651,12 +647,12 @@ defineExpose({ scrollToBottom });
     >
         <div
             ref="scroller"
-            class="h-full overflow-y-auto overscroll-contain px-3 pt-3 sm:px-6 lg:px-8 [@media(max-height:20rem)]:overscroll-auto [@media(max-height:20rem)]:pt-2"
+            class="h-full overflow-y-auto overscroll-contain px-3 sm:px-6 lg:px-8 [@media(max-height:20rem)]:overscroll-auto"
             :class="[
+                CHAT_UNDER_HEADER,
                 showJumpButton
                     ? 'pb-16 [@media(max-height:20rem)]:pb-10'
                     : 'pb-4',
-                customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS,
             ]"
             tabindex="0"
             role="log"

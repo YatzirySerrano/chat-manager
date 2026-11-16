@@ -3,6 +3,7 @@ import { Link, router, useHttp } from '@inertiajs/vue3';
 import { Archive, ArrowLeft, BellOff, Info, Palette } from '@lucide/vue';
 import {
     useDocumentVisibility,
+    useElementSize,
     useEventListener,
     useIntervalFn,
     useWindowFocus,
@@ -16,7 +17,11 @@ import {
     ref,
     watch,
 } from 'vue';
-import { arriveClass } from '@/components/chat/bubble';
+import {
+    CHAT_TOPBAR,
+    CHAT_UNDER_HEADER,
+    arriveClass,
+} from '@/components/chat/bubble';
 import ChatDaySeparator from '@/components/chat/ChatDaySeparator.vue';
 import ChatDivider from '@/components/chat/ChatDivider.vue';
 import ChatDropOverlay from '@/components/chat/ChatDropOverlay.vue';
@@ -110,6 +115,20 @@ watch(
 
 const customColors = computed(() => Boolean(appearance.value?.colors));
 const chatStyle = computed(() => chatColorVariables(appearance.value?.colors));
+
+/*
+ * The frosted header floats over the history: its measured height gives
+ * the history its top room and stops the sticky day labels right below it.
+ */
+const topbar = ref<HTMLElement | null>(null);
+const { height: topbarHeight } = useElementSize(topbar, undefined, {
+    box: 'border-box',
+});
+const paneStyle = computed(() =>
+    topbarHeight.value > 0
+        ? { '--chat-header-h': `${Math.round(topbarHeight.value)}px` }
+        : {},
+);
 
 provide(CUSTOM_CHAT_COLORS, customColors);
 
@@ -1055,126 +1074,137 @@ onBeforeUnmount(() => {
 
 <template>
     <section
-        class="relative flex h-full min-h-0 flex-col"
+        class="relative isolate flex h-full min-h-0 flex-col"
+        :class="customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS"
+        :style="[paneStyle, chatStyle]"
         :aria-label="`Chat: ${thread.title}`"
         @dragenter="onDragEnter"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
         @drop="onDrop"
     >
-        <header
-            class="chat-header relative z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/90 px-1.5 sm:h-16 sm:gap-2 sm:px-4"
-        >
-            <Button
-                variant="ghost"
-                size="icon"
-                class="rounded-full lg:hidden"
-                as-child
-                aria-label="Volver a la lista de chats"
+        <!--
+            The header floats over the top of the history (frosted glass):
+            the messages scroll beneath it. The archived notice belongs to it.
+        -->
+        <div ref="topbar" :class="CHAT_TOPBAR">
+            <header
+                class="chat-header flex h-14 shrink-0 items-center gap-1 px-1.5 sm:h-16 sm:gap-2 sm:px-4"
             >
-                <Link :href="teamChatIndex()" preserve-state>
-                    <ArrowLeft />
-                </Link>
-            </Button>
-            <!-- A shortcut for the pointer; the «Información» button is the control. -->
-            <div
-                class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl py-1 pr-3 pl-1 transition-colors duration-(--duration-fast) hover:bg-accent/70"
-                @click="emit('openSettings')"
-            >
-                <TeamAvatar
-                    :name="thread.title"
-                    :group="isGroup"
-                    :deleted="thread.partner?.deleted ?? false"
-                    :online="partnerOnline"
-                />
-                <span class="min-w-0 flex-1">
-                    <h2
-                        class="flex items-center gap-1.5 font-display text-[1.05rem] leading-tight font-semibold"
-                    >
-                        <span class="truncate">{{ thread.title }}</span>
-                        <BellOff
-                            v-if="thread.me.muted"
-                            class="size-3.5 shrink-0 text-muted-foreground"
-                            aria-label="Silenciado"
-                        />
-                    </h2>
-                    <Transition name="chat-attach" mode="out-in">
-                        <span
-                            :key="
-                                typingLabel && thread.can.post
-                                    ? 'typing'
-                                    : 'status'
-                            "
-                            class="flex items-center gap-1.5 truncate text-xs"
-                            :class="
-                                typingLabel && thread.can.post
-                                    ? 'font-medium text-primary'
-                                    : partnerOnline
-                                      ? 'text-success'
-                                      : 'text-muted-foreground'
-                            "
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="rounded-full lg:hidden"
+                    as-child
+                    aria-label="Volver a la lista de chats"
+                >
+                    <Link :href="teamChatIndex()" preserve-state>
+                        <ArrowLeft />
+                    </Link>
+                </Button>
+                <!-- A shortcut for the pointer; the «Información» button is the control. -->
+                <div
+                    class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl py-1 pr-3 pl-1 transition-colors duration-(--duration-fast) hover:bg-accent/60"
+                    @click="emit('openSettings')"
+                >
+                    <TeamAvatar
+                        :name="thread.title"
+                        :group="isGroup"
+                        :deleted="thread.partner?.deleted ?? false"
+                        :online="partnerOnline"
+                    />
+                    <span class="min-w-0 flex-1">
+                        <h2
+                            class="flex items-center gap-1.5 font-display text-[1.05rem] leading-tight font-semibold"
                         >
-                            <span
-                                v-if="!typingLabel && partnerOnline && !isGroup"
-                                class="size-1.5 shrink-0 rounded-full bg-success"
-                                aria-hidden="true"
+                            <span class="truncate">{{ thread.title }}</span>
+                            <BellOff
+                                v-if="thread.me.muted"
+                                class="size-3.5 shrink-0 text-muted-foreground"
+                                aria-label="Silenciado"
                             />
-                            <span class="truncate">{{
-                                typingLabel && thread.can.post
-                                    ? typingLabel
-                                    : subtitle
-                            }}</span>
-                        </span>
-                    </Transition>
-                </span>
-            </div>
-            <Button
-                v-if="appearance"
-                variant="ghost"
-                size="icon"
-                class="shrink-0 rounded-full text-muted-foreground"
-                title="Apariencia del chat"
-                aria-label="Cambiar los colores de tu chat"
-                @click="appearanceOpen = true"
-            >
-                <Palette aria-hidden="true" />
-            </Button>
-            <Button
-                variant="ghost"
-                size="icon"
-                class="shrink-0 rounded-full text-muted-foreground"
-                :aria-label="
-                    isGroup
-                        ? 'Información y ajustes del grupo'
-                        : 'Información del chat'
-                "
-                :title="
-                    isGroup
-                        ? 'Información y ajustes del grupo'
-                        : 'Información del chat'
-                "
-                @click="emit('openSettings')"
-            >
-                <Info />
-            </Button>
-        </header>
+                        </h2>
+                        <Transition name="chat-attach" mode="out-in">
+                            <span
+                                :key="
+                                    typingLabel && thread.can.post
+                                        ? 'typing'
+                                        : 'status'
+                                "
+                                class="flex items-center gap-1.5 truncate text-xs"
+                                :class="
+                                    typingLabel && thread.can.post
+                                        ? 'font-medium text-primary'
+                                        : partnerOnline
+                                          ? 'text-success'
+                                          : 'text-muted-foreground'
+                                "
+                            >
+                                <span
+                                    v-if="
+                                        !typingLabel &&
+                                        partnerOnline &&
+                                        !isGroup
+                                    "
+                                    class="size-1.5 shrink-0 rounded-full bg-success"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate">{{
+                                    typingLabel && thread.can.post
+                                        ? typingLabel
+                                        : subtitle
+                                }}</span>
+                            </span>
+                        </Transition>
+                    </span>
+                </div>
+                <Button
+                    v-if="appearance"
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 rounded-full text-muted-foreground"
+                    title="Apariencia del chat"
+                    aria-label="Cambiar los colores de tu chat"
+                    @click="appearanceOpen = true"
+                >
+                    <Palette aria-hidden="true" />
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 rounded-full text-muted-foreground"
+                    :aria-label="
+                        isGroup
+                            ? 'Información y ajustes del grupo'
+                            : 'Información del chat'
+                    "
+                    :title="
+                        isGroup
+                            ? 'Información y ajustes del grupo'
+                            : 'Información del chat'
+                    "
+                    @click="emit('openSettings')"
+                >
+                    <Info />
+                </Button>
+            </header>
 
-        <div
-            v-if="thread.archived"
-            class="flex shrink-0 items-center gap-2 border-b bg-warning-soft px-4 py-2 text-xs text-warning-soft-foreground"
-            role="status"
-        >
-            <Archive class="size-3.5 shrink-0" aria-hidden="true" />
-            Grupo archivado: puedes consultar su historial, pero ya no se pueden
-            enviar mensajes.
+            <div
+                v-if="thread.archived"
+                class="flex shrink-0 items-center gap-2 border-t border-warning/25 bg-warning-soft/80 px-4 py-2 text-xs text-warning-soft-foreground"
+                role="status"
+            >
+                <Archive class="size-3.5 shrink-0" aria-hidden="true" />
+                Grupo archivado: puedes consultar su historial, pero ya no se
+                pueden enviar mensajes.
+            </div>
         </div>
 
         <div class="relative min-h-0 flex-1">
             <div
                 ref="scroller"
                 class="relative h-full overflow-y-auto overscroll-contain pb-3"
-                :class="customColors ? CUSTOM_BUBBLE_CLASSES.chat : CHAT_CANVAS"
-                :style="chatStyle"
+                :class="CHAT_UNDER_HEADER"
                 :data-custom-colors="customColors || undefined"
                 role="log"
                 aria-live="polite"
@@ -1182,9 +1212,7 @@ onBeforeUnmount(() => {
                 :aria-busy="loadingOlder || loadingNewer"
                 @scroll.passive="onScroll"
             >
-                <div
-                    class="mx-auto w-full max-w-[64rem] px-3 pt-1 sm:px-6 lg:px-8"
-                >
+                <div class="mx-auto w-full max-w-[64rem] px-3 sm:px-6 lg:px-8">
                     <ChatHistoryStart
                         :has-more="hasMoreBefore"
                         :loading="loadingOlder"
@@ -1310,7 +1338,7 @@ onBeforeUnmount(() => {
 
         <p
             v-if="actionError"
-            class="flex shrink-0 items-center justify-between gap-3 border-t bg-destructive-soft px-4 py-1.5 text-xs text-destructive-soft-foreground"
+            class="mx-auto flex w-[calc(100%-1rem)] max-w-[60rem] shrink-0 items-center justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive-soft px-4 py-1.5 text-xs text-destructive-soft-foreground shadow-(--shadow-control) motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 sm:w-[calc(100%-2.5rem)]"
             role="alert"
         >
             {{ actionError }}
@@ -1335,7 +1363,7 @@ onBeforeUnmount(() => {
         />
         <p
             v-else
-            class="shrink-0 border-t bg-surface-sunken px-4 py-3 text-sm text-muted-foreground sm:px-5"
+            class="mx-2 mt-1.5 mb-2.5 shrink-0 rounded-[1.4rem] border border-dashed border-border-strong/70 glass-card px-4 py-3 text-sm text-muted-foreground sm:mx-5 sm:mb-4"
         >
             {{
                 thread.post_blocked_reason ??

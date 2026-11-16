@@ -3,7 +3,6 @@ import SlaBadge from '@/components/sla/SlaBadge.vue';
 import {
     Bot,
     CircleCheck,
-    CircleDot,
     CircleHelp,
     EllipsisVertical,
     Eye,
@@ -17,7 +16,6 @@ import {
 } from '@lucide/vue';
 import { computed, inject } from 'vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
-import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import {
     ACCEPT_BLOCK,
     noAcceptBlock,
@@ -40,6 +38,7 @@ import {
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import CountBadge from '@/components/filters/CountBadge.vue';
 import HighlightMatch from '@/components/filters/HighlightMatch.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,7 +48,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useInitials } from '@/composables/useInitials';
 import { useLongPress } from '@/composables/useLongPress';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
@@ -152,8 +150,6 @@ function open(): void {
         emit('select', props.conversation.id);
     }
 }
-
-const { getInitials } = useInitials();
 
 /*
  * Name shown: the viewer's private alias when PERSONALIZATION provides it
@@ -292,20 +288,17 @@ const label = computed(() => {
 </script>
 
 <template>
-    <div class="group/row" :data-readiness="readiness?.value">
+    <div
+        class="group/row relative list-item"
+        :data-readiness="readiness?.value"
+        :data-selected="selected ? '' : undefined"
+    >
         <div class="relative">
             <button
                 type="button"
-                class="relative flex w-full items-start gap-3 border-l-[3px] py-2.5 pr-11 pl-3 text-left transition-[background-color,border-color] duration-(--duration-fast) ease-(--ease-standard) outline-none select-none [-webkit-touch-callout:none] focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                :class="[
-                    selected
-                        ? 'border-l-primary bg-primary-soft'
-                        : pending
-                          ? 'border-l-warning hover:bg-accent/60'
-                          : unread > 0
-                            ? 'border-l-primary/50 hover:border-l-primary hover:bg-accent/60'
-                            : 'border-l-transparent hover:border-l-primary/50 hover:bg-accent/60',
-                ]"
+                class="list-row flex w-full items-start gap-3 py-2.5 pr-3 pl-3.5 text-left outline-none select-none [-webkit-touch-callout:none] pointer-coarse:pr-12"
+                :class="pending && !selected && 'bg-warning/[0.06]'"
+                :data-selected="selected ? '' : undefined"
                 :aria-current="selected ? 'true' : undefined"
                 :aria-label="label"
                 data-inbox-item
@@ -313,32 +306,27 @@ const label = computed(() => {
                 @click="open"
             >
                 <span
-                    class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:scale-105"
-                    :class="[
-                        selected && 'ring-2 ring-primary/40',
-                        pending
-                            ? 'bg-warning/15 text-foreground'
-                            : 'bg-primary-soft text-primary-soft-foreground',
-                        conversation.status === 'closed' && 'opacity-70',
-                    ]"
+                    v-if="unread > 0"
+                    class="list-unread-dot"
                     aria-hidden="true"
-                >
-                    {{ getInitials(displayName) }}
-                    <Hourglass
-                        v-if="pending"
-                        class="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-background p-0.5 text-warning"
-                    />
-                </span>
+                />
+                <ListAvatar
+                    :name="displayName"
+                    :channel="conversation.connection.channel"
+                    :channel-title="connectionTitle"
+                    :pending="pending"
+                    :dimmed="conversation.status === 'closed'"
+                />
 
                 <span class="min-w-0 flex-1">
                     <span class="flex items-baseline justify-between gap-2">
                         <span class="flex min-w-0 items-center gap-1.5">
                             <span
-                                class="truncate font-display text-[0.975rem] font-semibold"
+                                class="truncate font-display text-[0.95rem] leading-snug"
                                 :class="
                                     unread > 0
-                                        ? 'text-foreground'
-                                        : 'text-foreground/90'
+                                        ? 'font-bold text-foreground'
+                                        : 'font-semibold text-foreground/90'
                                 "
                                 :title="displayName"
                                 ><HighlightMatch
@@ -347,7 +335,7 @@ const label = computed(() => {
                             /></span>
                             <span
                                 v-if="hasAlias"
-                                class="inline-flex shrink-0 items-center gap-0.5 rounded border px-1 text-xs leading-4 text-muted-foreground"
+                                class="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-muted px-1.5 text-[0.7rem] leading-4 font-medium text-muted-foreground"
                                 :title="aliasTitle"
                                 data-inbox-alias
                             >
@@ -357,7 +345,7 @@ const label = computed(() => {
                         </span>
                         <time
                             v-if="conversation.last_message_at"
-                            class="shrink-0 text-xs tabular-nums"
+                            class="list-time shrink-0 text-[0.7rem] tabular-nums"
                             :class="
                                 unread > 0
                                     ? 'font-semibold text-primary'
@@ -371,9 +359,9 @@ const label = computed(() => {
                         >
                     </span>
 
-                    <span class="mt-1 flex items-center gap-1.5">
+                    <span class="mt-0.5 flex items-center gap-1.5">
                         <span
-                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-sm"
+                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-[0.8125rem] leading-snug"
                             :class="
                                 unread > 0
                                     ? 'font-medium text-foreground'
@@ -404,28 +392,29 @@ const label = computed(() => {
                                     : 'Sin mensajes'
                             }}</span>
                         </span>
-                        <CircleDot
+                        <!-- The customer wrote last and waits: a chip, not a lone icon. -->
+                        <span
                             v-if="conversation.awaiting_reply && unread === 0"
-                            class="size-3.5 shrink-0 text-warning"
+                            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-soft px-1.5 text-[0.7rem] leading-[1.125rem] font-semibold text-warning-soft-foreground"
                             aria-hidden="true"
-                        />
-                        <!-- Bumps and sends one ring out when a message arrives. -->
+                            data-inbox-awaiting-chip
+                        >
+                            <span class="size-1.5 rounded-full bg-warning" />
+                            Espera
+                        </span>
+                        <!-- Bumps, rolls and sends one ring out when a message arrives. -->
                         <CountBadge
                             v-if="unread > 0"
                             :value="unread"
                             tone="primary"
                             halo
-                            class="h-5 min-w-5 text-xs"
+                            class="h-5 min-w-5 text-[0.7rem]"
                         />
-                    </span>
-
-                    <!-- Response objective (SLA) of the request in course. -->
-                    <span v-if="conversation.sla" class="mt-1.5 flex">
-                        <SlaBadge :sla="conversation.sla" variant="compact" />
                     </span>
 
                     <span
                         v-if="
+                            conversation.sla ||
                             pending ||
                             showOperational ||
                             conversation.status === 'closed' ||
@@ -433,8 +422,14 @@ const label = computed(() => {
                             conversation.category ||
                             visibleTags.length > 0
                         "
-                        class="mt-1.5 flex flex-wrap items-center gap-1"
+                        class="mt-2 flex flex-wrap items-center gap-1"
                     >
+                        <!-- Response objective (SLA) of the request in course. -->
+                        <SlaBadge
+                            v-if="conversation.sla"
+                            :sla="conversation.sla"
+                            variant="compact"
+                        />
                         <!-- Pending: text and icon on the soft warning pair
                          (≥4.5:1 in both themes), never color alone. -->
                         <span
@@ -487,7 +482,7 @@ const label = computed(() => {
                         />
                         <span
                             v-if="hiddenTags > 0"
-                            class="rounded-sm bg-surface-sunken px-1 text-xs text-muted-foreground tabular-nums"
+                            class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
                             :title="`${hiddenTags} etiquetas más`"
                             >+{{ hiddenTags }}</span
                         >
@@ -499,7 +494,7 @@ const label = computed(() => {
                             showChannel ||
                             (showAssignee && conversation.assignee)
                         "
-                        class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+                        class="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
                         :class="[
                             canAccept &&
                                 'min-h-8 pr-24 pointer-coarse:min-h-10',
@@ -524,16 +519,9 @@ const label = computed(() => {
                                 conversation.assignee.name
                             }}</span>
                         </span>
-                        <ChannelIcon
-                            v-if="showOperational || showChannel"
-                            :title="connectionTitle"
-                            :channel="conversation.connection.channel"
-                            class="size-3.5 shrink-0"
-                            aria-hidden="true"
-                        />
                         <span
                             v-if="showChannel"
-                            class="shrink-0 rounded border px-1 leading-4 text-foreground"
+                            class="shrink-0 rounded-full bg-muted px-1.5 leading-4 font-medium text-foreground/80"
                             data-inbox-channel
                             >{{ conversation.connection.channel_label }}</span
                         >
@@ -556,90 +544,122 @@ const label = computed(() => {
                 </span>
             </button>
 
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        class="absolute top-2 right-1.5 text-muted-foreground opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 motion-safe:transition-opacity pointer-coarse:size-10 pointer-coarse:opacity-100"
-                        :aria-label="`Acciones de la conversación con ${displayName}`"
-                        data-inbox-row-menu
-                    >
-                        <EllipsisVertical aria-hidden="true" />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-56">
-                    <DropdownMenuItem @select="emit('select', conversation.id)">
-                        <MessageSquareText aria-hidden="true" />
-                        Abrir
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        data-inbox-preview
-                        @select="emit('preview', conversation)"
-                    >
-                        <Eye aria-hidden="true" />
-                        Vista previa
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                        v-if="unread > 0"
-                        @select="emit('markRead', conversation.id)"
-                    >
-                        <MailOpen aria-hidden="true" />
-                        Marcar como leída
-                    </DropdownMenuItem>
-                    <template
-                        v-if="conversation.can.confirm_ready && readiness"
-                    >
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            v-if="readiness.value === 'needs_info'"
-                            data-readiness-confirm
-                            @select="
-                                queueActions.readiness(conversation, 'ready')
-                            "
+            <!-- Hover quick actions: a floating bar over the time. -->
+            <div
+                class="list-quick absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-full glass p-0.5 shadow-(--shadow-lift,var(--shadow-hover)) ring-1 ring-border/80 pointer-coarse:bg-transparent pointer-coarse:shadow-none pointer-coarse:ring-0"
+            >
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:hidden"
+                    :aria-label="`Vista previa de la conversación con ${displayName}`"
+                    title="Vista previa sin marcar como leída"
+                    data-inbox-quick-preview
+                    @click="emit('preview', conversation)"
+                >
+                    <Eye aria-hidden="true" />
+                </Button>
+                <Button
+                    v-if="unread > 0"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:hidden"
+                    :aria-label="`Marcar como leída la conversación con ${displayName}`"
+                    title="Marcar como leída"
+                    data-inbox-quick-read
+                    @click="emit('markRead', conversation.id)"
+                >
+                    <MailOpen aria-hidden="true" />
+                </Button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            class="size-7 rounded-full text-muted-foreground hover:text-foreground active:scale-90 pointer-coarse:size-10"
+                            :aria-label="`Acciones de la conversación con ${displayName}`"
+                            data-inbox-row-menu
                         >
-                            <CircleCheck aria-hidden="true" />
-                            Confirmar solicitud completa
+                            <EllipsisVertical aria-hidden="true" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" class="w-56">
+                        <DropdownMenuItem
+                            @select="emit('select', conversation.id)"
+                        >
+                            <MessageSquareText aria-hidden="true" />
+                            Abrir
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                            v-else
-                            data-readiness-revert
-                            @select="
-                                queueActions.readiness(
-                                    conversation,
-                                    'needs_info',
-                                )
-                            "
+                            data-inbox-preview
+                            @select="emit('preview', conversation)"
                         >
-                            <CircleHelp aria-hidden="true" />
-                            Marcar que necesita información
-                        </DropdownMenuItem>
-                    </template>
-                    <template v-if="conversation.can.tag || canEditAlias">
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            v-if="conversation.can.tag"
-                            @select="emit('manageTags', conversation)"
-                        >
-                            <Tags aria-hidden="true" />
-                            Administrar etiquetas
+                            <Eye aria-hidden="true" />
+                            Vista previa
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                            v-if="canEditAlias"
-                            @select="emit('editAlias', conversation)"
+                            v-if="unread > 0"
+                            @select="emit('markRead', conversation.id)"
                         >
-                            <UserPen aria-hidden="true" />
-                            Asignar alias personal
+                            <MailOpen aria-hidden="true" />
+                            Marcar como leída
                         </DropdownMenuItem>
-                    </template>
-                </DropdownMenuContent>
-            </DropdownMenu>
+                        <template
+                            v-if="conversation.can.confirm_ready && readiness"
+                        >
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                v-if="readiness.value === 'needs_info'"
+                                data-readiness-confirm
+                                @select="
+                                    queueActions.readiness(
+                                        conversation,
+                                        'ready',
+                                    )
+                                "
+                            >
+                                <CircleCheck aria-hidden="true" />
+                                Confirmar solicitud completa
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                v-else
+                                data-readiness-revert
+                                @select="
+                                    queueActions.readiness(
+                                        conversation,
+                                        'needs_info',
+                                    )
+                                "
+                            >
+                                <CircleHelp aria-hidden="true" />
+                                Marcar que necesita información
+                            </DropdownMenuItem>
+                        </template>
+                        <template v-if="conversation.can.tag || canEditAlias">
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                v-if="conversation.can.tag"
+                                @select="emit('manageTags', conversation)"
+                            >
+                                <Tags aria-hidden="true" />
+                                Administrar etiquetas
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                v-if="canEditAlias"
+                                @select="emit('editAlias', conversation)"
+                            >
+                                <UserPen aria-hidden="true" />
+                                Asignar alias personal
+                            </DropdownMenuItem>
+                        </template>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
 
-            <span v-if="canAccept" class="absolute right-3 bottom-3">
+            <span v-if="canAccept" class="absolute right-3 bottom-2.5">
                 <Button
                     size="sm"
-                    variant="outline"
-                    class="bg-background pointer-coarse:h-10"
+                    class="rounded-full accent-gradient glow pointer-coarse:h-10"
                     :disabled="acceptingId !== null || acceptBlocked"
                     :aria-label="
                         acceptBlocked
@@ -671,7 +691,7 @@ const label = computed(() => {
             v-if="pending"
             :id="acceptanceId"
             :conversation="conversation"
-            class="-mt-1 pr-3 pb-3 pl-[4.25rem]"
+            class="relative -mt-1 pr-3 pb-3 pl-[4.125rem]"
         />
     </div>
 </template>

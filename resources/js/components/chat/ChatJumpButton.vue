@@ -34,7 +34,7 @@ const label = computed(() =>
         <button
             v-if="visible"
             type="button"
-            class="absolute z-20 inline-flex items-center gap-1.5 rounded-full border bg-popover/95 text-sm font-medium text-foreground shadow-elevated backdrop-blur-md transition-[background-color,scale,padding] duration-(--duration-fast) outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/45 active:scale-95"
+            class="absolute z-20 inline-flex items-center gap-1.5 rounded-full border border-border/70 glass text-sm font-medium text-foreground shadow-elevated transition-[background-color,scale,padding,translate] duration-(--duration-base) ease-(--ease-spring) outline-none hover:-translate-y-0.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/45 active:scale-90"
             :class="[
                 compact
                     ? 'right-2 bottom-2 h-7 px-2'
@@ -52,7 +52,7 @@ const label = computed(() =>
             <span
                 v-if="count > 0"
                 :key="count"
-                class="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground tabular-nums motion-safe:animate-in motion-safe:duration-300 motion-safe:zoom-in-50"
+                class="grid h-5 min-w-5 place-items-center rounded-full accent-gradient px-1.5 text-xs font-semibold tabular-nums shadow-(--shadow-glow) motion-safe:bump"
                 >{{ count > 99 ? '99+' : count }}</span
             >
             <span v-if="count > 0 && !compact">{{

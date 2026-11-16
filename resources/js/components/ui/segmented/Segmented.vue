@@ -82,7 +82,7 @@ watch([selectedKey, () => props.options.length], update, { flush: "post" })
       <span
         aria-hidden="true"
         class="pointer-events-none absolute top-0 left-0 -z-10 rounded-md border border-border-strong/60 bg-card shadow-(--shadow-control)"
-        :class="animated && 'transition-[transform,width,height,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'"
+        :class="animated && 'transition-[transform,width,height,opacity] duration-[380ms] ease-(--ease-spring-soft)'"
         :style="style"
       />
       <RadioGroupItem

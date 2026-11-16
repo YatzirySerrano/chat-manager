@@ -69,11 +69,14 @@
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
     --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* Gentler overshoot for larger surfaces (dialogs, panels, indicators). */
+    --ease-spring-soft: cubic-bezier(0.22, 1.25, 0.36, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
     /*
-      Radius by hierarchy, crisp like printed forms: controls 6 px
-      (rounded-md), popovers 8 px (rounded-lg), panels 12 px (rounded-xl),
-      dialogs 16 px (rounded-2xl). Chat bubbles keep their own radius.
+      Radius by hierarchy, soft but not bubbly: controls 8 px (rounded-md),
+      popovers 10 px (rounded-lg), panels 14 px (rounded-xl), dialogs 18 px
+      (rounded-2xl). Chat bubbles keep their own radius.
     */
     --radius-2xl: calc(var(--radius) + 8px);
     --radius-xl: calc(var(--radius) + 4px);
@@ -150,6 +153,30 @@
     --shadow-control:
         0 1px 1px color-mix(in oklch, var(--shadow-ink) 6%, transparent),
         0 1px 2px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent);
+    /*
+      Second redesign ("Pulso"): panels float on the canvas. shadow-float is
+      the resting elevation of a floating panel (contact + ambient + a light
+      lip on top in dark mode via --edge-highlight); shadow-glow is a halo in
+      the palette colour for the primary action, the active indicator and
+      focused fields.
+    */
+    --shadow-float:
+        inset 0 1px 0 var(--edge-highlight),
+        0 0 0 1px color-mix(in oklch, var(--shadow-ink) 3%, transparent),
+        0 1px 2px color-mix(in oklch, var(--shadow-ink) 5%, transparent),
+        0 6px 16px -6px color-mix(in oklch, var(--shadow-ink) 10%, transparent),
+        0 18px 40px -24px
+            color-mix(in oklch, var(--shadow-ink) 18%, transparent);
+    --shadow-lift:
+        inset 0 1px 0 var(--edge-highlight),
+        0 2px 4px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
+        0 12px 28px -10px
+            color-mix(in oklch, var(--shadow-ink) 22%, transparent);
+    --shadow-glow:
+        0 1px 2px color-mix(in oklch, var(--primary) 30%, transparent),
+        0 6px 18px -6px color-mix(in oklch, var(--primary) 55%, transparent);
+    --shadow-glow-ring: 0 0 0 4px
+        color-mix(in oklch, var(--primary) 18%, transparent);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -271,7 +298,9 @@
     --chart-3: var(--chart-cat-3);
     --chart-4: var(--chart-cat-4);
     --chart-5: var(--chart-cat-5);
-    --radius: 0.5rem;
+    --radius: 0.625rem;
+    /* Top lip of floating panels (only visible in dark mode). */
+    --edge-highlight: oklch(1 0 0 / 0.6);
     /*
       The navigation rail is a sheet of tinted paper one step below the
       canvas: the same light world as the page, so eyes do not re-adapt
@@ -330,6 +359,7 @@
     --duration-fast: 150ms;
     --duration-base: 200ms;
     --duration-panel: 280ms;
+    --duration-slow: 420ms;
     --stagger: 36ms;
     /* Also exposed as ease-standard / ease-emphasized utilities via @theme. */
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
@@ -407,6 +437,7 @@
     --ink-border: oklch(0.215 calc(var(--ink-chroma) * 0.7) var(--brand-hue));
     --shadow-color: 220 40% 2%;
     --shadow-ink: oklch(0 0 0);
+    --edge-highlight: oklch(1 0 0 / 0.045);
 }
 
 /*
@@ -902,14 +933,13 @@
   the entrance ends.
 */
 @utility reveal {
-    animation: reveal-up var(--duration-panel) var(--ease-out-quint) backwards;
+    animation: reveal-up 360ms var(--ease-spring-soft) backwards;
     animation-delay: calc(var(--i, 0) * var(--stagger));
 }
 
 @utility reveal-stagger {
     & > * {
-        animation: reveal-up var(--duration-panel) var(--ease-out-quint)
-            backwards;
+        animation: reveal-up 360ms var(--ease-spring-soft) backwards;
         animation-delay: calc(11 * var(--stagger));
     }
 
@@ -966,21 +996,21 @@
     &[data-state='open'],
     &[data-state='delayed-open'],
     &[data-state='instant-open'] {
-        animation: pop-in var(--duration-base) var(--ease-out-quint);
+        animation: pop-in 240ms var(--ease-spring-soft);
     }
 
     &[data-state='closed'] {
-        animation: pop-out 120ms var(--ease-standard) forwards;
+        animation: pop-out 120ms var(--ease-exit) forwards;
     }
 }
 
 @utility dialog-motion {
     &[data-state='open'] {
-        animation: dialog-in var(--duration-panel) var(--ease-out-quint);
+        animation: dialog-in 340ms var(--ease-spring-soft);
     }
 
     &[data-state='closed'] {
-        animation: dialog-out var(--duration-fast) var(--ease-standard) forwards;
+        animation: dialog-out var(--duration-fast) var(--ease-exit) forwards;
     }
 }
 
@@ -994,7 +1024,8 @@
 @keyframes pop-in {
     from {
         opacity: 0;
-        transform: scale(0.95);
+        transform: scale(0.94) translateY(-2px);
+        filter: blur(2px);
     }
 }
 
@@ -1008,7 +1039,8 @@
 @keyframes dialog-in {
     from {
         opacity: 0;
-        transform: translateY(14px) scale(0.97);
+        transform: translateY(16px) scale(0.96);
+        filter: blur(3px);
     }
 }
 
@@ -1042,7 +1074,8 @@
 @keyframes page-in {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translateY(10px) scale(0.995);
+        filter: blur(2px);
     }
 }
 
@@ -1071,7 +1104,7 @@
 }
 
 ::view-transition-new(page) {
-    animation: page-in 240ms var(--ease-out-quint) 60ms both;
+    animation: page-in 320ms var(--ease-spring-soft) 50ms both;
 }
 
 ::view-transition-old(shell-sidebar),
@@ -1114,17 +1147,18 @@
     view-transition-name: shell-toasts;
 }
 
-/* Skeletons: a light sweeps across instead of pulsing. */
+/* Skeletons: a light sweeps across instead of pulsing (see shimmer). */
 [data-slot='skeleton'] {
     background-image: linear-gradient(
         100deg,
-        transparent 30%,
-        color-mix(in oklch, var(--card) 70%, transparent) 50%,
-        transparent 70%
+        transparent 25%,
+        color-mix(in oklch, var(--card) 75%, transparent) 45%,
+        color-mix(in oklch, var(--primary) 7%, transparent) 52%,
+        transparent 72%
     );
     background-size: 220% 100%;
     background-repeat: no-repeat;
-    animation: shimmer 1.5s linear infinite;
+    animation: shimmer 1.6s var(--ease-standard) infinite;
 }
 
 /*
@@ -1356,5 +1390,286 @@
 
     to {
         transform: translateX(250%);
+    }
+}
+
+/* ------------------------------------------------------------------------
+  "Pulso" layer (second redesign). Utilities shared by every area; the
+  catalogue lives in docs/ui-tokens.md. All of them read --primary at the
+  element, so nested [data-palette] previews and the rail resolve their own
+  colour, and all motion collapses under prefers-reduced-motion (above).
+------------------------------------------------------------------------ */
+
+/* Ambient canvas: the page background with a faint palette glow on top. */
+@utility canvas-ambient {
+    background-color: var(--background);
+    background-image:
+        radial-gradient(
+            60rem 28rem at 12% -8%,
+            color-mix(in oklch, var(--primary) 7%, transparent),
+            transparent 70%
+        ),
+        radial-gradient(
+            48rem 24rem at 100% 0%,
+            color-mix(in oklch, var(--primary) 4%, transparent),
+            transparent 70%
+        );
+    background-repeat: no-repeat;
+}
+
+/* Floating panel: hairline, generous radius and layered elevation. */
+@utility surface-float {
+    border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+    border-radius: var(--radius-xl);
+    background-color: var(--card);
+    box-shadow: var(--shadow-float);
+}
+
+/* Translucent layers: popovers, menus, sticky toolbars over content. */
+@utility glass {
+    background-color: color-mix(in oklch, var(--popover) 80%, transparent);
+    backdrop-filter: blur(16px) saturate(1.6);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+}
+
+@utility glass-bar {
+    background-color: color-mix(in oklch, var(--background) 74%, transparent);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+@utility glass-card {
+    background-color: color-mix(in oklch, var(--card) 80%, transparent);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+}
+
+/*
+  Accent gradient: the palette primary sweeping to a neighbour hue. For hero
+  elements only (avatars, the primary button, active indicators).
+  accent-gradient fills; accent-gradient-soft is a tinted wash; text-gradient
+  paints text.
+*/
+@utility accent-gradient {
+    background-color: var(--primary);
+    background-image: linear-gradient(
+        135deg,
+        oklch(from var(--primary) calc(l + 0.07) c calc(h - 18)),
+        var(--primary) 55%,
+        oklch(from var(--primary) calc(l - 0.04) c calc(h + 14))
+    );
+    color: var(--primary-foreground);
+}
+
+@utility accent-gradient-soft {
+    background-image: linear-gradient(
+        135deg,
+        color-mix(in oklch, var(--primary) 14%, var(--card)),
+        color-mix(in oklch, var(--primary) 4%, var(--card))
+    );
+}
+
+@utility text-gradient {
+    background-image: linear-gradient(
+        120deg,
+        var(--foreground) 10%,
+        color-mix(in oklch, var(--primary) 80%, var(--foreground))
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+/* Halo in the palette colour (primary action, active pill). */
+@utility glow {
+    box-shadow: var(--shadow-glow);
+}
+
+/* Focus glow for fields: border in primary plus a soft outer ring. */
+@utility focus-glow {
+    transition-property: border-color, box-shadow, background-color;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-standard);
+
+    &:focus-visible,
+    &:focus-within {
+        border-color: color-mix(in oklch, var(--primary) 65%, var(--border));
+        box-shadow: var(--shadow-glow-ring);
+        outline: none;
+    }
+}
+
+/* Hover lift for anything clickable that is not a list row. */
+@utility hover-lift {
+    transition-property: translate, box-shadow, border-color, background-color;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-spring);
+
+    @media (hover: hover) {
+        &:hover {
+            translate: 0 -1px;
+            box-shadow: var(--shadow-lift);
+        }
+    }
+
+    &:active {
+        translate: 0 0;
+        transition-duration: 80ms;
+    }
+}
+
+/* Springy press: shrinks on press and bounces back on release. */
+@utility press-spring {
+    transition-property:
+        color, background-color, border-color, opacity, box-shadow, scale,
+        translate;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-spring);
+
+    &:active:not(:disabled, [aria-disabled='true']) {
+        scale: 0.96;
+        transition-duration: 90ms;
+        transition-timing-function: var(--ease-standard);
+    }
+}
+
+/* Shimmer for any placeholder that is not a <Skeleton>. */
+@utility shimmer {
+    background-color: var(--muted);
+    background-image: linear-gradient(
+        100deg,
+        transparent 25%,
+        color-mix(in oklch, var(--card) 75%, transparent) 45%,
+        color-mix(in oklch, var(--primary) 7%, transparent) 52%,
+        transparent 72%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.6s var(--ease-standard) infinite;
+}
+
+/* One-shot entrances. Stagger with style="--i: n". */
+@utility enter-spring {
+    animation: enter-spring 420ms var(--ease-spring-soft) backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+@utility enter-fade {
+    animation: enter-fade var(--duration-panel) var(--ease-standard) backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+@utility enter-slide-right {
+    animation: enter-slide-right var(--duration-panel) var(--ease-out-quint)
+        backwards;
+    animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+/* A value that just changed (counters, badges): a quick springy bump. */
+@utility bump {
+    animation: bump 380ms var(--ease-spring);
+}
+
+/* Moving indicators (tabs underline, sliding pills, selection bars). */
+@utility indicator-motion {
+    transition-property:
+        transform, translate, left, top, width, height, opacity,
+        background-color;
+    transition-duration: 360ms;
+    transition-timing-function: var(--ease-spring-soft);
+}
+
+/* Live status dot: a ring breathes out of it (online, new activity). */
+@utility live-dot {
+    position: relative;
+
+    &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 9999px;
+        background: currentColor;
+        animation: live-ping 2.2s var(--ease-out-quint) infinite;
+    }
+}
+
+/* Fades the top and bottom edge of a scroll area. */
+@utility scroll-fade-y {
+    mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 12px,
+        #000 calc(100% - 12px),
+        transparent
+    );
+}
+
+/* Gradient hairline border (active cards, the focused composer). */
+@utility border-gradient {
+    position: relative;
+
+    &::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        padding: 1px;
+        border-radius: inherit;
+        pointer-events: none;
+        background: linear-gradient(
+            135deg,
+            color-mix(in oklch, var(--primary) 70%, transparent),
+            color-mix(in oklch, var(--primary) 10%, transparent) 60%,
+            color-mix(in oklch, var(--primary) 40%, transparent)
+        );
+        mask:
+            linear-gradient(#000 0 0) content-box exclude,
+            linear-gradient(#000 0 0);
+    }
+}
+
+@keyframes enter-spring {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.98);
+    }
+}
+
+@keyframes enter-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes enter-slide-right {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+}
+
+@keyframes bump {
+    40% {
+        transform: scale(1.18);
+    }
+}
+
+@keyframes live-ping {
+    0% {
+        opacity: 0.55;
+        transform: scale(1);
+    }
+
+    80%,
+    100% {
+        opacity: 0;
+        transform: scale(2.4);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shimmer,
+    .live-dot::after {
+        animation: none !important;
     }
 }

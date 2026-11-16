@@ -114,8 +114,10 @@ defineExpose({ focus });
 <template>
     <div class="group/search relative min-w-0 flex-1" role="search">
         <Search
-            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 transition-colors duration-(--duration-fast)"
-            :class="focused ? 'text-primary' : 'text-muted-foreground'"
+            class="pointer-events-none absolute top-1/2 left-3.5 z-[1] size-4 -translate-y-1/2 transition-[color,scale] duration-(--duration-base) ease-(--ease-spring)"
+            :class="
+                focused ? 'scale-110 text-primary' : 'text-muted-foreground'
+            "
             aria-hidden="true"
         />
         <input
@@ -133,9 +135,8 @@ defineExpose({ focus });
             aria-keyshortcuts="/ Control+K Meta+K"
             :class="
                 cn(
-                    'h-9 w-full min-w-0 rounded-lg border border-transparent bg-muted/70 pr-16 pl-9 text-sm text-foreground shadow-none outline-none placeholder:text-muted-foreground',
-                    'transition-[background-color,border-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard)',
-                    'hover:bg-muted focus-visible:border-primary/40 focus-visible:bg-background focus-visible:ring-[3px] focus-visible:ring-primary/20',
+                    'h-10 w-full min-w-0 rounded-xl border border-border/80 bg-card pr-24 pl-10 text-sm text-foreground shadow-(--shadow-control) outline-none placeholder:text-muted-foreground',
+                    'focus-glow hover:border-border-strong focus-visible:bg-background',
                     'pointer-coarse:h-10 [&::-webkit-search-cancel-button]:hidden',
                 )
             "
@@ -155,7 +156,7 @@ defineExpose({ focus });
             <button
                 v-if="model !== ''"
                 type="button"
-                class="flex size-6 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-8"
+                class="flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-90 motion-safe:transition-colors motion-safe:transition-transform pointer-coarse:size-8"
                 aria-label="Limpiar búsqueda"
                 title="Limpiar búsqueda (Esc)"
                 data-filter-search-clear
@@ -163,13 +164,20 @@ defineExpose({ focus });
             >
                 <X class="size-3.5" aria-hidden="true" />
             </button>
-            <kbd
+            <span
                 v-else-if="shortcut && !focused"
-                class="pointer-events-none mr-1 hidden h-5 min-w-5 items-center justify-center rounded border bg-background px-1 font-sans text-[0.7rem] text-muted-foreground sm:inline-flex pointer-coarse:hidden"
+                class="pointer-events-none mr-1 hidden items-center gap-1 sm:inline-flex pointer-coarse:hidden"
                 aria-hidden="true"
-                title="Pulsa / para buscar"
-                >/</kbd
             >
+                <kbd
+                    class="inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-b-2 bg-background px-1 font-sans text-[0.7rem] font-medium text-muted-foreground"
+                    >/</kbd
+                >
+                <kbd
+                    class="inline-flex h-5 items-center justify-center rounded-md border border-b-2 bg-background px-1 font-sans text-[0.7rem] font-medium text-muted-foreground"
+                    >Ctrl K</kbd
+                >
+            </span>
         </span>
     </div>
 </template>

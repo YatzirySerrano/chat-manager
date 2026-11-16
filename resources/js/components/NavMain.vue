@@ -45,7 +45,7 @@ const { setOpenMobile } = useSidebar();
                     as-child
                     :is-active="isCurrentOrParentUrl(item.href)"
                     :tooltip="item.title"
-                    class="group/nav relative h-9.5 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-hover data-[active=true]:bg-transparent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground data-[active=true]:hover:bg-transparent pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-sidebar-muted [&>svg]:transition-colors [&>svg]:duration-(--duration-base) hover:[&>svg]:text-sidebar-accent-foreground data-[active=true]:[&>svg]:text-sidebar-primary"
+                    class="group/nav relative h-9.5 rounded-lg font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-hover data-[active=true]:bg-transparent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground data-[active=true]:hover:bg-transparent pointer-coarse:h-11 [&>svg]:size-4.5 [&>svg]:text-sidebar-muted [&>svg]:transition-[color,scale] [&>svg]:duration-(--duration-panel) [&>svg]:ease-(--ease-spring) hover:[&>svg]:scale-110 hover:[&>svg]:text-sidebar-accent-foreground active:[&>svg]:scale-95 data-[active=true]:[&>svg]:text-sidebar-primary"
                 >
                     <Link
                         :href="item.href"
@@ -56,9 +56,11 @@ const { setOpenMobile } = useSidebar();
                         <span>{{ item.title }}</span>
                     </Link>
                 </SidebarMenuButton>
+                <!-- Keyed by the count: it bumps whenever the number changes. -->
                 <SidebarMenuBadge
                     v-if="item.badge"
-                    class="rounded-full bg-sidebar-primary px-1.5 text-xs font-semibold text-sidebar-primary-foreground peer-hover/menu-button:text-sidebar-primary-foreground peer-data-[active=true]/menu-button:text-sidebar-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
+                    :key="item.badge"
+                    class="bump rounded-full accent-gradient px-1.5 text-xs font-semibold text-sidebar-primary-foreground shadow-[0_2px_6px_-2px_color-mix(in_oklch,var(--sidebar-primary)_60%,transparent)] peer-hover/menu-button:text-sidebar-primary-foreground peer-data-[active=true]/menu-button:text-sidebar-primary-foreground peer-data-[size=default]/menu-button:top-2.5 pointer-coarse:peer-data-[size=default]/menu-button:top-3"
                     :aria-label="`${item.badge} sin leer`"
                 >
                     {{ item.badge > 99 ? '99+' : item.badge }}

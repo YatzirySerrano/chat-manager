@@ -27,7 +27,7 @@ defineEmits<{ load: [] }>();
         <button
             v-if="hasMore"
             type="button"
-            class="inline-flex h-8 items-center gap-1.5 rounded-full border bg-background/90 px-3.5 text-xs font-medium text-muted-foreground shadow-(--shadow-control) backdrop-blur-sm transition-[color,background-color,border-color] duration-(--duration-fast) outline-none hover:border-border-strong hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/45 disabled:cursor-progress pointer-coarse:h-10"
+            class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 glass px-3.5 text-xs font-medium text-muted-foreground shadow-(--shadow-control) transition-[color,background-color,border-color,scale] duration-(--duration-fast) outline-none hover:border-border-strong hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/45 active:not-disabled:scale-95 disabled:cursor-progress pointer-coarse:h-10"
             :disabled="loading"
             :aria-busy="loading"
             @click="$emit('load')"
@@ -38,8 +38,8 @@ defineEmits<{ load: [] }>();
         </button>
         <p
             v-else-if="hasItems"
-            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs text-muted-foreground"
-            :class="custom && 'bg-background'"
+            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground"
+            :class="custom && 'glass ring-1 ring-border/70'"
         >
             <Sparkle class="size-3" aria-hidden="true" />
             Inicio de la conversación

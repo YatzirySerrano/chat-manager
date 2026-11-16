@@ -112,7 +112,7 @@ const previousText = computed(
 <template>
     <div
         :class="[
-            'spotlight flex min-w-0 flex-col rounded-xl border bg-card shadow-card transition-[border-color] duration-(--duration-base)',
+            'spotlight flex min-w-0 hover-lift flex-col rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float',
             size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-2 p-5',
         ]"
     >
@@ -131,6 +131,12 @@ const previousText = computed(
                 data-kpi-label
                 >{{ label }}</span
             >
+            <!-- Live figures breathe: they follow the inbox in real time. -->
+            <span
+                v-if="live"
+                class="live-dot mt-1 ml-auto size-1.5 shrink-0 rounded-full bg-current text-success"
+                aria-hidden="true"
+            />
         </div>
         <div v-else class="flex items-start justify-between gap-2">
             <span

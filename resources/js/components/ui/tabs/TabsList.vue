@@ -19,7 +19,7 @@ const delegatedProps = reactiveOmit(props, "class")
     <slot />
     <!-- reka-ui measures the active tab into these two variables. -->
     <TabsIndicator
-      class="absolute bottom-0 left-0 h-0.5 w-(--reka-tabs-indicator-size) translate-x-(--reka-tabs-indicator-position) rounded-full bg-primary transition-[width,translate] duration-(--duration-panel) ease-(--ease-out-quint)"
+      class="absolute bottom-0 left-0 h-0.5 w-(--reka-tabs-indicator-size) translate-x-(--reka-tabs-indicator-position) rounded-full accent-gradient shadow-[0_0_10px_-1px_color-mix(in_oklch,var(--primary)_60%,transparent)] transition-[width,translate] duration-[380ms] ease-(--ease-spring-soft)"
     />
   </TabsList>
 </template>

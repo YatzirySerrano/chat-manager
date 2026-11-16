@@ -40,7 +40,7 @@ onBeforeUnmount(() => observer?.disconnect())
  * (muted-foreground) ≥ 5.5:1 and type icons ≥ 4.5:1 in light and dark.
  */
 const tokenClasses: ToastClasses = {
-  toast: "font-sans! shadow-elevated! border-border!",
+  toast: "font-sans! shadow-elevated! border-border! backdrop-blur-xl! backdrop-saturate-150!",
   title: "text-popover-foreground! font-semibold!",
   description: "text-muted-foreground!",
   icon: "text-popover-foreground",
@@ -73,7 +73,7 @@ const toastOptions = computed(() => {
   <Sonner
     :class="cn('toaster group', props.class)"
     :style="{
-      '--normal-bg': 'var(--popover)',
+      '--normal-bg': 'color-mix(in oklch, var(--popover) 88%, transparent)',
       '--normal-text': 'var(--popover-foreground)',
       '--normal-border': 'var(--border)',
       '--normal-bg-hover': 'var(--accent)',

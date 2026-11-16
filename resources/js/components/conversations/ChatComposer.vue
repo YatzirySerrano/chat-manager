@@ -11,6 +11,11 @@ import {
     X,
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
+import {
+    COMPOSER_CARD,
+    COMPOSER_DOCK,
+    COMPOSER_TOOL,
+} from '@/components/chat/bubble';
 import ChatReplyPreview from '@/components/chat/ChatReplyPreview.vue';
 import ChatSendButton from '@/components/chat/ChatSendButton.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
@@ -929,211 +934,240 @@ defineExpose({ focus, addFiles, acceptsFiles });
         short labels («Responder» / «Nota») and stays on one row.
     -->
     <div
-        class="chat-dock @container border-t px-3 pt-2.5 pb-3 transition-colors duration-(--duration-base) *:mx-auto *:max-w-[64rem] sm:px-5 [@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5"
+        class="@container"
+        :class="[
+            COMPOSER_DOCK,
+            '[@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5',
+        ]"
         data-safe-bottom
-        :class="mode === 'note' ? 'bg-warning-soft/40' : 'bg-background'"
     >
-        <div
-            class="mb-2 flex flex-wrap items-center justify-between gap-2 [@media(max-height:32rem)]:mb-1 [@media(max-height:32rem)]:flex-nowrap"
-        >
+        <!--
+            One floating card for the whole composer: the switch, what is
+            attached, the text and its tools. In «Nota» mode the card takes
+            the note colour (chat.css).
+        -->
+        <div :class="COMPOSER_CARD" :data-mode="mode" data-composer-surface>
+            <!--
+            The card's top row: «Responder / Nota» (a switch whose thumb
+            slides between both options) and who the message goes to.
+        -->
             <div
-                class="inline-flex shrink-0 rounded-full bg-surface-sunken p-0.5 text-sm ring-1 ring-border ring-inset"
-                role="group"
-                aria-label="Tipo de mensaje"
+                class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-2.5 pt-2.5 [@media(max-height:32rem)]:flex-nowrap [@media(max-height:32rem)]:pt-1.5"
             >
-                <button
-                    type="button"
-                    :aria-pressed="mode === 'reply'"
-                    aria-label="Responder al cliente"
-                    :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-[color,background-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
-                    :class="
-                        mode === 'reply'
-                            ? 'bg-card text-foreground shadow-(--shadow-control)'
-                            : 'text-muted-foreground hover:text-foreground'
-                    "
-                    @click="mode = 'reply'"
+                <div
+                    class="relative grid shrink-0 rounded-full bg-surface-sunken p-0.5 text-sm ring-1 ring-border/80 ring-inset"
+                    :class="canNote ? 'grid-cols-2' : 'grid-cols-1'"
+                    role="group"
+                    aria-label="Tipo de mensaje"
                 >
-                    <Send class="size-3.5" aria-hidden="true" />
-                    <span class="whitespace-nowrap"
-                        >Responder<span class="hidden @min-[30rem]:inline">
-                            al cliente</span
-                        ></span
-                    >
-                </button>
-                <button
-                    v-if="canNote"
-                    type="button"
-                    :aria-pressed="mode === 'note'"
-                    aria-label="Nota interna"
-                    :disabled="sending"
-                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-[color,background-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
-                    :class="
-                        mode === 'note'
-                            ? 'bg-warning-soft text-warning-soft-foreground shadow-(--shadow-control)'
-                            : 'text-muted-foreground hover:text-foreground'
-                    "
-                    @click="mode = 'note'"
-                >
-                    <StickyNote class="size-3.5" aria-hidden="true" />
-                    <span class="whitespace-nowrap"
-                        >Nota<span class="hidden @min-[30rem]:inline">
-                            interna</span
-                        ></span
-                    >
-                </button>
-            </div>
-            <p
-                class="line-clamp-2 min-w-0 basis-full text-xs wrap-anywhere text-muted-foreground sm:line-clamp-none sm:basis-auto sm:truncate [@media(max-height:32rem)]:flex-1 [@media(max-height:32rem)]:basis-auto [@media(max-height:32rem)]:truncate"
-                :title="mode === 'reply' ? `Para: ${recipient}` : undefined"
-            >
-                <template v-if="mode === 'reply'">
                     <span
-                        v-if="windowBadge"
-                        class="mr-1.5 inline-flex items-center rounded-full border px-1.5 py-px text-xs font-medium"
-                        :class="windowBadge.tone"
-                        :title="windowBadge.title"
-                        >{{ windowBadge.text }}</span
-                    >
-                    Para:
-                    <span class="font-medium text-foreground">{{
-                        recipient
-                    }}</span>
-                    por {{ channelLabel }} · {{ conversation.connection.name }}
-                </template>
-                <span
-                    v-else
-                    class="inline-flex items-center gap-1 font-semibold text-warning"
-                >
-                    <Lock class="size-3.5" aria-hidden="true" />
-                    Nota interna — no se envía al cliente
-                </span>
-            </p>
-        </div>
-
-        <div
-            v-if="disabledReason"
-            class="flex flex-wrap items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm motion-safe:animate-in motion-safe:fade-in [@media(max-height:32rem)]:gap-2 [@media(max-height:32rem)]:py-1.5"
-            :class="
-                completedClosed
-                    ? 'border-success/30 bg-card text-muted-foreground'
-                    : 'border-dashed bg-surface-sunken/60 text-muted-foreground'
-            "
-            role="status"
-            :data-composer-completed="completedClosed || undefined"
-        >
-            <span
-                class="grid size-8 shrink-0 place-items-center rounded-full"
-                :class="
-                    completedClosed
-                        ? 'bg-success text-background'
-                        : 'bg-background ring-1 ring-border'
-                "
-                aria-hidden="true"
-            >
-                <BadgeCheck v-if="completedClosed" class="size-4" />
-                <Lock v-else class="size-4" />
-            </span>
-            <div class="min-w-0 flex-1">
-                <!-- A refused send (the state changed meanwhile) stays explained. -->
-                <p
-                    v-if="error"
-                    class="mb-1 text-xs text-destructive"
-                    role="alert"
-                >
-                    {{ error }}
-                </p>
-                <CompletedBadge
-                    v-if="completedClosed"
-                    class="mb-1"
-                    :at="conversation.completed_at"
-                />
-                <p :class="completedClosed && 'text-xs'">
-                    {{ disabledReason }}
-                </p>
-            </div>
-            <Button
-                v-if="mode === 'reply' && canUseTemplates"
-                size="sm"
-                class="pointer-coarse:h-10"
-                @click="emit('openTemplates')"
-            >
-                <LayoutTemplate aria-hidden="true" />
-                Enviar plantilla
-            </Button>
-        </div>
-
-        <form
-            v-else
-            novalidate
-            class="grid grid-cols-1 gap-2 [@media(max-height:32rem)]:gap-1"
-            @submit.prevent="submit"
-        >
-            <AttachmentDraft
-                v-if="attachment && attachmentEvaluation && mode === 'reply'"
-                :file="attachment"
-                :evaluation="attachmentEvaluation"
-                :channel-label="channelLabel"
-                :link-ttl-days="channelRules?.link_ttl_days ?? 7"
-                :link-confirmed="linkConfirmed"
-                :progress="uploadProgress"
-                :sending="sending"
-                :can-cancel="canCancelUpload"
-                :problem="captionBlock"
-                :notice="attachmentNotice"
-                :state="attachmentState ?? 'ready'"
-                :rejection="attachmentRejection"
-                @remove="removeDraft"
-                @cancel="cancelUpload"
-                @confirm-link="linkConfirmed = true"
-                @undo-link="linkConfirmed = false"
-            />
-
-            <ul
-                v-if="queued.length > 0 && mode === 'reply'"
-                class="flex flex-wrap items-center gap-1.5"
-                aria-label="Archivos en espera"
-                data-attachment-queue
-            >
-                <li class="text-xs text-muted-foreground">
-                    {{
-                        queued.length === 1
-                            ? 'Después se envía:'
-                            : `Después se envían, uno por mensaje:`
-                    }}
-                </li>
-                <li
-                    v-for="(file, index) in queued"
-                    :key="`${file.name}-${file.size}-${index}`"
-                    class="inline-flex max-w-56 items-center gap-1 rounded-full border bg-card py-0.5 pr-0.5 pl-2.5 text-xs"
-                    :title="`${file.name} (${formatFileSize(file.size)})`"
-                >
-                    <span class="min-w-0 truncate">{{ file.name }}</span>
+                        class="chat-mode-thumb pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full"
+                        :class="[
+                            canNote ? 'w-[calc(50%-0.125rem)]' : 'right-0.5',
+                            mode === 'note'
+                                ? 'translate-x-full bg-warning text-background shadow-[inset_0_1px_0_rgb(255_255_255/0.22),var(--shadow-control)]'
+                                : 'bg-card shadow-(--shadow-control) ring-1 ring-border/70',
+                        ]"
+                        aria-hidden="true"
+                    />
                     <button
                         type="button"
-                        class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:size-9"
-                        :aria-label="`Quitar ${file.name} de la espera`"
+                        :aria-pressed="mode === 'reply'"
+                        aria-label="Responder al cliente"
                         :disabled="sending"
-                        @click="removeQueued(index)"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        :class="
+                            mode === 'reply'
+                                ? 'text-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                        "
+                        @click="mode = 'reply'"
                     >
-                        <X class="size-3" aria-hidden="true" />
+                        <Send class="size-3.5" aria-hidden="true" />
+                        <span class="whitespace-nowrap"
+                            >Responder<span class="hidden @min-[30rem]:inline">
+                                al cliente</span
+                            ></span
+                        >
                     </button>
-                </li>
-            </ul>
+                    <button
+                        v-if="canNote"
+                        type="button"
+                        :aria-pressed="mode === 'note'"
+                        aria-label="Nota interna"
+                        :disabled="sending"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        :class="
+                            mode === 'note'
+                                ? 'text-background'
+                                : 'text-muted-foreground hover:text-foreground'
+                        "
+                        @click="mode = 'note'"
+                    >
+                        <StickyNote class="size-3.5" aria-hidden="true" />
+                        <span class="whitespace-nowrap"
+                            >Nota<span class="hidden @min-[30rem]:inline">
+                                interna</span
+                            ></span
+                        >
+                    </button>
+                </div>
+                <Transition name="chat-attach" mode="out-in">
+                    <p
+                        :key="mode"
+                        class="line-clamp-2 min-w-0 basis-full px-1 text-xs wrap-anywhere text-muted-foreground sm:line-clamp-none sm:basis-auto sm:truncate [@media(max-height:32rem)]:flex-1 [@media(max-height:32rem)]:basis-auto [@media(max-height:32rem)]:truncate"
+                        :title="
+                            mode === 'reply' ? `Para: ${recipient}` : undefined
+                        "
+                    >
+                        <template v-if="mode === 'reply'">
+                            <span
+                                v-if="windowBadge"
+                                class="mr-1.5 inline-flex items-center rounded-full border px-1.5 py-px text-xs font-medium"
+                                :class="windowBadge.tone"
+                                :title="windowBadge.title"
+                                >{{ windowBadge.text }}</span
+                            >
+                            Para:
+                            <span class="font-medium text-foreground">{{
+                                recipient
+                            }}</span>
+                            por {{ channelLabel }} ·
+                            {{ conversation.connection.name }}
+                        </template>
+                        <span
+                            v-else
+                            class="inline-flex items-center gap-1 font-semibold text-warning-soft-foreground"
+                        >
+                            <Lock class="size-3.5" aria-hidden="true" />
+                            Nota interna — no se envía al cliente
+                        </span>
+                    </p>
+                </Transition>
+            </div>
 
-            <!--
-                One surface for the text and its tools: the ring follows the
-                focus of the text field.
-            -->
             <div
-                class="rounded-2xl border bg-card shadow-(--shadow-control) transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-(--ease-standard) hover:border-border-strong"
+                v-if="disabledReason"
+                class="m-2.5 mt-2 flex flex-wrap items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm motion-safe:animate-in motion-safe:fade-in [@media(max-height:32rem)]:gap-2 [@media(max-height:32rem)]:py-1.5"
                 :class="
-                    mode === 'note'
-                        ? 'border-warning/60 bg-warning-soft/60 focus-within:border-warning focus-within:ring-[3px] focus-within:ring-warning/25'
-                        : 'focus-within:border-primary focus-within:shadow-hover focus-within:ring-[3px] focus-within:ring-primary/15'
+                    completedClosed
+                        ? 'border-success/30 bg-success-soft/50 text-muted-foreground'
+                        : 'border-dashed bg-surface-sunken/70 text-muted-foreground'
                 "
-                data-composer-surface
+                role="status"
+                :data-composer-completed="completedClosed || undefined"
             >
+                <span
+                    class="grid size-9 shrink-0 place-items-center rounded-full"
+                    :class="
+                        completedClosed
+                            ? 'bg-success text-background shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-control)] motion-safe:animate-in motion-safe:duration-500 motion-safe:zoom-in-50'
+                            : 'bg-card ring-1 ring-border'
+                    "
+                    aria-hidden="true"
+                >
+                    <BadgeCheck v-if="completedClosed" class="size-4.5" />
+                    <Lock v-else class="size-4" />
+                </span>
+                <div class="min-w-0 flex-1">
+                    <!-- A refused send (the state changed meanwhile) stays explained. -->
+                    <p
+                        v-if="error"
+                        class="mb-1 text-xs text-destructive"
+                        role="alert"
+                    >
+                        {{ error }}
+                    </p>
+                    <CompletedBadge
+                        v-if="completedClosed"
+                        class="mb-1"
+                        :at="conversation.completed_at"
+                    />
+                    <p :class="completedClosed && 'text-xs'">
+                        {{ disabledReason }}
+                    </p>
+                </div>
+                <Button
+                    v-if="mode === 'reply' && canUseTemplates"
+                    size="sm"
+                    class="rounded-full pointer-coarse:h-10"
+                    @click="emit('openTemplates')"
+                >
+                    <LayoutTemplate aria-hidden="true" />
+                    Enviar plantilla
+                </Button>
+            </div>
+
+            <form
+                v-else
+                novalidate
+                class="grid grid-cols-1"
+                @submit.prevent="submit"
+            >
+                <div
+                    v-if="
+                        mode === 'reply' &&
+                        ((attachment && attachmentEvaluation) ||
+                            queued.length > 0)
+                    "
+                    class="grid gap-2 px-2.5 pt-2.5"
+                >
+                    <AttachmentDraft
+                        v-if="attachment && attachmentEvaluation"
+                        :file="attachment"
+                        :evaluation="attachmentEvaluation"
+                        :channel-label="channelLabel"
+                        :link-ttl-days="channelRules?.link_ttl_days ?? 7"
+                        :link-confirmed="linkConfirmed"
+                        :progress="uploadProgress"
+                        :sending="sending"
+                        :can-cancel="canCancelUpload"
+                        :problem="captionBlock"
+                        :notice="attachmentNotice"
+                        :state="attachmentState ?? 'ready'"
+                        :rejection="attachmentRejection"
+                        class="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
+                        @remove="removeDraft"
+                        @cancel="cancelUpload"
+                        @confirm-link="linkConfirmed = true"
+                        @undo-link="linkConfirmed = false"
+                    />
+
+                    <ul
+                        v-if="queued.length > 0"
+                        class="flex flex-wrap items-center gap-1.5"
+                        aria-label="Archivos en espera"
+                        data-attachment-queue
+                    >
+                        <li class="text-xs text-muted-foreground">
+                            {{
+                                queued.length === 1
+                                    ? 'Después se envía:'
+                                    : `Después se envían, uno por mensaje:`
+                            }}
+                        </li>
+                        <li
+                            v-for="(file, index) in queued"
+                            :key="`${file.name}-${file.size}-${index}`"
+                            class="inline-flex max-w-56 items-center gap-1 rounded-full border bg-card py-0.5 pr-0.5 pl-2.5 text-xs shadow-(--shadow-control) motion-safe:animate-in motion-safe:zoom-in-90 motion-safe:fade-in"
+                            :title="`${file.name} (${formatFileSize(file.size)})`"
+                        >
+                            <span class="min-w-0 truncate">{{
+                                file.name
+                            }}</span>
+                            <button
+                                type="button"
+                                class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:size-9"
+                                :aria-label="`Quitar ${file.name} de la espera`"
+                                :disabled="sending"
+                                @click="removeQueued(index)"
+                            >
+                                <X class="size-3" aria-hidden="true" />
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+
                 <Transition name="chat-attach">
                     <ChatReplyPreview
                         v-if="replyTo && mode === 'reply'"
@@ -1174,7 +1208,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         "
                         :aria-invalid="tooLong || error !== null"
                         :placeholder="placeholder"
-                        class="flex field-sizing-content max-h-48 min-h-12 w-full resize-none rounded-t-xl border-0 bg-transparent px-3.5 pt-3 pb-1.5 text-base outline-none placeholder:text-muted-foreground md:text-sm [@media(max-height:32rem)]:max-h-20 [@media(max-height:32rem)]:min-h-9 [@media(max-height:32rem)]:py-1.5"
+                        class="flex field-sizing-content max-h-48 min-h-12 w-full resize-none border-0 bg-transparent px-4 pt-2.5 pb-1.5 text-base leading-relaxed outline-none placeholder:text-muted-foreground md:text-sm md:leading-6 [@media(max-height:32rem)]:max-h-20 [@media(max-height:32rem)]:min-h-9 [@media(max-height:32rem)]:py-1.5"
                         @input="updateTrigger"
                         @click="updateTrigger"
                         @keyup="
@@ -1205,7 +1239,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                     </div>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-1 px-2 pb-2">
+                <div class="flex flex-wrap items-center gap-0.5 px-2 pb-2">
                     <AttachmentMenu
                         v-if="mode === 'reply'"
                         :rules="channelRules"
@@ -1222,7 +1256,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         type="button"
                         variant="ghost"
                         size="icon"
-                        class="size-8 text-muted-foreground pointer-coarse:size-10"
+                        :class="COMPOSER_TOOL"
                         title="Respuestas rápidas (/)"
                         aria-label="Abrir las respuestas rápidas"
                         :disabled="sending"
@@ -1275,7 +1309,14 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         </template>
                     </ChatSendButton>
                 </div>
-            </div>
+            </form>
+        </div>
+
+        <!-- What the composer says under its card (error, warning or hint). -->
+        <div
+            v-if="!disabledReason"
+            class="mx-auto mt-1.5 max-w-[60rem] px-3 [@media(max-height:32rem)]:mt-0.5"
+        >
             <p
                 v-if="error"
                 id="chat-composer-error"
@@ -1305,6 +1346,6 @@ defineExpose({ focus, addFiles, acceptsFiles });
             >
                 {{ hint }}
             </p>
-        </form>
+        </div>
     </div>
 </template>

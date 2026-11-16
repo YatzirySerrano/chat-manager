@@ -15,6 +15,7 @@ import { toast } from 'vue-sonner';
 import {
     BUBBLE_HOVER,
     BUBBLE_META,
+    BUBBLE_TOMBSTONE,
     QUOTE_BASE,
     REACTIONS_ROW,
     ROW_ACTIONS,
@@ -237,7 +238,7 @@ function onEditKeydown(event: KeyboardEvent): void {
         class="flex justify-center px-4 py-1.5"
     >
         <p
-            class="max-w-md rounded-full bg-background/80 px-3 py-1 text-center text-xs text-pretty text-muted-foreground ring-1 ring-border/60 backdrop-blur-sm"
+            class="max-w-md rounded-full glass px-3 py-1 text-center text-xs text-pretty text-muted-foreground shadow-(--shadow-control) ring-1 ring-border/70"
             :title="fullDate"
         >
             {{ message.system_text }}
@@ -289,16 +290,16 @@ function onEditKeydown(event: KeyboardEvent): void {
                                 joinedAbove: !first,
                                 joinedBelow: !last,
                             }),
-                            custom
-                                ? message.is_mine
-                                    ? CUSTOM_BUBBLE_CLASSES.sent
-                                    : [
-                                          'border border-border/80',
-                                          CUSTOM_BUBBLE_CLASSES.received,
-                                      ]
-                                : bubbleTone(message.is_mine ? 'out' : 'in'),
-                            message.deleted &&
-                                'bg-muted text-muted-foreground shadow-none ring-1 ring-border ring-inset',
+                            message.deleted
+                                ? BUBBLE_TOMBSTONE
+                                : custom
+                                  ? message.is_mine
+                                      ? CUSTOM_BUBBLE_CLASSES.sent
+                                      : [
+                                            'border border-border/80',
+                                            CUSTOM_BUBBLE_CLASSES.received,
+                                        ]
+                                  : bubbleTone(message.is_mine ? 'out' : 'in'),
                             editing && 'w-[min(32rem,100%)]',
                             highlighted &&
                                 'ring-2 ring-warning ring-offset-2 ring-offset-background',
@@ -474,11 +475,7 @@ function onEditKeydown(event: KeyboardEvent): void {
                             <CheckCheck
                                 v-if="receipt === 'read'"
                                 class="size-3.5"
-                                :class="
-                                    custom
-                                        ? 'stroke-3'
-                                        : 'text-sky-600 dark:text-sky-400'
-                                "
+                                :class="custom ? 'stroke-3' : 'chat-tick-read'"
                                 aria-hidden="true"
                             />
                             <Check v-else class="size-3.5" aria-hidden="true" />

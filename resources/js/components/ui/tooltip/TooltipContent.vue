@@ -24,7 +24,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     <TooltipContent
       data-slot="tooltip-content"
       v-bind="{ ...forwarded, ...$attrs }"
-      :class="cn('bg-foreground text-background pop origin-(--reka-tooltip-content-transform-origin) shadow-popover z-50 w-fit max-w-72 rounded-md px-2.5 py-1.5 text-xs font-medium text-balance', props.class)"
+      :class="cn('bg-foreground text-background pop origin-(--reka-tooltip-content-transform-origin) shadow-popover z-50 w-fit max-w-72 rounded-lg px-2.5 py-1.5 text-xs font-medium text-balance', props.class)"
     >
       <slot />
 

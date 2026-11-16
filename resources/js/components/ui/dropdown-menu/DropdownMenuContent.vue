@@ -31,7 +31,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     <DropdownMenuContent
       data-slot="dropdown-menu-content"
       v-bind="{ ...$attrs, ...forwarded }"
-      :class="cn('glass text-popover-foreground pop border-[color-mix(in_oklch,var(--border)_80%,transparent)] z-50 max-h-(--reka-dropdown-menu-content-available-height) min-w-[8rem] origin-(--reka-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border p-1.5 shadow-popover', props.class)"
+      :class="cn('bg-popover text-popover-foreground pop border-border z-50 max-h-(--reka-dropdown-menu-content-available-height) min-w-[8rem] origin-(--reka-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border p-1.5 shadow-popover', props.class)"
     >
       <slot />
     </DropdownMenuContent>

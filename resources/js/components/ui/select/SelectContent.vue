@@ -34,7 +34,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       data-slot="select-content"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="cn(
-        'glass text-popover-foreground pop border-[color-mix(in_oklch,var(--border)_80%,transparent)] origin-(--reka-select-content-transform-origin) relative z-50 max-h-(--reka-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border shadow-popover',
+        'bg-popover text-popover-foreground pop border-border origin-(--reka-select-content-transform-origin) relative z-50 max-h-(--reka-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border shadow-popover',
         position === 'popper'
           && 'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
         props.class,

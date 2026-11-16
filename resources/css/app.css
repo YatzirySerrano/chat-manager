@@ -1425,24 +1425,22 @@
     box-shadow: var(--shadow-float);
 }
 
-/* Translucent layers: popovers, menus, sticky toolbars over content. */
+/*
+  Floating layers (popovers, menus, selects, sticky toolbars, panels): always
+  SOLID. Nothing behind them may show through; the names are kept so every
+  surface that used the old translucent style stays opaque.
+*/
 @utility glass {
-    background-color: color-mix(in oklch, var(--popover) 80%, transparent);
-    backdrop-filter: blur(16px) saturate(1.6);
-    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    background-color: var(--popover);
 }
 
 @utility glass-bar {
-    background-color: color-mix(in oklch, var(--background) 74%, transparent);
-    backdrop-filter: blur(14px) saturate(1.5);
-    -webkit-backdrop-filter: blur(14px) saturate(1.5);
-    border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+    background-color: var(--background);
+    border-bottom: 1px solid var(--border);
 }
 
 @utility glass-card {
-    background-color: color-mix(in oklch, var(--card) 80%, transparent);
-    backdrop-filter: blur(14px) saturate(1.5);
-    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    background-color: var(--card);
 }
 
 /*

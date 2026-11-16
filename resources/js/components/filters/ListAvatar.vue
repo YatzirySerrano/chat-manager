@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { UsersRound } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import { getInitials } from '@/composables/useInitials';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,10 @@ import './filters.css';
  * WhatsApp, Messenger, Instagram, web chat) or, for teammates, that they
  * are online. A request waiting to be taken gets a dashed warning ring; a
  * closed one fades a little. Decorative: the row says all of it in words.
+ *
+ * `src`: the contact's WhatsApp profile picture (a private copy served by
+ * the platform). It covers the initials once loaded and falls back to
+ * them when it is missing or fails to load.
  */
 const props = withDefaults(
     defineProps<{
@@ -26,6 +30,8 @@ const props = withDefaults(
         deleted?: boolean;
         pending?: boolean;
         dimmed?: boolean;
+        /** Profile picture; the initials are shown without it. */
+        src?: string | null;
     }>(),
     {
         channel: null,
@@ -35,7 +41,23 @@ const props = withDefaults(
         deleted: false,
         pending: false,
         dimmed: false,
+        src: null,
     },
+);
+
+const failed = ref(false);
+
+watch(
+    () => props.src,
+    () => {
+        failed.value = false;
+    },
+);
+
+const picture = computed(() =>
+    props.src && !failed.value && !props.group && !props.deleted
+        ? props.src
+        : null,
 );
 
 const hue = computed(() => {
@@ -72,6 +94,18 @@ const hue = computed(() => {
             <UsersRound v-if="group" class="size-4" />
             <template v-else>{{ deleted ? '?' : getInitials(name) }}</template>
         </span>
+        <img
+            v-if="picture"
+            :src="picture"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerpolicy="no-referrer"
+            class="absolute inset-0 size-full rounded-full object-cover"
+            :class="dimmed && 'opacity-60'"
+            data-list-avatar-photo
+            @error="failed = true"
+        />
         <span
             v-if="channel"
             :class="

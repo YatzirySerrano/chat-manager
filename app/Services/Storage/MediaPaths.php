@@ -294,6 +294,24 @@ class MediaPaths
     }
 
     /**
+     * Directory and file name (without counter) of the copy of a contact's
+     * WhatsApp profile picture: next to the contact's files, in its own
+     * folder ("WhatsApp/Juan Perez (+52 …)/Foto de perfil/2026-11-16 14.30.15 Foto de perfil.jpg").
+     *
+     * @return array{directory: string, stem: string, extension: string}
+     */
+    public function contactAvatarFile(Contact $contact, string $mime, CarbonInterface $at): array
+    {
+        $channel = ConnectionChannel::Whatsapp;
+
+        return [
+            'directory' => $this->channelFolder($channel).'/'.$this->contactFolder($contact, $channel).'/Foto de perfil',
+            'stem' => $this->stamp($at).' Foto de perfil',
+            'extension' => $this->extensionFor($mime),
+        ];
+    }
+
+    /**
      * Directory and file name (without counter) of an internal chat file:
      * "2026-11-12 09.05.40 Video de Ana Lopez.mp4".
      *

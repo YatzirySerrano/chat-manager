@@ -66,6 +66,41 @@ export type WaQuoted = {
     text: string | null;
 };
 
+/** One day of the business hours of a business account. */
+export type WaBusinessHours = {
+    /** sun | mon | tue | wed | thu | fri | sat, as WhatsApp sends it. */
+    day: string;
+    /** open_24h | appointment_only | specific_hours. */
+    mode: string;
+    /** Minutes after midnight (only with specific_hours). */
+    open: number | null;
+    close: number | null;
+};
+
+/** What a business account publishes about itself. */
+export type WaBusinessProfile = {
+    category: string | null;
+    description: string | null;
+    email: string | null;
+    website: string[];
+    address: string | null;
+    hours: { timezone: string | null; days: WaBusinessHours[] } | null;
+};
+
+/**
+ * What WhatsApp shares about a contact. Each part is null when the contact
+ * keeps it private, never set it, or WhatsApp did not answer.
+ */
+export type WaProfile = {
+    /** Temporary URL of the full picture on WhatsApp's CDN. */
+    picture_url: string | null;
+    /** The contact's "about" text. */
+    about: string | null;
+    /** Unix seconds when the "about" was set. */
+    about_set_at: number | null;
+    business: WaBusinessProfile | null;
+};
+
 export interface WaConnection {
     send(
         jid: string,
@@ -76,6 +111,8 @@ export interface WaConnection {
     resolveJid(digits: string): Promise<string | null>;
     /** Phone number (digits) behind an @lid identifier, when WhatsApp shared the mapping. */
     phoneForLid(lid: string): Promise<string | null>;
+    /** Picture, "about" and business profile of a contact; never throws for privacy. */
+    profile(jid: string): Promise<WaProfile>;
     /** Tells WhatsApp to unlink this device. */
     logout(): Promise<void>;
     /** Closes the socket without unlinking; no further events are emitted. */

@@ -37,6 +37,7 @@ import {
     type WaEvent,
     type WaFactory,
     type WaOutgoing,
+    type WaProfile,
 } from './wa.js';
 
 /**
@@ -75,6 +76,9 @@ const emptyMeta = (): Meta => ({
     last_error: null,
     history: false,
 });
+
+/** A contact's profile is read from WhatsApp at most once in this window. */
+export const PROFILE_THROTTLE_MS = 60_000;
 
 /** Largest JSON of one history.batch event (Laravel accepts 512 KB per event). */
 const HISTORY_BATCH_BYTES = 200_000;
@@ -155,6 +159,10 @@ export class Session {
     private retry: Cancel | null = null;
     private readonly jids = new Map<string, string>();
     private readonly recentIds = new Set<string>();
+    private readonly profiles = new Map<
+        string,
+        { at: number; result: Promise<WaProfile> }
+    >();
     private readonly sending = new Map<
         string,
         Promise<{ provider_message_id: string; timestamp: number }>
@@ -351,6 +359,55 @@ export class Session {
         this.sending.set(message.idempotency_key, task);
 
         return task;
+    }
+
+    /**
+     * Picture, "about" and business profile of one contact (§4). A contact
+     * asked again within PROFILE_THROTTLE_MS gets the same answer without a
+     * new query to WhatsApp, and simultaneous asks share one query.
+     */
+    async profile(to: string): Promise<WaProfile> {
+        const connection = this.connection;
+
+        if (this.state !== 'connected' || connection === null) {
+            throw new ApiError(409, 'not_connected', { state: this.state });
+        }
+
+        const jid = await this.recipient(connection, to);
+        const now = this.options.now?.() ?? Date.now();
+        const cached = this.profiles.get(jid);
+
+        if (cached && now - cached.at < PROFILE_THROTTLE_MS) {
+            return cached.result.catch(() => {
+                throw new ApiError(504, 'profile_timeout');
+            });
+        }
+
+        const result = withTimeout(connection.profile(jid), 30_000);
+
+        if (this.profiles.size >= 500) {
+            this.profiles.clear();
+        }
+
+        this.profiles.set(jid, { at: now, result });
+
+        try {
+            return await result;
+        } catch (error) {
+            this.profiles.delete(jid);
+            this.options.logger.warn(
+                {
+                    connection_id: this.connectionId,
+                    to: maskJid(jid),
+                    err: safeErrorMessage(error),
+                },
+                'A contact profile could not be read',
+            );
+
+            throw this.state === 'connected'
+                ? new ApiError(504, 'profile_timeout')
+                : new ApiError(409, 'not_connected', { state: this.state });
+        }
     }
 
     // -- state machine ----------------------------------------------------

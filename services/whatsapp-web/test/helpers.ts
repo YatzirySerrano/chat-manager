@@ -19,6 +19,7 @@ import type {
     WaEvent,
     WaFactory,
     WaOutgoing,
+    WaProfile,
     WaQuoted,
 } from '../src/wa.js';
 
@@ -88,6 +89,15 @@ export class FakeSocket {
     });
     /** Numbers WhatsApp knows, with the JID it registered for each. */
     readonly directory = new Map<string, string>();
+    /** JIDs whose profile the service asked WhatsApp for. */
+    readonly profileQueries: string[] = [];
+    /** Replace to answer a profile differently. */
+    profileBehaviour: (jid: string) => Promise<WaProfile> = async () => ({
+        picture_url: null,
+        about: null,
+        about_set_at: null,
+        business: null,
+    });
 
     constructor(
         readonly registered: boolean,
@@ -106,6 +116,11 @@ export class FakeSocket {
         },
         resolveJid: async (digits) => this.directory.get(digits) ?? null,
         phoneForLid: async () => null,
+        profile: async (jid) => {
+            this.profileQueries.push(jid);
+
+            return this.profileBehaviour(jid);
+        },
         logout: async () => {
             this.loggedOut = true;
         },

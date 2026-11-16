@@ -198,8 +198,24 @@ useChannel(
     },
 );
 
-/* Without real-time, refresh the open chat periodically. */
 const { getInitials } = useInitials();
+
+/* The customer's WhatsApp profile picture (private copy), else the initials. */
+const headerPhotoFailed = ref(false);
+const headerPhoto = computed(() =>
+    headerPhotoFailed.value
+        ? null
+        : (props.conversation.contact.avatar_url ?? null),
+);
+
+watch(
+    () => props.conversation.contact.avatar_url,
+    () => {
+        headerPhotoFailed.value = false;
+    },
+);
+
+/* Without real-time, refresh the open chat periodically. */
 const { state: realtimeState } = useRealtimeStatus();
 const visibility = useDocumentVisibility();
 const FALLBACK_MS = 20_000;
@@ -470,6 +486,17 @@ watch(conversationId, () => (dragDepth.value = 0));
                     <span :class="CHAT_HEADER_AVATAR">{{
                         getInitials(conversation.contact.display_name)
                     }}</span>
+                    <img
+                        v-if="headerPhoto"
+                        :src="headerPhoto"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        referrerpolicy="no-referrer"
+                        class="absolute inset-0 size-full rounded-full object-cover ring-2 ring-background"
+                        data-chat-header-photo
+                        @error="headerPhotoFailed = true"
+                    />
                     <span
                         class="absolute -right-1 -bottom-1 grid size-5 place-items-center rounded-full bg-card text-muted-foreground shadow-(--shadow-control) ring-2 ring-background"
                     >

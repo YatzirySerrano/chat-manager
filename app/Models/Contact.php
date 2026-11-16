@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\DeletesLogically;
+use App\Enums\ConnectionChannel;
 use App\Enums\ContactSource;
 use App\Enums\ContactStatus;
 use App\Enums\DataScope;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -124,6 +126,17 @@ class Contact extends Model
     public function tags(): BelongsToMany
     {
         return $this->belongsToMany(Tag::class)->withPivot(['tagged_by_user_id', 'created_at']);
+    }
+
+    /**
+     * The WhatsApp identity whose profile (picture, "about") the contact
+     * shows: the newest one.
+     *
+     * @return HasOne<ContactIdentity, $this>
+     */
+    public function whatsappIdentity(): HasOne
+    {
+        return $this->hasOne(ContactIdentity::class)->ofMany(['id' => 'max'], fn (Builder $query) => $query->where('channel', ConnectionChannel::Whatsapp->value));
     }
 
     /**

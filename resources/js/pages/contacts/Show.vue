@@ -19,6 +19,7 @@ import ContactNotesCard from '@/components/contacts/ContactNotesCard.vue';
 import ContactOriginCard from '@/components/contacts/ContactOriginCard.vue';
 import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
 import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
+import WhatsAppProfileCard from '@/components/contacts/WhatsAppProfileCard.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
@@ -54,6 +55,7 @@ import type {
     ContactOriginTypeValue,
     ContactReceivingConnection,
     ContactTag,
+    WhatsAppProfile,
 } from '@/types';
 
 const props = defineProps<{
@@ -65,6 +67,8 @@ const props = defineProps<{
     };
     notes: ContactNote[] | null;
     conversations: ContactConversation[];
+    /** «Perfil de WhatsApp»; null when the contact has no WhatsApp identity. */
+    whatsappProfile?: WhatsAppProfile | null;
     originTypes: ContactEnumOption<ContactOriginTypeValue>[];
     availableTags: ContactTag[];
     can: {
@@ -155,6 +159,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             <template #avatar>
                 <DirectoryAvatar
                     :name="contact.name"
+                    :src="contact.is_deleted ? null : contact.avatar_url"
                     size="xl"
                     :tone="contact.is_deleted ? 'muted' : 'auto'"
                     class="dir-hero-avatar"
@@ -597,6 +602,13 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             </div>
 
             <div class="flex flex-col gap-6 2xl:col-start-3 2xl:row-start-1">
+                <WhatsAppProfileCard
+                    v-if="whatsappProfile"
+                    :profile="whatsappProfile"
+                    :reload="['contact', 'whatsappProfile']"
+                    variant="page"
+                />
+
                 <ContactOriginCard
                     :current="origin.current"
                     :history="origin.history"

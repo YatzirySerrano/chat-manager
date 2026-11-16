@@ -6,6 +6,7 @@ use App\Models\Contact;
 use App\Models\ContactIdentity;
 use App\Models\Tag;
 use App\Services\ResolveContactOrigin;
+use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -28,6 +29,8 @@ class ContactResource extends JsonResource
             'profile_name' => $this->profile_name,
             'phone_e164' => $this->phone_e164,
             'email' => $this->email,
+            // Private copy of the WhatsApp profile picture (WhatsApp Web only), or null: the initials are shown.
+            'avatar_url' => WhatsAppWebContactProfiles::contactAvatarUrl($this->resource),
             'status' => $this->status->value,
             'is_deleted' => $this->isDeleted(),
             'deleted_at' => $this->archived_at?->toIso8601String(),

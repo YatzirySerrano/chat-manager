@@ -190,7 +190,7 @@ export function createControlServer(options: ServerOptions): Server {
         }
 
         const match =
-            /^\/v1\/sessions\/(\d{1,12})(?:\/(start|stop|logout|messages|media))?$/.exec(
+            /^\/v1\/sessions\/(\d{1,12})(?:\/(start|stop|logout|messages|media|profile))?$/.exec(
                 path,
             );
 
@@ -230,6 +230,14 @@ export function createControlServer(options: ServerOptions): Server {
                     outboundMessage(parseJson(body)),
                 ),
             );
+        } else if (action === 'profile' && method === 'POST') {
+            const to = parseJson(body).to;
+
+            if (typeof to !== 'string' || to === '' || to.length > 200) {
+                throw new ApiError(422, 'invalid_request');
+            }
+
+            json(response, 200, await manager.profile(connectionId, to));
         } else if (action === 'media' && method === 'POST') {
             await streamMedia(
                 options,

@@ -74,6 +74,7 @@ Base `http://{WAWEB_HOST}:{WAWEB_PORT}`. JSON, firmada (§2). `connectionId` es 
 | `DELETE /v1/sessions/{connectionId}`        | —                            | `{"deleted":true}` (cierra y borra todo)                                            |
 | `POST /v1/sessions/{connectionId}/messages` | `OutboundMessage`            | `{"provider_message_id":"…","timestamp":1700000000}`                                |
 | `POST /v1/sessions/{connectionId}/media`    | `{"descriptor":{…}}`         | El archivo descifrado, en streaming (`Content-Type`, `Content-Length` si se conoce) |
+| `POST /v1/sessions/{connectionId}/profile`  | `{"to":"5215512345678"}`     | `ContactProfile` (abajo)                                                            |
 
 `start` con `mode = "link"` exige que no haya credenciales válidas (si las hay responde la sesión actual);
 `mode = "restore"` nunca genera QR: sin credenciales responde `409 {"error":"not_linked"}`.
@@ -120,6 +121,36 @@ Base `http://{WAWEB_HOST}:{WAWEB_PORT}`. JSON, firmada (§2). `connectionId` es 
   `422 {"error":"invalid_request"|"invalid_recipient"|"unsupported_type"|"media_too_large"|"media_unavailable"}`,
   `504 {"error":"send_timeout"}` (resultado **ambiguo**: Laravel deja el mensaje como «entrega sin confirmar», no lo
   reenvía solo), `500 {"error":"internal"}`.
+
+### Perfil de un contacto
+
+`to` acepta lo mismo que `OutboundMessage.to` (dígitos o JID completo `…@s.whatsapp.net` / `…@lid`). Exige sesión
+`connected` (`409 not_connected` si no), `422 invalid_recipient` si WhatsApp no conoce el número y
+`504 profile_timeout` si WhatsApp no respondió.
+
+```jsonc
+// ContactProfile — cada parte es null si el contacto la tiene privada, no la tiene o WhatsApp no respondió
+{
+  "picture_url": "https://pps.whatsapp.net/…",   // URL temporal del CDN de WhatsApp (foto completa)
+  "about": "Disponible",                           // «Info»
+  "about_set_at": 1690000000,                      // segundos Unix
+  "business": {                                    // solo cuentas de empresa
+    "category": "Tienda", "description": "…", "email": null, "website": ["https://…"], "address": null,
+    "hours": { "timezone": "America/Mexico_City",
+               "days": [ { "day": "mon", "mode": "specific_hours", "open": 540, "close": 1080 } ] }  // minutos desde medianoche
+  }
+}
+```
+
+- Un error de privacidad nunca es un error de la petición: esa parte llega en `null`.
+- Límite en memoria por JID: el mismo contacto pedido de nuevo en 60 s recibe la respuesta anterior sin consultar a
+  WhatsApp, y las peticiones simultáneas comparten una consulta.
+- Laravel (`RefreshWhatsAppWebContactProfile`, cola `media`) descarga la foto en el servidor — solo HTTPS de
+  `*.whatsapp.net` / `*.fbcdn.net`, sin redirecciones, JPEG/PNG/WebP de hasta 2 MB — y la guarda en `MediaDisk`
+  (`WhatsApp/{contacto}/Foto de perfil/…`). El navegador nunca carga el CDN de WhatsApp: la foto se sirve con
+  autorización desde `contacts/{contact}/avatar` y `conversations/{conversation}/contact/avatar`. Se pide tras un
+  mensaje entrante si el perfil nunca se leyó o tiene más de 24 h, y con «Actualizar» (una vez por minuto por contacto).
+- WhatsApp Cloud API no expone foto ni «Info» de los clientes: solo el nombre de perfil.
 
 ## 5. Eventos: Node → Laravel
 

@@ -10,6 +10,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Services\Conversations\QueueRules;
 use App\Services\Sla\SlaSnapshot;
+use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\Features;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
@@ -51,6 +52,8 @@ class ConversationResource extends JsonResource
                 'display_name' => ViewerAlias::displayName($this->contact, $alias),
                 // False while the customer is only a provisional contact (not saved into the directory).
                 'is_saved' => $this->contact->isSaved(),
+                // Private copy of the WhatsApp profile picture (WhatsApp Web only), or null: the initials are shown.
+                'avatar_url' => WhatsAppWebContactProfiles::conversationAvatarUrl($this->resource),
             ]),
             'connection' => $this->whenLoaded('channelConnection', fn (): array => [
                 'id' => $this->channelConnection->id,

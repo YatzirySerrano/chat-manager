@@ -6,6 +6,7 @@ import {
     makeCacheableSignalKeyStore,
     makeWASocket,
     type AnyMessageContent,
+    type WABusinessProfile,
     type WAMessage,
     type WAVersion,
 } from 'baileys';
@@ -15,9 +16,11 @@ import { isIgnoredJid, isUserJid, phoneOfJid } from './normalize.js';
 import type { MediaDescriptor } from './types.js';
 import type {
     MediaDownloader,
+    WaBusinessProfile,
     WaConnection,
     WaFactory,
     WaOutgoing,
+    WaProfile,
     WaQuoted,
 } from './wa.js';
 
@@ -361,6 +364,28 @@ export function createBaileysFactory(options: {
                 return phoneOfJid(jid?.replace(/:\d+@/, '@'));
             },
 
+            async profile(jid) {
+                // Each part fails on its own: a private picture must not
+                // hide a public "about", and the other way around.
+                const [picture, status, business] = await Promise.all([
+                    orNothing(
+                        socket.profilePictureUrl(
+                            jid,
+                            'image',
+                            PROFILE_TIMEOUT_MS,
+                        ),
+                    ),
+                    orNothing(socket.fetchStatus(jid)),
+                    orNothing(socket.getBusinessProfile(jid)),
+                ]);
+
+                return {
+                    picture_url: profilePicture(picture),
+                    ...statusOf(status?.[0]?.status),
+                    business: businessProfile(business),
+                };
+            },
+
             async logout() {
                 closed = true;
                 await socket.logout();
@@ -372,6 +397,110 @@ export function createBaileysFactory(options: {
             },
         };
     };
+}
+
+const PROFILE_TIMEOUT_MS = 10_000;
+
+/** The answer, or undefined when WhatsApp refused it (privacy) or did not answer in time. */
+function orNothing<T>(promise: Promise<T>): Promise<T | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+
+    return Promise.race([
+        promise.catch(() => undefined),
+        new Promise<undefined>((resolve) => {
+            timer = setTimeout(() => resolve(undefined), PROFILE_TIMEOUT_MS);
+        }),
+    ]).finally(() => clearTimeout(timer));
+}
+
+function text(value: unknown, max = 1000): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const trimmed = value.trim();
+
+    return trimmed === '' ? null : trimmed.slice(0, max);
+}
+
+function profilePicture(url: unknown): string | null {
+    const value = text(url, 2000);
+
+    return value !== null && value.startsWith('https://') ? value : null;
+}
+
+function statusOf(
+    data: unknown,
+): Pick<WaProfile, 'about' | 'about_set_at'> {
+    const status = data as { status?: unknown; setAt?: unknown } | undefined;
+    const about = text(status?.status, 700);
+    const at =
+        status?.setAt instanceof Date
+            ? Math.floor(status.setAt.getTime() / 1000)
+            : 0;
+
+    return {
+        about,
+        about_set_at: about !== null && at > 0 ? at : null,
+    };
+}
+
+function minutes(value: unknown): number | null {
+    const number = Number(value);
+
+    return Number.isInteger(number) && number >= 0 && number <= 1440
+        ? number
+        : null;
+}
+
+function businessProfile(
+    profile: WABusinessProfile | void | undefined,
+): WaBusinessProfile | null {
+    if (!profile) {
+        return null;
+    }
+
+    const config =
+        profile.business_hours?.business_config ??
+        profile.business_hours?.config ??
+        [];
+    const days = config
+        .filter((day) => typeof day?.day_of_week === 'string')
+        .slice(0, 14)
+        .map((day) => ({
+            day: String(day.day_of_week).slice(0, 10),
+            mode: String(day.mode ?? '').slice(0, 30),
+            open: minutes(day.open_time),
+            close: minutes(day.close_time),
+        }));
+    const result: WaBusinessProfile = {
+        category: text(profile.category, 200),
+        description: text(profile.description, 1000),
+        email: text(profile.email, 200),
+        website: (profile.website ?? [])
+            .map((site) => text(site, 300))
+            .filter((site): site is string => site !== null)
+            .slice(0, 5),
+        address: text(profile.address, 500),
+        hours:
+            days.length > 0
+                ? {
+                      timezone: text(profile.business_hours?.timezone, 60),
+                      days,
+                  }
+                : null,
+    };
+
+    // WhatsApp answers an empty profile for a personal account.
+    const empty =
+        result.category === null &&
+        result.description === null &&
+        result.email === null &&
+        result.website.length === 0 &&
+        result.address === null &&
+        result.hours === null;
+
+    return empty ? null : result;
 }
 
 /** Downloads and decrypts a received file from WhatsApp's media servers. */

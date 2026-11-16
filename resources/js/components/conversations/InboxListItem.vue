@@ -312,6 +312,7 @@ const label = computed(() => {
                 />
                 <ListAvatar
                     :name="displayName"
+                    :src="conversation.contact.avatar_url"
                     :channel="conversation.connection.channel"
                     :channel-title="connectionTitle"
                     :pending="pending"

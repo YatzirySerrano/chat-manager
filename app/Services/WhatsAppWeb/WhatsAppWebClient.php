@@ -111,6 +111,26 @@ class WhatsAppWebClient
     }
 
     /**
+     * What WhatsApp shares about one contact through the session: picture
+     * (a temporary URL on WhatsApp's CDN), "about" and business profile.
+     * Each part is null when the contact keeps it private or has none.
+     *
+     * @param  string  $to  Digits, or the full JID ("…@s.whatsapp.net", "…@lid").
+     * @return array{picture_url: string|null, about: string|null, about_set_at: int|null, business: array<string, mixed>|null}
+     */
+    public function contactProfile(int $connectionId, string $to): array
+    {
+        $answer = $this->json('POST', "/v1/sessions/{$connectionId}/profile", ['to' => $to]);
+
+        return [
+            'picture_url' => is_string($answer['picture_url'] ?? null) && $answer['picture_url'] !== '' ? $answer['picture_url'] : null,
+            'about' => is_string($answer['about'] ?? null) && trim($answer['about']) !== '' ? $answer['about'] : null,
+            'about_set_at' => is_int($answer['about_set_at'] ?? null) && $answer['about_set_at'] > 0 ? $answer['about_set_at'] : null,
+            'business' => is_array($answer['business'] ?? null) ? $answer['business'] : null,
+        ];
+    }
+
+    /**
      * Download and decrypt an inbound file into `$targetPath`, never
      * keeping it in memory and never past `$maxBytes`.
      *

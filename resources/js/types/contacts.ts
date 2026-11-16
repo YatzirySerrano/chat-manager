@@ -57,6 +57,8 @@ export type Contact = {
     profile_name: string | null;
     phone_e164: string | null;
     email: string | null;
+    /** WhatsApp profile picture (private copy, WhatsApp Web only); null shows the initials. */
+    avatar_url?: string | null;
     status: ContactStatusValue;
     is_deleted: boolean;
     deleted_at: string | null;
@@ -216,4 +218,37 @@ export type ConversationOriginInfo = {
     origin_label: string;
     history_only: boolean;
     history_url: string | null;
+};
+
+/** One day of the business hours of a WhatsApp business account. */
+export type WhatsAppBusinessDay = {
+    day: string;
+    label: string;
+    hours: string;
+};
+
+/** What a WhatsApp business account publishes about itself. */
+export type WhatsAppBusinessProfile = {
+    category: string | null;
+    description: string | null;
+    email: string | null;
+    website: string[];
+    address: string | null;
+    hours: { timezone: string | null; days: WhatsAppBusinessDay[] } | null;
+};
+
+/**
+ * What WhatsApp shares about a contact (WhatsAppWebContactProfiles::present).
+ * `source` is "cloud_api" when the contact only talks through WhatsApp Cloud
+ * API, which shares neither the picture nor the info.
+ */
+export type WhatsAppProfile = {
+    source: 'whatsapp_web' | 'cloud_api';
+    avatar_url: string | null;
+    about: string | null;
+    about_set_at: string | null;
+    business: WhatsAppBusinessProfile | null;
+    fetched_at: string | null;
+    can_refresh: boolean;
+    refresh_url: string | null;
 };

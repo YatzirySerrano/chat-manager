@@ -13,16 +13,18 @@ import {
     UserRound,
     X,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
 import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
+import WhatsAppProfileCard from '@/components/contacts/WhatsAppProfileCard.vue';
 import CompletedBadge from '@/components/conversations/CompletedBadge.vue';
 import ConversationStatusBadge from '@/components/conversations/ConversationStatusBadge.vue';
 import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
+import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
@@ -32,6 +34,7 @@ import TagPicker from '@/components/tags/TagPicker.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/composables/useInitials';
+import type { ViewerItem } from '@/lib/conversations/media';
 import { formatDate, formatDateTime } from '@/lib/format';
 import '@/components/chat/chat.css';
 import { formatPhone } from '@/lib/phone';
@@ -164,6 +167,40 @@ const initials = computed(() =>
     getInitials(props.details.contact.display_name),
 );
 
+/*
+ * The customer's WhatsApp profile picture (a private copy, WhatsApp Web
+ * only): it covers the initials and opens larger in the media viewer.
+ * Without it, or when it fails to load, the initials stay.
+ */
+const photoFailed = ref(false);
+const photoOpen = ref(false);
+const photo = computed(() =>
+    photoFailed.value ? null : (props.details.contact.avatar_url ?? null),
+);
+const photoItems = computed<ViewerItem[]>(() =>
+    photo.value
+        ? [
+              {
+                  id: props.details.contact.id,
+                  kind: 'image',
+                  src: photo.value,
+                  downloadUrl: null,
+                  name: `Foto de perfil de ${props.details.contact.display_name}`,
+                  caption: null,
+                  author: props.details.contact.display_name,
+                  at: props.details.whatsappProfile?.fetched_at ?? null,
+              },
+          ]
+        : [],
+);
+
+watch(
+    () => props.details.contact.avatar_url,
+    () => {
+        photoFailed.value = false;
+    },
+);
+
 /* Phone and e-mail are what gets pasted elsewhere most: one click copies them. */
 async function copy(
     value: string | null | undefined,
@@ -227,13 +264,39 @@ function safeUrl(url: string | null): string | null {
                     aria-hidden="true"
                 />
                 <div class="relative flex items-start gap-3.5">
-                    <span
-                        class="flex size-16 shrink-0 items-center justify-center rounded-full accent-gradient font-display text-xl font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-glow)] ring-4 ring-card"
-                        aria-hidden="true"
+                    <component
+                        :is="photo ? 'button' : 'span'"
+                        v-bind="
+                            photo
+                                ? {
+                                      type: 'button',
+                                      title: 'Ver la foto de perfil',
+                                      'aria-label': `Ver la foto de perfil de ${details.contact.display_name}`,
+                                  }
+                                : { 'aria-hidden': 'true' }
+                        "
+                        class="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full accent-gradient font-display text-xl font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.25),var(--shadow-glow)] ring-4 ring-card outline-none focus-visible:ring-ring"
+                        :class="
+                            photo &&
+                            'cursor-zoom-in transition-transform duration-(--duration-base) ease-(--ease-spring) hover:scale-[1.04]'
+                        "
+                        data-details-avatar
+                        @click="photo ? (photoOpen = true) : undefined"
                     >
                         <template v-if="initials">{{ initials }}</template>
                         <UserRound v-else class="size-5" />
-                    </span>
+                        <img
+                            v-if="photo"
+                            :src="photo"
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            referrerpolicy="no-referrer"
+                            class="absolute inset-0 size-full object-cover"
+                            data-details-avatar-photo
+                            @error="photoFailed = true"
+                        />
+                    </component>
                     <div class="min-w-0 pt-1">
                         <p
                             class="truncate font-display text-xl leading-snug font-semibold"
@@ -434,6 +497,12 @@ function safeUrl(url: string | null): string | null {
                     </div>
                 </div>
             </section>
+
+            <WhatsAppProfileCard
+                v-if="details.whatsappProfile"
+                :profile="details.whatsappProfile"
+                :reload="['details', 'conversation', 'conversations']"
+            />
 
             <section
                 v-if="conversation.sla"
@@ -708,6 +777,11 @@ function safeUrl(url: string | null): string | null {
             </section>
         </div>
 
+        <MediaViewer
+            v-if="photoOpen && photoItems.length > 0"
+            v-model:open="photoOpen"
+            :items="photoItems"
+        />
         <AliasDialog
             v-model:open="aliasOpen"
             :conversation-id="conversation.id"

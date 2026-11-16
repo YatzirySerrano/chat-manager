@@ -30,6 +30,7 @@ use App\Services\Exports\ReportExporter;
 use App\Services\Personalization\ChatAppearances;
 use App\Services\PlatformSettings;
 use App\Services\Sla\SlaSnapshot;
+use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\Attachments\ChannelAttachmentPolicy;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
@@ -179,7 +180,7 @@ class ConversationController extends Controller
                 $resolved = true;
                 $candidate = isset($validated['c']) ? Conversation::query()->find((int) $validated['c']) : null;
                 $cached = $candidate !== null && $actor->can('view', $candidate) ? $candidate : null;
-                $cached?->load(['contact', 'channelConnection.webChatWidget', 'department', 'assignee', 'category:id,name,color,is_active', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
+                $cached?->load(['contact.whatsappIdentity', 'channelConnection.webChatWidget', 'department', 'assignee', 'category:id,name,color,is_active', 'tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
                 if ($cached !== null) {
                     // The viewer's private alias of the contact (PERSONALIZATION).
                     ViewerAlias::load($cached, $actor);
@@ -396,6 +397,8 @@ class ConversationController extends Controller
         $rows = $inbox->withListColumns($listed, $actor)
             ->with([
                 'contact',
+                // The stored WhatsApp profile picture of each row (avatar_url).
+                'contact.whatsappIdentity',
                 // The web chat's sending state reads its widget (Connection::isConfigured()).
                 'channelConnection.webChatWidget',
                 'department',
@@ -484,6 +487,7 @@ class ConversationController extends Controller
     private function details(Conversation $conversation, User $actor, Request $request, callable $tagCatalog): array
     {
         $contact = $conversation->contact;
+        $profiles = app(WhatsAppWebContactProfiles::class);
         $contact->loadMissing(['tags' => fn (BelongsToMany $query) => $query->orderBy('tags.name')]);
         $canTag = $actor->can('tag', $conversation);
 
@@ -511,7 +515,16 @@ class ConversationController extends Controller
                 // Provisional contacts can be saved into the directory from the panel.
                 'is_saved' => $contact->isSaved(),
                 'can_save' => ! $contact->isSaved() && $actor->can('saveToDirectory', $contact),
+                'avatar_url' => $avatarUrl = WhatsAppWebContactProfiles::conversationAvatarUrl($conversation),
             ],
+            // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).
+            'whatsappProfile' => $profiles->present(
+                $contact,
+                $profiles->connectionFor($contact, $conversation),
+                $avatarUrl,
+                true,
+                route('conversations.contact.whatsapp-profile.refresh', $conversation),
+            ),
             'origin' => ContactAttributionResource::collection($conversation->attributions()->with('recorder')->orderBy('captured_at')->get())->resolve($request),
             'history' => array_values($history->map(fn (Conversation $previous): array => [
                 'id' => $previous->id,

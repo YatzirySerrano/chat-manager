@@ -73,6 +73,7 @@ class WhatsAppWebEvents
         private RegisterInboundContact $registerContact,
         private ImportWhatsAppWebHistory $history,
         private ConnectionMonitor $monitor,
+        private WhatsAppWebContactProfiles $profiles,
     ) {}
 
     /**
@@ -152,6 +153,8 @@ class WhatsAppWebEvents
         }
 
         $this->monitor->inboundReceived($connection, $inbound->sender->occurredAt);
+        // Picture and info of the sender, read in the background when missing or older than a day.
+        $this->profiles->refreshAfterInbound($connection, $externalId);
 
         return 'applied';
     }

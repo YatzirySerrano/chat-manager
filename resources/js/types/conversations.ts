@@ -1,6 +1,10 @@
 import type { AppColor } from './admin';
 import type { ConnectionChannel } from './connections';
-import type { ContactAttribution, ConversationOriginInfo } from './contacts';
+import type {
+    ContactAttribution,
+    ConversationOriginInfo,
+    WhatsAppProfile,
+} from './contacts';
 import type { ViewerChatAppearance } from './personalization';
 import type { ConversationReadinessValue } from './service-rules';
 import type { TagOption } from './tags';
@@ -106,6 +110,8 @@ export type ConversationSummary = {
         display_name: string;
         /** False while the customer is a provisional contact (not in the directory). */
         is_saved: boolean;
+        /** WhatsApp profile picture (private copy, WhatsApp Web only); null shows the initials. */
+        avatar_url?: string | null;
     };
     connection: ConversationConnection;
     department: {
@@ -525,7 +531,11 @@ export type ConversationDetails = {
         is_saved: boolean;
         /** The viewer may save this provisional contact into the directory. */
         can_save: boolean;
+        /** WhatsApp profile picture (private copy, WhatsApp Web only); null shows the initials. */
+        avatar_url?: string | null;
     };
+    /** «Perfil de WhatsApp»; null when the contact has no WhatsApp identity. */
+    whatsappProfile?: WhatsAppProfile | null;
     origin: ContactAttribution[];
     history: ({
         id: number;

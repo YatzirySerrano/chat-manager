@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Contacts\ContactAttributionController;
+use App\Http\Controllers\Contacts\ContactAvatarController;
 use App\Http\Controllers\Contacts\ContactController;
 use App\Http\Controllers\Contacts\ContactDirectoryController;
 use App\Http\Controllers\Contacts\ContactNoteController;
@@ -27,5 +28,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('contacts/{contact}/attributions', [ContactAttributionController::class, 'store'])->name('contacts.attributions.store');
     // "Guardar contacto": a provisional contact enters the shared directory.
     Route::post('contacts/{contact}/save', [ContactDirectoryController::class, 'store'])->name('contacts.save');
+    // WhatsApp profile picture (private copy) and «Actualizar» of the WhatsApp profile (WhatsApp Web only).
+    Route::get('contacts/{contact}/avatar', [ContactAvatarController::class, 'contact'])->name('contacts.avatar');
+    Route::get('conversations/{conversation}/contact/avatar', [ContactAvatarController::class, 'conversation'])->name('conversations.contact-avatar');
+    Route::post('contacts/{contact}/whatsapp-profile/refresh', [ContactAvatarController::class, 'refreshFromContact'])
+        ->middleware('throttle:10,1')
+        ->name('contacts.whatsapp-profile.refresh');
+    Route::post('conversations/{conversation}/contact/whatsapp-profile/refresh', [ContactAvatarController::class, 'refreshFromConversation'])
+        ->middleware('throttle:10,1')
+        ->name('conversations.contact.whatsapp-profile.refresh');
     Route::post('conversations/{conversation}/contact/save', [ConversationContactController::class, 'store'])->name('conversations.contact.save');
 });

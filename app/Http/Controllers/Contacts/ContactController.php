@@ -27,6 +27,7 @@ use App\Models\User;
 use App\Services\Conversations\ContactConversationHistory;
 use App\Services\Exports\ReportExporter;
 use App\Services\ResolveContactOrigin;
+use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\ProtectedAccounts;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -134,7 +135,7 @@ class ContactController extends Controller
      * Contact profile: identity, origin, tags, private notes and the
      * conversations the actor is allowed to see.
      */
-    public function show(Request $request, Contact $contact, ResolveContactOrigin $resolveOrigin): Response
+    public function show(Request $request, Contact $contact, ResolveContactOrigin $resolveOrigin, WhatsAppWebContactProfiles $profiles): Response
     {
         Gate::authorize('view', $contact);
 
@@ -143,6 +144,7 @@ class ContactController extends Controller
 
         $contact->load([
             'creator:id,name',
+            'whatsappIdentity',
             'identities' => fn ($query) => $query->orderBy('id'),
             'tags' => fn (BelongsToMany $query) => $query
                 ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
@@ -166,6 +168,14 @@ class ContactController extends Controller
             ],
             'notes' => $canManageNotes ? $this->notes($contact) : null,
             'conversations' => $this->conversations($contact, $actor),
+            // «Perfil de WhatsApp»: picture, info and business profile (WhatsApp Web only; null without a WhatsApp identity).
+            'whatsappProfile' => $profiles->present(
+                $contact,
+                $profiles->connectionFor($contact),
+                WhatsAppWebContactProfiles::contactAvatarUrl($contact),
+                true,
+                route('contacts.whatsapp-profile.refresh', $contact),
+            ),
             'originTypes' => array_values(array_filter(
                 ContactOriginType::options(),
                 fn (array $option): bool => $option['value'] !== ContactOriginType::Unknown->value

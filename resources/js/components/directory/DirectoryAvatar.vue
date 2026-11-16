@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { LucideIcon } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { HTMLAttributes } from 'vue';
 import { getInitials } from '@/composables/useInitials';
 import { isHexColor, isPaletteColor } from '@/lib/colors';
@@ -13,6 +13,10 @@ import './directory.css';
  * everywhere; records with their own color (a tag, a category, a
  * department) pass it as `color` (any CSS color) and usually an `icon`.
  * Decorative: the row says the name in words.
+ *
+ * `src`: a person's profile picture (the WhatsApp one, a private copy
+ * served by the platform). It covers the initials once loaded and falls
+ * back to them when it is missing or fails to load.
  */
 const props = withDefaults(
     defineProps<{
@@ -24,6 +28,8 @@ const props = withDefaults(
         shape?: 'circle' | 'square';
         tone?: 'auto' | 'muted' | 'accent';
         class?: HTMLAttributes['class'];
+        /** Profile picture; the initials (or icon) are shown without it. */
+        src?: string | null;
     }>(),
     {
         icon: undefined,
@@ -32,6 +38,16 @@ const props = withDefaults(
         shape: 'circle',
         tone: 'auto',
         class: undefined,
+        src: null,
+    },
+);
+
+const failed = ref(false);
+
+watch(
+    () => props.src,
+    () => {
+        failed.value = false;
     },
 );
 
@@ -96,6 +112,17 @@ const radius = computed(() => {
     >
         <component :is="icon" v-if="icon" />
         <template v-else>{{ getInitials(name) || '?' }}</template>
+        <img
+            v-if="src && !failed"
+            :src="src"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            referrerpolicy="no-referrer"
+            :class="cn('absolute inset-0 size-full object-cover', radius)"
+            data-dir-avatar-photo
+            @error="failed = true"
+        />
         <slot />
     </span>
 </template>

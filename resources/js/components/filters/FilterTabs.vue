@@ -150,14 +150,14 @@ const thumbStyle = computed(() => ({
     >
         <div
             ref="track"
-            class="relative flex shrink-0 items-center gap-px"
+            class="relative flex shrink-0 items-center gap-px rounded-lg border border-border bg-muted p-0.5"
             role="group"
             :aria-label="label"
             @keydown="onKeydown"
         >
             <!-- The thumb: a quiet tint under the chosen tab. -->
             <span
-                class="pointer-events-none absolute inset-y-0 left-0 rounded-md bg-foreground/[0.07] dark:bg-foreground/10"
+                class="pointer-events-none absolute inset-y-0.5 left-0 rounded-md border border-border bg-card shadow-(--shadow-control)"
                 :class="placed && 'filter-tabs-thumb'"
                 :style="thumbStyle"
                 aria-hidden="true"

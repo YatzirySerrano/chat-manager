@@ -133,8 +133,8 @@ defineExpose({ focus });
             aria-keyshortcuts="/ Control+K Meta+K"
             :class="
                 cn(
-                    'h-9 w-full min-w-0 rounded-lg border border-transparent bg-muted/70 pr-16 pl-9 text-sm text-foreground outline-none placeholder:text-muted-foreground',
-                    'transition-[background-color,border-color,box-shadow] duration-(--duration-fast) hover:bg-muted focus-visible:border-ring/60 focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/20',
+                    'h-9 w-full min-w-0 rounded-lg border border-input bg-card pr-16 pl-9 text-sm text-foreground shadow-(--shadow-control) outline-none placeholder:text-muted-foreground',
+                    'transition-[background-color,border-color,box-shadow] duration-(--duration-fast) hover:border-border-strong focus-visible:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/20',
                     'pointer-coarse:h-10 [&::-webkit-search-cancel-button]:hidden',
                 )
             "

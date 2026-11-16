@@ -45,7 +45,7 @@ const emit = defineEmits<{ toggle: [] }>();
                 'transition-colors duration-(--duration-fast) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 pointer-coarse:h-9',
                 pressed
                     ? 'border-primary/35 bg-primary-soft text-primary-soft-foreground'
-                    : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
+                    : 'border-border bg-card text-foreground/80 shadow-(--shadow-control) hover:bg-muted hover:text-foreground',
             )
         "
         data-filter-toggle

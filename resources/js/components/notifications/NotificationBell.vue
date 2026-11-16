@@ -2,8 +2,10 @@
 import { Link, router } from '@inertiajs/vue3';
 import {
     AlertTriangle,
+    ArrowUpRight,
     Bell,
     BellRing,
+    Check,
     CheckCheck,
     Download,
     Lock,
@@ -13,6 +15,8 @@ import {
 } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import AttentionAlertBellItem from '@/components/attention/AttentionAlertBellItem.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import NotificationKindIcon from '@/components/notifications/NotificationKindIcon.vue';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
@@ -20,6 +24,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import { Segmented } from '@/components/ui/segmented';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
     Tooltip,
@@ -28,7 +33,12 @@ import {
 } from '@/components/ui/tooltip';
 import { useAttentionAlerts } from '@/composables/useAttentionAlerts';
 import { useNotificationCenter } from '@/composables/useNotificationCenter';
-import { formatDateTime, formatRelative } from '@/lib/format';
+import { formatDateTime, platformTimezone } from '@/lib/format';
+import {
+    notificationActionLabel,
+    notificationKind,
+    occurrencesText,
+} from '@/lib/notifications/kinds';
 import { cn } from '@/lib/utils';
 import { index as conversationsIndex } from '@/routes/conversations';
 import { edit as editPreferences } from '@/routes/notifications/preferences';
@@ -84,17 +94,14 @@ const moreAlerts = computed(() =>
     Math.max(0, pendingAlerts.value - attention.alerts.value.length),
 );
 
+const filterOptions = [
+    { value: false, label: 'Todas' },
+    { value: true, label: 'Sin leer' },
+];
+
 function viewPending(): void {
     open.value = false;
     router.visit(conversationsIndex({ query: { view: 'mine' } }));
-}
-
-/**
- * A ready export: opening it downloads the file (the server turns the
- * visit into a full browser download, or explains that it expired).
- */
-function isDownload(item: AppNotification): boolean {
-    return item.kind === 'export.finished' && item.url !== null;
 }
 
 function select(item: AppNotification): void {
@@ -105,8 +112,142 @@ function select(item: AppNotification): void {
     center.open(item);
 }
 
-watch(open, (value) => (attention.bellOpen.value = value));
-onBeforeUnmount(() => (attention.bellOpen.value = false));
+/*
+ * Time of each row: relative within today («hace 3 min»), the clock time
+ * on older days (their group already says which day). The full date is in
+ * the title. «now» advances every 30 s while the bell is open.
+ */
+const now = ref(Date.now());
+let clock: ReturnType<typeof setInterval> | null = null;
+
+function stopClock(): void {
+    if (clock !== null) {
+        clearInterval(clock);
+        clock = null;
+    }
+}
+
+watch(open, (value) => {
+    attention.bellOpen.value = value;
+    stopClock();
+
+    if (value) {
+        now.value = Date.now();
+        clock = setInterval(() => (now.value = Date.now()), 30_000);
+    }
+});
+
+onBeforeUnmount(() => {
+    attention.bellOpen.value = false;
+    stopClock();
+});
+
+function dayKey(at: number): string {
+    try {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: platformTimezone(),
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(at);
+    } catch {
+        return new Date(at).toISOString().slice(0, 10);
+    }
+}
+
+function dayLabel(at: number, key: string): string {
+    if (key === dayKey(now.value)) {
+        return 'Hoy';
+    }
+
+    if (key === dayKey(now.value - 86_400_000)) {
+        return 'Ayer';
+    }
+
+    const sameYear = key.slice(0, 4) === dayKey(now.value).slice(0, 4);
+    const text = formatDateTime(new Date(at).toISOString(), {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        ...(sameYear ? {} : { year: 'numeric' }),
+    });
+
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+type Group = {
+    key: string;
+    label: string;
+    items: { item: AppNotification; index: number }[];
+};
+
+/** The list split by day, newest first, as the server sends it. */
+const groups = computed<Group[]>(() => {
+    const result: Group[] = [];
+    let index = 0;
+
+    for (const item of center.items.value) {
+        const at = Date.parse(item.updated_at ?? item.created_at ?? '');
+        const key = Number.isFinite(at) ? dayKey(at) : 'unknown';
+        let group = result[result.length - 1];
+
+        if (!group || group.key !== key) {
+            group = {
+                key,
+                label: Number.isFinite(at) ? dayLabel(at, key) : 'Sin fecha',
+                items: [],
+            };
+            result.push(group);
+        }
+
+        group.items.push({ item, index: index++ });
+    }
+
+    return result;
+});
+
+function timeText(iso: string | null): string {
+    const at = Date.parse(iso ?? '');
+
+    if (!Number.isFinite(at)) {
+        return '';
+    }
+
+    if (dayKey(at) !== dayKey(now.value)) {
+        return formatDateTime(iso, { hour: '2-digit', minute: '2-digit' });
+    }
+
+    const minutes = Math.floor(Math.max(0, now.value - at) / 60_000);
+
+    if (minutes < 1) {
+        return 'ahora';
+    }
+
+    if (minutes < 60) {
+        return `hace ${minutes} min`;
+    }
+
+    return `hace ${Math.floor(minutes / 60)} h`;
+}
+
+function hasActions(item: AppNotification): boolean {
+    return item.read_at === null || item.url !== null;
+}
+
+/** Room the row actions take at the end of the meta line. */
+function actionsRoom(item: AppNotification): string | false {
+    const unread = item.read_at === null;
+
+    if (item.url === null) {
+        return unread && 'pr-9';
+    }
+
+    if (item.kind === 'export.finished') {
+        return unread ? 'pr-[8.25rem]' : 'pr-24';
+    }
+
+    return unread ? 'pr-[6.25rem]' : 'pr-[4.25rem]';
+}
 
 function onOpenChange(value: boolean): void {
     open.value = value;
@@ -148,8 +289,8 @@ function onOpenChange(value: boolean): void {
                                         cn(
                                             'badge-pop absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[0.6875rem] leading-none font-semibold tabular-nums ring-2 ring-background',
                                             urgent
-                                                ? 'bg-destructive text-destructive-foreground shadow-[0_2px_8px_-2px_color-mix(in_oklch,var(--destructive)_70%,transparent)]'
-                                                : 'bg-primary',
+                                                ? 'bg-destructive text-destructive-foreground'
+                                                : 'bg-primary text-primary-foreground',
                                         )
                                     "
                                     aria-hidden="true"
@@ -168,64 +309,84 @@ function onOpenChange(value: boolean): void {
         <PopoverContent
             align="end"
             :side-offset="8"
-            class="flex max-h-[min(36rem,calc(100vh-5rem))] w-[min(24rem,calc(100vw-1.5rem))] flex-col p-0"
+            class="notification-panel flex max-h-[min(38rem,calc(100dvh-5rem))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden bg-popover! p-0 backdrop-filter-none!"
         >
-            <div
-                class="flex items-center justify-between gap-2 border-b px-4 py-3"
-            >
-                <div>
-                    <h2
-                        class="font-display text-base leading-tight font-semibold"
+            <header class="grid gap-3 border-b px-4 pt-3.5 pb-3">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <h2
+                            class="flex items-center gap-2 font-display text-base leading-tight font-semibold"
+                        >
+                            Notificaciones
+                            <span
+                                v-if="center.unread.value.total > 0"
+                                class="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1.5 text-[0.6875rem] font-semibold text-primary-foreground tabular-nums"
+                                aria-hidden="true"
+                            >
+                                {{
+                                    center.unread.value.total > 99
+                                        ? '99+'
+                                        : center.unread.value.total
+                                }}
+                            </span>
+                        </h2>
+                        <p
+                            class="mt-0.5 text-xs text-muted-foreground"
+                            aria-live="polite"
+                            data-notification-summary
+                        >
+                            {{ count === 0 ? 'Estás al día' : summary }}
+                        </p>
+                    </div>
+                    <!--
+                        A native title, not a Tooltip: the popover focuses
+                        its first control on open, and a tooltip would pop
+                        up every time the bell opens.
+                    -->
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="-mt-1 -mr-1.5 text-muted-foreground"
+                        as-child
                     >
-                        Notificaciones
-                    </h2>
-                    <p
-                        class="text-xs text-muted-foreground"
-                        aria-live="polite"
-                        data-notification-summary
-                    >
-                        {{ count === 0 ? 'Estás al día' : summary }}
-                    </p>
+                        <Link
+                            :href="editPreferences()"
+                            aria-label="Preferencias de notificación"
+                            title="Preferencias de notificación"
+                            data-notification-preferences
+                            @click="open = false"
+                        >
+                            <Settings2 />
+                        </Link>
+                    </Button>
                 </div>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    :disabled="center.unread.value.total === 0"
-                    @click="center.markAllRead()"
-                >
-                    <CheckCheck />
-                    Marcar todo leído
-                </Button>
-            </div>
+
+                <div class="flex items-center justify-between gap-2">
+                    <Segmented
+                        v-model="center.onlyUnread.value"
+                        :options="filterOptions"
+                        size="sm"
+                        aria-label="Mostrar"
+                    />
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        :disabled="center.unread.value.total === 0"
+                        @click="center.markAllRead()"
+                    >
+                        <CheckCheck class="size-3.5" />
+                        Marcar todas como leídas
+                    </Button>
+                </div>
+            </header>
 
             <div
-                class="flex gap-1 border-b px-3 py-2 [&>[aria-selected=true]]:bg-card [&>[aria-selected=true]]:shadow-(--shadow-control) [&>[aria-selected=true]]:ring-1 [&>[aria-selected=true]]:ring-border"
-                role="tablist"
+                class="notification-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain"
             >
-                <Button
-                    v-for="option in [
-                        { value: false, label: 'Todas' },
-                        { value: true, label: 'Sin leer' },
-                    ]"
-                    :key="option.label"
-                    role="tab"
-                    size="sm"
-                    :variant="
-                        center.onlyUnread.value === option.value
-                            ? 'secondary'
-                            : 'ghost'
-                    "
-                    :aria-selected="center.onlyUnread.value === option.value"
-                    @click="center.onlyUnread.value = option.value"
-                >
-                    {{ option.label }}
-                </Button>
-            </div>
-
-            <div class="min-h-0 flex-1 overflow-y-auto">
                 <section
                     v-if="attention.alerts.value.length > 0"
-                    class="grid gap-2 border-b bg-muted/30 p-3"
+                    class="grid gap-2 border-b bg-muted/40 p-3"
                     aria-labelledby="bell-attention-heading"
                     data-bell-attention
                 >
@@ -268,12 +429,20 @@ function onOpenChange(value: boolean): void {
 
                 <div
                     v-if="!center.loaded.value && center.loading.value"
-                    class="space-y-3 p-4"
+                    class="grid gap-1 p-2"
                     aria-busy="true"
                 >
-                    <div v-for="index in 3" :key="index" class="space-y-2">
-                        <Skeleton class="h-4 w-3/4" />
-                        <Skeleton class="h-3 w-1/2" />
+                    <div
+                        v-for="index in 4"
+                        :key="index"
+                        class="flex gap-3 px-2.5 py-2.5"
+                    >
+                        <Skeleton class="size-9 shrink-0 rounded-[0.625rem]" />
+                        <div class="flex-1 space-y-2 pt-0.5">
+                            <Skeleton class="h-3.5 w-3/4" />
+                            <Skeleton class="h-3 w-11/12" />
+                            <Skeleton class="h-3 w-1/3" />
+                        </div>
                     </div>
                 </div>
 
@@ -281,12 +450,13 @@ function onOpenChange(value: boolean): void {
                     v-else-if="
                         center.failed.value && center.items.value.length === 0
                     "
-                    class="flex flex-col items-start gap-3 p-6 text-sm"
+                    class="flex flex-col items-center gap-3 px-6 py-10 text-center text-sm"
                 >
-                    <AlertTriangle
-                        class="size-5 text-warning"
-                        aria-hidden="true"
-                    />
+                    <span
+                        class="grid size-10 place-items-center rounded-xl bg-warning-soft text-warning-soft-foreground"
+                    >
+                        <AlertTriangle class="size-5" aria-hidden="true" />
+                    </span>
                     <p class="text-muted-foreground">
                         No se pudieron cargar las notificaciones.
                     </p>
@@ -312,118 +482,250 @@ function onOpenChange(value: boolean): void {
 
                 <div
                     v-else-if="center.items.value.length === 0"
-                    class="flex flex-col items-start gap-2 p-8"
+                    class="flex flex-col items-center px-8 py-12 text-center"
+                    data-notification-empty
                 >
                     <span
-                        class="mb-1 grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground"
+                        class="relative mb-4 grid size-12 place-items-center rounded-2xl border bg-muted text-muted-foreground"
                     >
-                        <Bell class="size-5" aria-hidden="true" />
+                        <CheckCheck
+                            v-if="center.onlyUnread.value"
+                            class="size-5"
+                            aria-hidden="true"
+                        />
+                        <Bell v-else class="size-5" aria-hidden="true" />
                     </span>
-                    <p class="text-sm font-medium">
+                    <p class="text-sm font-semibold">
                         {{
                             center.onlyUnread.value
-                                ? 'No tienes notificaciones sin leer'
+                                ? 'Nada pendiente por leer'
                                 : 'Aún no tienes notificaciones'
                         }}
                     </p>
-                    <p class="text-xs text-muted-foreground">
-                        Aquí verás asignaciones, transferencias, mensajes nuevos
-                        y avisos importantes.
+                    <p
+                        class="mt-1 max-w-[17rem] text-xs leading-relaxed text-muted-foreground"
+                    >
+                        {{
+                            center.onlyUnread.value
+                                ? 'Ya leíste todo. Las nuevas asignaciones y mensajes aparecerán aquí.'
+                                : 'Aquí verás asignaciones, transferencias, mensajes nuevos y avisos importantes.'
+                        }}
                     </p>
+                    <Button
+                        v-if="center.onlyUnread.value"
+                        variant="outline"
+                        size="sm"
+                        class="mt-4"
+                        @click="center.onlyUnread.value = false"
+                    >
+                        Ver todas
+                    </Button>
                 </div>
 
-                <ul v-else class="reveal-stagger divide-y">
-                    <li v-for="item in center.items.value" :key="item.id">
-                        <button
-                            type="button"
-                            class="group/notification flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
-                            :class="
-                                item.read_at === null && 'bg-primary-soft/35'
-                            "
-                            @click="select(item)"
+                <template v-else>
+                    <section
+                        v-for="group in groups"
+                        :key="group.key"
+                        :aria-labelledby="`notification-day-${group.key}`"
+                        data-notification-day
+                    >
+                        <h3
+                            :id="`notification-day-${group.key}`"
+                            class="sticky top-0 z-10 border-b border-border/70 bg-popover px-4 py-1.5 text-xs font-medium text-muted-foreground"
                         >
-                            <span
-                                class="mt-1.5 size-2 shrink-0 rounded-full"
-                                :class="
-                                    item.read_at !== null
-                                        ? 'bg-transparent'
-                                        : item.level === 'urgent'
-                                          ? 'live-dot bg-destructive text-destructive'
-                                          : 'bg-primary'
+                            {{ group.label }}
+                        </h3>
+                        <ul class="grid gap-px p-1.5">
+                            <li
+                                v-for="{ item, index } in group.items"
+                                :key="item.id"
+                                class="notification-row group/notification relative rounded-lg"
+                                :style="{ '--i': Math.min(index, 10) }"
+                                :data-notification-kind="item.kind"
+                                :data-unread="
+                                    item.read_at === null || undefined
                                 "
-                                aria-hidden="true"
-                            />
-                            <span class="min-w-0 flex-1">
-                                <span class="flex items-start gap-2">
+                            >
+                                <button
+                                    type="button"
+                                    class="flex w-full gap-3 rounded-lg py-2.5 pr-3 pl-3.5 text-left transition-colors duration-(--duration-fast) hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                    @click="select(item)"
+                                >
                                     <span
-                                        class="min-w-0 flex-1 text-sm"
-                                        :class="
-                                            item.read_at === null
-                                                ? 'font-medium'
-                                                : 'text-muted-foreground'
-                                        "
+                                        class="relative mt-0.5 flex shrink-0 self-start"
                                     >
-                                        {{ item.title }}
+                                        <template v-if="item.subject">
+                                            <ListAvatar
+                                                :name="item.subject.name"
+                                                :src="item.subject.avatar_url"
+                                            />
+                                            <NotificationKindIcon
+                                                :item="item"
+                                                size="badge"
+                                                class="absolute -right-1.5 -bottom-1"
+                                            />
+                                        </template>
+                                        <NotificationKindIcon
+                                            v-else
+                                            :item="item"
+                                        />
                                     </span>
-                                    <Lock
-                                        v-if="!item.accessible"
-                                        class="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                                        aria-label="Sin acceso"
-                                    />
-                                </span>
+
+                                    <span class="min-w-0 flex-1">
+                                        <span class="flex items-start gap-2">
+                                            <span
+                                                class="line-clamp-2 min-w-0 flex-1 text-sm leading-snug"
+                                                :class="
+                                                    item.read_at === null
+                                                        ? 'font-semibold text-foreground'
+                                                        : 'font-medium text-foreground/75'
+                                                "
+                                            >
+                                                {{ item.title }}
+                                            </span>
+                                            <time
+                                                class="mt-px shrink-0 text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                                                :datetime="
+                                                    item.updated_at ?? undefined
+                                                "
+                                                :title="
+                                                    formatDateTime(
+                                                        item.updated_at,
+                                                        {
+                                                            dateStyle: 'full',
+                                                            timeStyle: 'short',
+                                                        },
+                                                    )
+                                                "
+                                            >
+                                                {{ timeText(item.updated_at) }}
+                                            </time>
+                                        </span>
+                                        <span
+                                            v-if="item.body"
+                                            class="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-muted-foreground"
+                                        >
+                                            {{ item.body }}
+                                        </span>
+                                        <span
+                                            class="mt-1.5 flex min-h-6 flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                                            :class="actionsRoom(item)"
+                                        >
+                                            <span class="font-medium">
+                                                {{
+                                                    notificationKind(item).label
+                                                }}
+                                            </span>
+                                            <span
+                                                v-if="item.level === 'urgent'"
+                                                class="inline-flex h-5 items-center rounded-md bg-destructive-soft px-1.5 font-medium text-destructive-soft-foreground"
+                                                data-notification-urgent
+                                            >
+                                                Urgente
+                                            </span>
+                                            <span
+                                                v-if="occurrencesText(item)"
+                                                class="inline-flex h-5 items-center rounded-md bg-muted px-1.5 font-medium text-foreground/80 tabular-nums"
+                                                data-notification-occurrences
+                                            >
+                                                {{ occurrencesText(item) }}
+                                            </span>
+                                            <span
+                                                v-if="
+                                                    item.kind.startsWith('sla.')
+                                                "
+                                                class="inline-flex h-5 items-center gap-1 rounded-md border px-1.5"
+                                                data-notification-sla
+                                            >
+                                                <Timer
+                                                    class="size-3"
+                                                    aria-hidden="true"
+                                                />
+                                                SLA automático
+                                            </span>
+                                            <span
+                                                v-if="!item.accessible"
+                                                class="inline-flex h-5 items-center gap-1 rounded-md border px-1.5"
+                                            >
+                                                <Lock
+                                                    class="size-3"
+                                                    aria-hidden="true"
+                                                />
+                                                Sin acceso
+                                            </span>
+                                            <span
+                                                v-if="item.read_at === null"
+                                                class="sr-only"
+                                            >
+                                                Sin leer
+                                            </span>
+                                        </span>
+                                    </span>
+                                </button>
+
+                                <!-- Unread: a dot in the gutter that fades once read. -->
                                 <span
-                                    v-if="item.body"
-                                    class="mt-0.5 line-clamp-2 block text-xs text-muted-foreground"
+                                    class="unread-dot pointer-events-none absolute top-[1.15rem] left-1 size-1.5 rounded-full bg-primary"
+                                    :class="
+                                        item.read_at === null
+                                            ? 'opacity-100'
+                                            : 'scale-50 opacity-0'
+                                    "
+                                    aria-hidden="true"
+                                />
+
+                                <div
+                                    v-if="hasActions(item)"
+                                    class="row-actions absolute right-2.5 bottom-2 flex items-center gap-1"
                                 >
-                                    {{ item.body }}
-                                </span>
-                                <span
-                                    class="mt-1 flex items-center gap-2 text-xs text-muted-foreground"
-                                >
-                                    <time
-                                        :datetime="item.updated_at ?? undefined"
-                                        :title="formatDateTime(item.updated_at)"
-                                    >
-                                        {{ formatRelative(item.updated_at) }}
-                                    </time>
-                                    <span
-                                        v-if="isDownload(item)"
-                                        class="inline-flex items-center gap-1 font-medium text-primary-soft-foreground"
+                                    <Tooltip v-if="item.read_at === null">
+                                        <TooltipTrigger as-child>
+                                            <button
+                                                type="button"
+                                                class="row-action grid size-7 place-items-center rounded-md border bg-popover text-muted-foreground hover:bg-accent hover:text-foreground"
+                                                aria-label="Marcar como leída"
+                                                data-notification-mark-read
+                                                @click="center.markRead(item)"
+                                            >
+                                                <Check
+                                                    class="size-3.5"
+                                                    aria-hidden="true"
+                                                />
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent
+                                            >Marcar como leída</TooltipContent
+                                        >
+                                    </Tooltip>
+                                    <button
+                                        v-if="item.url"
+                                        type="button"
+                                        class="row-action inline-flex h-7 items-center gap-1 rounded-md border bg-popover px-2 text-xs font-medium text-foreground hover:bg-accent"
+                                        :aria-label="`${notificationActionLabel(item)}: ${item.title}`"
+                                        data-notification-action
+                                        @click="select(item)"
                                     >
                                         <Download
+                                            v-if="
+                                                item.kind === 'export.finished'
+                                            "
                                             class="size-3.5"
                                             aria-hidden="true"
                                         />
-                                        Descargar
-                                    </span>
-                                    <span
-                                        v-if="item.kind.startsWith('sla.')"
-                                        class="inline-flex items-center gap-1 font-medium"
-                                        data-notification-sla
-                                    >
-                                        <Timer
-                                            class="size-3.5"
+                                        {{ notificationActionLabel(item) }}
+                                        <ArrowUpRight
+                                            v-if="
+                                                item.kind !== 'export.finished'
+                                            "
+                                            class="size-3.5 text-muted-foreground"
                                             aria-hidden="true"
                                         />
-                                        SLA automático
-                                    </span>
-                                    <span
-                                        v-if="item.level === 'urgent'"
-                                        class="rounded-full border border-destructive/30 px-1.5 text-destructive"
-                                    >
-                                        Requiere acción
-                                    </span>
-                                    <span
-                                        v-if="item.read_at === null"
-                                        class="sr-only"
-                                    >
-                                        Sin leer
-                                    </span>
-                                </span>
-                            </span>
-                        </button>
-                    </li>
-                </ul>
+                                    </button>
+                                </div>
+                            </li>
+                        </ul>
+                    </section>
+                </template>
 
                 <div
                     v-if="center.hasMore.value"
@@ -440,20 +742,6 @@ function onOpenChange(value: boolean): void {
                     </Button>
                 </div>
             </div>
-
-            <div class="border-t px-2 py-2">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    class="w-full justify-start"
-                    as-child
-                >
-                    <Link :href="editPreferences()" @click="open = false">
-                        <Settings2 />
-                        Preferencias de notificación
-                    </Link>
-                </Button>
-            </div>
         </PopoverContent>
     </Popover>
 </template>
@@ -468,6 +756,50 @@ function onOpenChange(value: boolean): void {
 .bell-ring {
     transform-origin: 50% 10%;
     animation: bell-ring 700ms var(--ease-standard);
+}
+
+/* Rows fade in once, a few milliseconds apart (capped at ten). */
+.notification-row {
+    animation: row-in 260ms var(--ease-standard) backwards;
+    animation-delay: calc(var(--i, 0) * 28ms);
+}
+
+.unread-dot {
+    transition:
+        opacity 320ms var(--ease-standard),
+        scale 320ms var(--ease-standard);
+}
+
+/*
+ * Row actions appear on hover or keyboard focus; on touch screens (no
+ * hover) they are always visible.
+ */
+.row-actions {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.group\/notification:hover .row-actions,
+.group\/notification:focus-within .row-actions {
+    opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .row-actions {
+        opacity: 1;
+    }
+}
+
+.row-action:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--ring);
+}
+
+@keyframes row-in {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
 }
 
 @keyframes badge-pop {
@@ -501,6 +833,19 @@ function onOpenChange(value: boolean): void {
 
     75% {
         rotate: 2deg;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .notification-row,
+    .badge-pop,
+    .bell-ring {
+        animation: none;
+    }
+
+    .unread-dot,
+    .row-actions {
+        transition: none;
     }
 }
 </style>

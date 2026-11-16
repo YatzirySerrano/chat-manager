@@ -1,6 +1,16 @@
 import { router, useHttp, usePage } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    defineComponent,
+    h,
+    markRaw,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
 import { toast } from 'vue-sonner';
+import NotificationKindIcon from '@/components/notifications/NotificationKindIcon.vue';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
 import { syncServerClock } from '@/composables/useServerNow';
 import { useUserChannel } from '@/composables/useUserChannel';
@@ -13,6 +23,7 @@ import {
     showBrowserNotification,
     unlockNotificationSound,
 } from '@/lib/notifications/alerts';
+import { notificationTone } from '@/lib/notifications/kinds';
 import { ensurePushSubscription } from '@/lib/notifications/push';
 import {
     VIEWED_THREAD_HEARTBEAT_MS,
@@ -49,6 +60,19 @@ const TEAM_CHAT_KINDS: NotificationKindValue[] = [
     'team-chat.message',
     'team-chat.mention',
 ];
+
+/**
+ * The toast's leading icon: the kind's icon on its tinted square, the same
+ * one the bell shows for the notification.
+ */
+function toastIcon(item: AppNotification) {
+    return markRaw(
+        defineComponent({
+            name: 'NotificationToastIcon',
+            setup: () => () => h(NotificationKindIcon, { item, size: 'sm' }),
+        }),
+    );
+}
 
 /** What the page does for one new notification. */
 export type NotificationAlertPlan = {
@@ -500,6 +524,9 @@ export function useNotificationCenter() {
                 toast.info(item.title, {
                     id: toastId,
                     description: item.body ?? undefined,
+                    icon: toastIcon(item),
+                    class: `notification-toast tone-${notificationTone(item)}`,
+                    classes: { description: 'line-clamp-2' },
                     action: item.url
                         ? {
                               label:

@@ -18,6 +18,7 @@ use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
+use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\Features;
 use App\Support\ProtectedAccounts;
 use Illuminate\Notifications\DatabaseNotification;
@@ -41,7 +42,8 @@ use Illuminate\Support\Str;
  * @phpstan-type PresentedNotification array{
  *     id: string, kind: string, level: string, title: string, body: string|null, url: string|null,
  *     accessible: bool, occurrences: int, read_at: string|null, created_at: string|null, updated_at: string|null,
- *     conversation_id: int|null, team_thread_id: int|null, toast: bool
+ *     conversation_id: int|null, team_thread_id: int|null, toast: bool,
+ *     subject: array{type: string, name: string, avatar_url: string|null}|null
  * }
  */
 class NotificationPresenter
@@ -54,6 +56,15 @@ class NotificationPresenter
 
     /** @var array<int, string> */
     private array $userNames = [];
+
+    /**
+     * Who the notification being presented is about (the contact of a single
+     * visible conversation, or the teammate who wrote in the internal chat),
+     * for the avatar of the bell; null for aggregated or inaccessible ones.
+     *
+     * @var array{type: string, name: string, avatar_url: string|null}|null
+     */
+    private ?array $subject = null;
 
     /**
      * Records referenced by the page being presented, loaded once per page
@@ -97,6 +108,7 @@ class NotificationPresenter
         $occurrences = (int) ($notification->getAttribute('occurrences') ?? 1);
 
         $settled = false;
+        $this->subject = null;
 
         [$title, $body, $url, $accessible] = match ($kind) {
             NotificationKind::ConversationPending => $this->pending($data, $viewer, $occurrences),
@@ -127,6 +139,7 @@ class NotificationPresenter
             'conversation_id' => $accessible && isset($data['conversation_id']) && is_int($data['conversation_id']) ? $data['conversation_id'] : null,
             'team_thread_id' => $accessible && in_array($kind, [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage], true) && is_int($data['thread_id'] ?? null) ? $data['thread_id'] : null,
             'toast' => $accessible && $kind !== null && $kind->announcesInPage(),
+            'subject' => $accessible ? $this->subject : null,
         ];
     }
 
@@ -202,6 +215,10 @@ class NotificationPresenter
             ->get()
             ->keyBy('id');
 
+        // The stored WhatsApp picture of each contact (one query), served by
+        // the conversation's own avatar route, which checks access again.
+        WhatsAppWebContactProfiles::loadIdentities($this->conversations->map(fn (Conversation $conversation) => $conversation->contact));
+
         $this->userNames = $userIds === [] ? [] : User::query()
             ->whereKey(array_values(array_unique($userIds)))
             ->pluck('name', 'id')
@@ -215,9 +232,24 @@ class NotificationPresenter
             return null;
         }
 
-        $conversation = $this->conversations->get($id) ?? Conversation::query()->with(['contact:id,name,profile_name', 'department:id,name'])->find($id);
+        $conversation = $this->conversations->get($id);
+
+        if ($conversation === null) {
+            $conversation = Conversation::query()->with(['contact:id,name,profile_name', 'department:id,name'])->find($id);
+            WhatsAppWebContactProfiles::loadIdentities([$conversation?->contact]);
+        }
 
         return $conversation !== null && $this->access->canView($viewer, $conversation) ? $conversation : null;
+    }
+
+    /** The contact of a conversation the viewer can see, as the notification's subject. */
+    private function aboutContact(Conversation $conversation): void
+    {
+        $this->subject = [
+            'type' => 'contact',
+            'name' => $this->contactName($conversation),
+            'avatar_url' => WhatsAppWebContactProfiles::conversationAvatarUrl($conversation),
+        ];
     }
 
     private function contactName(Conversation $conversation): string
@@ -266,6 +298,10 @@ class NotificationPresenter
             ? $this->routeOrNull('conversations.index', ['view' => 'queue'])
             : $this->routeOrNull('conversations.show', $latest);
 
+        if ($occurrences === 1) {
+            $this->aboutContact($latest);
+        }
+
         return [$title, $body, $url, true];
     }
 
@@ -280,6 +316,8 @@ class NotificationPresenter
         if ($conversation === null) {
             return $this->noAccess('Conversación asignada');
         }
+
+        $this->aboutContact($conversation);
 
         $actor = $this->userName($data['actor_id'] ?? null, $viewer);
         $title = match ($data['reason'] ?? null) {
@@ -306,6 +344,8 @@ class NotificationPresenter
             return $this->noAccess('Transferencia recibida');
         }
 
+        $this->aboutContact($conversation);
+
         $actor = $this->userName($data['actor_id'] ?? null, $viewer) ?? 'Un compañero';
 
         return [
@@ -328,6 +368,8 @@ class NotificationPresenter
         if ($conversation === null) {
             return $this->noAccess('Mensaje nuevo');
         }
+
+        $this->aboutContact($conversation);
 
         $name = $this->contactName($conversation);
 
@@ -368,6 +410,11 @@ class NotificationPresenter
         $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId]);
         $author = $this->userName($data['author_id'] ?? null, $viewer);
         $message = $this->teamMessage($data['message_id'] ?? null);
+
+        if ($author !== null) {
+            // Users have no profile picture: the bell shows their initials.
+            $this->subject = ['type' => 'teammate', 'name' => $author, 'avatar_url' => null];
+        }
 
         if ($message === null || $message->team_thread_id !== $threadId || $author === null) {
             return [$generic, $author !== null ? "De {$author}." : null, $url, true];
@@ -606,6 +653,7 @@ class NotificationPresenter
 
         [$cycle, $conversation] = $visible[0];
         $name = $this->contactName($conversation);
+        $this->aboutContact($conversation);
         $objective = $cycle->kind === ResponseCycleKind::FirstResponse ? 'la primera respuesta' : 'la respuesta';
         $url = $this->routeOrNull('conversations.show', $conversation);
         $reminder = $breach && is_int($data['reminder'] ?? null) && $data['reminder'] > 0 ? "Recordatorio {$data['reminder']}. " : '';

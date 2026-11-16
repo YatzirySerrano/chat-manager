@@ -43,6 +43,18 @@ export type AppNotification = {
     team_thread_id: number | null;
     /** Announced live with a toast when it arrives (urgent kinds, customer and internal chat messages). */
     toast: boolean;
+    /**
+     * Who it is about, for the avatar: the contact of a single visible
+     * conversation (with its WhatsApp picture when stored) or the teammate
+     * who wrote in the internal chat. Null for aggregated or inaccessible ones.
+     */
+    subject?: NotificationSubject | null;
+};
+
+export type NotificationSubject = {
+    type: 'contact' | 'teammate';
+    name: string;
+    avatar_url: string | null;
 };
 
 export type NotificationUnread = { urgent: number; total: number };

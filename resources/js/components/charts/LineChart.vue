@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onClickOutside, useElementSize } from '@vueuse/core';
-import { computed, onMounted, ref, useTemplateRef } from 'vue';
+import { computed, onMounted, ref, useId, useTemplateRef } from 'vue';
 import {
     chartTokens,
     formatCompact,
@@ -12,6 +12,7 @@ import {
 import type { BucketLabel } from '@/composables/useChartTheme';
 import ChartTooltip from './ChartTooltip.vue';
 import type { ChartTooltipRow, LineSeries } from './types';
+import '@/components/reports/insights.css';
 
 /**
  * Line chart drawn in SVG (no chart library): up to three series over one
@@ -34,6 +35,9 @@ const props = withDefaults(
 );
 
 const { duration, reducedMotion } = useChartTheme();
+
+/* Unique ids of the area gradients (several charts share a page). */
+const gradientId = `line-area-${useId()}`;
 
 const root = useTemplateRef<HTMLElement>('root');
 const { width: measuredWidth } = useElementSize(root);
@@ -200,6 +204,8 @@ const drawnSeries = computed(() =>
                       )
                       .join(' ')
                 : '',
+            /** The latest measured value: the end of the line gets a dot. */
+            last: pieces[pieces.length - 1]?.slice(-1)[0] ?? null,
             /** Isolated values (both neighbours missing) are drawn as a dot. */
             dots: pieces
                 .filter((piece) => piece.length === 1)
@@ -343,6 +349,7 @@ const announcement = computed(() => {
                     :y2="y(tick)"
                     :style="{ stroke: chartTokens.grid }"
                     stroke-width="1"
+                    :stroke-dasharray="tick === 0 ? undefined : '3 4'"
                     shape-rendering="crispEdges"
                 />
                 <text
@@ -371,13 +378,37 @@ const announcement = computed(() => {
             </g>
 
             <g aria-hidden="true">
+                <defs>
+                    <linearGradient
+                        v-for="series in drawnSeries"
+                        :id="`${gradientId}-${series.key}`"
+                        :key="`gradient-${series.key}`"
+                        x1="0"
+                        x2="0"
+                        y1="0"
+                        y2="1"
+                    >
+                        <stop
+                            offset="0%"
+                            :style="{
+                                stopColor: series.color,
+                                stopOpacity: 0.26,
+                            }"
+                        />
+                        <stop
+                            offset="100%"
+                            :style="{ stopColor: series.color, stopOpacity: 0 }"
+                        />
+                    </linearGradient>
+                </defs>
                 <template v-for="series in drawnSeries" :key="series.key">
                     <path
                         v-if="series.area"
                         :d="series.area"
+                        class="chart-area-rise"
+                        :fill="`url(#${gradientId}-${series.key})`"
                         :style="{
-                            fill: series.color,
-                            opacity: drawn ? 0.12 : 0,
+                            opacity: drawn ? 1 : 0,
                             transition: `opacity ${duration}ms ease-out`,
                         }"
                     />
@@ -420,6 +451,20 @@ const announcement = computed(() => {
                         :style="{ fill: series.color }"
                     />
                 </template>
+                <!-- The latest value of the first series: a dot on a surface ring. -->
+                <circle
+                    v-if="drawnSeries[0]?.last && drawnSeries[0].line"
+                    :cx="x(drawnSeries[0].last.index)"
+                    :cy="y(drawnSeries[0].last.value)"
+                    r="4"
+                    stroke-width="2"
+                    :style="{
+                        fill: drawnSeries[0].color,
+                        stroke: chartTokens.surface,
+                        opacity: drawn && active === null ? 1 : 0,
+                        transition: `opacity ${duration}ms ease-out`,
+                    }"
+                />
             </g>
 
             <g v-if="active !== null" aria-hidden="true">
@@ -429,27 +474,38 @@ const announcement = computed(() => {
                     :y1="padding.top"
                     :y2="baseline"
                     :style="{ stroke: chartTokens.axis }"
-                    stroke-opacity="0.45"
+                    stroke-opacity="0.55"
                     stroke-width="1"
+                    stroke-dasharray="3 3"
                 />
                 <template
                     v-for="series in drawnSeries"
                     :key="`marker-${series.key}`"
                 >
-                    <circle
+                    <g
                         v-if="
                             series.values[active] !== null &&
                             series.values[active] !== undefined
                         "
-                        :cx="x(active)"
-                        :cy="y(series.values[active] as number)"
-                        r="4"
-                        stroke-width="2"
-                        :style="{
-                            fill: series.color,
-                            stroke: chartTokens.surface,
-                        }"
-                    />
+                    >
+                        <circle
+                            :cx="x(active)"
+                            :cy="y(series.values[active] as number)"
+                            r="9"
+                            :style="{ fill: series.color, opacity: 0.16 }"
+                        />
+                        <circle
+                            class="chart-marker-pop"
+                            :cx="x(active)"
+                            :cy="y(series.values[active] as number)"
+                            r="4.5"
+                            stroke-width="2"
+                            :style="{
+                                fill: series.color,
+                                stroke: chartTokens.surface,
+                            }"
+                        />
+                    </g>
                 </template>
             </g>
         </svg>

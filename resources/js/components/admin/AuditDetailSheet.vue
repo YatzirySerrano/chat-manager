@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import { ChevronDown } from '@lucide/vue';
 import { computed } from 'vue';
 import AuditRestrictedBadge from '@/components/admin/AuditRestrictedBadge.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
 import {
     Collapsible,
     CollapsibleContent,
@@ -16,7 +17,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { formatDateTime } from '@/lib/format';
-import type { AuditLogEntry } from '@/types';
+import type { AuditLogEntry, AuditTone } from '@/types';
 
 const props = defineProps<{
     entry: AuditLogEntry | null;
@@ -25,11 +26,17 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { required: true });
 
 const resultClasses = {
-    success:
-        'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    success: 'border-success/30 bg-success-soft text-success-soft-foreground',
     warning: 'border-transparent bg-warning-soft text-warning-soft-foreground',
     danger: 'border-destructive/30 bg-destructive/10 text-destructive',
 } as const;
+
+const toneDot: Record<AuditTone, string> = {
+    success: 'bg-success',
+    warning: 'bg-warning',
+    danger: 'bg-destructive',
+    neutral: 'bg-muted-foreground/60',
+};
 
 const technicalJson = computed(() =>
     props.entry?.technical
@@ -42,8 +49,15 @@ const technicalJson = computed(() =>
     <Sheet v-model:open="open">
         <SheetContent class="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
             <template v-if="entry">
-                <SheetHeader class="border-b p-5">
-                    <SheetTitle class="flex items-center gap-2">
+                <SheetHeader class="border-b accent-gradient-soft p-5">
+                    <SheetTitle
+                        class="flex items-center gap-2.5 font-display text-lg"
+                    >
+                        <span
+                            class="size-2.5 shrink-0 rounded-full"
+                            :class="toneDot[entry.action.tone]"
+                            aria-hidden="true"
+                        />
                         {{ entry.action.label }}
                         <AuditRestrictedBadge v-if="entry.restricted" />
                     </SheetTitle>
@@ -62,7 +76,7 @@ const technicalJson = computed(() =>
 
                     <div
                         v-if="entry.result || entry.error"
-                        class="space-y-2 rounded-md border p-3"
+                        class="space-y-2 rounded-xl border p-3 shadow-(--shadow-control)"
                         :class="resultClasses[entry.result?.tone ?? 'danger']"
                     >
                         <p v-if="entry.result" class="font-medium">
@@ -71,9 +85,18 @@ const technicalJson = computed(() =>
                         <p v-if="entry.error">{{ entry.error }}</p>
                     </div>
 
-                    <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-3">
+                    <dl
+                        class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border bg-surface-sunken/50 p-4"
+                    >
                         <dt class="text-muted-foreground">Realizado por</dt>
-                        <dd class="font-medium">{{ entry.actor.name }}</dd>
+                        <dd class="flex min-w-0 items-center gap-2 font-medium">
+                            <ListAvatar
+                                v-if="entry.actor.id !== null"
+                                :name="entry.actor.name"
+                                class="size-6! text-[0.625rem]!"
+                            />
+                            <span class="truncate">{{ entry.actor.name }}</span>
+                        </dd>
 
                         <dt class="text-muted-foreground">Elemento</dt>
                         <dd>
@@ -101,8 +124,10 @@ const technicalJson = computed(() =>
                     </dl>
 
                     <section v-if="entry.changes.length > 0" class="space-y-2">
-                        <h3 class="font-medium">Cambios</h3>
-                        <div class="overflow-x-auto rounded-md border">
+                        <h3 class="section-title font-semibold">Cambios</h3>
+                        <div
+                            class="overflow-x-auto rounded-xl border shadow-(--shadow-control)"
+                        >
                             <table class="w-full text-left text-xs">
                                 <thead
                                     class="bg-muted/50 text-muted-foreground"
@@ -142,9 +167,9 @@ const technicalJson = computed(() =>
                     </section>
 
                     <section v-if="entry.details.length > 0" class="space-y-2">
-                        <h3 class="font-medium">Detalles</h3>
+                        <h3 class="section-title font-semibold">Detalles</h3>
                         <dl
-                            class="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-4 gap-y-2 rounded-md border p-3 text-xs"
+                            class="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-xl border p-3 text-xs"
                         >
                             <template
                                 v-for="detail in entry.details"
@@ -169,7 +194,7 @@ const technicalJson = computed(() =>
                             Información técnica
                         </CollapsibleTrigger>
                         <CollapsibleContent
-                            class="space-y-2 rounded-md border bg-muted/30 p-3 text-xs"
+                            class="space-y-2 rounded-xl border bg-muted/30 p-3 text-xs"
                         >
                             <p>
                                 <span class="text-muted-foreground"

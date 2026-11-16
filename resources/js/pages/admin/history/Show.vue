@@ -3,14 +3,13 @@ import { Head, Link } from '@inertiajs/vue3';
 import { ArrowLeft, History, Lock, Trash2 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import HistoryTimeline from '@/components/history-import/HistoryTimeline.vue';
-import {
-    ARCHIVE_LIST_KEY,
-    formatNumber,
-} from '@/components/history-import/labels';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import { ARCHIVE_LIST_KEY, plural } from '@/components/history-import/labels';
 import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusNote from '@/components/StatusNote.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
@@ -69,6 +68,13 @@ const contactName = computed(
             : 'Contacto sin nombre'),
 );
 
+/* The three moments of the conversation, as a small vertical timeline. */
+const moments = computed(() => [
+    { label: 'Inicio', value: props.conversation.started_at },
+    { label: 'Último mensaje', value: props.conversation.last_message_at },
+    { label: 'Cierre', value: props.conversation.closed_at },
+]);
+
 const SOURCE_LABELS: Record<string, string> = {
     kind: 'Tipo de registro',
     ticket_id: 'Ticket',
@@ -114,7 +120,7 @@ const sourceRows = computed(() =>
             help="historial"
             :title="contactName"
             show-title
-            :description="`${conversation.origin_label} · ${formatNumber(conversation.messages_count)} mensajes`"
+            :description="`${conversation.origin_label} · ${plural(conversation.messages_count, 'mensaje')}`"
         >
             <template #actions>
                 <Button variant="ghost" as-child>
@@ -174,85 +180,132 @@ const sourceRows = computed(() =>
                 :initial="timeline"
             />
 
-            <SurfaceCard
-                title="Datos de la conversación"
-                body-class="p-4 text-sm sm:p-5"
-                class="lg:sticky lg:top-[4.5rem]"
+            <aside
+                class="admin-section enter-spring overflow-hidden text-sm lg:sticky lg:top-[4.5rem]"
+                aria-labelledby="archive-details-title"
             >
-                <dl
-                    class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2"
+                <header
+                    class="flex items-center gap-3 border-b accent-gradient-soft px-4 py-4 sm:px-5"
                 >
-                    <dt class="text-muted-foreground">Destino</dt>
-                    <dd>
-                        <span class="flex flex-wrap items-center gap-1.5">
-                            <Lock
-                                class="size-3.5 shrink-0 text-muted-foreground"
+                    <ListAvatar :name="contactName" channel="whatsapp" />
+                    <div class="min-w-0 flex-1">
+                        <h2
+                            id="archive-details-title"
+                            class="font-display text-lg leading-tight font-semibold"
+                        >
+                            Datos de la conversación
+                        </h2>
+                        <p class="truncate text-xs text-muted-foreground">
+                            {{ contactName }}
+                        </p>
+                    </div>
+                </header>
+                <div class="p-4 sm:p-5">
+                    <dl
+                        class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2.5"
+                    >
+                        <dt class="text-muted-foreground">Destino</dt>
+                        <dd>
+                            <StatusPill
+                                :label="
+                                    conversation.destination === 'archive'
+                                        ? 'Archivada · solo consulta'
+                                        : 'Importada · cerrada'
+                                "
+                                :tone="
+                                    conversation.destination === 'archive'
+                                        ? 'info'
+                                        : 'success'
+                                "
+                            >
+                                <Lock
+                                    class="size-3 shrink-0"
+                                    aria-hidden="true"
+                                />
+                            </StatusPill>
+                        </dd>
+                        <dt class="text-muted-foreground">Número</dt>
+                        <dd class="wrap-anywhere tabular-nums">
+                            {{
+                                conversation.contact?.phone
+                                    ? formatPhone(conversation.contact.phone)
+                                    : '—'
+                            }}
+                        </dd>
+                        <dt class="text-muted-foreground">En el directorio</dt>
+                        <dd>{{ conversation.contact?.saved ? 'Sí' : 'No' }}</dd>
+                        <dt class="text-muted-foreground">Departamento</dt>
+                        <dd>{{ conversation.department?.name ?? '—' }}</dd>
+                        <dt class="text-muted-foreground">Agente</dt>
+                        <dd>{{ conversation.agent?.name ?? '—' }}</dd>
+                        <dt class="text-muted-foreground">Conexión</dt>
+                        <dd class="wrap-anywhere">
+                            {{ conversation.connection?.name ?? '—' }}
+                            <span
+                                v-if="conversation.connection?.historical"
+                                class="block text-xs text-muted-foreground"
+                            >
+                                Conexión histórica sin envío
+                            </span>
+                        </dd>
+                        <dt class="text-muted-foreground">Etiquetas</dt>
+                        <dd>
+                            <span
+                                v-if="conversation.tags.length > 0"
+                                class="flex flex-wrap gap-1"
+                            >
+                                <span
+                                    v-for="(tag, tagIndex) in conversation.tags"
+                                    :key="tagIndex"
+                                    class="rounded-full bg-muted px-2 py-px text-xs text-muted-foreground"
+                                    >{{ tag.name }}</span
+                                >
+                            </span>
+                            <template v-else>—</template>
+                        </dd>
+                    </dl>
+
+                    <ol
+                        class="relative mt-5 grid gap-3 border-l border-border pl-4"
+                        aria-label="Fechas de la conversación"
+                    >
+                        <li
+                            v-for="moment in moments"
+                            :key="moment.label"
+                            class="relative"
+                        >
+                            <span
+                                class="absolute top-1.5 -left-[1.3125rem] size-2.5 rounded-full border-2 border-card bg-primary/70"
                                 aria-hidden="true"
                             />
-                            {{
-                                conversation.destination === 'archive'
-                                    ? 'Archivada · solo consulta'
-                                    : 'Importada · cerrada'
-                            }}
-                        </span>
-                    </dd>
-                    <dt class="text-muted-foreground">Número</dt>
-                    <dd class="wrap-anywhere">
-                        {{
-                            conversation.contact?.phone
-                                ? formatPhone(conversation.contact.phone)
-                                : '—'
-                        }}
-                    </dd>
-                    <dt class="text-muted-foreground">En el directorio</dt>
-                    <dd>{{ conversation.contact?.saved ? 'Sí' : 'No' }}</dd>
-                    <dt class="text-muted-foreground">Departamento</dt>
-                    <dd>{{ conversation.department?.name ?? '—' }}</dd>
-                    <dt class="text-muted-foreground">Agente</dt>
-                    <dd>{{ conversation.agent?.name ?? '—' }}</dd>
-                    <dt class="text-muted-foreground">Conexión</dt>
-                    <dd class="wrap-anywhere">
-                        {{ conversation.connection?.name ?? '—' }}
-                        <span
-                            v-if="conversation.connection?.historical"
-                            class="block text-xs text-muted-foreground"
+                            <p class="text-xs text-muted-foreground">
+                                {{ moment.label }}
+                            </p>
+                            <p class="tabular-nums">
+                                {{ formatDateTime(moment.value) }}
+                            </p>
+                        </li>
+                    </ol>
+
+                    <template v-if="sourceRows.length > 0">
+                        <h3
+                            class="mt-6 mb-2 border-t pt-4 text-sm font-semibold"
                         >
-                            Conexión histórica sin envío
-                        </span>
-                    </dd>
-                    <dt class="text-muted-foreground">Etiquetas</dt>
-                    <dd>
-                        {{
-                            conversation.tags.length > 0
-                                ? conversation.tags
-                                      .map((tag) => tag.name)
-                                      .join(', ')
-                                : '—'
-                        }}
-                    </dd>
-                    <dt class="text-muted-foreground">Inicio</dt>
-                    <dd>{{ formatDateTime(conversation.started_at) }}</dd>
-                    <dt class="text-muted-foreground">Último mensaje</dt>
-                    <dd>{{ formatDateTime(conversation.last_message_at) }}</dd>
-                    <dt class="text-muted-foreground">Cierre</dt>
-                    <dd>{{ formatDateTime(conversation.closed_at) }}</dd>
-                </dl>
-                <template v-if="sourceRows.length > 0">
-                    <h3 class="mt-5 mb-2 text-sm font-semibold">
-                        Datos en Whaticket
-                    </h3>
-                    <dl
-                        class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2"
-                    >
-                        <template v-for="row in sourceRows" :key="row.key">
-                            <dt class="text-muted-foreground">
-                                {{ row.label }}
-                            </dt>
-                            <dd class="wrap-anywhere">{{ row.value }}</dd>
-                        </template>
-                    </dl>
-                </template>
-            </SurfaceCard>
+                            Datos en Whaticket
+                        </h3>
+                        <dl
+                            class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-2"
+                        >
+                            <template v-for="row in sourceRows" :key="row.key">
+                                <dt class="text-muted-foreground">
+                                    {{ row.label }}
+                                </dt>
+                                <dd class="wrap-anywhere">{{ row.value }}</dd>
+                            </template>
+                        </dl>
+                    </template>
+                </div>
+            </aside>
         </div>
     </div>
 </template>

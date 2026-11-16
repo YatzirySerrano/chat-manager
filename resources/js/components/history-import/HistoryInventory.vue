@@ -12,8 +12,14 @@ import {
 import { watchDebounced } from '@vueuse/core';
 import { computed, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import TableSkeleton from '@/components/admin/TableSkeleton.vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import type { FilterTabOption } from '@/components/filters/types';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +32,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { cn } from '@/lib/utils';
@@ -422,6 +426,26 @@ const pageLabel = computed(() =>
 );
 
 const total = computed(() => meta.value?.total ?? 0);
+
+/* «Mostrar» as tabs; «Todas» is the absence of a decision filter. */
+type DecisionTab = 'all' | NonNullable<HistoryFilters['decision']>;
+
+const decisionTabs = computed<FilterTabOption<DecisionTab>[]>(() => [
+    { value: 'all', label: 'Todas' },
+    { value: 'undecided', label: 'Sin decidir' },
+    ...DECISION_ORDER.map((value) => ({
+        value: value as DecisionTab,
+        label: DECISIONS[value].label,
+    })),
+]);
+
+function chooseDecision(value: DecisionTab): void {
+    filters.value = {
+        ...filters.value,
+        decision:
+            value === 'all' ? undefined : (value as HistoryFilters['decision']),
+    };
+}
 </script>
 
 <template>
@@ -461,36 +485,21 @@ const total = computed(() => meta.value?.total ?? 0);
                     :facets="facets"
                     id-prefix="inventory"
                 />
-                <div v-else class="flex flex-wrap items-center gap-2 text-sm">
-                    <span class="text-muted-foreground">Mostrar:</span>
-                    <Button
-                        v-for="choice in [
-                            { value: undefined, label: 'Todas' },
-                            { value: 'undecided', label: 'Sin decidir' },
-                            ...DECISION_ORDER.map((value) => ({
-                                value,
-                                label: DECISIONS[value].label,
-                            })),
-                        ]"
-                        :key="choice.label"
-                        size="sm"
-                        :variant="
-                            filters.decision === choice.value
-                                ? 'default'
-                                : 'outline'
+                <div
+                    v-else
+                    class="flex flex-wrap items-center gap-2 text-sm sm:flex-nowrap"
+                >
+                    <span class="shrink-0 text-muted-foreground">Mostrar:</span>
+                    <FilterTabs
+                        class="min-w-0 max-sm:w-full"
+                        :options="decisionTabs"
+                        :model-value="
+                            (filters.decision as DecisionTab | undefined) ??
+                            'all'
                         "
-                        class="rounded-full pointer-coarse:h-10"
-                        :aria-pressed="filters.decision === choice.value"
-                        @click="
-                            filters = {
-                                ...filters,
-                                decision:
-                                    choice.value as HistoryFilters['decision'],
-                            }
-                        "
-                    >
-                        {{ choice.label }}
-                    </Button>
+                        label="Mostrar"
+                        @update:model-value="chooseDecision"
+                    />
                 </div>
             </div>
             <p
@@ -504,7 +513,7 @@ const total = computed(() => meta.value?.total ?? 0);
 
         <div
             v-if="editable"
-            class="z-10 flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-card sm:sticky sm:top-[4.5rem] sm:flex-row sm:flex-wrap sm:items-center [@media(max-height:32rem)]:static"
+            class="z-10 flex flex-col gap-2 rounded-2xl border border-border/80 glass p-3 shadow-float sm:sticky sm:top-[4.5rem] sm:flex-row sm:flex-wrap sm:items-center [@media(max-height:32rem)]:static"
             data-tour="history-import.bulk"
             role="group"
             aria-label="Aplicar destino"
@@ -564,6 +573,7 @@ const total = computed(() => meta.value?.total ?? 0);
                 </Select>
                 <Button
                     class="pointer-coarse:h-10"
+                    :class="selected.size > 0 && 'shadow-glow'"
                     :disabled="selected.size === 0 || bulkProcessing"
                     @click="applyBulk('selection')"
                     :loading="bulkProcessing"
@@ -587,7 +597,10 @@ const total = computed(() => meta.value?.total ?? 0);
             </div>
         </div>
 
-        <SurfaceCard data-tour="history-import.inventory">
+        <SurfaceCard
+            class="admin-list overflow-clip"
+            data-tour="history-import.inventory"
+        >
             <StatusNote
                 v-if="loadError"
                 tone="danger"
@@ -604,42 +617,33 @@ const total = computed(() => meta.value?.total ?? 0);
 
             <div
                 v-else-if="loading && rows.length === 0"
-                class="grid gap-2 p-4"
                 aria-busy="true"
+                role="status"
                 aria-label="Cargando conversaciones"
             >
-                <Skeleton v-for="n in 5" :key="n" class="h-16 w-full" />
+                <TableSkeleton :rows="5" />
             </div>
 
-            <EmptyState
+            <FilteredEmpty
                 v-else-if="rows.length === 0"
-                class="border-none"
-                :tone="hasFilters ? 'filtered' : 'neutral'"
-                :icon="hasFilters ? undefined : Inbox"
-                :title="
-                    hasFilters
-                        ? 'Ninguna conversación coincide con el filtro'
-                        : 'El inventario está vacío'
-                "
-                :description="
-                    hasFilters
-                        ? 'Cambia o quita los filtros para ver otras conversaciones.'
-                        : 'Sube el reporte de chats, los mensajes o un Chat.txt para ver sus conversaciones.'
-                "
-            >
-                <Button
-                    v-if="hasFilters"
-                    variant="outline"
-                    @click="clearFilters"
-                >
-                    Quitar filtros
-                </Button>
-            </EmptyState>
+                :narrowed="hasFilters"
+                narrowed-title="Ninguna conversación coincide con el filtro"
+                narrowed-description="Cambia o quita los filtros para ver otras conversaciones."
+                :icon="Inbox"
+                title="El inventario está vacío"
+                description="Sube el reporte de chats, los mensajes o un Chat.txt para ver sus conversaciones."
+                @clear="clearFilters"
+            />
 
             <template v-else>
                 <div
-                    class="flex items-center justify-between gap-2 border-b px-4 py-2 text-sm sm:px-5"
+                    class="admin-toolbar relative flex items-center justify-between gap-2 px-4 py-2 text-sm sm:px-5"
                 >
+                    <div
+                        v-if="loading"
+                        class="absolute inset-x-0 bottom-0 pane-progress h-0.5"
+                        aria-hidden="true"
+                    />
                     <label
                         v-if="editable"
                         class="flex min-h-9 cursor-pointer items-center gap-2 pointer-coarse:min-h-11"
@@ -663,21 +667,24 @@ const total = computed(() => meta.value?.total ?? 0);
                     >
                         {{ plural(total, 'conversación', 'conversaciones') }}
                     </span>
-                    <Spinner
-                        v-if="loading"
-                        class="size-4"
-                        aria-label="Actualizando"
-                    />
+                    <span v-if="loading" class="sr-only" role="status"
+                        >Actualizando</span
+                    >
                 </div>
 
-                <ul class="divide-y" aria-label="Conversaciones del inventario">
+                <ul
+                    class="divide-y divide-border/70 transition-opacity"
+                    :class="loading && 'admin-loading'"
+                    aria-label="Conversaciones del inventario"
+                >
                     <li
                         v-for="row in rows"
                         :key="row.id"
                         :class="
                             cn(
-                                'grid gap-3 px-4 py-3 sm:px-5 lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(12rem,auto)] lg:items-start',
-                                selected.has(row.id) && 'bg-primary-soft/30',
+                                'relative grid gap-3 px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-primary-soft/25 sm:px-5 lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(12rem,auto)] lg:items-start',
+                                selected.has(row.id) &&
+                                    'bg-primary-soft/40 shadow-[inset_3px_0_0_var(--primary)] hover:bg-primary-soft/45',
                             )
                         "
                         :data-row="row.source_key"
@@ -702,6 +709,12 @@ const total = computed(() => meta.value?.total ?? 0);
                                 :model-value="selected.has(row.id)"
                                 :aria-label="`Seleccionar ${contactTitle(row)}`"
                                 @update:model-value="toggleRow(row.id, $event)"
+                            />
+                            <ListAvatar
+                                class="max-sm:hidden"
+                                :name="contactTitle(row)"
+                                :group="row.is_group"
+                                :channel="row.is_group ? null : 'whatsapp'"
                             />
                             <div class="min-w-0 space-y-1">
                                 <button
@@ -824,9 +837,10 @@ const total = computed(() => meta.value?.total ?? 0);
                                 }}
                             </p>
                             <p>
-                                <Badge :variant="validation(row).badge">
-                                    {{ validation(row).label }}
-                                </Badge>
+                                <StatusPill
+                                    :label="validation(row).label"
+                                    :tone="validation(row).badge"
+                                />
                             </p>
                             <p
                                 v-if="row.recommendation"
@@ -898,7 +912,7 @@ const total = computed(() => meta.value?.total ?? 0);
                     <Button
                         variant="outline"
                         size="sm"
-                        class="pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
+                        class="rounded-full pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
                         :disabled="page <= 1 || loading"
                         @click="page -= 1"
                     >
@@ -911,7 +925,7 @@ const total = computed(() => meta.value?.total ?? 0);
                     <Button
                         variant="outline"
                         size="sm"
-                        class="pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
+                        class="rounded-full pointer-coarse:h-11 max-sm:pointer-coarse:w-11"
                         :disabled="page >= meta.last_page || loading"
                         @click="page += 1"
                     >

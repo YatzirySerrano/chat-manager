@@ -9,6 +9,7 @@ import {
     isPdf,
     mediaClock,
 } from '@/components/team-chat/teamChatFormat';
+import { warmImage } from '@/lib/conversations/media';
 import { formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { TeamAttachment } from '@/types/team-chat';
@@ -126,6 +127,8 @@ const cardSurface = computed(() =>
                 :title="tiles[0].name"
                 :aria-label="`Ver imagen ${tiles[0].name}`"
                 @click.exact.prevent="emit('view', tiles[0].id)"
+                @pointerenter="warmImage(tiles[0].preview_url)"
+                @focus="warmImage(tiles[0].preview_url)"
             >
                 <span
                     v-if="brokenImages.has(tiles[0].id)"
@@ -164,6 +167,8 @@ const cardSurface = computed(() =>
                 :title="image.name"
                 :aria-label="`Ver imagen ${image.name}`"
                 @click.exact.prevent="emit('view', image.id)"
+                @pointerenter="warmImage(image.preview_url)"
+                @focus="warmImage(image.preview_url)"
             >
                 <img
                     v-if="!brokenImages.has(image.id)"

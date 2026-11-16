@@ -18,7 +18,9 @@ import {
 import type { LucideIcon } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
-import EmptyState from '@/components/EmptyState.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatCard from '@/components/StatCard.vue';
 import HeartbeatMonitor from '@/components/storage/HeartbeatMonitor.vue';
@@ -282,7 +284,7 @@ const usageTone = computed(() => {
         return 'bg-destructive';
     }
 
-    return usage.value.level === 'warning' ? 'bg-warning' : 'bg-primary';
+    return usage.value.level === 'warning' ? 'bg-warning' : 'accent-gradient';
 });
 
 const usageCopy = computed(() => {
@@ -318,9 +320,18 @@ const checkIcons: Record<StorageCheck['status'], LucideIcon> = {
 };
 
 const checkTones: Record<StorageCheck['status'], string> = {
-    ok: 'text-success',
-    fail: 'text-destructive',
-    skipped: 'text-muted-foreground',
+    ok: 'bg-success-soft text-success',
+    fail: 'bg-destructive-soft text-destructive',
+    skipped: 'bg-muted text-muted-foreground',
+};
+
+const checkPillTones: Record<
+    StorageCheck['status'],
+    'success' | 'danger' | 'muted'
+> = {
+    ok: 'success',
+    fail: 'danger',
+    skipped: 'muted',
 };
 
 const checkLabels: Record<StorageCheck['status'], string> = {
@@ -349,7 +360,12 @@ const pollCopy = computed(() => {
             description="Dónde se guardan los archivos de las conversaciones y si ese almacenamiento responde en este momento. Solo información técnica, sin contenido de clientes."
         >
             <template v-if="canManage" #actions>
-                <Button variant="outline" :loading="probing" @click="probeNow">
+                <Button
+                    variant="outline"
+                    class="rounded-full"
+                    :loading="probing"
+                    @click="probeNow"
+                >
                     <RefreshCw class="size-4" aria-hidden="true" />
                     Comprobar ahora
                 </Button>
@@ -359,7 +375,7 @@ const pollCopy = computed(() => {
         <!-- The monitor: an ink surface in both themes, like a bedside screen. -->
         <section
             data-ink
-            class="reveal overflow-hidden rounded-xl bg-sidebar text-sidebar-foreground"
+            class="monitor reveal overflow-hidden rounded-2xl bg-sidebar text-sidebar-foreground shadow-float"
             aria-labelledby="storage-headline"
             :data-tone="tone"
         >
@@ -371,15 +387,11 @@ const pollCopy = computed(() => {
                         class="monitor-tone inline-flex items-center gap-2 text-xs font-semibold"
                         aria-live="polite"
                     >
-                        <span class="relative flex size-2" aria-hidden="true">
-                            <span
-                                v-if="tone !== 'down'"
-                                class="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60 [animation-duration:2s]"
-                            />
-                            <span
-                                class="relative inline-flex size-2 rounded-full bg-current"
-                            />
-                        </span>
+                        <span
+                            class="relative inline-flex size-2 rounded-full bg-current"
+                            :class="tone !== 'down' && 'live-dot'"
+                            aria-hidden="true"
+                        />
                         {{ toneLabel }}
                     </p>
                     <h2
@@ -396,7 +408,9 @@ const pollCopy = computed(() => {
                 <dl
                     class="grid shrink-0 grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-3 xl:min-w-[34rem]"
                 >
-                    <div class="min-w-0">
+                    <div
+                        class="min-w-0 rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/10 ring-inset"
+                    >
                         <dt class="text-xs">Última comprobación</dt>
                         <dd
                             class="font-display text-lg font-semibold text-foreground tabular-nums"
@@ -404,7 +418,9 @@ const pollCopy = computed(() => {
                             {{ ago(checkAge) }}
                         </dd>
                     </div>
-                    <div class="min-w-0">
+                    <div
+                        class="min-w-0 rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/10 ring-inset"
+                    >
                         <dt class="text-xs">Último archivo guardado</dt>
                         <dd
                             class="font-display text-lg font-semibold text-foreground tabular-nums"
@@ -412,7 +428,9 @@ const pollCopy = computed(() => {
                             {{ ago(lastSavedAge) }}
                         </dd>
                     </div>
-                    <div class="min-w-0">
+                    <div
+                        class="min-w-0 rounded-xl bg-white/[0.04] px-3 py-2 ring-1 ring-white/10 ring-inset"
+                    >
                         <dt class="text-xs">Disco de adjuntos</dt>
                         <dd
                             class="font-display text-lg font-semibold break-words text-foreground"
@@ -434,7 +452,7 @@ const pollCopy = computed(() => {
             />
 
             <div
-                class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t px-5 py-3 text-xs sm:px-7"
+                class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-white/10 px-5 py-3 text-xs sm:px-7"
             >
                 <p>
                     Cada marca bajo el trazo es una comprobación real del
@@ -447,13 +465,15 @@ const pollCopy = computed(() => {
         <!-- The server's disk is not the NAS: say it and how to connect it. -->
         <SurfaceCard
             v-if="current.disk.kind === 'local'"
-            class="reveal"
+            class="reveal border-warning/30 bg-warning-soft/30"
             body-class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:gap-4"
         >
-            <HardDrive
-                class="mt-0.5 size-5 shrink-0 text-muted-foreground"
+            <span
+                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-soft-foreground ring-1 ring-warning/25 ring-inset"
                 aria-hidden="true"
-            />
+            >
+                <HardDrive class="size-5" />
+            </span>
             <div class="min-w-0 space-y-1.5">
                 <p class="font-display text-base font-semibold">
                     Los adjuntos se guardan en el disco del servidor, no en el
@@ -533,7 +553,7 @@ const pollCopy = computed(() => {
                 </p>
                 <div
                     v-if="usagePercent !== null"
-                    class="relative h-2.5 overflow-hidden rounded-full bg-muted"
+                    class="relative h-3 overflow-hidden rounded-full bg-muted shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_10%,transparent)]"
                     role="progressbar"
                     aria-label="Espacio ocupado por los adjuntos"
                     :aria-valuenow="usagePercent"
@@ -586,19 +606,23 @@ const pollCopy = computed(() => {
                     v-if="current.activity.recent.length > 0"
                     tag="ul"
                     name="file"
-                    class="divide-y"
+                    class="divide-y divide-border/60"
                 >
                     <li
                         v-for="file in current.activity.recent"
                         :key="file.key"
-                        class="flex items-center gap-3 px-5 py-2.5"
+                        class="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-primary-soft/25"
                         :class="arrived.has(file.key) && 'file-arrived'"
                     >
-                        <component
-                            :is="fileIcons[file.kind]"
-                            class="size-4 shrink-0 text-muted-foreground"
+                        <span
+                            class="admin-icon-tile size-8 rounded-lg"
                             aria-hidden="true"
-                        />
+                        >
+                            <component
+                                :is="fileIcons[file.kind]"
+                                class="size-4"
+                            />
+                        </span>
                         <div class="min-w-0 flex-1">
                             <p class="truncate text-sm font-medium">
                                 {{ fileLabels[file.kind] }}
@@ -611,7 +635,7 @@ const pollCopy = computed(() => {
                             </p>
                         </div>
                         <span
-                            class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                            class="shrink-0 text-xs text-muted-foreground tabular-nums max-sm:hidden"
                         >
                             {{ formatFileSize(file.size_bytes) }}
                         </span>
@@ -622,11 +646,13 @@ const pollCopy = computed(() => {
                         </span>
                     </li>
                 </TransitionGroup>
-                <EmptyState
+                <FilteredEmpty
                     v-else
+                    :narrowed="false"
+                    narrowed-title=""
+                    :icon="FolderInput"
                     title="Todavía no se ha guardado ningún archivo en este disco"
                     description="En cuanto llegue una imagen, un audio o un documento por una conversación, aparecerá aquí."
-                    class="px-5 py-8"
                 />
             </SurfaceCard>
 
@@ -634,24 +660,37 @@ const pollCopy = computed(() => {
                 title="Comprobaciones"
                 description="En el orden en que se ejecutan; si una falla, las siguientes no se evalúan."
             >
-                <ul class="divide-y">
+                <ol class="relative grid gap-0 px-5 py-3">
                     <li
-                        v-for="check in current.checks"
+                        v-for="(check, position) in current.checks"
                         :key="check.key"
-                        class="flex items-start gap-3 px-5 py-3"
+                        class="relative flex items-start gap-3 pb-4 last:pb-1"
                     >
-                        <component
-                            :is="checkIcons[check.status]"
-                            class="mt-0.5 size-4 shrink-0"
-                            :class="checkTones[check.status]"
+                        <!-- The rail joins the checks: they run in order. -->
+                        <span
+                            v-if="position < current.checks.length - 1"
+                            class="absolute top-8 bottom-0 left-[0.9375rem] w-px bg-border"
                             aria-hidden="true"
                         />
-                        <div class="min-w-0 space-y-0.5">
-                            <p class="text-sm font-medium">
+                        <span
+                            class="relative flex size-8 shrink-0 items-center justify-center rounded-full ring-4 ring-card"
+                            :class="checkTones[check.status]"
+                            aria-hidden="true"
+                        >
+                            <component
+                                :is="checkIcons[check.status]"
+                                class="size-4"
+                            />
+                        </span>
+                        <div class="min-w-0 space-y-1 pt-1">
+                            <p
+                                class="flex flex-wrap items-center gap-2 text-sm font-medium"
+                            >
                                 {{ check.label }}
-                                <span class="sr-only"
-                                    >: {{ checkLabels[check.status] }}</span
-                                >
+                                <StatusPill
+                                    :label="checkLabels[check.status]"
+                                    :tone="checkPillTones[check.status]"
+                                />
                             </p>
                             <p
                                 class="text-xs text-pretty text-muted-foreground"
@@ -660,7 +699,7 @@ const pollCopy = computed(() => {
                             </p>
                         </div>
                     </li>
-                </ul>
+                </ol>
                 <p
                     v-if="
                         current.activity.pending > 0 ||
@@ -696,6 +735,26 @@ const pollCopy = computed(() => {
 </template>
 
 <style scoped>
+/* A soft glow of the state's colour behind the monitor. */
+.monitor {
+    position: relative;
+    isolation: isolate;
+    --monitor-glow: oklch(0.82 0.17 155 / 0.16);
+    background-image: radial-gradient(
+        80% 120% at 0% 0%,
+        var(--monitor-glow),
+        transparent 60%
+    );
+}
+
+.monitor[data-tone='warning'] {
+    --monitor-glow: oklch(0.84 0.15 82 / 0.16);
+}
+
+.monitor[data-tone='down'] {
+    --monitor-glow: oklch(0.72 0.19 25 / 0.2);
+}
+
 /* The label above the headline takes the monitor's colour. */
 .monitor-tone {
     color: oklch(0.82 0.17 155);

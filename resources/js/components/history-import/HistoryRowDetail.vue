@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import '@/components/admin/admin.css';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
 import { FileWarning, Paperclip, Save } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
@@ -14,7 +16,6 @@ import {
     SheetHeader,
     SheetTitle,
 } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateTime, formatFileSize } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import {
@@ -222,15 +223,27 @@ function displayPhone(phone: string | null): string | null {
     <Sheet v-model:open="open">
         <SheetContent class="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
             <template v-if="row">
-                <SheetHeader class="border-b p-5">
-                    <SheetTitle class="wrap-anywhere">
-                        {{
-                            row.contact.name ??
-                            displayPhone(row.contact.phone) ??
-                            row.contact.identifier ??
-                            'Sin nombre'
-                        }}
-                    </SheetTitle>
+                <SheetHeader class="border-b accent-gradient-soft p-5">
+                    <div class="flex items-center gap-3 pr-8">
+                        <ListAvatar
+                            :name="
+                                row.contact.name ??
+                                displayPhone(row.contact.phone) ??
+                                row.contact.identifier ??
+                                'Sin nombre'
+                            "
+                            :group="row.is_group"
+                            :channel="row.is_group ? null : 'whatsapp'"
+                        />
+                        <SheetTitle class="min-w-0 wrap-anywhere">
+                            {{
+                                row.contact.name ??
+                                displayPhone(row.contact.phone) ??
+                                row.contact.identifier ??
+                                'Sin nombre'
+                            }}
+                        </SheetTitle>
+                    </div>
                     <SheetDescription>
                         {{ KIND_LABELS[row.kind] ?? row.kind }}
                         <template v-if="row.ticket_id">
@@ -348,7 +361,7 @@ function displayPhone(phone: string | null): string | null {
 
                     <fieldset
                         v-if="needsParticipants"
-                        class="grid gap-2 rounded-lg border p-3"
+                        class="grid gap-2 rounded-xl border bg-card p-3 shadow-(--shadow-control)"
                         data-tour="history-import.participants"
                     >
                         <legend class="px-1 text-sm font-semibold">
@@ -386,7 +399,7 @@ function displayPhone(phone: string | null): string | null {
 
                     <label
                         v-if="!row.is_group"
-                        class="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+                        class="flex cursor-pointer items-start gap-3 rounded-xl border bg-card p-3 transition-[border-color,box-shadow] duration-(--duration-base) has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:shadow-glow-ring"
                     >
                         <Checkbox
                             v-model="saveContactDraft"
@@ -433,10 +446,16 @@ function displayPhone(phone: string | null): string | null {
                             solo para decidir.
                         </p>
                         <div v-if="loading" class="grid gap-2" aria-busy="true">
-                            <Skeleton
+                            <span
                                 v-for="n in 4"
                                 :key="n"
-                                class="h-12 w-full"
+                                class="admin-shimmer h-11 rounded-2xl"
+                                :class="
+                                    n % 2 === 0
+                                        ? 'w-3/5 justify-self-end'
+                                        : 'w-2/3'
+                                "
+                                :style="{ '--i': n }"
                             />
                         </div>
                         <StatusNote v-else-if="loadError" tone="danger">

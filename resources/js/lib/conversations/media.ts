@@ -231,6 +231,49 @@ export const MEDIA_GALLERY: InjectionKey<MediaGallery> =
 /* Only one audio or video of the page sounds at a time. */
 let playing: HTMLMediaElement | null = null;
 
+/** Originals already asked for in this tab (warmImage). */
+const warmed = new Set<string>();
+const MAX_WARMED = 200;
+
+/**
+ * Starts downloading a picture before it is shown (the pointer is over its
+ * preview, or it is the next one in the viewer), so the viewer paints it at
+ * once: the attachment routes let the browser keep files, so the later
+ * <img> reuses this download. Each URL is asked for once per tab.
+ */
+export function warmImage(url: string | null | undefined): void {
+    if (!url || warmed.has(url) || typeof Image === 'undefined') {
+        return;
+    }
+
+    if (warmed.size >= MAX_WARMED) {
+        warmed.clear();
+    }
+
+    warmed.add(url);
+
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = url;
+}
+
+/**
+ * Warms the pictures around the one on screen in a viewer (previous and
+ * next), so moving with the arrows feels instant.
+ */
+export function warmNeighbours(
+    items: ReadonlyArray<{ kind: string; src?: string | null }>,
+    index: number,
+): void {
+    for (const offset of [1, -1, 2]) {
+        const item = items[index + offset];
+
+        if (item?.kind === 'image') {
+            warmImage(item.src);
+        }
+    }
+}
+
 export function claimPlayback(element: HTMLMediaElement): void {
     if (playing && playing !== element && !playing.paused) {
         playing.pause();

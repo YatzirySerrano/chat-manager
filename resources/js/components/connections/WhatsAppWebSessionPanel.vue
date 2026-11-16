@@ -24,6 +24,7 @@ import type {
     WhatsAppWebSessionSummary,
     WhatsAppWebState,
 } from '@/types';
+import '@/components/admin/admin.css';
 
 /**
  * Session of a WhatsApp Web (QR) connection, inside the "Estado" section of
@@ -326,8 +327,10 @@ watch(
 
         <div
             v-if="!deleted"
-            class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4"
+            class="relative isolate flex flex-wrap items-start justify-between gap-x-6 gap-y-4 overflow-hidden rounded-xl p-4 ring-1 ring-border/60 ring-inset sm:p-5"
+            data-channel-theme="whatsapp"
         >
+            <span class="channel-wash -z-10" aria-hidden="true" />
             <div class="grid min-w-0 gap-2" role="status" aria-live="polite">
                 <div class="flex flex-wrap items-center gap-2">
                     <WhatsAppWebStateBadge
@@ -359,7 +362,7 @@ watch(
                 >
                     {{ headline }}
                 </p>
-                <Skeleton v-else class="h-8 w-56" />
+                <Skeleton v-else class="h-8 w-56 max-w-full" />
                 <p
                     v-if="state"
                     class="max-w-prose text-sm text-pretty text-muted-foreground"
@@ -387,9 +390,13 @@ watch(
 
         <dl
             v-if="state && !deleted"
-            class="auto-grid border-t pt-5 [--col-min:11rem] [--grid-gap:1rem]"
+            class="auto-grid [--col-min:11rem] [--grid-gap:0.625rem]"
         >
-            <div v-for="detail in details" :key="detail.label" class="min-w-0">
+            <div
+                v-for="detail in details"
+                :key="detail.label"
+                class="min-w-0 rounded-lg bg-surface-sunken/60 px-3 py-2.5"
+            >
                 <dt class="text-xs text-muted-foreground">
                     {{ detail.label }}
                 </dt>
@@ -417,7 +424,7 @@ watch(
                 !deleted &&
                 (state.actions.disconnect || state.actions.logout || canDelete)
             "
-            class="grid gap-px overflow-hidden rounded-xl border bg-border"
+            class="grid gap-px overflow-hidden rounded-xl border bg-border shadow-(--shadow-control)"
             aria-label="Formas de terminar la sesión"
         >
             <li

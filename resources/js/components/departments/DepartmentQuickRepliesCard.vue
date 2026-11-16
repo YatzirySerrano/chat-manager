@@ -31,14 +31,14 @@ defineProps<{
             </Link>
         </template>
 
-        <ul v-if="quickReplies.items.length > 0" class="divide-y">
+        <ul v-if="quickReplies.items.length > 0" class="grid gap-0.5 p-2">
             <li
                 v-for="reply in quickReplies.items"
                 :key="reply.id"
-                class="flex items-center gap-3 px-5 py-3"
+                class="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent/50"
             >
                 <span
-                    class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+                    class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-soft-foreground"
                 >
                     <Zap class="size-4" aria-hidden="true" />
                 </span>
@@ -62,7 +62,9 @@ defineProps<{
             </p>
         </div>
 
-        <p class="border-t px-5 py-3 text-xs text-muted-foreground">
+        <p
+            class="border-t bg-surface-sunken/50 px-5 py-3 text-xs text-muted-foreground"
+        >
             {{
                 quickReplies.global_count === 0
                     ? 'No hay respuestas globales activas.'

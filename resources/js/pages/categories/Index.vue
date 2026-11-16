@@ -5,37 +5,30 @@ import {
     MessagesSquare,
     Pencil,
     Plus,
-    Search,
     SlidersHorizontal,
     Trash2,
-    X,
+    TrendingUp,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, reactive, ref } from 'vue';
+import { computed, onUnmounted, reactive, ref } from 'vue';
 import CategoryFormDialog from '@/components/categories/CategoryFormDialog.vue';
 import CategoryRulesDialog from '@/components/categories/CategoryRulesDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
+import DirectoryRow from '@/components/directory/DirectoryRow.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
-import RecordGrid from '@/components/RecordGrid.vue';
 import RecordStateFilter from '@/components/RecordStateFilter.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
+import '@/components/tags/tags.css';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import { useFeatures } from '@/composables/useFeatures';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
@@ -102,6 +95,20 @@ const usage = computed(() => {
 const hasFilters = computed(
     () => filterState.search !== '' || filterState.record !== 'active',
 );
+
+/* A filter request on its way: the rows dim and a line runs under the toolbar. */
+const loading = ref(false);
+const stopStart = router.on('start', (event) => {
+    if (event.detail.visit.method === 'get' && !event.detail.visit.async) {
+        loading.value = true;
+    }
+});
+const stopFinish = router.on('finish', () => (loading.value = false));
+
+onUnmounted(() => {
+    stopStart();
+    stopFinish();
+});
 
 function applyFilters(): void {
     const query: Record<string, string> = {};
@@ -240,7 +247,11 @@ function rulesLabel(count: number): string {
             description="Tipos de solicitud de los clientes. Cada categoría puede tener reglas de servicio propias, que tienen prioridad sobre las del departamento y las generales."
         >
             <template v-if="can.manage" #actions>
-                <Button data-tour="categories.new" @click="openCreate">
+                <Button
+                    class="accent-gradient glow max-sm:w-full"
+                    data-tour="categories.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nueva categoría
                 </Button>
@@ -250,115 +261,87 @@ function rulesLabel(count: number): string {
         <div
             :class="
                 usage.length > 0
-                    ? 'split-layout reveal [--aside-w:22rem]'
+                    ? 'split-layout reveal items-start [--aside-w:22rem]'
                     : 'grid reveal'
             "
         >
-            <SurfaceCard>
-                <div
-                    class="flex flex-wrap items-center gap-2 border-b p-4"
-                    role="search"
-                    data-tour="categories.search"
-                >
-                    <div class="relative order-1 min-w-0 flex-1">
-                        <Search
-                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                        <Input
+            <DirectoryPanel :busy="loading">
+                <template #toolbar>
+                    <div
+                        class="flex flex-wrap items-center gap-2"
+                        data-tour="categories.search"
+                    >
+                        <FilterSearch
                             v-model="filterState.search"
-                            type="search"
+                            label="Buscar categorías"
                             placeholder="Buscar por nombre o descripción"
-                            class="pl-9"
-                            aria-label="Buscar categorías"
+                            :loading="loading"
+                            class="basis-full sm:basis-auto"
                         />
-                    </div>
-                    <ViewModeToggle
-                        v-model="viewMode"
-                        class="order-2 sm:order-3"
-                    />
-                    <div class="order-3 flex w-full gap-2 sm:order-2 sm:w-auto">
                         <RecordStateFilter
                             v-model="filterState.record"
                             :options="recordStates"
-                            class="sm:w-36"
+                            class="h-10 flex-1 rounded-xl sm:w-36 sm:flex-none"
                             @change="applyFilters"
                         />
-                        <Button
-                            v-if="hasFilters"
-                            variant="ghost"
-                            @click="clearFilters"
-                        >
-                            <X />
-                            Limpiar
-                        </Button>
+                        <ViewModeToggle v-model="viewMode" />
                     </div>
-                </div>
+                </template>
 
-                <Table
+                <ul
                     v-if="categories.data.length > 0 && viewMode === 'table'"
+                    class="dir-rows"
+                    role="list"
                 >
-                    <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                            <TableHead class="pl-5">Categoría</TableHead>
-                            <TableHead
-                                v-if="phaseTwo"
-                                class="hidden md:table-cell"
-                                >Reglas de servicio</TableHead
+                    <DirectoryRow
+                        v-for="(category, position) in categories.data"
+                        :key="category.id"
+                        :muted="category.is_deleted"
+                        class="enter-fade"
+                        :style="{ '--i': Math.min(position, 10) }"
+                        :data-tour="
+                            position === 0 ? 'categories.list' : undefined
+                        "
+                    >
+                        <template #leading>
+                            <DirectoryAvatar
+                                :name="category.name"
+                                :icon="FolderTree"
+                                :color="category.color"
+                                :tone="category.is_deleted ? 'muted' : 'auto'"
+                                shape="square"
+                            />
+                        </template>
+                        <template #title>
+                            <TagBadge
+                                :name="category.name"
+                                :color="category.color"
+                                :deleted="category.is_deleted"
+                                size="md"
+                                class="max-w-full font-sans"
+                            />
+                        </template>
+                        <template v-if="category.description" #subtitle>
+                            <span class="line-clamp-2 whitespace-normal">{{
+                                category.description
+                            }}</span>
+                        </template>
+                        <template #badges>
+                            <DeletedBadge v-if="category.is_deleted" feminine />
+                            <span
+                                class="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground md:hidden"
                             >
-                            <TableHead class="hidden md:table-cell"
-                                >Uso</TableHead
-                            >
-                            <TableHead>Estado</TableHead>
-                            <TableHead class="pr-5 text-right">
-                                <span class="sr-only">Acciones</span>
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="(category, position) in categories.data"
-                            :key="category.id"
-                            :data-tour="
-                                position === 0 ? 'categories.list' : undefined
-                            "
-                            :class="
-                                category.is_deleted && 'text-muted-foreground'
-                            "
-                        >
-                            <TableCell class="w-full max-w-0 py-3 pl-5">
-                                <div class="grid gap-1">
-                                    <TagBadge
-                                        :name="category.name"
-                                        :color="category.color"
-                                        :deleted="category.is_deleted"
-                                        size="md"
-                                        class="w-fit"
-                                    />
-                                    <p
-                                        v-if="category.description"
-                                        class="line-clamp-2 max-w-md text-xs whitespace-normal text-muted-foreground"
-                                    >
-                                        {{ category.description }}
-                                    </p>
-                                </div>
-                            </TableCell>
-                            <TableCell
-                                v-if="phaseTwo"
-                                class="hidden text-sm text-muted-foreground md:table-cell"
-                            >
-                                <span class="inline-flex items-center gap-1.5">
+                                <span
+                                    v-if="phaseTwo"
+                                    class="inline-flex items-center gap-1"
+                                >
                                     <SlidersHorizontal
                                         class="size-3.5"
                                         aria-hidden="true"
                                     />
                                     {{ rulesLabel(category.overrides_count) }}
                                 </span>
-                            </TableCell>
-                            <TableCell
-                                class="hidden text-sm text-muted-foreground md:table-cell"
-                            >
-                                <span class="inline-flex items-center gap-1.5">
+                                <span class="inline-flex items-center gap-1">
                                     <MessagesSquare
                                         class="size-3.5"
                                         aria-hidden="true"
@@ -367,40 +350,72 @@ function rulesLabel(count: number): string {
                                         usageLabel(category.conversations_count)
                                     }}
                                 </span>
-                            </TableCell>
-                            <TableCell>
-                                <DeletedBadge
-                                    v-if="category.is_deleted"
-                                    feminine
+                            </span>
+                        </template>
+                        <template #aside>
+                            <span
+                                v-if="phaseTwo"
+                                class="inline-flex w-48 items-center gap-1.5"
+                                :class="
+                                    category.overrides_count > 0 &&
+                                    'font-medium text-foreground'
+                                "
+                            >
+                                <SlidersHorizontal
+                                    class="size-4 shrink-0"
+                                    aria-hidden="true"
                                 />
-                                <span
-                                    v-else
-                                    class="text-xs text-muted-foreground"
-                                    >Activa</span
-                                >
-                            </TableCell>
-                            <TableCell class="w-px pr-5 text-right">
-                                <RecordActions
-                                    :actions="actionsFor(category)"
-                                    :record="`la categoría ${category.name}`"
-                                    :busy="
-                                        deletion.processingId === category.id
-                                    "
+                                {{ rulesLabel(category.overrides_count) }}
+                            </span>
+                            <span
+                                class="inline-flex w-40 items-center gap-1.5 tabular-nums"
+                            >
+                                <MessagesSquare
+                                    class="size-4 shrink-0"
+                                    aria-hidden="true"
                                 />
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                                {{ usageLabel(category.conversations_count) }}
+                            </span>
+                        </template>
+                        <template #actions>
+                            <RecordActions
+                                :actions="actionsFor(category)"
+                                :record="`la categoría ${category.name}`"
+                                :busy="deletion.processingId === category.id"
+                            />
+                        </template>
+                    </DirectoryRow>
+                </ul>
 
-                <RecordGrid v-else-if="categories.data.length > 0">
+                <ul
+                    v-else-if="categories.data.length > 0"
+                    class="dir-grid"
+                    role="list"
+                >
                     <li
                         v-for="(category, position) in categories.data"
                         :key="category.id"
+                        class="enter-spring"
+                        :style="{ '--i': Math.min(position, 10) }"
                         :data-tour="
                             position === 0 ? 'categories.list' : undefined
                         "
                     >
-                        <RecordCard :muted="category.is_deleted">
+                        <RecordCard
+                            class="dir-card"
+                            :muted="category.is_deleted"
+                        >
+                            <template #leading>
+                                <DirectoryAvatar
+                                    :name="category.name"
+                                    :icon="FolderTree"
+                                    :color="category.color"
+                                    :tone="
+                                        category.is_deleted ? 'muted' : 'auto'
+                                    "
+                                    shape="square"
+                                />
+                            </template>
                             <template #title>
                                 <TagBadge
                                     :name="category.name"
@@ -448,89 +463,96 @@ function rulesLabel(count: number): string {
                             </template>
                         </RecordCard>
                     </li>
-                </RecordGrid>
+                </ul>
 
-                <EmptyState
+                <FilteredEmpty
                     v-else
-                    class="m-4 border-none"
-                    :icon="FolderTree"
-                    :title="
-                        hasFilters
-                            ? 'Ninguna categoría coincide con los filtros'
-                            : 'Aún no hay categorías'
-                    "
+                    :narrowed="hasFilters"
+                    narrowed-title="Ninguna categoría coincide con los filtros"
+                    narrowed-description="Prueba con otra búsqueda o cambia qué categorías mostrar."
+                    title="Aún no hay categorías"
                     :description="
-                        hasFilters
-                            ? 'Prueba con otros criterios de búsqueda.'
-                            : can.manage
-                              ? 'Crea la primera categoría para clasificar las solicitudes y, si hace falta, darle reglas de servicio propias.'
-                              : 'Cuando se creen categorías aparecerán aquí.'
+                        can.manage
+                            ? 'Crea la primera categoría para clasificar las solicitudes y, si hace falta, darle reglas de servicio propias.'
+                            : 'Cuando se creen categorías aparecerán aquí.'
                     "
+                    :icon="FolderTree"
+                    @clear="clearFilters"
                 >
                     <Button
-                        v-if="hasFilters"
-                        variant="outline"
-                        @click="clearFilters"
-                        >Limpiar filtros</Button
+                        v-if="can.manage"
+                        class="rounded-full"
+                        @click="openCreate"
                     >
-                    <Button v-else-if="can.manage" @click="openCreate">
                         <Plus />
                         Nueva categoría
                     </Button>
-                </EmptyState>
+                </FilteredEmpty>
 
-                <div
-                    v-if="
-                        categories.meta.last_page > 1 ||
-                        categories.data.length > 0
-                    "
-                    class="border-t px-4 py-3"
-                >
+                <template v-if="categories.data.length > 0" #footer>
                     <DataPagination :meta="categories.meta" noun="categorías" />
-                </div>
-            </SurfaceCard>
+                </template>
+            </DirectoryPanel>
 
             <aside
                 v-if="usage.length > 0"
-                class="overflow-hidden surface-panel"
+                class="overflow-clip surface-float lg:sticky lg:top-20"
                 aria-labelledby="category-usage-title"
             >
-                <header class="border-b px-5 py-4">
-                    <h2
-                        id="category-usage-title"
-                        class="font-display text-lg font-semibold"
+                <header class="flex items-start gap-3 px-5 pt-5 pb-4">
+                    <span
+                        class="flex size-9 shrink-0 items-center justify-center rounded-xl accent-gradient"
+                        aria-hidden="true"
                     >
-                        Más frecuentes
-                    </h2>
-                    <p class="text-sm text-muted-foreground">
-                        Conversaciones clasificadas con cada categoría de esta
-                        lista.
-                    </p>
+                        <TrendingUp class="size-4" />
+                    </span>
+                    <div class="min-w-0">
+                        <h2
+                            id="category-usage-title"
+                            class="font-display text-lg leading-snug font-semibold"
+                        >
+                            Más frecuentes
+                        </h2>
+                        <p class="text-sm text-pretty text-muted-foreground">
+                            Conversaciones clasificadas con cada categoría de
+                            esta lista.
+                        </p>
+                    </div>
                 </header>
-                <ol class="grid gap-3.5 p-5">
+                <ol class="grid gap-3.5 px-5 pb-5">
                     <li
-                        v-for="item in usage"
+                        v-for="(item, position) in usage"
                         :key="item.id"
                         class="grid gap-1.5"
                     >
                         <div
                             class="flex items-baseline justify-between gap-3 text-sm"
                         >
-                            <span class="min-w-0 truncate font-medium">{{
-                                item.name
-                            }}</span>
+                            <span class="flex min-w-0 items-baseline gap-2">
+                                <span
+                                    class="w-4 shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    aria-hidden="true"
+                                    >{{ position + 1 }}</span
+                                >
+                                <span class="min-w-0 truncate font-medium">{{
+                                    item.name
+                                }}</span>
+                            </span>
                             <span
                                 class="shrink-0 font-display font-semibold tabular-nums"
                                 >{{ item.total }}</span
                             >
                         </div>
                         <span
-                            class="h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+                            class="ml-6 h-2 overflow-hidden rounded-full bg-surface-sunken"
                             aria-hidden="true"
                         >
                             <span
-                                class="block h-full origin-left rounded-full bg-primary"
-                                :style="{ width: `${item.share}%` }"
+                                class="tag-usage-bar block h-full rounded-full"
+                                :style="{
+                                    width: `${item.share}%`,
+                                    '--i': position,
+                                }"
                             />
                         </span>
                     </li>

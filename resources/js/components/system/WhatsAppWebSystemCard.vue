@@ -69,11 +69,18 @@ const sendingCount = computed(
         </template>
 
         <div
-            class="flex flex-wrap items-center gap-x-6 gap-y-1 border-b px-5 py-3 text-xs text-muted-foreground"
+            class="flex flex-wrap items-center gap-2 border-b border-border/70 bg-surface-sunken/40 px-5 py-3 text-xs text-muted-foreground"
         >
             <template v-if="available">
-                <span v-for="fact in serviceFacts" :key="fact">{{ fact }}</span>
-                <span class="font-medium text-foreground tabular-nums">
+                <span
+                    v-for="fact in serviceFacts"
+                    :key="fact"
+                    class="rounded-full border border-border/70 bg-card px-2 py-0.5"
+                    >{{ fact }}</span
+                >
+                <span
+                    class="ml-auto rounded-full bg-success-soft/70 px-2 py-0.5 font-medium text-success-soft-foreground tabular-nums"
+                >
                     {{ sendingCount }} de {{ whatsappWeb.sessions.length }}
                     {{
                         whatsappWeb.sessions.length === 1
@@ -132,13 +139,18 @@ const sendingCount = computed(
                             :tone="session.tone"
                         />
                         <p
-                            class="mt-1 text-xs"
+                            class="mt-1 flex items-center gap-1.5 text-xs"
                             :class="
                                 session.can_send
                                     ? 'text-success'
                                     : 'text-muted-foreground'
                             "
                         >
+                            <span
+                                class="size-1.5 rounded-full bg-current"
+                                :class="session.can_send && 'live-dot'"
+                                aria-hidden="true"
+                            />
                             {{
                                 session.can_send
                                     ? 'Puede enviar'

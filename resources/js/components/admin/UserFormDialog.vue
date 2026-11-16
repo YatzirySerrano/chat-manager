@@ -8,6 +8,7 @@ import {
     UserRound,
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import './admin.css';
 import RoleChangeImpactDialog from '@/components/admin/RoleChangeImpactDialog.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import FormDialog from '@/components/FormDialog.vue';
@@ -332,8 +333,12 @@ function submit(): void {
     >
         <div class="space-y-6">
             <section class="space-y-4">
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <UserRound class="size-4 text-muted-foreground" />
+                <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+                    <span
+                        class="admin-icon-tile size-7 rounded-lg"
+                        aria-hidden="true"
+                        ><UserRound class="size-3.5"
+                    /></span>
                     Datos de la cuenta
                 </h3>
                 <div class="grid gap-4 sm:grid-cols-2">
@@ -376,8 +381,12 @@ function submit(): void {
             </section>
 
             <section class="space-y-3 border-t pt-5">
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <ShieldCheck class="size-4 text-muted-foreground" />
+                <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+                    <span
+                        class="admin-icon-tile size-7 rounded-lg"
+                        aria-hidden="true"
+                        ><ShieldCheck class="size-3.5"
+                    /></span>
                     Rol y alcance
                 </h3>
                 <FormField
@@ -483,8 +492,12 @@ function submit(): void {
             </section>
 
             <section class="space-y-3 border-t pt-5">
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <Building2 class="size-4 text-muted-foreground" />
+                <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+                    <span
+                        class="admin-icon-tile size-7 rounded-lg"
+                        aria-hidden="true"
+                        ><Building2 class="size-3.5"
+                    /></span>
                     Departamentos
                 </h3>
                 <template v-if="allowsDepartments">
@@ -496,12 +509,12 @@ function submit(): void {
                     </p>
                     <div
                         v-else
-                        class="grid max-h-52 gap-1 overflow-y-auto rounded-lg border p-1 sm:grid-cols-2"
+                        class="grid max-h-52 gap-1 overflow-y-auto rounded-xl border bg-surface-sunken/50 scroll-fade-y p-1 sm:grid-cols-2"
                     >
                         <Label
                             v-for="department in selectableDepartments"
                             :key="department.id"
-                            class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 font-normal hover:bg-accent"
+                            class="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 font-normal transition-colors duration-(--duration-fast) hover:bg-card hover:shadow-(--shadow-control) has-[[data-state=checked]]:bg-primary-soft/60"
                         >
                             <Checkbox
                                 :model-value="
@@ -577,8 +590,12 @@ function submit(): void {
                 "
                 class="space-y-3 border-t pt-5"
             >
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <MessageSquareText class="size-4 text-muted-foreground" />
+                <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+                    <span
+                        class="admin-icon-tile size-7 rounded-lg"
+                        aria-hidden="true"
+                        ><MessageSquareText class="size-3.5"
+                    /></span>
                     Respuestas rápidas personales
                 </h3>
                 <div class="flex items-start justify-between gap-4">
@@ -624,8 +641,12 @@ function submit(): void {
             </section>
 
             <section class="space-y-4 border-t pt-5">
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <KeyRound class="size-4 text-muted-foreground" />
+                <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+                    <span
+                        class="admin-icon-tile size-7 rounded-lg"
+                        aria-hidden="true"
+                        ><KeyRound class="size-3.5"
+                    /></span>
                     Contraseña
                 </h3>
                 <p v-if="editsOwnAccount" class="text-sm text-muted-foreground">

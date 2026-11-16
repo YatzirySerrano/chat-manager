@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link, router, useHttp } from '@inertiajs/vue3';
 import { Download, FolderDown } from '@lucide/vue';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
     DropdownMenuItem,
     DropdownMenuLabel,
@@ -47,6 +47,16 @@ onMounted(async () => {
 
 onBeforeUnmount(() => http.cancel());
 
+/** Files that can be downloaded or are still being prepared. */
+const listed = computed(() =>
+    transfers.value.filter(
+        (transfer) =>
+            transfer.download_url !== null ||
+            transfer.status.value === 'queued' ||
+            transfer.status.value === 'processing',
+    ),
+);
+
 /** Tells apart two files of the same report (their filters). */
 function filtersText(transfer: DataTransfer): string {
     return transfer.filters.length > 0
@@ -62,15 +72,15 @@ function download(transfer: DataTransfer): void {
 </script>
 
 <template>
-    <div :data-recent-exports="transfers.length > 0 ? '' : undefined">
+    <div :data-recent-exports="listed.length > 0 ? '' : undefined">
         <DropdownMenuSeparator />
         <DropdownMenuLabel
-            v-if="transfers.length > 0"
+            v-if="listed.length > 0"
             class="text-xs text-muted-foreground"
         >
             Archivos preparados recientemente
         </DropdownMenuLabel>
-        <template v-for="transfer in transfers" :key="transfer.id">
+        <template v-for="transfer in listed" :key="transfer.id">
             <DropdownMenuItem
                 v-if="transfer.download_url"
                 class="items-start gap-3 py-2"

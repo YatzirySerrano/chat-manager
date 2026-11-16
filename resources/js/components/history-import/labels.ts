@@ -102,6 +102,22 @@ export const BATCH_STATUS_BADGE: Record<
     expired: 'muted',
 };
 
+/** Tone of the batch state as a StatusPill; `live` while it is running. */
+export const BATCH_STATUS_TONE: Record<
+    HistoryBatchStatus,
+    {
+        tone: 'success' | 'warning' | 'danger' | 'info' | 'primary' | 'muted';
+        live: boolean;
+    }
+> = {
+    draft: { tone: 'muted', live: false },
+    queued: { tone: 'info', live: true },
+    processing: { tone: 'primary', live: true },
+    completed: { tone: 'success', live: false },
+    failed: { tone: 'danger', live: false },
+    expired: { tone: 'muted', live: false },
+};
+
 export const FILE_STATUS_BADGE: Record<
     HistoryFileStatus,
     NonNullable<BadgeVariants['variant']>
@@ -111,6 +127,18 @@ export const FILE_STATUS_BADGE: Record<
     parsed: 'success',
     failed: 'danger',
     purged: 'muted',
+};
+
+/** Tone of a file state as a StatusPill; `live` while it is being read. */
+export const FILE_STATUS_TONE: Record<
+    HistoryFileStatus,
+    { tone: 'success' | 'danger' | 'info' | 'primary' | 'muted'; live: boolean }
+> = {
+    uploaded: { tone: 'info', live: true },
+    parsing: { tone: 'primary', live: true },
+    parsed: { tone: 'success', live: false },
+    failed: { tone: 'danger', live: false },
+    purged: { tone: 'muted', live: false },
 };
 
 export const ROW_STATES: Record<

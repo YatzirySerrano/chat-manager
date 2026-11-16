@@ -10,7 +10,6 @@ import {
     Power,
     PowerOff,
     QrCode,
-    Search,
     ShieldCheck,
     Unplug,
     X,
@@ -28,15 +27,20 @@ import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import type {
+    ActiveFilterPill,
+    FilterTabOption,
+} from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
-import RecordGrid from '@/components/RecordGrid.vue';
-import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
     Select,
     SelectContent,
@@ -77,7 +81,9 @@ import type {
     MetaChannelAvailability,
     RecordAction,
     RecordStateOption,
+    RecordStateValue,
 } from '@/types';
+import '@/components/admin/admin.css';
 
 defineOptions({
     layout: {
@@ -143,13 +149,87 @@ function applyFilters(): void {
         query.record = filterState.record;
     }
 
+    const visit = ++visitId;
+
     router.get(connectionsIndex.url({ query }), undefined, {
         preserveState: true,
         preserveScroll: true,
         replace: true,
         only: ['connections', 'filters', 'stats'],
+        onStart: () => (loading.value = true),
+        // A cancelled older visit finishes after the new one started.
+        onFinish: () => {
+            if (visit === visitId) {
+                loading.value = false;
+            }
+        },
     });
 }
+
+/* A filter request is on its way: the rows dim and a bar runs on top. */
+const loading = ref(false);
+let visitId = 0;
+
+/* Activos / Eliminados / Todos as tabs (only when deleted ones can be seen). */
+const recordTabs = computed<FilterTabOption<RecordStateValue>[]>(() =>
+    props.recordStates.map((option) => ({
+        value: option.value,
+        label: option.label,
+    })),
+);
+
+function chooseRecord(value: RecordStateValue): void {
+    filterState.record = value;
+    applyFilters();
+}
+
+/* Applied selects as removable pills under the toolbar. */
+const pills = computed<ActiveFilterPill[]>(() => {
+    const result: ActiveFilterPill[] = [];
+    const add = (
+        key: 'channel' | 'health' | 'department' | 'status',
+        label: string,
+    ): void => {
+        result.push({
+            key,
+            label,
+            remove: () => {
+                filterState[key] = ALL;
+                applyFilters();
+            },
+        });
+    };
+
+    if (filterState.channel !== ALL) {
+        add(
+            'channel',
+            `Canal: ${props.channels.find((option) => option.value === filterState.channel)?.label ?? filterState.channel}`,
+        );
+    }
+
+    if (filterState.health !== ALL) {
+        add(
+            'health',
+            `Salud: ${props.healthOptions.find((option) => option.value === filterState.health)?.label ?? filterState.health}`,
+        );
+    }
+
+    if (filterState.department !== ALL) {
+        add(
+            'department',
+            `Departamento: ${props.departments.find((department) => String(department.id) === filterState.department)?.name ?? 'No disponible'}`,
+        );
+    }
+
+    if (filterState.status !== ALL) {
+        add(
+            'status',
+            filterState.status === 'active' ? 'Solo activas' : 'Solo inactivas',
+        );
+    }
+
+    return result;
+});
 
 watchDebounced(() => filterState.search, applyFilters, { debounce: 300 });
 
@@ -356,6 +436,7 @@ function phoneLabel(connection: Connection): string {
                 />
                 <Button
                     v-if="can.create"
+                    class="shadow-glow"
                     data-tour="connections.new"
                     @click="channelPickerOpen = true"
                 >
@@ -398,314 +479,230 @@ function phoneLabel(connection: Connection): string {
 
         <EmptyState
             v-if="stats.total === 0 && recordStates.length === 0"
+            class="enter-spring border-solid accent-gradient-soft shadow-float"
             :icon="Unplug"
             title="Aún no hay conexiones"
             description="Registra tu número de WhatsApp Business con los datos de tu app de Meta o crea un chat para tu sitio web. Podrás guardar la configuración aunque todavía no esté completa; ningún indicador se marcará como funcionando hasta que exista evidencia real."
         >
-            <Button v-if="can.create" @click="channelPickerOpen = true">
+            <Button
+                v-if="can.create"
+                class="shadow-glow"
+                @click="channelPickerOpen = true"
+            >
                 <Plus />
                 Nueva conexión
             </Button>
         </EmptyState>
 
-        <SurfaceCard v-else>
-            <div
-                class="flex flex-wrap items-center gap-2 border-b p-4"
-                role="search"
-            >
-                <div class="relative order-1 min-w-0 flex-1">
-                    <Search
-                        class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <Input
+        <SurfaceCard v-else class="admin-list overflow-clip">
+            <div class="admin-toolbar grid gap-3 p-3 sm:p-4" role="search">
+                <div class="flex items-center gap-2">
+                    <FilterSearch
                         v-model="filterState.search"
-                        type="search"
                         placeholder="Buscar por nombre, número o identificador"
-                        class="pl-9"
-                        aria-label="Buscar conexiones"
+                        label="Buscar conexiones"
+                        :loading="loading"
                     />
+                    <ViewModeToggle v-model="viewMode" />
                 </div>
-                <ViewModeToggle v-model="viewMode" class="order-2" />
-                <div
-                    class="order-3 grid w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:flex-wrap"
-                >
-                    <Select
-                        v-model="filterState.channel"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-44"
-                            aria-label="Filtrar por canal o modalidad"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL"
-                                >Todos los canales</SelectItem
-                            >
-                            <SelectItem
-                                v-for="option in channels"
-                                :key="option.value"
-                                :value="option.value"
-                            >
-                                {{ option.label }}
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Select
-                        v-model="filterState.health"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-48"
-                            aria-label="Filtrar por estado de salud"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL"
-                                >Cualquier estado de salud</SelectItem
-                            >
-                            <SelectItem
-                                v-for="option in healthOptions"
-                                :key="option.value"
-                                :value="option.value"
-                            >
-                                {{ option.label }}
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Select
-                        v-model="filterState.department"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-44"
-                            aria-label="Filtrar por departamento"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL"
-                                >Todos los departamentos</SelectItem
-                            >
-                            <SelectItem
-                                v-for="department in departments"
-                                :key="department.id"
-                                :value="String(department.id)"
-                            >
-                                {{ department.name }}
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Select
-                        v-model="filterState.status"
-                        @update:model-value="applyFilters"
-                    >
-                        <SelectTrigger
-                            class="w-full lg:w-32"
-                            aria-label="Filtrar por activación"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem :value="ALL">Todas</SelectItem>
-                            <SelectItem value="active">Activas</SelectItem>
-                            <SelectItem value="inactive">Inactivas</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <RecordStateFilter
-                        v-model="filterState.record"
-                        :options="recordStates"
-                        @change="applyFilters"
+                <div class="flex flex-wrap items-center gap-2">
+                    <FilterTabs
+                        v-if="recordTabs.length > 0"
+                        class="max-sm:w-full"
+                        :options="recordTabs"
+                        :model-value="filterState.record"
+                        label="Mostrar activas o eliminadas"
+                        @update:model-value="chooseRecord"
                     />
-                    <Button
-                        v-if="hasFilters"
-                        variant="ghost"
-                        @click="clearFilters"
+                    <div
+                        class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
                     >
-                        <X />
-                        Limpiar
-                    </Button>
+                        <Select
+                            v-model="filterState.channel"
+                            @update:model-value="applyFilters"
+                        >
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card sm:w-44"
+                                aria-label="Filtrar por canal o modalidad"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL"
+                                    >Todos los canales</SelectItem
+                                >
+                                <SelectItem
+                                    v-for="option in channels"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >
+                                    {{ option.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            v-model="filterState.health"
+                            @update:model-value="applyFilters"
+                        >
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card sm:w-52"
+                                aria-label="Filtrar por estado de salud"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL"
+                                    >Cualquier estado de salud</SelectItem
+                                >
+                                <SelectItem
+                                    v-for="option in healthOptions"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >
+                                    {{ option.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            v-model="filterState.department"
+                            @update:model-value="applyFilters"
+                        >
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card sm:w-48"
+                                aria-label="Filtrar por departamento"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL"
+                                    >Todos los departamentos</SelectItem
+                                >
+                                <SelectItem
+                                    v-for="department in departments"
+                                    :key="department.id"
+                                    :value="String(department.id)"
+                                >
+                                    {{ department.name }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            v-model="filterState.status"
+                            @update:model-value="applyFilters"
+                        >
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card sm:w-36"
+                                aria-label="Filtrar por activación"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL">Todas</SelectItem>
+                                <SelectItem value="active">Activas</SelectItem>
+                                <SelectItem value="inactive"
+                                    >Inactivas</SelectItem
+                                >
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
+                <ActiveFilters
+                    v-if="pills.length > 0 || hasFilters"
+                    :pills="pills"
+                    :clearable="hasFilters"
+                    @clear="clearFilters"
+                />
             </div>
 
-            <EmptyState
-                v-if="connections.length === 0"
-                class="m-4 border-none"
-                :icon="Search"
-                title="Ninguna conexión coincide con los filtros"
-                description="Prueba con otros criterios de búsqueda."
-            >
-                <Button variant="outline" @click="clearFilters"
-                    >Limpiar filtros</Button
-                >
-            </EmptyState>
+            <div class="relative" :aria-busy="loading">
+                <div
+                    v-if="loading"
+                    class="absolute inset-x-0 top-0 z-10 pane-progress h-0.5"
+                    aria-hidden="true"
+                />
 
-            <RecordGrid v-else-if="viewMode === 'cards'">
-                <li
-                    v-for="(connection, position) in connections"
-                    :key="connection.id"
-                    :data-tour="position === 0 ? 'connections.item' : undefined"
+                <FilteredEmpty
+                    v-if="connections.length === 0"
+                    :narrowed="hasFilters"
+                    narrowed-title="Ninguna conexión coincide con los filtros"
+                    narrowed-description="Prueba con otros criterios de búsqueda."
+                    :icon="Unplug"
+                    title="Aún no hay conexiones"
+                    description="Registra un número de WhatsApp o crea un chat para tu sitio web."
+                    @clear="clearFilters"
                 >
-                    <RecordCard
-                        :muted="!connection.is_active || connection.is_deleted"
-                        :href="showConnection(connection.id)"
-                        :label="`Ver conexión ${connection.name}`"
+                    <Button
+                        v-if="can.create"
+                        class="rounded-full"
+                        @click="channelPickerOpen = true"
                     >
-                        <template #leading>
-                            <span
-                                class="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                                :class="
-                                    connection.is_active
-                                        ? 'bg-primary-soft text-primary-soft-foreground'
-                                        : 'bg-muted text-muted-foreground'
-                                "
-                            >
-                                <PlugZap
-                                    v-if="connection.is_active"
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                                <Unplug
-                                    v-else
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </span>
-                        </template>
-                        <template #title>
-                            <span class="block truncate">{{
-                                connection.name
-                            }}</span>
-                        </template>
-                        <template #subtitle>
-                            <span
-                                class="inline-flex min-w-0 items-center gap-1"
-                            >
-                                <ChannelIcon
-                                    :channel="connection.channel.value"
-                                    class="size-3.5 shrink-0"
-                                    aria-hidden="true"
-                                />
-                                <span class="truncate"
-                                    >{{ modalityLabel(connection) }} ·
-                                    {{ phoneLabel(connection) }}</span
-                                >
-                            </span>
-                        </template>
-                        <template #badges>
-                            <DeletedBadge
-                                v-if="connection.is_deleted"
-                                feminine
-                            />
-                            <ConnectionHealthBadge
-                                :health="connection.health"
-                            />
-                            <WhatsAppWebStateBadge
-                                v-if="connection.whatsapp_web"
-                                :state="connection.whatsapp_web.state"
-                                :label="connection.whatsapp_web.state_label"
-                                :tone="connection.whatsapp_web.tone"
-                            />
-                            <ConnectionHealthBadge
-                                v-if="!connection.is_active"
-                                :health="connection.configuration_health"
-                            />
-                        </template>
-                        <ConnectionChecklist
-                            :checks="connection.checks"
-                            :monitoring="connection.monitoring"
-                            :channel="connection.channel.value"
-                            :provider="connection.provider.value"
-                            compact
-                        />
-                        <template #meta>
-                            <DepartmentTag
-                                v-for="department in connection.departments.slice(
-                                    0,
-                                    2,
-                                )"
-                                :key="department.id"
-                                :name="department.name"
-                                :color="department.color"
-                                :muted="!department.is_active"
-                            />
-                            <span v-if="connection.departments.length > 2">
-                                +{{ connection.departments.length - 2 }}
-                            </span>
-                            <span v-if="connection.departments.length === 0"
-                                >Sin departamentos autorizados</span
-                            >
-                        </template>
-                        <template #actions>
-                            <RecordActions
-                                :actions="actionsFor(connection)"
-                                :record="connection.name"
-                                :busy="
-                                    processingId === connection.id ||
-                                    deletion.processingId === connection.id
-                                "
-                            />
-                        </template>
-                    </RecordCard>
-                </li>
-            </RecordGrid>
+                        <Plus />
+                        Nueva conexión
+                    </Button>
+                </FilteredEmpty>
 
-            <Table v-else>
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead class="pl-5">Conexión</TableHead>
-                        <TableHead class="hidden sm:table-cell"
-                            >Estado</TableHead
-                        >
-                        <TableHead class="hidden lg:table-cell"
-                            >Credenciales</TableHead
-                        >
-                        <TableHead class="hidden xl:table-cell"
-                            >Departamentos</TableHead
-                        >
-                        <TableHead class="hidden 2xl:table-cell"
-                            >Última actividad</TableHead
-                        >
-                        <TableHead class="pr-5 text-right">
-                            <span class="sr-only">Acciones</span>
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow
+                <ul
+                    v-else-if="viewMode === 'cards'"
+                    role="list"
+                    class="grid reveal-stagger grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3 p-3 sm:p-4"
+                    :class="loading && 'admin-loading'"
+                >
+                    <li
                         v-for="(connection, position) in connections"
                         :key="connection.id"
                         :data-tour="
                             position === 0 ? 'connections.item' : undefined
                         "
-                        :class="
-                            !connection.is_active && 'text-muted-foreground'
-                        "
                     >
-                        <TableCell class="w-full max-w-0 py-3 pl-5">
-                            <Link
-                                :href="showConnection(connection.id)"
-                                class="block truncate font-medium text-foreground hover:underline"
-                            >
-                                {{ connection.name }}
-                            </Link>
-                            <p
-                                class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
-                            >
-                                <ChannelIcon
-                                    :channel="connection.channel.value"
-                                    class="size-3.5 shrink-0"
+                        <RecordCard
+                            class="admin-card isolate overflow-hidden"
+                            :data-channel-theme="connection.channel.value"
+                            :muted="
+                                !connection.is_active || connection.is_deleted
+                            "
+                            :href="showConnection(connection.id)"
+                            :label="`Ver conexión ${connection.name}`"
+                        >
+                            <template #leading>
+                                <span
+                                    class="channel-wash -z-10"
                                     aria-hidden="true"
                                 />
-                                <span class="truncate"
+                                <span
+                                    class="channel-tile relative size-11"
+                                    :class="
+                                        !connection.is_active &&
+                                        'opacity-55 grayscale-[0.6]'
+                                    "
+                                    aria-hidden="true"
+                                >
+                                    <ChannelIcon
+                                        :channel="connection.channel.value"
+                                        class="size-5"
+                                    />
+                                    <span
+                                        class="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-card text-muted-foreground shadow-(--shadow-control) ring-2 ring-card"
+                                    >
+                                        <PlugZap
+                                            v-if="connection.is_active"
+                                            class="size-3 text-success"
+                                        />
+                                        <Unplug v-else class="size-3" />
+                                    </span>
+                                </span>
+                            </template>
+                            <template #title>
+                                <span class="relative block truncate">{{
+                                    connection.name
+                                }}</span>
+                            </template>
+                            <template #subtitle>
+                                <span class="relative block truncate"
                                     >{{ modalityLabel(connection) }} ·
                                     {{ phoneLabel(connection) }}</span
                                 >
-                            </p>
-                            <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
+                            </template>
+                            <template #badges>
                                 <DeletedBadge
                                     v-if="connection.is_deleted"
                                     feminine
@@ -719,144 +716,305 @@ function phoneLabel(connection: Connection): string {
                                     :label="connection.whatsapp_web.state_label"
                                     :tone="connection.whatsapp_web.tone"
                                 />
-                            </div>
-                            <!-- The status column is hidden on phones. -->
-                            <ConnectionEvidenceLabel
-                                class="mt-1 sm:hidden"
-                                :monitoring="connection.monitoring"
-                                with-warnings
-                            />
-                        </TableCell>
-                        <TableCell class="hidden sm:table-cell">
-                            <div class="flex flex-wrap gap-1">
-                                <DeletedBadge
-                                    v-if="connection.is_deleted"
-                                    feminine
-                                />
                                 <ConnectionHealthBadge
-                                    :health="connection.health"
+                                    v-if="!connection.is_active"
+                                    :health="connection.configuration_health"
                                 />
-                                <WhatsAppWebStateBadge
-                                    v-if="connection.whatsapp_web"
-                                    :state="connection.whatsapp_web.state"
-                                    :label="connection.whatsapp_web.state_label"
-                                    :tone="connection.whatsapp_web.tone"
-                                />
-                            </div>
-                            <ConnectionEvidenceLabel
-                                class="mt-1"
-                                :monitoring="connection.monitoring"
-                                with-warnings
-                            />
-                        </TableCell>
-                        <TableCell class="hidden text-sm lg:table-cell">
-                            <span
-                                v-if="connection.channel.value === 'web_chat'"
-                                class="text-muted-foreground"
-                                >No aplica</span
-                            >
-                            <span
-                                v-else-if="isWhatsAppWeb(connection)"
-                                class="text-muted-foreground"
-                                >Vinculación por QR</span
-                            >
-                            <span
-                                v-else-if="
-                                    connection.checks.credentials.state ===
-                                    'verified'
-                                "
-                                class="text-success"
-                                :title="
-                                    formatDateTime(
-                                        connection.checks.credentials
-                                            .verified_at,
-                                    )
-                                "
-                                >Verificadas
-                                {{
-                                    formatRelative(
-                                        connection.checks.credentials
-                                            .verified_at,
-                                    )
-                                }}</span
-                            >
-                            <span
-                                v-else-if="
-                                    connection.checks.credentials.state ===
-                                    'invalid'
-                                "
-                                class="text-destructive"
-                                :title="
-                                    connection.checks.credentials.error ??
-                                    undefined
-                                "
-                                >Rechazadas por Meta</span
-                            >
-                            <span
-                                v-else-if="
-                                    connection.checks.credentials.state ===
-                                    'unverified'
-                                "
-                                class="text-muted-foreground"
-                                >Sin verificar</span
-                            >
-                            <span v-else class="text-muted-foreground"
-                                >Incompletas</span
-                            >
-                        </TableCell>
-                        <TableCell class="hidden xl:table-cell">
+                            </template>
                             <div
-                                v-if="connection.departments.length > 0"
-                                class="flex flex-wrap gap-1"
+                                class="rounded-lg bg-surface-sunken/60 p-2.5 ring-1 ring-border/50 ring-inset"
                             >
+                                <ConnectionChecklist
+                                    :checks="connection.checks"
+                                    :monitoring="connection.monitoring"
+                                    :channel="connection.channel.value"
+                                    :provider="connection.provider.value"
+                                    compact
+                                />
+                            </div>
+                            <template #meta>
                                 <DepartmentTag
                                     v-for="department in connection.departments.slice(
                                         0,
-                                        3,
+                                        2,
                                     )"
                                     :key="department.id"
                                     :name="department.name"
                                     :color="department.color"
                                     :muted="!department.is_active"
                                 />
-                                <span
-                                    v-if="connection.departments.length > 3"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    +{{ connection.departments.length - 3 }}
+                                <span v-if="connection.departments.length > 2">
+                                    +{{ connection.departments.length - 2 }}
                                 </span>
-                            </div>
-                            <span v-else class="text-xs text-muted-foreground"
-                                >Sin asignar</span
+                                <span v-if="connection.departments.length === 0"
+                                    >Sin departamentos autorizados</span
+                                >
+                            </template>
+                            <template #actions>
+                                <RecordActions
+                                    class="admin-row-actions"
+                                    :actions="actionsFor(connection)"
+                                    :record="connection.name"
+                                    :busy="
+                                        processingId === connection.id ||
+                                        deletion.processingId === connection.id
+                                    "
+                                />
+                            </template>
+                        </RecordCard>
+                    </li>
+                </ul>
+
+                <Table v-else :class="loading && 'admin-loading'">
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Conexión</TableHead>
+                            <TableHead class="hidden sm:table-cell"
+                                >Estado</TableHead
                             >
-                        </TableCell>
-                        <TableCell class="hidden text-sm 2xl:table-cell">
-                            <span
-                                v-if="connection.last_activity_at"
-                                :title="
-                                    formatDateTime(connection.last_activity_at)
-                                "
-                                >{{
-                                    formatRelative(connection.last_activity_at)
-                                }}</span
+                            <TableHead class="hidden lg:table-cell"
+                                >Credenciales</TableHead
                             >
-                            <span v-else class="text-xs text-muted-foreground"
-                                >Sin actividad registrada</span
+                            <TableHead class="hidden xl:table-cell"
+                                >Departamentos</TableHead
                             >
-                        </TableCell>
-                        <TableCell class="w-px pr-5 text-right">
-                            <RecordActions
-                                :actions="actionsFor(connection)"
-                                :record="connection.name"
-                                :busy="
-                                    processingId === connection.id ||
-                                    deletion.processingId === connection.id
-                                "
-                            />
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+                            <TableHead class="hidden 2xl:table-cell"
+                                >Última actividad</TableHead
+                            >
+                            <TableHead class="pr-5 text-right">
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow
+                            v-for="(connection, position) in connections"
+                            :key="connection.id"
+                            :data-tour="
+                                position === 0 ? 'connections.item' : undefined
+                            "
+                            :class="
+                                !connection.is_active && 'text-muted-foreground'
+                            "
+                        >
+                            <TableCell class="w-full max-w-0 py-3 pl-5">
+                                <div class="flex min-w-0 items-center gap-3">
+                                    <span
+                                        class="channel-tile size-10"
+                                        :class="
+                                            !connection.is_active &&
+                                            'opacity-55 grayscale-[0.6]'
+                                        "
+                                        :data-channel-theme="
+                                            connection.channel.value
+                                        "
+                                        :title="modalityLabel(connection)"
+                                        aria-hidden="true"
+                                    >
+                                        <ChannelIcon
+                                            :channel="connection.channel.value"
+                                            class="size-[1.125rem]"
+                                        />
+                                    </span>
+                                    <div class="min-w-0">
+                                        <Link
+                                            :href="
+                                                showConnection(connection.id)
+                                            "
+                                            class="block truncate font-medium text-foreground underline-offset-2 hover:underline"
+                                        >
+                                            {{ connection.name }}
+                                        </Link>
+                                        <p
+                                            class="truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ modalityLabel(connection) }} ·
+                                            {{ phoneLabel(connection) }}
+                                        </p>
+                                        <div
+                                            class="mt-1.5 flex flex-wrap gap-1 sm:hidden"
+                                        >
+                                            <DeletedBadge
+                                                v-if="connection.is_deleted"
+                                                feminine
+                                            />
+                                            <ConnectionHealthBadge
+                                                :health="connection.health"
+                                            />
+                                            <WhatsAppWebStateBadge
+                                                v-if="connection.whatsapp_web"
+                                                :state="
+                                                    connection.whatsapp_web
+                                                        .state
+                                                "
+                                                :label="
+                                                    connection.whatsapp_web
+                                                        .state_label
+                                                "
+                                                :tone="
+                                                    connection.whatsapp_web.tone
+                                                "
+                                            />
+                                        </div>
+                                        <!-- The status column is hidden on phones. -->
+                                        <ConnectionEvidenceLabel
+                                            class="mt-1 sm:hidden"
+                                            :monitoring="connection.monitoring"
+                                            with-warnings
+                                        />
+                                    </div>
+                                </div>
+                            </TableCell>
+                            <TableCell class="hidden sm:table-cell">
+                                <div class="flex flex-wrap gap-1">
+                                    <DeletedBadge
+                                        v-if="connection.is_deleted"
+                                        feminine
+                                    />
+                                    <ConnectionHealthBadge
+                                        :health="connection.health"
+                                    />
+                                    <WhatsAppWebStateBadge
+                                        v-if="connection.whatsapp_web"
+                                        :state="connection.whatsapp_web.state"
+                                        :label="
+                                            connection.whatsapp_web.state_label
+                                        "
+                                        :tone="connection.whatsapp_web.tone"
+                                    />
+                                </div>
+                                <ConnectionEvidenceLabel
+                                    class="mt-1"
+                                    :monitoring="connection.monitoring"
+                                    with-warnings
+                                />
+                            </TableCell>
+                            <TableCell class="hidden text-sm lg:table-cell">
+                                <span
+                                    v-if="
+                                        connection.channel.value === 'web_chat'
+                                    "
+                                    class="text-muted-foreground"
+                                    >No aplica</span
+                                >
+                                <span
+                                    v-else-if="isWhatsAppWeb(connection)"
+                                    class="text-muted-foreground"
+                                    >Vinculación por QR</span
+                                >
+                                <span
+                                    v-else-if="
+                                        connection.checks.credentials.state ===
+                                        'verified'
+                                    "
+                                    class="inline-flex items-center gap-1 text-success"
+                                    :title="
+                                        formatDateTime(
+                                            connection.checks.credentials
+                                                .verified_at,
+                                        )
+                                    "
+                                    ><ShieldCheck
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />Verificadas
+                                    {{
+                                        formatRelative(
+                                            connection.checks.credentials
+                                                .verified_at,
+                                        )
+                                    }}</span
+                                >
+                                <span
+                                    v-else-if="
+                                        connection.checks.credentials.state ===
+                                        'invalid'
+                                    "
+                                    class="inline-flex items-center gap-1 text-destructive"
+                                    :title="
+                                        connection.checks.credentials.error ??
+                                        undefined
+                                    "
+                                    ><CircleAlert
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />Rechazadas por Meta</span
+                                >
+                                <span
+                                    v-else-if="
+                                        connection.checks.credentials.state ===
+                                        'unverified'
+                                    "
+                                    class="text-muted-foreground"
+                                    >Sin verificar</span
+                                >
+                                <span v-else class="text-muted-foreground"
+                                    >Incompletas</span
+                                >
+                            </TableCell>
+                            <TableCell class="hidden xl:table-cell">
+                                <div
+                                    v-if="connection.departments.length > 0"
+                                    class="flex flex-wrap gap-1"
+                                >
+                                    <DepartmentTag
+                                        v-for="department in connection.departments.slice(
+                                            0,
+                                            3,
+                                        )"
+                                        :key="department.id"
+                                        :name="department.name"
+                                        :color="department.color"
+                                        :muted="!department.is_active"
+                                    />
+                                    <span
+                                        v-if="connection.departments.length > 3"
+                                        class="text-xs text-muted-foreground"
+                                    >
+                                        +{{ connection.departments.length - 3 }}
+                                    </span>
+                                </div>
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >Sin asignar</span
+                                >
+                            </TableCell>
+                            <TableCell class="hidden text-sm 2xl:table-cell">
+                                <span
+                                    v-if="connection.last_activity_at"
+                                    :title="
+                                        formatDateTime(
+                                            connection.last_activity_at,
+                                        )
+                                    "
+                                    >{{
+                                        formatRelative(
+                                            connection.last_activity_at,
+                                        )
+                                    }}</span
+                                >
+                                <span
+                                    v-else
+                                    class="text-xs text-muted-foreground"
+                                    >Sin actividad registrada</span
+                                >
+                            </TableCell>
+                            <TableCell class="w-px pr-5 text-right">
+                                <RecordActions
+                                    class="admin-row-actions"
+                                    :actions="actionsFor(connection)"
+                                    :record="connection.name"
+                                    :busy="
+                                        processingId === connection.id ||
+                                        deletion.processingId === connection.id
+                                    "
+                                />
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            </div>
         </SurfaceCard>
 
         <ConfirmDialog

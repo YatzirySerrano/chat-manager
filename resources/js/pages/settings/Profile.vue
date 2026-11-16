@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { MailWarning, UserRound } from '@lucide/vue';
 import { computed } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
-import FormSection from '@/components/FormSection.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,10 +56,30 @@ function submit(): void {
     <Head title="Perfil" />
 
     <form novalidate @submit.prevent="submit">
-        <FormSection
+        <SettingsSection
+            :icon="UserRound"
             title="Perfil"
             description="Tu nombre es el que ven tus compañeros en las conversaciones y en el chat interno. El correo es con el que inicias sesión."
         >
+            <!-- How teammates see you, updated while you type. -->
+            <div
+                class="mb-5 flex min-w-0 items-center gap-3 rounded-xl accent-gradient-soft px-3 py-3 ring-1 ring-primary/15 ring-inset sm:px-4"
+                aria-hidden="true"
+            >
+                <ListAvatar
+                    :name="form.name.trim() || user.name"
+                    class="size-12! text-base!"
+                />
+                <div class="min-w-0">
+                    <p class="truncate font-display text-base font-semibold">
+                        {{ form.name.trim() || user.name }}
+                    </p>
+                    <p class="truncate text-sm text-muted-foreground">
+                        {{ form.email.trim() || user.email }}
+                    </p>
+                </div>
+            </div>
+
             <div class="field-grid [--col-min:20rem]">
                 <div class="grid gap-2">
                     <Label for="name">Nombre</Label>
@@ -98,9 +120,15 @@ function submit(): void {
 
                 <div
                     v-if="page.props.mustVerifyEmail && !user.email_verified_at"
-                    class="col-span-full"
+                    class="col-span-full rounded-xl border border-warning/30 bg-warning-soft/60 px-3 py-2.5"
                 >
-                    <p class="text-sm text-muted-foreground">
+                    <p
+                        class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-warning-soft-foreground"
+                    >
+                        <MailWarning
+                            class="size-4 shrink-0"
+                            aria-hidden="true"
+                        />
                         Tu correo electrónico no está verificado.
                         <Link
                             :href="send()"
@@ -122,6 +150,7 @@ function submit(): void {
 
             <template #footer>
                 <Button
+                    type="submit"
                     :disabled="!validation.hasChanges"
                     :loading="form.processing"
                     data-test="update-profile-button"
@@ -135,6 +164,6 @@ function submit(): void {
                     Sin cambios por guardar
                 </p>
             </template>
-        </FormSection>
+        </SettingsSection>
     </form>
 </template>

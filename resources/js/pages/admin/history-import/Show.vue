@@ -20,14 +20,15 @@ import HistoryMappingStep from '@/components/history-import/HistoryMappingStep.v
 import HistoryResultStep from '@/components/history-import/HistoryResultStep.vue';
 import HistoryRulesPanel from '@/components/history-import/HistoryRulesPanel.vue';
 import HistorySummaryStep from '@/components/history-import/HistorySummaryStep.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
 import {
-    BATCH_STATUS_BADGE,
+    BATCH_STATUS_TONE,
     FORMAT_DISCLAIMER,
     formatNumber,
 } from '@/components/history-import/labels';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusNote from '@/components/StatusNote.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatTimeZone } from '@/lib/format';
@@ -418,12 +419,13 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
             :description="`Cuenta de Whaticket: ${batch.source_instance} · fechas en ${formatTimeZone(batch.timezone)} · creado ${formatDateTime(batch.created_at)}${batch.owner ? ` por ${batch.owner}` : ''}`"
         >
             <template #actions>
-                <Badge
-                    :variant="BATCH_STATUS_BADGE[batch.status]"
+                <StatusPill
+                    :label="batch.status_label"
+                    :tone="BATCH_STATUS_TONE[batch.status].tone"
+                    :live="BATCH_STATUS_TONE[batch.status].live"
+                    class="px-2.5 py-1 text-sm"
                     data-batch-status
-                >
-                    {{ batch.status_label }}
-                </Badge>
+                />
                 <Button v-if="!isDraft" variant="outline" as-child>
                     <a :href="reportRoute.url(batch.id)" download>
                         <FileDown />
@@ -462,7 +464,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
             data-tour="history-import.steps"
         >
             <ol
-                class="grid gap-1 rounded-xl border bg-card p-1.5"
+                class="grid gap-1 rounded-2xl border border-border/80 glass-card p-1.5 shadow-float"
                 :class="
                     steps.length === 4
                         ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
@@ -476,8 +478,9 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                         :class="
                             cn(
                                 'group/step flex h-full w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11',
+                                'transition-[background-color,color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring-soft) active:scale-[0.98]',
                                 item.key === step
-                                    ? 'bg-primary-soft text-primary-soft-foreground'
+                                    ? 'bg-linear-to-b from-card to-[color-mix(in_oklch,var(--primary)_8%,var(--card))] text-foreground shadow-(--shadow-control) ring-1 ring-primary/25'
                                     : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                             )
                         "
@@ -489,7 +492,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                                 cn(
                                     'grid size-7 shrink-0 place-items-center rounded-full border font-display text-sm font-semibold tabular-nums transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/step:scale-110',
                                     item.key === step &&
-                                        'border-primary bg-primary text-primary-foreground',
+                                        'border-transparent accent-gradient glow',
                                     item.key !== step &&
                                         isStepDone(item.key) &&
                                         'border-success bg-success-soft text-success-soft-foreground',
@@ -525,7 +528,7 @@ const title = computed(() => batch.value.label ?? `Lote ${batch.value.id}`);
                 aria-hidden="true"
             >
                 <div
-                    class="h-full rounded-full bg-primary transition-[width] duration-(--duration-panel) ease-(--ease-out-quint)"
+                    class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
                     :style="{ width: `${stepProgress}%` }"
                 />
             </div>

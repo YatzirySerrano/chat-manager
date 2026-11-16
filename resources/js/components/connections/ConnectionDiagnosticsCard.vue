@@ -186,7 +186,7 @@ const automation = computed(() => {
     <div class="grid grid-cols-1 gap-5 text-sm" data-slot="diagnostics">
         <div
             v-if="diagnostics.transport.mode !== 'meta'"
-            class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
+            class="flex gap-2 rounded-xl border border-warning/25 bg-warning-soft p-3 text-xs"
         >
             <FlaskConical
                 v-if="diagnostics.transport.mode === 'simulated'"
@@ -210,7 +210,7 @@ const automation = computed(() => {
 
         <p
             v-if="diagnostics.transport.pilot_recipients > 0"
-            class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
+            class="flex gap-2 rounded-xl border border-warning/25 bg-warning-soft p-3 text-xs"
         >
             <FlaskConical
                 class="mt-0.5 size-4 shrink-0 text-warning"
@@ -230,7 +230,7 @@ const automation = computed(() => {
             </p>
             <div class="flex gap-2">
                 <code
-                    class="min-w-0 flex-1 truncate rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs"
+                    class="min-w-0 flex-1 truncate rounded-lg border bg-surface-sunken px-2.5 py-2 font-mono text-xs"
                     :title="diagnostics.webhook.url ?? ''"
                     >{{ diagnostics.webhook.url ?? 'No disponible' }}</code
                 >
@@ -260,13 +260,21 @@ const automation = computed(() => {
         </div>
 
         <ul class="auto-grid [--col-min:17rem] [--grid-gap:1rem]">
-            <li v-for="item in checks" :key="item.key" class="flex gap-2">
-                <component
-                    :is="icon[item.state]"
-                    class="mt-0.5 size-4 shrink-0"
-                    :class="iconClass[item.state]"
+            <li
+                v-for="item in checks"
+                :key="item.key"
+                class="flex gap-3 rounded-xl bg-surface-sunken/55 p-3 ring-1 ring-border/50 ring-inset"
+            >
+                <span
+                    class="flex size-8 shrink-0 items-center justify-center rounded-full bg-card shadow-(--shadow-control)"
                     aria-hidden="true"
-                />
+                >
+                    <component
+                        :is="icon[item.state]"
+                        class="size-4"
+                        :class="iconClass[item.state]"
+                    />
+                </span>
                 <div class="min-w-0">
                     <p class="text-xs font-medium">{{ item.label }}</p>
                     <p class="text-xs text-muted-foreground">
@@ -278,7 +286,7 @@ const automation = computed(() => {
 
         <div
             v-if="diagnostics.webhook.last_failure"
-            class="rounded-lg bg-destructive-soft p-3 text-xs"
+            class="rounded-xl border border-destructive/25 bg-destructive-soft p-3 text-xs"
         >
             <p class="font-medium text-destructive">
                 Último evento con error ·
@@ -291,7 +299,7 @@ const automation = computed(() => {
 
         <p
             v-if="diagnostics.outbound.unconfirmed > 0"
-            class="rounded-lg bg-warning-soft p-3 text-xs"
+            class="rounded-xl border border-warning/25 bg-warning-soft p-3 text-xs"
         >
             {{ diagnostics.outbound.unconfirmed }} mensaje(s) enviados sin
             confirmación de Meta. Si no llega la confirmación se marcarán como
@@ -300,7 +308,7 @@ const automation = computed(() => {
 
         <div
             v-if="diagnostics.outbound.unknown > 0"
-            class="grid gap-1.5 rounded-lg bg-warning-soft p-3 text-xs"
+            class="grid gap-1.5 rounded-xl border border-warning/25 bg-warning-soft p-3 text-xs"
             role="status"
         >
             <p>
@@ -374,7 +382,7 @@ const automation = computed(() => {
             <p
                 v-for="warning in automation.warnings"
                 :key="warning"
-                class="flex gap-2 rounded-lg bg-warning-soft p-3"
+                class="flex gap-2 rounded-xl border border-warning/25 bg-warning-soft p-3"
             >
                 <TriangleAlert
                     class="mt-0.5 size-4 shrink-0 text-warning"

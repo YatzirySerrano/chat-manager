@@ -18,6 +18,7 @@ import {
 } from 'reka-ui';
 import { computed, nextTick, ref, watch } from 'vue';
 import { formatDateTime } from '@/lib/format';
+import { warmNeighbours } from '@/lib/conversations/media';
 import type { ViewerItem } from '@/lib/conversations/media';
 
 /**
@@ -66,6 +67,13 @@ function reset(): void {
 
 watch(open, (value) => value && reset());
 watch(() => current.value?.id, reset);
+
+/* The pictures next to this one start loading now: the arrows feel instant. */
+watch(
+    [open, index, () => props.items.length],
+    ([isOpen]) => isOpen && warmNeighbours(props.items, index.value),
+    { immediate: true },
+);
 
 /* The list shrank (a message was removed) while the viewer was open. */
 watch(

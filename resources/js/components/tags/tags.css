@@ -1,0 +1,23 @@
+/* Bars of «Más usadas» (pages/tags/Index.vue): a gradient in the palette
+   color that grows once from the left, staggered by rank. */
+@layer components {
+    .tag-usage-bar {
+        transform-origin: left;
+        background-color: var(--primary);
+        background-image: linear-gradient(
+            90deg,
+            color-mix(in oklch, var(--primary) 55%, white),
+            var(--primary)
+        );
+        box-shadow: 0 0 8px color-mix(in oklch, var(--primary) 35%, transparent);
+        animation: tag-usage-grow 640ms var(--ease-spring-soft, ease-out)
+            backwards;
+        animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+    }
+
+    @keyframes tag-usage-grow {
+        from {
+            transform: scaleX(0);
+        }
+    }
+}

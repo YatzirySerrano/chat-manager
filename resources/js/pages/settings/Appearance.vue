@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
-import FormSection from '@/components/FormSection.vue';
+import { Palette } from '@lucide/vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import { edit } from '@/routes/appearance';
 
 defineOptions({
@@ -19,10 +20,11 @@ defineOptions({
 <template>
     <Head title="Apariencia" />
 
-    <FormSection
+    <SettingsSection
+        :icon="Palette"
         title="Tema"
         description="Claro, oscuro o el que use tu sistema. Solo cambia en este navegador; los colores de la plataforma los define la administración."
     >
         <AppearanceTabs />
-    </FormSection>
+    </SettingsSection>
 </template>

@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { groupIcon, normalizeSearch as normalize } from '@/lib/roles';
 import type { CatalogPermission, PermissionGroupCatalog } from '@/types';
+import './admin.css';
 
 /**
  * Permissions grouped by module with per-group selection, search and
@@ -153,12 +154,12 @@ function clearSelection(): void {
             <section
                 v-for="group in groups"
                 :key="group.value"
-                class="rounded-xl border bg-card"
-                :class="group.future && 'border-dashed bg-muted/30'"
+                class="rounded-xl border bg-card shadow-(--shadow-control) transition-[border-color,box-shadow] duration-(--duration-base) has-[[data-state=checked]]:border-primary/30"
+                :class="group.future && 'border-dashed bg-muted/30 shadow-none'"
                 :aria-labelledby="`group-${group.value}`"
             >
                 <header
-                    class="flex items-center justify-between gap-2 border-b px-4 py-2.5"
+                    class="flex items-center justify-between gap-2 rounded-t-xl border-b bg-surface-sunken/50 px-4 py-2.5"
                 >
                     <label
                         class="flex items-center gap-2.5 text-sm font-semibold"
@@ -182,11 +183,15 @@ function clearSelection(): void {
                                     )
                             "
                         />
-                        <component
-                            :is="group.iconComponent"
-                            class="size-4 shrink-0 text-muted-foreground"
+                        <span
+                            class="admin-icon-tile size-7 rounded-lg"
                             aria-hidden="true"
-                        />
+                        >
+                            <component
+                                :is="group.iconComponent"
+                                class="size-3.5 shrink-0"
+                            />
+                        </span>
                         <span :id="`group-${group.value}`">{{
                             group.label
                         }}</span>

@@ -18,6 +18,7 @@ import {
     DialogTitle,
 } from 'reka-ui';
 import { computed, nextTick, ref, watch } from 'vue';
+import { warmNeighbours } from '@/lib/conversations/media';
 
 /**
  * Full-screen viewer of the internal chat: the images, videos and PDF of
@@ -68,6 +69,13 @@ function reset(): void {
 }
 
 watch([open, () => item.value?.id], reset);
+
+/* The pictures next to this one start loading now: the arrows feel instant. */
+watch(
+    [open, index, () => props.items.length],
+    ([isOpen]) => isOpen && warmNeighbours(props.items, index.value),
+    { immediate: true },
+);
 
 /* The file on screen was deleted while it was open. */
 watch(

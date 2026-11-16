@@ -1,36 +1,32 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import {
+    ChevronRight,
     CircleCheck,
     Clock,
     FileText,
     RefreshCw,
-    Search,
     TriangleAlert,
-    X,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, reactive, ref } from 'vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
+import DirectoryRow from '@/components/directory/DirectoryRow.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TemplateStatusBadge from '@/components/templates/TemplateStatusBadge.vue';
+import '@/components/templates/templates.css';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import {
     formatLocale,
     formatRelative,
@@ -122,6 +118,9 @@ const hasFilters = computed(
         filterState.record !== 'active',
 );
 
+/** A filter request on its way (the toolbar shows a progress line). */
+const loading = ref(false);
+
 function applyFilters(): void {
     const query: Record<string, string> = {};
 
@@ -149,6 +148,12 @@ function applyFilters(): void {
         preserveScroll: true,
         replace: true,
         only: ['templates', 'filters'],
+        onStart: () => {
+            loading.value = true;
+        },
+        onFinish: () => {
+            loading.value = false;
+        },
     });
 }
 
@@ -226,229 +231,210 @@ function sync(connection: TemplateConnectionOption): void {
 
         <div
             :class="
-                syncable.length > 0 ? 'split-layout [--aside-w:24rem]' : 'grid'
+                syncable.length > 0
+                    ? 'split-layout reveal [--aside-w:24rem]'
+                    : 'grid reveal'
             "
         >
-            <SurfaceCard>
-                <div
-                    class="flex flex-col gap-2 border-b p-4"
-                    role="search"
-                    data-tour="templates.search"
-                >
-                    <div class="relative min-w-0">
-                        <Search
-                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                        <Input
+            <DirectoryPanel :busy="loading" toolbar-class="max-sm:static">
+                <template #toolbar>
+                    <div class="grid gap-3" data-tour="templates.search">
+                        <FilterSearch
                             v-model="filterState.search"
-                            type="search"
+                            label="Buscar plantillas"
                             placeholder="Buscar por nombre"
-                            class="pl-9"
-                            aria-label="Buscar plantillas"
+                            :loading="loading"
                         />
-                    </div>
-                    <div
-                        class="auto-grid items-center [--col-min:11rem] [--grid-gap:0.5rem]"
-                    >
-                        <AppSelect
-                            v-model="filterState.connection"
-                            :options="connectionOptions"
-                            aria-label="Conexión"
-                            data-filter="connection"
-                            @change="applyFilters"
-                        />
-                        <AppSelect
-                            v-model="filterState.status"
-                            :options="statusOptions"
-                            aria-label="Estado"
-                            data-filter="status"
-                            @change="applyFilters"
-                        />
-                        <AppSelect
-                            v-model="filterState.category"
-                            :options="categoryOptions"
-                            aria-label="Categoría"
-                            data-filter="category"
-                            @change="applyFilters"
-                        />
-                        <AppSelect
-                            v-model="filterState.language"
-                            :options="languageOptions"
-                            aria-label="Idioma"
-                            data-filter="language"
-                            @change="applyFilters"
-                        />
-                        <RecordStateFilter
-                            v-if="recordStates.length > 1"
-                            v-model="filterState.record"
-                            :options="recordStates"
-                            @change="applyFilters"
-                        />
-                        <Button
-                            v-if="hasFilters"
-                            variant="ghost"
-                            class="justify-self-start"
-                            @click="clearFilters"
+                        <ActiveFilters
+                            :pills="[]"
+                            :clearable="hasFilters"
+                            @clear="clearFilters"
                         >
-                            <X />
-                            Limpiar
-                        </Button>
+                            <div
+                                class="tpl-filters grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
+                            >
+                                <AppSelect
+                                    v-model="filterState.connection"
+                                    :options="connectionOptions"
+                                    aria-label="Conexión"
+                                    data-filter="connection"
+                                    @change="applyFilters"
+                                />
+                                <AppSelect
+                                    v-model="filterState.status"
+                                    :options="statusOptions"
+                                    aria-label="Estado"
+                                    data-filter="status"
+                                    @change="applyFilters"
+                                />
+                                <AppSelect
+                                    v-model="filterState.category"
+                                    :options="categoryOptions"
+                                    aria-label="Categoría"
+                                    data-filter="category"
+                                    @change="applyFilters"
+                                />
+                                <AppSelect
+                                    v-model="filterState.language"
+                                    :options="languageOptions"
+                                    aria-label="Idioma"
+                                    data-filter="language"
+                                    @change="applyFilters"
+                                />
+                                <RecordStateFilter
+                                    v-if="recordStates.length > 1"
+                                    v-model="filterState.record"
+                                    :options="recordStates"
+                                    class="sm:w-36"
+                                    @change="applyFilters"
+                                />
+                            </div>
+                        </ActiveFilters>
                     </div>
-                </div>
+                </template>
 
-                <Table
+                <ul
                     v-if="templates.data.length > 0"
+                    role="list"
+                    class="dir-rows"
                     data-tour="templates.table"
                 >
-                    <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                            <TableHead class="pl-5">Plantilla</TableHead>
-                            <TableHead class="hidden md:table-cell">
-                                Conexión
-                            </TableHead>
-                            <TableHead class="hidden sm:table-cell">
-                                Categoría
-                            </TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead class="hidden lg:table-cell">
-                                Contenido
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="template in templates.data"
-                            :key="template.id"
-                            :class="
-                                template.is_deleted && 'text-muted-foreground'
-                            "
-                        >
-                            <TableCell class="py-3 pl-5">
-                                <Link
-                                    :href="showTemplate(template.id)"
-                                    prefetch
-                                    class="font-medium underline-offset-4 hover:text-primary hover:underline"
-                                >
-                                    {{ template.name }}
-                                </Link>
-                                <p class="text-xs text-muted-foreground">
-                                    {{ formatLocale(template.language) }}
-                                </p>
-                            </TableCell>
-                            <TableCell class="hidden md:table-cell">
-                                {{ template.connection?.name }}
-                            </TableCell>
-                            <TableCell class="hidden sm:table-cell">
-                                {{ template.category.label ?? '—' }}
-                            </TableCell>
-                            <TableCell>
-                                <div
-                                    class="flex flex-wrap items-center gap-1.5"
-                                >
-                                    <DeletedBadge
-                                        v-if="template.is_deleted"
-                                        feminine
-                                    />
-                                    <TemplateStatusBadge
-                                        v-else
-                                        :status="template.status"
-                                    />
-                                    <span
-                                        v-if="template.quality_score"
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        Calidad
-                                        {{
-                                            formatTemplateQuality(
-                                                template.quality_score,
-                                            )
-                                        }}
-                                    </span>
-                                </div>
-                            </TableCell>
-                            <TableCell class="hidden w-2/5 lg:table-cell">
-                                <p
-                                    class="line-clamp-2 text-xs whitespace-normal text-muted-foreground"
-                                >
-                                    {{ template.structure.body }}
-                                </p>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-
-                <EmptyState
-                    v-else
-                    class="m-4 border-none"
-                    :icon="FileText"
-                    :title="
-                        hasFilters
-                            ? 'Ninguna plantilla coincide con los filtros'
-                            : 'Aún no se han traído plantillas de Meta'
-                    "
-                    :description="
-                        hasFilters
-                            ? 'Prueba con otros criterios de búsqueda.'
-                            : 'Crea las plantillas en WhatsApp Manager y sincronízalas con la conexión correspondiente.'
-                    "
-                >
-                    <Button
-                        v-if="hasFilters"
-                        variant="outline"
-                        @click="clearFilters"
+                    <DirectoryRow
+                        v-for="template in templates.data"
+                        :key="template.id"
+                        :href="showTemplate(template.id)"
+                        :label="`Ver plantilla ${template.name}`"
+                        :muted="template.is_deleted"
                     >
-                        Limpiar filtros
-                    </Button>
-                </EmptyState>
+                        <template #leading>
+                            <DirectoryAvatar
+                                :name="template.name"
+                                :icon="FileText"
+                                shape="square"
+                                :tone="template.is_deleted ? 'muted' : 'auto'"
+                            />
+                        </template>
+                        <template #title>{{ template.name }}</template>
+                        <template #subtitle>
+                            {{
+                                [
+                                    formatLocale(template.language),
+                                    template.connection?.name,
+                                ]
+                                    .filter(Boolean)
+                                    .join(', ')
+                            }}
+                        </template>
+                        <template #badges>
+                            <DeletedBadge v-if="template.is_deleted" feminine />
+                            <TemplateStatusBadge
+                                v-else
+                                :status="template.status"
+                            />
+                            <span
+                                v-if="template.category.label"
+                                class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+                                >{{ template.category.label }}</span
+                            >
+                            <span
+                                v-if="template.quality_score"
+                                class="text-xs text-muted-foreground"
+                            >
+                                Calidad
+                                {{
+                                    formatTemplateQuality(
+                                        template.quality_score,
+                                    )
+                                }}
+                            </span>
+                        </template>
+                        <template v-if="template.structure.body" #aside>
+                            <p
+                                class="line-clamp-2 w-56 text-xs leading-relaxed text-pretty lg:w-72 xl:w-80"
+                            >
+                                {{ template.structure.body }}
+                            </p>
+                        </template>
+                        <template #actions>
+                            <ChevronRight
+                                class="size-4 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                        </template>
+                    </DirectoryRow>
+                </ul>
 
-                <div
+                <FilteredEmpty
+                    v-else
+                    :narrowed="hasFilters"
+                    narrowed-title="Ninguna plantilla coincide con los filtros"
+                    narrowed-description="Quita algún filtro o cambia la búsqueda para ver más plantillas."
+                    title="Aún no se han traído plantillas de Meta"
+                    description="Crea las plantillas en WhatsApp Manager y sincronízalas con la conexión correspondiente."
+                    :icon="FileText"
+                    @clear="clearFilters"
+                />
+
+                <template
                     v-if="
                         templates.meta.last_page > 1 ||
                         templates.data.length > 0
                     "
-                    class="border-t px-4 py-3"
+                    #footer
                 >
                     <DataPagination :meta="templates.meta" noun="plantillas" />
-                </div>
-            </SurfaceCard>
+                </template>
+            </DirectoryPanel>
 
             <SurfaceCard
                 v-if="syncable.length > 0"
+                class="self-start xl:sticky xl:top-20"
                 data-tour="templates.sync"
                 title="Actualizar desde Meta"
                 description="Trae de Meta las plantillas de cada conexión y su estado actual. También se actualizan solas cada 6 horas y cuando Meta avisa un cambio."
-                body-class="divide-y"
             >
-                <div
-                    v-for="connection in syncable"
-                    :key="connection.id"
-                    class="row-accent flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
-                >
-                    <div class="min-w-0">
-                        <p class="truncate text-sm font-medium">
-                            {{ connection.name }}
-                        </p>
-                        <p class="text-xs text-muted-foreground">
-                            {{
-                                connection.last_synced_at
-                                    ? `Actualizada ${formatRelative(connection.last_synced_at)}`
-                                    : 'Aún no se ha actualizado desde Meta'
-                            }}
-                        </p>
-                    </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        :disabled="syncing !== null"
-                        :loading="syncing === connection.id"
-                        :aria-label="`Actualizar desde Meta ${connection.name}`"
-                        @click="sync(connection)"
+                <ul role="list" class="dir-rows">
+                    <li
+                        v-for="connection in syncable"
+                        :key="connection.id"
+                        class="dir-row flex flex-wrap items-center gap-3 py-2.5 pr-3 pl-3.5"
                     >
-                        <RefreshCw v-if="syncing !== connection.id" />
-                        Actualizar
-                    </Button>
-                </div>
+                        <DirectoryAvatar
+                            :name="connection.name"
+                            :icon="RefreshCw"
+                            shape="square"
+                            size="sm"
+                            :class="
+                                syncing === connection.id &&
+                                '[&_svg]:animate-spin'
+                            "
+                        />
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm font-medium">
+                                {{ connection.name }}
+                            </p>
+                            <p class="text-xs text-muted-foreground">
+                                {{
+                                    connection.last_synced_at
+                                        ? `Actualizada ${formatRelative(connection.last_synced_at)}`
+                                        : 'Aún no se ha actualizado desde Meta'
+                                }}
+                            </p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="rounded-full"
+                            :disabled="syncing !== null"
+                            :loading="syncing === connection.id"
+                            :aria-label="`Actualizar desde Meta ${connection.name}`"
+                            @click="sync(connection)"
+                        >
+                            <RefreshCw v-if="syncing !== connection.id" />
+                            Actualizar
+                        </Button>
+                    </li>
+                </ul>
             </SurfaceCard>
         </div>
     </div>

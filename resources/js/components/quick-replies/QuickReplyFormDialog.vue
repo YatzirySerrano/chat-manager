@@ -286,15 +286,15 @@ function submit(): void {
                             type="button"
                             role="radio"
                             :aria-checked="!isPersonal"
-                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            class="flex items-start gap-3 rounded-xl border bg-card p-3 text-left text-sm shadow-(--shadow-control) transition-[border-color,background-color,box-shadow,translate] duration-(--duration-base) ease-(--ease-spring) outline-none hover:-translate-y-px hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0"
                             :class="
                                 !isPersonal &&
-                                'border-primary bg-primary-soft/60'
+                                'border-primary/60 bg-primary-soft/60 ring-1 ring-primary/30'
                             "
                             @click="form.type = 'corporate'"
                         >
                             <Building2
-                                class="mt-0.5 size-4 shrink-0"
+                                class="mt-0.5 size-4 shrink-0 text-primary"
                                 aria-hidden="true"
                             />
                             <span>
@@ -311,15 +311,15 @@ function submit(): void {
                             type="button"
                             role="radio"
                             :aria-checked="isPersonal"
-                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            class="flex items-start gap-3 rounded-xl border bg-card p-3 text-left text-sm shadow-(--shadow-control) transition-[border-color,background-color,box-shadow,translate] duration-(--duration-base) ease-(--ease-spring) outline-none hover:-translate-y-px hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0"
                             :class="
                                 isPersonal &&
-                                'border-primary bg-primary-soft/60'
+                                'border-primary/60 bg-primary-soft/60 ring-1 ring-primary/30'
                             "
                             @click="form.type = 'personal'"
                         >
                             <Lock
-                                class="mt-0.5 size-4 shrink-0"
+                                class="mt-0.5 size-4 shrink-0 text-primary"
                                 aria-hidden="true"
                             />
                             <span>
@@ -333,7 +333,7 @@ function submit(): void {
                 </fieldset>
                 <p
                     v-else-if="isPersonal"
-                    class="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground"
+                    class="flex items-start gap-2 rounded-xl border border-dashed bg-surface-sunken/60 p-3 text-sm text-muted-foreground"
                 >
                     <Lock class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     {{
@@ -374,7 +374,7 @@ function submit(): void {
                 >
                     <div class="flex">
                         <span
-                            class="inline-flex items-center rounded-l-md border border-r-0 bg-muted px-3 font-mono text-sm text-muted-foreground"
+                            class="inline-flex items-center rounded-l-md border border-r-0 bg-primary-soft px-3 font-mono text-sm font-semibold text-primary-soft-foreground"
                             aria-hidden="true"
                             >/</span
                         >
@@ -426,7 +426,7 @@ function submit(): void {
                             type="button"
                             variant="outline"
                             size="sm"
-                            class="h-7 px-2 text-xs"
+                            class="h-7 rounded-full px-2.5 text-xs"
                             :title="`Inserta ${variable.token}`"
                             @click="insertVariable(variable.token)"
                         >
@@ -495,15 +495,15 @@ function submit(): void {
                             role="radio"
                             :aria-checked="form.is_global"
                             :disabled="!canManageGlobal"
-                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            class="flex items-start gap-3 rounded-xl border bg-card p-3 text-left text-sm shadow-(--shadow-control) transition-[border-color,background-color,box-shadow,translate] duration-(--duration-base) ease-(--ease-spring) outline-none hover:-translate-y-px hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
                             :class="
                                 form.is_global &&
-                                'border-primary bg-primary-soft/60'
+                                'border-primary/60 bg-primary-soft/60 ring-1 ring-primary/30'
                             "
                             @click="form.is_global = true"
                         >
                             <Globe
-                                class="mt-0.5 size-4 shrink-0"
+                                class="mt-0.5 size-4 shrink-0 text-primary"
                                 aria-hidden="true"
                             />
                             <span>
@@ -521,15 +521,15 @@ function submit(): void {
                             type="button"
                             role="radio"
                             :aria-checked="!form.is_global"
-                            class="flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            class="flex items-start gap-3 rounded-xl border bg-card p-3 text-left text-sm shadow-(--shadow-control) transition-[border-color,background-color,box-shadow,translate] duration-(--duration-base) ease-(--ease-spring) outline-none hover:-translate-y-px hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0"
                             :class="
                                 !form.is_global &&
-                                'border-primary bg-primary-soft/60'
+                                'border-primary/60 bg-primary-soft/60 ring-1 ring-primary/30'
                             "
                             @click="form.is_global = false"
                         >
                             <Users
-                                class="mt-0.5 size-4 shrink-0"
+                                class="mt-0.5 size-4 shrink-0 text-primary"
                                 aria-hidden="true"
                             />
                             <span>
@@ -548,18 +548,18 @@ function submit(): void {
                     <template v-if="!form.is_global">
                         <p
                             v-if="selectableDepartments.length === 0"
-                            class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
+                            class="rounded-xl border border-dashed p-3 text-sm text-muted-foreground"
                         >
                             No hay departamentos activos disponibles.
                         </p>
                         <div
                             v-else
-                            class="grid max-h-44 gap-1 overflow-y-auto rounded-lg border p-1 sm:grid-cols-2"
+                            class="grid max-h-44 gap-1 overflow-y-auto rounded-xl border bg-surface-sunken/40 scroll-fade-y p-1 sm:grid-cols-2"
                         >
                             <Label
                                 v-for="department in selectableDepartments"
                                 :key="department.id"
-                                class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 font-normal hover:bg-accent"
+                                class="flex min-h-9 cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 font-normal hover:bg-card pointer-coarse:min-h-11"
                             >
                                 <Checkbox
                                     :model-value="
@@ -589,7 +589,9 @@ function submit(): void {
                 </fieldset>
             </div>
 
-            <aside class="grid content-start gap-2 lg:sticky lg:top-0">
+            <aside
+                class="grid content-start gap-2 rounded-2xl border bg-surface-sunken/40 p-3 lg:sticky lg:top-0"
+            >
                 <p class="text-sm font-medium">Vista previa</p>
                 <p class="text-xs text-muted-foreground">
                     Con valores de ejemplo. En el chat se usarán los datos

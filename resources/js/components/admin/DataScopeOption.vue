@@ -84,7 +84,7 @@ const describedBy = computed(() =>
             cn(
                 'relative flex h-full min-w-0 flex-col gap-2 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color,box-shadow] duration-(--duration-fast) ease-(--ease-standard) outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                 selected
-                    ? 'border-primary bg-primary-soft/50 ring-1 ring-primary'
+                    ? 'border-primary accent-gradient-soft shadow-glow-ring ring-1 ring-primary'
                     : !disabled && 'interactive-surface',
                 disabled && 'cursor-not-allowed border-dashed',
             )
@@ -96,7 +96,7 @@ const describedBy = computed(() =>
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg"
                 :class="[
                     selected
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'accent-gradient shadow-glow'
                         : 'bg-muted text-muted-foreground',
                     disabled && 'opacity-60',
                 ]"
@@ -114,7 +114,7 @@ const describedBy = computed(() =>
         </span>
         <CircleCheck
             v-if="selected"
-            class="absolute top-3 right-3 size-5 text-primary"
+            class="absolute top-3 right-3 size-5 text-primary motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:fade-in"
             aria-hidden="true"
         />
         <span

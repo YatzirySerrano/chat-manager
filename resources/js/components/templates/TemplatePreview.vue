@@ -51,11 +51,11 @@ const mediaIcon = computed(() =>
 
 <template>
     <div
-        class="max-w-sm rounded-xl rounded-tl-sm border bg-card p-3 text-sm shadow-(--shadow-control)"
+        class="max-w-sm rounded-2xl rounded-tl-sm border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-card p-3 text-sm shadow-float"
     >
         <div
             v-if="header && header.format !== 'TEXT'"
-            class="mb-2 flex h-28 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+            class="mb-2 flex h-28 items-center justify-center rounded-xl bg-linear-to-br from-muted to-surface-sunken text-muted-foreground"
         >
             <component :is="mediaIcon" class="size-8" aria-hidden="true" />
             <span class="sr-only">Encabezado multimedia</span>
@@ -77,12 +77,12 @@ const mediaIcon = computed(() =>
 
         <ul
             v-if="template.structure.buttons.length > 0"
-            class="mt-3 grid gap-1 border-t pt-2"
+            class="-mx-3 mt-3 -mb-3 grid divide-y border-t"
         >
             <li
                 v-for="(button, index) in template.structure.buttons"
                 :key="index"
-                class="flex items-center justify-center gap-1.5 py-1 text-sm font-medium text-primary"
+                class="flex items-center justify-center gap-1.5 py-2 text-sm font-medium text-primary"
             >
                 <ExternalLink
                     v-if="button.type === 'URL'"

@@ -15,7 +15,9 @@ import {
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import StatusPill from '@/components/admin/StatusPill.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import AutoMessagePreview from '@/components/connections/AutoMessagePreview.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagnosticsCard.vue';
@@ -38,7 +40,6 @@ import FormField from '@/components/FormField.vue';
 import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -74,8 +75,11 @@ import type {
     Connection,
     ConnectionDiagnostics,
     ConnectionMessageKind,
+    ConnectionChannel,
     ConnectionOption,
 } from '@/types';
+import '@/components/admin/admin.css';
+import '@/components/connections/connections.css';
 
 defineOptions({
     layout: {
@@ -133,6 +137,9 @@ type ConnectionForm = {
 
 const connection = computed(() => props.connection);
 const isEditing = computed(() => connection.value !== null);
+/* The channel option's value is one of the connection channels. */
+const channelValue = computed(() => props.channel.value as ConnectionChannel);
+
 const isWebChat = computed(() => props.channel.value === 'web_chat');
 /**
  * WhatsApp through WhatsApp Web (QR): no Meta identifiers, secrets, webhook
@@ -688,7 +695,8 @@ const flaggedSections = computed(() =>
 
     <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
         <div
-            class="page-shell lg:[&_[data-slot=form-section]>div:first-child]:top-32"
+            class="connection-form page-shell lg:[&_[data-slot=form-section]>div:first-child]:top-32"
+            :data-channel-theme="channel.value"
         >
             <PageHeader
                 help="conexiones"
@@ -704,24 +712,40 @@ const flaggedSections = computed(() =>
                 "
             >
                 <template #eyebrow>
-                    <Link
-                        :href="connectionsIndex()"
-                        prefetch
-                        class="group/back inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                    >
-                        <ArrowLeft
-                            class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/back:-translate-x-0.5"
-                            aria-hidden="true"
-                        />
-                        Conexiones
-                    </Link>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <Link
+                            :href="connectionsIndex()"
+                            prefetch
+                            class="group/back inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                        >
+                            <ArrowLeft
+                                class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/back:-translate-x-0.5"
+                                aria-hidden="true"
+                            />
+                            Conexiones
+                        </Link>
+                        <span class="h-4 w-px bg-border" aria-hidden="true" />
+                        <span
+                            class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+                        >
+                            <span
+                                class="channel-tile size-7 rounded-lg"
+                                aria-hidden="true"
+                            >
+                                <ChannelIcon
+                                    :channel="channelValue"
+                                    class="size-3.5"
+                                />
+                            </span>
+                            {{ channel.label }}
+                        </span>
+                    </div>
                 </template>
                 <template v-if="connection" #actions>
                     <DeletedBadge v-if="connection.is_deleted" feminine />
-                    <StatusBadge
-                        :active="connection.is_active"
-                        active-label="Activa"
-                        inactive-label="Inactiva"
+                    <StatusPill
+                        :label="connection.is_active ? 'Activa' : 'Inactiva'"
+                        :tone="connection.is_active ? 'success' : 'muted'"
                     />
                     <ConnectionHealthBadge :health="connection.health" />
                 </template>
@@ -759,7 +783,7 @@ const flaggedSections = computed(() =>
 
             <p
                 v-else-if="!can.update"
-                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground"
+                class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-float"
             >
                 <Lock class="size-4" aria-hidden="true" />
                 Puedes consultar esta conexión, pero no modificarla.
@@ -1412,10 +1436,11 @@ const flaggedSections = computed(() =>
                             <div
                                 v-for="definition in messageDefinitions"
                                 :key="definition.kind"
-                                class="grid content-start gap-2 rounded-xl border bg-card p-4 transition-colors sm:p-5"
-                                :class="
-                                    messageEnabled(definition.kind) &&
-                                    'border-primary/35'
+                                class="connection-message grid content-start gap-2 rounded-xl border bg-card p-4 transition-[border-color,box-shadow] duration-(--duration-base) sm:p-5"
+                                :data-enabled="
+                                    messageEnabled(definition.kind)
+                                        ? ''
+                                        : undefined
                                 "
                             >
                                 <div
@@ -1645,10 +1670,11 @@ const flaggedSections = computed(() =>
         <div
             v-if="can.update"
             data-dock-bottom
-            class="sticky bottom-0 z-10 flex items-center gap-3 border-t bg-background/85 px-4 py-3 backdrop-blur-md md:px-6 lg:px-8 min-[100rem]:px-10"
+            class="sticky bottom-0 z-10 flex items-center gap-3 border-t border-border/70 bg-background/75 px-4 py-3 shadow-[0_-12px_24px_-20px_color-mix(in_oklch,var(--shadow-ink,black)_50%,transparent)] backdrop-blur-[14px] backdrop-saturate-150 md:px-6 lg:px-8 min-[100rem]:px-10"
         >
             <Button
                 type="submit"
+                class="shadow-glow"
                 :disabled="validation.requiresChanges && !validation.hasChanges"
                 :loading="form.processing"
             >
@@ -1671,7 +1697,7 @@ const flaggedSections = computed(() =>
                 class="flex items-center gap-2 text-sm text-muted-foreground max-sm:sr-only"
             >
                 <span
-                    class="size-1.5 rounded-full bg-warning"
+                    class="live-dot size-1.5 rounded-full bg-warning text-warning"
                     aria-hidden="true"
                 />
                 Cambios sin guardar

@@ -9,17 +9,18 @@ import {
     ShieldCheck,
     Upload,
 } from '@lucide/vue';
-import EmptyState from '@/components/EmptyState.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FormField from '@/components/FormField.vue';
 import {
     FORMAT_DISCLAIMER,
-    BATCH_STATUS_BADGE,
+    BATCH_STATUS_TONE,
     formatNumber,
 } from '@/components/history-import/labels';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -138,11 +139,14 @@ const steps = [
             <li
                 v-for="(item, position) in steps"
                 :key="item.title"
-                class="flex gap-3 rounded-xl border bg-card p-4"
+                class="admin-card relative flex gap-3 p-4"
             >
                 <span
-                    class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary-soft-foreground"
-                >
+                    v-if="position < steps.length - 1"
+                    class="absolute top-1/2 -right-3 hidden h-px w-3 bg-linear-to-r from-border to-transparent md:block"
+                    aria-hidden="true"
+                />
+                <span class="admin-icon-tile size-10">
                     <component
                         :is="item.icon"
                         class="size-4"
@@ -168,7 +172,7 @@ const steps = [
                 title="Nueva importación"
                 description="Crea un lote para subir sus archivos. Puedes dejarlo a medias y volver después."
                 body-class="p-4 sm:p-5"
-                class="xl:sticky xl:top-20"
+                class="self-start rounded-2xl bg-card/85 backdrop-blur-md xl:sticky xl:top-20"
                 data-tour="history-import.create"
             >
                 <form
@@ -232,7 +236,7 @@ const steps = [
                     <div class="flex justify-end md:col-span-3 xl:col-span-1">
                         <Button
                             type="submit"
-                            class="pointer-coarse:h-11"
+                            class="shadow-glow pointer-coarse:h-11"
                             :disabled="form.processing"
                             :loading="form.processing"
                         >
@@ -246,11 +250,13 @@ const steps = [
             <SurfaceCard
                 title="Lotes de importación"
                 description="Los últimos 50 lotes, del más reciente al más antiguo."
+                class="admin-list overflow-clip"
                 data-tour="history-import.batches"
             >
-                <EmptyState
+                <FilteredEmpty
                     v-if="batches.length === 0"
-                    class="border-none"
+                    :narrowed="false"
+                    narrowed-title=""
                     :icon="FileArchive"
                     title="Aún no hay importaciones"
                     :description="
@@ -259,17 +265,23 @@ const steps = [
                             : 'Cuando alguien con permiso cree un lote, aparecerá aquí.'
                     "
                 />
-                <ul v-else class="divide-y" aria-label="Lotes de importación">
-                    <li
-                        v-for="batch in batches"
-                        :key="batch.id"
-                        class="row-accent"
-                    >
+                <ul
+                    v-else
+                    class="grid reveal-stagger gap-0.5 p-1.5"
+                    aria-label="Lotes de importación"
+                >
+                    <li v-for="batch in batches" :key="batch.id">
                         <Link
                             :href="importShow(batch.id)"
-                            class="group/row flex flex-col gap-2 px-4 py-3.5 transition-colors outline-none hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:flex-row sm:items-center sm:gap-4 sm:px-5"
+                            class="list-row group/row flex flex-col gap-2 px-3 py-3 outline-none sm:flex-row sm:items-center sm:gap-4 sm:px-4"
                             :data-batch="batch.id"
                         >
+                            <span
+                                class="admin-icon-tile hidden size-10 sm:inline-flex"
+                                aria-hidden="true"
+                            >
+                                <FileArchive class="size-4" />
+                            </span>
                             <span class="min-w-0 flex-1 space-y-0.5">
                                 <span
                                     class="flex flex-wrap items-center gap-2 font-medium"
@@ -277,13 +289,15 @@ const steps = [
                                     <span class="min-w-0 wrap-anywhere">
                                         {{ batch.label ?? `Lote ${batch.id}` }}
                                     </span>
-                                    <Badge
-                                        :variant="
-                                            BATCH_STATUS_BADGE[batch.status]
+                                    <StatusPill
+                                        :label="batch.status_label"
+                                        :tone="
+                                            BATCH_STATUS_TONE[batch.status].tone
                                         "
-                                    >
-                                        {{ batch.status_label }}
-                                    </Badge>
+                                        :live="
+                                            BATCH_STATUS_TONE[batch.status].live
+                                        "
+                                    />
                                 </span>
                                 <span
                                     class="block text-xs text-muted-foreground"
@@ -306,9 +320,13 @@ const steps = [
                                 v-if="batch.result"
                                 class="text-xs text-muted-foreground tabular-nums sm:text-right"
                             >
-                                {{ formatNumber(batch.result.imported) }}
+                                <span class="font-semibold text-foreground">{{
+                                    formatNumber(batch.result.imported)
+                                }}</span>
                                 importadas ·
-                                {{ formatNumber(batch.result.archived) }}
+                                <span class="font-semibold text-foreground">{{
+                                    formatNumber(batch.result.archived)
+                                }}</span>
                                 archivadas
                             </span>
                             <span

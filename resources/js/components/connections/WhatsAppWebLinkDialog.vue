@@ -262,7 +262,7 @@ function countdown(seconds: number): string {
 <template>
     <Dialog :open="open" @update:open="onOpenChange">
         <DialogContent
-            class="gap-0 overflow-hidden p-0 sm:max-w-3xl"
+            class="max-h-[92dvh] gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-3xl"
             data-test="whatsapp-web-link"
         >
             <div class="grid sm:grid-cols-[19rem_minmax(0,1fr)]">
@@ -346,7 +346,7 @@ function countdown(seconds: number): string {
                                     class="grid place-items-center gap-3 text-center"
                                 >
                                     <span
-                                        class="grid size-20 place-items-center rounded-full bg-primary text-primary-foreground"
+                                        class="grid size-20 enter-spring place-items-center rounded-full accent-gradient shadow-glow"
                                     >
                                         <svg
                                             class="size-10"

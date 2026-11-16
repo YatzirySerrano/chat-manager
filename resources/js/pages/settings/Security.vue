@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
-import FormSection from '@/components/FormSection.vue';
+import { KeyRound } from '@lucide/vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import PasswordRequirements from '@/components/PasswordRequirements.vue';
@@ -75,7 +76,8 @@ defineOptions({
     <Head title="Seguridad" />
 
     <form novalidate @submit.prevent="submit">
-        <FormSection
+        <SettingsSection
+            :icon="KeyRound"
             title="Contraseña"
             description="Usa una contraseña larga y que no repitas en otro sitio. Al cambiarla se cierran tus demás sesiones."
         >
@@ -155,13 +157,14 @@ defineOptions({
 
             <template #footer>
                 <Button
+                    type="submit"
                     :loading="form.processing"
                     data-test="update-password-button"
                 >
                     Guardar
                 </Button>
             </template>
-        </FormSection>
+        </SettingsSection>
     </form>
 
     <ManageTwoFactor

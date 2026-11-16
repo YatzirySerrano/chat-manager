@@ -31,6 +31,13 @@ class TeamAttachmentController extends Controller
      * Opened on its own tab, a file is an isolated document that may only
      * draw or play itself (the browser's media document needs `media-src`).
      */
+    /**
+     * The file behind an attachment URL never changes: the viewer's own
+     * browser keeps it for a week (never a shared cache) instead of downloading
+     * it again every time the thread is painted.
+     */
+    private const CACHE_CONTROL = 'private, max-age=604800';
+
     private const SANDBOX = "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox";
 
     public function show(Request $request, TeamThread $thread, TeamMessage $message, TeamAttachment $attachment, MediaThumbnails $thumbnails): Response
@@ -65,7 +72,7 @@ class TeamAttachmentController extends Controller
                 return $disk->response($thumbnail['path'], (pathinfo($attachment->original_name, PATHINFO_FILENAME) ?: 'imagen').'.jpg', [
                     'Content-Type' => $thumbnail['mime'],
                     'X-Content-Type-Options' => 'nosniff',
-                    'Cache-Control' => 'private, no-store',
+                    'Cache-Control' => self::CACHE_CONTROL,
                     'Referrer-Policy' => 'no-referrer',
                     'Content-Security-Policy' => self::SANDBOX,
                 ], 'inline');
@@ -77,7 +84,7 @@ class TeamAttachmentController extends Controller
         $headers = [
             'Content-Type' => $attachment->mime_type,
             'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'private, no-store',
+            'Cache-Control' => self::CACHE_CONTROL,
             'Referrer-Policy' => 'no-referrer',
         ];
 
@@ -109,7 +116,7 @@ class TeamAttachmentController extends Controller
                 : RangedStream::response($request, fn () => $disk->readStream($attachment->path), (int) $disk->size($attachment->path), $headers);
 
             // A file response marks itself public: internal files never are.
-            $response->headers->set('Cache-Control', 'private, no-store');
+            $response->headers->set('Cache-Control', self::CACHE_CONTROL);
 
             return $response;
         }

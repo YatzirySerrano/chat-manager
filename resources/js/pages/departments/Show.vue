@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     Building2,
     Pencil,
+    Plug,
     RotateCcw,
     Trash2,
     UserMinus,
@@ -23,22 +24,14 @@ import DepartmentMetricsCard from '@/components/departments/DepartmentMetricsCar
 import DepartmentQuickRepliesCard from '@/components/departments/DepartmentQuickRepliesCard.vue';
 import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWelcomeMessageCard.vue';
 import DepartmentServiceRulesCard from '@/components/service-rules/DepartmentServiceRulesCard.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryHero from '@/components/directory/DirectoryHero.vue';
+import DirectoryRow from '@/components/directory/DirectoryRow.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
-import { getInitials } from '@/composables/useInitials';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
-import { colorPresentations } from '@/lib/colors';
 import { departmentDeletionCopy } from '@/lib/deletionCopy';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { toastFirstError } from '@/lib/toastErrors';
@@ -176,55 +169,114 @@ function confirmRemoval(): void {
     <Head :title="department.name" />
 
     <div class="page-shell">
-        <PageHeader
-            help="departamentos"
-            show-title
-            :title="department.name"
-            :description="department.description ?? undefined"
-        >
-            <template #eyebrow>
-                <div class="flex items-center gap-2">
-                    <span
-                        class="flex size-6 items-center justify-center rounded"
-                        v-bind="colorPresentations(department.color).soft"
+        <DirectoryHero>
+            <template #avatar>
+                <DirectoryAvatar
+                    :name="department.name"
+                    :icon="Building2"
+                    :color="department.color"
+                    :tone="department.is_deleted ? 'muted' : 'auto'"
+                    size="xl"
+                    shape="square"
+                    class="dir-hero-avatar"
+                />
+            </template>
+            <PageHeader
+                help="departamentos"
+                show-title
+                :title="department.name"
+                :description="department.description ?? undefined"
+            >
+                <template v-if="department.is_deleted" #eyebrow>
+                    <DeletedBadge />
+                </template>
+                <template #actions>
+                    <Button
+                        v-if="can.update"
+                        variant="outline"
+                        class="bg-card/70"
+                        @click="editOpen = true"
                     >
-                        <Building2 class="size-3.5" aria-hidden="true" />
-                    </span>
-                    <DeletedBadge v-if="department.is_deleted" />
-                </div>
+                        <Pencil />
+                        Editar
+                    </Button>
+                    <Button
+                        v-if="can.delete"
+                        variant="outline"
+                        class="bg-card/70 text-destructive hover:text-destructive"
+                        @click="deletion.ask('delete', department)"
+                    >
+                        <Trash2 />
+                        Eliminar
+                    </Button>
+                    <Button
+                        v-if="can.restore"
+                        variant="outline"
+                        class="bg-card/70"
+                        @click="deletion.ask('restore', department)"
+                    >
+                        <RotateCcw />
+                        Restaurar
+                    </Button>
+                    <Button
+                        v-if="can.manageMembers"
+                        class="accent-gradient glow"
+                        @click="addOpen = true"
+                    >
+                        <UserPlus />
+                        Agregar miembros
+                    </Button>
+                </template>
+            </PageHeader>
+            <template #footer>
+                <span
+                    class="dir-stat inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+                >
+                    <Users
+                        class="size-3.5 text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <span class="font-semibold tabular-nums">{{
+                        department.members_count ?? members.length
+                    }}</span>
+                    {{
+                        (department.members_count ?? members.length) === 1
+                            ? 'miembro'
+                            : 'miembros'
+                    }}
+                </span>
+                <span
+                    class="dir-stat inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+                >
+                    <Plug
+                        class="size-3.5 text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <span class="font-semibold tabular-nums">{{
+                        connections.length
+                    }}</span>
+                    {{ connections.length === 1 ? 'conexión' : 'conexiones' }}
+                </span>
+                <span
+                    class="dir-stat inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
+                >
+                    <span
+                        class="size-2 rounded-full bg-current"
+                        :class="
+                            automation.hours.is_open
+                                ? 'live-dot text-success'
+                                : 'text-warning'
+                        "
+                        aria-hidden="true"
+                    />
+                    {{
+                        automation.hours.is_open
+                            ? 'Dentro del horario'
+                            : 'Fuera del horario'
+                    }}
+                </span>
             </template>
-            <template #actions>
-                <Button
-                    v-if="can.update"
-                    variant="outline"
-                    @click="editOpen = true"
-                >
-                    <Pencil />
-                    Editar
-                </Button>
-                <Button
-                    v-if="can.delete"
-                    variant="outline"
-                    class="text-destructive hover:text-destructive"
-                    @click="deletion.ask('delete', department)"
-                >
-                    <Trash2 />
-                    Eliminar
-                </Button>
-                <Button
-                    v-if="can.restore"
-                    variant="outline"
-                    @click="deletion.ask('restore', department)"
-                >
-                    <RotateCcw />
-                    Restaurar
-                </Button>
-                <Button v-if="can.manageMembers" @click="addOpen = true">
-                    <UserPlus />
-                    Agregar miembros
-                </Button>
-            </template>
-        </PageHeader>
+        </DirectoryHero>
 
         <DeletedRecordNotice
             v-if="department.is_deleted"
@@ -287,155 +339,165 @@ function confirmRemoval(): void {
             :can-update="can.update"
         />
 
-        <h2 class="-mb-2 font-display text-xl font-semibold">Miembros</h2>
-
-        <EmptyState
-            v-if="members.length === 0"
-            data-tour="department.members"
-            :icon="Users"
-            title="Este departamento no tiene miembros"
-            :description="
-                can.manageMembers
-                    ? 'Agrega a las personas que atenderán o supervisarán sus conversaciones.'
-                    : 'Un administrador debe asignar miembros.'
-            "
-        >
-            <Button v-if="can.manageMembers" @click="addOpen = true">
-                <UserPlus />
-                Agregar miembros
-            </Button>
-        </EmptyState>
-
-        <template v-else>
-            <section
-                v-for="(group, position) in memberGroups"
-                :key="group.key"
-                :data-tour="position === 0 ? 'department.members' : undefined"
-                class="space-y-3"
-                :aria-labelledby="`${group.key}-heading`"
-            >
-                <h2
-                    :id="`${group.key}-heading`"
-                    class="flex items-center gap-2 text-sm font-medium"
-                >
-                    {{ group.title }}
-                    <span class="text-muted-foreground tabular-nums">
-                        {{ group.members.length }}
-                    </span>
-                </h2>
-
-                <div
-                    v-if="group.members.length > 0"
-                    class="overflow-hidden rounded-xl border bg-card"
-                >
-                    <Table>
-                        <TableHeader>
-                            <TableRow class="hover:bg-transparent">
-                                <TableHead>Nombre</TableHead>
-                                <TableHead class="hidden sm:table-cell"
-                                    >Rol</TableHead
-                                >
-                                <TableHead>Estado</TableHead>
-                                <TableHead class="hidden md:table-cell">
-                                    Último acceso
-                                </TableHead>
-                                <TableHead class="w-24">
-                                    <span class="sr-only">Acciones</span>
-                                </TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            <TableRow
-                                v-for="member in group.members"
-                                :key="member.id"
-                                :class="
-                                    member.is_deleted && 'text-muted-foreground'
-                                "
-                            >
-                                <TableCell>
-                                    <div class="flex items-center gap-3">
-                                        <Avatar class="size-8 rounded-md">
-                                            <AvatarFallback
-                                                class="rounded-md text-xs"
-                                            >
-                                                {{ getInitials(member.name) }}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div class="min-w-0">
-                                            <p class="truncate font-medium">
-                                                {{ member.name }}
-                                            </p>
-                                            <p
-                                                class="truncate text-xs text-muted-foreground"
-                                            >
-                                                {{ member.email }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </TableCell>
-                                <TableCell class="hidden sm:table-cell">
-                                    <RoleBadge :role="member.role" />
-                                </TableCell>
-                                <TableCell>
-                                    <DeletedBadge v-if="member.is_deleted" />
-                                    <span
-                                        v-else
-                                        class="text-xs text-muted-foreground"
-                                        >Activo</span
-                                    >
-                                </TableCell>
-                                <TableCell class="hidden md:table-cell">
-                                    <span
-                                        v-if="member.last_login_at"
-                                        :title="
-                                            formatDateTime(member.last_login_at)
-                                        "
-                                    >
-                                        {{
-                                            formatRelative(member.last_login_at)
-                                        }}
-                                    </span>
-                                    <span
-                                        v-else
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        Nunca
-                                    </span>
-                                </TableCell>
-                                <TableCell class="text-right">
-                                    <Button
-                                        v-if="
-                                            removableMemberIds.includes(
-                                                member.id,
-                                            )
-                                        "
-                                        variant="ghost"
-                                        size="sm"
-                                        :aria-label="`Retirar a ${member.name}`"
-                                        @click="askRemoval(member)"
-                                    >
-                                        <UserMinus />
-                                        <span class="hidden sm:inline"
-                                            >Retirar</span
-                                        >
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        </TableBody>
-                    </Table>
+        <section class="grid gap-4" aria-labelledby="department-members-title">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2
+                        id="department-members-title"
+                        class="font-display text-xl font-semibold"
+                    >
+                        Miembros
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Quienes atienden o supervisan las conversaciones del
+                        departamento, por rol.
+                    </p>
                 </div>
-                <p
-                    v-else
-                    class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+                <Button
+                    v-if="can.manageMembers && members.length > 0"
+                    variant="outline"
+                    size="sm"
+                    class="rounded-full max-sm:min-h-11 max-sm:w-full"
+                    @click="addOpen = true"
                 >
-                    {{
-                        group.key === 'supervisors'
-                            ? 'Sin supervisores asignados.'
-                            : 'Sin agentes asignados.'
-                    }}
-                </p>
-            </section>
-        </template>
+                    <UserPlus />
+                    Agregar miembros
+                </Button>
+            </div>
+
+            <div
+                v-if="members.length === 0"
+                class="surface-float"
+                data-tour="department.members"
+            >
+                <FilteredEmpty
+                    :narrowed="false"
+                    narrowed-title=""
+                    title="Este departamento no tiene miembros"
+                    :description="
+                        can.manageMembers
+                            ? 'Agrega a las personas que atenderán o supervisarán sus conversaciones.'
+                            : 'Un administrador debe asignar miembros.'
+                    "
+                    :icon="Users"
+                >
+                    <Button
+                        v-if="can.manageMembers"
+                        class="rounded-full accent-gradient glow"
+                        @click="addOpen = true"
+                    >
+                        <UserPlus />
+                        Agregar miembros
+                    </Button>
+                </FilteredEmpty>
+            </div>
+
+            <template v-else>
+                <section
+                    v-for="(group, position) in memberGroups"
+                    :key="group.key"
+                    :data-tour="
+                        position === 0 ? 'department.members' : undefined
+                    "
+                    class="dir-panel"
+                    :aria-labelledby="`members-group-${group.key}`"
+                >
+                    <header
+                        class="flex items-center gap-2 border-b border-[color-mix(in_oklch,var(--border)_70%,transparent)] px-4 py-3"
+                    >
+                        <h3
+                            :id="`members-group-${group.key}`"
+                            class="text-sm font-semibold"
+                        >
+                            {{ group.title }}
+                        </h3>
+                        <span
+                            class="rounded-full bg-muted px-2 text-xs font-medium text-muted-foreground tabular-nums"
+                        >
+                            {{ group.members.length }}
+                        </span>
+                    </header>
+                    <ul class="dir-rows" role="list">
+                        <DirectoryRow
+                            v-for="member in group.members"
+                            :key="member.id"
+                            :muted="member.is_deleted"
+                        >
+                            <template #leading>
+                                <DirectoryAvatar
+                                    :name="member.name"
+                                    :tone="member.is_deleted ? 'muted' : 'auto'"
+                                />
+                            </template>
+                            <template #title>
+                                <span class="font-sans">{{ member.name }}</span>
+                            </template>
+                            <template #subtitle>{{ member.email }}</template>
+                            <template #badges>
+                                <RoleBadge :role="member.role" />
+                                <DeletedBadge v-if="member.is_deleted" />
+                                <span
+                                    class="text-xs text-muted-foreground md:hidden"
+                                    :title="
+                                        member.last_login_at
+                                            ? formatDateTime(
+                                                  member.last_login_at,
+                                              )
+                                            : undefined
+                                    "
+                                >
+                                    {{
+                                        member.last_login_at
+                                            ? `Último acceso ${formatRelative(member.last_login_at)}`
+                                            : 'Nunca ha entrado'
+                                    }}
+                                </span>
+                            </template>
+                            <template #aside>
+                                <span
+                                    class="w-40 text-right text-xs"
+                                    :title="
+                                        member.last_login_at
+                                            ? formatDateTime(
+                                                  member.last_login_at,
+                                              )
+                                            : undefined
+                                    "
+                                >
+                                    <span class="block text-muted-foreground"
+                                        >Último acceso</span
+                                    >
+                                    <span class="text-foreground">{{
+                                        member.last_login_at
+                                            ? formatRelative(
+                                                  member.last_login_at,
+                                              )
+                                            : 'Nunca'
+                                    }}</span>
+                                </span>
+                            </template>
+                            <template
+                                v-if="removableMemberIds.includes(member.id)"
+                                #actions
+                            >
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:size-10 max-sm:p-0"
+                                    :aria-label="`Retirar a ${member.name}`"
+                                    @click="askRemoval(member)"
+                                >
+                                    <UserMinus />
+                                    <span class="hidden sm:inline"
+                                        >Retirar</span
+                                    >
+                                </Button>
+                            </template>
+                        </DirectoryRow>
+                    </ul>
+                </section>
+            </template>
+        </section>
 
         <DepartmentFormDialog
             v-if="can.update"

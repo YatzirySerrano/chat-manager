@@ -14,6 +14,7 @@ import { WHATSAPP_WEB_PROVIDER } from '@/lib/whatsappWeb';
 import { create as createConnection } from '@/routes/connections';
 import { show as metaAuthorization } from '@/routes/connections/meta';
 import type { ConnectionChannel, MetaChannelAvailability } from '@/types';
+import '@/components/admin/admin.css';
 
 /**
  * First step of "Nueva conexión": choose the channel and, for WhatsApp, how
@@ -113,7 +114,7 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-lg">
+        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
             <DialogHeader>
                 <DialogTitle>Nueva conexión</DialogTitle>
                 <DialogDescription>
@@ -121,39 +122,42 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
                     puede cambiar después de crear la conexión.
                 </DialogDescription>
             </DialogHeader>
-            <ul class="grid gap-3">
+            <ul class="grid reveal-stagger gap-2.5">
                 <li v-for="choice in choices" :key="choice.key">
                     <Link
                         :href="hrefFor(choice)"
-                        class="flex items-center gap-3 rounded-lg border p-4 transition-colors hover:border-primary/40 hover:bg-primary-soft/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        class="group/choice admin-card relative isolate flex items-center gap-3.5 overflow-hidden p-3.5 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:p-4"
+                        data-interactive
                         :data-channel="choice.channel"
+                        :data-channel-theme="choice.channel"
                         :data-provider="choice.provider"
                     >
+                        <span class="channel-wash -z-10" aria-hidden="true" />
                         <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                            class="channel-tile size-11 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/choice:scale-105"
+                            aria-hidden="true"
                         >
                             <QrCode
                                 v-if="choice.provider === WHATSAPP_WEB_PROVIDER"
                                 class="size-5"
-                                aria-hidden="true"
                             />
                             <ChannelIcon
                                 v-else
                                 :channel="choice.channel"
                                 class="size-5"
-                                aria-hidden="true"
                             />
                         </span>
                         <span class="min-w-0 flex-1">
                             <span class="block text-sm font-semibold">{{
                                 choice.title
                             }}</span>
-                            <span class="block text-sm text-muted-foreground">{{
-                                choice.description
-                            }}</span>
+                            <span
+                                class="block text-sm text-pretty text-muted-foreground"
+                                >{{ choice.description }}</span
+                            >
                             <span
                                 v-if="needsMetaApp(choice.channel)"
-                                class="mt-1 block text-xs font-medium text-warning"
+                                class="mt-1.5 block text-xs font-medium text-warning-soft-foreground"
                             >
                                 Requiere configurar la aplicación de Meta en el
                                 servidor; solicítalo al administrador del
@@ -161,7 +165,7 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
                             </span>
                         </span>
                         <ChevronRight
-                            class="size-4 shrink-0 text-muted-foreground"
+                            class="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/choice:translate-x-0.5 group-hover/choice:text-foreground"
                             aria-hidden="true"
                         />
                     </Link>

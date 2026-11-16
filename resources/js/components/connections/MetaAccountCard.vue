@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { RefreshCw, Unplug } from '@lucide/vue';
+import { Check, RefreshCw, Unplug } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -40,9 +41,7 @@ const stateLabel = computed(
 );
 
 const stateTone = computed(() =>
-    account.value.state === 'authorized'
-        ? 'bg-success-soft text-success-soft-foreground'
-        : 'bg-warning-soft text-warning-soft-foreground',
+    account.value.state === 'authorized' ? 'success' : 'warning',
 );
 
 const subscriptionLabel = computed(() => {
@@ -93,25 +92,26 @@ function confirmDisconnect(): void {
         body-class="grid gap-5 p-5"
     >
         <template #actions>
-            <span
-                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="stateTone"
-                >{{ stateLabel }}</span
-            >
+            <StatusPill
+                :label="stateLabel"
+                :tone="stateTone"
+                :live="account.state === 'authorized'"
+            />
         </template>
 
-        <div class="flex items-center gap-4">
+        <div
+            class="relative isolate flex items-center gap-4 overflow-hidden rounded-xl p-3 ring-1 ring-border/60 ring-inset"
+            :data-channel-theme="channel.value"
+        >
+            <span class="channel-wash -z-10" aria-hidden="true" />
             <img
                 v-if="account.picture"
                 :src="account.picture"
                 alt=""
-                class="size-14 shrink-0 rounded-full border object-cover"
+                class="size-14 shrink-0 rounded-full object-cover shadow-float ring-2 ring-card"
                 referrerpolicy="no-referrer"
             />
-            <span
-                v-else
-                class="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
-            >
+            <span v-else class="channel-tile size-14 rounded-full">
                 <ChannelIcon
                     :channel="channel.value"
                     class="size-6"
@@ -119,7 +119,7 @@ function confirmDisconnect(): void {
                 />
             </span>
             <div class="min-w-0">
-                <p class="truncate font-semibold">
+                <p class="truncate font-display text-lg font-semibold">
                     {{ account.name ?? 'Sin nombre' }}
                 </p>
                 <p class="text-xs text-muted-foreground">
@@ -128,8 +128,8 @@ function confirmDisconnect(): void {
             </div>
         </div>
 
-        <dl class="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
+        <dl class="grid gap-2.5 text-sm sm:grid-cols-2">
+            <div class="rounded-lg bg-surface-sunken/60 px-3 py-2.5">
                 <dt class="text-xs text-muted-foreground">Autorizada</dt>
                 <dd>
                     {{
@@ -144,7 +144,7 @@ function confirmDisconnect(): void {
                     >
                 </dd>
             </div>
-            <div>
+            <div class="rounded-lg bg-surface-sunken/60 px-3 py-2.5">
                 <dt class="text-xs text-muted-foreground">
                     Vigencia del token
                 </dt>
@@ -157,7 +157,9 @@ function confirmDisconnect(): void {
                     <template v-else>Sin vencimiento</template>
                 </dd>
             </div>
-            <div class="sm:col-span-2">
+            <div
+                class="rounded-lg bg-surface-sunken/60 px-3 py-2.5 sm:col-span-2"
+            >
                 <dt class="text-xs text-muted-foreground">Webhook</dt>
                 <dd>
                     {{ subscriptionLabel }}
@@ -175,8 +177,13 @@ function confirmDisconnect(): void {
 
         <div v-if="account.granted_scopes.length > 0" class="space-y-2">
             <p class="text-xs text-muted-foreground">Permisos concedidos</p>
-            <ul class="grid gap-1 text-sm">
-                <li v-for="scope in account.granted_scopes" :key="scope.value">
+            <ul class="flex flex-wrap gap-1.5 text-sm">
+                <li
+                    v-for="scope in account.granted_scopes"
+                    :key="scope.value"
+                    class="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success-soft-foreground"
+                >
+                    <Check class="size-3" aria-hidden="true" />
                     {{ scope.label }}
                 </li>
             </ul>

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { index as connectionsIndex } from '@/routes/connections';
 import { authorize } from '@/routes/connections/meta';
 import type { ConnectionChannel, MetaScope } from '@/types';
+import '@/components/admin/admin.css';
 
 /**
  * Requirements of a Facebook Messenger or Instagram connection and the
@@ -83,13 +84,16 @@ async function copy(value: string, label: string): Promise<void> {
         >
             <template #eyebrow>
                 <span
-                    class="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                    class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+                    :data-channel-theme="channel.value"
                 >
-                    <ChannelIcon
-                        :channel="channel.value"
-                        class="size-4"
-                        aria-hidden="true"
-                    />
+                    <span class="channel-tile size-7 rounded-lg">
+                        <ChannelIcon
+                            :channel="channel.value"
+                            class="size-3.5"
+                            aria-hidden="true"
+                        />
+                    </span>
                     {{ channel.label }}
                 </span>
             </template>
@@ -102,6 +106,7 @@ async function copy(value: string, label: string): Promise<void> {
                 </Button>
                 <Button
                     type="button"
+                    class="shadow-glow"
                     :disabled="!configured"
                     :loading="processing"
                     @click="start"
@@ -114,12 +119,13 @@ async function copy(value: string, label: string): Promise<void> {
         <div
             v-if="!configured"
             role="alert"
-            class="flex gap-3 rounded-xl border border-transparent bg-warning-soft p-4 text-sm"
+            class="flex enter-spring gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm shadow-float"
         >
-            <TriangleAlert
-                class="mt-0.5 size-5 shrink-0 text-warning"
-                aria-hidden="true"
-            />
+            <span
+                class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning"
+            >
+                <TriangleAlert class="size-5" aria-hidden="true" />
+            </span>
             <div class="min-w-0 space-y-1">
                 <p class="font-semibold">
                     Requiere configurar la aplicación de Meta en el servidor
@@ -155,11 +161,11 @@ async function copy(value: string, label: string): Promise<void> {
                     description="Revisa que se cumplan estos requisitos de Meta."
                     body-class="p-5"
                 >
-                    <ul class="space-y-3 text-sm">
+                    <ul class="grid gap-2 text-sm">
                         <li
                             v-for="requirement in requirements"
                             :key="requirement"
-                            class="flex gap-2"
+                            class="flex gap-2.5 rounded-lg bg-surface-sunken/60 px-3 py-2.5"
                         >
                             <CircleCheck
                                 class="mt-0.5 size-4 shrink-0 text-primary"
@@ -179,11 +185,11 @@ async function copy(value: string, label: string): Promise<void> {
                     "
                     body-class="p-5"
                 >
-                    <ul class="grid gap-3 text-sm">
+                    <ul class="grid gap-2 text-sm">
                         <li
                             v-for="scope in scopes"
                             :key="scope.value"
-                            class="flex gap-2"
+                            class="flex gap-2.5 rounded-lg bg-surface-sunken/60 px-3 py-2.5"
                         >
                             <ShieldCheck
                                 class="mt-0.5 size-4 shrink-0 text-muted-foreground"
@@ -205,7 +211,7 @@ async function copy(value: string, label: string): Promise<void> {
                         <p class="font-medium">Dirección de retorno (OAuth)</p>
                         <div class="flex items-center gap-2">
                             <code
-                                class="min-w-0 flex-1 rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs break-all"
+                                class="min-w-0 flex-1 rounded-lg border bg-surface-sunken px-2.5 py-2 font-mono text-xs break-all shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_6%,transparent)]"
                                 >{{ redirectUri }}</code
                             >
                             <Button
@@ -225,7 +231,7 @@ async function copy(value: string, label: string): Promise<void> {
                         <p class="font-medium">URL del webhook</p>
                         <div class="flex items-center gap-2">
                             <code
-                                class="min-w-0 flex-1 rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-xs break-all"
+                                class="min-w-0 flex-1 rounded-lg border bg-surface-sunken px-2.5 py-2 font-mono text-xs break-all shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_6%,transparent)]"
                                 >{{ webhookUrl }}</code
                             >
                             <Button

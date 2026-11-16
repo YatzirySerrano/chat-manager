@@ -33,6 +33,7 @@ import {
     normalizeSearch,
     summarizeRole,
 } from '@/lib/roles';
+import './admin.css';
 import type {
     CatalogPermission,
     ManagedRole,
@@ -192,7 +193,9 @@ function edit(): void {
             "
             @open-auto-focus="focusTitle"
         >
-            <SheetHeader class="space-y-3 border-b px-5 pt-5 pr-12 pb-4">
+            <SheetHeader
+                class="space-y-3 border-b accent-gradient-soft px-5 pt-5 pr-12 pb-4"
+            >
                 <div class="space-y-1">
                     <p class="text-xs font-medium text-muted-foreground">
                         Permisos del rol
@@ -312,7 +315,7 @@ function edit(): void {
                                 class="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-md px-2 py-2.5 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                             >
                                 <span
-                                    class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                                    class="admin-icon-tile size-8 rounded-lg"
                                     aria-hidden="true"
                                 >
                                     <component

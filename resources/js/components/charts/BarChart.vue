@@ -261,7 +261,10 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                     v-for="(item, itemIndex) in items"
                     :key="item.key"
                     class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-md px-1.5 py-1 transition-colors duration-(--duration-fast) sm:grid-cols-[minmax(6rem,32%)_1fr] sm:items-center"
-                    :class="active === itemIndex && 'bg-muted/60'"
+                    :class="
+                        active === itemIndex &&
+                        'bg-[color-mix(in_oklch,var(--primary)_6%,transparent)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--primary)_14%,transparent)]'
+                    "
                     :data-unit="itemIndex"
                     :data-bar-row="item.key"
                     @pointerenter="hover(itemIndex)"
@@ -309,7 +312,12 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                                 }"
                             />
                             <span
-                                class="text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                                class="text-xs whitespace-nowrap tabular-nums transition-colors duration-(--duration-fast)"
+                                :class="
+                                    active === itemIndex
+                                        ? 'font-semibold text-foreground'
+                                        : 'text-muted-foreground'
+                                "
                                 :data-bar-value="seriesItem.key"
                             >
                                 {{ format(item.values[seriesIndex] ?? 0) }}
@@ -327,7 +335,7 @@ function unitIndex(itemIndex: number, seriesIndex: number): number {
                 >
                     <p v-if="item.label" class="text-sm">{{ item.label }}</p>
                     <div
-                        class="bar-grow flex h-4 w-full gap-0.5 overflow-hidden rounded-[4px]"
+                        class="bar-grow flex h-5 w-full gap-0.5 overflow-hidden rounded-md"
                         :style="{ '--i': Math.min(itemIndex, 10) }"
                     >
                         <template

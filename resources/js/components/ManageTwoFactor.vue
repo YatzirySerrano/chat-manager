@@ -2,10 +2,10 @@
 import { Form } from '@inertiajs/vue3';
 import { ShieldCheck } from '@lucide/vue';
 import { onUnmounted, ref } from 'vue';
-import FormSection from '@/components/FormSection.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import TwoFactorRecoveryCodes from '@/components/TwoFactorRecoveryCodes.vue';
 import TwoFactorSetupModal from '@/components/TwoFactorSetupModal.vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useTwoFactorAuth } from '@/composables/useTwoFactorAuth';
 import { disable, enable } from '@/routes/two-factor';
@@ -29,15 +29,17 @@ onUnmounted(() => clearTwoFactorAuthData());
 </script>
 
 <template>
-    <FormSection
+    <SettingsSection
         v-if="canManageTwoFactor"
+        :icon="ShieldCheck"
         title="Autenticación en dos pasos"
         description="Una capa extra de seguridad: además de tu contraseña se pide un código temporal de tu teléfono."
     >
-        <template #aside>
-            <Badge :variant="twoFactorEnabled ? 'success' : 'muted'">
-                {{ twoFactorEnabled ? 'Activada' : 'Desactivada' }}
-            </Badge>
+        <template #actions>
+            <StatusPill
+                :label="twoFactorEnabled ? 'Activada' : 'Desactivada'"
+                :tone="twoFactorEnabled ? 'success' : 'muted'"
+            />
         </template>
 
         <div v-if="!twoFactorEnabled" class="flex flex-col items-start gap-4">
@@ -87,5 +89,5 @@ onUnmounted(() => clearTwoFactorAuthData());
             :requiresConfirmation="requiresConfirmation"
             :twoFactorEnabled="twoFactorEnabled"
         />
-    </FormSection>
+    </SettingsSection>
 </template>

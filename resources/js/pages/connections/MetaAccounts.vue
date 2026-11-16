@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { index as connectionsIndex } from '@/routes/connections';
 import { connect, show as metaAuthorization } from '@/routes/connections/meta';
 import type { ConnectionChannel, MetaAccountCandidate } from '@/types';
+import '@/components/admin/admin.css';
 
 /**
  * Second step of a Messenger / Instagram authorization: Meta returned the
@@ -74,19 +75,19 @@ function actionLabel(account: MetaAccountCandidate): string {
             <div
                 v-for="account in accounts"
                 :key="account.id"
-                class="spotlight flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4 sm:p-5"
+                class="admin-card relative isolate flex flex-wrap items-center gap-4 overflow-hidden p-4 sm:p-5"
+                :data-channel-theme="channel.value"
+                data-interactive
             >
+                <span class="channel-wash -z-10" aria-hidden="true" />
                 <img
                     v-if="account.picture"
                     :src="account.picture"
                     alt=""
-                    class="size-12 shrink-0 rounded-full border object-cover"
+                    class="size-12 shrink-0 rounded-full object-cover shadow-float ring-2 ring-card"
                     referrerpolicy="no-referrer"
                 />
-                <span
-                    v-else
-                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
-                >
+                <span v-else class="channel-tile size-12 rounded-full">
                     <ChannelIcon
                         :channel="channel.value"
                         class="size-5"
@@ -112,7 +113,7 @@ function actionLabel(account: MetaAccountCandidate): string {
                     </p>
                     <p
                         v-if="!account.can_message"
-                        class="flex items-center gap-1 text-xs text-warning"
+                        class="flex items-center gap-1 text-xs text-warning-soft-foreground"
                     >
                         <TriangleAlert class="size-3.5" aria-hidden="true" />
                         Tu rol en esta página no permite administrar mensajes.

@@ -1,0 +1,394 @@
+/*
+  Shared look of the administration modules (users, roles, audit, settings,
+  storage, system, integrations, history, connections and the personal
+  settings). Plain CSS on top of the "Pulso" tokens (docs/ui-tokens.md): it
+  only reads variables from resources/css/app.css, so palettes and dark
+  mode follow by themselves. Motion uses transform/opacity and the global
+  reduced-motion rule turns it off.
+
+  Import it from the component that uses it: `import '@/components/admin/admin.css'`.
+  Everything sits in the `components` layer, so Tailwind utilities on the
+  same element still win.
+*/
+
+@layer components {
+    /* ───────────────────────── Lists and tables ─────────────────────────
+  `.admin-list` goes on the card that holds a table (SurfaceCard with
+  `overflow-clip`, never `overflow-hidden`, so the header can stick).
+  On wide screens the table header sticks under the app's top bar as a
+  glass strip; on phones the table keeps its sideways scroll.
+*/
+    .admin-list {
+        --admin-sticky-top: 4rem;
+        overflow: clip;
+    }
+
+    @media (max-width: 39.99rem) {
+        .admin-list {
+            --admin-sticky-top: 3.5rem;
+        }
+    }
+
+    @media (max-height: 32rem) {
+        .admin-list {
+            --admin-sticky-top: 3rem;
+        }
+    }
+
+    @media (min-width: 64rem) {
+        .admin-list [data-slot='table-container'] {
+            overflow: visible;
+        }
+
+        .admin-list thead[data-slot='table-header'] th {
+            position: sticky;
+            top: var(--admin-sticky-top);
+            z-index: 5;
+            background-color: color-mix(in oklch, var(--card) 78%, transparent);
+            backdrop-filter: blur(14px) saturate(1.5);
+            -webkit-backdrop-filter: blur(14px) saturate(1.5);
+            box-shadow: inset 0 -1px 0
+                color-mix(
+                    in oklch,
+                    var(--border-strong, var(--border)) 70%,
+                    transparent
+                );
+        }
+    }
+
+    .admin-list thead[data-slot='table-header'] th {
+        font-size: 0.75rem;
+        letter-spacing: 0.01em;
+    }
+
+    /* Rows: a soft wash and a sliver of the accent at the left edge on hover. */
+    .admin-list tbody tr[data-slot='table-row'] {
+        position: relative;
+    }
+
+    .admin-list tbody tr[data-slot='table-row'] > td:first-child {
+        position: relative;
+    }
+
+    .admin-list tbody tr[data-slot='table-row'] > td:first-child::after {
+        content: '';
+        position: absolute;
+        top: 25%;
+        bottom: 25%;
+        left: 0;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: linear-gradient(
+            180deg,
+            color-mix(in oklch, var(--primary) 60%, white),
+            var(--primary)
+        );
+        opacity: 0;
+        transform: scaleY(0.4);
+        transition:
+            opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out),
+            transform var(--duration-base, 200ms) var(--ease-spring, ease-out);
+        pointer-events: none;
+    }
+
+    .admin-list tbody tr[data-slot='table-row']:hover > td:first-child::after,
+    .admin-list
+        tbody
+        tr[data-slot='table-row']:focus-within
+        > td:first-child::after {
+        opacity: 1;
+        transform: none;
+    }
+
+    /* Row actions: quiet at rest, fully there on hover or keyboard focus. */
+    @media (hover: hover) and (pointer: fine) {
+        .admin-row-actions {
+            opacity: 0.38;
+            transform: translateX(3px);
+            transition:
+                opacity var(--duration-fast, 150ms)
+                    var(--ease-standard, ease-out),
+                transform var(--duration-base, 200ms)
+                    var(--ease-spring-soft, ease-out);
+        }
+
+        tr:hover .admin-row-actions,
+        tr:focus-within .admin-row-actions,
+        .admin-card:hover .admin-row-actions,
+        .admin-card:focus-within .admin-row-actions,
+        .admin-row-actions:has([data-state='open']) {
+            opacity: 1;
+            transform: none;
+        }
+    }
+
+    /* While a filter loads, the rows dim a little (the bar on top says why). */
+    .admin-loading {
+        opacity: 0.6;
+        transition: opacity var(--duration-fast, 150ms)
+            var(--ease-standard, ease-out);
+    }
+
+    /* The toolbar above a list: search, tabs and selects on a faint glass strip. */
+    .admin-toolbar {
+        background-color: color-mix(
+            in oklch,
+            var(--surface-sunken, var(--muted)) 45%,
+            transparent
+        );
+        border-bottom: 1px solid
+            color-mix(in oklch, var(--border) 80%, transparent);
+    }
+
+    /* ───────────────────────── Cards ─────────────────────────
+  `.admin-card` is a floating record card (grid views, connection cards):
+  a lip of light on top, lifts on hover.
+*/
+    .admin-card {
+        position: relative;
+        border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+        border-radius: var(--radius-xl, 0.875rem);
+        background: linear-gradient(
+            180deg,
+            color-mix(in oklch, var(--card) 100%, white 3%) 0%,
+            var(--card) 40%
+        );
+        box-shadow: var(--shadow-float, var(--shadow-card));
+        transition:
+            translate var(--duration-base, 200ms) var(--ease-spring, ease-out),
+            box-shadow var(--duration-base, 200ms)
+                var(--ease-out-quint, ease-out),
+            border-color var(--duration-fast, 150ms)
+                var(--ease-standard, ease-out);
+    }
+
+    @media (hover: hover) {
+        .admin-card[data-interactive]:hover,
+        .admin-card:has(a[data-card-link]:hover) {
+            translate: 0 -2px;
+            box-shadow: var(--shadow-lift, var(--shadow-hover));
+            border-color: color-mix(
+                in oklch,
+                var(--primary) 22%,
+                var(--border)
+            );
+        }
+    }
+
+    .admin-card[data-highlighted] {
+        border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+        box-shadow:
+            0 0 0 3px color-mix(in oklch, var(--primary) 16%, transparent),
+            var(--shadow-float, var(--shadow-card));
+    }
+
+    /* Glass section card of a settings form (SettingsSection). */
+    .admin-section {
+        position: relative;
+        border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+        border-radius: var(--radius-2xl, 1.125rem);
+        background-color: color-mix(in oklch, var(--card) 86%, transparent);
+        backdrop-filter: blur(14px) saturate(1.4);
+        -webkit-backdrop-filter: blur(14px) saturate(1.4);
+        box-shadow: var(--shadow-float, var(--shadow-card));
+    }
+
+    /* The icon tile of a section or a card header. */
+    .admin-icon-tile {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.75rem;
+        background: linear-gradient(
+            140deg,
+            color-mix(in oklch, var(--primary) 18%, var(--card)),
+            color-mix(in oklch, var(--primary) 7%, var(--card))
+        );
+        color: color-mix(in oklch, var(--primary) 85%, var(--foreground));
+        box-shadow:
+            inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent),
+            inset 0 1px 0 oklch(1 0 0 / 0.25);
+    }
+
+    /* ───────────────────────── Status pills ─────────────────────────
+  StatusPill: the tone colors the pill; a live one breathes (live-dot).
+*/
+    .admin-pill {
+        --pill: var(--muted-foreground);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        max-width: 100%;
+        border-radius: 9999px;
+        padding: 0.125rem 0.5rem 0.125rem 0.4375rem;
+        font-size: 0.75rem;
+        line-height: 1.25rem;
+        font-weight: 500;
+        white-space: nowrap;
+        color: color-mix(in oklch, var(--pill) 82%, var(--foreground));
+        background-color: color-mix(in oklch, var(--pill) 12%, transparent);
+        box-shadow: inset 0 0 0 1px
+            color-mix(in oklch, var(--pill) 24%, transparent);
+    }
+
+    .admin-pill[data-tone='success'] {
+        --pill: var(--success);
+    }
+
+    .admin-pill[data-tone='warning'] {
+        --pill: var(--warning);
+    }
+
+    .admin-pill[data-tone='danger'] {
+        --pill: var(--destructive);
+    }
+
+    .admin-pill[data-tone='info'] {
+        --pill: var(--info);
+    }
+
+    .admin-pill[data-tone='primary'] {
+        --pill: var(--primary);
+    }
+
+    .admin-pill[data-tone='muted'] {
+        color: var(--muted-foreground);
+        background-color: color-mix(in oklch, var(--muted) 80%, transparent);
+        box-shadow: inset 0 0 0 1px
+            color-mix(in oklch, var(--border) 80%, transparent);
+    }
+
+    .admin-pill-dot {
+        position: relative;
+        width: 0.4375rem;
+        height: 0.4375rem;
+        flex-shrink: 0;
+        border-radius: 9999px;
+        background-color: var(--pill);
+        color: var(--pill);
+    }
+
+    /* ───────────────────────── Channel identity ─────────────────────────
+  `data-channel-theme="whatsapp|messenger|instagram|web_chat"` on a card sets the
+  channel colors; `.channel-tile` and `.channel-wash` inside it use them.
+*/
+    [data-channel-theme] {
+        --channel-bg: var(--primary);
+        --channel-glow: color-mix(in oklch, var(--primary) 60%, transparent);
+        --channel-ink: var(--primary-foreground);
+    }
+
+    [data-channel-theme='whatsapp'],
+    [data-channel-theme='whatsapp_web'] {
+        --channel-bg: linear-gradient(
+            140deg,
+            oklch(0.7 0.16 150),
+            oklch(0.55 0.14 160)
+        );
+        --channel-glow: oklch(0.6 0.15 152 / 0.65);
+        --channel-ink: white;
+    }
+
+    [data-channel-theme='messenger'] {
+        --channel-bg: linear-gradient(
+            140deg,
+            oklch(0.64 0.2 250),
+            oklch(0.56 0.24 300)
+        );
+        --channel-glow: oklch(0.58 0.22 270 / 0.65);
+        --channel-ink: white;
+    }
+
+    [data-channel-theme='instagram'] {
+        --channel-bg: linear-gradient(
+            45deg,
+            oklch(0.74 0.17 70),
+            oklch(0.6 0.24 15) 50%,
+            oklch(0.52 0.23 310)
+        );
+        --channel-glow: oklch(0.6 0.24 15 / 0.55);
+        --channel-ink: white;
+    }
+
+    [data-channel-theme='web_chat'] {
+        --channel-bg: linear-gradient(
+            140deg,
+            color-mix(in oklch, var(--primary) 75%, white),
+            var(--primary)
+        );
+    }
+
+    .channel-tile {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.875rem;
+        background: var(--channel-bg, var(--primary));
+        color: var(--channel-ink, white);
+        box-shadow:
+            inset 0 1px 0 oklch(1 0 0 / 0.3),
+            inset 0 -1px 2px oklch(0 0 0 / 0.15),
+            0 6px 16px -8px var(--channel-glow, transparent);
+    }
+
+    /* A faint wash of the channel color across the top of a connection card. */
+    .channel-wash {
+        position: absolute;
+        inset: 0 0 auto;
+        height: 6rem;
+        border-radius: inherit;
+        background: radial-gradient(
+            120% 100% at 0% 0%,
+            var(--channel-glow, transparent),
+            transparent 70%
+        );
+        opacity: 0.22;
+        pointer-events: none;
+    }
+
+    /* ───────────────────────── Skeletons ───────────────────────── */
+    .admin-shimmer {
+        position: relative;
+        overflow: hidden;
+        border-radius: 9999px;
+        background-color: color-mix(
+            in oklch,
+            var(--muted-foreground) 12%,
+            transparent
+        );
+    }
+
+    .admin-shimmer::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(
+            90deg,
+            transparent,
+            color-mix(in oklch, var(--background) 70%, transparent),
+            transparent
+        );
+        animation: admin-shimmer 1.6s var(--ease-standard, ease-in-out) infinite;
+        animation-delay: calc(var(--i, 0) * 80ms);
+    }
+
+    @keyframes admin-shimmer {
+        to {
+            transform: translateX(100%);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .admin-shimmer::after {
+            display: none;
+        }
+
+        .admin-card,
+        .admin-row-actions {
+            transition: none;
+        }
+    }
+}

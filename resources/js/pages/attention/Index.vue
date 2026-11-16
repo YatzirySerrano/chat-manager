@@ -2,14 +2,15 @@
 import { Head, Link, router, useHttp, usePage, usePoll } from '@inertiajs/vue3';
 import {
     BellRing,
+    CheckCheck,
     ChevronRight,
     Clock,
     Hourglass,
     Inbox,
     Lock,
     RefreshCw,
-    Search,
     Send,
+    ShieldAlert,
     UserRoundX,
     Users,
 } from '@lucide/vue';
@@ -18,11 +19,18 @@ import AttentionAlertCard from '@/components/attention/AttentionAlertCard.vue';
 import AttentionAlertComposer from '@/components/attention/AttentionAlertComposer.vue';
 import { ALERT_SURFACE, PRIORITY_LOOK } from '@/components/attention/priority';
 import DepartmentTag from '@/components/DepartmentTag.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
+import FilterToggle from '@/components/filters/FilterToggle.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import type { ActiveFilterPill } from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
+import InsightTabs from '@/components/reports/InsightTabs.vue';
+import KpiCard from '@/components/reports/KpiCard.vue';
 import SlaMonitorPanel from '@/components/sla/SlaMonitorPanel.vue';
-import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
+import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -32,14 +40,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { useFeatures } from '@/composables/useFeatures';
 import { useLiveReload } from '@/composables/useLiveReload';
@@ -54,6 +54,7 @@ import { formatDateTime, formatRelative } from '@/lib/format';
 import type { LiveChannel } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 import { index as attentionIndex } from '@/routes/attention';
+import '@/components/reports/insights.css';
 import { show as showAlert } from '@/routes/attention/alerts';
 import type {
     AttentionAgent,
@@ -155,6 +156,23 @@ watch(
     (tab) => (activeTab.value = tab),
 );
 
+const sections = computed(() => [
+    {
+        key: 'attention' as const,
+        label: 'Seguimiento de agentes',
+        icon: Users,
+        count: awaitingTotal.value,
+        attention: true,
+        attrs: { 'data-attention-tab': 'attention' },
+    },
+    {
+        key: 'sla' as const,
+        label: 'Monitoreo de SLA',
+        icon: ShieldAlert,
+        attrs: { 'data-attention-tab': 'sla' },
+    },
+]);
+
 function selectTab(tab: 'attention' | 'sla'): void {
     if (activeTab.value === tab) {
         return;
@@ -210,6 +228,9 @@ const blockedCount = computed(
     () => props.agents.filter((agent) => agent.blocked).length,
 );
 const oldestWaiting = computed(() => props.waiting[0] ?? null);
+const withWaiting = computed(
+    () => props.agents.filter((agent) => agent.awaiting > 0).length,
+);
 
 /* Agents: search, department and «solo con clientes esperando». */
 const search = ref('');
@@ -242,7 +263,68 @@ const shownAgents = computed(() => {
     );
 });
 
+const departmentOptions = computed(() => [
+    { value: 'all', label: 'Todos los departamentos' },
+    ...props.departments.map((item) => ({
+        value: String(item.id),
+        label: item.name,
+    })),
+]);
+
+/* Applied filters as removable pills (the toggle shows its own state). */
+const pills = computed<ActiveFilterPill[]>(() => {
+    const list: ActiveFilterPill[] = [];
+    const term = search.value.trim();
+
+    if (term !== '') {
+        list.push({
+            key: 'search',
+            label: `«${term}»`,
+            remove: () => (search.value = ''),
+        });
+    }
+
+    if (department.value !== 'all') {
+        const name = props.departments.find(
+            (item) => String(item.id) === department.value,
+        )?.name;
+
+        list.push({
+            key: 'department',
+            label: name ?? 'Departamento',
+            remove: () => (department.value = 'all'),
+        });
+    }
+
+    return list;
+});
+
+const narrowed = computed(() => pills.value.length > 0 || onlyWaiting.value);
+
+function clearFilters(): void {
+    search.value = '';
+    department.value = 'all';
+    onlyWaiting.value = false;
+}
+
 const selected = ref<number[]>([]);
+
+/*
+ * The list refreshes every 30 s: someone who left the team (or the
+ * viewer's reach) must not stay counted in «N elegidos» nor receive the
+ * alert.
+ */
+watch(
+    () => props.agents,
+    (agents) => {
+        const ids = new Set(agents.map((agent) => agent.id));
+        const kept = selected.value.filter((id) => ids.has(id));
+
+        if (kept.length !== selected.value.length) {
+            selected.value = kept;
+        }
+    },
+);
 
 function toggle(id: number, checked: boolean): void {
     selected.value = checked
@@ -300,16 +382,23 @@ type AlertDetail = {
 const detailHttp = useHttp<Record<string, never>, AlertDetail>({});
 const detail = ref<AlertDetail | null>(null);
 const detailOpen = ref(false);
+const detailFailed = ref(false);
 
 async function openDetail(alert: AttentionAlertSummary): Promise<void> {
     detail.value = { alert, recipients: [] };
+    detailFailed.value = false;
     detailOpen.value = true;
 
     try {
         detail.value = await detailHttp.get(showAlert.url(alert.id));
     } catch {
         detail.value = { alert, recipients: [] };
+        detailFailed.value = true;
     }
+}
+
+function ratio(part: number, total: number): number {
+    return total === 0 ? 0 : Math.round((part / total) * 100);
 }
 
 function colorLabel(color: ColorSwatch): string {
@@ -342,8 +431,13 @@ function recipientState(recipient: AttentionAlertRecipient): string {
             description="Qué atiende cada agente, qué clientes esperan respuesta y desde cuándo. Una conversación abierta no cuenta como desatendida si el agente ya respondió y espera al cliente."
         >
             <template #actions>
-                <span class="text-xs text-muted-foreground"
-                    >Actualizado {{ formatRelative(generatedAt) }}</span
+                <span
+                    class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                    :title="formatDateTime(generatedAt)"
+                    ><span
+                        class="live-dot size-1.5 rounded-full bg-current text-success"
+                        aria-hidden="true"
+                    />Actualizado {{ formatRelative(generatedAt) }}</span
                 >
                 <Button
                     variant="outline"
@@ -358,6 +452,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                 <Button
                     v-if="can.send && agents.length > 0"
                     size="sm"
+                    class="glow"
                     data-attention-alert-all
                     @click="compose([], 'everyone')"
                 >
@@ -367,35 +462,19 @@ function recipientState(recipient: AttentionAlertRecipient): string {
             </template>
         </PageHeader>
 
-        <div
+        <InsightTabs
             v-if="phaseTwo"
-            class="flex flex-wrap gap-1 border-b pb-2"
-            role="tablist"
-            aria-label="Secciones del seguimiento"
-        >
-            <Button
-                v-for="section in [
-                    {
-                        value: 'attention' as const,
-                        label: 'Seguimiento de agentes',
-                    },
-                    { value: 'sla' as const, label: 'Monitoreo de SLA' },
-                ]"
-                :id="`attention-tab-${section.value}`"
-                :key="section.value"
-                role="tab"
-                size="sm"
-                :variant="activeTab === section.value ? 'secondary' : 'ghost'"
-                :aria-selected="activeTab === section.value"
-                :data-attention-tab="section.value"
-                @click="selectTab(section.value)"
-            >
-                {{ section.label }}
-            </Button>
-        </div>
+            :items="sections"
+            :model-value="activeTab"
+            label="Secciones del seguimiento"
+            id-prefix="attention-tab"
+            panel-prefix="attention-panel"
+            @select="selectTab"
+        />
 
         <SlaMonitorPanel
             v-if="phaseTwo && activeTab === 'sla' && slaFilters && slaOptions"
+            id="attention-panel-sla"
             role="tabpanel"
             aria-labelledby="attention-tab-sla"
             :data="sla"
@@ -405,33 +484,57 @@ function recipientState(recipient: AttentionAlertRecipient): string {
             :settings-url="settingsUrl"
         />
 
-        <template v-else>
+        <div
+            v-else
+            id="attention-panel-attention"
+            :role="phaseTwo ? 'tabpanel' : undefined"
+            :aria-labelledby="phaseTwo ? 'attention-tab-attention' : undefined"
+            class="flex flex-col gap-(--section-gap)"
+        >
             <div
                 class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+                data-attention-summary
             >
-                <StatCard
+                <KpiCard
                     label="Agentes"
                     :value="agents.length"
                     :icon="Users"
+                    plain
                     hint="Que atienden clientes dentro de tu alcance"
                 />
-                <StatCard
+                <KpiCard
                     label="Clientes esperando respuesta"
                     :value="awaitingTotal"
                     :icon="Hourglass"
+                    :tone="awaitingTotal > 0 ? 'warning' : 'success'"
+                    live
                     hint="El cliente escribió y el agente aún no responde"
                 />
-                <StatCard
+                <KpiCard
                     label="Agentes sin poder aceptar"
                     :value="control.enabled ? blockedCount : null"
                     :icon="Lock"
-                    :hint="`Con clientes esperando más de ${control.tolerance_minutes} min`"
+                    :tone="
+                        !control.enabled
+                            ? 'muted'
+                            : blockedCount > 0
+                              ? 'destructive'
+                              : 'primary'
+                    "
+                    plain
+                    :hint="
+                        control.enabled
+                            ? `Con clientes esperando más de ${control.tolerance_minutes} min`
+                            : undefined
+                    "
                     unavailable-label="El control de pendientes está desactivado"
                 />
-                <StatCard
+                <KpiCard
                     label="En cola sin agente"
                     :value="queue.count"
                     :icon="Inbox"
+                    :tone="queue.count > 0 ? 'warning' : 'primary'"
+                    live
                     :hint="
                         queue.oldest_since
                             ? `La más antigua espera desde ${formatRelative(queue.oldest_since)}`
@@ -448,62 +551,53 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                         title="Agentes"
                         description="Ordenados por acumulación: primero quienes tienen clientes esperando más tiempo."
                     >
-                        <div class="grid gap-3 px-5 pb-5">
+                        <div class="grid gap-3 px-4 pb-5 sm:px-5">
                             <div
                                 class="flex flex-col gap-2 md:flex-row md:items-center"
+                                data-attention-filters
                             >
-                                <div class="relative flex-1">
-                                    <Search
-                                        class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                                        aria-hidden="true"
-                                    />
-                                    <Input
-                                        v-model="search"
-                                        type="search"
-                                        class="pl-8"
-                                        placeholder="Buscar agente"
-                                        aria-label="Buscar agente"
-                                    />
-                                </div>
-                                <Select v-model="department">
-                                    <SelectTrigger
-                                        class="md:w-56"
-                                        aria-label="Filtrar por departamento"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all"
-                                            >Todos los departamentos</SelectItem
-                                        >
-                                        <SelectItem
-                                            v-for="item in departments"
-                                            :key="item.id"
-                                            :value="String(item.id)"
-                                            >{{ item.name }}</SelectItem
-                                        >
-                                    </SelectContent>
-                                </Select>
-                                <label
-                                    class="flex min-h-10 cursor-pointer items-center gap-2 text-sm"
-                                >
-                                    <Checkbox
-                                        :model-value="onlyWaiting"
-                                        @update:model-value="
-                                            (checked) =>
-                                                (onlyWaiting = checked === true)
-                                        "
-                                    />
-                                    Solo con clientes esperando
-                                </label>
+                                <FilterSearch
+                                    v-model="search"
+                                    placeholder="Buscar agente por nombre o correo"
+                                    label="Buscar agente"
+                                />
+                                <AppSelect
+                                    v-if="departments.length > 0"
+                                    v-model="department"
+                                    :options="departmentOptions"
+                                    aria-label="Filtrar por departamento"
+                                    class="md:w-56"
+                                />
                             </div>
+
+                            <ActiveFilters
+                                :pills="pills"
+                                :clearable="narrowed"
+                                @clear="clearFilters"
+                            >
+                                <FilterToggle
+                                    :pressed="onlyWaiting"
+                                    label="Solo con clientes esperando"
+                                    :icon="Hourglass"
+                                    :count="withWaiting"
+                                    tone="warning"
+                                    :sr-label="`${withWaiting} ${withWaiting === 1 ? 'agente' : 'agentes'}`"
+                                    @toggle="onlyWaiting = !onlyWaiting"
+                                />
+                            </ActiveFilters>
 
                             <div
                                 v-if="can.send && shownAgents.length > 0"
-                                class="flex flex-wrap items-center gap-3 rounded-lg bg-surface-sunken px-3 py-2 text-sm"
+                                class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2 text-sm transition-[background-color,border-color,box-shadow] duration-(--duration-base) ease-(--ease-standard)"
+                                :class="
+                                    selected.length > 0
+                                        ? 'border-primary/30 bg-primary-soft/70 shadow-(--shadow-control)'
+                                        : 'border-transparent bg-surface-sunken'
+                                "
+                                data-attention-selection
                             >
                                 <label
-                                    class="flex cursor-pointer items-center gap-2"
+                                    class="flex min-h-9 cursor-pointer items-center gap-2"
                                 >
                                     <Checkbox
                                         :model-value="allShownSelected"
@@ -514,17 +608,25 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                     />
                                     Elegir los de la lista
                                 </label>
-                                <span class="text-muted-foreground"
-                                    >{{ selected.length }}
+                                <span
+                                    class="text-muted-foreground tabular-nums"
+                                    aria-live="polite"
+                                >
+                                    <span
+                                        :key="selected.length"
+                                        class="inline-block font-semibold text-foreground"
+                                        :class="selected.length > 0 && 'bump'"
+                                        >{{ selected.length }}</span
+                                    >
                                     {{
                                         selected.length === 1
                                             ? 'elegido'
                                             : 'elegidos'
-                                    }}</span
-                                >
+                                    }}
+                                </span>
                                 <Button
                                     size="sm"
-                                    class="ml-auto"
+                                    class="ml-auto rounded-full"
                                     :disabled="selected.length === 0"
                                     data-attention-alert-selected
                                     @click="
@@ -541,113 +643,70 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 </Button>
                             </div>
 
-                            <EmptyState
+                            <FilteredEmpty
                                 v-if="shownAgents.length === 0"
+                                :narrowed="agents.length > 0"
+                                narrowed-title="Ningún agente coincide"
+                                narrowed-description="Cambia la búsqueda o quita algún filtro para ver más agentes."
+                                title="No hay agentes a tu cargo"
+                                description="Aquí aparecen las personas activas que atienden clientes dentro de tu alcance."
                                 :icon="UserRoundX"
-                                :title="
-                                    agents.length === 0
-                                        ? 'No hay agentes a tu cargo'
-                                        : 'Ningún agente coincide'
-                                "
-                                :description="
-                                    agents.length === 0
-                                        ? 'Aquí aparecen las personas activas que atienden clientes dentro de tu alcance.'
-                                        : 'Cambia la búsqueda o los filtros.'
-                                "
+                                @clear="clearFilters"
                             />
 
-                            <ul
+                            <TransitionGroup
                                 v-else
-                                class="auto-grid [--col-min:27rem] [--grid-gap:0.625rem]"
+                                tag="ul"
+                                name="filter-row"
+                                class="relative auto-grid [--col-min:27rem] [--grid-gap:0.625rem]"
                                 aria-label="Agentes"
                             >
                                 <li
-                                    v-for="agent in shownAgents"
+                                    v-for="(agent, index) in shownAgents"
                                     :key="agent.id"
                                     :class="
                                         cn(
-                                            'grid gap-3 rounded-xl border bg-card p-3.5 transition-[border-color,box-shadow] duration-(--duration-base) ease-(--ease-out-quint) hover:border-border-strong hover:shadow-hover sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center',
+                                            'group/agent relative grid enter-spring gap-3 rounded-xl border bg-card p-3.5 shadow-(--shadow-control) transition-[border-color,box-shadow,background-color] duration-(--duration-base) ease-(--ease-out-quint) hover:border-border-strong hover:shadow-lift sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start',
                                             selected.includes(agent.id) &&
-                                                'border-primary shadow-[inset_0_0_0_1px_var(--primary)]',
+                                                'border-primary/60 bg-[color-mix(in_oklch,var(--primary)_5%,var(--card))] shadow-[0_0_0_1px_var(--primary),var(--shadow-float)]',
                                             agent.blocked &&
-                                                'border-warning/60 bg-warning-soft/40',
+                                                !selected.includes(agent.id) &&
+                                                'border-warning/50 bg-[color-mix(in_oklch,var(--warning)_6%,var(--card))]',
                                         )
                                     "
+                                    :style="{ '--i': Math.min(index, 8) }"
                                     data-attention-agent
                                 >
-                                    <Checkbox
-                                        v-if="can.send"
-                                        class="hidden sm:flex"
-                                        :model-value="
-                                            selected.includes(agent.id)
-                                        "
-                                        :aria-label="`Elegir a ${agent.name}`"
-                                        @update:model-value="
-                                            (checked) =>
-                                                toggle(
-                                                    agent.id,
-                                                    checked === true,
-                                                )
-                                        "
-                                    />
-                                    <span v-else class="hidden sm:block" />
+                                    <div class="flex items-center gap-3">
+                                        <Checkbox
+                                            v-if="can.send"
+                                            class="hidden sm:flex"
+                                            :model-value="
+                                                selected.includes(agent.id)
+                                            "
+                                            :aria-label="`Elegir a ${agent.name}`"
+                                            @update:model-value="
+                                                (checked) =>
+                                                    toggle(
+                                                        agent.id,
+                                                        checked === true,
+                                                    )
+                                            "
+                                        />
+                                        <ListAvatar
+                                            :name="agent.name"
+                                            :online="presence(agent).online"
+                                        />
+                                    </div>
                                     <div class="min-w-0">
                                         <p
-                                            class="flex flex-wrap items-center gap-2"
+                                            class="flex flex-wrap items-center gap-x-2 gap-y-1"
                                         >
                                             <span
-                                                class="font-display text-base font-semibold"
+                                                class="font-display text-base leading-6 font-semibold"
                                                 data-attention-agent-name
                                                 >{{ agent.name }}</span
                                             >
-                                            <span
-                                                :class="
-                                                    cn(
-                                                        'inline-flex items-center gap-1 text-xs',
-                                                        presence(agent).online
-                                                            ? 'text-success'
-                                                            : 'text-muted-foreground',
-                                                    )
-                                                "
-                                                :title="
-                                                    agent.last_activity_at
-                                                        ? formatDateTime(
-                                                              agent.last_activity_at,
-                                                          )
-                                                        : undefined
-                                                "
-                                            >
-                                                <span
-                                                    :class="
-                                                        cn(
-                                                            'size-2 rounded-full',
-                                                            presence(agent)
-                                                                .online
-                                                                ? 'bg-success'
-                                                                : 'bg-muted-foreground/40',
-                                                        )
-                                                    "
-                                                    aria-hidden="true"
-                                                />
-                                                {{ presence(agent).label }}
-                                                <time
-                                                    v-if="
-                                                        !presence(agent)
-                                                            .online &&
-                                                        agent.last_activity_at
-                                                    "
-                                                    :datetime="
-                                                        agent.last_activity_at
-                                                    "
-                                                    class="text-muted-foreground"
-                                                    data-attention-agent-last-activity
-                                                    >({{
-                                                        formatDateTime(
-                                                            agent.last_activity_at,
-                                                        )
-                                                    }})</time
-                                                >
-                                            </span>
                                             <span
                                                 v-if="agent.blocked"
                                                 class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground"
@@ -660,7 +719,54 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             </span>
                                         </p>
                                         <p
+                                            :class="
+                                                cn(
+                                                    'mt-0.5 inline-flex flex-wrap items-center gap-x-1.5 text-xs',
+                                                    presence(agent).online
+                                                        ? 'text-success'
+                                                        : 'text-muted-foreground',
+                                                )
+                                            "
+                                            :title="
+                                                agent.last_activity_at
+                                                    ? formatDateTime(
+                                                          agent.last_activity_at,
+                                                      )
+                                                    : undefined
+                                            "
+                                        >
+                                            <span
+                                                :class="
+                                                    cn(
+                                                        'size-1.5 shrink-0 rounded-full',
+                                                        presence(agent).online
+                                                            ? 'live-dot bg-current'
+                                                            : 'bg-muted-foreground/40',
+                                                    )
+                                                "
+                                                aria-hidden="true"
+                                            />
+                                            {{ presence(agent).label }}
+                                            <time
+                                                v-if="
+                                                    !presence(agent).online &&
+                                                    agent.last_activity_at
+                                                "
+                                                :datetime="
+                                                    agent.last_activity_at
+                                                "
+                                                class="text-muted-foreground"
+                                                data-attention-agent-last-activity
+                                                >({{
+                                                    formatDateTime(
+                                                        agent.last_activity_at,
+                                                    )
+                                                }})</time
+                                            >
+                                        </p>
+                                        <p
                                             class="mt-0.5 truncate text-xs text-muted-foreground"
+                                            :title="`${agent.role ?? 'Sin rol'} · ${agent.departments.map((item) => item.name).join(', ') || 'Sin departamento'}`"
                                         >
                                             {{ agent.role ?? 'Sin rol' }} ·
                                             {{
@@ -671,102 +777,146 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             }}
                                         </p>
                                         <dl
-                                            class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"
+                                            class="mt-2.5 grid grid-cols-3 gap-1.5 text-xs"
                                         >
-                                            <div class="flex gap-1">
+                                            <div
+                                                class="rounded-lg bg-surface-sunken px-2 py-1.5"
+                                            >
                                                 <dt
-                                                    class="text-muted-foreground"
+                                                    class="truncate text-muted-foreground"
                                                 >
                                                     En atención
                                                 </dt>
                                                 <dd
-                                                    class="font-semibold tabular-nums"
+                                                    class="font-display text-base leading-5 font-semibold tabular-nums"
                                                 >
                                                     {{ agent.in_attention }}
                                                 </dd>
                                             </div>
-                                            <div class="flex gap-1">
+                                            <div
+                                                :class="
+                                                    cn(
+                                                        'rounded-lg px-2 py-1.5',
+                                                        agent.awaiting > 0
+                                                            ? 'bg-warning-soft text-warning-soft-foreground'
+                                                            : 'bg-surface-sunken',
+                                                    )
+                                                "
+                                            >
                                                 <dt
-                                                    class="text-muted-foreground"
+                                                    class="truncate"
+                                                    :class="
+                                                        agent.awaiting === 0 &&
+                                                        'text-muted-foreground'
+                                                    "
                                                 >
                                                     Esperan su respuesta
                                                 </dt>
                                                 <dd
-                                                    class="font-semibold tabular-nums"
+                                                    class="font-display text-base leading-5 font-semibold tabular-nums"
                                                 >
                                                     {{ agent.awaiting }}
                                                 </dd>
                                             </div>
-                                            <div class="flex gap-1">
+                                            <div
+                                                class="rounded-lg bg-surface-sunken px-2 py-1.5"
+                                            >
                                                 <dt
-                                                    class="text-muted-foreground"
+                                                    class="truncate text-muted-foreground"
                                                 >
                                                     Esperando al cliente
                                                 </dt>
                                                 <dd
-                                                    class="font-semibold tabular-nums"
+                                                    class="font-display text-base leading-5 font-semibold tabular-nums"
                                                 >
                                                     {{ agent.waiting_customer }}
                                                 </dd>
                                             </div>
-                                            <div
+                                        </dl>
+                                        <p
+                                            v-if="
+                                                agent.overdue > 0 ||
+                                                agent.oldest_waiting_since
+                                            "
+                                            class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                                        >
+                                            <span
                                                 v-if="agent.overdue > 0"
-                                                class="flex gap-1 text-warning-soft-foreground"
+                                                class="inline-flex items-center gap-1 font-medium text-warning-soft-foreground"
                                             >
-                                                <dt>
-                                                    Más de
-                                                    {{
-                                                        control.tolerance_minutes
-                                                    }}
-                                                    min
-                                                </dt>
-                                                <dd
-                                                    class="font-semibold tabular-nums"
-                                                >
-                                                    {{ agent.overdue }}
-                                                </dd>
-                                            </div>
-                                            <div
+                                                <Hourglass
+                                                    class="size-3 text-warning"
+                                                    aria-hidden="true"
+                                                />
+                                                {{ agent.overdue }} con más de
+                                                {{ control.tolerance_minutes }}
+                                                min
+                                            </span>
+                                            <span
                                                 v-if="
                                                     agent.oldest_waiting_since
                                                 "
-                                                class="flex gap-1"
+                                                class="inline-flex items-center gap-1 text-muted-foreground"
                                             >
-                                                <dt
-                                                    class="text-muted-foreground"
-                                                >
-                                                    Más antigua
-                                                </dt>
-                                                <dd
+                                                <Clock
+                                                    class="size-3"
+                                                    aria-hidden="true"
+                                                />
+                                                Más antigua
+                                                <time
+                                                    :datetime="
+                                                        agent.oldest_waiting_since
+                                                    "
                                                     :title="
                                                         formatDateTime(
                                                             agent.oldest_waiting_since,
                                                         )
                                                     "
-                                                >
-                                                    {{
+                                                    class="text-foreground"
+                                                    >{{
                                                         formatRelative(
                                                             agent.oldest_waiting_since,
                                                         )
-                                                    }}
-                                                </dd>
-                                            </div>
-                                        </dl>
+                                                    }}</time
+                                                >
+                                            </span>
+                                        </p>
                                     </div>
-                                    <Button
+                                    <div
                                         v-if="can.send"
-                                        variant="outline"
-                                        size="sm"
-                                        class="justify-self-start sm:justify-self-end pointer-coarse:h-10"
-                                        @click="
-                                            compose([agent.id], 'individual')
-                                        "
+                                        class="flex items-center justify-between gap-2 sm:justify-end"
                                     >
-                                        <BellRing aria-hidden="true" />
-                                        Alertar
-                                    </Button>
+                                        <Checkbox
+                                            class="sm:hidden"
+                                            :model-value="
+                                                selected.includes(agent.id)
+                                            "
+                                            :aria-label="`Elegir a ${agent.name}`"
+                                            @update:model-value="
+                                                (checked) =>
+                                                    toggle(
+                                                        agent.id,
+                                                        checked === true,
+                                                    )
+                                            "
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            class="rounded-full pointer-coarse:h-10"
+                                            @click="
+                                                compose(
+                                                    [agent.id],
+                                                    'individual',
+                                                )
+                                            "
+                                        >
+                                            <BellRing aria-hidden="true" />
+                                            Alertar
+                                        </Button>
+                                    </div>
                                 </li>
-                            </ul>
+                            </TransitionGroup>
                         </div>
                     </SurfaceCard>
                 </div>
@@ -774,18 +924,28 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                     class="grid min-w-0 content-start gap-(--section-gap)"
                     aria-label="Clientes en espera y alertas enviadas"
                 >
-                    <SurfaceCard
+                    <div
                         v-if="oldestWaiting"
-                        body-class="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                        class="relative flex flex-col gap-3 overflow-hidden rounded-xl border border-warning/40 bg-[color-mix(in_oklch,var(--warning)_7%,var(--card))] px-4 py-4 shadow-float sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                        data-attention-oldest
                     >
-                        <p class="flex items-start gap-2 text-sm">
-                            <Clock
-                                class="mt-0.5 size-4 shrink-0 text-warning"
+                        <p class="flex min-w-0 items-start gap-3 text-sm">
+                            <span
+                                class="insight-tile"
+                                data-tone="warning"
                                 aria-hidden="true"
-                            />
-                            <span>
-                                Espera más larga:
-                                <strong>{{ oldestWaiting.contact }}</strong> con
+                            >
+                                <Clock class="size-4" />
+                            </span>
+                            <span class="min-w-0 pt-0.5">
+                                <span
+                                    class="block text-xs font-medium text-muted-foreground"
+                                    >Espera más larga</span
+                                >
+                                <strong class="font-semibold">{{
+                                    oldestWaiting.contact
+                                }}</strong>
+                                con
                                 {{ oldestWaiting.agent?.name ?? 'sin agente' }},
                                 desde
                                 <time
@@ -797,6 +957,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             oldestWaiting.waiting_since,
                                         )
                                     "
+                                    class="font-semibold"
                                     >{{
                                         formatRelative(
                                             oldestWaiting.waiting_since,
@@ -805,37 +966,55 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 >.
                             </span>
                         </p>
-                        <Button as-child variant="outline" size="sm">
+                        <Button
+                            as-child
+                            size="sm"
+                            class="shrink-0 rounded-full"
+                        >
                             <Link :href="oldestWaiting.url"
                                 >Abrir conversación</Link
                             >
                         </Button>
-                    </SurfaceCard>
+                    </div>
 
                     <SurfaceCard
                         title="Clientes esperando respuesta"
                         description="Conversaciones en atención donde el cliente escribió después de la última respuesta del agente, la más antigua primero."
                     >
-                        <div class="px-5 pb-5">
-                            <p
+                        <div class="px-3 pb-4 sm:px-4">
+                            <div
                                 v-if="waiting.length === 0"
-                                class="py-2 text-sm text-muted-foreground"
+                                class="flex items-center gap-3 rounded-xl border border-dashed bg-surface-sunken/50 px-4 py-5 text-sm text-muted-foreground"
+                                data-attention-waiting-empty
                             >
+                                <span
+                                    class="insight-tile"
+                                    data-tone="success"
+                                    aria-hidden="true"
+                                >
+                                    <CheckCheck class="size-4" />
+                                </span>
                                 Ningún cliente espera respuesta en este momento.
-                            </p>
-                            <ul
+                            </div>
+                            <TransitionGroup
                                 v-else
-                                class="divide-y rounded-lg border"
+                                tag="ul"
+                                name="filter-row"
+                                class="relative grid gap-1"
                                 aria-label="Clientes esperando respuesta"
                             >
                                 <li
                                     v-for="item in waiting"
                                     :key="item.id"
-                                    class="flex flex-col gap-1 px-3 py-2.5 transition-colors duration-(--duration-fast) hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between"
+                                    class="list-row flex items-center gap-3 px-2.5 py-2"
                                 >
-                                    <div class="min-w-0">
+                                    <ListAvatar
+                                        :name="item.contact"
+                                        :pending="item.overdue"
+                                    />
+                                    <div class="min-w-0 flex-1">
                                         <p
-                                            class="flex flex-wrap items-center gap-2 text-sm"
+                                            class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
                                         >
                                             <span class="font-medium">{{
                                                 item.contact
@@ -859,7 +1038,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             </span>
                                         </p>
                                         <p
-                                            class="text-xs text-muted-foreground"
+                                            class="truncate text-xs text-muted-foreground"
                                         >
                                             {{
                                                 item.agent?.name ?? 'Sin agente'
@@ -887,12 +1066,16 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                         as-child
                                         variant="ghost"
                                         size="sm"
-                                        class="self-start sm:self-auto"
+                                        class="shrink-0 rounded-full"
                                     >
-                                        <Link :href="item.url">Abrir</Link>
+                                        <Link
+                                            :href="item.url"
+                                            :aria-label="`Abrir la conversación con ${item.contact}`"
+                                            >Abrir</Link
+                                        >
                                     </Button>
                                 </li>
-                            </ul>
+                            </TransitionGroup>
                         </div>
                     </SurfaceCard>
 
@@ -901,13 +1084,20 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                         title="Alertas enviadas"
                         description="Mostrada: la aplicación del agente la presentó en pantalla. Confirmada: el agente pulsó «Entendido»."
                     >
-                        <div class="px-5 pb-5">
-                            <p
+                        <div class="px-3 pb-4 sm:px-4">
+                            <div
                                 v-if="alerts.length === 0"
-                                class="py-2 text-sm text-muted-foreground"
+                                class="flex items-center gap-3 rounded-xl border border-dashed bg-surface-sunken/50 px-4 py-5 text-sm text-muted-foreground"
                             >
+                                <span
+                                    class="insight-tile"
+                                    data-tone="muted"
+                                    aria-hidden="true"
+                                >
+                                    <BellRing class="size-4" />
+                                </span>
                                 Todavía no se han enviado alertas.
-                            </p>
+                            </div>
                             <ul
                                 v-else
                                 class="grid gap-2"
@@ -916,12 +1106,12 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                 <li v-for="alert in alerts" :key="alert.id">
                                     <button
                                         type="button"
-                                        class="grid w-full interactive-surface gap-1 rounded-lg border bg-card px-3 py-2.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                                        class="grid w-full interactive-surface hover-lift gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left shadow-(--shadow-control) outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
                                         data-attention-history
                                         @click="openDetail(alert)"
                                     >
                                         <span
-                                            class="flex flex-wrap items-center gap-2 text-sm"
+                                            class="flex min-w-0 items-center gap-2 text-sm"
                                         >
                                             <span
                                                 :class="
@@ -940,7 +1130,7 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                             <span
                                                 :class="
                                                     cn(
-                                                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold',
+                                                        'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold',
                                                         PRIORITY_LOOK[
                                                             alert.priority
                                                         ].badge,
@@ -983,13 +1173,58 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                                                     )
                                                 }}</time
                                             >
-                                            · {{ alert.delivered_count }}/{{
-                                                alert.recipients_count
-                                            }}
-                                            mostradas ·
-                                            {{ alert.acknowledged_count }}/{{
-                                                alert.recipients_count
-                                            }}
+                                        </span>
+                                        <span
+                                            class="grid grid-cols-2 gap-2 text-[0.6875rem] text-muted-foreground"
+                                            aria-hidden="true"
+                                        >
+                                            <span class="grid gap-1">
+                                                <span class="tabular-nums"
+                                                    >{{
+                                                        alert.delivered_count
+                                                    }}/{{
+                                                        alert.recipients_count
+                                                    }}
+                                                    mostradas</span
+                                                >
+                                                <span
+                                                    class="h-1 overflow-hidden rounded-full bg-muted"
+                                                >
+                                                    <span
+                                                        class="block h-full rounded-full bg-primary/60 transition-[width] duration-(--duration-slow) ease-(--ease-out-quint)"
+                                                        :style="{
+                                                            width: `${ratio(alert.delivered_count, alert.recipients_count)}%`,
+                                                        }"
+                                                    />
+                                                </span>
+                                            </span>
+                                            <span class="grid gap-1">
+                                                <span class="tabular-nums"
+                                                    >{{
+                                                        alert.acknowledged_count
+                                                    }}/{{
+                                                        alert.recipients_count
+                                                    }}
+                                                    confirmadas</span
+                                                >
+                                                <span
+                                                    class="h-1 overflow-hidden rounded-full bg-muted"
+                                                >
+                                                    <span
+                                                        class="block h-full rounded-full bg-success transition-[width] duration-(--duration-slow) ease-(--ease-out-quint)"
+                                                        :style="{
+                                                            width: `${ratio(alert.acknowledged_count, alert.recipients_count)}%`,
+                                                        }"
+                                                    />
+                                                </span>
+                                            </span>
+                                        </span>
+                                        <span class="sr-only">
+                                            {{ alert.delivered_count }} de
+                                            {{ alert.recipients_count }}
+                                            mostradas,
+                                            {{ alert.acknowledged_count }} de
+                                            {{ alert.recipients_count }}
                                             confirmadas
                                         </span>
                                     </button>
@@ -999,10 +1234,10 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                     </SurfaceCard>
                 </aside>
             </div>
-        </template>
+        </div>
 
         <details
-            class="group/glossary rounded-xl border bg-card px-4 py-3 text-sm transition-colors duration-(--duration-fast) hover:border-border-strong"
+            class="group/glossary rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card px-4 py-3 text-sm shadow-float transition-colors duration-(--duration-fast) hover:border-border-strong"
             data-attention-glossary
         >
             <summary
@@ -1093,12 +1328,22 @@ function recipientState(recipient: AttentionAlertRecipient): string {
                 <div
                     v-if="detailHttp.processing"
                     class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
+                    role="status"
                 >
                     <Spinner />
+                    Cargando destinatarios…
                 </div>
+                <p
+                    v-else-if="detailFailed"
+                    class="rounded-xl border border-dashed bg-surface-sunken/50 px-4 py-4 text-sm text-muted-foreground"
+                    data-attention-detail-empty
+                >
+                    No se pudo cargar la lista de destinatarios. Cierra y vuelve
+                    a abrir la alerta para intentarlo de nuevo.
+                </p>
                 <ul
                     v-else
-                    class="divide-y rounded-lg border text-sm"
+                    class="divide-y overflow-hidden rounded-xl border text-sm"
                     aria-label="Destinatarios"
                 >
                     <li

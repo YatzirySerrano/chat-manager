@@ -168,7 +168,7 @@ async function loadOlder(): Promise<void> {
 <template>
     <div
         ref="root"
-        class="rounded-xl border bg-muted/30 px-3 py-4 sm:px-6"
+        class="rounded-2xl border border-border/80 chat-canvas px-3 py-4 shadow-float outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-6"
         role="region"
         tabindex="0"
         :aria-label="`Historial importado de la conversación con ${contactName}`"
@@ -178,9 +178,9 @@ async function loadOlder(): Promise<void> {
             <div class="flex justify-center py-1">
                 <Button
                     v-if="hasMore"
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    class="pointer-coarse:h-10"
+                    class="rounded-full glass pointer-coarse:h-10"
                     :disabled="loading"
                     @click="loadOlder"
                     :loading="loading"
@@ -219,7 +219,7 @@ async function loadOlder(): Promise<void> {
             >
                 <h3 class="flex justify-center py-1">
                     <span
-                        class="max-w-full rounded-full border bg-background px-3 py-0.5 text-center text-xs font-medium text-muted-foreground shadow-xs"
+                        class="max-w-full rounded-full border border-border/70 glass px-3 py-0.5 text-center text-xs font-medium text-muted-foreground shadow-(--shadow-control)"
                     >
                         {{ group.label }}
                     </span>

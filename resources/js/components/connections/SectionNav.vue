@@ -2,6 +2,7 @@
 import { useEventListener } from '@vueuse/core';
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useSlidingIndicator } from '@/composables/useSlidingIndicator';
+import '@/components/filters/filters.css';
 
 /**
  * Section navigation of a long form (connection, platform settings): one
@@ -108,7 +109,7 @@ watch(
         ref="nav"
         :aria-label="ariaLabel"
         data-slot="section-nav"
-        class="sticky top-14 z-10 -mx-(--page-gutter) flex gap-1 overflow-x-auto border-b bg-background/85 px-(--page-gutter) backdrop-blur-md sm:top-16 md:-mx-(--page-gutter-md) md:px-(--page-gutter-md) lg:-mx-(--page-gutter-lg) lg:px-(--page-gutter-lg)"
+        class="filter-tabs-scroll sticky top-14 z-10 -mx-(--page-gutter) flex gap-1 overflow-x-auto glass-bar px-(--page-gutter) sm:top-16 md:-mx-(--page-gutter-md) md:px-(--page-gutter-md) lg:-mx-(--page-gutter-lg) lg:px-(--page-gutter-lg) [@media(max-height:32rem)]:top-12!"
     >
         <a
             v-for="section in sections"
@@ -121,14 +122,14 @@ watch(
             {{ section.label }}
             <span
                 v-if="flagged.includes(section.id)"
-                class="size-1.5 rounded-full bg-destructive"
+                class="size-1.5 rounded-full bg-destructive shadow-[0_0_0_3px_color-mix(in_oklch,var(--destructive)_18%,transparent)]"
             >
                 <span class="sr-only">(tiene campos por revisar)</span>
             </span>
         </a>
         <span
             aria-hidden="true"
-            class="pointer-events-none absolute top-0 left-0 border-b-2 border-primary"
+            class="pointer-events-none absolute top-0 left-0 border-b-2 border-primary shadow-[0_6px_10px_-8px_var(--primary)]"
             :class="
                 animated &&
                 'transition-[transform,width,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'

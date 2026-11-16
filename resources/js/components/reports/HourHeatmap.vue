@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { MousePointer2, Sparkles } from '@lucide/vue';
+import { computed, ref } from 'vue';
+import './insights.css';
 
 /**
  * Demand per weekday and local hour: a single-hue sequential scale (the
- * platform color, from transparent to solid). Each cell carries its exact
- * count as a tooltip and as accessible text.
+ * platform color, from transparent to solid). Pointing at a cell writes
+ * its exact count in the readout under the grid (no floating box over the
+ * cells); every cell also carries it as accessible text, so the table
+ * reads whole with a screen reader. The busiest cell is outlined.
  */
 const props = defineProps<{
     /** 7 rows (Monday first) × 24 hours. */
@@ -46,19 +50,33 @@ const busiest = computed(() => {
     return best as { day: number; hour: number; count: number } | null;
 });
 
+const hovered = ref<{ day: number; hour: number; count: number } | null>(null);
+
+function pad(hour: number): string {
+    return String(hour).padStart(2, '0');
+}
+
+function plural(count: number): string {
+    return `${count.toLocaleString('es-MX')} ${count === 1 ? 'solicitud' : 'solicitudes'}`;
+}
+
 function describe(day: number, hour: number, count: number): string {
-    return `${fullDays[day]} de ${String(hour).padStart(2, '0')}:00 a ${String(hour).padStart(2, '0')}:59: ${count.toLocaleString('es-MX')} ${count === 1 ? 'conversación' : 'conversaciones'}`;
+    return `${fullDays[day]} de ${pad(hour)}:00 a ${pad(hour)}:59: ${plural(count)}`;
+}
+
+function isBusiest(day: number, hour: number): boolean {
+    return busiest.value?.day === day && busiest.value?.hour === hour;
 }
 </script>
 
 <template>
-    <div class="space-y-3">
-        <div class="overflow-x-auto">
+    <div class="space-y-3" @pointerleave="hovered = null">
+        <div class="-mx-1 overflow-x-auto px-1 pb-1">
             <table
-                class="w-full min-w-[600px] border-separate border-spacing-0.5 text-xs"
+                class="w-full min-w-[600px] border-separate border-spacing-[3px] text-xs"
             >
                 <caption class="sr-only">
-                    Conversaciones recibidas por día de la semana y hora
+                    Solicitudes recibidas por día de la semana y hora
                 </caption>
                 <thead>
                     <tr>
@@ -67,13 +85,11 @@ function describe(day: number, hour: number, count: number): string {
                             v-for="hour in hours"
                             :key="hour"
                             scope="col"
-                            class="font-normal text-muted-foreground"
+                            class="pb-1 font-normal text-muted-foreground tabular-nums"
+                            :class="hovered?.hour === hour && 'text-foreground'"
                         >
-                            {{
-                                hour % 3 === 0
-                                    ? String(hour).padStart(2, '0')
-                                    : ''
-                            }}
+                            <span v-if="hour % 3 === 0">{{ pad(hour) }}</span>
+                            <span v-else class="sr-only">{{ pad(hour) }}</span>
                         </th>
                     </tr>
                 </thead>
@@ -81,18 +97,26 @@ function describe(day: number, hour: number, count: number): string {
                     <tr v-for="(row, day) in cells" :key="day">
                         <th
                             scope="row"
-                            class="pr-1 text-left font-normal text-muted-foreground"
+                            class="pr-1.5 text-left font-medium text-muted-foreground transition-colors duration-(--duration-fast)"
+                            :class="hovered?.day === day && 'text-foreground'"
                         >
                             {{ days[day] }}
                         </th>
                         <td
                             v-for="(count, hour) in row"
                             :key="hour"
-                            class="relative h-6 rounded-sm bg-muted/60 transition-[scale,box-shadow] duration-(--duration-fast) ease-(--ease-standard) hover:z-10 hover:scale-[1.3] hover:ring-2 hover:ring-ring"
-                            :title="describe(day, hour, count)"
+                            class="heat-cell relative h-7 rounded-[5px] bg-[color-mix(in_oklch,var(--muted)_80%,transparent)] transition-[scale,box-shadow] duration-(--duration-fast) ease-(--ease-spring) hover:z-10 hover:scale-[1.25] hover:shadow-[0_0_0_2px_var(--card),0_0_0_4px_var(--ring)]"
+                            :class="
+                                isBusiest(day, hour) &&
+                                'shadow-[0_0_0_2px_var(--card),0_0_0_3.5px_var(--primary)]'
+                            "
+                            :style="{ '--h': hour, '--d': day }"
+                            :data-heat-cell="`${day}-${hour}`"
+                            @pointerenter="hovered = { day, hour, count }"
+                            @pointerdown="hovered = { day, hour, count }"
                         >
                             <span
-                                class="absolute inset-0 rounded-sm bg-primary"
+                                class="absolute inset-0 rounded-[5px] bg-primary"
                                 :style="{ opacity: opacity(count) }"
                                 aria-hidden="true"
                             />
@@ -105,19 +129,60 @@ function describe(day: number, hour: number, count: number): string {
             </table>
         </div>
         <div
-            class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground"
         >
-            <p v-if="busiest">
-                Mayor demanda: {{ fullDays[busiest.day] }} a las
-                {{ String(busiest.hour).padStart(2, '0') }}:00 ({{
-                    busiest.count.toLocaleString('es-MX')
-                }}). Hora local.
+            <p
+                class="flex min-h-5 min-w-0 items-center gap-1.5"
+                aria-hidden="true"
+                data-heatmap-readout
+            >
+                <template v-if="hovered">
+                    <MousePointer2
+                        class="size-3.5 shrink-0 text-primary"
+                        aria-hidden="true"
+                    />
+                    <span>
+                        <span
+                            class="font-semibold text-foreground capitalize"
+                            >{{ fullDays[hovered.day] }}</span
+                        >
+                        de {{ pad(hovered.hour) }}:00 a
+                        {{ pad(hovered.hour) }}:59 ·
+                        <span
+                            class="font-semibold text-foreground tabular-nums"
+                            >{{ plural(hovered.count) }}</span
+                        >
+                    </span>
+                </template>
+                <template v-else-if="busiest">
+                    <Sparkles
+                        class="size-3.5 shrink-0 text-primary"
+                        aria-hidden="true"
+                    />
+                    <span>
+                        Mayor demanda:
+                        <span class="font-semibold text-foreground">{{
+                            fullDays[busiest.day]
+                        }}</span>
+                        a las {{ pad(busiest.hour) }}:00 ({{
+                            plural(busiest.count)
+                        }}). Hora local.
+                    </span>
+                </template>
+                <span v-else>Sin solicitudes recibidas en el periodo.</span>
             </p>
-            <p v-else>Sin conversaciones recibidas en el periodo.</p>
-            <span class="flex items-center gap-1.5" aria-hidden="true">
+            <p v-if="busiest" class="sr-only">
+                Mayor demanda: {{ fullDays[busiest.day] }} a las
+                {{ pad(busiest.hour) }}:00 ({{ plural(busiest.count) }}). Hora
+                local.
+            </p>
+            <span
+                class="flex items-center gap-1.5 tabular-nums"
+                aria-hidden="true"
+            >
                 0
                 <span
-                    class="h-2 w-16 rounded-sm bg-gradient-to-r from-primary/15 to-primary"
+                    class="h-2 w-20 rounded-full bg-linear-to-r from-primary/15 to-primary"
                 />
                 {{ max.toLocaleString('es-MX') }}
             </span>

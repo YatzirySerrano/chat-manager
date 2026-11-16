@@ -38,19 +38,19 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
             </Link>
         </template>
 
-        <ul v-if="connections.length > 0" class="divide-y">
+        <ul v-if="connections.length > 0" class="grid gap-0.5 p-2">
             <li v-for="connection in connections" :key="connection.id">
                 <component
                     :is="connection.url ? Link : 'div'"
                     v-bind="connection.url ? { href: connection.url } : {}"
-                    class="flex items-center gap-3 px-5 py-3"
+                    class="flex items-center gap-3 rounded-xl px-3 py-2.5"
                     :class="
                         connection.url &&
-                        'transition-colors outline-none hover:bg-muted/50 focus-visible:bg-muted/50'
+                        'group/connection hover-lift outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring'
                     "
                 >
                     <span
-                        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-soft-foreground"
                     >
                         <Plug class="size-4" aria-hidden="true" />
                     </span>
@@ -84,7 +84,7 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
                     </span>
                     <ChevronRight
                         v-if="connection.url"
-                        class="size-4 shrink-0 text-muted-foreground"
+                        class="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/connection:translate-x-0.5"
                         aria-hidden="true"
                     />
                 </component>
@@ -97,7 +97,9 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
             </p>
         </div>
 
-        <p class="border-t px-5 py-3 text-xs text-muted-foreground">
+        <p
+            class="border-t bg-surface-sunken/50 px-5 py-3 text-xs text-muted-foreground"
+        >
             La asociación se edita desde el formulario de cada conexión.
         </p>
     </SurfaceCard>

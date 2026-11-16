@@ -12,23 +12,18 @@ import {
 } from '@lucide/vue';
 import { computed } from 'vue';
 import DataPagination from '@/components/DataPagination.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { userChannelName } from '@/composables/useUserChannel';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { index as exportsIndex } from '@/routes/exports';
 import type { DataTransfer, DataTransferStatus, Paginated } from '@/types';
+import '@/components/filters/filters.css';
+import '@/components/reports/insights.css';
 
 defineOptions({
     layout: {
@@ -41,10 +36,15 @@ const props = defineProps<{
     retentionHours: number;
 }>();
 
-const hasPending = computed(() =>
-    props.transfers.data.some((transfer) =>
-        ['queued', 'processing'].includes(transfer.status.value),
-    ),
+function inProgress(transfer: DataTransfer): boolean {
+    return ['queued', 'processing'].includes(transfer.status.value);
+}
+
+const hasPending = computed(() => props.transfers.data.some(inProgress));
+
+/** The guided tour points at one download button, the first one. */
+const firstDownloadable = computed(
+    () => props.transfers.data.find((transfer) => transfer.download_url)?.id,
 );
 
 /**
@@ -99,6 +99,12 @@ function rows(transfer: DataTransfer): string {
     return `${new Intl.NumberFormat('es-MX').format(transfer.rows_total)} ${transfer.rows_total === 1 ? 'registro' : 'registros'}`;
 }
 
+function filtersText(transfer: DataTransfer): string {
+    return transfer.filters.length > 0
+        ? transfer.filters.join(' · ')
+        : 'Sin filtros';
+}
+
 function detail(transfer: DataTransfer): string {
     switch (transfer.status.value) {
         case 'completed':
@@ -125,228 +131,183 @@ function detail(transfer: DataTransfer): string {
             :description="`Archivos de Excel y PDF que pediste preparar. Solo tú puedes descargarlos y se eliminan ${retentionHours} horas después de generarse. También los encuentras en el menú «Exportar» de cada módulo y en tus notificaciones.`"
         >
             <template #actions>
-                <span
-                    v-if="hasPending"
-                    class="inline-flex items-center gap-2 text-sm text-muted-foreground"
-                    role="status"
+                <Transition
+                    enter-active-class="motion-safe:transition-[opacity,transform] duration-(--duration-base) ease-(--ease-spring-soft)"
+                    enter-from-class="opacity-0 scale-90"
+                    leave-active-class="motion-safe:transition-opacity duration-(--duration-fast)"
+                    leave-to-class="opacity-0"
                 >
-                    <Spinner class="size-4" />
-                    Generando archivos…
-                </span>
+                    <span
+                        v-if="hasPending"
+                        class="inline-flex h-8 items-center gap-2 rounded-full border border-primary/25 bg-primary-soft px-3 text-sm font-medium text-primary-soft-foreground shadow-(--shadow-control)"
+                        role="status"
+                    >
+                        <Spinner class="size-3.5" />
+                        Generando archivos…
+                    </span>
+                </Transition>
             </template>
         </PageHeader>
 
-        <template v-if="transfers.data.length > 0">
+        <section
+            v-if="transfers.data.length > 0"
+            class="overflow-hidden rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float"
+            aria-label="Tus archivos preparados"
+            data-tour="exports.list"
+        >
             <div
-                class="hidden reveal overflow-hidden rounded-xl border bg-card md:block"
-                data-tour="exports.list"
+                class="hidden grid-cols-[minmax(0,1fr)_14rem_8rem_8rem_9rem] items-center gap-4 border-b bg-surface-sunken/60 px-5 py-2.5 text-xs font-medium text-muted-foreground lg:grid"
+                aria-hidden="true"
             >
-                <Table>
-                    <TableHeader>
-                        <TableRow class="hover:bg-transparent">
-                            <TableHead class="pl-5">Reporte</TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead class="text-right">Registros</TableHead>
-                            <TableHead>Solicitado</TableHead>
-                            <TableHead class="pr-5 text-right">
-                                <span class="sr-only">Acciones</span>
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="transfer in transfers.data"
-                            :key="transfer.id"
-                        >
-                            <TableCell class="w-full max-w-0 pl-5">
-                                <div class="flex items-start gap-3">
-                                    <span
-                                        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
-                                    >
-                                        <component
-                                            :is="formatIcon(transfer)"
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    </span>
-                                    <div class="min-w-0 space-y-0.5">
-                                        <p class="font-medium">
-                                            {{ transfer.report_title }}
-                                            <span
-                                                class="font-normal text-muted-foreground"
-                                            >
-                                                · {{ transfer.format.label }}
-                                            </span>
-                                        </p>
-                                        <p
-                                            class="truncate text-xs text-muted-foreground"
-                                        >
-                                            {{
-                                                transfer.filters.length > 0
-                                                    ? transfer.filters.join(
-                                                          ' · ',
-                                                      )
-                                                    : 'Sin filtros'
-                                            }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </TableCell>
-                            <TableCell>
-                                <div class="space-y-1">
-                                    <span
-                                        class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
-                                        :class="
-                                            statusStyles[transfer.status.value]
-                                                .class
-                                        "
-                                    >
-                                        <Spinner
-                                            v-if="
-                                                transfer.status.value ===
-                                                'processing'
-                                            "
-                                            class="size-3"
-                                        />
-                                        <component
-                                            :is="
-                                                statusStyles[
-                                                    transfer.status.value
-                                                ].icon
-                                            "
-                                            v-else
-                                            class="size-3"
-                                            aria-hidden="true"
-                                        />
-                                        {{ transfer.status.label }}
-                                    </span>
-                                    <div
-                                        v-if="
-                                            transfer.status.value ===
-                                                'processing' ||
-                                            transfer.status.value === 'queued'
-                                        "
-                                        class="h-1 w-40 overflow-hidden rounded-full bg-muted"
-                                        aria-hidden="true"
-                                    >
-                                        <div
-                                            class="export-progress h-full w-2/5 rounded-full bg-primary"
-                                        />
-                                    </div>
-                                    <p
-                                        class="w-64 text-xs text-pretty whitespace-normal text-muted-foreground"
-                                    >
-                                        {{ detail(transfer) }}
-                                    </p>
-                                </div>
-                            </TableCell>
-                            <TableCell
-                                class="text-right text-muted-foreground tabular-nums"
-                            >
-                                {{ rows(transfer) }}
-                            </TableCell>
-                            <TableCell
-                                class="text-muted-foreground tabular-nums"
-                                :title="formatDateTime(transfer.created_at)"
-                            >
-                                {{ formatRelative(transfer.created_at) }}
-                            </TableCell>
-                            <TableCell class="pr-5 text-right">
-                                <Button
-                                    v-if="transfer.download_url"
-                                    size="sm"
-                                    data-tour="exports.download"
-                                    as-child
-                                >
-                                    <a :href="transfer.download_url">
-                                        <Download />
-                                        Descargar
-                                    </a>
-                                </Button>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                <span>Reporte</span>
+                <span>Estado</span>
+                <span class="text-right">Registros</span>
+                <span>Solicitado</span>
+                <span class="sr-only">Acciones</span>
             </div>
-
-            <ul class="grid gap-3 md:hidden" data-tour="exports.list">
+            <TransitionGroup
+                tag="ul"
+                name="filter-row"
+                class="relative reveal-stagger divide-y divide-[color-mix(in_oklch,var(--border)_70%,transparent)]"
+            >
                 <li
                     v-for="transfer in transfers.data"
                     :key="transfer.id"
-                    class="flex flex-col gap-3 rounded-xl border bg-card p-4"
+                    class="grid gap-3 px-4 py-4 transition-colors duration-(--duration-fast) hover:bg-[color-mix(in_oklch,var(--accent)_45%,transparent)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_14rem_8rem_8rem_9rem] lg:items-center lg:gap-4"
+                    :data-transfer-status="transfer.status.value"
+                    data-transfer
                 >
-                    <div class="flex items-start gap-3">
+                    <div class="flex min-w-0 items-start gap-3">
                         <span
-                            class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                            class="insight-tile"
+                            :data-tone="
+                                transfer.format.value === 'xlsx'
+                                    ? 'success'
+                                    : 'destructive'
+                            "
+                            aria-hidden="true"
                         >
                             <component
                                 :is="formatIcon(transfer)"
                                 class="size-4"
-                                aria-hidden="true"
                             />
                         </span>
-                        <div class="min-w-0 flex-1">
-                            <p class="font-medium">
-                                {{ transfer.report_title }}
-                                <span class="font-normal text-muted-foreground">
-                                    · {{ transfer.format.label }}
-                                </span>
+                        <div class="min-w-0 flex-1 space-y-0.5">
+                            <p
+                                class="flex flex-wrap items-center gap-x-2 gap-y-1"
+                            >
+                                <span class="font-medium">{{
+                                    transfer.report_title
+                                }}</span>
+                                <span
+                                    class="rounded-md border bg-surface-sunken px-1.5 py-px text-[0.6875rem] font-semibold text-muted-foreground"
+                                    >{{ transfer.format.label }}</span
+                                >
                             </p>
-                            <p class="text-xs text-muted-foreground">
-                                {{ formatRelative(transfer.created_at) }} ·
-                                {{ rows(transfer) }}
+                            <p
+                                class="text-xs text-pretty wrap-anywhere text-muted-foreground lg:truncate"
+                                :title="filtersText(transfer)"
+                            >
+                                {{ filtersText(transfer) }}
+                            </p>
+                            <p
+                                class="text-xs text-muted-foreground tabular-nums lg:hidden"
+                            >
+                                <time
+                                    :datetime="transfer.created_at ?? undefined"
+                                    :title="formatDateTime(transfer.created_at)"
+                                    >{{
+                                        formatRelative(transfer.created_at)
+                                    }}</time
+                                >
+                                · {{ rows(transfer) }}
                             </p>
                         </div>
+                    </div>
+
+                    <div class="min-w-0 space-y-1.5">
                         <span
-                            class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+                            class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold"
                             :class="statusStyles[transfer.status.value].class"
+                            data-transfer-badge
                         >
+                            <Spinner
+                                v-if="transfer.status.value === 'processing'"
+                                class="size-3"
+                            />
+                            <component
+                                :is="statusStyles[transfer.status.value].icon"
+                                v-else
+                                class="size-3"
+                                aria-hidden="true"
+                            />
                             {{ transfer.status.label }}
                         </span>
+                        <div
+                            v-if="inProgress(transfer)"
+                            class="insight-progress h-1 w-full max-w-48"
+                            aria-hidden="true"
+                        />
+                        <p
+                            class="text-xs text-pretty text-muted-foreground"
+                            :class="
+                                transfer.status.value === 'failed' &&
+                                'text-destructive'
+                            "
+                        >
+                            {{ detail(transfer) }}
+                        </p>
                     </div>
-                    <p class="text-xs text-muted-foreground">
-                        {{ detail(transfer) }}
-                    </p>
-                    <Button
-                        v-if="transfer.download_url"
-                        size="sm"
-                        class="w-full"
-                        data-tour="exports.download"
-                        as-child
-                    >
-                        <a :href="transfer.download_url">
-                            <Download />
-                            Descargar
-                        </a>
-                    </Button>
-                </li>
-            </ul>
-        </template>
 
-        <EmptyState
-            v-else
-            :icon="FolderDown"
-            title="Aún no tienes archivos preparados"
-            description="Usa el botón «Exportar» de cada módulo. Los archivos grandes se preparan en segundo plano y aparecen aquí."
-        />
+                    <p
+                        class="hidden text-right text-sm text-muted-foreground tabular-nums lg:block"
+                    >
+                        {{ rows(transfer) }}
+                    </p>
+                    <p
+                        class="hidden text-sm text-muted-foreground tabular-nums lg:block"
+                        :title="formatDateTime(transfer.created_at)"
+                    >
+                        <time :datetime="transfer.created_at ?? undefined">{{
+                            formatRelative(transfer.created_at)
+                        }}</time>
+                    </p>
+
+                    <div class="flex lg:justify-end">
+                        <Button
+                            v-if="transfer.download_url"
+                            size="sm"
+                            class="w-full rounded-full sm:w-auto"
+                            :data-tour="
+                                transfer.id === firstDownloadable
+                                    ? 'exports.download'
+                                    : undefined
+                            "
+                            as-child
+                        >
+                            <a
+                                :href="transfer.download_url"
+                                :aria-label="`Descargar ${transfer.report_title} (${transfer.format.label})`"
+                            >
+                                <Download aria-hidden="true" />
+                                Descargar
+                            </a>
+                        </Button>
+                    </div>
+                </li>
+            </TransitionGroup>
+        </section>
+
+        <SurfaceCard v-else>
+            <FilteredEmpty
+                :narrowed="false"
+                narrowed-title=""
+                :icon="FolderDown"
+                title="Aún no tienes archivos preparados"
+                description="Usa el botón «Exportar» de cada módulo. Los archivos grandes se preparan en segundo plano y aparecen aquí."
+            />
+        </SurfaceCard>
 
         <DataPagination :meta="transfers.meta" noun="archivos" />
     </div>
 </template>
-
-<style scoped>
-/* Indeterminate bar of a file that is being prepared (a loading indicator). */
-.export-progress {
-    animation: export-progress 1.4s var(--ease-standard) infinite;
-}
-
-@keyframes export-progress {
-    from {
-        transform: translateX(-110%);
-    }
-
-    to {
-        transform: translateX(260%);
-    }
-}
-</style>

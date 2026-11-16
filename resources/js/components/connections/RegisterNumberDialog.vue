@@ -86,7 +86,7 @@ function submit(): void {
 
                 <p
                     v-if="alreadyConnected"
-                    class="flex gap-2 rounded-lg bg-info-soft px-3 py-2 text-xs text-info-soft-foreground"
+                    class="flex gap-2 rounded-xl border border-info/25 bg-info-soft px-3 py-2.5 text-xs text-info-soft-foreground"
                     role="note"
                 >
                     <ShieldCheck

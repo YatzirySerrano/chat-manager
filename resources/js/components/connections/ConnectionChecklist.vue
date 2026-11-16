@@ -64,6 +64,15 @@ const stateClass: Record<CheckState, string> = {
     history: 'text-muted-foreground',
 };
 
+/* The round tile behind the icon in the full checklist. */
+const stateTile: Record<CheckState, string> = {
+    ok: 'bg-success/12 text-success ring-1 ring-success/25',
+    pending: 'bg-warning/12 text-warning ring-1 ring-warning/25',
+    error: 'bg-destructive/12 text-destructive ring-1 ring-destructive/25',
+    muted: 'bg-muted text-muted-foreground ring-1 ring-border',
+    history: 'bg-muted text-muted-foreground ring-1 ring-border',
+};
+
 const stateText: Record<CheckState, string> = {
     ok: 'Confirmado recientemente',
     pending: 'Pendiente',
@@ -317,16 +326,28 @@ function capitalize(text: string): string {
             <li
                 v-for="item in items"
                 :key="item.key"
-                class="flex items-start gap-2"
+                class="flex items-start"
+                :class="
+                    compact
+                        ? 'gap-2'
+                        : 'gap-3 rounded-xl bg-surface-sunken/55 p-3 ring-1 ring-border/50 ring-inset'
+                "
                 :title="item.title"
+                :data-check-state="item.state"
             >
+                <span
+                    v-if="!compact"
+                    class="flex size-8 shrink-0 items-center justify-center rounded-full"
+                    :class="stateTile[item.state]"
+                    aria-hidden="true"
+                >
+                    <component :is="stateIcon[item.state]" class="size-4" />
+                </span>
                 <component
                     :is="stateIcon[item.state]"
-                    class="mt-0.5 shrink-0"
-                    :class="[
-                        stateClass[item.state],
-                        compact ? 'size-3.5' : 'size-4',
-                    ]"
+                    v-else
+                    class="mt-0.5 size-3.5 shrink-0"
+                    :class="stateClass[item.state]"
                     aria-hidden="true"
                 />
                 <div class="min-w-0">
@@ -362,7 +383,7 @@ function capitalize(text: string): string {
         </ul>
         <div
             v-if="!compact && monitoring.warnings.length > 0"
-            class="grid gap-2 rounded-lg bg-warning-soft p-3 text-xs"
+            class="grid gap-2 rounded-xl border border-warning/25 bg-warning-soft p-3 text-xs"
             role="status"
             data-connection-warnings
         >

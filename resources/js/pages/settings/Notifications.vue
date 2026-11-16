@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
-import FormSection from '@/components/FormSection.vue';
-import { BellRing, MonitorSmartphone, Trash2, Volume2 } from '@lucide/vue';
+import {
+    BellRing,
+    ListChecks,
+    MonitorSmartphone,
+    Trash2,
+    Volume2,
+} from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -167,7 +174,14 @@ async function removeDevice(device: PushDevice): Promise<void> {
     pushError.value = null;
 
     if (device.endpoint_hash === currentHash.value) {
-        await unsubscribeFromPush();
+        // A browser that fails to unsubscribe still lets the device be
+        // removed from the account (it stops receiving with no record).
+        try {
+            await unsubscribeFromPush();
+        } catch {
+            // Ignored: the server record is what sends the notifications.
+        }
+
         currentHash.value = null;
     }
 
@@ -180,6 +194,23 @@ async function removeDevice(device: PushDevice): Promise<void> {
 }
 
 const browserAllowed = computed(() => permission.value === 'granted');
+
+/* The state of this browser in one pill (header of the permission card). */
+const permissionPill = computed<{
+    label: string;
+    tone: 'success' | 'warning' | 'danger' | 'muted';
+}>(() => {
+    switch (permission.value) {
+        case 'granted':
+            return { label: 'Permitidas', tone: 'success' };
+        case 'denied':
+            return { label: 'Bloqueadas', tone: 'danger' };
+        case 'unsupported':
+            return { label: 'No disponibles', tone: 'muted' };
+        default:
+            return { label: 'Sin permiso', tone: 'warning' };
+    }
+});
 
 async function askPermission(): Promise<void> {
     permission.value = await requestBrowserNotificationPermission();
@@ -212,138 +243,169 @@ function submit(): void {
 <template>
     <Head title="Notificaciones" />
 
-    <FormSection
+    <SettingsSection
+        :icon="BellRing"
         title="Este navegador"
         description="El permiso para mostrar avisos, la prueba de sonido y los dispositivos que reciben notificaciones con la plataforma cerrada."
         bare
     >
-        <div class="rounded-xl border bg-card p-4 shadow-card sm:p-5">
-            <div class="flex items-start gap-3">
-                <BellRing
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                <div class="min-w-0 flex-1 space-y-3">
-                    <div>
-                        <p class="text-sm font-medium">
-                            Notificaciones del navegador
-                        </p>
-                        <p class="text-sm text-muted-foreground">
-                            {{ permissionText }}
-                        </p>
+        <div class="grid gap-4 xl:grid-cols-2">
+            <div class="admin-card flex min-w-0 flex-col gap-4 p-4 sm:p-5">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex min-w-0 items-start gap-3">
+                        <span class="admin-icon-tile size-9">
+                            <Volume2 class="size-4" aria-hidden="true" />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold">
+                                Permiso y sonido
+                            </p>
+                            <p
+                                class="text-sm text-pretty text-muted-foreground"
+                            >
+                                {{ permissionText }}
+                            </p>
+                        </div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <Button
-                            v-if="permission === 'default'"
-                            type="button"
-                            size="sm"
-                            @click="askPermission"
-                        >
-                            Permitir en este navegador
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            @click="playNotificationSound(true)"
-                        >
-                            <Volume2 />
-                            Probar sonido
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            @click="playNotificationSound(false, 'team-chat')"
-                        >
-                            <Volume2 />
-                            Probar sonido del chat interno
-                        </Button>
-                    </div>
-                    <p
-                        v-if="notificationSoundState === 'locked'"
-                        class="text-xs text-muted-foreground"
-                        role="status"
-                        data-test="sound-locked-notice"
-                    >
-                        El navegador bloquea el sonido hasta que interactúes con
-                        la página (un clic o una tecla) después de abrirla o
-                        recargarla. Con la pestaña en segundo plano puede no
-                        sonar; activa las notificaciones del navegador para no
-                        perder avisos.
-                    </p>
-                    <p
-                        v-else-if="notificationSoundState === 'unsupported'"
-                        class="text-xs text-muted-foreground"
-                        role="status"
-                    >
-                        Este navegador no permite reproducir el sonido de aviso.
-                    </p>
-                    <p class="text-xs text-muted-foreground">
-                        Con varias pestañas abiertas el aviso suena una sola
-                        vez. Los mensajes del chat interno que tienes abierto y
-                        a la vista no suenan. El sonido depende también del
-                        volumen y de los ajustes de tu dispositivo.
-                    </p>
+                    <StatusPill
+                        :label="permissionPill.label"
+                        :tone="permissionPill.tone"
+                        class="shrink-0"
+                    />
                 </div>
-            </div>
-        </div>
-
-        <div class="rounded-xl border bg-card p-4 shadow-card sm:p-5">
-            <div class="flex items-start gap-3">
-                <MonitorSmartphone
-                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                <div class="min-w-0 flex-1 space-y-3">
-                    <div>
-                        <p class="text-sm font-medium">
-                            Notificaciones del navegador
-                        </p>
-                        <p class="text-sm text-muted-foreground">
-                            {{ pushText }}
-                        </p>
-                        <p
-                            v-if="pushError"
-                            class="mt-1 text-sm text-destructive"
-                            role="alert"
-                        >
-                            {{ pushError }}
-                        </p>
-                    </div>
-                    <div v-if="canOfferPush" class="flex flex-wrap gap-2">
-                        <Button
-                            v-if="currentDevice"
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            :disabled="pushBusy"
-                            @click="removeDevice(currentDevice)"
-                        >
-                            <Spinner v-if="pushBusy" />
-                            Desactivar en este navegador
-                        </Button>
-                        <Button
-                            v-else
-                            type="button"
-                            size="sm"
-                            :disabled="pushBusy"
-                            @click="enablePush"
-                        >
-                            <Spinner v-if="pushBusy" />
-                            Activar en este navegador
-                        </Button>
-                    </div>
-                    <ul
-                        v-if="push.subscriptions.length > 0"
-                        class="divide-y rounded-lg border"
-                        aria-label="Navegadores con notificaciones activadas"
+                <div class="flex flex-wrap gap-2">
+                    <Button
+                        v-if="permission === 'default'"
+                        type="button"
+                        size="sm"
+                        @click="askPermission"
                     >
-                        <li
-                            v-for="device in push.subscriptions"
-                            :key="device.id"
-                            class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                        >
+                        Permitir en este navegador
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        @click="playNotificationSound(true)"
+                    >
+                        <Volume2 />
+                        Probar sonido
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        @click="playNotificationSound(false, 'team-chat')"
+                    >
+                        <Volume2 />
+                        Probar sonido del chat interno
+                    </Button>
+                </div>
+                <p
+                    v-if="notificationSoundState === 'locked'"
+                    class="rounded-lg bg-warning-soft/60 px-3 py-2 text-xs text-warning-soft-foreground"
+                    role="status"
+                    data-test="sound-locked-notice"
+                >
+                    El navegador bloquea el sonido hasta que interactúes con la
+                    página (un clic o una tecla) después de abrirla o
+                    recargarla. Con la pestaña en segundo plano puede no sonar;
+                    activa las notificaciones del navegador para no perder
+                    avisos.
+                </p>
+                <p
+                    v-else-if="notificationSoundState === 'unsupported'"
+                    class="text-xs text-muted-foreground"
+                    role="status"
+                >
+                    Este navegador no permite reproducir el sonido de aviso.
+                </p>
+                <p class="mt-auto text-xs text-pretty text-muted-foreground">
+                    Con varias pestañas abiertas el aviso suena una sola vez.
+                    Los mensajes del chat interno que tienes abierto y a la
+                    vista no suenan. El sonido depende también del volumen y de
+                    los ajustes de tu dispositivo.
+                </p>
+            </div>
+
+            <div class="admin-card flex min-w-0 flex-col gap-4 p-4 sm:p-5">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex min-w-0 items-start gap-3">
+                        <span class="admin-icon-tile size-9">
+                            <MonitorSmartphone
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold">
+                                Notificaciones del navegador
+                            </p>
+                            <p
+                                class="text-sm text-pretty text-muted-foreground"
+                            >
+                                {{ pushText }}
+                            </p>
+                            <p
+                                v-if="pushError"
+                                class="mt-1 text-sm text-destructive"
+                                role="alert"
+                            >
+                                {{ pushError }}
+                            </p>
+                        </div>
+                    </div>
+                    <StatusPill
+                        v-if="currentDevice"
+                        label="Activadas"
+                        tone="success"
+                        live
+                        class="shrink-0"
+                    />
+                </div>
+                <div v-if="canOfferPush" class="flex flex-wrap gap-2">
+                    <Button
+                        v-if="currentDevice"
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        :disabled="pushBusy"
+                        :loading="pushBusy"
+                        @click="removeDevice(currentDevice)"
+                    >
+                        Desactivar en este navegador
+                    </Button>
+                    <Button
+                        v-else
+                        type="button"
+                        size="sm"
+                        :disabled="pushBusy"
+                        :loading="pushBusy"
+                        @click="enablePush"
+                    >
+                        Activar en este navegador
+                    </Button>
+                </div>
+                <ul
+                    v-if="push.subscriptions.length > 0"
+                    class="grid gap-1.5"
+                    aria-label="Navegadores con notificaciones activadas"
+                >
+                    <li
+                        v-for="device in push.subscriptions"
+                        :key="device.id"
+                        class="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm transition-colors"
+                        :class="
+                            device.id === currentDevice?.id
+                                ? 'border-primary/30 bg-primary-soft/40'
+                                : 'border-border/70 bg-surface-sunken/50 hover:bg-surface-sunken'
+                        "
+                    >
+                        <div class="flex min-w-0 items-center gap-2.5">
+                            <MonitorSmartphone
+                                class="size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                            />
                             <div class="min-w-0">
                                 <p class="truncate">
                                     {{ formatUserAgent(device.user_agent) }}
@@ -359,31 +421,35 @@ function submit(): void {
                                     {{ formatDate(device.created_at) }}
                                 </p>
                             </div>
-                            <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                :disabled="pushBusy"
-                                :aria-label="`Quitar ${formatUserAgent(device.user_agent)}`"
-                                @click="removeDevice(device)"
-                            >
-                                <Trash2 />
-                            </Button>
-                        </li>
-                    </ul>
-                </div>
+                        </div>
+                        <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            :disabled="pushBusy"
+                            :aria-label="`Quitar ${formatUserAgent(device.user_agent)}`"
+                            @click="removeDevice(device)"
+                        >
+                            <Trash2 />
+                        </Button>
+                    </li>
+                </ul>
             </div>
         </div>
-    </FormSection>
+    </SettingsSection>
 
     <form novalidate @submit.prevent="submit">
-        <FormSection
+        <SettingsSection
+            :icon="ListChecks"
             title="Qué te avisamos"
             description="Elige, aviso por aviso, si aparece dentro de la plataforma, si suena y si llega como notificación del navegador."
             flush
         >
             <template #aside>
-                <p class="pt-1 text-xs text-pretty text-muted-foreground">
+                <p
+                    class="max-w-prose pt-1 text-xs text-pretty text-muted-foreground"
+                >
                     Si desactivas un aviso en la app tampoco sonará ni aparecerá
                     en el navegador. «Navegador» viene activado para los
                     mensajes y los avisos urgentes. Cada aviso del navegador
@@ -394,7 +460,7 @@ function submit(): void {
             </template>
             <div>
                 <div
-                    class="hidden grid-cols-[1fr_repeat(3,5.5rem)] gap-2 border-b px-4 py-2 text-xs font-medium text-muted-foreground sm:grid"
+                    class="hidden grid-cols-[1fr_repeat(3,5.5rem)] gap-2 border-b border-border/70 bg-surface-sunken/40 px-4 py-2 text-xs font-medium text-muted-foreground sm:grid sm:px-6"
                     aria-hidden="true"
                 >
                     <span>Aviso</span>
@@ -402,27 +468,25 @@ function submit(): void {
                     <span class="text-center">Sonido</span>
                     <span class="text-center">Navegador</span>
                 </div>
-                <ul class="divide-y">
+                <ul class="divide-y divide-border/60">
                     <li
                         v-for="(kind, index) in kinds"
                         :key="kind.value"
-                        class="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_repeat(3,5.5rem)] sm:items-center sm:gap-2"
+                        class="grid gap-3 px-4 py-3 transition-colors hover:bg-primary-soft/25 sm:grid-cols-[1fr_repeat(3,5.5rem)] sm:items-center sm:gap-2 sm:px-6"
                     >
                         <div class="min-w-0">
                             <p
                                 class="flex flex-wrap items-center gap-2 text-sm font-medium"
                             >
                                 {{ kind.label }}
-                                <span
-                                    class="rounded-full border px-1.5 text-xs font-normal"
-                                    :class="
+                                <StatusPill
+                                    :label="kind.level_label"
+                                    :tone="
                                         kind.level === 'urgent'
-                                            ? 'border-destructive/30 text-destructive'
-                                            : 'text-muted-foreground'
+                                            ? 'danger'
+                                            : 'muted'
                                     "
-                                >
-                                    {{ kind.level_label }}
-                                </span>
+                                />
                             </p>
                             <p class="text-xs text-muted-foreground">
                                 {{ kind.description }}
@@ -471,22 +535,31 @@ function submit(): void {
             </div>
 
             <template #footer>
-                <Button
-                    type="button"
-                    variant="outline"
-                    :disabled="!form.isDirty || form.processing"
-                    @click="form.reset()"
+                <p
+                    v-if="form.isDirty"
+                    class="text-sm text-muted-foreground"
+                    aria-live="polite"
                 >
-                    Descartar
-                </Button>
-                <Button
-                    type="submit"
-                    :disabled="!form.isDirty"
-                    :loading="form.processing"
-                >
-                    Guardar preferencias
-                </Button>
+                    Tienes cambios sin guardar
+                </p>
+                <div class="ml-auto flex flex-wrap gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        :disabled="!form.isDirty || form.processing"
+                        @click="form.reset()"
+                    >
+                        Descartar
+                    </Button>
+                    <Button
+                        type="submit"
+                        :disabled="!form.isDirty"
+                        :loading="form.processing"
+                    >
+                        Guardar preferencias
+                    </Button>
+                </div>
             </template>
-        </FormSection>
+        </SettingsSection>
     </form>
 </template>

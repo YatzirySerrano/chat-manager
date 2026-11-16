@@ -6,10 +6,9 @@ import {
     MessageSquareText,
     Pencil,
     Plus,
-    Search,
     Trash2,
     UserRound,
-    X,
+    UsersRound,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
@@ -18,20 +17,25 @@ import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
+import DirectoryRow from '@/components/directory/DirectoryRow.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterSearch from '@/components/filters/FilterSearch.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import type { FilterTabOption } from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
 import QuickReplyExportMenu from '@/components/quick-replies/QuickReplyExportMenu.vue';
 import QuickReplyFormDialog from '@/components/quick-replies/QuickReplyFormDialog.vue';
 import QuickReplyListSkeleton from '@/components/quick-replies/QuickReplyListSkeleton.vue';
 import QuickReplySandbox from '@/components/quick-replies/QuickReplySandbox.vue';
+import '@/components/quick-replies/quick-replies.css';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordCard from '@/components/RecordCard.vue';
-import RecordGrid from '@/components/RecordGrid.vue';
 import RecordStateFilter from '@/components/RecordStateFilter.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Select,
     SelectContent,
@@ -39,14 +43,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
 import ViewModeToggle from '@/components/ViewModeToggle.vue';
 import WhatsAppText from '@/components/WhatsAppText.vue';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
@@ -179,6 +175,9 @@ function keepSegmentBarInView(): void {
 
 onBeforeUnmount(stopSkeleton);
 
+/** Any filter request on its way (the toolbar shows a progress line). */
+const loading = ref(false);
+
 function applyFilters(): void {
     const query: Record<string, string> = {};
 
@@ -209,7 +208,11 @@ function applyFilters(): void {
         preserveScroll: true,
         replace: true,
         only: ['quickReplies', 'filters', 'segments', 'recordStates'],
+        onStart: () => {
+            loading.value = true;
+        },
         onFinish: () => {
+            loading.value = false;
             const switchedSegment = loadingSegment.value !== null;
 
             loadingSegment.value = null;
@@ -247,6 +250,15 @@ function selectSegment(segment: QuickReplySegment): void {
     filterState.record = 'active';
     applyFilters();
 }
+
+const segmentTabs = computed<FilterTabOption<QuickReplySegment>[]>(() =>
+    props.segments.map((segment) => ({
+        value: segment.value,
+        label: segment.label,
+        count: segment.count,
+        title: segmentHint(segment.value),
+    })),
+);
 
 function segmentHint(segment: QuickReplySegment): string {
     return {
@@ -330,6 +342,15 @@ const listKey = computed(() =>
         ? 'loading'
         : `${props.filters.segment}-${viewMode.value}`,
 );
+
+/** The tile of a reply says who may use it. */
+function availabilityIcon(reply: QuickReplySummary) {
+    if (reply.is_personal) {
+        return reply.is_own ? Lock : UserRound;
+    }
+
+    return reply.is_global ? Globe : UsersRound;
+}
 
 const formOpen = ref(false);
 const editingReply = ref<QuickReplySummary | null>(null);
@@ -438,6 +459,7 @@ const purgeOpen = computed({
                 />
                 <Button
                     v-if="canCreateHere"
+                    class="accent-gradient glow"
                     data-tour="quick-replies.new"
                     @click="openCreate"
                 >
@@ -450,77 +472,182 @@ const purgeOpen = computed({
         </PageHeader>
 
         <div class="split-layout reveal [--aside-w:24rem]">
-            <SurfaceCard>
-                <div
-                    v-if="segments.length > 1"
-                    ref="segmentBar"
-                    class="flex scroll-mt-4 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 pt-4 pb-3"
-                >
+            <DirectoryPanel
+                :busy="loading && !showSkeleton"
+                toolbar-class="grid gap-3 max-sm:static"
+            >
+                <template #toolbar>
                     <div
-                        role="group"
-                        aria-label="Tipo de respuestas"
-                        data-tour="quick-replies.segments"
-                        :aria-busy="loadingSegment !== null"
-                        class="inline-flex flex-wrap gap-1 rounded-lg bg-surface-sunken p-1"
+                        v-if="segments.length > 1"
+                        ref="segmentBar"
+                        class="grid scroll-mt-20 gap-1.5"
                     >
-                        <button
-                            v-for="segment in segments"
-                            :key="segment.value"
-                            type="button"
-                            :aria-pressed="
-                                filterState.segment === segment.value
-                            "
-                            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-standard outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                            :class="
-                                filterState.segment === segment.value &&
-                                'bg-card text-foreground shadow-(--shadow-control)'
-                            "
-                            @click="selectSegment(segment.value)"
+                        <div
+                            data-tour="quick-replies.segments"
+                            :aria-busy="loadingSegment !== null"
+                            class="min-w-0 sm:w-fit"
                         >
-                            {{ segment.label }}
-                            <span
-                                class="inline-flex min-w-6 justify-center rounded-full px-1.5 text-xs tabular-nums transition-colors duration-200 ease-standard"
-                                :class="
-                                    filterState.segment === segment.value
-                                        ? 'bg-muted'
-                                        : 'bg-background'
-                                "
+                            <FilterTabs
+                                :model-value="filterState.segment"
+                                :options="segmentTabs"
+                                label="Tipo de respuestas"
+                                @update:model-value="selectSegment"
+                            />
+                        </div>
+                        <!--
+                            The live region is the stable wrapper: a region
+                            inserted fresh on every change (the keyed hint
+                            inside the transition) is often not announced.
+                        -->
+                        <div aria-live="polite" data-segment-hint class="px-1">
+                            <Transition
+                                mode="out-in"
+                                enter-active-class="transition-opacity duration-200 ease-standard"
+                                enter-from-class="opacity-0"
+                                leave-active-class="transition-opacity duration-100 ease-standard"
+                                leave-to-class="opacity-0"
                             >
-                                <Spinner
-                                    v-if="loadingSegment === segment.value"
-                                    class="size-3"
-                                    aria-hidden="true"
-                                />
-                                <template v-else>{{ segment.count }}</template>
-                            </span>
-                        </button>
+                                <p
+                                    :key="filterState.segment"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    {{ segmentHint(filterState.segment) }}
+                                </p>
+                            </Transition>
+                        </div>
                     </div>
-                    <!--
-                        The live region is the stable wrapper: a region
-                        inserted fresh on every change (the keyed hint inside
-                        the transition) is often not announced.
-                    -->
-                    <div aria-live="polite" data-segment-hint>
-                        <Transition
-                            mode="out-in"
-                            enter-active-class="transition-opacity duration-200 ease-standard"
-                            enter-from-class="opacity-0"
-                            leave-active-class="transition-opacity duration-100 ease-standard"
-                            leave-to-class="opacity-0"
+
+                    <div
+                        class="flex items-center gap-2"
+                        data-tour="quick-replies.search"
+                    >
+                        <FilterSearch
+                            v-model="filterState.search"
+                            label="Buscar respuestas rápidas"
+                            placeholder="Buscar por título, atajo o texto"
+                            :loading="loading"
+                        />
+                        <ViewModeToggle v-model="viewMode" />
+                    </div>
+
+                    <ActiveFilters
+                        :pills="[]"
+                        :clearable="hasFilters"
+                        @clear="clearFilters"
+                    >
+                        <div
+                            class="qr-filters grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
                         >
-                            <p
-                                :key="filterState.segment"
-                                class="text-xs text-muted-foreground"
+                            <Select
+                                v-if="isOthers"
+                                v-model="filterState.owner"
+                                @update:model-value="applyFilters"
                             >
-                                {{ segmentHint(filterState.segment) }}
-                            </p>
-                        </Transition>
-                    </div>
-                </div>
+                                <SelectTrigger
+                                    class="w-full sm:w-44"
+                                    aria-label="Filtrar por usuario"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="ALL"
+                                        >Todos los usuarios</SelectItem
+                                    >
+                                    <SelectItem
+                                        v-for="owner in owners"
+                                        :key="owner.id"
+                                        :value="String(owner.id)"
+                                    >
+                                        {{ owner.name }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                v-if="!isMine"
+                                v-model="filterState.department"
+                                @update:model-value="applyFilters"
+                            >
+                                <SelectTrigger
+                                    class="w-full sm:w-48"
+                                    :aria-label="
+                                        isOthers
+                                            ? 'Filtrar por departamento del usuario'
+                                            : 'Filtrar por departamento'
+                                    "
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="ALL">{{
+                                        isOthers
+                                            ? 'Usuarios de todos los departamentos'
+                                            : 'Todos los departamentos'
+                                    }}</SelectItem>
+                                    <SelectItem
+                                        v-for="department in departments"
+                                        :key="department.id"
+                                        :value="String(department.id)"
+                                    >
+                                        {{ department.name }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                v-if="isCorporate"
+                                v-model="filterState.availability"
+                                @update:model-value="applyFilters"
+                            >
+                                <SelectTrigger
+                                    class="w-full sm:w-40"
+                                    aria-label="Filtrar por disponibilidad"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem :value="ALL"
+                                        >Cualquier alcance</SelectItem
+                                    >
+                                    <SelectItem value="global"
+                                        >Para todos</SelectItem
+                                    >
+                                    <SelectItem value="departments"
+                                        >Por departamento</SelectItem
+                                    >
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                v-model="filterState.sort"
+                                @update:model-value="applyFilters"
+                            >
+                                <SelectTrigger
+                                    class="w-full sm:w-48"
+                                    aria-label="Ordenar respuestas"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem
+                                        v-for="option in SORT_OPTIONS"
+                                        :key="option.value"
+                                        :value="option.value"
+                                    >
+                                        {{ option.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <RecordStateFilter
+                                v-model="filterState.record"
+                                :options="recordStates"
+                                class="sm:w-36"
+                                @change="applyFilters"
+                            />
+                        </div>
+                    </ActiveFilters>
+                </template>
 
                 <p
                     v-if="personalReadOnly"
-                    class="mx-4 mt-4 flex items-start gap-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
+                    class="mx-3 mt-3 flex items-start gap-2 rounded-xl border border-dashed bg-surface-sunken/50 p-3 text-sm text-muted-foreground sm:mx-4"
                 >
                     <Lock class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     Ya no tienes permiso para crear ni editar respuestas
@@ -528,287 +655,124 @@ const purgeOpen = computed({
                     «/».
                 </p>
 
-                <div
-                    class="flex flex-wrap items-center gap-2 border-b p-4"
-                    role="search"
-                    data-tour="quick-replies.search"
-                >
-                    <div class="relative order-1 min-w-0 flex-1">
-                        <Search
-                            class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                        <Input
-                            v-model="filterState.search"
-                            type="search"
-                            placeholder="Buscar por título, atajo o texto"
-                            class="pl-9"
-                            aria-label="Buscar respuestas rápidas"
-                        />
-                    </div>
-                    <ViewModeToggle v-model="viewMode" class="order-2" />
-                    <div
-                        class="order-3 grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap"
-                    >
-                        <Select
-                            v-if="isOthers"
-                            v-model="filterState.owner"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full sm:w-44"
-                                aria-label="Filtrar por usuario"
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="ALL"
-                                    >Todos los usuarios</SelectItem
-                                >
-                                <SelectItem
-                                    v-for="owner in owners"
-                                    :key="owner.id"
-                                    :value="String(owner.id)"
-                                >
-                                    {{ owner.name }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            v-if="!isMine"
-                            v-model="filterState.department"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full sm:w-44"
-                                :aria-label="
-                                    isOthers
-                                        ? 'Filtrar por departamento del usuario'
-                                        : 'Filtrar por departamento'
-                                "
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="ALL">{{
-                                    isOthers
-                                        ? 'Usuarios de todos los departamentos'
-                                        : 'Todos los departamentos'
-                                }}</SelectItem>
-                                <SelectItem
-                                    v-for="department in departments"
-                                    :key="department.id"
-                                    :value="String(department.id)"
-                                >
-                                    {{ department.name }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            v-if="isCorporate"
-                            v-model="filterState.availability"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full sm:w-40"
-                                aria-label="Filtrar por disponibilidad"
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem :value="ALL"
-                                    >Cualquier alcance</SelectItem
-                                >
-                                <SelectItem value="global"
-                                    >Para todos</SelectItem
-                                >
-                                <SelectItem value="departments"
-                                    >Por departamento</SelectItem
-                                >
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            v-model="filterState.sort"
-                            @update:model-value="applyFilters"
-                        >
-                            <SelectTrigger
-                                class="w-full sm:w-48"
-                                aria-label="Ordenar respuestas"
-                            >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem
-                                    v-for="option in SORT_OPTIONS"
-                                    :key="option.value"
-                                    :value="option.value"
-                                >
-                                    {{ option.label }}
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <RecordStateFilter
-                            v-model="filterState.record"
-                            :options="recordStates"
-                            class="sm:w-36"
-                            @change="applyFilters"
-                        />
-                        <Button
-                            v-if="hasFilters"
-                            variant="ghost"
-                            @click="clearFilters"
-                        >
-                            <X />
-                            Limpiar
-                        </Button>
-                    </div>
-                </div>
-
                 <Transition
                     enter-active-class="transition-[opacity,translate] duration-200 ease-standard"
                     enter-from-class="translate-y-1 opacity-0"
                     leave-active-class="hidden"
                 >
-                    <div
-                        :key="listKey"
-                        :aria-busy="loadingSegment !== null"
-                        class="transition-opacity duration-150 ease-standard"
-                        :class="
-                            loadingSegment !== null &&
-                            !showSkeleton &&
-                            'opacity-60'
-                        "
-                    >
+                    <div :key="listKey" :aria-busy="loadingSegment !== null">
                         <QuickReplyListSkeleton
                             v-if="showSkeleton"
                             :rows="skeletonRows"
                             :layout="viewMode"
                         />
-                        <Table
+                        <ul
                             v-else-if="
                                 quickReplies.data.length > 0 &&
                                 viewMode === 'table'
                             "
+                            role="list"
+                            class="dir-rows"
                         >
-                            <TableHeader>
-                                <TableRow class="hover:bg-transparent">
-                                    <TableHead class="pl-5"
-                                        >Respuesta</TableHead
+                            <DirectoryRow
+                                v-for="reply in quickReplies.data"
+                                :key="reply.id"
+                                :muted="reply.is_deleted"
+                            >
+                                <template #leading>
+                                    <DirectoryAvatar
+                                        :name="reply.title"
+                                        :icon="availabilityIcon(reply)"
+                                        shape="square"
+                                        :tone="
+                                            reply.is_deleted ? 'muted' : 'auto'
+                                        "
+                                    />
+                                </template>
+                                <template #title>
+                                    <span
+                                        class="flex min-w-0 items-center gap-2"
                                     >
-                                    <TableHead class="hidden 2xl:table-cell"
-                                        >Disponible para</TableHead
-                                    >
-                                    <TableHead class="hidden sm:table-cell"
-                                        >Estado</TableHead
-                                    >
-                                    <TableHead class="pr-5 text-right">
-                                        <span class="sr-only">Acciones</span>
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                <TableRow
-                                    v-for="reply in quickReplies.data"
-                                    :key="reply.id"
-                                    :class="
-                                        reply.is_deleted &&
-                                        'text-muted-foreground'
-                                    "
-                                >
-                                    <TableCell class="w-full max-w-0 py-3 pl-5">
-                                        <div
-                                            class="flex min-w-0 items-center gap-2"
-                                        >
-                                            <span
-                                                class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
-                                                >/{{ reply.shortcut }}</span
-                                            >
-                                            <span
-                                                class="truncate font-medium text-foreground"
-                                                >{{ reply.title }}</span
-                                            >
-                                        </div>
-                                        <p
-                                            class="mt-1 truncate text-xs text-muted-foreground"
-                                        >
-                                            {{ reply.body }}
-                                        </p>
-                                        <p
-                                            class="mt-0.5 truncate text-xs text-muted-foreground 2xl:hidden"
-                                        >
-                                            {{ availabilityLabel(reply) }}
-                                        </p>
-                                    </TableCell>
-                                    <TableCell class="hidden 2xl:table-cell">
                                         <span
-                                            v-if="reply.is_personal"
-                                            class="inline-flex items-center gap-1 text-xs"
+                                            class="shrink-0 rounded-md bg-primary-soft px-1.5 py-0.5 font-mono text-xs font-medium text-primary-soft-foreground"
+                                            >/{{ reply.shortcut }}</span
                                         >
-                                            <component
-                                                :is="
-                                                    reply.is_own
-                                                        ? Lock
-                                                        : UserRound
-                                                "
-                                                class="size-3"
-                                                aria-hidden="true"
-                                            />
-                                            {{ availabilityLabel(reply) }}
-                                        </span>
-                                        <span
-                                            v-else-if="reply.is_global"
-                                            class="inline-flex items-center gap-1 text-xs"
-                                        >
-                                            <Globe
-                                                class="size-3"
-                                                aria-hidden="true"
-                                            />
-                                            Todos los departamentos
-                                        </span>
-                                        <div
-                                            v-else
-                                            class="flex flex-wrap gap-1"
-                                        >
-                                            <DepartmentTag
-                                                v-for="department in reply.departments"
-                                                :key="department.id"
-                                                :name="department.name"
-                                                :color="department.color"
-                                                :muted="!department.is_active"
-                                            />
-                                        </div>
-                                    </TableCell>
-                                    <TableCell class="hidden sm:table-cell">
-                                        <DeletedBadge
-                                            v-if="reply.is_deleted"
-                                            feminine
+                                        <span class="truncate">{{
+                                            reply.title
+                                        }}</span>
+                                    </span>
+                                </template>
+                                <template #subtitle>
+                                    {{ reply.body }}
+                                </template>
+                                <template #badges>
+                                    <DeletedBadge
+                                        v-if="reply.is_deleted"
+                                        feminine
+                                    />
+                                    <span
+                                        v-if="
+                                            reply.is_personal || reply.is_global
+                                        "
+                                        class="inline-flex max-w-full items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                                    >
+                                        <component
+                                            :is="availabilityIcon(reply)"
+                                            class="size-3 shrink-0"
+                                            aria-hidden="true"
                                         />
-                                        <span
-                                            v-else
-                                            class="text-xs text-muted-foreground"
-                                            >Activa</span
-                                        >
-                                    </TableCell>
-                                    <TableCell class="w-px pr-5 text-right">
-                                        <RecordActions
-                                            :actions="actionsFor(reply)"
-                                            :record="`la respuesta /${reply.shortcut}`"
-                                            :busy="
-                                                deletion.processingId ===
-                                                reply.id
-                                            "
+                                        <span class="truncate">{{
+                                            availabilityLabel(reply)
+                                        }}</span>
+                                    </span>
+                                    <template v-else>
+                                        <DepartmentTag
+                                            v-for="department in reply.departments"
+                                            :key="department.id"
+                                            :name="department.name"
+                                            :color="department.color"
+                                            :muted="!department.is_active"
                                         />
-                                    </TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
+                                    </template>
+                                </template>
+                                <template #actions>
+                                    <RecordActions
+                                        :actions="actionsFor(reply)"
+                                        :record="`la respuesta /${reply.shortcut}`"
+                                        :busy="
+                                            deletion.processingId === reply.id
+                                        "
+                                    />
+                                </template>
+                            </DirectoryRow>
+                        </ul>
 
-                        <RecordGrid v-else-if="quickReplies.data.length > 0">
+                        <ul
+                            v-else-if="quickReplies.data.length > 0"
+                            role="list"
+                            class="dir-grid"
+                        >
                             <li
                                 v-for="reply in quickReplies.data"
                                 :key="reply.id"
                             >
-                                <RecordCard :muted="reply.is_deleted">
+                                <RecordCard
+                                    :muted="reply.is_deleted"
+                                    class="dir-card"
+                                >
+                                    <template #leading>
+                                        <DirectoryAvatar
+                                            :name="reply.title"
+                                            :icon="availabilityIcon(reply)"
+                                            shape="square"
+                                            size="sm"
+                                            :tone="
+                                                reply.is_deleted
+                                                    ? 'muted'
+                                                    : 'auto'
+                                            "
+                                        />
+                                    </template>
                                     <template #title>
                                         <span
                                             class="flex min-w-0 items-center gap-2"
@@ -832,38 +796,28 @@ const purgeOpen = computed({
                                     </p>
                                     <template #meta>
                                         <span
-                                            v-if="reply.is_personal"
+                                            v-if="
+                                                reply.is_personal ||
+                                                reply.is_global
+                                            "
                                             class="inline-flex items-center gap-1"
                                         >
                                             <component
-                                                :is="
-                                                    reply.is_own
-                                                        ? Lock
-                                                        : UserRound
-                                                "
+                                                :is="availabilityIcon(reply)"
                                                 class="size-3"
                                                 aria-hidden="true"
                                             />
                                             {{ availabilityLabel(reply) }}
                                         </span>
-                                        <span
-                                            v-else-if="reply.is_global"
-                                            class="inline-flex items-center gap-1"
-                                        >
-                                            <Globe
-                                                class="size-3"
-                                                aria-hidden="true"
+                                        <template v-else>
+                                            <DepartmentTag
+                                                v-for="department in reply.departments"
+                                                :key="department.id"
+                                                :name="department.name"
+                                                :color="department.color"
+                                                :muted="!department.is_active"
                                             />
-                                            Todos los departamentos
-                                        </span>
-                                        <DepartmentTag
-                                            v-for="department in reply.departments"
-                                            v-else
-                                            :key="department.id"
-                                            :name="department.name"
-                                            :color="department.color"
-                                            :muted="!department.is_active"
-                                        />
+                                        </template>
                                     </template>
                                     <template #actions>
                                         <RecordActions
@@ -877,23 +831,21 @@ const purgeOpen = computed({
                                     </template>
                                 </RecordCard>
                             </li>
-                        </RecordGrid>
+                        </ul>
 
-                        <EmptyState
+                        <FilteredEmpty
                             v-else
-                            class="m-4 border-none"
-                            :icon="MessageSquareText"
+                            :narrowed="hasFilters"
+                            narrowed-title="Ninguna respuesta coincide con los filtros"
+                            narrowed-description="Quita algún filtro o cambia la búsqueda para ver más respuestas."
                             :title="emptyState.title"
                             :description="emptyState.description"
+                            :icon="MessageSquareText"
+                            @clear="clearFilters"
                         >
                             <Button
-                                v-if="hasFilters"
-                                variant="outline"
-                                @click="clearFilters"
-                                >Limpiar filtros</Button
-                            >
-                            <Button
-                                v-else-if="canCreateHere && !isOthers"
+                                v-if="canCreateHere && !isOthers"
+                                class="rounded-full"
                                 @click="openCreate"
                             >
                                 <Plus />
@@ -903,24 +855,24 @@ const purgeOpen = computed({
                                         : 'Nueva respuesta'
                                 }}
                             </Button>
-                        </EmptyState>
+                        </FilteredEmpty>
                     </div>
                 </Transition>
 
-                <div
+                <template
                     v-if="
                         !showSkeleton &&
                         (quickReplies.meta.last_page > 1 ||
                             quickReplies.data.length > 0)
                     "
-                    class="border-t px-4 py-3"
+                    #footer
                 >
                     <DataPagination
                         :meta="quickReplies.meta"
                         noun="respuestas"
                     />
-                </div>
-            </SurfaceCard>
+                </template>
+            </DirectoryPanel>
 
             <SurfaceCard
                 v-if="can.use"

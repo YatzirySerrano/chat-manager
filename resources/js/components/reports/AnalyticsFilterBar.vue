@@ -1,5 +1,12 @@
 <script setup lang="ts">
+import { CalendarRange, Globe2, SlidersHorizontal } from '@lucide/vue';
 import { computed, reactive, watch } from 'vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import type {
+    ActiveFilterPill,
+    FilterTabOption,
+} from '@/components/filters/types';
 import { AppSelect } from '@/components/ui/app-select';
 import type { AppSelectOption } from '@/components/ui/app-select';
 import { DateRangePicker } from '@/components/ui/date-picker';
@@ -10,10 +17,14 @@ import type {
     AnalyticsPreset,
     AnalyticsQuery,
 } from '@/types';
+import './insights.css';
 
 /**
  * Period and dimension filters shared by the reports page and the
- * dashboard. It only emits the new query; the page navigates, so filters
+ * dashboard, in the language of the inbox filters: the period as a pill
+ * track (the thumb glides to the chosen one), the dimensions as selects in
+ * one grid, and every applied dimension as a removable pill with «Limpiar
+ * filtros». It only emits the new query; the page navigates, so filters
  * stay in the URL. Options come from the server already limited to the
  * viewer's reach (an empty list hides the filter).
  */
@@ -26,6 +37,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ change: [query: AnalyticsQuery] }>();
+
+const DEFAULT_PERIOD: AnalyticsPreset = '30d';
 
 const state = reactive({
     period: props.period.preset,
@@ -57,7 +70,7 @@ watch(
 function build(): AnalyticsQuery {
     const query: AnalyticsQuery = {};
 
-    if (state.period !== '30d') {
+    if (state.period !== DEFAULT_PERIOD) {
         query.period = state.period;
     }
 
@@ -102,8 +115,14 @@ function apply(): void {
     emit('change', build());
 }
 
-function changePeriod(): void {
-    if (state.period !== 'custom') {
+function changePeriod(preset: AnalyticsPreset): void {
+    if (preset === state.period) {
+        return;
+    }
+
+    state.period = preset;
+
+    if (preset !== 'custom') {
         apply();
     }
 }
@@ -184,73 +203,157 @@ const dimensions = computed<Dimension[]>(() => {
     return list.filter((dimension) => dimension.show);
 });
 
-const periodOptions = computed(() =>
+const periodTabs = computed<FilterTabOption<AnalyticsPreset>[]>(() =>
     props.presets.map((preset) => ({
         value: preset.value,
         label: preset.label,
+        icon: preset.value === 'custom' ? CalendarRange : undefined,
+        attrs: { 'data-period': preset.value },
     })),
 );
+
+/** Every applied dimension as a removable pill («Canal: WhatsApp»). */
+const pills = computed<ActiveFilterPill[]>(() =>
+    dimensions.value.flatMap((dimension) => {
+        const value = state[dimension.key];
+
+        if (value === '' || value === undefined) {
+            return [];
+        }
+
+        const option = dimension.options.find(
+            (item) => String(item.value) === String(value),
+        );
+
+        return [
+            {
+                key: dimension.key,
+                label: `${dimension.label}: ${option?.label ?? value}`,
+                remove: () => {
+                    state[dimension.key] = '';
+                    apply();
+                },
+            },
+        ];
+    }),
+);
+
+const narrowed = computed(
+    () => pills.value.length > 0 || state.period !== DEFAULT_PERIOD,
+);
+
+function clearAll(): void {
+    state.period = DEFAULT_PERIOD;
+    state.department = '';
+    state.agent = '';
+    state.connection = '';
+    state.category = '';
+    state.status = '';
+    state.channel = '';
+    apply();
+}
 </script>
 
 <template>
     <!--
-      Full-width filter bar: every filter is a column of the same grid, so
-      the bar fills the workspace on wide screens and stacks on phones.
+      Full-width filter bar: the period on one pill track, every dimension a
+      column of the same grid (fills the workspace on wide screens, stacks on
+      phones) and the applied filters as pills under them.
     -->
-    <div class="flex flex-col gap-3 rounded-xl border bg-card p-4">
-        <div class="auto-grid [--col-min:13rem]">
-            <div class="grid gap-1.5">
-                <span class="text-xs font-medium text-muted-foreground"
-                    >Periodo</span
-                >
-                <AppSelect
-                    v-model="state.period"
-                    :options="periodOptions"
-                    aria-label="Periodo"
-                    data-filter="period"
-                    @change="changePeriod"
-                />
-            </div>
-            <div v-if="state.period === 'custom'" class="grid gap-1.5">
-                <span class="text-xs font-medium text-muted-foreground"
-                    >Rango de fechas<template v-if="maxDays">
-                        (hasta {{ maxDays }} días)</template
-                    ></span
-                >
-                <DateRangePicker
-                    v-model:from="state.from"
-                    v-model:to="state.to"
-                    required
-                    aria-label="Rango de fechas"
-                    @change="applyRange"
-                />
-            </div>
-            <div
-                v-for="dimension in dimensions"
-                :key="dimension.key"
-                class="grid gap-1.5"
+    <div
+        class="flex flex-col gap-3.5 rounded-2xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] glass-card p-3 shadow-float sm:p-4"
+        data-analytics-filters
+    >
+        <div class="flex flex-col gap-2">
+            <span
+                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
             >
-                <span class="text-xs font-medium text-muted-foreground">{{
-                    dimension.label
-                }}</span>
-                <AppSelect
-                    v-model="state[dimension.key]"
-                    :options="dimension.options"
-                    :aria-label="dimension.label"
-                    :data-filter="dimension.key"
-                    @change="apply"
-                />
+                <CalendarRange class="size-3.5" aria-hidden="true" />
+                Periodo
+            </span>
+            <FilterTabs
+                :options="periodTabs"
+                :model-value="state.period"
+                label="Periodo"
+                data-filter="period"
+                @update:model-value="changePeriod"
+            />
+        </div>
+
+        <div
+            v-if="state.period === 'custom'"
+            class="grid enter-spring gap-1.5 sm:max-w-md"
+        >
+            <span class="text-xs font-medium text-muted-foreground"
+                >Rango de fechas<template v-if="maxDays">
+                    (hasta {{ maxDays }} días)</template
+                ></span
+            >
+            <DateRangePicker
+                v-model:from="state.from"
+                v-model:to="state.to"
+                required
+                aria-label="Rango de fechas"
+                @change="applyRange"
+            />
+        </div>
+
+        <div v-if="dimensions.length > 0" class="flex flex-col gap-2">
+            <span
+                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+            >
+                <SlidersHorizontal class="size-3.5" aria-hidden="true" />
+                Filtrar por
+            </span>
+            <div class="auto-grid [--col-min:13rem] [--grid-gap:0.625rem]">
+                <label
+                    v-for="dimension in dimensions"
+                    :key="dimension.key"
+                    class="grid gap-1"
+                >
+                    <span
+                        class="text-[0.6875rem] font-medium text-muted-foreground"
+                        >{{ dimension.label }}</span
+                    >
+                    <AppSelect
+                        v-model="state[dimension.key]"
+                        :options="dimension.options"
+                        :aria-label="dimension.label"
+                        :data-filter="dimension.key"
+                        @change="apply"
+                    />
+                </label>
             </div>
         </div>
 
-        <p class="text-xs text-muted-foreground">
-            {{ period.label }}, comparado con
-            <template v-if="period.comparison.partial"
-                >el mismo tramo transcurrido del periodo anterior ({{
-                    period.comparison.label
-                }})</template
-            ><template v-else>{{ period.comparison.label }}</template
-            >, {{ zoneLabel(period.timezone) }}
-        </p>
+        <div
+            class="flex flex-col gap-2 border-t border-dashed pt-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+            <p
+                class="flex min-w-0 items-start gap-1.5 text-xs text-pretty text-muted-foreground"
+                data-analytics-period
+            >
+                <Globe2 class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                    <span class="font-medium text-foreground">{{
+                        period.label
+                    }}</span
+                    >, comparado con
+                    <template v-if="period.comparison.partial"
+                        >el mismo tramo transcurrido del periodo anterior ({{
+                            period.comparison.label
+                        }})</template
+                    ><template v-else>{{ period.comparison.label }}</template
+                    >, {{ zoneLabel(period.timezone) }}
+                </span>
+            </p>
+            <ActiveFilters
+                v-if="narrowed"
+                class="sm:justify-end"
+                :pills="pills"
+                :clearable="narrowed"
+                @clear="clearAll"
+            />
+        </div>
     </div>
 </template>

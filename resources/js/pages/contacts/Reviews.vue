@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { CheckCheck, GitMerge, ShieldQuestion, UserCheck } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import {
+    ArrowRightLeft,
+    CheckCheck,
+    GitMerge,
+    ShieldQuestion,
+    Trash2,
+    UserCheck,
+} from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import type { FilterTabOption } from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
-import { Segmented } from '@/components/ui/segmented';
 import { formatDateTime } from '@/lib/format';
 import { formatPhone } from '@/lib/phone';
 import { index as contactsIndex, show } from '@/routes/contacts';
@@ -126,11 +134,39 @@ function confirmDecision(): void {
     );
 }
 
-function filterBy(status: ContactReviewStatusValue): void {
+/* The tab moves at once; the list follows when the server answers. */
+const status = ref<ContactReviewStatusValue>(props.filters.status);
+const loading = ref(false);
+
+watch(
+    () => props.filters.status,
+    (value) => (status.value = value),
+);
+
+const statusTabs = computed<FilterTabOption<ContactReviewStatusValue>[]>(() =>
+    props.statuses.map((option) => ({
+        value: option.value,
+        label: option.label,
+    })),
+);
+
+function filterBy(value: ContactReviewStatusValue): void {
+    if (value === status.value) {
+        return;
+    }
+
+    status.value = value;
+
     router.get(
-        reviewsIndex.url({ query: status === 'open' ? {} : { status } }),
+        reviewsIndex.url({ query: value === 'open' ? {} : { status: value } }),
         undefined,
-        { preserveState: true, preserveScroll: true, replace: true },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            onStart: () => (loading.value = true),
+            onFinish: () => (loading.value = false),
+        },
     );
 }
 
@@ -151,50 +187,79 @@ function phone(summary: ContactReviewSummary): string {
             description="Contactos que podrían estar repetidos. El sistema no los une solo para no mezclar a personas distintas; decide tú si son la misma persona."
         />
 
-        <Segmented
-            :model-value="filters.status"
-            :options="statuses"
-            aria-label="Estado de los casos"
-            class="w-fit"
-            @change="filterBy"
-        />
-
-        <EmptyState
-            v-if="props.cases.data.length === 0"
-            :icon="ShieldQuestion"
-            :title="
-                filters.status === 'open'
-                    ? 'No hay posibles duplicados pendientes'
-                    : 'Todavía no se ha resuelto ningún caso'
-            "
-            description="Aparecen aquí cuando alguien escribe por WhatsApp y se parece a varios contactos, o cuando se agrega a mano un teléfono o correo que ya usa otro contacto."
+        <FilterTabs
+            :model-value="status"
+            :options="statusTabs"
+            label="Estado de los casos"
+            class="w-fit max-w-full enter-fade"
+            @update:model-value="filterBy"
         />
 
         <div
-            v-if="props.cases.data.length > 0"
-            class="auto-grid reveal-stagger items-start [--col-min:34rem] [--grid-gap:1rem]"
+            v-if="props.cases.data.length === 0"
+            class="reveal surface-float"
+            :aria-busy="loading"
         >
-            <SurfaceCard
-                v-for="reviewCase in props.cases.data"
+            <FilteredEmpty
+                :narrowed="false"
+                narrowed-title=""
+                :icon="ShieldQuestion"
+                :title="
+                    filters.status === 'open'
+                        ? 'No hay posibles duplicados pendientes'
+                        : 'Todavía no se ha resuelto ningún caso'
+                "
+                description="Aparecen aquí cuando alguien escribe por WhatsApp y se parece a varios contactos, o cuando se agrega a mano un teléfono o correo que ya usa otro contacto."
+            />
+        </div>
+
+        <ul
+            v-else
+            role="list"
+            class="auto-grid items-start transition-opacity [--col-min:34rem] [--grid-gap:1rem]"
+            :class="loading && 'opacity-60'"
+            :aria-busy="loading"
+        >
+            <li
+                v-for="(reviewCase, position) in props.cases.data"
                 :key="reviewCase.id"
-                class="grid gap-4 p-4"
+                class="grid enter-spring gap-4 surface-float p-4 sm:p-5"
+                :style="{ '--i': Math.min(position, 8) }"
             >
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                    <div class="min-w-0">
-                        <p class="font-medium">{{ reviewCase.reason_label }}</p>
-                        <p class="text-xs text-muted-foreground">
-                            Detectado
-                            {{ formatDateTime(reviewCase.created_at) }}
-                        </p>
+                <header
+                    class="flex flex-wrap items-start justify-between gap-3"
+                >
+                    <div class="flex min-w-0 items-start gap-3">
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-xl"
+                            :class="
+                                reviewCase.status === 'resolved'
+                                    ? 'bg-success-soft text-success-soft-foreground'
+                                    : 'bg-warning-soft text-warning-soft-foreground'
+                            "
+                            aria-hidden="true"
+                        >
+                            <CheckCheck
+                                v-if="reviewCase.status === 'resolved'"
+                                class="size-4"
+                            />
+                            <ShieldQuestion v-else class="size-4" />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="font-display leading-snug font-semibold">
+                                {{ reviewCase.reason_label }}
+                            </p>
+                            <p class="text-xs text-muted-foreground">
+                                Detectado
+                                {{ formatDateTime(reviewCase.created_at) }}
+                            </p>
+                        </div>
                     </div>
                     <p
                         v-if="reviewCase.status === 'resolved'"
-                        class="text-sm text-muted-foreground"
+                        class="rounded-full bg-success-soft px-2.5 py-1 text-xs font-medium text-success-soft-foreground"
                     >
-                        <CheckCheck
-                            class="mr-1 inline size-4 text-success"
-                            aria-hidden="true"
-                        />{{ reviewCase.resolution_label }}
+                        {{ reviewCase.resolution_label }}
                         <template v-if="reviewCase.resolved_by">
                             · {{ reviewCase.resolved_by }}</template
                         >
@@ -204,33 +269,42 @@ function phone(summary: ContactReviewSummary): string {
                         v-else
                         size="sm"
                         variant="outline"
+                        class="rounded-full max-sm:w-full"
                         @click="decide(reviewCase, 'distinct_people')"
                     >
                         <UserCheck />
                         Son personas distintas
                     </Button>
-                </div>
+                </header>
 
-                <div class="grid gap-3 md:grid-cols-2">
+                <div
+                    class="grid items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                >
                     <section
-                        class="grid content-start gap-1 rounded-lg border p-3"
+                        class="grid content-start gap-1.5 rounded-xl border border-warning/40 bg-[color-mix(in_oklch,var(--warning)_6%,var(--card))] p-3.5"
                         aria-label="Contacto en revisión"
                     >
                         <p class="text-xs font-medium text-muted-foreground">
                             En revisión
                         </p>
-                        <Link
-                            :href="show(reviewCase.contact.id)"
-                            class="truncate font-medium hover:underline"
-                            >{{ reviewCase.contact.name }}</Link
-                        >
-                        <p class="text-sm text-muted-foreground">
+                        <div class="flex min-w-0 items-center gap-2.5">
+                            <DirectoryAvatar
+                                :name="reviewCase.contact.name"
+                                size="sm"
+                            />
+                            <Link
+                                :href="show(reviewCase.contact.id)"
+                                class="min-w-0 truncate rounded-sm font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                                >{{ reviewCase.contact.name }}</Link
+                            >
+                        </div>
+                        <p class="text-sm break-words text-muted-foreground">
                             {{ phone(reviewCase.contact) }}
                             <template v-if="reviewCase.contact.email">
                                 · {{ reviewCase.contact.email }}</template
                             >
                         </p>
-                        <p class="text-xs text-muted-foreground">
+                        <p class="text-xs break-words text-muted-foreground">
                             {{ reviewCase.contact.source_label }}
                             <template
                                 v-if="reviewCase.contact.whatsapp_ids.length"
@@ -243,15 +317,26 @@ function phone(summary: ContactReviewSummary): string {
                             :active="reviewCase.contact.status === 'active'"
                             active-label="Activo"
                             inactive-label="Eliminado"
-                            class="justify-self-start"
+                            class="mt-0.5 justify-self-start"
                         />
                     </section>
+
+                    <span
+                        class="flex items-center justify-center text-muted-foreground"
+                        aria-hidden="true"
+                    >
+                        <span
+                            class="flex size-8 items-center justify-center rounded-full border bg-card shadow-(--shadow-control) max-md:rotate-90"
+                        >
+                            <ArrowRightLeft class="size-4" />
+                        </span>
+                    </span>
 
                     <div class="grid content-start gap-3">
                         <section
                             v-for="candidate in reviewCase.candidates"
                             :key="candidate.id"
-                            class="grid gap-1 rounded-lg border border-dashed p-3"
+                            class="grid gap-1.5 rounded-xl border border-dashed border-border-strong/70 bg-card p-3.5"
                             :aria-label="`Coincidencia: ${candidate.name}`"
                         >
                             <p
@@ -259,18 +344,28 @@ function phone(summary: ContactReviewSummary): string {
                             >
                                 Coincide con
                             </p>
-                            <Link
-                                :href="show(candidate.id)"
-                                class="truncate font-medium hover:underline"
-                                >{{ candidate.name }}</Link
+                            <div class="flex min-w-0 items-center gap-2.5">
+                                <DirectoryAvatar
+                                    :name="candidate.name"
+                                    size="sm"
+                                />
+                                <Link
+                                    :href="show(candidate.id)"
+                                    class="min-w-0 truncate rounded-sm font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                                    >{{ candidate.name }}</Link
+                                >
+                            </div>
+                            <p
+                                class="text-sm break-words text-muted-foreground"
                             >
-                            <p class="text-sm text-muted-foreground">
                                 {{ phone(candidate) }}
                                 <template v-if="candidate.email">
                                     · {{ candidate.email }}</template
                                 >
                             </p>
-                            <p class="text-xs text-muted-foreground">
+                            <p
+                                class="text-xs break-words text-muted-foreground"
+                            >
                                 {{ candidate.source_label }}
                                 <template v-if="candidate.whatsapp_ids.length">
                                     · WhatsApp
@@ -279,7 +374,7 @@ function phone(summary: ContactReviewSummary): string {
                             </p>
                             <div
                                 v-if="reviewCase.status === 'open'"
-                                class="mt-1 flex flex-wrap gap-2"
+                                class="mt-1.5 flex flex-wrap gap-2"
                             >
                                 <Button
                                     v-if="
@@ -287,6 +382,7 @@ function phone(summary: ContactReviewSummary): string {
                                         'ambiguous_identity_match'
                                     "
                                     size="sm"
+                                    class="rounded-full accent-gradient max-sm:w-full"
                                     @click="
                                         decide(
                                             reviewCase,
@@ -302,6 +398,7 @@ function phone(summary: ContactReviewSummary): string {
                                     v-else
                                     size="sm"
                                     variant="outline"
+                                    class="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive max-sm:w-full"
                                     @click="
                                         decide(
                                             reviewCase,
@@ -310,14 +407,15 @@ function phone(summary: ContactReviewSummary): string {
                                         )
                                     "
                                 >
+                                    <Trash2 />
                                     Eliminar el registro en revisión
                                 </Button>
                             </div>
                         </section>
                     </div>
                 </div>
-            </SurfaceCard>
-        </div>
+            </li>
+        </ul>
 
         <DataPagination
             v-if="props.cases.data.length > 0"

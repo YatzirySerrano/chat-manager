@@ -11,8 +11,10 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import InputError from '@/components/InputError.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -36,7 +38,6 @@ import {
 import { FileDropzone } from '@/components/ui/file-dropzone';
 import type { RejectedFile } from '@/components/ui/file-dropzone';
 import { RadioCards } from '@/components/ui/radio-cards';
-import { Spinner } from '@/components/ui/spinner';
 import { formatFileSize } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -52,7 +53,7 @@ import type {
     HistoryOptions,
 } from '@/types/history-import';
 import { errorMessage, historyRequest } from './api';
-import { FILE_STATUS_BADGE, formatNumber } from './labels';
+import { FILE_STATUS_TONE, formatNumber } from './labels';
 
 /**
  * Step 1: upload the authorized Whaticket files and check how each one was
@@ -357,7 +358,7 @@ function hasColumns(file: HistoryBatchFile): boolean {
                         aria-hidden="true"
                     >
                         <div
-                            class="h-full rounded-full bg-primary transition-[width] duration-(--duration-base) ease-(--ease-standard)"
+                            class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-base) ease-(--ease-standard)"
                             :style="{
                                 width: `${upload.progress.percentage ?? 0}%`,
                             }"
@@ -380,6 +381,7 @@ function hasColumns(file: HistoryBatchFile): boolean {
                         <Button
                             type="submit"
                             class="pointer-coarse:h-11"
+                            :class="upload.file !== null && 'shadow-glow'"
                             :disabled="upload.file === null"
                             :loading="upload.processing"
                         >
@@ -396,66 +398,75 @@ function hasColumns(file: HistoryBatchFile): boolean {
             description="Cómo se leyó cada archivo. Revisa las columnas no reconocidas y los datos que faltan."
             data-tour="history-import.files"
         >
-            <EmptyState
+            <FilteredEmpty
                 v-if="batch.files.length === 0"
-                class="border-none"
+                :narrowed="false"
+                narrowed-title=""
                 :icon="FileSpreadsheet"
                 title="Todavía no hay archivos"
                 description="Sube al menos el reporte de chats o los mensajes para ver el inventario."
             />
-            <ul v-else class="divide-y" aria-label="Archivos del lote">
+            <ul
+                v-else
+                class="reveal-stagger divide-y divide-border/70"
+                aria-label="Archivos del lote"
+            >
                 <li
                     v-for="file in batch.files"
                     :key="file.id"
-                    class="grid gap-3 px-4 py-4 sm:px-5"
+                    class="grid gap-3 px-4 py-4 transition-colors duration-(--duration-fast) hover:bg-surface-sunken/40 sm:px-5"
                     :data-file="file.kind"
                 >
                     <div
                         class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
                     >
-                        <div class="min-w-0 space-y-1">
-                            <p
-                                class="flex flex-wrap items-center gap-2 font-medium"
+                        <div class="flex min-w-0 items-start gap-3">
+                            <span
+                                class="admin-icon-tile size-10"
+                                aria-hidden="true"
                             >
                                 <component
                                     :is="KIND_ICONS[file.kind]"
-                                    class="size-4 shrink-0 text-muted-foreground"
-                                    aria-hidden="true"
+                                    class="size-4"
                                 />
-                                <span class="min-w-0 wrap-anywhere">{{
-                                    file.name
-                                }}</span>
-                                <Badge
-                                    :variant="FILE_STATUS_BADGE[file.status]"
+                            </span>
+                            <div class="min-w-0 space-y-1">
+                                <p
+                                    class="flex flex-wrap items-center gap-2 font-medium"
                                 >
-                                    <Spinner
-                                        v-if="isReading(file)"
-                                        class="size-3"
+                                    <span class="min-w-0 wrap-anywhere">{{
+                                        file.name
+                                    }}</span>
+                                    <StatusPill
+                                        :label="file.status_label"
+                                        :tone="
+                                            FILE_STATUS_TONE[file.status].tone
+                                        "
+                                        :live="isReading(file)"
                                     />
-                                    {{ file.status_label }}
-                                </Badge>
-                                <Badge
-                                    v-if="file.verified_format"
-                                    variant="success"
-                                    title="Este archivo tiene el formato comprobado con una exportación real de Whaticket: se lee sin mapeo manual."
-                                >
-                                    Formato verificado
-                                </Badge>
-                                <Badge
-                                    v-else
-                                    variant="outline"
-                                    title="El formato de este archivo aún no se comprobó con una exportación real de Whaticket (ver el aviso de arriba)."
-                                >
-                                    Sin verificar
-                                </Badge>
-                            </p>
-                            <p class="text-xs text-muted-foreground">
-                                {{ file.kind_label }} ·
-                                {{ formatFileSize(file.size_bytes) }}
-                                <template v-if="file.format">
-                                    · formato detectado: {{ file.format }}
-                                </template>
-                            </p>
+                                    <Badge
+                                        v-if="file.verified_format"
+                                        variant="success"
+                                        title="Este archivo tiene el formato comprobado con una exportación real de Whaticket: se lee sin mapeo manual."
+                                    >
+                                        Formato verificado
+                                    </Badge>
+                                    <Badge
+                                        v-else
+                                        variant="outline"
+                                        title="El formato de este archivo aún no se comprobó con una exportación real de Whaticket (ver el aviso de arriba)."
+                                    >
+                                        Sin verificar
+                                    </Badge>
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ file.kind_label }} ·
+                                    {{ formatFileSize(file.size_bytes) }}
+                                    <template v-if="file.format">
+                                        · formato detectado: {{ file.format }}
+                                    </template>
+                                </p>
+                            </div>
                         </div>
                         <div
                             v-if="editable"
@@ -511,38 +522,52 @@ function hasColumns(file: HistoryBatchFile): boolean {
                         v-if="file.status === 'parsed'"
                         class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"
                     >
-                        <div class="rounded-lg bg-muted/40 px-3 py-2">
+                        <div
+                            class="rounded-xl bg-surface-sunken/70 px-3 py-2 ring-1 ring-border/60 ring-inset"
+                        >
                             <dt class="text-xs text-muted-foreground">
                                 Filas leídas
                             </dt>
-                            <dd class="font-semibold tabular-nums">
+                            <dd
+                                class="font-display text-lg font-semibold tabular-nums"
+                            >
                                 {{ formatNumber(file.rows.total) }}
                             </dd>
                         </div>
-                        <div class="rounded-lg bg-muted/40 px-3 py-2">
+                        <div
+                            class="rounded-xl bg-surface-sunken/70 px-3 py-2 ring-1 ring-border/60 ring-inset"
+                        >
                             <dt class="text-xs text-muted-foreground">
                                 Aceptadas
                             </dt>
-                            <dd class="font-semibold tabular-nums">
+                            <dd
+                                class="font-display text-lg font-semibold tabular-nums"
+                            >
                                 {{ formatNumber(file.rows.accepted) }}
                             </dd>
                         </div>
-                        <div class="rounded-lg bg-muted/40 px-3 py-2">
+                        <div
+                            class="rounded-xl bg-surface-sunken/70 px-3 py-2 ring-1 ring-border/60 ring-inset"
+                        >
                             <dt class="text-xs text-muted-foreground">
                                 Rechazadas
                             </dt>
-                            <dd class="font-semibold tabular-nums">
+                            <dd
+                                class="font-display text-lg font-semibold tabular-nums"
+                            >
                                 {{ formatNumber(file.rows.rejected) }}
                             </dd>
                         </div>
                         <div
                             v-if="file.kind === 'media'"
-                            class="rounded-lg bg-muted/40 px-3 py-2"
+                            class="rounded-xl bg-surface-sunken/70 px-3 py-2 ring-1 ring-border/60 ring-inset"
                         >
                             <dt class="text-xs text-muted-foreground">
                                 Archivos en el ZIP
                             </dt>
-                            <dd class="font-semibold tabular-nums">
+                            <dd
+                                class="font-display text-lg font-semibold tabular-nums"
+                            >
                                 {{ formatNumber(file.media_entries) }}
                             </dd>
                         </div>
@@ -561,7 +586,7 @@ function hasColumns(file: HistoryBatchFile): boolean {
                                 :key="index"
                                 :class="
                                     cn(
-                                        'rounded-md border px-2 py-0.5 text-xs wrap-anywhere',
+                                        'rounded-full border bg-card px-2 py-0.5 text-xs wrap-anywhere',
                                         file.unknown_headers.includes(header) &&
                                             'border-dashed text-muted-foreground',
                                     )

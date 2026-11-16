@@ -119,7 +119,7 @@ function reset(): void {
                     trigger !== null ? picker?.activeOptionId : undefined
                 "
                 placeholder="Escribe «/» para buscar una respuesta rápida…"
-                :class="[fieldControl, 'flex min-h-24 px-3 py-2']"
+                :class="[fieldControl, 'flex min-h-24 rounded-xl! px-3 py-2']"
                 @input="updateTrigger"
                 @click="updateTrigger"
                 @keyup="
@@ -143,7 +143,7 @@ function reset(): void {
 
         <div
             v-if="missingLabels.length > 0"
-            class="flex gap-2 rounded-lg bg-warning/10 p-2 text-xs text-foreground"
+            class="flex gap-2 rounded-xl bg-warning-soft p-2.5 text-xs text-warning-soft-foreground"
             role="status"
         >
             <TriangleAlert

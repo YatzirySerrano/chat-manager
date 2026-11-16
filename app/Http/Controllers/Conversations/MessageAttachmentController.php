@@ -44,6 +44,9 @@ class MessageAttachmentController extends ConversationOperationController
         'video/mp4', 'video/3gpp', 'video/webm', 'video/quicktime',
     ];
 
+    /** How long the viewer's browser keeps a file before asking again. */
+    public const BROWSER_CACHE_SECONDS = 604800;
+
     public function show(Request $request, Conversation $conversation, Message $message, MessageAttachment $attachment, MediaThumbnails $thumbnails): Response
     {
         $this->ensureVisible($conversation);
@@ -144,12 +147,16 @@ class MessageAttachmentController extends ConversationOperationController
     }
 
     /**
-     * Private, always revalidated caching. Set after the response is built
-     * because a file response marks itself public on construction.
+     * Private caching in the viewer's own browser only (never a shared
+     * proxy). The file behind an attachment URL never changes, so the browser
+     * keeps it for a week instead of asking again every time the chat is
+     * painted (each request used to cost a full round trip with session and
+     * authorization). After that it revalidates with the ETag. Set after the
+     * response is built because a file response marks itself public.
      */
     private function revalidated(Response $response, string $etag, CarbonInterface $lastModified): Response
     {
-        $response->headers->set('Cache-Control', 'private, no-cache');
+        $response->headers->set('Cache-Control', 'private, max-age='.self::BROWSER_CACHE_SECONDS);
         $response->setEtag($etag);
         $response->setLastModified($lastModified);
 

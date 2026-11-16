@@ -63,11 +63,11 @@ defineProps<{
         </div>
         <div
             v-else
-            class="flex flex-col gap-4 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center"
+            class="flex flex-col gap-4 surface-float accent-gradient-soft p-5 sm:flex-row sm:items-center"
         >
             <div class="flex flex-1 items-start gap-3">
                 <span
-                    class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-muted-foreground"
+                    class="flex size-10 shrink-0 items-center justify-center rounded-xl accent-gradient"
                 >
                     <MessagesSquare class="size-4" aria-hidden="true" />
                 </span>

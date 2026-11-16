@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { FolderTree } from '@lucide/vue';
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 import ColorPicker from '@/components/ColorPicker.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
 import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import TagBadge from '@/components/tags/TagBadge.vue';
@@ -131,15 +133,26 @@ function submit(): void {
                 :error="validation.error('color')"
             />
 
-            <div class="grid gap-2 rounded-lg border bg-muted/40 p-3">
-                <p class="text-xs font-medium text-muted-foreground">
-                    Vista previa
-                </p>
-                <div class="flex flex-wrap items-center gap-2">
+            <div
+                class="flex items-center gap-3 rounded-xl border border-dashed bg-surface-sunken/60 p-3"
+                aria-live="polite"
+            >
+                <DirectoryAvatar
+                    :name="previewName"
+                    :icon="FolderTree"
+                    :color="form.color"
+                    shape="square"
+                    class="motion-safe:transition-[background] motion-safe:duration-(--duration-base)"
+                />
+                <div class="grid min-w-0 gap-1">
+                    <p class="text-xs font-medium text-muted-foreground">
+                        Así se verá la categoría
+                    </p>
                     <TagBadge
                         :name="previewName"
                         :color="form.color"
                         size="md"
+                        class="max-w-full"
                     />
                 </div>
             </div>

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\AttachmentStatus;
+use App\Jobs\WarmMediaThumbnail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -43,6 +44,21 @@ class MessageAttachment extends Model
         'delivery_method' => 'native',
         'download_attempts' => 0,
     ];
+
+    /**
+     * As soon as a stored image becomes available (received, sent or
+     * imported), its chat preview is made in the background, so nobody waits
+     * for it the first time the conversation is opened.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (MessageAttachment $attachment): void {
+            if ($attachment->status === AttachmentStatus::Available
+                && ($attachment->wasRecentlyCreated || $attachment->wasChanged(['path', 'status']))) {
+                WarmMediaThumbnail::warm((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, 'message_attachments', $attachment->id);
+            }
+        });
+    }
 
     /**
      * @return array<string, string>

@@ -13,6 +13,8 @@ import {
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
 import StatCard from '@/components/StatCard.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -88,10 +90,25 @@ async function resume(): Promise<void> {
             v-if="running"
             title="Importando…"
             description="Puedes salir de esta página o seguir trabajando: la importación continúa sola."
+            class="enter-spring accent-gradient-soft"
             body-class="grid gap-3 p-4 sm:p-5"
         >
+            <template #actions>
+                <StatusPill
+                    :label="batch.status_label"
+                    :tone="batch.status === 'queued' ? 'info' : 'primary'"
+                    live
+                />
+            </template>
+            <p
+                class="font-display text-4xl leading-none font-semibold tracking-tight tabular-nums"
+                aria-hidden="true"
+            >
+                {{ percent
+                }}<span class="text-xl text-muted-foreground">%</span>
+            </p>
             <div
-                class="h-2.5 w-full overflow-hidden rounded-full bg-muted"
+                class="h-2.5 w-full overflow-hidden rounded-full bg-muted shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_10%,transparent)]"
                 role="progressbar"
                 aria-label="Avance de la importación"
                 :aria-valuenow="percent"
@@ -99,7 +116,7 @@ async function resume(): Promise<void> {
                 aria-valuemax="100"
             >
                 <div
-                    class="import-bar h-full rounded-full bg-primary transition-[width] duration-(--duration-panel) ease-(--ease-standard)"
+                    class="import-bar h-full rounded-full accent-gradient transition-[width] duration-(--duration-slow) ease-(--ease-spring-soft)"
                     :style="{ width: `${percent}%` }"
                 />
             </div>
@@ -197,11 +214,14 @@ async function resume(): Promise<void> {
             </StatusNote>
 
             <section aria-labelledby="result-title" class="grid gap-3">
-                <h2 id="result-title" class="text-base font-semibold">
+                <h2
+                    id="result-title"
+                    class="font-display text-lg font-semibold"
+                >
                     Reporte final
                 </h2>
                 <div
-                    class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
+                    class="grid reveal-stagger grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
                     data-result
                 >
                     <StatCard
@@ -234,9 +254,11 @@ async function resume(): Promise<void> {
                     />
                 </div>
                 <dl
-                    class="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2"
+                    class="admin-section grid grid-cols-1 gap-x-6 gap-y-1 px-4 py-2 text-sm sm:grid-cols-2 sm:px-5"
                 >
-                    <div class="flex justify-between gap-2 border-b py-1.5">
+                    <div
+                        class="flex justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                    >
                         <dt class="text-muted-foreground">
                             Mensajes guardados
                         </dt>
@@ -244,7 +266,9 @@ async function resume(): Promise<void> {
                             {{ formatNumber(batch.result.messages) }}
                         </dd>
                     </div>
-                    <div class="flex justify-between gap-2 border-b py-1.5">
+                    <div
+                        class="flex justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                    >
                         <dt class="text-muted-foreground">
                             Archivos recuperados
                         </dt>
@@ -254,7 +278,9 @@ async function resume(): Promise<void> {
                             }}
                         </dd>
                     </div>
-                    <div class="flex justify-between gap-2 border-b py-1.5">
+                    <div
+                        class="flex justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                    >
                         <dt class="text-muted-foreground">
                             Archivos no disponibles
                         </dt>
@@ -262,13 +288,17 @@ async function resume(): Promise<void> {
                             {{ formatNumber(batch.result.attachments_missing) }}
                         </dd>
                     </div>
-                    <div class="flex justify-between gap-2 border-b py-1.5">
+                    <div
+                        class="flex justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                    >
                         <dt class="text-muted-foreground">Contactos creados</dt>
                         <dd class="tabular-nums">
                             {{ formatNumber(batch.result.contacts_created) }}
                         </dd>
                     </div>
-                    <div class="flex justify-between gap-2 border-b py-1.5">
+                    <div
+                        class="flex justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+                    >
                         <dt class="text-muted-foreground">
                             Contactos guardados en el directorio
                         </dt>

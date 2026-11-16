@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { TriangleAlert } from '@lucide/vue';
+import {
+    Braces,
+    FileText,
+    Image as ImageIcon,
+    Send,
+    Shapes,
+    TriangleAlert,
+    Type,
+} from '@lucide/vue';
+import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryHero from '@/components/directory/DirectoryHero.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import TemplatePreview from '@/components/templates/TemplatePreview.vue';
@@ -32,15 +43,56 @@ defineProps<{
     <Head :title="`Plantilla ${template.name}`" />
 
     <div class="page-shell">
-        <PageHeader
-            help="plantillas"
-            :title="template.name"
-            :description="
-                [formatLocale(template.language), template.connection?.name]
-                    .filter(Boolean)
-                    .join(', ')
-            "
-        />
+        <DirectoryHero>
+            <template #avatar>
+                <DirectoryAvatar
+                    :name="template.name"
+                    :icon="FileText"
+                    size="lg"
+                    shape="square"
+                    :tone="template.is_deleted ? 'muted' : 'accent'"
+                    class="dir-hero-avatar"
+                />
+            </template>
+            <PageHeader
+                help="plantillas"
+                :title="template.name"
+                :description="
+                    [formatLocale(template.language), template.connection?.name]
+                        .filter(Boolean)
+                        .join(', ')
+                "
+                class="[&_h1]:break-all"
+            />
+            <template #footer>
+                <DeletedBadge v-if="template.is_deleted" feminine />
+                <TemplateStatusBadge v-else :status="template.status" />
+                <span
+                    v-if="template.category.label"
+                    class="inline-flex items-center gap-1 rounded-full border bg-card px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                    <Shapes class="size-3" aria-hidden="true" />
+                    {{ template.category.label }}
+                </span>
+                <span
+                    class="inline-flex items-center gap-1 rounded-full border bg-card px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                    <Braces class="size-3" aria-hidden="true" />
+                    {{
+                        template.parameters.length === 1
+                            ? '1 variable'
+                            : `${template.parameters.length} variables`
+                    }}
+                </span>
+                <span
+                    v-if="template.sendable"
+                    class="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground"
+                >
+                    <Send class="size-3" aria-hidden="true" />
+                    Se puede enviar desde las conversaciones
+                </span>
+            </template>
+        </DirectoryHero>
 
         <DeletedRecordNotice
             v-if="template.is_deleted"
@@ -56,7 +108,9 @@ defineProps<{
             class="grid reveal-stagger gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]"
         >
             <SurfaceCard title="Vista previa" body-class="grid gap-4 p-5">
-                <div class="rounded-xl bg-surface-sunken p-5 sm:p-8">
+                <div
+                    class="rounded-2xl chat-canvas bg-surface-sunken p-5 sm:p-8"
+                >
                     <TemplatePreview :template="template" />
                 </div>
                 <p class="text-xs text-muted-foreground">
@@ -75,16 +129,16 @@ defineProps<{
                         :status="template.status"
                         class="w-fit"
                     />
-                    <dl class="grid gap-2 text-xs">
-                        <div class="flex justify-between gap-3">
+                    <dl class="grid divide-y text-xs">
+                        <div class="flex justify-between gap-3 py-2">
                             <dt class="text-muted-foreground">Categoría</dt>
-                            <dd class="font-medium">
+                            <dd class="text-right font-medium">
                                 {{ template.category.label ?? '—' }}
                             </dd>
                         </div>
-                        <div class="flex justify-between gap-3">
+                        <div class="flex justify-between gap-3 py-2">
                             <dt class="text-muted-foreground">Calidad</dt>
-                            <dd class="font-medium">
+                            <dd class="text-right font-medium">
                                 {{
                                     formatTemplateQuality(
                                         template.quality_score,
@@ -94,35 +148,35 @@ defineProps<{
                         </div>
                         <div
                             v-if="template.rejected_reason"
-                            class="flex justify-between gap-3"
+                            class="flex justify-between gap-3 py-2"
                         >
                             <dt class="text-muted-foreground">
                                 Motivo de rechazo
                             </dt>
-                            <dd class="font-medium">
+                            <dd class="text-right font-medium break-words">
                                 {{ template.rejected_reason }}
                             </dd>
                         </div>
-                        <div class="flex justify-between gap-3">
+                        <div class="flex justify-between gap-3 py-2">
                             <dt class="text-muted-foreground">
                                 Cambio de estado
                             </dt>
-                            <dd>
+                            <dd class="text-right">
                                 {{ formatDateTime(template.status_updated_at) }}
                             </dd>
                         </div>
-                        <div class="flex justify-between gap-3">
+                        <div class="flex justify-between gap-3 py-2">
                             <dt class="text-muted-foreground">
                                 Actualizada desde Meta
                             </dt>
-                            <dd>
+                            <dd class="text-right">
                                 {{ formatDateTime(template.last_synced_at) }}
                             </dd>
                         </div>
                     </dl>
                     <div
                         v-if="!template.sendable && template.unsupported_reason"
-                        class="flex gap-2 rounded-lg bg-warning-soft p-3 text-xs"
+                        class="flex gap-2 rounded-xl bg-warning-soft p-3 text-xs text-warning-soft-foreground"
                     >
                         <TriangleAlert
                             class="mt-0.5 size-4 shrink-0 text-warning"
@@ -145,19 +199,42 @@ defineProps<{
                     <div
                         v-for="parameter in template.parameters"
                         :key="parameter.key"
-                        class="rounded-lg border p-2"
+                        class="flex items-start gap-3 rounded-xl border bg-card p-3 shadow-(--shadow-control)"
                     >
-                        <p class="text-xs font-medium">{{ parameter.label }}</p>
-                        <p class="text-xs text-muted-foreground">
-                            {{
-                                parameter.kind === 'media_url'
-                                    ? 'Enlace público (que empiece con https://) a la imagen, video o documento'
-                                    : `Texto, hasta ${parameter.max} caracteres`
-                            }}
-                            <template v-if="parameter.example">
-                                · Ejemplo: {{ parameter.example }}</template
+                        <span
+                            class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                            aria-hidden="true"
+                        >
+                            <component
+                                :is="
+                                    parameter.kind === 'media_url'
+                                        ? ImageIcon
+                                        : Type
+                                "
+                                class="size-3.5"
+                            />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="text-xs font-medium">
+                                {{ parameter.label }}
+                            </p>
+                            <p class="text-xs text-muted-foreground">
+                                {{
+                                    parameter.kind === 'media_url'
+                                        ? 'Enlace público (que empiece con https://) a la imagen, video o documento'
+                                        : `Texto, hasta ${parameter.max} caracteres`
+                                }}
+                            </p>
+                            <p
+                                v-if="parameter.example"
+                                class="mt-1 text-xs break-words text-muted-foreground"
                             >
-                        </p>
+                                Ejemplo:
+                                <span class="text-foreground">{{
+                                    parameter.example
+                                }}</span>
+                            </p>
+                        </div>
                     </div>
                 </SurfaceCard>
             </div>

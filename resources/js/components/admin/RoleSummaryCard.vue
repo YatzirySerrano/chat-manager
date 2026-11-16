@@ -16,6 +16,7 @@ import {
 import type { RolePermissionSummary } from '@/lib/roles';
 import { index as usersIndex } from '@/routes/admin/users';
 import type { ManagedRole, RecordAction } from '@/types';
+import './admin.css';
 
 /**
  * Executive card of a role for the «Tarjetas» view: icon, name, short
@@ -48,11 +49,19 @@ const description = computed(() =>
     <RecordCard
         :muted="role.is_deleted"
         :highlighted="highlighted"
-        class="gap-4"
+        class="admin-card group/card gap-4 shadow-float hover:shadow-lift"
+        data-interactive
     >
         <template #leading>
             <span
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                class="flex size-11 shrink-0 items-center justify-center rounded-xl transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/card:scale-105 group-hover/card:-rotate-3"
+                :class="
+                    role.is_deleted
+                        ? 'bg-muted text-muted-foreground'
+                        : role.is_root
+                          ? 'accent-gradient shadow-glow'
+                          : 'admin-icon-tile'
+                "
                 aria-hidden="true"
             >
                 <component :is="roleIcon" class="size-5" />
@@ -76,7 +85,7 @@ const description = computed(() =>
             <Badge
                 v-if="role.is_current_user_role"
                 variant="outline"
-                class="font-normal"
+                class="rounded-full border-primary/30 font-normal text-primary"
                 >Tu rol</Badge
             >
             <Badge
@@ -88,7 +97,7 @@ const description = computed(() =>
         </template>
 
         <dl
-            class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 border-t pt-3"
+            class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg bg-surface-sunken/60 p-3 ring-1 ring-border/50 ring-inset"
         >
             <dt class="text-xs font-medium text-muted-foreground">Alcance</dt>
             <dd class="flex min-w-0 items-center gap-1.5 text-sm">
@@ -103,7 +112,7 @@ const description = computed(() =>
             <dd class="min-w-0 text-sm">
                 <Link
                     :href="usersIndex({ query: { role: role.id } })"
-                    class="rounded-sm tabular-nums underline-offset-4 hover:underline"
+                    class="rounded-sm tabular-nums underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                     :aria-label="`Ver los ${usersCountLabel(role.users_count)} con el rol ${role.label}`"
                 >
                     {{ usersCountLabel(role.users_count) }}
@@ -144,6 +153,7 @@ const description = computed(() =>
         </template>
         <template #actions>
             <RecordActions
+                class="admin-row-actions"
                 :actions="actions"
                 :record="`el rol ${role.label}`"
                 :busy="busy"

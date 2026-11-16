@@ -3,13 +3,20 @@ import { Deferred, Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
     ArrowRight,
     Building2,
+    CalendarCheck2,
     CheckCircle2,
+    ChartPie,
     CircleCheck,
+    Gauge,
     Hourglass,
     Inbox,
+    Layers,
     MessageCircle,
+    Radio,
     Timer,
+    TrendingUp,
     UserRoundCheck,
+    UsersRound,
 } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
 import BacklogChart from '@/components/charts/BacklogChart.vue';
@@ -34,11 +41,10 @@ import PageHeader from '@/components/PageHeader.vue';
 import AnalyticsFilterBar from '@/components/reports/AnalyticsFilterBar.vue';
 import GranularityToggle from '@/components/reports/GranularityToggle.vue';
 import HourHeatmap from '@/components/reports/HourHeatmap.vue';
+import InsightHeading from '@/components/reports/InsightHeading.vue';
 import KpiCard from '@/components/reports/KpiCard.vue';
-import SectionHeading from '@/components/SectionHeading.vue';
-import StatCard from '@/components/StatCard.vue';
+import KpiSkeleton from '@/components/reports/KpiSkeleton.vue';
 import StatusNote from '@/components/StatusNote.vue';
-import SurfaceCard from '@/components/SurfaceCard.vue';
 import {
     chartTokens,
     formatBucket,
@@ -513,17 +519,25 @@ const loadingCards = [
         <Deferred v-if="canViewMetrics" data="overview">
             <template #fallback>
                 <div
-                    class="auto-grid reveal-stagger [--col-min:14rem]"
+                    class="flex flex-col gap-3"
+                    role="status"
                     aria-busy="true"
                     aria-label="Cargando indicadores"
                 >
-                    <StatCard
-                        v-for="index in 8"
-                        :key="index"
-                        label="Cargando…"
-                        :value="null"
-                        loading
-                    />
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <KpiSkeleton
+                            v-for="index in 3"
+                            :key="index"
+                            :index="index - 1"
+                        />
+                    </div>
+                    <div class="auto-grid [--col-min:14rem]">
+                        <KpiSkeleton
+                            v-for="index in 4"
+                            :key="index"
+                            :index="index + 2"
+                        />
+                    </div>
                 </div>
             </template>
 
@@ -553,8 +567,9 @@ const loadingCards = [
                     aria-labelledby="live-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="live-heading"
+                        :icon="Radio"
                         title="Ahora"
                         :description="
                             statusFiltered
@@ -570,6 +585,12 @@ const loadingCards = [
                             label="Pendientes"
                             :icon="Hourglass"
                             :value="count(overview.conversations.pending)"
+                            :tone="
+                                overview.conversations.pending
+                                    ? 'warning'
+                                    : 'primary'
+                            "
+                            size="default"
                             live
                             hint="Esperan que alguien las acepte"
                             :unavailable-label="conversationsUnavailable"
@@ -584,6 +605,7 @@ const loadingCards = [
                             label="En atención"
                             :icon="MessageCircle"
                             :value="count(overview.conversations.active)"
+                            size="default"
                             live
                             hint="Con una persona responsable"
                             :unavailable-label="conversationsUnavailable"
@@ -598,6 +620,8 @@ const loadingCards = [
                             label="Finalizadas hoy"
                             :icon="CircleCheck"
                             :value="count(overview.conversations.closed_today)"
+                            tone="success"
+                            size="default"
                             live
                             hint="Cerradas desde las 00:00 de hoy y que siguen cerradas"
                             :unavailable-label="conversationsUnavailable"
@@ -621,8 +645,9 @@ const loadingCards = [
                     aria-labelledby="period-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="period-heading"
+                        :icon="CalendarCheck2"
                         title="Resultado del periodo"
                         :description="`Solicitudes recibidas ${period?.label ?? ''}; cada una cuenta una sola vez. Comparado con ${period?.comparison.partial ? 'el mismo tramo transcurrido del periodo anterior' : 'el periodo anterior'} (${comparisonLabel}).`"
                     />
@@ -715,7 +740,10 @@ const loadingCards = [
         <Deferred v-if="canViewMetrics" data="charts">
             <template #fallback>
                 <section class="flex flex-col gap-3" aria-busy="true">
-                    <SectionHeading title="Tiempos y cumplimiento" />
+                    <InsightHeading
+                        :icon="Gauge"
+                        title="Tiempos y cumplimiento"
+                    />
                     <div class="grid gap-3 lg:grid-cols-3">
                         <ChartCard
                             v-for="card in loadingCards"
@@ -738,22 +766,26 @@ const loadingCards = [
                     aria-labelledby="times-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="times-heading"
+                        :icon="Gauge"
                         title="Tiempos y cumplimiento"
                         :description="period?.label"
                     >
                         <template v-if="canViewReports" #actions>
                             <Link
                                 :href="reportsIndex({ query: filters })"
-                                class="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                                class="group/reports inline-flex h-8 items-center gap-1.5 rounded-full border border-primary/25 bg-primary-soft px-3 text-sm font-semibold text-primary-soft-foreground shadow-(--shadow-control) transition-[transform,box-shadow] duration-(--duration-base) ease-(--ease-spring-soft) outline-none hover:-translate-y-px hover:shadow-lift focus-visible:ring-[3px] focus-visible:ring-primary/30 active:scale-[0.96]"
                                 data-tour="dashboard.reports-link"
                             >
                                 Ver reportes completos
-                                <ArrowRight class="size-4" aria-hidden="true" />
+                                <ArrowRight
+                                    class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/reports:translate-x-0.5"
+                                    aria-hidden="true"
+                                />
                             </Link>
                         </template>
-                    </SectionHeading>
+                    </InsightHeading>
 
                     <div class="grid grid-flow-dense gap-3 lg:grid-cols-3">
                         <ResponseTrendChart
@@ -792,8 +824,9 @@ const loadingCards = [
                     aria-labelledby="load-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="load-heading"
+                        :icon="Layers"
                         title="Carga de trabajo"
                         description="Qué hay pendiente y en manos de quién."
                     />
@@ -825,8 +858,9 @@ const loadingCards = [
                     aria-labelledby="demand-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="demand-heading"
+                        :icon="TrendingUp"
                         title="Demanda"
                         description="Cuánto llega y cuándo."
                     />
@@ -869,25 +903,19 @@ const loadingCards = [
                             </template>
                         </ChartCard>
 
-                        <SurfaceCard
+                        <ChartCard
                             v-if="charts.heatmap"
                             title="¿En qué horario llegan más solicitudes?"
                             description="Solicitudes recibidas en el periodo por día de la semana y hora"
-                            body-class="p-4 sm:p-5"
+                            :empty="charts.heatmap.max === 0"
+                            empty-text="Sin solicitudes recibidas en este periodo"
                             data-chart="heatmap"
                         >
                             <HourHeatmap
-                                v-if="charts.heatmap.max > 0"
                                 :cells="charts.heatmap.cells"
                                 :max="charts.heatmap.max"
                             />
-                            <p
-                                v-else
-                                class="py-8 text-sm text-muted-foreground"
-                            >
-                                Sin solicitudes recibidas en este periodo.
-                            </p>
-                        </SurfaceCard>
+                        </ChartCard>
                     </div>
                 </section>
 
@@ -895,8 +923,9 @@ const loadingCards = [
                     aria-labelledby="mix-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="mix-heading"
+                        :icon="ChartPie"
                         title="Distribución"
                         description="De qué tipo son las solicitudes del periodo, por dónde llegan y cómo están hoy."
                     />
@@ -931,8 +960,9 @@ const loadingCards = [
                     aria-labelledby="team-heading"
                     class="flex flex-col gap-3"
                 >
-                    <SectionHeading
+                    <InsightHeading
                         id="team-heading"
+                        :icon="UsersRound"
                         title="Equipo"
                         description="Solicitudes del periodo según su responsable y su departamento actuales; el resto se agrupa en «Otros». La productividad de cada persona está en Reportes."
                     />
@@ -968,18 +998,21 @@ const loadingCards = [
             aria-label="Equipo disponible"
             class="auto-grid reveal-stagger [--col-min:14rem]"
         >
-            <StatCard
+            <KpiCard
                 label="Agentes activos"
                 :icon="UserRoundCheck"
                 :value="overview.agents.active"
+                plain
                 hint="Cuentas activas que pueden atender conversaciones"
                 unavailable-label="Sin datos"
             />
-            <StatCard
+            <KpiCard
                 label="Departamentos activos"
                 :icon="Building2"
                 :value="overview.departments.active"
+                plain
                 :hint="`${formatNumber(overview.departments.total)} en total`"
+                unavailable-label="Sin datos todavía"
             />
         </section>
     </div>

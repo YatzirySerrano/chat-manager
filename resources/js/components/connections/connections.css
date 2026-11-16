@@ -1,0 +1,51 @@
+/*
+  Connection form (pages/connections/Form.vue): the shared FormSection
+  panels become glass cards with a lip of light, and each section title
+  gets a short accent bar. The panels carry Tailwind utilities (bg-card,
+  shadow-card), so these rules stay outside any layer to win over them;
+  every selector is scoped to `.connection-form`, so nothing else changes.
+*/
+.connection-form [data-slot='form-section'] > div:last-child.overflow-hidden {
+    border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    border-radius: var(--radius-2xl, 1.125rem);
+    background-color: color-mix(in oklch, var(--card) 86%, transparent);
+    background-image: linear-gradient(
+        180deg,
+        color-mix(in oklch, white 3%, transparent),
+        transparent 5rem
+    );
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    box-shadow: var(--shadow-float, var(--shadow-card));
+}
+
+.connection-form [data-slot='form-section'] > div:first-child > h2 {
+    position: relative;
+    padding-left: 0.875rem;
+}
+
+.connection-form [data-slot='form-section'] > div:first-child > h2::before {
+    content: '';
+    position: absolute;
+    top: 0.3em;
+    bottom: 0.3em;
+    left: 0;
+    width: 3px;
+    border-radius: 3px;
+    background: linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--primary) 60%, white),
+        var(--primary)
+    );
+}
+
+/* An automatic message turned on: its card glows faintly in the palette. */
+.connection-message[data-enabled] {
+    border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+    background-image: linear-gradient(
+        135deg,
+        color-mix(in oklch, var(--primary) 8%, var(--card)),
+        var(--card) 60%
+    );
+    box-shadow: var(--shadow-float, var(--shadow-card));
+}

@@ -14,6 +14,8 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
+import DirectoryRow from '@/components/directory/DirectoryRow.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ImportRollbackDialog from '@/components/imports/ImportRollbackDialog.vue';
 import InputError from '@/components/InputError.vue';
@@ -445,13 +447,13 @@ const progress = computed(() => {
                 class="flex min-w-0 flex-col gap-2.5"
             >
                 <span
-                    class="h-1 overflow-hidden rounded-full bg-surface-sunken"
+                    class="h-1.5 overflow-hidden rounded-full bg-surface-sunken"
                     aria-hidden="true"
                 >
                     <span
                         :class="
                             cn(
-                                'block h-full origin-left rounded-full bg-primary transition-transform duration-(--duration-panel) ease-(--ease-out-quint)',
+                                'block h-full origin-left rounded-full accent-gradient transition-transform duration-(--duration-panel) ease-(--ease-out-quint)',
                                 index <= currentStep
                                     ? 'scale-x-100'
                                     : 'scale-x-0',
@@ -463,9 +465,9 @@ const progress = computed(() => {
                     <span
                         :class="
                             cn(
-                                'grid size-7 shrink-0 place-items-center rounded-md border font-display text-sm font-semibold tabular-nums transition-colors duration-(--duration-base)',
+                                'grid size-8 shrink-0 place-items-center rounded-full border font-display text-sm font-semibold tabular-nums transition-[color,background-color,box-shadow] duration-(--duration-base)',
                                 index === currentStep &&
-                                    'border-primary bg-primary text-primary-foreground',
+                                    'border-transparent accent-gradient glow',
                                 index < currentStep &&
                                     'border-transparent bg-success-soft text-success-soft-foreground',
                                 index > currentStep &&
@@ -568,7 +570,7 @@ const progress = computed(() => {
                             </div>
                             <Button
                                 type="submit"
-                                class="pointer-coarse:h-10"
+                                class="accent-gradient glow pointer-coarse:h-10"
                                 :disabled="upload.file === null"
                                 :loading="upload.processing"
                             >
@@ -610,12 +612,14 @@ const progress = computed(() => {
                         </template>
                     </SurfaceCard>
                     <div
-                        class="flex items-start gap-3 rounded-xl border border-dashed p-4 text-sm"
+                        class="flex items-start gap-3 rounded-xl border border-dashed border-primary/30 accent-gradient-soft p-4 text-sm"
                     >
-                        <FileSpreadsheet
-                            class="mt-0.5 size-5 shrink-0 text-primary"
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-card text-primary shadow-(--shadow-control)"
                             aria-hidden="true"
-                        />
+                        >
+                            <FileSpreadsheet class="size-5" />
+                        </span>
                         <div class="min-w-0 space-y-1.5">
                             <p class="font-medium">¿Empiezas desde cero?</p>
                             <p
@@ -643,71 +647,92 @@ const progress = computed(() => {
             >
                 <EmptyState
                     v-if="recent.length === 0"
+                    class="m-4 border-none"
                     :icon="FileSpreadsheet"
                     title="Aún no hay importaciones"
                     description="Las importaciones que hagas aparecerán aquí con su resultado."
                 />
-                <Table v-else>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Archivo</TableHead>
-                            <TableHead class="hidden md:table-cell">
-                                Origen
-                            </TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead class="hidden sm:table-cell">
-                                Fecha
-                            </TableHead>
-                            <TableHead class="text-right">Resultado</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow v-for="item in recent" :key="item.id">
-                            <TableCell class="max-w-48 truncate font-medium">
-                                <Link :href="item.url" class="hover:underline">
-                                    {{ item.file ?? 'Archivo' }}
-                                </Link>
-                            </TableCell>
-                            <TableCell
-                                class="hidden text-muted-foreground md:table-cell"
+                <ul v-else role="list" class="dir-rows" aria-label="Lotes">
+                    <DirectoryRow
+                        v-for="(item, position) in recent"
+                        :key="item.id"
+                        class="enter-fade"
+                        :style="{ '--i': Math.min(position, 10) }"
+                        :href="item.url"
+                        :label="`Abrir la importación ${item.file ?? 'Archivo'}`"
+                    >
+                        <template #leading>
+                            <DirectoryAvatar
+                                :name="item.file ?? 'Archivo'"
+                                :icon="FileSpreadsheet"
+                                shape="square"
+                                :tone="
+                                    item.status.value === 'completed'
+                                        ? 'accent'
+                                        : 'muted'
+                                "
+                            />
+                        </template>
+                        <template #title>{{ item.file ?? 'Archivo' }}</template>
+                        <template #subtitle>
+                            {{ item.source.label }}
+                            <span aria-hidden="true" class="px-1">·</span>
+                            {{ formatDateTime(item.created_at) }}
+                        </template>
+                        <template #badges>
+                            <span
+                                class="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80"
+                                >{{ item.status.label }}</span
                             >
-                                {{ item.source.label }}
-                            </TableCell>
-                            <TableCell>
-                                <span class="flex flex-col">
-                                    <span>{{ item.status.label }}</span>
+                            <span
+                                v-if="rollbackLabel(item)"
+                                class="text-xs text-muted-foreground"
+                            >
+                                {{ rollbackLabel(item) }}
+                            </span>
+                            <span
+                                v-else-if="item.rollback.available"
+                                class="inline-flex items-center rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary-soft-foreground"
+                            >
+                                Se puede revertir
+                            </span>
+                            <span
+                                v-if="item.summary"
+                                class="text-xs text-muted-foreground tabular-nums md:hidden"
+                            >
+                                {{ item.summary.created }} creados ·
+                                {{ item.summary.failed }} con error
+                            </span>
+                        </template>
+                        <template #aside>
+                            <span
+                                v-if="item.summary"
+                                class="flex items-center gap-4 tabular-nums"
+                            >
+                                <span class="grid justify-items-end">
                                     <span
-                                        v-if="rollbackLabel(item)"
-                                        class="text-xs text-muted-foreground"
+                                        class="font-display text-base font-semibold text-foreground"
+                                        >{{ item.summary.created }}</span
                                     >
-                                        {{ rollbackLabel(item) }}
-                                    </span>
-                                    <Link
-                                        v-else-if="item.rollback.available"
-                                        :href="item.url"
-                                        class="text-xs text-primary hover:underline"
-                                    >
-                                        Se puede revertir
-                                    </Link>
+                                    <span class="text-[0.7rem]">creados</span>
                                 </span>
-                            </TableCell>
-                            <TableCell
-                                class="hidden text-muted-foreground sm:table-cell"
-                            >
-                                {{ formatDateTime(item.created_at) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                <template v-if="item.summary">
-                                    {{ item.summary.created }} creados ·
-                                    {{ item.summary.failed }} con error
-                                </template>
-                                <span v-else class="text-muted-foreground"
-                                    >—</span
-                                >
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                                <span class="grid justify-items-end">
+                                    <span
+                                        class="font-display text-base font-semibold"
+                                        :class="
+                                            item.summary.failed > 0
+                                                ? 'text-destructive'
+                                                : 'text-foreground'
+                                        "
+                                        >{{ item.summary.failed }}</span
+                                    >
+                                    <span class="text-[0.7rem]">con error</span>
+                                </span>
+                            </span>
+                            <span v-else>—</span>
+                        </template>
+                    </DirectoryRow>
+                </ul>
             </SurfaceCard>
         </template>
 
@@ -898,11 +923,17 @@ const progress = computed(() => {
                             ? 'Ninguna fila tiene observaciones'
                             : 'Sin filas para mostrar'
                     "
-                    description="Todas las filas se registrarán como contactos nuevos."
+                    :description="
+                        previewTab === 'issues'
+                            ? 'Todas las filas se registrarán como contactos nuevos.'
+                            : undefined
+                    "
                 />
-                <div v-else class="overflow-x-auto">
+                <div v-else class="max-h-[36rem] overflow-auto">
                     <Table>
-                        <TableHeader>
+                        <TableHeader
+                            class="sticky top-0 z-[2] bg-[color-mix(in_oklch,var(--card)_85%,transparent)] backdrop-blur-md"
+                        >
                             <TableRow>
                                 <TableHead class="w-14">Fila</TableHead>
                                 <TableHead>Estado</TableHead>
@@ -1036,6 +1067,7 @@ const progress = computed(() => {
                 </Button>
                 <div class="flex flex-col gap-1 sm:items-end">
                     <Button
+                        class="accent-gradient glow"
                         :disabled="!canConfirm || configuration.processing"
                         :loading="confirming"
                         @click="confirm"
@@ -1079,14 +1111,14 @@ const progress = computed(() => {
                         </span>
                     </div>
                     <div
-                        class="h-2 overflow-hidden rounded-full bg-muted"
+                        class="h-2.5 overflow-hidden rounded-full bg-surface-sunken"
                         role="progressbar"
                         :aria-valuenow="progress"
                         aria-valuemin="0"
                         aria-valuemax="100"
                     >
                         <div
-                            class="h-full rounded-full bg-primary transition-all"
+                            class="h-full rounded-full accent-gradient transition-[width] duration-(--duration-panel) ease-(--ease-out-quint)"
                             :style="{ width: `${progress}%` }"
                         />
                     </div>
@@ -1212,7 +1244,9 @@ const progress = computed(() => {
                     class="flex flex-col gap-2 text-sm"
                 >
                     <p class="font-medium">Se conservaron</p>
-                    <ul class="flex flex-col divide-y rounded-lg border">
+                    <ul
+                        class="flex flex-col divide-y overflow-hidden rounded-xl border bg-surface-sunken/40"
+                    >
                         <li
                             v-for="record in rollbackKept"
                             :key="record.contact_id"

@@ -45,7 +45,7 @@ const tooLong = computed(
         >
             <div class="flex justify-end">
                 <div
-                    class="relative max-w-[85%] rounded-2xl rounded-tr-sm bg-primary-soft px-3 py-2 text-sm text-foreground"
+                    class="relative max-w-[85%] rounded-2xl rounded-tr-sm bg-primary-soft px-3 py-2 text-sm text-foreground shadow-(--shadow-control) ring-1 ring-primary/15 motion-safe:animate-in motion-safe:zoom-in-95 motion-safe:fade-in"
                 >
                     <WhatsAppText v-if="text.trim() !== ''" :text="text" />
                     <span v-else class="text-muted-foreground italic">
@@ -63,7 +63,7 @@ const tooLong = computed(
 
         <div
             v-if="missingLabels.length > 0"
-            class="flex gap-2 rounded-lg bg-warning/10 p-2 text-xs text-foreground"
+            class="flex gap-2 rounded-xl bg-warning-soft p-2.5 text-xs text-warning-soft-foreground"
             role="status"
         >
             <TriangleAlert

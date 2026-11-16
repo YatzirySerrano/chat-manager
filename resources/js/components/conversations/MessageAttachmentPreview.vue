@@ -20,6 +20,7 @@ import {
     fileBadge,
     formatClock,
     mediaKind,
+    warmImage,
 } from '@/lib/conversations/media';
 import type { ViewerItem } from '@/lib/conversations/media';
 import { formatFileSize } from '@/lib/format';
@@ -379,6 +380,8 @@ function pauseVideo(): void {
                         : `Abrir imagen ${name}`
                 "
                 @click="openViewer"
+                @pointerenter="!sticker && warmImage(attachment.url)"
+                @focus="!sticker && warmImage(attachment.url)"
             >
                 <img
                     :src="imageSource"

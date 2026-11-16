@@ -1,15 +1,26 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
-import { CircleDashed, Lock, PlugZap } from '@lucide/vue';
+import {
+    CalendarOff,
+    CircleDashed,
+    Clock,
+    Gauge,
+    Lock,
+    PlugZap,
+    Settings2,
+    Siren,
+    Workflow,
+} from '@lucide/vue';
 import { computed, ref } from 'vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
 import PlatformHolidaysCard from '@/components/automation/PlatformHolidaysCard.vue';
 import FieldHelp from '@/components/FieldHelp.vue';
 import SectionNav from '@/components/connections/SectionNav.vue';
 import FormField from '@/components/FormField.vue';
-import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import ServiceRulesCard from '@/components/service-rules/ServiceRulesCard.vue';
+import SettingsSection from '@/components/settings/SettingsSection.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
@@ -269,10 +280,7 @@ const integrationConnected = computed(
     <Head title="Configuración" />
 
     <form class="flex flex-1 flex-col" novalidate @submit.prevent="submit">
-        <fieldset
-            :disabled="!can.update"
-            class="page-shell lg:[&_[data-slot=form-section]>div:first-child]:top-32"
-        >
+        <fieldset :disabled="!can.update" class="page-shell">
             <PageHeader
                 help="configuracion"
                 title="Configuración"
@@ -290,8 +298,9 @@ const integrationConnected = computed(
             />
 
             <div class="grid gap-10 pt-2">
-                <FormSection
+                <SettingsSection
                     id="general"
+                    :icon="Settings2"
                     class="reveal scroll-mt-32"
                     data-tour="settings.general"
                     title="General"
@@ -336,10 +345,11 @@ const integrationConnected = computed(
                             />
                         </FormField>
                     </div>
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     id="horario"
+                    :icon="Clock"
                     class="scroll-mt-32"
                     data-tour="settings.hours"
                     title="Horario de atención"
@@ -348,7 +358,7 @@ const integrationConnected = computed(
                 >
                     <div>
                         <label
-                            class="flex items-center justify-between gap-4 border-b p-5"
+                            class="flex items-center justify-between gap-4 border-b border-border/70 px-4 py-4 sm:px-6"
                         >
                             <span>
                                 <span class="block text-sm font-medium"
@@ -367,7 +377,7 @@ const integrationConnected = computed(
                             />
                         </label>
                         <ul
-                            class="divide-y"
+                            class="divide-y divide-border/60 transition-opacity duration-(--duration-base)"
                             :class="
                                 !form.business_hours.enabled && 'opacity-60'
                             "
@@ -375,7 +385,7 @@ const integrationConnected = computed(
                             <li
                                 v-for="day in weekdays"
                                 :key="day"
-                                class="row-accent grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-[9rem_auto_1fr]"
+                                class="row-accent grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-primary-soft/25 sm:grid-cols-[9rem_auto_1fr] sm:px-6"
                             >
                                 <span class="text-sm font-medium">{{
                                     weekdayLabels[day]
@@ -445,10 +455,11 @@ const integrationConnected = computed(
                             </li>
                         </ul>
                     </div>
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     id="dias-no-laborables"
+                    :icon="CalendarOff"
                     class="scroll-mt-32"
                     title="Días no laborables"
                     description="Fechas en las que no se atiende. Se guardan aparte del resto de la configuración."
@@ -458,10 +469,11 @@ const integrationConnected = computed(
                         :holidays="settings.business_hours.holidays ?? []"
                         :can-update="can.update"
                     />
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     id="operacion"
+                    :icon="Workflow"
                     class="scroll-mt-32"
                     data-tour="settings.operations"
                     title="Operación"
@@ -589,7 +601,7 @@ const integrationConnected = computed(
                                 />
                             </div>
                             <label
-                                class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                                class="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface-sunken/40 px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/30"
                             >
                                 <span class="text-muted-foreground">
                                     {{
@@ -636,7 +648,7 @@ const integrationConnected = computed(
                                 />
                             </div>
                             <label
-                                class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                                class="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface-sunken/40 px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/30"
                             >
                                 <span class="text-muted-foreground">
                                     {{
@@ -678,10 +690,11 @@ const integrationConnected = computed(
                             </FormField>
                         </div>
                     </div>
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     id="objetivos"
+                    :icon="Gauge"
                     class="scroll-mt-32"
                     data-tour="settings.sla"
                     title="Objetivos de servicio"
@@ -715,11 +728,12 @@ const integrationConnected = computed(
                             @update="setRule"
                         />
                     </div>
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     v-if="phaseTwo"
                     id="alertas-sla"
+                    :icon="Siren"
                     class="scroll-mt-32"
                     data-tour="settings.sla-alerts"
                     title="Alertas automáticas de SLA"
@@ -759,7 +773,7 @@ const integrationConnected = computed(
                                 <label
                                     v-for="alert in slaAlertSwitches"
                                     :key="alert.key"
-                                    class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/40"
+                                    class="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface-sunken/40 px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/30"
                                 >
                                     <span>
                                         <span class="block font-medium">{{
@@ -857,44 +871,69 @@ const integrationConnected = computed(
                             </FormField>
                         </div>
                     </div>
-                </FormSection>
+                </SettingsSection>
 
-                <FormSection
+                <SettingsSection
                     id="meta"
+                    :icon="PlugZap"
                     class="scroll-mt-32"
                     title="Integración con Meta"
                     description="WhatsApp Cloud API oficial."
                 >
+                    <template #actions>
+                        <StatusPill
+                            :label="
+                                integrationConnected
+                                    ? 'Con números activos'
+                                    : 'Sin números activos'
+                            "
+                            :tone="integrationConnected ? 'success' : 'muted'"
+                            :live="integrationConnected"
+                        />
+                    </template>
                     <div class="space-y-4">
-                        <div class="flex items-start gap-3">
+                        <div
+                            class="flex items-center gap-3 rounded-xl px-3 py-3 ring-1 ring-inset"
+                            :class="
+                                integrationConnected
+                                    ? 'bg-success-soft/50 ring-success/20'
+                                    : 'bg-surface-sunken/60 ring-border/70'
+                            "
+                        >
                             <span
-                                class="flex size-9 shrink-0 items-center justify-center rounded-md"
+                                class="flex size-10 shrink-0 items-center justify-center rounded-xl"
                                 :class="
                                     integrationConnected
-                                        ? 'bg-success-soft text-success-soft-foreground'
+                                        ? 'bg-success text-white'
                                         : 'bg-muted text-muted-foreground'
                                 "
                             >
                                 <PlugZap
                                     v-if="integrationConnected"
-                                    class="size-4"
+                                    class="size-5"
                                     aria-hidden="true"
                                 />
                                 <CircleDashed
                                     v-else
-                                    class="size-4"
+                                    class="size-5"
                                     aria-hidden="true"
                                 />
                             </span>
-                            <div>
-                                <p class="font-display text-base font-semibold">
-                                    {{
-                                        integrationConnected
-                                            ? 'Con números activos'
-                                            : 'Sin números activos'
-                                    }}
+                            <div class="min-w-0">
+                                <p
+                                    class="font-display text-2xl leading-none font-semibold tabular-nums"
+                                >
+                                    {{ integration.active_whatsapp_accounts
+                                    }}<span
+                                        class="text-base font-medium text-muted-foreground"
+                                    >
+                                        /
+                                        {{
+                                            integration.whatsapp_accounts
+                                        }}</span
+                                    >
                                 </p>
-                                <p class="text-sm text-muted-foreground">
+                                <p class="mt-1 text-sm text-muted-foreground">
                                     {{ integration.active_whatsapp_accounts }}
                                     de
                                     {{ integration.whatsapp_accounts }} números
@@ -910,7 +949,7 @@ const integrationConnected = computed(
                             verificada.
                         </p>
                     </div>
-                </FormSection>
+                </SettingsSection>
             </div>
         </fieldset>
 
@@ -918,10 +957,11 @@ const integrationConnected = computed(
             v-if="can.update"
             data-dock-bottom
             data-tour="settings.save"
-            class="sticky bottom-0 z-10 flex items-center gap-3 border-t bg-background/85 px-4 py-3 backdrop-blur-md md:px-6 lg:px-8 min-[100rem]:px-10"
+            class="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t border-border/70 bg-background/75 px-4 py-3 backdrop-blur-xl backdrop-saturate-150 md:px-6 lg:px-8 min-[100rem]:px-10"
         >
             <Button
                 type="submit"
+                :class="validation.hasChanges && 'shadow-glow'"
                 :disabled="!validation.hasChanges"
                 :loading="form.processing"
             >
@@ -941,7 +981,7 @@ const integrationConnected = computed(
             >
                 <span
                     v-if="validation.hasChanges"
-                    class="size-1.5 rounded-full bg-warning"
+                    class="live-dot size-1.5 rounded-full bg-warning text-warning"
                     aria-hidden="true"
                 />
                 {{

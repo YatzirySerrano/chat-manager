@@ -83,8 +83,13 @@ function groupByModule<T extends { group: string }>(
             class="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         >
             <DialogHeader class="border-b px-6 pt-5 pb-4 text-left">
-                <DialogTitle class="flex items-center gap-2 text-base">
-                    <AlertTriangle class="size-4 text-warning" />
+                <DialogTitle class="flex items-center gap-2.5 text-base">
+                    <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning ring-1 ring-warning/30 ring-inset"
+                        aria-hidden="true"
+                    >
+                        <AlertTriangle class="size-4" />
+                    </span>
                     Confirmar cambio de rol
                 </DialogTitle>
                 <DialogDescription>{{ summary }}</DialogDescription>
@@ -103,7 +108,7 @@ function groupByModule<T extends { group: string }>(
                 </p>
 
                 <div
-                    class="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3"
+                    class="flex items-center gap-3 rounded-xl border bg-surface-sunken/60 px-4 py-3 shadow-(--shadow-control)"
                 >
                     <div class="min-w-0 flex-1">
                         <p class="text-xs text-muted-foreground">Rol actual</p>

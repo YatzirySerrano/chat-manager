@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '@/components/admin/admin.css';
 import {
     Archive,
     Ban,
@@ -140,7 +141,11 @@ async function confirm(): Promise<void> {
 
 <template>
     <div class="grid gap-6" data-tour="history-import.summary">
-        <div v-if="!summary" class="grid gap-3" aria-busy="true">
+        <div
+            v-if="!summary"
+            class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+            aria-busy="true"
+        >
             <StatCard
                 v-for="n in 4"
                 :key="n"
@@ -161,7 +166,10 @@ async function confirm(): Promise<void> {
             </StatusNote>
 
             <section aria-labelledby="summary-destinations" class="grid gap-3">
-                <h2 id="summary-destinations" class="text-base font-semibold">
+                <h2
+                    id="summary-destinations"
+                    class="font-display text-lg font-semibold"
+                >
                     Qué pasará con las
                     {{
                         plural(
@@ -180,17 +188,21 @@ async function confirm(): Promise<void> {
                     <article
                         v-for="decision in DECISION_ORDER"
                         :key="decision"
-                        class="spotlight grid content-start gap-2 rounded-xl border bg-card p-4"
+                        class="admin-card grid content-start gap-2 p-4"
                         :data-summary-destination="decision"
                     >
                         <p
-                            class="flex items-center gap-2 text-sm font-semibold"
+                            class="flex items-center gap-2.5 text-sm font-semibold"
                         >
-                            <component
-                                :is="DESTINATION_ICONS[decision]"
-                                class="size-4 text-muted-foreground"
+                            <span
+                                class="admin-icon-tile size-8"
                                 aria-hidden="true"
-                            />
+                            >
+                                <component
+                                    :is="DESTINATION_ICONS[decision]"
+                                    class="size-4"
+                                />
+                            </span>
                             {{ DECISIONS[decision].label }}
                         </p>
                         <p
@@ -213,7 +225,10 @@ async function confirm(): Promise<void> {
                                 :key="consequence"
                                 class="flex gap-2"
                             >
-                                <span aria-hidden="true">·</span>
+                                <span
+                                    class="mt-2 size-1 shrink-0 rounded-full bg-primary/60"
+                                    aria-hidden="true"
+                                />
                                 <span>{{ consequence }}</span>
                             </li>
                         </ul>
@@ -233,7 +248,10 @@ async function confirm(): Promise<void> {
             </section>
 
             <section aria-labelledby="summary-details" class="grid gap-3">
-                <h2 id="summary-details" class="text-base font-semibold">
+                <h2
+                    id="summary-details"
+                    class="font-display text-lg font-semibold"
+                >
                     Detalle
                 </h2>
                 <div class="auto-grid [--col-min:15rem]">
@@ -353,6 +371,7 @@ async function confirm(): Promise<void> {
             <SurfaceCard
                 v-if="canExecute"
                 title="Confirmar la importación"
+                class="accent-gradient-soft"
                 body-class="grid gap-4 p-4 sm:p-5"
                 data-tour="history-import.confirm"
             >
@@ -368,7 +387,7 @@ async function confirm(): Promise<void> {
                     </li>
                 </ul>
                 <label
-                    class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-[[data-state=checked]]:border-primary/50"
+                    class="flex cursor-pointer items-start gap-3 rounded-xl border bg-card p-3 text-sm transition-[border-color,box-shadow] duration-(--duration-base) has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:shadow-glow-ring"
                 >
                     <Checkbox
                         v-model="reviewed"
@@ -388,6 +407,7 @@ async function confirm(): Promise<void> {
                 <div class="flex justify-end">
                     <Button
                         class="pointer-coarse:h-11"
+                        :class="summary.ready && reviewed && 'shadow-glow'"
                         :disabled="
                             !summary.ready || !reviewed || executing || loading
                         "

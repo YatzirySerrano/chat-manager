@@ -3,14 +3,18 @@ import { Head, router, usePoll } from '@inertiajs/vue3';
 import {
     Activity,
     CircleAlert,
+    CircleCheck,
     Clock,
     Inbox,
     ListX,
     RefreshCw,
     RotateCcw,
+    ServerCog,
     Trash2,
+    TriangleAlert,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import WhatsAppWebSystemCard from '@/components/system/WhatsAppWebSystemCard.vue';
@@ -20,6 +24,7 @@ import PageHeader from '@/components/PageHeader.vue';
 import StatCard from '@/components/StatCard.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import HealthStatusBadge from '@/components/system/HealthStatusBadge.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
 import { Button } from '@/components/ui/button';
 import {
     Select,
@@ -89,6 +94,33 @@ const overallCopy = computed(() => {
     }
 });
 
+/* The hero's look follows the overall state. */
+const overallLook = computed(() => {
+    switch (props.overall) {
+        case 'fail':
+            return {
+                icon: TriangleAlert,
+                wash: 'border-destructive/30 bg-destructive-soft/50',
+                tile: 'bg-destructive text-white',
+            };
+        case 'warning':
+            return {
+                icon: CircleAlert,
+                wash: 'border-warning/30 bg-warning-soft/50',
+                tile: 'bg-warning text-white',
+            };
+        default:
+            return {
+                icon: CircleCheck,
+                wash: 'border-success/25 bg-success-soft/40',
+                tile: 'bg-success text-white',
+            };
+    }
+});
+
+/* The failed jobs list is reloading after a change of group. */
+const filteringJobs = ref(false);
+
 const totalPending = computed(() =>
     props.queues.reduce((sum, queue) => sum + (queue.pending ?? 0), 0),
 );
@@ -118,6 +150,8 @@ function applyQueueFilter(value: unknown): void {
         preserveScroll: true,
         replace: true,
         only: ['failedJobs', 'filters'],
+        onStart: () => (filteringJobs.value = true),
+        onFinish: () => (filteringJobs.value = false),
     });
 }
 
@@ -231,12 +265,20 @@ function age(seconds: number | null): string {
             description="Estado técnico de la plataforma: servicios, tareas en segundo plano, tareas con error y conexiones. Solo información técnica, sin contenido de clientes."
         >
             <template #actions>
-                <span class="text-xs text-muted-foreground">
+                <span
+                    class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                    :title="formatDateTime(checkedAt)"
+                >
+                    <span
+                        class="live-dot size-1.5 rounded-full bg-success text-success"
+                        aria-hidden="true"
+                    />
                     Revisado {{ formatRelative(checkedAt) }}
                 </span>
                 <Button
                     variant="outline"
                     size="sm"
+                    class="rounded-full"
                     :loading="refreshing"
                     data-tour="system.refresh"
                     @click="refreshAll"
@@ -247,16 +289,25 @@ function age(seconds: number | null): string {
             </template>
         </PageHeader>
 
-        <SurfaceCard
-            class="reveal"
-            body-class="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:gap-4"
+        <section
+            class="relative flex reveal flex-col gap-3 overflow-hidden rounded-2xl border px-5 py-4 shadow-float sm:flex-row sm:items-center sm:gap-4"
+            :class="overallLook.wash"
             data-tour="system.overall"
         >
-            <HealthStatusBadge :status="overall" pulse />
-            <p class="font-display text-base font-semibold">
-                {{ overallCopy }}
-            </p>
-        </SurfaceCard>
+            <span
+                class="flex size-11 shrink-0 items-center justify-center rounded-xl shadow-sm"
+                :class="overallLook.tile"
+                aria-hidden="true"
+            >
+                <component :is="overallLook.icon" class="size-5" />
+            </span>
+            <div class="min-w-0 flex-1 space-y-1">
+                <HealthStatusBadge :status="overall" pulse />
+                <p class="font-display text-base font-semibold text-pretty">
+                    {{ overallCopy }}
+                </p>
+            </div>
+        </section>
 
         <div class="auto-grid reveal-stagger [--col-min:14rem]">
             <StatCard
@@ -298,13 +349,23 @@ function age(seconds: number | null): string {
             title="Verificaciones"
             description="Una falla marca la plataforma como «no lista» ante el monitoreo externo; las advertencias solo se muestran aquí."
         >
-            <ul class="grid gap-px bg-border min-[110rem]:grid-cols-2">
+            <ul class="grid gap-2 p-3 sm:p-4 min-[110rem]:grid-cols-2">
                 <li
                     v-for="check in checks"
                     :key="check.key"
-                    class="row-accent flex flex-col gap-1 bg-card px-5 py-3 transition-colors hover:bg-[color-mix(in_oklch,var(--card)_60%,var(--accent))] sm:flex-row sm:items-start sm:gap-4"
+                    class="flex flex-col gap-1.5 rounded-xl border px-4 py-3 transition-colors sm:flex-row sm:items-start sm:gap-4"
+                    :class="
+                        check.status === 'fail'
+                            ? 'border-destructive/30 bg-destructive-soft/30'
+                            : check.status === 'warning'
+                              ? 'border-warning/30 bg-warning-soft/30'
+                              : 'border-border/70 bg-surface-sunken/30 hover:bg-surface-sunken/60'
+                    "
+                    :data-check="check.key"
                 >
-                    <div class="flex w-56 shrink-0 items-center gap-2">
+                    <div
+                        class="flex shrink-0 items-center gap-2 sm:w-56 sm:flex-col sm:items-start sm:gap-1"
+                    >
                         <HealthStatusBadge :status="check.status" />
                         <span class="text-sm font-medium">{{
                             check.label
@@ -329,6 +390,7 @@ function age(seconds: number | null): string {
         </SurfaceCard>
 
         <SurfaceCard
+            class="admin-list overflow-clip"
             title="Tareas en segundo plano"
             description="Las tareas en segundo plano se agrupan por tipo; cada grupo tiene su propio proceso."
         >
@@ -337,9 +399,15 @@ function age(seconds: number | null): string {
                     <TableRow>
                         <TableHead>Grupo de tareas</TableHead>
                         <TableHead class="text-right">Pendientes</TableHead>
-                        <TableHead class="text-right">Programados</TableHead>
-                        <TableHead class="text-right">En proceso</TableHead>
-                        <TableHead class="text-right">Espera máxima</TableHead>
+                        <TableHead class="hidden text-right md:table-cell"
+                            >Programados</TableHead
+                        >
+                        <TableHead class="hidden text-right md:table-cell"
+                            >En proceso</TableHead
+                        >
+                        <TableHead class="hidden text-right sm:table-cell"
+                            >Espera máxima</TableHead
+                        >
                         <TableHead>Estado</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -354,18 +422,22 @@ function age(seconds: number | null): string {
                                 {{ queue.name }}
                             </p>
                         </TableCell>
-                        <TableCell class="text-right tabular-nums">{{
-                            queue.pending ?? '—'
-                        }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{
-                            queue.delayed ?? '—'
-                        }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{
-                            queue.reserved ?? '—'
-                        }}</TableCell>
-                        <TableCell class="text-right tabular-nums">{{
-                            age(queue.oldest_pending_age)
-                        }}</TableCell>
+                        <TableCell
+                            class="text-right font-display text-base font-semibold tabular-nums"
+                            >{{ queue.pending ?? '—' }}</TableCell
+                        >
+                        <TableCell
+                            class="hidden text-right tabular-nums md:table-cell"
+                            >{{ queue.delayed ?? '—' }}</TableCell
+                        >
+                        <TableCell
+                            class="hidden text-right tabular-nums md:table-cell"
+                            >{{ queue.reserved ?? '—' }}</TableCell
+                        >
+                        <TableCell
+                            class="hidden text-right tabular-nums sm:table-cell"
+                            >{{ age(queue.oldest_pending_age) }}</TableCell
+                        >
                         <TableCell>
                             <div class="flex flex-col items-start gap-1">
                                 <HealthStatusBadge :status="queue.status" />
@@ -391,7 +463,7 @@ function age(seconds: number | null): string {
                     @update:model-value="applyQueueFilter"
                 >
                     <SelectTrigger
-                        class="w-48"
+                        class="w-48 rounded-full"
                         aria-label="Filtrar por grupo de tareas"
                     >
                         <SelectValue placeholder="Todos los grupos" />
@@ -432,67 +504,74 @@ function age(seconds: number | null): string {
                 />
             </div>
             <template v-else>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Tarea</TableHead>
-                            <TableHead>Grupo</TableHead>
-                            <TableHead>Falló</TableHead>
-                            <TableHead>Error</TableHead>
-                            <TableHead v-if="canManage" class="text-right"
-                                >Acciones</TableHead
-                            >
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
+                <div class="relative" :aria-busy="filteringJobs">
+                    <div
+                        v-if="filteringJobs"
+                        class="absolute inset-x-0 top-0 z-10 pane-progress h-0.5"
+                        aria-hidden="true"
+                    />
+                    <ul
+                        class="divide-y divide-border/60"
+                        :class="filteringJobs && 'admin-loading'"
+                    >
+                        <li
                             v-for="job in failedJobs.data"
                             :key="job.uuid"
+                            class="group/job grid gap-2 px-4 py-3.5 transition-colors hover:bg-primary-soft/25 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] sm:items-start sm:gap-4 sm:px-5"
                         >
-                            <TableCell>
-                                <p class="font-medium" :title="job.job_class">
+                            <div class="min-w-0">
+                                <p
+                                    class="truncate font-medium"
+                                    :title="job.job_class"
+                                >
                                     {{ job.job }}
                                 </p>
                                 <p
-                                    class="font-mono text-xs text-muted-foreground"
+                                    class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
                                 >
-                                    {{ job.uuid.slice(0, 8) }}
+                                    <span class="font-mono">{{
+                                        job.uuid.slice(0, 8)
+                                    }}</span>
+                                    <span
+                                        class="rounded-full border border-border/70 px-1.5 font-mono"
+                                        >{{ job.queue }}</span
+                                    >
                                 </p>
-                            </TableCell>
-                            <TableCell class="font-mono text-xs">{{
-                                job.queue
-                            }}</TableCell>
-                            <TableCell class="text-sm whitespace-nowrap">{{
-                                formatDateTime(job.failed_at)
-                            }}</TableCell>
-                            <TableCell
-                                class="max-w-md text-xs break-words whitespace-normal text-muted-foreground"
-                                >{{ job.exception }}</TableCell
+                                <p class="mt-1 text-xs text-muted-foreground">
+                                    Falló {{ formatDateTime(job.failed_at) }}
+                                </p>
+                            </div>
+                            <p
+                                class="min-w-0 rounded-lg bg-destructive-soft/40 px-2.5 py-1.5 font-mono text-xs break-words text-destructive-soft-foreground"
                             >
-                            <TableCell v-if="canManage" class="text-right">
-                                <div class="flex justify-end gap-1">
-                                    <Button
-                                        v-if="job.retryable"
-                                        variant="outline"
-                                        size="sm"
-                                        @click="ask('retry', job)"
-                                    >
-                                        <RotateCcw />
-                                        Reintentar
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        @click="ask('forget', job)"
-                                    >
-                                        <Trash2 />
-                                        Descartar
-                                    </Button>
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                                {{ job.exception }}
+                            </p>
+                            <div
+                                v-if="canManage"
+                                class="admin-row-actions flex gap-1 sm:justify-end"
+                            >
+                                <Button
+                                    v-if="job.retryable"
+                                    variant="outline"
+                                    size="sm"
+                                    @click="ask('retry', job)"
+                                >
+                                    <RotateCcw />
+                                    Reintentar
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="hover:bg-destructive/10 hover:text-destructive"
+                                    @click="ask('forget', job)"
+                                >
+                                    <Trash2 />
+                                    Descartar
+                                </Button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
                 <div class="border-t px-5 py-3">
                     <DataPagination
                         :meta="failedJobs.meta"
@@ -517,39 +596,55 @@ function age(seconds: number | null): string {
                     description="Aún no hay números de WhatsApp registrados."
                 />
             </div>
-            <Table v-else>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Conexión</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Último aviso de Meta</TableHead>
-                        <TableHead>Último error</TableHead>
-                        <TableHead class="text-right">Acciones</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow
-                        v-for="connection in connections"
-                        :key="connection.id"
-                    >
-                        <TableCell>
-                            <p class="font-medium">{{ connection.name }}</p>
-                            <p class="text-xs text-muted-foreground">
+            <ul v-else class="divide-y divide-border/60">
+                <li
+                    v-for="connection in connections"
+                    :key="connection.id"
+                    class="grid gap-2 px-4 py-3.5 transition-colors hover:bg-primary-soft/25 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5"
+                >
+                    <div class="flex min-w-0 items-center gap-3">
+                        <span
+                            class="channel-tile size-9"
+                            data-channel-theme="whatsapp"
+                            aria-hidden="true"
+                        >
+                            <ServerCog class="size-4" />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="truncate font-medium">
+                                {{ connection.name }}
+                            </p>
+                            <p
+                                class="truncate text-xs text-muted-foreground tabular-nums"
+                            >
                                 {{ connection.phone ?? 'Sin número' }}
                             </p>
-                        </TableCell>
-                        <TableCell>
+                        </div>
+                    </div>
+                    <div
+                        class="min-w-0 space-y-1 text-xs text-muted-foreground"
+                    >
+                        <div class="flex flex-wrap items-center gap-2">
                             <ConnectionHealthBadge
                                 :health="connection.health"
                             />
-                        </TableCell>
-                        <TableCell class="text-sm whitespace-nowrap">{{
-                            formatRelative(connection.last_webhook_at)
-                        }}</TableCell>
-                        <TableCell
-                            class="max-w-xs text-xs whitespace-normal text-muted-foreground"
-                        >
+                            <span
+                                :title="
+                                    connection.last_webhook_at
+                                        ? formatDateTime(
+                                              connection.last_webhook_at,
+                                          )
+                                        : undefined
+                                "
+                                >Último aviso de Meta:
+                                {{
+                                    formatRelative(connection.last_webhook_at)
+                                }}</span
+                            >
+                        </div>
+                        <p class="whitespace-normal">
                             <template v-if="connection.last_error_at">
+                                Último error:
                                 {{ formatDateTime(connection.last_error_at) }}
                                 <template v-if="connection.last_error">
                                     —
@@ -580,21 +675,21 @@ function age(seconds: number | null): string {
                                 </template>
                             </template>
                             <template v-else>Sin errores registrados</template>
-                        </TableCell>
-                        <TableCell class="text-right">
-                            <Button
-                                v-if="connection.can_verify"
-                                variant="outline"
-                                size="sm"
-                                :loading="verifyingId === connection.id"
-                                @click="probeConnection(connection.id)"
-                            >
-                                Probar
-                            </Button>
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+                        </p>
+                    </div>
+                    <div class="sm:text-right">
+                        <Button
+                            v-if="connection.can_verify"
+                            variant="outline"
+                            size="sm"
+                            :loading="verifyingId === connection.id"
+                            @click="probeConnection(connection.id)"
+                        >
+                            Probar
+                        </Button>
+                    </div>
+                </li>
+            </ul>
         </SurfaceCard>
 
         <!-- A separate card: its state never mixes with the official API's. -->
@@ -623,18 +718,20 @@ function age(seconds: number | null): string {
                     <li
                         v-for="(entry, index) in recentErrors.entries"
                         :key="index"
-                        class="flex flex-col gap-1 px-5 py-3"
+                        class="flex flex-col gap-1.5 px-5 py-3 transition-colors hover:bg-destructive-soft/20"
                     >
                         <div class="flex items-center gap-2 text-xs">
                             <span
-                                class="rounded-sm bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-soft-foreground uppercase"
+                                class="rounded-full bg-destructive-soft px-2 py-0.5 font-medium text-destructive-soft-foreground"
                                 >{{ entry.level }}</span
                             >
                             <span class="text-muted-foreground">{{
                                 formatDateTime(entry.at)
                             }}</span>
                         </div>
-                        <p class="font-mono text-xs break-words">
+                        <p
+                            class="rounded-lg bg-surface-sunken/60 px-2.5 py-1.5 font-mono text-xs break-words"
+                        >
                             {{ entry.message }}
                         </p>
                     </li>
@@ -642,15 +739,19 @@ function age(seconds: number | null): string {
             </SurfaceCard>
 
             <SurfaceCard title="Entorno">
-                <dl class="grid grid-cols-2 gap-x-4 gap-y-3 px-5 py-4 text-sm">
+                <dl
+                    class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0 px-5 py-2 text-sm [&>dd]:border-b [&>dd]:border-border/50 [&>dd]:py-2.5 [&>dd]:text-right [&>dd:last-of-type]:border-0 [&>dt]:border-b [&>dt]:border-border/50 [&>dt]:py-2.5 [&>dt:last-of-type]:border-0"
+                >
                     <dt class="text-muted-foreground">Ambiente</dt>
                     <dd class="font-medium">{{ environment.app_env }}</dd>
                     <dt class="text-muted-foreground">Depuración</dt>
-                    <dd
-                        class="font-medium"
-                        :class="environment.debug ? 'text-destructive' : ''"
-                    >
-                        {{ environment.debug ? 'Activada' : 'Desactivada' }}
+                    <dd class="font-medium">
+                        <StatusPill
+                            :label="
+                                environment.debug ? 'Activada' : 'Desactivada'
+                            "
+                            :tone="environment.debug ? 'danger' : 'muted'"
+                        />
                     </dd>
                     <dt class="text-muted-foreground">PHP</dt>
                     <dd class="font-medium">{{ environment.php }}</dd>

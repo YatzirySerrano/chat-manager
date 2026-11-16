@@ -4,9 +4,11 @@ import { Ban, Check, Copy, KeyRound, Plus } from '@lucide/vue';
 import { useClipboard } from '@vueuse/core';
 import { computed, onUnmounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
@@ -65,18 +67,23 @@ const abilityLabels = computed<Record<string, string>>(() =>
 
 const statusPresentation: Record<
     ApiTokenStatus,
-    { label: string; class: string }
+    { label: string; tone: 'success' | 'muted' | 'danger' }
 > = {
-    active: {
-        label: 'Activa',
-        class: 'bg-success-soft text-success-soft-foreground',
-    },
-    expired: { label: 'Vencida', class: 'bg-muted text-muted-foreground' },
-    revoked: {
-        label: 'Revocada',
-        class: 'bg-destructive-soft text-destructive-soft-foreground',
-    },
+    active: { label: 'Activa', tone: 'success' },
+    expired: { label: 'Vencida', tone: 'muted' },
+    revoked: { label: 'Revocada', tone: 'danger' },
 };
+
+/* A key used in the last 24 hours is in use right now: its dot breathes. */
+const DAY = 24 * 60 * 60 * 1000;
+
+function inUse(token: ApiTokenSummary): boolean {
+    return (
+        token.status === 'active' &&
+        token.last_used_at !== null &&
+        Date.now() - new Date(token.last_used_at).getTime() < DAY
+    );
+}
 
 /* Issuing ---------------------------------------------------------------- */
 
@@ -236,52 +243,81 @@ function departmentsLabel(token: ApiTokenSummary): string {
             description="Claves de acceso (tokens) para que otros sistemas (por ejemplo, tu CRM) consulten conversaciones o envíen mensajes. Cada clave tiene permisos, conexiones permitidas y fecha de vencimiento."
         >
             <template v-if="can.manage" #actions>
-                <Button data-tour="integrations.new" @click="openCreate">
+                <Button
+                    class="shadow-glow"
+                    data-tour="integrations.new"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nueva clave de acceso
                 </Button>
             </template>
         </PageHeader>
 
-        <SurfaceCard data-tour="integrations.tokens">
-            <ul v-if="tokens.data.length > 0" class="divide-y">
+        <SurfaceCard class="overflow-clip" data-tour="integrations.tokens">
+            <ul
+                v-if="tokens.data.length > 0"
+                class="grid reveal-stagger gap-3 p-3 sm:p-4"
+            >
                 <li
                     v-for="token in tokens.data"
                     :key="token.id"
-                    class="row-accent grid gap-3 p-4 transition-colors hover:bg-accent/40 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:p-5"
+                    class="admin-card grid gap-3 p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start sm:p-5"
                     :class="
                         token.status !== 'active' && 'text-muted-foreground'
                     "
                 >
-                    <div class="grid min-w-0 gap-2">
+                    <span
+                        class="flex size-10 shrink-0 items-center justify-center rounded-xl max-sm:hidden"
+                        :class="
+                            token.status === 'active'
+                                ? 'accent-gradient'
+                                : 'bg-muted text-muted-foreground'
+                        "
+                        aria-hidden="true"
+                    >
+                        <KeyRound class="size-5" />
+                    </span>
+                    <div class="grid min-w-0 gap-2.5">
                         <div class="flex flex-wrap items-center gap-2">
                             <h2
                                 class="font-display text-base font-semibold wrap-anywhere"
+                                :class="
+                                    token.status === 'active' &&
+                                    'text-foreground'
+                                "
                             >
                                 {{ token.name }}
                             </h2>
-                            <span
-                                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                                :class="statusPresentation[token.status].class"
+                            <StatusPill
+                                :label="statusPresentation[token.status].label"
+                                :tone="statusPresentation[token.status].tone"
+                                :live="inUse(token)"
+                                :title="
+                                    inUse(token)
+                                        ? 'Usada en las últimas 24 horas'
+                                        : undefined
+                                "
+                            />
+                            <code
+                                class="w-fit max-w-full rounded-md border border-border/70 bg-surface-sunken px-1.5 py-0.5 font-mono text-xs wrap-anywhere"
+                                >{{ token.prefix }}_…</code
                             >
-                                {{ statusPresentation[token.status].label }}
-                            </span>
                         </div>
-                        <code
-                            class="w-fit max-w-full rounded-md border bg-surface-sunken px-1.5 py-0.5 font-mono text-xs wrap-anywhere"
-                            >{{ token.prefix }}_…</code
-                        >
                         <div class="flex flex-wrap gap-1.5">
                             <span
                                 v-for="ability in token.abilities"
                                 :key="ability"
-                                class="rounded-full border px-2 py-0.5 text-xs"
+                                class="rounded-full bg-primary-soft/60 px-2 py-0.5 text-xs text-primary-soft-foreground ring-1 ring-primary/15 ring-inset"
+                                :class="
+                                    token.status !== 'active' && 'opacity-70'
+                                "
                             >
                                 {{ abilityLabels[ability] ?? ability }}
                             </span>
                         </div>
                         <dl
-                            class="auto-grid text-xs text-muted-foreground [--col-min:15rem] [--grid-gap:0.25rem_1.5rem]"
+                            class="auto-grid rounded-xl bg-surface-sunken/50 px-3 py-2.5 text-xs text-muted-foreground [--col-min:15rem] [--grid-gap:0.375rem_1.5rem]"
                         >
                             <div class="min-w-0">
                                 <dt class="inline font-medium">Conexiones:</dt>
@@ -368,7 +404,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                     <Button
                         v-if="can.manage && token.status === 'active'"
                         variant="outline"
-                        class="w-full text-destructive sm:w-auto"
+                        class="admin-row-actions w-full text-destructive hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive sm:w-auto"
                         data-tour="integrations.revoke"
                         @click="openRevoke(token)"
                     >
@@ -378,9 +414,10 @@ function departmentsLabel(token: ApiTokenSummary): string {
                 </li>
             </ul>
 
-            <EmptyState
+            <FilteredEmpty
                 v-else
-                class="m-4 border-none"
+                :narrowed="false"
+                narrowed-title=""
                 :icon="KeyRound"
                 title="Aún no hay claves de acceso"
                 :description="
@@ -389,11 +426,15 @@ function departmentsLabel(token: ApiTokenSummary): string {
                         : 'Cuando se creen claves de acceso aparecerán aquí.'
                 "
             >
-                <Button v-if="can.manage" @click="openCreate">
+                <Button
+                    v-if="can.manage"
+                    class="rounded-full"
+                    @click="openCreate"
+                >
                     <Plus />
                     Nueva clave de acceso
                 </Button>
-            </EmptyState>
+            </FilteredEmpty>
 
             <div
                 v-if="tokens.meta.last_page > 1 || tokens.data.length > 0"
@@ -437,7 +478,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                     <label
                         v-for="ability in abilities"
                         :key="ability.value"
-                        class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-[[data-state=checked]]:border-primary/40"
+                        class="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border/80 px-3 py-2 text-sm transition-colors hover:border-border-strong hover:bg-accent/40 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/40"
                     >
                         <Checkbox
                             :model-value="
@@ -473,7 +514,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                         <label
                             v-for="connection in connections"
                             :key="connection.id"
-                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-[[data-state=checked]]:border-primary/40"
+                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border/80 px-3 py-2 text-sm transition-colors hover:border-border-strong hover:bg-accent/40 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/40"
                         >
                             <Checkbox
                                 :model-value="
@@ -512,7 +553,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                         <label
                             v-for="department in departments"
                             :key="department.id"
-                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-[[data-state=checked]]:border-primary/40"
+                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border/80 px-3 py-2 text-sm transition-colors hover:border-border-strong hover:bg-accent/40 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary-soft/40"
                         >
                             <Checkbox
                                 :model-value="
@@ -570,7 +611,12 @@ function departmentsLabel(token: ApiTokenSummary): string {
         </FormDialog>
 
         <Dialog v-model:open="secretOpen">
-            <DialogContent class="sm:max-w-lg">
+            <!-- The key is shown once: an outside click never closes it. -->
+            <DialogContent
+                class="sm:max-w-lg"
+                @pointer-down-outside.prevent
+                @interact-outside.prevent
+            >
                 <DialogHeader>
                     <DialogTitle>Clave de acceso creada</DialogTitle>
                     <DialogDescription>
@@ -586,7 +632,7 @@ function departmentsLabel(token: ApiTokenSummary): string {
                     <Label for="issued-token">Clave de acceso (token)</Label>
                     <code
                         id="issued-token"
-                        class="block rounded-lg border bg-muted p-3 font-mono text-xs break-all select-all"
+                        class="block rounded-xl border border-primary/25 accent-gradient-soft p-3 font-mono text-xs break-all shadow-[inset_0_1px_2px_color-mix(in_oklch,var(--shadow-ink,black)_8%,transparent)] select-all"
                         >{{ issued?.token }}</code
                     >
                     <p class="text-xs text-muted-foreground">

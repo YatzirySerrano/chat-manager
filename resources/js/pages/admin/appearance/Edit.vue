@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import { Check, Eye, Lock, MessagesSquare, RotateCcw } from '@lucide/vue';
+import '@/components/admin/admin.css';
 import { onBeforeUnmount, watch } from 'vue';
 import PageHeader from '@/components/PageHeader.vue';
 import StatusNote from '@/components/StatusNote.vue';
@@ -91,30 +92,40 @@ function save(): void {
                         :data-palette="option.value"
                         :aria-checked="form.palette === option.value"
                         :disabled="!can.update || form.processing"
-                        class="group relative flex flex-col gap-3 rounded-xl border bg-card p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed"
+                        class="group relative flex press-spring flex-col gap-3 rounded-xl border bg-card p-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
                         :class="
                             form.palette === option.value
-                                ? 'border-primary ring-2 ring-primary/70'
-                                : 'interactive-surface'
+                                ? 'border-primary shadow-glow ring-2 ring-primary/60'
+                                : 'hover-lift border-border/80'
                         "
                         @click="form.palette = option.value"
                     >
                         <span
-                            class="flex h-14 overflow-hidden rounded-lg"
+                            class="relative flex h-16 overflow-hidden rounded-lg shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--foreground)_8%,transparent)]"
                             aria-hidden="true"
                         >
                             <span
-                                class="flex-[2] bg-primary transition-[flex-grow] duration-(--duration-panel) ease-(--ease-out-quint) group-hover:flex-[3]"
+                                class="flex-[2] accent-gradient transition-[flex-grow] duration-(--duration-panel) ease-(--ease-out-quint) group-hover:flex-[3]"
                             />
-                            <span class="flex-1 bg-primary-soft" />
+                            <span class="flex flex-1 flex-col bg-primary-soft">
+                                <span class="flex-1" />
+                                <span
+                                    class="m-1.5 h-1.5 rounded-full bg-primary/40"
+                                />
+                            </span>
+                            <span
+                                v-if="form.palette === option.value"
+                                class="absolute top-1.5 left-1.5 flex size-5 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm motion-safe:animate-in motion-safe:zoom-in-50"
+                            >
+                                <Check class="size-3.5" />
+                            </span>
                         </span>
                         <span
                             class="flex items-center justify-between gap-2 text-sm font-medium"
                         >
                             {{ option.label }}
-                            <Check
-                                v-if="form.palette === option.value"
-                                class="size-4 shrink-0 text-primary"
+                            <span
+                                class="size-2.5 shrink-0 rounded-full bg-primary"
                                 aria-hidden="true"
                             />
                         </span>
@@ -135,6 +146,7 @@ function save(): void {
                     >
                         <Button
                             type="button"
+                            :class="form.isDirty && 'shadow-glow'"
                             :disabled="!form.isDirty"
                             :loading="form.processing"
                             @click="save"
@@ -167,7 +179,7 @@ function save(): void {
 
             <SurfaceCard
                 title="Vista previa"
-                class="xl:sticky xl:top-22"
+                class="glass-card xl:sticky xl:top-22"
                 body-class="space-y-4 p-5"
                 data-tour="appearance.preview"
             >
@@ -175,14 +187,14 @@ function save(): void {
                     <Badge
                         v-if="form.isDirty"
                         variant="outline"
-                        class="gap-1 font-normal"
+                        class="gap-1 font-normal motion-safe:animate-in motion-safe:zoom-in-95 motion-safe:fade-in"
                     >
                         <Eye class="size-3" /> Sin guardar
                     </Badge>
                 </template>
                 <div class="flex items-center gap-3">
                     <span
-                        class="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+                        class="flex size-10 items-center justify-center rounded-xl accent-gradient shadow-glow"
                     >
                         <MessagesSquare class="size-4.5" />
                     </span>
@@ -195,14 +207,29 @@ function save(): void {
                         </p>
                     </div>
                 </div>
-                <div class="space-y-1 rounded-lg border p-1.5 text-sm">
+                <div class="space-y-1 rounded-xl border bg-card p-1.5 text-sm">
                     <p
-                        class="rounded-md bg-primary-soft px-2.5 py-1.5 font-medium text-primary-soft-foreground"
+                        class="relative rounded-lg bg-primary-soft px-2.5 py-1.5 pl-4 font-medium text-primary-soft-foreground before:absolute before:inset-y-2 before:left-1.5 before:w-0.75 before:rounded-full before:bg-primary"
                     >
                         Usuarios
                     </p>
                     <p class="px-2.5 py-1.5 text-muted-foreground">
                         Departamentos
+                    </p>
+                </div>
+                <div
+                    class="space-y-1.5 rounded-xl bg-surface-sunken/70 p-3"
+                    aria-hidden="true"
+                >
+                    <p
+                        class="w-fit max-w-[80%] rounded-2xl rounded-bl-md border bg-card px-3 py-1.5 text-xs"
+                    >
+                        Hola, quiero solicitar un crédito.
+                    </p>
+                    <p
+                        class="ml-auto w-fit max-w-[80%] rounded-2xl rounded-br-md accent-gradient px-3 py-1.5 text-xs"
+                    >
+                        ¡Claro! Te ayudo con tu solicitud.
                     </p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -216,10 +243,10 @@ function save(): void {
                     <span
                         v-for="(height, index) in previewBars"
                         :key="index"
-                        class="flex-1 rounded-t-sm"
+                        class="flex-1 rounded-t-sm transition-[height] duration-(--duration-slow) ease-(--ease-spring-soft)"
                         :class="
                             index === previewBars.length - 1
-                                ? 'bg-primary'
+                                ? 'accent-gradient'
                                 : 'bg-primary/35'
                         "
                         :style="{ height: `${height}%` }"

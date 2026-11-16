@@ -309,7 +309,7 @@ async function remove(): Promise<void> {
 
         <form
             v-if="formOpen"
-            class="grid gap-4 rounded-lg border p-3 sm:p-4"
+            class="grid gap-4 rounded-xl border bg-surface-sunken/50 p-3 sm:p-4"
             aria-labelledby="rule-form-title"
             @submit.prevent="apply"
         >
@@ -439,7 +439,7 @@ async function remove(): Promise<void> {
             <li
                 v-for="rule in rules"
                 :key="rule.id"
-                class="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between"
+                class="flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-(--shadow-control) transition-[border-color,box-shadow] duration-(--duration-base) hover:border-border-strong sm:flex-row sm:items-start sm:justify-between"
             >
                 <div class="min-w-0 space-y-1 text-sm">
                     <p class="flex flex-wrap items-center gap-2 font-medium">

@@ -1,0 +1,23 @@
+/*
+  Templates: the filter selects of the list toolbar read as compact pills
+  next to the search. Unlayered on purpose: it overrides the trigger's own
+  height, radius and background and the select's full width from `sm` up.
+*/
+.tpl-filters [data-slot='select-trigger'] {
+    height: 2rem;
+    border-radius: 9999px;
+    background-color: var(--card);
+    font-size: 0.8125rem;
+}
+
+@media (pointer: coarse) {
+    .tpl-filters [data-slot='select-trigger'] {
+        height: 2.5rem;
+    }
+}
+
+@media (width >= 40rem) {
+    .tpl-filters > [data-slot='app-select'] {
+        width: 11rem;
+    }
+}

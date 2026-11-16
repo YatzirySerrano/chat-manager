@@ -3,6 +3,7 @@
 namespace App\Models\TeamChat;
 
 use App\Enums\TeamChat\TeamAttachmentKind;
+use App\Jobs\WarmMediaThumbnail;
 use Database\Factories\TeamChat\TeamAttachmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -32,6 +33,19 @@ class TeamAttachment extends Model
 {
     /** @use HasFactory<TeamAttachmentFactory> */
     use HasFactory;
+
+    /**
+     * The chat preview of an image is made in the background as soon as it
+     * is stored, so the thread paints it without waiting.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (TeamAttachment $attachment): void {
+            if ($attachment->kind === TeamAttachmentKind::Image && $attachment->isPreviewable()) {
+                WarmMediaThumbnail::warm((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes);
+            }
+        });
+    }
 
     /**
      * Get the attributes that should be cast.

@@ -1,0 +1,303 @@
+/*
+  Shared look of the insight modules (Panel principal, Reportes,
+  Seguimiento de atención, Archivos preparados): metric tiles, section
+  headings, the pill tabs of a page and the chart entrances. Plain CSS on
+  the tokens of resources/css/app.css, so palettes and dark mode apply as
+  is; every animation uses transform/opacity only and the global
+  reduced-motion rule of app.css turns it off.
+*/
+
+/* ───────────── Icon tile: the gradient square that heads a figure ───────────── */
+
+.insight-tile {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.75rem;
+    color: var(--tile-ink, var(--primary));
+    background: linear-gradient(
+        140deg,
+        color-mix(in oklch, var(--tile, var(--primary)) 24%, var(--card)) 0%,
+        color-mix(in oklch, var(--tile, var(--primary)) 9%, var(--card)) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklch, white 55%, transparent),
+        inset 0 0 0 1px
+            color-mix(in oklch, var(--tile, var(--primary)) 22%, transparent),
+        0 6px 14px -8px
+            color-mix(in oklch, var(--tile, var(--primary)) 55%, transparent);
+    transition:
+        transform var(--duration-base, 200ms) var(--ease-spring, ease-out),
+        box-shadow var(--duration-base, 200ms) var(--ease-standard, ease-out);
+}
+
+.dark .insight-tile {
+    box-shadow:
+        inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
+        inset 0 0 0 1px
+            color-mix(in oklch, var(--tile, var(--primary)) 30%, transparent),
+        0 6px 16px -8px
+            color-mix(in oklch, var(--tile, var(--primary)) 60%, transparent);
+}
+
+/* The solid version, for the one hero figure of a view. */
+.insight-tile[data-solid] {
+    color: var(--primary-foreground);
+    background: linear-gradient(
+        140deg,
+        color-mix(in oklch, var(--tile, var(--primary)) 78%, white) 0%,
+        var(--tile, var(--primary)) 60%,
+        color-mix(in oklch, var(--tile, var(--primary)) 82%, black) 100%
+    );
+}
+
+.insight-tile[data-size='sm'] {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.6rem;
+}
+
+.insight-tile[data-tone='warning'] {
+    --tile: var(--warning);
+    --tile-ink: var(--warning);
+}
+
+.insight-tile[data-tone='success'] {
+    --tile: var(--success);
+    --tile-ink: var(--success);
+}
+
+.insight-tile[data-tone='destructive'] {
+    --tile: var(--destructive);
+    --tile-ink: var(--destructive);
+}
+
+.insight-tile[data-tone='muted'] {
+    --tile: var(--muted-foreground);
+    --tile-ink: var(--muted-foreground);
+}
+
+/* ───────────── Metric card ───────────── */
+
+.kpi-card {
+    /* A faint wash of the tile color in the top corner: depth, not decoration.
+       (Painted on the card itself: ::before and ::after belong to spotlight.) */
+    background-image: radial-gradient(
+        120% 90% at 100% 0%,
+        color-mix(in oklch, var(--tile, var(--primary)) 7%, transparent) 0%,
+        transparent 55%
+    );
+}
+
+.kpi-card[data-tone='warning'] {
+    --tile: var(--warning);
+}
+
+.kpi-card[data-tone='success'] {
+    --tile: var(--success);
+}
+
+.kpi-card[data-tone='destructive'] {
+    --tile: var(--destructive);
+}
+
+.kpi-card[data-tone='muted'] {
+    --tile: var(--muted-foreground);
+}
+
+@media (hover: hover) {
+    .kpi-card:hover .insight-tile {
+        transform: translateY(-1px) scale(1.06) rotate(-3deg);
+    }
+}
+
+/* The change against the previous period: a soft pill. */
+.kpi-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    height: 1.375rem;
+    padding-inline: 0.4rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    animation: kpi-delta-in 520ms var(--ease-spring, ease-out) 240ms backwards;
+}
+
+.kpi-delta[data-tone='good'] {
+    background: var(--success-soft);
+    color: var(--success-soft-foreground);
+}
+
+.kpi-delta[data-tone='bad'] {
+    background: var(--destructive-soft);
+    color: var(--destructive-soft-foreground);
+}
+
+.kpi-delta[data-tone='neutral'] {
+    background: var(--muted);
+    color: var(--muted-foreground);
+}
+
+@keyframes kpi-delta-in {
+    from {
+        opacity: 0;
+        transform: translateY(3px) scale(0.85);
+    }
+}
+
+/* ───────────── Pill tabs of a page (role="tablist") ───────────── */
+
+.insight-tabs {
+    position: relative;
+    display: inline-flex;
+    max-width: 100%;
+    gap: 0.125rem;
+    padding: 0.25rem;
+    overflow-x: auto;
+    border-radius: 9999px;
+    background: var(--surface-sunken);
+    box-shadow:
+        inset 0 1px 2px
+            color-mix(in oklch, var(--shadow-ink, black) 8%, transparent),
+        inset 0 0 0 1px color-mix(in oklch, var(--border) 70%, transparent);
+    scrollbar-width: none;
+}
+
+.insight-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.insight-tabs-thumb {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 9999px;
+    background: linear-gradient(
+        180deg,
+        var(--card),
+        color-mix(in oklch, var(--primary) 7%, var(--card))
+    );
+    box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--primary) 25%, transparent),
+        var(--shadow-float, var(--shadow-control));
+    pointer-events: none;
+}
+
+.insight-tabs-thumb[data-animated] {
+    transition:
+        transform 420ms var(--ease-spring-soft, ease-out),
+        width 320ms var(--ease-out-quint, ease-out),
+        opacity var(--duration-fast, 150ms) var(--ease-standard, ease-out);
+}
+
+/* ───────────── Charts ───────────── */
+
+/* The tooltip of a chart pops from its anchor. */
+.chart-tooltip-pop {
+    animation: chart-tooltip-in 220ms var(--ease-spring-soft, ease-out);
+}
+
+@keyframes chart-tooltip-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px) scale(0.96);
+    }
+}
+
+/* Area wash under a line: rises from the baseline once. */
+.chart-area-rise {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: chart-area-rise 640ms var(--ease-out-quint, ease-out) 120ms
+        backwards;
+}
+
+@keyframes chart-area-rise {
+    from {
+        opacity: 0;
+        transform: scaleY(0.4);
+    }
+}
+
+/* A marker that appears under the pointer. */
+.chart-marker-pop {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: chart-marker-pop 260ms var(--ease-spring, ease-out);
+}
+
+@keyframes chart-marker-pop {
+    from {
+        transform: scale(0.3);
+    }
+}
+
+/* The empty stage of a chart card: ghost bars rising once. */
+.chart-empty-bar {
+    transform-origin: bottom;
+    animation: chart-empty-rise 620ms var(--ease-spring-soft, ease-out)
+        backwards;
+    animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+@keyframes chart-empty-rise {
+    from {
+        opacity: 0;
+        transform: scaleY(0.2);
+    }
+}
+
+/* Heatmap cells come in by column, left to right, once. */
+.heat-cell {
+    animation: heat-in 420ms var(--ease-out-quint, ease-out) backwards;
+    animation-delay: calc(var(--h, 0) * 14ms + var(--d, 0) * 10ms);
+}
+
+@keyframes heat-in {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+
+/* Indeterminate bar of a file being prepared. */
+.insight-progress {
+    position: relative;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--primary) 12%, var(--muted));
+}
+
+.insight-progress::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 40%;
+    border-radius: inherit;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        var(--primary) 40%,
+        color-mix(in oklch, var(--primary) 60%, white) 70%,
+        transparent
+    );
+    animation: insight-progress 1.4s var(--ease-standard, ease-in-out) infinite;
+}
+
+@keyframes insight-progress {
+    from {
+        transform: translateX(-110%);
+    }
+
+    to {
+        transform: translateX(260%);
+    }
+}

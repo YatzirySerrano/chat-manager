@@ -5,14 +5,19 @@ import { computed, nextTick, ref } from 'vue';
 import RoleFormDialog from '@/components/admin/RoleFormDialog.vue';
 import RolePermissionsSheet from '@/components/admin/RolePermissionsSheet.vue';
 import RoleSummaryCard from '@/components/admin/RoleSummaryCard.vue';
+import StatusPill from '@/components/admin/StatusPill.vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import type { FilterTabOption } from '@/components/filters/types';
 import PageHeader from '@/components/PageHeader.vue';
 import RecordActions from '@/components/RecordActions.vue';
 import RecordGrid from '@/components/RecordGrid.vue';
-import RecordStateFilter from '@/components/RecordStateFilter.vue';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import SurfaceCard from '@/components/SurfaceCard.vue';
@@ -166,6 +171,22 @@ const deletion = useRecordDeletion<ManagedRole>({
               },
 });
 
+const recordTabs = computed<FilterTabOption<RecordStateValue>[]>(() =>
+    props.recordStates.map((option) => ({
+        value: option.value,
+        label: option.label,
+    })),
+);
+
+function chooseRecord(value: RecordStateValue): void {
+    if (value === record.value) {
+        return;
+    }
+
+    record.value = value;
+    applyRecordState();
+}
+
 const { mode: viewMode } = useViewMode('admin.roles');
 
 /**
@@ -218,6 +239,7 @@ function roleDescription(role: ManagedRole): string {
                 />
                 <Button
                     v-if="can.create"
+                    class="shadow-glow"
                     data-tour="roles.new"
                     @click="openCreate"
                 >
@@ -231,34 +253,42 @@ function roleDescription(role: ManagedRole): string {
             v-if="roles.length > 0 || record !== 'active'"
             class="grid reveal items-start gap-(--section-gap) min-[112rem]:grid-cols-[minmax(0,1fr)_22rem] [&>*]:min-w-0"
         >
-            <SurfaceCard>
+            <SurfaceCard class="admin-list overflow-clip">
                 <div
-                    class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3"
+                    class="admin-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-3"
                 >
                     <p class="text-sm text-muted-foreground">
-                        {{ roles.length }}
+                        <span
+                            class="font-display text-base font-semibold text-foreground tabular-nums"
+                            >{{ roles.length }}</span
+                        >
                         {{ roles.length === 1 ? 'rol' : 'roles' }} ·
-                        {{ availableTotal }} permisos disponibles
+                        <span class="tabular-nums">{{ availableTotal }}</span>
+                        permisos disponibles
                     </p>
                     <div
-                        class="flex items-center gap-2"
+                        class="flex flex-wrap items-center gap-2 max-sm:w-full"
                         data-tour="roles.toolbar"
                     >
-                        <RecordStateFilter
-                            v-model="record"
-                            :options="recordStates"
-                            @change="applyRecordState"
+                        <FilterTabs
+                            v-if="recordTabs.length > 0"
+                            class="max-sm:flex-1"
+                            :options="recordTabs"
+                            :model-value="record"
+                            label="Mostrar activos o eliminados"
+                            @update:model-value="chooseRecord"
                         />
                         <ViewModeToggle v-model="viewMode" />
                     </div>
                 </div>
 
-                <EmptyState
+                <FilteredEmpty
                     v-if="roles.length === 0"
-                    class="m-4 border-none"
-                    :icon="ShieldCheck"
+                    narrowed
+                    narrowed-title="Ningún rol en este estado"
+                    narrowed-description="Cambia el filtro (Activos, Eliminados o Todos)."
                     title="Ningún rol en este estado"
-                    description="Cambia el filtro (Activos, Eliminados o Todos)."
+                    @clear="chooseRecord('active')"
                 />
 
                 <Table v-else-if="viewMode === 'table'">
@@ -289,7 +319,7 @@ function roleDescription(role: ManagedRole): string {
                             :data-tour="
                                 position === 0 ? 'roles.card' : undefined
                             "
-                            class="transition-colors duration-(--duration-panel)"
+                            class="group/row transition-colors duration-(--duration-panel)"
                             :class="[
                                 role.is_deleted && 'text-muted-foreground',
                                 highlightedId === role.id &&
@@ -299,7 +329,14 @@ function roleDescription(role: ManagedRole): string {
                             <TableCell class="w-full max-w-0 py-3 pl-5">
                                 <div class="flex min-w-0 items-center gap-3">
                                     <span
-                                        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:scale-105"
+                                        :class="
+                                            role.is_deleted
+                                                ? 'bg-muted text-muted-foreground'
+                                                : role.is_root
+                                                  ? 'accent-gradient shadow-glow'
+                                                  : 'admin-icon-tile'
+                                        "
                                         aria-hidden="true"
                                     >
                                         <component
@@ -321,7 +358,7 @@ function roleDescription(role: ManagedRole): string {
                                             <Badge
                                                 v-if="role.is_current_user_role"
                                                 variant="outline"
-                                                class="font-normal"
+                                                class="rounded-full border-primary/30 font-normal text-primary"
                                                 >Tu rol</Badge
                                             >
                                         </p>
@@ -390,7 +427,7 @@ function roleDescription(role: ManagedRole): string {
                                     :href="
                                         usersIndex({ query: { role: role.id } })
                                     "
-                                    class="text-sm hover:underline"
+                                    class="rounded-sm text-sm underline-offset-2 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                                     :aria-label="`Ver los ${usersLabel(role)} con el rol ${role.label}`"
                                 >
                                     {{ usersLabel(role) }}
@@ -398,14 +435,15 @@ function roleDescription(role: ManagedRole): string {
                             </TableCell>
                             <TableCell class="hidden sm:table-cell">
                                 <DeletedBadge v-if="role.is_deleted" />
-                                <span
+                                <StatusPill
                                     v-else
-                                    class="text-xs text-muted-foreground"
-                                    >Activo</span
-                                >
+                                    label="Activo"
+                                    tone="success"
+                                />
                             </TableCell>
                             <TableCell class="w-px pr-5 text-right">
                                 <RecordActions
+                                    class="admin-row-actions"
                                     :actions="actionsFor(role)"
                                     :record="`el rol ${role.label}`"
                                     :busy="deletion.processingId === role.id"
@@ -415,7 +453,7 @@ function roleDescription(role: ManagedRole): string {
                     </TableBody>
                 </Table>
 
-                <RecordGrid v-else>
+                <RecordGrid v-else class="reveal-stagger">
                     <li
                         v-for="(role, position) in roles"
                         :key="role.id"
@@ -461,11 +499,11 @@ function roleDescription(role: ManagedRole): string {
                             >
                         </div>
                         <div
-                            class="h-1.5 overflow-hidden rounded-full bg-muted"
+                            class="h-2 overflow-hidden rounded-full bg-surface-sunken ring-1 ring-border/60 ring-inset"
                             aria-hidden="true"
                         >
                             <div
-                                class="role-bar h-full rounded-full bg-primary"
+                                class="role-bar h-full rounded-full accent-gradient"
                                 :style="{
                                     width: `${item.share}%`,
                                     '--i': position,
@@ -485,9 +523,7 @@ function roleDescription(role: ManagedRole): string {
                         :key="scope.value"
                         class="flex items-start gap-3"
                     >
-                        <span
-                            class="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary-soft-foreground"
-                        >
+                        <span class="admin-icon-tile size-9">
                             <component
                                 :is="scopeIcon(scope.value)"
                                 class="size-4"
@@ -509,6 +545,7 @@ function roleDescription(role: ManagedRole): string {
 
         <EmptyState
             v-else
+            class="admin-section border-solid"
             :icon="ShieldCheck"
             title="Aún no hay roles"
             description="Aún no se han creado los roles básicos. Pide al equipo técnico que los cree; después podrás crearlos y editarlos aquí."

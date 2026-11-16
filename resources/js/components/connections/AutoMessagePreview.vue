@@ -21,12 +21,12 @@ defineProps<{
 
 <template>
     <div
-        class="overflow-hidden rounded-2xl border bg-muted/40"
+        class="overflow-hidden rounded-2xl border bg-muted/40 shadow-float"
         aria-label="Vista previa de los mensajes automáticos"
     >
-        <div class="flex items-center gap-2 border-b bg-card px-4 py-3">
+        <div class="flex items-center gap-2 border-b glass-card px-4 py-3">
             <span
-                class="flex size-8 items-center justify-center rounded-full bg-primary-soft text-primary-soft-foreground"
+                class="flex size-8 items-center justify-center rounded-full accent-gradient"
             >
                 <Bot class="size-4" aria-hidden="true" />
             </span>

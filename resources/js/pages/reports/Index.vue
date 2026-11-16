@@ -8,15 +8,20 @@ import {
     Clock3,
     Hourglass,
     Inbox,
+    LayoutDashboard,
+    ListTree,
     MessageCircleReply,
     MoonStar,
     RotateCcw,
     Send,
+    ShieldCheck,
     Target,
     Timer,
+    TrendingUp,
     UserRoundCheck,
+    UsersRound,
 } from '@lucide/vue';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import BacklogChart from '@/components/charts/BacklogChart.vue';
 import BarChart from '@/components/charts/BarChart.vue';
 import ChannelChart from '@/components/charts/ChannelChart.vue';
@@ -41,10 +46,11 @@ import AnalyticsFilterBar from '@/components/reports/AnalyticsFilterBar.vue';
 import BreakdownTable from '@/components/reports/BreakdownTable.vue';
 import GranularityToggle from '@/components/reports/GranularityToggle.vue';
 import HourHeatmap from '@/components/reports/HourHeatmap.vue';
+import InsightHeading from '@/components/reports/InsightHeading.vue';
+import InsightTabs from '@/components/reports/InsightTabs.vue';
 import KpiCard from '@/components/reports/KpiCard.vue';
+import KpiSkeleton from '@/components/reports/KpiSkeleton.vue';
 import ProductivityTable from '@/components/reports/ProductivityTable.vue';
-import SectionHeading from '@/components/SectionHeading.vue';
-import StatCard from '@/components/StatCard.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import {
@@ -54,7 +60,6 @@ import {
     granularityNoun,
 } from '@/composables/useChartTheme';
 import { useFeatures } from '@/composables/useFeatures';
-import { useSlidingIndicator } from '@/composables/useSlidingIndicator';
 import { usePermissions } from '@/composables/usePermissions';
 import { inboxLink } from '@/lib/analyticsLinks';
 import { formatDuration } from '@/lib/format';
@@ -127,10 +132,10 @@ function changeGranularity(granularity: AnalyticsGranularity): void {
 /* ---------- Views of the page (kept in the URL hash, so a link opens the same view) */
 
 const allViews = [
-    { key: 'resumen', label: 'Resumen' },
-    { key: 'productividad', label: 'Productividad' },
-    { key: 'sla', label: 'Cumplimiento de SLA' },
-    { key: 'desgloses', label: 'Desgloses' },
+    { key: 'resumen', label: 'Resumen', icon: LayoutDashboard },
+    { key: 'productividad', label: 'Productividad', icon: UsersRound },
+    { key: 'sla', label: 'Cumplimiento de SLA', icon: ShieldCheck },
+    { key: 'desgloses', label: 'Desgloses', icon: ListTree },
 ] as const;
 
 type ViewKey = (typeof allViews)[number]['key'];
@@ -139,24 +144,16 @@ type ViewKey = (typeof allViews)[number]['key'];
 const { phaseTwo } = useFeatures();
 
 const views = computed(() =>
-    allViews.filter(
-        (item) =>
-            phaseTwo.value ||
-            (item.key !== 'productividad' && item.key !== 'sla'),
-    ),
+    allViews
+        .filter(
+            (item) =>
+                phaseTwo.value ||
+                (item.key !== 'productividad' && item.key !== 'sla'),
+        )
+        .map((item) => ({ ...item, attrs: { 'data-view': item.key } })),
 );
 
 const view = ref<ViewKey>('resumen');
-
-/** The underline slides to the open view. */
-const tabList = ref<HTMLElement | null>(null);
-const {
-    style: tabIndicator,
-    animated: tabAnimated,
-    update: updateTabIndicator,
-} = useSlidingIndicator(tabList, '[aria-selected=true]');
-
-watch([view, views], updateTabIndicator, { flush: 'post' });
 
 function selectView(key: ViewKey): void {
     view.value = key;
@@ -167,24 +164,6 @@ function selectView(key: ViewKey): void {
             '',
             `${window.location.pathname}${window.location.search}#${key}`,
         );
-    }
-}
-
-function onTabKeydown(event: KeyboardEvent, index: number): void {
-    const step =
-        event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-
-    if (step === 0) {
-        return;
-    }
-
-    event.preventDefault();
-    const next =
-        views.value[(index + step + views.value.length) % views.value.length];
-
-    if (next) {
-        selectView(next.key);
-        document.getElementById(`reports-tab-${next.key}`)?.focus();
     }
 }
 
@@ -691,58 +670,31 @@ const loadingCards = [
             muestran los últimos 30 días.
         </StatusNote>
 
-        <div
-            ref="tabList"
-            class="relative flex max-w-full gap-1 overflow-x-auto border-b"
-            role="tablist"
-            aria-label="Vistas del reporte"
+        <InsightTabs
+            :items="views"
+            :model-value="view"
+            label="Vistas del reporte"
+            id-prefix="reports-tab"
+            panel-prefix="reports-panel"
             data-reports-tabs
-        >
-            <button
-                v-for="(item, index) in views"
-                :id="`reports-tab-${item.key}`"
-                :key="item.key"
-                type="button"
-                role="tab"
-                class="inline-flex h-11 shrink-0 items-center rounded-t-md px-3 text-sm font-medium whitespace-nowrap outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                :class="
-                    view === item.key
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                "
-                :aria-selected="view === item.key"
-                :aria-controls="`reports-panel-${item.key}`"
-                :tabindex="view === item.key ? 0 : -1"
-                :data-view="item.key"
-                @click="selectView(item.key)"
-                @keydown="onTabKeydown($event, index)"
-            >
-                {{ item.label }}
-            </button>
-            <span
-                aria-hidden="true"
-                class="pointer-events-none absolute top-0 left-0 border-b-2 border-primary"
-                :class="
-                    tabAnimated &&
-                    'transition-[transform,width,opacity] duration-(--duration-panel) ease-(--ease-out-quint)'
-                "
-                :style="tabIndicator"
-            />
-        </div>
+            @select="selectView"
+        />
 
         <Deferred data="analytics">
             <template #fallback>
-                <div class="flex flex-col gap-(--section-gap)" aria-busy="true">
+                <div
+                    class="flex flex-col gap-(--section-gap)"
+                    role="status"
+                    aria-busy="true"
+                    aria-label="Cargando reportes"
+                >
                     <div
                         class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 min-[112rem]:grid-cols-6"
-                        aria-label="Cargando reportes"
                     >
-                        <StatCard
+                        <KpiSkeleton
                             v-for="index in 6"
                             :key="index"
-                            label="Cargando…"
-                            :value="null"
-                            loading
+                            :index="index - 1"
                         />
                     </div>
                     <div class="grid gap-3 lg:grid-cols-2">
@@ -772,8 +724,9 @@ const loadingCards = [
                         aria-labelledby="kpis-heading"
                         class="flex flex-col gap-3"
                     >
-                        <SectionHeading
+                        <InsightHeading
                             id="kpis-heading"
+                            :icon="Inbox"
                             title="Volumen"
                             :description="`Solicitudes recibidas ${period.label}; cada una cuenta una sola vez, sin importar reasignaciones ni mensajes. Comparado con ${comparisonText}.`"
                         />
@@ -839,6 +792,11 @@ const loadingCards = [
                                 label="Pendientes ahora"
                                 :icon="Clock3"
                                 :value="count(analytics.current.pending)"
+                                :tone="
+                                    analytics.current.pending > 0
+                                        ? 'warning'
+                                        : 'primary'
+                                "
                                 live
                                 :hint="`Esperan que alguien las acepte · ${analytics.current.open.toLocaleString('es-MX')} en atención${statusFiltered ? ' · el filtro de estado no se aplica a esta cifra en vivo' : ''}`"
                                 :href="
@@ -866,8 +824,9 @@ const loadingCards = [
                         aria-labelledby="charts-heading"
                         class="flex flex-col gap-3"
                     >
-                        <SectionHeading
+                        <InsightHeading
                             id="charts-heading"
+                            :icon="TrendingUp"
                             title="Evolución del periodo"
                             :description="period.label"
                         />
@@ -1020,8 +979,9 @@ const loadingCards = [
                         aria-labelledby="quality-heading"
                         class="flex flex-col gap-3"
                     >
-                        <SectionHeading
+                        <InsightHeading
                             id="quality-heading"
+                            :icon="ShieldCheck"
                             title="Seguimiento y calidad"
                         />
                         <div class="auto-grid [--col-min:15rem]">
@@ -1083,17 +1043,19 @@ const loadingCards = [
                         </div>
                     </section>
 
-                    <SurfaceCard
+                    <ChartCard
                         title="¿En qué días y horarios llegan más solicitudes?"
                         description="Solicitudes recibidas por día de la semana y hora"
-                        body-class="p-4 sm:p-5"
+                        :empty="analytics.heatmap.max === 0"
+                        empty-text="Sin solicitudes recibidas en este periodo"
                         data-tour="reports.heatmap"
+                        data-chart="heatmap"
                     >
                         <HourHeatmap
                             :cells="analytics.heatmap.cells"
                             :max="analytics.heatmap.max"
                         />
-                    </SurfaceCard>
+                    </ChartCard>
                 </template>
 
                 <!-- ============================== Productividad -->

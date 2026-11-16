@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { Eye, Lock, Pencil, RotateCcw, Trash2, X } from '@lucide/vue';
+import { Eye, Lock, Pencil, RotateCcw, Trash2 } from '@lucide/vue';
 import { computed, reactive, ref } from 'vue';
+import '@/components/admin/admin.css';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DataPagination from '@/components/DataPagination.vue';
-import EmptyState from '@/components/EmptyState.vue';
+import ActiveFilters from '@/components/filters/ActiveFilters.vue';
+import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
+import FilterTabs from '@/components/filters/FilterTabs.vue';
+import ListAvatar from '@/components/filters/ListAvatar.vue';
+import type {
+    ActiveFilterPill,
+    FilterTabOption,
+} from '@/components/filters/types';
 import FormField from '@/components/FormField.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import SurfaceCard from '@/components/SurfaceCard.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -137,6 +146,54 @@ function clearFilters(): void {
     filterState.department = ALL;
     applyFilters();
 }
+
+/* Alias / Apariencia del chat as tabs (a visit that keeps the filters). */
+const typeTabs = computed<FilterTabOption<ItemType>[]>(() =>
+    TYPES.map((option) => ({ value: option.value, label: option.label })),
+);
+
+const switching = ref(false);
+
+function chooseType(value: ItemType): void {
+    if (value === props.type) {
+        return;
+    }
+
+    router.get(personalItemsIndex.url({ query: query(value) }), undefined, {
+        preserveScroll: true,
+        onStart: () => (switching.value = true),
+        onFinish: () => (switching.value = false),
+    });
+}
+
+/* The chosen user and department as removable pills. */
+const pills = computed<ActiveFilterPill[]>(() => {
+    const result: ActiveFilterPill[] = [];
+
+    if (filterState.user !== ALL) {
+        result.push({
+            key: 'user',
+            label: `Usuario: ${props.users.find((user) => String(user.id) === filterState.user)?.name ?? 'No disponible'}`,
+            remove: () => {
+                filterState.user = ALL;
+                applyFilters();
+            },
+        });
+    }
+
+    if (filterState.department !== ALL) {
+        result.push({
+            key: 'department',
+            label: `Departamento: ${props.departments.find((department) => String(department.id) === filterState.department)?.name ?? 'No disponible'}`,
+            remove: () => {
+                filterState.department = ALL;
+                applyFilters();
+            },
+        });
+    }
+
+    return result;
+});
 
 const aliases = computed(() => props.items.data as AliasRow[]);
 const appearances = computed(() => props.items.data as AppearanceRow[]);
@@ -270,286 +327,365 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
 
         <p
             v-if="!can.manage"
-            class="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground shadow-card"
+            class="flex items-center gap-3 rounded-xl border glass-card px-4 py-3 text-sm text-muted-foreground shadow-float"
         >
-            <Lock class="size-4 shrink-0" aria-hidden="true" />
+            <span class="admin-icon-tile size-8" aria-hidden="true">
+                <Lock class="size-4" />
+            </span>
             Puedes consultar estos elementos, pero no modificarlos.
         </p>
 
-        <nav
-            class="flex flex-wrap gap-1 border-b"
-            aria-label="Tipo de elemento personal"
-        >
-            <Link
-                v-for="option in TYPES"
-                :key="option.value"
-                :href="personalItemsIndex.url({ query: query(option.value) })"
-                preserve-scroll
-                class="-mb-px border-b-2 px-3 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                :class="
-                    type === option.value
-                        ? 'border-primary text-foreground'
-                        : 'border-transparent text-muted-foreground hover:text-foreground'
-                "
-                :aria-current="type === option.value ? 'page' : undefined"
-            >
-                {{ option.label }}
-            </Link>
-        </nav>
-
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-end">
-            <Select
-                v-model="filterState.user"
-                @update:model-value="applyFilters"
-            >
-                <SelectTrigger
-                    class="w-full lg:w-60"
-                    aria-label="Filtrar por usuario"
+        <SurfaceCard class="admin-list overflow-clip">
+            <div class="admin-toolbar grid gap-3 p-3 sm:p-4">
+                <div
+                    class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between"
                 >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem :value="ALL">Todos los usuarios</SelectItem>
-                    <SelectItem
-                        v-for="user in users"
-                        :key="user.id"
-                        :value="String(user.id)"
-                    >
-                        {{ user.name }}
-                    </SelectItem>
-                </SelectContent>
-            </Select>
-            <Select
-                v-model="filterState.department"
-                @update:model-value="applyFilters"
-            >
-                <SelectTrigger
-                    class="w-full lg:w-60"
-                    aria-label="Filtrar por departamento"
-                >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem :value="ALL"
-                        >Todos los departamentos</SelectItem
-                    >
-                    <SelectItem
-                        v-for="department in departments"
-                        :key="department.id"
-                        :value="String(department.id)"
-                    >
-                        {{ department.name }}
-                    </SelectItem>
-                </SelectContent>
-            </Select>
-            <Button v-if="hasFilters" variant="ghost" @click="clearFilters">
-                <X aria-hidden="true" />
-                Limpiar
-            </Button>
-        </div>
-
-        <EmptyState
-            v-if="items.data.length === 0"
-            :icon="Eye"
-            title="No hay nada que mostrar"
-            description="Ninguno de los usuarios que supervisas tiene elementos de este tipo con los filtros aplicados."
-        />
-
-        <div
-            v-else
-            class="overflow-x-auto rounded-xl border bg-card shadow-card"
-        >
-            <Table v-if="type === 'alias'">
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead>Usuario</TableHead>
-                        <TableHead>Alias</TableHead>
-                        <TableHead>Nombre oficial del contacto</TableHead>
-                        <TableHead class="hidden md:table-cell"
-                            >Actualizado</TableHead
+                    <nav aria-label="Tipo de elemento personal">
+                        <FilterTabs
+                            class="max-lg:w-full lg:w-fit"
+                            :options="typeTabs"
+                            :model-value="type"
+                            label="Tipo de elemento personal"
+                            @update:model-value="chooseType"
+                        />
+                    </nav>
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex">
+                        <Select
+                            v-model="filterState.user"
+                            @update:model-value="applyFilters"
                         >
-                        <TableHead v-if="can.manage" class="text-right">
-                            <span class="sr-only">Acciones</span>
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow v-for="row in aliases" :key="row.id">
-                        <TableCell>{{ row.owner.name }}</TableCell>
-                        <TableCell class="max-w-56 truncate font-medium">
-                            {{ row.alias }}
-                        </TableCell>
-                        <TableCell class="max-w-64">
-                            <span class="block truncate">{{
-                                row.contact.name
-                            }}</span>
-                            <span
-                                v-if="row.contact.phone_e164"
-                                class="block text-xs text-muted-foreground tabular-nums"
-                                >{{ formatPhone(row.contact.phone_e164) }}</span
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card lg:w-56"
+                                aria-label="Filtrar por usuario"
                             >
-                        </TableCell>
-                        <TableCell
-                            class="hidden text-muted-foreground tabular-nums md:table-cell"
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL"
+                                    >Todos los usuarios</SelectItem
+                                >
+                                <SelectItem
+                                    v-for="user in users"
+                                    :key="user.id"
+                                    :value="String(user.id)"
+                                >
+                                    {{ user.name }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select
+                            v-model="filterState.department"
+                            @update:model-value="applyFilters"
                         >
-                            {{ formatDateTime(row.updated_at) }}
-                        </TableCell>
-                        <TableCell v-if="can.manage" class="text-right">
-                            <div class="flex justify-end gap-1">
-                                <Button
-                                    v-if="row.can.update"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :aria-label="`Editar el alias de ${row.owner.name}`"
-                                    title="Editar"
-                                    @click="editAlias(row)"
+                            <SelectTrigger
+                                class="w-full rounded-full bg-card lg:w-56"
+                                aria-label="Filtrar por departamento"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="ALL"
+                                    >Todos los departamentos</SelectItem
                                 >
-                                    <Pencil aria-hidden="true" />
-                                </Button>
-                                <Button
-                                    v-if="row.can.delete"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :aria-label="`Eliminar el alias de ${row.owner.name}`"
-                                    title="Eliminar"
-                                    @click="
-                                        confirmDelete({ kind: 'alias', row })
-                                    "
+                                <SelectItem
+                                    v-for="department in departments"
+                                    :key="department.id"
+                                    :value="String(department.id)"
                                 >
-                                    <Trash2 aria-hidden="true" />
-                                </Button>
-                            </div>
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+                                    {{ department.name }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <ActiveFilters
+                    v-if="hasFilters"
+                    :pills="pills"
+                    :clearable="hasFilters"
+                    @clear="clearFilters"
+                />
+            </div>
 
-            <Table v-else>
-                <TableHeader>
-                    <TableRow class="hover:bg-transparent">
-                        <TableHead>Usuario</TableHead>
-                        <TableHead>Se aplica a</TableHead>
-                        <TableHead>Paleta</TableHead>
-                        <TableHead>Colores</TableHead>
-                        <TableHead class="hidden md:table-cell"
-                            >Actualizado</TableHead
-                        >
-                        <TableHead v-if="can.manage" class="text-right">
-                            <span class="sr-only">Acciones</span>
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow v-for="row in appearances" :key="row.id">
-                        <TableCell>{{ row.owner.name }}</TableCell>
-                        <TableCell class="max-w-64 truncate">{{
-                            row.scope_label
-                        }}</TableCell>
-                        <TableCell>{{
-                            row.preset_label ?? 'Personalizada'
-                        }}</TableCell>
-                        <TableCell>
-                            <div class="grid gap-1" data-appearance-swatches>
+            <div class="relative" :aria-busy="switching">
+                <div
+                    v-if="switching"
+                    class="absolute inset-x-0 top-0 z-10 pane-progress h-0.5"
+                    aria-hidden="true"
+                />
+
+                <FilteredEmpty
+                    v-if="items.data.length === 0"
+                    :narrowed="hasFilters"
+                    narrowed-title="No hay nada que mostrar"
+                    narrowed-description="Ninguno de los usuarios que supervisas tiene elementos de este tipo con los filtros aplicados."
+                    :icon="Eye"
+                    title="No hay nada que mostrar"
+                    :description="
+                        type === 'alias'
+                            ? 'Ninguno de los usuarios que supervisas tiene alias personales.'
+                            : 'Ninguno de los usuarios que supervisas cambió los colores de su chat.'
+                    "
+                    @clear="clearFilters"
+                />
+
+                <Table
+                    v-else-if="type === 'alias'"
+                    :class="switching && 'admin-loading'"
+                >
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Usuario</TableHead>
+                            <TableHead>Alias</TableHead>
+                            <TableHead>Nombre oficial del contacto</TableHead>
+                            <TableHead class="hidden md:table-cell"
+                                >Actualizado</TableHead
+                            >
+                            <TableHead
+                                v-if="can.manage"
+                                class="pr-5 text-right"
+                            >
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow v-for="row in aliases" :key="row.id">
+                            <TableCell class="pl-5">
+                                <span class="flex items-center gap-3">
+                                    <ListAvatar
+                                        class="size-8! text-xs"
+                                        :name="row.owner.name"
+                                    />
+                                    <span class="truncate font-medium">{{
+                                        row.owner.name
+                                    }}</span>
+                                </span>
+                            </TableCell>
+                            <TableCell class="max-w-56">
+                                <span
+                                    class="inline-flex max-w-full items-center truncate rounded-full bg-primary-soft px-2.5 py-0.5 font-medium text-primary-soft-foreground"
+                                    >{{ row.alias }}</span
+                                >
+                            </TableCell>
+                            <TableCell class="max-w-64">
+                                <span class="block truncate">{{
+                                    row.contact.name
+                                }}</span>
+                                <span
+                                    v-if="row.contact.phone_e164"
+                                    class="block text-xs text-muted-foreground tabular-nums"
+                                    >{{
+                                        formatPhone(row.contact.phone_e164)
+                                    }}</span
+                                >
+                            </TableCell>
+                            <TableCell
+                                class="hidden text-muted-foreground tabular-nums md:table-cell"
+                            >
+                                {{ formatDateTime(row.updated_at) }}
+                            </TableCell>
+                            <TableCell
+                                v-if="can.manage"
+                                class="w-px pr-5 text-right"
+                            >
                                 <div
-                                    v-for="mode in ['light', 'dark'] as const"
-                                    :key="mode"
-                                    class="flex items-center gap-1"
+                                    class="admin-row-actions flex justify-end gap-1"
                                 >
-                                    <span
-                                        class="w-12 text-xs text-muted-foreground"
+                                    <Button
+                                        v-if="row.can.update"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        :aria-label="`Editar el alias de ${row.owner.name}`"
+                                        title="Editar"
+                                        @click="editAlias(row)"
                                     >
-                                        {{
-                                            mode === 'light'
-                                                ? 'Claro'
-                                                : 'Oscuro'
-                                        }}
-                                    </span>
-                                    <template v-if="swatches(row.colors, mode)">
-                                        <span
-                                            class="inline-flex h-6 items-center rounded-md border px-1.5 text-xs"
-                                            :style="{
-                                                backgroundColor: swatches(
-                                                    row.colors,
-                                                    mode,
-                                                )!.sent_bg,
-                                                color: swatches(
-                                                    row.colors,
-                                                    mode,
-                                                )!.sent_text,
-                                            }"
-                                            >Enviado</span
-                                        >
-                                        <span
-                                            class="inline-flex h-6 items-center rounded-md border px-1.5 text-xs"
-                                            :style="{
-                                                backgroundColor: swatches(
-                                                    row.colors,
-                                                    mode,
-                                                )!.received_bg,
-                                                color: swatches(
-                                                    row.colors,
-                                                    mode,
-                                                )!.received_text,
-                                            }"
-                                            >Recibido</span
-                                        >
-                                        <span
-                                            class="size-6 rounded-md border"
-                                            :style="{
-                                                backgroundColor: swatches(
-                                                    row.colors,
-                                                    mode,
-                                                )!.chat_bg,
-                                            }"
-                                            title="Fondo del chat"
-                                        />
-                                    </template>
-                                    <span
-                                        v-else
-                                        class="text-xs text-muted-foreground"
-                                        >Sin colores válidos</span
+                                        <Pencil aria-hidden="true" />
+                                    </Button>
+                                    <Button
+                                        v-if="row.can.delete"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        class="hover:bg-destructive/10 hover:text-destructive"
+                                        :aria-label="`Eliminar el alias de ${row.owner.name}`"
+                                        title="Eliminar"
+                                        @click="
+                                            confirmDelete({
+                                                kind: 'alias',
+                                                row,
+                                            })
+                                        "
                                     >
+                                        <Trash2 aria-hidden="true" />
+                                    </Button>
                                 </div>
-                            </div>
-                        </TableCell>
-                        <TableCell
-                            class="hidden text-muted-foreground tabular-nums md:table-cell"
-                        >
-                            {{ formatDateTime(row.updated_at) }}
-                        </TableCell>
-                        <TableCell v-if="can.manage" class="text-right">
-                            <div class="flex justify-end gap-1">
-                                <Button
-                                    v-if="row.can.update"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :aria-label="`Cambiar la paleta de ${row.owner.name}`"
-                                    title="Cambiar paleta"
-                                    @click="editAppearance(row)"
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+
+                <Table v-else :class="switching && 'admin-loading'">
+                    <TableHeader>
+                        <TableRow class="hover:bg-transparent">
+                            <TableHead class="pl-5">Usuario</TableHead>
+                            <TableHead>Se aplica a</TableHead>
+                            <TableHead>Paleta</TableHead>
+                            <TableHead>Colores</TableHead>
+                            <TableHead class="hidden md:table-cell"
+                                >Actualizado</TableHead
+                            >
+                            <TableHead
+                                v-if="can.manage"
+                                class="pr-5 text-right"
+                            >
+                                <span class="sr-only">Acciones</span>
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        <TableRow v-for="row in appearances" :key="row.id">
+                            <TableCell class="pl-5">
+                                <span class="flex items-center gap-3">
+                                    <ListAvatar
+                                        class="size-8! text-xs"
+                                        :name="row.owner.name"
+                                    />
+                                    <span class="truncate font-medium">{{
+                                        row.owner.name
+                                    }}</span>
+                                </span>
+                            </TableCell>
+                            <TableCell class="max-w-64 truncate">{{
+                                row.scope_label
+                            }}</TableCell>
+                            <TableCell>{{
+                                row.preset_label ?? 'Personalizada'
+                            }}</TableCell>
+                            <TableCell>
+                                <div
+                                    class="grid gap-1"
+                                    data-appearance-swatches
                                 >
-                                    <Pencil aria-hidden="true" />
-                                </Button>
-                                <Button
-                                    v-if="row.can.delete"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    :aria-label="`Restablecer los colores de ${row.owner.name}`"
-                                    title="Restablecer predeterminados"
-                                    @click="
-                                        confirmDelete({
-                                            kind: 'appearance',
-                                            row,
-                                        })
-                                    "
+                                    <div
+                                        v-for="mode in [
+                                            'light',
+                                            'dark',
+                                        ] as const"
+                                        :key="mode"
+                                        class="flex items-center gap-1"
+                                    >
+                                        <span
+                                            class="w-12 text-xs text-muted-foreground"
+                                        >
+                                            {{
+                                                mode === 'light'
+                                                    ? 'Claro'
+                                                    : 'Oscuro'
+                                            }}
+                                        </span>
+                                        <template
+                                            v-if="swatches(row.colors, mode)"
+                                        >
+                                            <span
+                                                class="flex items-center gap-1 rounded-lg border p-0.5 shadow-(--shadow-control)"
+                                                :style="{
+                                                    backgroundColor: swatches(
+                                                        row.colors,
+                                                        mode,
+                                                    )!.chat_bg,
+                                                }"
+                                                title="Fondo del chat"
+                                            >
+                                                <span
+                                                    class="inline-flex h-5 items-center rounded-md rounded-br-sm px-1.5 text-[0.6875rem]"
+                                                    :style="{
+                                                        backgroundColor:
+                                                            swatches(
+                                                                row.colors,
+                                                                mode,
+                                                            )!.received_bg,
+                                                        color: swatches(
+                                                            row.colors,
+                                                            mode,
+                                                        )!.received_text,
+                                                    }"
+                                                    >Recibido</span
+                                                >
+                                                <span
+                                                    class="inline-flex h-5 items-center rounded-md rounded-bl-sm px-1.5 text-[0.6875rem]"
+                                                    :style="{
+                                                        backgroundColor:
+                                                            swatches(
+                                                                row.colors,
+                                                                mode,
+                                                            )!.sent_bg,
+                                                        color: swatches(
+                                                            row.colors,
+                                                            mode,
+                                                        )!.sent_text,
+                                                    }"
+                                                    >Enviado</span
+                                                >
+                                            </span>
+                                        </template>
+                                        <span
+                                            v-else
+                                            class="text-xs text-muted-foreground"
+                                            >Sin colores válidos</span
+                                        >
+                                    </div>
+                                </div>
+                            </TableCell>
+                            <TableCell
+                                class="hidden text-muted-foreground tabular-nums md:table-cell"
+                            >
+                                {{ formatDateTime(row.updated_at) }}
+                            </TableCell>
+                            <TableCell
+                                v-if="can.manage"
+                                class="w-px pr-5 text-right"
+                            >
+                                <div
+                                    class="admin-row-actions flex justify-end gap-1"
                                 >
-                                    <RotateCcw aria-hidden="true" />
-                                </Button>
-                            </div>
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
-        </div>
+                                    <Button
+                                        v-if="row.can.update"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        :aria-label="`Cambiar la paleta de ${row.owner.name}`"
+                                        title="Cambiar paleta"
+                                        @click="editAppearance(row)"
+                                    >
+                                        <Pencil aria-hidden="true" />
+                                    </Button>
+                                    <Button
+                                        v-if="row.can.delete"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        :aria-label="`Restablecer los colores de ${row.owner.name}`"
+                                        title="Restablecer predeterminados"
+                                        @click="
+                                            confirmDelete({
+                                                kind: 'appearance',
+                                                row,
+                                            })
+                                        "
+                                    >
+                                        <RotateCcw aria-hidden="true" />
+                                    </Button>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            </div>
+
+            <div
+                v-if="items.meta.last_page > 1 || items.data.length > 0"
+                class="border-t px-4 py-3"
+            >
+                <DataPagination :meta="items.meta" noun="elementos" />
+            </div>
+        </SurfaceCard>
 
         <p class="text-sm text-muted-foreground">
             Las respuestas rápidas personales se consultan en
@@ -560,124 +696,128 @@ function swatches(colors: ChatColors | null, mode: 'light' | 'dark') {
             >, con los mismos filtros de usuario y departamento.
         </p>
 
-        <DataPagination :meta="items.meta" noun="elementos" />
-    </div>
-
-    <Dialog v-model:open="aliasOpen">
-        <DialogContent class="sm:max-w-md">
-            <form class="grid gap-4" novalidate @submit.prevent="saveAlias">
-                <DialogHeader>
-                    <DialogTitle>Editar alias de otro usuario</DialogTitle>
-                    <DialogDescription>
-                        Cambia el alias que {{ editingAlias?.owner.name }} ve
-                        para {{ editingAlias?.contact.name }}. Queda registrado
-                        en la auditoría (sin el texto del alias). Déjalo vacío
-                        para eliminarlo.
-                    </DialogDescription>
-                </DialogHeader>
-                <FormField
-                    id="supervised-alias"
-                    label="Alias"
-                    :error="aliasForm.errors.alias"
-                >
-                    <Input
+        <Dialog v-model:open="aliasOpen">
+            <DialogContent class="sm:max-w-md">
+                <form class="grid gap-4" novalidate @submit.prevent="saveAlias">
+                    <DialogHeader>
+                        <DialogTitle>Editar alias de otro usuario</DialogTitle>
+                        <DialogDescription>
+                            Cambia el alias que
+                            {{ editingAlias?.owner.name }} ve para
+                            {{ editingAlias?.contact.name }}. Queda registrado
+                            en la auditoría (sin el texto del alias). Déjalo
+                            vacío para eliminarlo.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <FormField
                         id="supervised-alias"
-                        v-model="aliasForm.alias"
-                        maxlength="80"
-                        autocomplete="off"
-                    />
-                </FormField>
-                <DialogFooter class="gap-2">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        :disabled="aliasForm.processing"
-                        @click="aliasOpen = false"
+                        label="Alias"
+                        :error="aliasForm.errors.alias"
                     >
-                        Cancelar
-                    </Button>
-                    <Button
-                        type="submit"
-                        :disabled="aliasForm.processing"
-                        :loading="aliasForm.processing"
-                    >
-                        Guardar
-                    </Button>
-                </DialogFooter>
-            </form>
-        </DialogContent>
-    </Dialog>
+                        <Input
+                            id="supervised-alias"
+                            v-model="aliasForm.alias"
+                            maxlength="80"
+                            autocomplete="off"
+                        />
+                    </FormField>
+                    <DialogFooter class="gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            :disabled="aliasForm.processing"
+                            @click="aliasOpen = false"
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="submit"
+                            :disabled="aliasForm.processing"
+                            :loading="aliasForm.processing"
+                        >
+                            Guardar
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
 
-    <Dialog v-model:open="appearanceOpen">
-        <DialogContent class="sm:max-w-md">
-            <form
-                class="grid gap-4"
-                novalidate
-                @submit.prevent="saveAppearance"
-            >
-                <DialogHeader>
-                    <DialogTitle>Cambiar paleta de otro usuario</DialogTitle>
-                    <DialogDescription>
-                        Solo cambia el chat de
-                        {{ editingAppearance?.owner.name }} ({{
-                            editingAppearance?.scope_label
-                        }}). Queda registrado en la auditoría.
-                    </DialogDescription>
-                </DialogHeader>
-                <FormField id="supervised-preset" label="Paleta">
-                    <Select v-model="appearanceForm.preset">
-                        <SelectTrigger id="supervised-preset" class="w-full">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem
-                                v-for="preset in presets"
-                                :key="preset.value"
-                                :value="preset.value"
+        <Dialog v-model:open="appearanceOpen">
+            <DialogContent class="sm:max-w-md">
+                <form
+                    class="grid gap-4"
+                    novalidate
+                    @submit.prevent="saveAppearance"
+                >
+                    <DialogHeader>
+                        <DialogTitle
+                            >Cambiar paleta de otro usuario</DialogTitle
+                        >
+                        <DialogDescription>
+                            Solo cambia el chat de
+                            {{ editingAppearance?.owner.name }} ({{
+                                editingAppearance?.scope_label
+                            }}). Queda registrado en la auditoría.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <FormField id="supervised-preset" label="Paleta">
+                        <Select v-model="appearanceForm.preset">
+                            <SelectTrigger
+                                id="supervised-preset"
+                                class="w-full"
                             >
-                                {{ preset.label }}
-                            </SelectItem>
-                        </SelectContent>
-                    </Select>
-                </FormField>
-                <DialogFooter class="gap-2">
-                    <Button
-                        type="button"
-                        variant="outline"
-                        :disabled="appearanceForm.processing"
-                        @click="appearanceOpen = false"
-                    >
-                        Cancelar
-                    </Button>
-                    <Button
-                        type="submit"
-                        :disabled="appearanceForm.processing"
-                        :loading="appearanceForm.processing"
-                    >
-                        Guardar
-                    </Button>
-                </DialogFooter>
-            </form>
-        </DialogContent>
-    </Dialog>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem
+                                    v-for="preset in presets"
+                                    :key="preset.value"
+                                    :value="preset.value"
+                                >
+                                    {{ preset.label }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </FormField>
+                    <DialogFooter class="gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            :disabled="appearanceForm.processing"
+                            @click="appearanceOpen = false"
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="submit"
+                            :disabled="appearanceForm.processing"
+                            :loading="appearanceForm.processing"
+                        >
+                            Guardar
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
 
-    <ConfirmDialog
-        v-model:open="deleteOpen"
-        :title="
-            toDelete?.kind === 'alias'
-                ? 'Eliminar alias de otro usuario'
-                : 'Restablecer colores de otro usuario'
-        "
-        :description="
-            toDelete?.kind === 'alias'
-                ? `${toDelete.row.owner.name} volverá a ver el nombre oficial del contacto. Queda registrado en la auditoría.`
-                : `${toDelete?.row.owner.name ?? ''} volverá a ver los colores predeterminados en ${toDelete?.row.scope_label.toLowerCase() ?? ''}. Queda registrado en la auditoría.`
-        "
-        :confirm-label="
-            toDelete?.kind === 'alias' ? 'Eliminar alias' : 'Restablecer'
-        "
-        destructive
-        :processing="deleting"
-        @confirm="performDelete"
-    />
+        <ConfirmDialog
+            v-model:open="deleteOpen"
+            :title="
+                toDelete?.kind === 'alias'
+                    ? 'Eliminar alias de otro usuario'
+                    : 'Restablecer colores de otro usuario'
+            "
+            :description="
+                toDelete?.kind === 'alias'
+                    ? `${toDelete.row.owner.name} volverá a ver el nombre oficial del contacto. Queda registrado en la auditoría.`
+                    : `${toDelete?.row.owner.name ?? ''} volverá a ver los colores predeterminados en ${toDelete?.row.scope_label.toLowerCase() ?? ''}. Queda registrado en la auditoría.`
+            "
+            :confirm-label="
+                toDelete?.kind === 'alias' ? 'Eliminar alias' : 'Restablecer'
+            "
+            destructive
+            :processing="deleting"
+            @confirm="performDelete"
+        />
+    </div>
 </template>

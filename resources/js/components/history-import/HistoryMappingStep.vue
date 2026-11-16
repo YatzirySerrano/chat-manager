@@ -248,7 +248,7 @@ const optionalGroups = computed(
                 <li
                     v-for="row in mappings.connections"
                     :key="row.source"
-                    class="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] sm:items-center"
+                    class="grid gap-2 rounded-xl border bg-card p-3 shadow-(--shadow-control) transition-[border-color,box-shadow] duration-(--duration-base) hover:border-border-strong sm:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] sm:items-center"
                     :data-connection-source="row.source"
                 >
                     <div class="min-w-0">

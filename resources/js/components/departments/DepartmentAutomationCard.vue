@@ -66,19 +66,21 @@ function messagesLabel(connection: DepartmentConnection): string {
         description="Cómo opera hoy el departamento según su horario, los días no laborables, el límite de carga y la reapertura de sus conexiones."
         body-class="divide-y"
     >
-        <div class="flex items-start gap-3 p-5">
-            <Clock
-                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        <div class="flex items-start gap-3 px-5 py-4">
+            <span
+                class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
                 aria-hidden="true"
-            />
+            >
+                <Clock class="size-4" />
+            </span>
             <div class="space-y-1 text-sm">
                 <p class="flex flex-wrap items-center gap-2 font-medium">
                     <span
-                        class="size-2 rounded-full"
+                        class="size-2 rounded-full bg-current"
                         :class="
                             automation.hours.is_open
-                                ? 'bg-success'
-                                : 'bg-warning'
+                                ? 'live-dot text-success'
+                                : 'text-warning'
                         "
                         aria-hidden="true"
                     />
@@ -115,11 +117,13 @@ function messagesLabel(connection: DepartmentConnection): string {
             </div>
         </div>
 
-        <div class="flex items-start gap-3 p-5">
-            <CalendarOff
-                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        <div class="flex items-start gap-3 px-5 py-4">
+            <span
+                class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
                 aria-hidden="true"
-            />
+            >
+                <CalendarOff class="size-4" />
+            </span>
             <div class="min-w-0 flex-1 space-y-1 text-sm">
                 <p class="font-medium">Próximos días no laborables</p>
                 <ul
@@ -139,11 +143,13 @@ function messagesLabel(connection: DepartmentConnection): string {
             </div>
         </div>
 
-        <div class="flex items-start gap-3 p-5">
-            <Gauge
-                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        <div class="flex items-start gap-3 px-5 py-4">
+            <span
+                class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
                 aria-hidden="true"
-            />
+            >
+                <Gauge class="size-4" />
+            </span>
             <div class="space-y-1 text-sm">
                 <p class="font-medium">Límite de carga por agente</p>
                 <p class="text-muted-foreground">
@@ -162,11 +168,13 @@ function messagesLabel(connection: DepartmentConnection): string {
             </div>
         </div>
 
-        <div class="flex items-start gap-3 p-5">
-            <RotateCcw
-                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        <div class="flex items-start gap-3 px-5 py-4">
+            <span
+                class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
                 aria-hidden="true"
-            />
+            >
+                <RotateCcw class="size-4" />
+            </span>
             <div class="min-w-0 flex-1 space-y-2 text-sm">
                 <p class="font-medium">
                     Reapertura y mensajes de las conexiones

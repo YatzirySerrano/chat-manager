@@ -1,3 +1,4 @@
+import type { VideoSaveOptions } from '@/lib/videoExports';
 import type { AppColor } from './admin';
 import type { ViewerChatAppearance } from './personalization';
 
@@ -102,6 +103,8 @@ export type TeamAttachment = {
     thumb_url?: string | null;
     /** Audio and video played in place (served with byte ranges). */
     stream_url?: string | null;
+    /** «Guardar video» (videos.save-to-nas): absent or null when the viewer may not save it. */
+    video_save?: VideoSaveOptions | null;
 };
 
 export type TeamMessage = {

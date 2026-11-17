@@ -135,6 +135,7 @@ enum AuditAction: string
     case ConversationCategoryChanged = 'conversation.category_changed';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case RecordPermanentlyDeleted = 'record.permanently_deleted';
+    case VideoSaveRequested = 'video.save_requested';
 
     /**
      * Human readable description of the action.
@@ -267,6 +268,7 @@ enum AuditAction: string
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::RecordPermanentlyDeleted => 'Registro eliminado definitivamente',
+            self::VideoSaveRequested => 'Video enviado a guardar en Synology',
         };
     }
 

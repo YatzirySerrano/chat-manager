@@ -381,6 +381,74 @@ permita al VPS llegar al puerto 445 del NAS. Respaldos con instantáneas o Hyper
 borrado mediante el proceso con tiempo límite). Para volver atrás basta `MEDIA_DISK=local` (o `s3`): las filas `nas`
 siguen leyéndose mientras el disco `nas` siga definido y montado.
 
+#### Guardar videos en Synology
+
+En los mensajes con video (conversaciones con clientes y chat interno) aparece el botón **«Guardar video»** para
+quien tenga el permiso `videos.save-to-nas` («Guardar videos en Synology»; se otorga a los roles de
+Superadministrador y Administrador al migrar y a los demás desde Roles). Además del permiso, el servidor exige que la
+persona pueda ver esa conversación o ese chat interno (las mismas políticas que el chat y sus archivos; si no, 404).
+
+**El diálogo es un explorador de carpetas del NAS** (`App\Services\VideoExports\VideoFolders`):
+
+- Se abre en la carpeta donde la persona guardó su último video (o en la raíz si ya no existe) y lista las carpetas
+  **que ya existen** ahí: ruta de navegación (clic en cualquier nivel), lista de carpetas (clic para entrar) y botón
+  «Subir». Nunca se puede subir por encima de la raíz.
+- **«Crear carpeta»** crea una carpeta dentro de la actual, con el nombre limpiado como el resto de los archivos
+  (`MediaPaths::clean`: ASCII sin acentos, sin `/`, `..` ni caracteres prohibidos en SMB/Windows). Así el equipo crea
+  una sola vez las carpetas de sucursal, mes, tipo y día y después solo navega.
+- **«Nombre del video»**: el nombre lo escribe la persona (en conversaciones se propone el nombre del contacto); se
+  limpia igual y la extensión se agrega sola según el tipo real del video. Si ya existe un archivo con ese nombre se
+  agrega un contador legible, `… (2).mp4`; nunca se reemplaza un archivo.
+
+**Estructura recomendada (cinco niveles de carpetas y después el archivo).** La aplicación no la impone, pero es la
+que usan las sucursales:
+
+1. Carpeta general de videos: el ajuste «Carpeta de videos de solicitudes» (Configuración › Videos en Synology),
+   `VIDEOS` por omisión. Es la raíz del explorador; siempre es una sola carpeta (las diagonales se convierten en
+   espacios).
+2. Sucursal: `ORIZABA`.
+3. Mes: `11-Noviembre 2026`.
+4. Tipo: `Solicitud` o `Desembolso`.
+5. Día de atención: `03-11-2026`.
+
+```text
+VIDEOS/ORIZABA/11-Noviembre 2026/Solicitud/03-11-2026/ORIZABA SOLICITUD 03-11-2026 ULISES ABRAHAM ARZABA.mp4
+```
+
+**Seguridad de las rutas:** el explorador solo recibe rutas relativas a la raíz. Se rechazan `.`, `..`, rutas
+absolutas, letras de unidad, caracteres de control y los signos que SMB no acepta, y las carpetas ocultas (que empiezan
+con punto). En un disco local o montado, la ruta real (`realpath`) debe quedar dentro de la raíz real, así que un
+enlace simbólico no lleva fuera de ella, y los enlaces no se listan. La carpeta se vuelve a comprobar al guardar y en la
+tarea en cola.
+
+**La copia:** al confirmar se registra (`video_exports`: video de origen, carpeta, nombre, estado, error, usuario), se
+anota en la auditoría («Video enviado a guardar en Synology», con la carpeta y el nombre) y una tarea en cola
+(`SaveVideoToNas`, cola `media`) **copia** el archivo; el original no se mueve, así que el video se sigue reproduciendo
+en el chat. La escritura usa el temporal `.part` + renombrado + verificación de `MediaDisk`.
+
+**Dónde se escribe:** en el disco de archivos (`MEDIA_DISK`, el NAS montado con `MEDIA_DISK=nas`), o en otro disco con
+`VIDEO_EXPORTS_DISK=<disco>` (debe existir en `config/filesystems.php`; se le aplican las mismas reglas que a
+`MEDIA_DISK`, incluida la verificación del montaje). La raíz es relativa a ese disco.
+
+**Si el NAS no está disponible:** antes de listar, crear o escribir se comprueba el disco (con un NAS montado,
+`MountHealth`: prueba de salud en caché, tabla de montajes y archivo de identidad; no bloquea la petición). El
+explorador responde 503 con el motivo en español («Synology no está disponible: la carpeta compartida del NAS no está
+montada…») y un botón «Reintentar». Si el NAS cae con una copia en cola, vuelve a «Guardando…» con el motivo y se
+reintenta sola (4 intentos, a 1, 5 y 15 minutos); tras el último queda en **«Error al guardar · Reintentar»** con la
+explicación. Si la carpeta elegida se borró mientras tanto, falla con «La carpeta elegida ya no existe en Synology».
+Nunca se escribe en el disco local del VPS en lugar del NAS.
+
+**En el chat:** el globo muestra «Guardando…», «Guardado en Synology» (la ruta como información al pasar el cursor) o
+«Error al guardar · Reintentar»; mientras la copia está en curso consulta su estado cada 4 s.
+
+**Rutas:** `GET /video-exports/folders?path=` (listar), `POST /video-exports/folders` (crear), `POST
+…/attachments/{attachment}/save-video` (conversación o chat interno), `GET /video-exports/{id}` (estado) y `POST
+/video-exports/{id}/retry`. Todas exigen `videos.save-to-nas`.
+
+**Despliegue:** `php artisan migrate --force` crea `video_exports` y el permiso. Los workers deben atender la cola
+`media` (ya lo hacen). Opcional: `VIDEO_EXPORTS_DISK` en `shared/.env`. Crear la carpeta raíz (`VIDEOS`) en el NAS no
+es obligatorio: se crea con la primera carpeta.
+
 ## 4. Base de datos (MariaDB)
 
 ```sql

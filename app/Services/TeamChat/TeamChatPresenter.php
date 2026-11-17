@@ -10,6 +10,7 @@ use App\Models\TeamChat\TeamMessageReaction;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\VideoExports\VideoExports;
 use App\Support\ProtectedAccounts;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -165,7 +166,7 @@ class TeamChatPresenter
             'reactions' => $message->isSystem() || $message->isDeleted() ? [] : $this->reactions($message, $viewer),
             'attachments' => $message->isDeleted() ? [] : array_values($message->attachments
                 ->filter(fn (TeamAttachment $attachment): bool => ! $attachment->isPurged())
-                ->map(fn (TeamAttachment $attachment): array => $this->attachment($message, $attachment))
+                ->map(fn (TeamAttachment $attachment): array => $this->attachment($message, $attachment, $viewer))
                 ->all()),
             'can' => ['edit' => $isEditable, 'delete' => $isEditable],
         ];
@@ -192,7 +193,7 @@ class TeamChatPresenter
     /**
      * @return array<string, mixed>
      */
-    public function attachment(TeamMessage $message, TeamAttachment $attachment): array
+    public function attachment(TeamMessage $message, TeamAttachment $attachment, ?User $viewer = null): array
     {
         $parameters = ['thread' => $message->team_thread_id, 'message' => $message->id, 'attachment' => $attachment->id];
 
@@ -211,6 +212,8 @@ class TeamChatPresenter
                 : null,
             // Audio and video played in place, with byte ranges.
             'stream_url' => $attachment->isPlayable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
+            // «Guardar video» (videos.save-to-nas): null when the viewer may not save it.
+            'video_save' => app(VideoExports::class)->forTeamAttachment($message, $attachment, $viewer),
         ];
     }
 

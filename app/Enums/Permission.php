@@ -80,6 +80,8 @@ enum Permission: string
     case ManageTeamChatGroups = 'team-chat.manage-groups';
     case UseCrossDepartmentTeamChat = 'team-chat.cross-department';
 
+    case SaveVideosToNas = 'videos.save-to-nas';
+
     case ViewReports = 'reports.view';
     case ExportReports = 'reports.export';
 
@@ -174,6 +176,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos internos',
             self::ManageTeamChatGroups => 'Administrar los grupos internos en los que participa',
             self::UseCrossDepartmentTeamChat => 'Iniciar chats internos con personas de otros departamentos',
+            self::SaveVideosToNas => 'Guardar videos en Synology',
             self::ViewReports => 'Ver reportes',
             self::ExportReports => 'Exportar información a Excel y PDF',
             self::ViewSettings => 'Ver configuración',
@@ -262,6 +265,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos de chat interno con varias personas.',
             self::ManageTeamChatGroups => 'Cambiar el nombre y los miembros de los grupos internos en los que participa.',
             self::UseCrossDepartmentTeamChat => 'Escribir por chat interno a personas de otros departamentos.',
+            self::SaveVideosToNas => 'Copiar un video de una conversación o del chat interno a una carpeta del NAS (Synology) y crear carpetas dentro de la carpeta de videos. El original no se mueve.',
             self::ViewReports => 'Consultar los indicadores de atención de la información que le corresponde.',
             self::ExportReports => 'Descargar en Excel o PDF la información de las pantallas que puede consultar.',
             self::ViewSettings => 'Consultar la configuración general de la plataforma.',

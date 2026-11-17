@@ -67,6 +67,7 @@ export type PermissionName =
     | 'team-chat.create-groups'
     | 'team-chat.manage-groups'
     | 'team-chat.cross-department'
+    | 'videos.save-to-nas'
     | 'history-import.view'
     | 'history-import.classify'
     | 'history-import.execute'

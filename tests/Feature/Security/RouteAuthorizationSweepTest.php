@@ -205,6 +205,8 @@ beforeEach(function () {
         // «Seguimiento de atención»: an alert of the root, a recipient row of someone else.
         'alert' => AttentionAlert::factory()->create(['sender_id' => $root->id])->id,
         'recipient' => 1,
+        // «Guardar video»: a copy that does not exist (403 or 404).
+        'export' => 1,
     ];
 
     $this->teamParameters = [...$this->parameters, 'message' => $teamMessage->id, 'attachment' => $teamAttachment->id];

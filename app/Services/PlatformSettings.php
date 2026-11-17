@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Cache;
  *     intake: array{confirmation_required: bool},
  *     queue: array{min_wait_minutes: int, chronological_order: bool},
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
+ *     video_exports: array{root_folder: string},
  * }
  */
 #[Scoped]
@@ -201,6 +202,11 @@ class PlatformSettings
                 'supervisor_breach' => true,
                 'reminder_minutes' => null,
                 'reminder_limit' => 3,
+            ],
+            // «Guardar video»: root folder of the NAS browser, relative to
+            // the disk of saved videos (VideoFolders).
+            'video_exports' => [
+                'root_folder' => 'VIDEOS',
             ],
         ];
     }

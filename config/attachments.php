@@ -57,6 +57,9 @@ return [
         'inbound_available_days' => 7,
         'max_download_attempts' => 12,
         'recover_batch' => 200,
+        // Disk the «Guardar video» copies are written to (VideoFolders);
+        // empty = the media disk (MEDIA_DISK, the NAS when mounted).
+        'video_exports_disk' => env('VIDEO_EXPORTS_DISK'),
         'mount' => [
             'health_ttl_seconds' => (int) env('MEDIA_MOUNT_HEALTH_TTL', 90),
             'probe_timeout_seconds' => (float) env('MEDIA_MOUNT_PROBE_TIMEOUT', 10),

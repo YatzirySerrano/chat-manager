@@ -5,6 +5,7 @@ import {
     CircleDashed,
     Clock,
     Gauge,
+    HardDriveDownload,
     Lock,
     PlugZap,
     Settings2,
@@ -102,6 +103,10 @@ const validation = useFormValidation(form, {
                 required('Escribe el máximo de recordatorios.'),
                 integerBetween(1, 10),
             ],
+            'video_exports.root_folder': [
+                required('Escribe el nombre de la carpeta de videos.'),
+                maxLength(120),
+            ],
         };
 
         // Service rules: bounds come from the server definition.
@@ -167,6 +172,7 @@ const sections = computed(() => [
     { id: 'operacion', label: 'Operación' },
     { id: 'objetivos', label: 'Objetivos de servicio' },
     ...(phaseTwo.value ? [{ id: 'alertas-sla', label: 'Alertas de SLA' }] : []),
+    { id: 'videos', label: 'Videos en Synology' },
     { id: 'meta', label: 'Integración con Meta' },
 ]);
 
@@ -175,6 +181,7 @@ const SECTION_PREFIXES: Record<string, string> = {
     horario: 'business_hours.',
     operacion: 'operations.',
     'alertas-sla': 'sla_alerts.',
+    videos: 'video_exports.',
 };
 
 /** Sections with a field to review: marked in the navigation. */
@@ -871,6 +878,35 @@ const integrationConnected = computed(
                             </FormField>
                         </div>
                     </div>
+                </SettingsSection>
+
+                <SettingsSection
+                    id="videos"
+                    :icon="HardDriveDownload"
+                    class="scroll-mt-32"
+                    title="Videos en Synology"
+                    description="Carpeta del NAS donde el botón «Guardar video» de los chats guarda las copias de los videos."
+                >
+                    <FormField
+                        id="video-root-folder"
+                        label="Carpeta de videos de solicitudes"
+                        hint="Carpeta principal dentro del NAS donde se abre «Guardar video». Dentro de ella el equipo crea sus carpetas: sucursal › mes › Solicitud o Desembolso › día de atención."
+                        :error="validation.error('video_exports.root_folder')"
+                    >
+                        <Input
+                            id="video-root-folder"
+                            v-model="form.video_exports.root_folder"
+                            v-bind="
+                                validation.field(
+                                    'video_exports.root_folder',
+                                    'video-root-folder',
+                                )
+                            "
+                            required
+                            maxlength="120"
+                            class="max-w-md"
+                        />
+                    </FormField>
                 </SettingsSection>
 
                 <SettingsSection

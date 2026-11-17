@@ -1,3 +1,4 @@
+import type { VideoSaveOptions } from '@/lib/videoExports';
 import type { AppColor } from './admin';
 import type { ConnectionChannel } from './connections';
 import type {
@@ -334,6 +335,8 @@ export type MessageAttachment = {
     link_revoked_at?: string | null;
     /** POST endpoint that revokes the customer's download link (outbound link deliveries). */
     link_revoke_url?: string | null;
+    /** «Guardar video» (videos.save-to-nas): absent or null when the viewer may not save it. */
+    video_save?: VideoSaveOptions | null;
 };
 
 export type MessageContent =

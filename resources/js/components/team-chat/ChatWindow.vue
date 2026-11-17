@@ -90,6 +90,8 @@ const props = defineProps<{
     page: TeamMessagePage;
     around: number | null;
     limits: TeamChatLimits;
+    /** Query of the list to return to (keeps the «Mesa de control» tab). */
+    backQuery?: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -237,6 +239,18 @@ const subtitle = computed(() => {
         return online > 0 ? `${people}, ${online} en línea` : people;
     }
 
+    if (props.thread.type === 'desk') {
+        const desk = props.thread.desk;
+
+        if (desk?.is_requester) {
+            return desk.status === 'new'
+                ? 'Escribe tu solicitud'
+                : `Solicitud ${desk.status_label.toLowerCase()}`;
+        }
+
+        return `Mesa de control · ${desk?.status_label ?? ''}`;
+    }
+
     const partner = props.thread.partner;
 
     if (!partner || partner.deleted) {
@@ -359,7 +373,8 @@ const days = computed<Day[]>(() => {
             message,
             first,
             last,
-            showAuthor: first && props.thread.type === 'group',
+            // Several people may write in a group or a «Mesa de control» thread.
+            showAuthor: first && props.thread.type !== 'direct',
             unreadStart,
             receipt:
                 direct && message.is_mine && !partnerGone
@@ -1098,7 +1113,10 @@ onBeforeUnmount(() => {
                     as-child
                     aria-label="Volver a la lista de chats"
                 >
-                    <Link :href="teamChatIndex()" preserve-state>
+                    <Link
+                        :href="teamChatIndex({ query: backQuery ?? {} })"
+                        preserve-state
+                    >
                         <ArrowLeft />
                     </Link>
                 </Button>
@@ -1198,6 +1216,8 @@ onBeforeUnmount(() => {
                 Grupo archivado: puedes consultar su historial, pero ya no se
                 pueden enviar mensajes.
             </div>
+            <!-- Extra state under the header (the «Mesa de control» request). -->
+            <slot name="banner" />
         </div>
 
         <div class="relative min-h-0 flex-1">

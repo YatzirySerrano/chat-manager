@@ -263,7 +263,9 @@ function restoreGroup(): void {
                     {{
                         isGroup
                             ? 'Solo los participantes ven este grupo y sus mensajes.'
-                            : 'Chat privado: solo ustedes dos ven estos mensajes.'
+                            : thread.type === 'desk'
+                              ? 'Mesa de control: estos mensajes los ven quien hace la solicitud y el equipo que atiende la mesa.'
+                              : 'Chat privado: solo ustedes dos ven estos mensajes.'
                     }}
                 </SheetDescription>
             </SheetHeader>
@@ -292,11 +294,13 @@ function restoreGroup(): void {
                                     ? thread.participants.length === 1
                                         ? 'Grupo de 1 participante'
                                         : `Grupo de ${thread.participants.length} participantes`
-                                    : thread.partner?.deleted
-                                      ? 'Cuenta eliminada'
-                                      : isOnline(thread.partner?.id ?? 0)
-                                        ? 'En línea'
-                                        : 'Sin conexión'
+                                    : thread.type === 'desk'
+                                      ? `Mesa de control · ${thread.desk?.status_label ?? ''}`
+                                      : thread.partner?.deleted
+                                        ? 'Cuenta eliminada'
+                                        : isOnline(thread.partner?.id ?? 0)
+                                          ? 'En línea'
+                                          : 'Sin conexión'
                             }}
                         </p>
                     </div>

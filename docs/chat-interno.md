@@ -10,13 +10,13 @@ muestra el total de mensajes sin leer (los chats silenciados no suman).
 
 ## Modelo de datos
 
-| Tabla                    | Contenido                                                                                                                                                        | Notas                                                                                                                                                      |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `team_threads`           | `type` (`direct`/`group`), `name`, `description`, `direct_key`, `created_by_user_id`, `archived_at`, `archived_by_user_id`, `last_message_id`, `last_message_at` | `direct_key` = `"{idMenor}:{idMayor}"`, único: **un solo chat privado por pareja**, también si ambos lo abren a la vez. Los hilos nunca se borran.         |
-| `team_participants`      | `team_thread_id`, `user_id`, `role` (`member`/`admin`), `joined_at`, `left_at`, `added_by_user_id`, `removed_by_user_id`, `last_read_message_id`, `muted`        | Único por hilo y persona. Salir o ser retirado pone `left_at` (la fila queda como historial); volver a entrar la reutiliza.                                |
-| `team_messages`          | `team_thread_id`, `user_id`, `kind` (`message`/`system`), `body`, `metadata`, `reply_to_message_id`, `client_reference`, `edited_at`, `deleted_at`               | Nunca se borran físicamente. `system` registra cambios del grupo visibles para todos. `client_reference`: llave de idempotencia, única por autor.          |
-| `team_attachments`       | `team_message_id`, `disk`, `path`, `original_name`, `mime_type`, `kind`, `size_bytes`, `sha256`, `purged_at`                                                     | El archivo vive en disco privado; la base solo guarda metadatos.                                                                                           |
-| `team_message_reactions` | `team_message_id`, `user_id`, `emoji`                                                                                                                            | Único por mensaje, persona y emoji (reaccionar dos veces no duplica). `emoji` con intercalación binaria (`utf8mb4_bin`). Se borran al eliminar el mensaje. |
+| Tabla                    | Contenido                                                                                                                                                                                               | Notas                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `team_threads`           | `type` (`direct`/`group`/`desk`), `desk_*` (ver Mesa de control), `name`, `description`, `direct_key`, `created_by_user_id`, `archived_at`, `archived_by_user_id`, `last_message_id`, `last_message_at` | `direct_key` = `"{idMenor}:{idMayor}"`, único: **un solo chat privado por pareja**, también si ambos lo abren a la vez. Los hilos nunca se borran.         |
+| `team_participants`      | `team_thread_id`, `user_id`, `role` (`member`/`admin`), `joined_at`, `left_at`, `added_by_user_id`, `removed_by_user_id`, `last_read_message_id`, `muted`                                               | Único por hilo y persona. Salir o ser retirado pone `left_at` (la fila queda como historial); volver a entrar la reutiliza.                                |
+| `team_messages`          | `team_thread_id`, `user_id`, `kind` (`message`/`system`), `body`, `metadata`, `reply_to_message_id`, `client_reference`, `edited_at`, `deleted_at`                                                      | Nunca se borran físicamente. `system` registra cambios del grupo visibles para todos. `client_reference`: llave de idempotencia, única por autor.          |
+| `team_attachments`       | `team_message_id`, `disk`, `path`, `original_name`, `mime_type`, `kind`, `size_bytes`, `sha256`, `purged_at`                                                                                            | El archivo vive en disco privado; la base solo guarda metadatos.                                                                                           |
+| `team_message_reactions` | `team_message_id`, `user_id`, `emoji`                                                                                                                                                                   | Único por mensaje, persona y emoji (reaccionar dos veces no duplica). `emoji` con intercalación binaria (`utf8mb4_bin`). Se borran al eliminar el mensaje. |
 
 Todas las llaves foráneas son `restrictOnDelete`/`nullOnDelete`: no hay borrados en cascada. Migraciones:
 `2026_10_22_025230..025233_create_team_*_table.php` y `2026_10_22_162857_create_team_message_reactions_table.php`
@@ -30,12 +30,13 @@ Código: `app/Models/TeamChat`, `app/Actions/TeamChat`, `app/Services/TeamChat`,
 
 ## Permisos
 
-| Permiso                      | Significado                                                                                                                                                                              |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `team-chat.use`              | Usar el chat interno: ver sus propios chats, escribir, iniciar chats privados. Sin él no se ve el módulo ni se recibe nada (aunque siga figurando como participante).                    |
-| `team-chat.create-groups`    | Crear grupos (quien lo crea queda como administrador del grupo).                                                                                                                         |
-| `team-chat.manage-groups`    | Administrar **los grupos en los que participa** como si fuera administrador del grupo (renombrar, participantes, administradores, archivar/reactivar). **No** da acceso a grupos ajenos. |
-| `team-chat.cross-department` | Iniciar chats y agregar a grupos a personas de otros departamentos.                                                                                                                      |
+| Permiso                         | Significado                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `team-chat.use`                 | Usar el chat interno: ver sus propios chats, escribir, iniciar chats privados. Sin él no se ve el módulo ni se recibe nada (aunque siga figurando como participante).                    |
+| `team-chat.create-groups`       | Crear grupos (quien lo crea queda como administrador del grupo).                                                                                                                         |
+| `team-chat.manage-groups`       | Administrar **los grupos en los que participa** como si fuera administrador del grupo (renombrar, participantes, administradores, archivar/reactivar). **No** da acceso a grupos ajenos. |
+| `team-chat.cross-department`    | Iniciar chats y agregar a grupos a personas de otros departamentos.                                                                                                                      |
+| `team-chat.control-desk.attend` | «Atender mesa de control»: aceptar, responder y completar solicitudes. Quien usa el chat **sin** este permiso es solicitante (ver [Mesa de control](#mesa-de-control)).                  |
 
 **Alcance de contacto** (`TeamChatDirectory`): solo cuentas activas con `team-chat.use`. Con alcance global o con
 `team-chat.cross-department` se llega a cualquiera; si no, solo a quien comparte al menos un departamento. Esto
@@ -49,7 +50,8 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 ## Seguridad y privacidad
 
 - **Solo los participantes actuales** acceden a un hilo, sus mensajes, sus archivos y su canal de tiempo real
-  (`TeamThreadPolicy`). Para cualquier otra persona la respuesta es **404**, idéntica a la de un hilo inexistente (no se
+  (`TeamThreadPolicy`). Única excepción: los hilos de la [Mesa de control](#mesa-de-control), que lee su solicitante
+  y cualquier persona con `team-chat.control-desk.attend` (son una cola compartida, no un chat privado). Para cualquier otra persona la respuesta es **404**, idéntica a la de un hilo inexistente (no se
   confirma que exista). Mensajes y adjuntos se resuelven con _scoped bindings_: un mensaje de otro hilo no se alcanza
   aunque se participe en el hilo de la URL.
 - **El Superadministrador no tiene acceso automático** a chats ajenos: no existe una habilidad "ver todo", ni consulta
@@ -157,6 +159,109 @@ existentes): Superadministrador y Administrador tienen todos; Supervisor tiene l
 - **Apariencia del chat** (fase 5.2.1): botón de paleta en el encabezado del hilo; ver
   [Personalización](#personalización-de-colores-fase-521).
 
+## Mesa de control
+
+Una mesa de ayuda dentro del chat interno, con el mismo flujo que la bandeja de conversaciones de clientes (esperar →
+aceptar → atender → completar), pero entre personas del equipo.
+
+### Quién es quién
+
+- **Auditoras**: `team-chat.use` + `team-chat.control-desk.attend` («Atender mesa de control», asignable desde
+  _Roles y permisos_, grupo _Chat interno_). Conservan su chat normal (privados y grupos) y además ven la sección
+  **Mesa de control**.
+- **Solicitantes**: `team-chat.use` **sin** ese permiso. Su chat interno muestra **un solo contacto, «Mesa de
+  control»**: sin búsqueda, filtros, chats privados ni grupos, y no pueden crearlos. Se aplica también en el servidor:
+  `TeamThreadPolicy` (`startDirect`, `createGroup` y cualquier hilo que no sea su mesa responden 403/404, incluso sus
+  chats y grupos anteriores), `TeamChatDirectory` (no llegan a nadie y nadie llega a ellas: el selector de personas
+  solo ofrece auditoras), `TeamThreadListQuery`, `TeamUnreadCounter` (el badge solo cuenta su mesa), la búsqueda y
+  los avisos (`NotifyTeamChatMessage` ya no les avisa de sus grupos anteriores).
+- **Despliegue sin sorpresas**: la migración otorga el permiso a la autoridad raíz, al Administrador y a **todo rol
+  existente que ya tenía `team-chat.use`**, y los roles predeterminados Supervisor y Agente lo incluyen en su
+  definición. Así nadie pierde sus chats al actualizar. **Para convertir un rol en solicitante, quítale el permiso**
+  (o crea un rol con `team-chat.use` sin él).
+
+### Modelo de datos
+
+Hilo de tipo `desk` en `team_threads` (una mesa por solicitante), con columnas aditivas y nulas
+(`2026_11_17_120000_add_control_desk_to_team_threads_table.php`):
+
+| Columna                                           | Uso                                                                                                         |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `desk_requester_id`                               | La solicitante. **Único**: abrir el chat dos veces a la vez nunca crea dos mesas.                           |
+| `desk_status`                                     | `pending` (en espera, sin asignar), `open` (en atención), `closed` (completada). Nulo: aún sin solicitudes. |
+| `desk_assigned_user_id`                           | Auditora que atiende la solicitud abierta (nulo en espera y al completarse).                                |
+| `desk_requested_at`                               | Cuándo entró la solicitud actual a la lista de espera (ordena «Pendientes» y «Mías»).                       |
+| `desk_request_message_id`                         | Primer mensaje de la solicitud actual (desde ahí cuentan los no leídos de quien la acepta).                 |
+| `desk_accepted_at`                                | Cuándo se aceptó.                                                                                           |
+| `desk_completed_at` / `desk_completed_by_user_id` | Última vez que se completó y quién.                                                                         |
+
+Índices `(type, desk_status, desk_requested_at)` y `(desk_assigned_user_id, desk_status)`. La mesa se crea al abrir
+el chat por primera vez (`ControlDesk::threadFor()`), con la solicitante como única participante permanente.
+
+### Ciclo de una solicitud
+
+1. **En espera**: cuando la solicitante escribe (texto, fotos, videos o documentos, como en cualquier hilo) y su mesa
+   no está abierta (nueva o completada), pasa a `pending` sin asignar («vuelve a la lista de espera»). Lo decide
+   `ControlDesk::messagePosted()` dentro de la transacción de `PostTeamMessage`, con la fila del hilo bloqueada.
+2. **Aceptar solicitud** (`POST team-chat/threads/{thread}/desk/accept`, `AcceptDeskRequest`): queda `open`, asignada
+   a la auditora (`desk_accepted_at`), aunque tenga mensajes sin leer. Ella entra como participante (recibe los avisos
+   y el contador de no leídos; todo lo de esta solicitud cuenta como no leído). Se registra la línea de sistema
+   «Laura aceptó la solicitud.». Se abre la solicitud en «Mías».
+3. **Mensajes con la solicitud abierta**: siguen con la misma auditora, aunque no los haya leído.
+4. **Solicitud completa** (`POST …/desk/complete`, `CompleteDeskRequest`): solo quien la atiende. Queda `closed` con
+   `desk_completed_at`/`desk_completed_by_user_id`, la línea «Laura marcó la solicitud como completa.» y la auditora
+   deja de participar (puede seguir leyéndola desde «Completadas»).
+5. Si la solicitante vuelve a escribir, el ciclo empieza otra vez en el paso 1.
+
+**Concurrencia**: aceptar bloquea la fila del hilo (`lockForUpdate`), así que si dos auditoras aceptan a la vez la
+segunda recibe «Otra persona de la mesa de control ya aceptó esta solicitud.» (`TeamDeskConflict`: _toast_ de error y
+`errors.desk`, o 409 `desk_conflict` en JSON); también bloquea la fila de la auditora, lo que serializa dos pestañas
+suyas. Aceptar una solicitud que ya es suya no hace nada (idempotente). Completar también bloquea el hilo: un mensaje
+enviado al mismo tiempo queda completo antes o después.
+
+**Límite de atención simultánea**: es **el mismo número** que limita las conversaciones de clientes de esa persona
+(`ConversationAccess::attentionLimit()`: su límite propio `users.max_open_conversations` y, si no tiene, el de la
+plataforma `operations.max_open_conversations_per_agent`; aquí no hay departamento). Se cuenta **por separado**: las
+solicitudes abiertas de la mesa contra ese número, sin sumar las conversaciones que atiende (y viceversa). Con el límite
+alcanzado: «Ya atiendes el máximo de N solicitudes de la mesa de control. Marca alguna como completa antes de aceptar
+otra.». La carga se lee con lectura bloqueante bajo el bloqueo de su fila.
+
+### Lo que ve cada quien
+
+- **Solicitante**: el contacto «Mesa de control» con una barra de estado («Tu solicitud está en espera / en
+  atención / se completó…»). Ve el nombre de quien le responde en cada mensaje y en las líneas de sistema, pero no
+  la lista de participantes ni quién tiene asignada la solicitud.
+- **Auditoras**: arriba de la lista, «Chats» | «Mesa de control» (con el número en espera). La sección tiene pestañas
+  con contador: **Pendientes** (por omisión; la solicitud más reciente arriba, con botón «Aceptar» en cada fila),
+  **Mías** (las que atiende, **la más antigua arriba**, con sus no leídos) y **Completadas** (la más reciente arriba), y
+  el texto «Atiendes N de M solicitudes simultáneas». La URL guarda la pestaña (`?desk=pending|mine|completed`, también
+  con una solicitud abierta). Al abrir una solicitud, una barra bajo el encabezado ofrece «Aceptar solicitud» o
+  «Solicitud completa», o dice quién la atiende.
+- **Lectura compartida**: toda auditora puede **leer** cualquier solicitud (pendiente, en atención o completada) y sus
+  archivos; **solo la asignada responde** (las demás ven «Otra persona de la mesa de control atiende esta solicitud.»).
+  En espera nadie responde hasta aceptarla («Acepta la solicitud para responder.»). La mesa no es un chat privado: es
+  una cola compartida del equipo que la atiende.
+- Las solicitudes no aparecen en la lista normal de chats de las auditoras (ni en «Todos»); sí cuentan en su badge
+  mientras las atienden.
+
+### Tiempo real
+
+Pedir, aceptar y completar emiten `TeamThreadChanged` (`reason: desk`) con todas las auditoras como afectadas, y cada
+mensaje de una mesa avisa a todas por `users.{id}` (`.team-chat.changed`): sus listas (`deskInbox`, `deskPending`) se
+recargan solas; el hilo abierto recibe `thread.changed` y vuelve a pedir su estado (botones, barra). Sin Reverb, la
+lista se refresca cada 20 s como el resto del chat. No hay notificación de campana por solicitud nueva (solo el
+contador en vivo); la auditora asignada sí recibe los avisos normales de los mensajes de su solicitud.
+
+Código: `app/Services/TeamChat/ControlDesk.php`, `app/Actions/TeamChat/{AcceptDeskRequest,CompleteDeskRequest,DeskInboxQuery}.php`,
+`app/Http/Controllers/TeamChat/TeamDeskController.php`, `app/Exceptions/TeamDeskConflict.php`,
+`app/Enums/TeamChat/TeamDeskStatus.php`, `resources/js/components/team-chat/{DeskRequestItem,DeskRequestBar}.vue`.
+Pruebas: `tests/Feature/TeamChat/ControlDeskTest.php`.
+
+**Pendiente / fuera de alcance**: no hay pestaña de solicitudes «en atención por otras» ni reasignación o liberación
+manual (si una auditora pierde el permiso, sus solicitudes abiertas siguen a su nombre hasta que alguien con acceso a
+la base las libere); no hay búsqueda dentro de la sección ni historial por ciclo (las columnas guardan solo la
+solicitud actual y la última finalización; el historial completo queda en los mensajes y líneas de sistema).
+
 ## Filtros de la lista
 
 Mismo patrón, componentes (`resources/js/components/filters/*`) y movimiento que la bandeja de conversaciones
@@ -262,6 +367,7 @@ Pruebas: `tests/Feature/TeamChat/TeamThreadFiltersTest.php`.
 | PUT/DELETE      | `/team-chat/threads/{thread}/messages/{message}`                          | Editar / eliminar propio                                        |
 | PUT/DELETE      | `/team-chat/threads/{thread}/messages/{message}/reactions`                | JSON: añadir / retirar la reacción propia (`emoji`, 120/min)    |
 | POST            | `/team-chat/threads/{thread}/typing`                                      | Señal «escribiendo…» (204, 30/min, no se guarda)                |
+| POST            | `/team-chat/threads/{thread}/desk/accept` · `/desk/complete`              | Mesa de control: aceptar / completar (60/min)                   |
 | GET             | `/team-chat/threads/{thread}/messages/{message}/attachments/{attachment}` | Descarga autorizada                                             |
 | PUT/DELETE      | `/team-chat/threads/{thread}/appearance`                                  | JSON: colores propios del hilo (`routes/personalization.php`)   |
 

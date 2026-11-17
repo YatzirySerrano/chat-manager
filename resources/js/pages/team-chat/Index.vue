@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { Head, router, useHttp } from '@inertiajs/vue3';
+import { Head, Link, router, useHttp } from '@inertiajs/vue3';
 import {
     AtSign,
+    Headset,
+    Inbox,
     MailWarning,
     MessageCircle,
     MessagesSquare,
@@ -21,6 +23,8 @@ import ListSkeleton from '@/components/filters/ListSkeleton.vue';
 import { useRowMotion } from '@/components/filters/useRowMotion';
 import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
 import ChatWindow from '@/components/team-chat/ChatWindow.vue';
+import DeskRequestBar from '@/components/team-chat/DeskRequestBar.vue';
+import DeskRequestItem from '@/components/team-chat/DeskRequestItem.vue';
 import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
 import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
 import ThreadListItem from '@/components/team-chat/ThreadListItem.vue';
@@ -47,6 +51,9 @@ import { show as showThread } from '@/routes/team-chat/threads';
 import type {
     TeamChatFilters,
     TeamChatLimits,
+    TeamDeskInbox,
+    TeamDeskRole,
+    TeamDeskTab,
     TeamMessagePage,
     TeamSearchResult,
     TeamThreadCounts,
@@ -71,9 +78,128 @@ const props = defineProps<{
     unreadTotal: number;
     /** Numbers of «No leídos» and «Menciones» in the scope. */
     threadCounts?: TeamThreadCounts;
-    can: { createGroup: boolean };
+    can: { createGroup: boolean; startDirect?: boolean };
     limits: TeamChatLimits;
+    /** «Mesa de control»: requester, auditor, or null when it does not apply. */
+    desk?: TeamDeskRole;
+    /** The auditor's desk section, when it is open (`desk` in the URL). */
+    deskInbox?: TeamDeskInbox | null;
+    /** Requests waiting, for the auditor's «Mesa de control» badge. */
+    deskPending?: number | null;
 }>();
+
+/*
+ * «Mesa de control». A requester's chat is a single contact, her desk
+ * thread: no search, filters or new chats. An auditor switches between her
+ * chats and the desk section (Pendientes, Mías, Completadas), which the URL
+ * keeps (`desk`), also while a request is open.
+ */
+const isRequester = computed(() => props.desk?.role === 'requester');
+const isAuditor = computed(() => props.desk?.role === 'auditor');
+const canStartDirect = computed(() => props.can.startDirect !== false);
+const deskTab = ref<TeamDeskTab | null>(props.desk?.tab ?? null);
+
+watch(
+    () => props.desk?.tab,
+    (tab) => (deskTab.value = tab ?? null),
+);
+
+const DESK_PROPS = ['desk', 'deskInbox', 'deskPending'];
+
+function openDeskSection(tab: TeamDeskTab | null): void {
+    deskTab.value = tab;
+    router.get(currentPath(), tab === null ? listQuery() : { desk: tab }, {
+        only: [...DESK_PROPS, 'threads', 'filters', 'threadCounts'],
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+        onStart: () => (loadingList.value = true),
+        onFinish: () => (loadingList.value = false),
+    });
+}
+
+const sectionTabs = computed<FilterTabOption<'chats' | 'desk'>[]>(() => [
+    { value: 'chats', label: 'Chats', title: 'Tus chats privados y grupos' },
+    {
+        value: 'desk',
+        label: 'Mesa de control',
+        count: props.deskPending ?? 0,
+        attention: (props.deskPending ?? 0) > 0,
+        srLabel: `${props.deskPending ?? 0} solicitudes en espera`,
+        title: 'Solicitudes de la mesa de control',
+        attrs: { 'data-desk-section': '' },
+    },
+]);
+
+const deskTabs = computed<FilterTabOption<TeamDeskTab>[]>(() => {
+    const counts = props.deskInbox?.counts ?? {
+        pending: props.deskPending ?? 0,
+        mine: 0,
+        completed: 0,
+    };
+
+    return [
+        {
+            value: 'pending',
+            label: 'Pendientes',
+            count: counts.pending,
+            attention: counts.pending > 0,
+            srLabel: `${counts.pending} en espera`,
+            title: 'Solicitudes en espera, la más reciente arriba',
+        },
+        {
+            value: 'mine',
+            label: 'Mías',
+            count: counts.mine,
+            srLabel: `${counts.mine} que atiendes`,
+            title: 'Las solicitudes que atiendes, la que más espera arriba',
+        },
+        {
+            value: 'completed',
+            label: 'Completadas',
+            count: counts.completed,
+            title: 'Solicitudes completadas, la más reciente arriba',
+        },
+    ];
+});
+
+const deskCapacity = computed(() => {
+    const capacity = props.deskInbox?.capacity;
+
+    if (!capacity) {
+        return null;
+    }
+
+    return capacity.limit === null
+        ? `Atiendes ${capacity.load} ${capacity.load === 1 ? 'solicitud' : 'solicitudes'} (sin límite).`
+        : `Atiendes ${capacity.load} de ${capacity.limit} solicitudes simultáneas.`;
+});
+
+const deskEmptyCopy = computed(
+    () =>
+        ({
+            pending: {
+                title: 'No hay solicitudes en espera',
+                description:
+                    'Cuando alguien escriba a la mesa de control, su solicitud aparecerá aquí.',
+            },
+            mine: {
+                title: 'No atiendes ninguna solicitud',
+                description:
+                    'Acepta una solicitud de «Pendientes» para atenderla.',
+            },
+            completed: {
+                title: 'Sin solicitudes completadas',
+                description:
+                    'Las solicitudes que se marquen como completas aparecerán aquí.',
+            },
+        })[deskTab.value ?? 'pending'],
+);
+
+/* Back from an open request returns to the same desk tab. */
+const backQuery = computed((): Record<string, string> =>
+    deskTab.value === null ? {} : { desk: deskTab.value },
+);
 
 /* The same canvas as the open chat (ChatWindow). */
 const CHAT_CANVAS =
@@ -313,10 +439,12 @@ function rememberedFilters(): RememberedFilters | null {
 
 try {
     const parameters = new URLSearchParams(window.location.search);
-    const isUrlFiltered = ['filter', 'unread', 'mentions'].some((key) =>
+    // The desk section (or a requester's single contact) has no chat filters.
+    const isUrlFiltered = ['filter', 'unread', 'mentions', 'desk'].some((key) =>
         parameters.has(key),
     );
-    const remembered = isUrlFiltered ? null : rememberedFilters();
+    const remembered =
+        isUrlFiltered || isRequester.value ? null : rememberedFilters();
 
     if (
         remembered &&
@@ -556,7 +684,14 @@ const liveReload = useLiveReload({
 
         return user ? [{ name: user, events: ['team-chat.changed'] }] : [];
     },
-    only: ['threads', 'unreadTotal', 'teamChatUnread', 'threadCounts'],
+    only: [
+        'threads',
+        'unreadTotal',
+        'teamChatUnread',
+        'threadCounts',
+        'deskInbox',
+        'deskPending',
+    ],
     fallbackIntervalMs: 20_000,
 });
 
@@ -588,6 +723,12 @@ const narrowedCopy = computed(() => {
 const threadMotion = useRowMotion(
     () => props.threads.threads,
     () => props.filters,
+);
+
+/* The desk rows animate like the chats (a request arrives, one is accepted). */
+const deskMotion = useRowMotion(
+    () => props.deskInbox?.threads ?? [],
+    () => props.deskInbox?.tab,
 );
 
 const emptyListCopy = computed(() => {
@@ -667,7 +808,51 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     >
                 </h1>
 
-                <div class="flex items-center gap-1.5">
+                <!-- An auditor: her chats or the «Mesa de control» section. -->
+                <div v-if="isAuditor" class="-mx-1 min-w-0">
+                    <FilterTabs
+                        :options="sectionTabs"
+                        :model-value="deskTab === null ? 'chats' : 'desk'"
+                        label="Sección del chat interno"
+                        class="px-1"
+                        @update:model-value="
+                            (section) =>
+                                openDeskSection(
+                                    section === 'desk' ? 'pending' : null,
+                                )
+                        "
+                    />
+                </div>
+
+                <!-- A requester: one contact, the desk. -->
+                <p
+                    v-if="isRequester"
+                    class="px-1 py-1 text-sm text-muted-foreground"
+                >
+                    Escribe a la mesa de control: tus mensajes los atiende el
+                    equipo que revisa las solicitudes.
+                </p>
+
+                <template v-else-if="deskTab !== null">
+                    <div class="-mx-1 min-w-0">
+                        <FilterTabs
+                            :options="deskTabs"
+                            :model-value="deskTab"
+                            label="Solicitudes de la mesa de control"
+                            class="px-1"
+                            @update:model-value="openDeskSection"
+                        />
+                    </div>
+                    <p
+                        v-if="deskCapacity"
+                        class="px-1 text-xs text-muted-foreground"
+                        data-desk-capacity
+                    >
+                        {{ deskCapacity }}
+                    </p>
+                </template>
+
+                <div v-else class="flex items-center gap-1.5">
                     <FilterSearch
                         ref="searchBox"
                         v-model="search"
@@ -699,7 +884,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button
-                        v-else
+                        v-else-if="canStartDirect"
                         class="h-9 shrink-0 gap-1.5 px-2.5"
                         data-tour="team-chat.new"
                         @click="newDirectOpen = true"
@@ -709,7 +894,10 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 </div>
 
                 <!-- One strip: the scopes as tabs, then the quick toggles. -->
-                <div class="-mx-1 min-w-0">
+                <div
+                    v-if="!isRequester && deskTab === null"
+                    class="-mx-1 min-w-0"
+                >
                     <FilterTabs
                         :options="scopeTabs"
                         :model-value="filter"
@@ -784,8 +972,55 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     class="sticky top-0 z-10 -mx-1.5 -mt-1.5 mb-1 pane-progress"
                     aria-hidden="true"
                 />
+                <!-- «Mesa de control» section of an auditor. -->
+                <template v-if="deskTab !== null">
+                    <ListSkeleton
+                        v-if="!deskInbox || deskInbox.tab !== deskTab"
+                        :rows="5"
+                        class="-m-1.5"
+                    />
+                    <FilteredEmpty
+                        v-else-if="deskInbox.threads.length === 0"
+                        :narrowed="false"
+                        narrowed-title=""
+                        :icon="Inbox"
+                        :title="deskEmptyCopy.title"
+                        :description="deskEmptyCopy.description"
+                    />
+                    <nav
+                        v-else
+                        aria-label="Solicitudes de la mesa de control"
+                        data-desk-list
+                    >
+                        <TransitionGroup
+                            tag="div"
+                            :name="deskMotion"
+                            class="relative grid grid-cols-1 gap-px"
+                            :class="loadingList && 'opacity-60'"
+                        >
+                            <DeskRequestItem
+                                v-for="row in deskInbox.threads"
+                                :key="row.id"
+                                :row="row"
+                                :tab="deskInbox.tab"
+                                :active="
+                                    openingThreadId === null &&
+                                    activeThread?.id === row.id
+                                "
+                                :opening="openingThreadId === row.id"
+                            />
+                        </TransitionGroup>
+                        <p
+                            v-if="deskInbox.has_more"
+                            class="px-3 py-2 text-xs text-muted-foreground"
+                        >
+                            Se muestran las {{ deskInbox.threads.length }}
+                            primeras solicitudes.
+                        </p>
+                    </nav>
+                </template>
                 <ListSkeleton
-                    v-if="loadingList && threads.threads.length === 0"
+                    v-else-if="loadingList && threads.threads.length === 0"
                     :rows="6"
                     class="-m-1.5"
                 />
@@ -848,8 +1083,9 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </TransitionGroup>
                 </nav>
 
+                <p v-if="deskTab !== null" class="sr-only" />
                 <p
-                    v-if="reachedListLimit"
+                    v-else-if="reachedListLimit"
                     class="px-3 py-2 text-xs text-muted-foreground"
                 >
                     Se muestran los {{ limits.maxThreads }} chats más recientes.
@@ -871,7 +1107,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 </div>
 
                 <section
-                    v-if="search.trim().length >= 2"
+                    v-if="deskTab === null && search.trim().length >= 2"
                     class="mt-3 border-t border-border/70 pt-3"
                     aria-label="Resultados en mensajes"
                 >
@@ -1004,9 +1240,14 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     :page="messages"
                     :around="around"
                     :limits="limits"
+                    :back-query="backQuery"
                     @open-settings="settingsOpen = true"
                     @unread-changed="onUnreadChanged"
-                />
+                >
+                    <template v-if="activeThread.type === 'desk'" #banner>
+                        <DeskRequestBar :thread="activeThread" />
+                    </template>
+                </ChatWindow>
                 <ThreadSettingsSheet
                     v-model:open="settingsOpen"
                     :thread="activeThread"
@@ -1018,7 +1259,68 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 class="flex-1 overflow-y-auto p-6 sm:p-10"
                 :class="CHAT_CANVAS"
             >
-                <div class="grid reveal justify-items-start gap-2">
+                <!-- A requester: her only contact is the desk. -->
+                <div
+                    v-if="isRequester"
+                    class="grid reveal justify-items-start gap-2"
+                >
+                    <span
+                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
+                        aria-hidden="true"
+                    >
+                        <Headset class="size-6" />
+                    </span>
+                    <h2
+                        class="font-display text-3xl font-semibold tracking-tight text-balance"
+                    >
+                        Mesa de control
+                    </h2>
+                    <p
+                        class="max-w-prose text-base text-pretty text-muted-foreground"
+                    >
+                        Envía aquí tus solicitudes con fotos, videos y
+                        documentos. El equipo de la mesa de control las atiende
+                        en orden y te responde en este mismo chat.
+                    </p>
+                    <div v-if="desk?.thread_id" class="mt-4">
+                        <Button as-child>
+                            <Link :href="showThread(desk.thread_id)">
+                                <MessageCircle /> Escribir a la mesa de control
+                            </Link>
+                        </Button>
+                    </div>
+                </div>
+                <div
+                    v-else-if="deskTab !== null"
+                    class="grid reveal justify-items-start gap-2"
+                >
+                    <span
+                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
+                        aria-hidden="true"
+                    >
+                        <Headset class="size-6" />
+                    </span>
+                    <h2
+                        class="font-display text-3xl font-semibold tracking-tight text-balance"
+                    >
+                        {{
+                            (deskPending ?? 0) > 0
+                                ? deskPending === 1
+                                    ? '1 solicitud en espera'
+                                    : `${deskPending} solicitudes en espera`
+                                : 'Elige una solicitud'
+                        }}
+                    </h2>
+                    <p
+                        class="max-w-prose text-base text-pretty text-muted-foreground"
+                    >
+                        Acepta una solicitud de «Pendientes» para atenderla:
+                        queda en «Mías» hasta que la marques como completa. Si
+                        la persona vuelve a escribir después, regresa a
+                        «Pendientes».
+                    </p>
+                </div>
+                <div v-else class="grid reveal justify-items-start gap-2">
                     <span
                         class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
                         aria-hidden="true"
@@ -1046,7 +1348,10 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                         chat.
                     </p>
                     <div class="mt-4 flex flex-wrap gap-2">
-                        <Button @click="newDirectOpen = true">
+                        <Button
+                            v-if="canStartDirect"
+                            @click="newDirectOpen = true"
+                        >
                             <Plus /> Nuevo chat privado
                         </Button>
                         <Button
@@ -1067,7 +1372,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             @open="openFromPreview"
         />
 
-        <NewDirectDialog v-model:open="newDirectOpen" />
+        <NewDirectDialog v-if="canStartDirect" v-model:open="newDirectOpen" />
         <NewGroupDialog
             v-if="can.createGroup"
             v-model:open="newGroupOpen"

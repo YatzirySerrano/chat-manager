@@ -108,13 +108,18 @@ Alcance: **P** propio, **D** departamentos, **G** global (el que aplique según 
 
 ### Chat interno
 
-| Acción                                  | Permiso                      | Alcance                        | SA  | AD  | SU  | AG  | Interfaz  |
-| --------------------------------------- | ---------------------------- | ------------------------------ | --- | --- | --- | --- | --------- |
-| Usar el chat y sus conversaciones       | `team-chat.use`              | Solo los hilos donde participa | ✓   | ✓   | ✓   | ✓   | Coherente |
-| Crear grupos                            | `team-chat.create-groups`    | —                              | ✓   | ✓   | ✓   | —   | Coherente |
-| Administrar grupos en los que participa | `team-chat.manage-groups`    | Sus grupos                     | ✓   | ✓   | ✓   | —   | Coherente |
-| Escribir a otros departamentos          | `team-chat.cross-department` | —                              | ✓   | ✓   | ✓   | —   | Coherente |
-| Editar o borrar un mensaje              | Ser su autor                 | Propio                         | ✓   | ✓   | ✓   | ✓   | Coherente |
+| Acción                                  | Permiso                         | Alcance                          | SA  | AD  | SU  | AG  | Interfaz  |
+| --------------------------------------- | ------------------------------- | -------------------------------- | --- | --- | --- | --- | --------- |
+| Usar el chat y sus conversaciones       | `team-chat.use`                 | Solo los hilos donde participa   | ✓   | ✓   | ✓   | ✓   | Coherente |
+| Crear grupos                            | `team-chat.create-groups`       | —                                | ✓   | ✓   | ✓   | —   | Coherente |
+| Administrar grupos en los que participa | `team-chat.manage-groups`       | Sus grupos                       | ✓   | ✓   | ✓   | —   | Coherente |
+| Escribir a otros departamentos          | `team-chat.cross-department`    | —                                | ✓   | ✓   | ✓   | —   | Coherente |
+| Atender mesa de control                 | `team-chat.control-desk.attend` | Todas las solicitudes de la mesa | ✓   | ✓   | ✓   | ✓   | Coherente |
+| Editar o borrar un mensaje              | Ser su autor                    | Propio                           | ✓   | ✓   | ✓   | ✓   | Coherente |
+
+Quien tiene `team-chat.use` **sin** `team-chat.control-desk.attend` es **solicitante**: su chat interno solo muestra
+el contacto «Mesa de control» (sin chats privados ni grupos). Ver
+[chat-interno.md §Mesa de control](chat-interno.md#mesa-de-control).
 
 ### Equipo: departamentos, usuarios y roles
 

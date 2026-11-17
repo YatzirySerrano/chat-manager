@@ -267,7 +267,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos de chat interno con varias personas.',
             self::ManageTeamChatGroups => 'Cambiar el nombre y los miembros de los grupos internos en los que participa.',
             self::UseCrossDepartmentTeamChat => 'Escribir por chat interno a personas de otros departamentos.',
-            self::AttendControlDesk => 'Aceptar, responder y completar las solicitudes de la mesa de control. Quien usa el chat interno sin este permiso solo puede escribir a la mesa de control.',
+            self::AttendControlDesk => 'Aceptar, responder y completar solicitudes de la mesa de control. Sin este permiso, el chat interno solo escribe a la mesa.',
             self::SaveVideosToNas => 'Copiar videos de los chats a una carpeta de Synology y crear carpetas en la carpeta de videos. El original no se mueve.',
             self::ViewReports => 'Consultar los indicadores de atención de la información que le corresponde.',
             self::ExportReports => 'Descargar en Excel o PDF la información de las pantallas que puede consultar.',

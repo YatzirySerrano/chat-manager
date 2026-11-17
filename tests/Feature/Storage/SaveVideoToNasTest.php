@@ -358,7 +358,7 @@ test('only videos can be saved', function () {
 
 test('a participant with the permission saves an internal chat video; others cannot', function () {
     Queue::fake();
-    $role = Role::factory()->scope(DataScope::Assigned)->withPermissions([Permission::UseTeamChat, Permission::SaveVideosToNas])->create();
+    $role = Role::factory()->scope(DataScope::Assigned)->withPermissions([Permission::UseTeamChat, Permission::AttendControlDesk, Permission::SaveVideosToNas])->create();
     $ana = User::factory()->withRole($role)->create();
     $beto = User::factory()->agent()->create();
     $carla = User::factory()->withRole($role)->create();

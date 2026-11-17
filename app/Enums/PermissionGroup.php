@@ -17,6 +17,7 @@ enum PermissionGroup: string
     case Categories = 'categories';
     case QuickReplies = 'quick-replies';
     case TeamChat = 'team-chat';
+    case Videos = 'videos';
     case Reports = 'reports';
     case Settings = 'settings';
     case Appearance = 'appearance';
@@ -44,6 +45,7 @@ enum PermissionGroup: string
             self::Categories => 'Categorías de solicitud',
             self::QuickReplies => 'Respuestas rápidas',
             self::TeamChat => 'Chat interno',
+            self::Videos => 'Videos en Synology',
             self::Reports => 'Reportes',
             self::Settings => 'Configuración',
             self::Appearance => 'Personalización',
@@ -76,6 +78,7 @@ enum PermissionGroup: string
             self::Categories => 'Tipos de solicitud de los clientes y las reglas de servicio propias de cada uno.',
             self::QuickReplies => 'Textos guardados para responder más rápido.',
             self::TeamChat => 'Mensajes entre las personas del equipo.',
+            self::Videos => 'Copias de videos de los chats en las carpetas del NAS (Synology).',
             self::Reports => 'Indicadores de la atención y descarga de información.',
             self::Settings => 'Reglas generales de funcionamiento de la plataforma.',
             self::Appearance => 'Colores y aspecto de la plataforma para todo el equipo.',
@@ -108,6 +111,7 @@ enum PermissionGroup: string
             self::Categories => 'folder-tree',
             self::QuickReplies => 'message-square-text',
             self::TeamChat => 'message-circle',
+            self::Videos => 'hard-drive-download',
             self::Reports => 'chart-no-axes-combined',
             self::Settings => 'settings',
             self::Appearance => 'palette',

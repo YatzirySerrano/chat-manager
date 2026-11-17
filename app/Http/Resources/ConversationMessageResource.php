@@ -12,6 +12,7 @@ use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Policies\HistoryImportPolicy;
 use App\Services\Storage\MediaThumbnails;
+use App\Services\VideoExports\VideoExports;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -287,6 +288,8 @@ class ConversationMessageResource extends JsonResource
             'link_revoke_url' => $delivery === AttachmentDeliveryMethod::Link && $this->direction === MessageDirection::Outbound
                 ? route('conversations.messages.attachments.revoke-link', ['conversation' => $this->conversation_id, 'message' => $this->id, 'attachment' => $attachment->id])
                 : null,
+            // «Guardar video» (videos.save-to-nas): null when the viewer may not save it.
+            'video_save' => app(VideoExports::class)->forMessageAttachment($this->resource, $attachment, request()->user()),
         ];
     }
 

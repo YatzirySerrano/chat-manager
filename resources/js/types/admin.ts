@@ -415,6 +415,8 @@ export type PlatformSettings = {
         reminder_minutes: number | null;
         reminder_limit: number;
     };
+    /** «Guardar video»: root folder of the NAS browser. */
+    video_exports: { root_folder: string };
 };
 
 /**

@@ -93,21 +93,25 @@ class MediaDisk
      * StorageUnavailable), or null when the disk is ready. Configuration
      * only: no network call. A mounted disk also reads its cached health
      * and identity marker (see mountProblem()).
+     *
+     * @param  string|null  $disk  Another disk held to the same rules (the
+     *                             target of the saved videos); the media disk by default.
      */
-    public function problem(): ?string
+    public function problem(?string $disk = null): ?string
     {
-        $config = config('filesystems.disks.'.$this->name());
+        $disk ??= $this->name();
+        $config = config('filesystems.disks.'.$disk);
 
         if (! is_array($config) || ! is_string($config['driver'] ?? null)) {
             return 'not_configured';
         }
 
-        if ($this->name() === 'public' || ($config['visibility'] ?? null) === 'public') {
+        if ($disk === 'public' || ($config['visibility'] ?? null) === 'public') {
             return 'public_disk';
         }
 
-        if ($config['driver'] === 'local' && $this->isMount()) {
-            return $this->mountProblem();
+        if ($config['driver'] === 'local' && $this->isMount($disk)) {
+            return $this->mountProblem($disk);
         }
 
         if ($config['driver'] === 'local') {
@@ -132,20 +136,20 @@ class MediaDisk
         return null;
     }
 
-    public function ready(): bool
+    public function ready(?string $disk = null): bool
     {
-        return $this->problem() === null;
+        return $this->problem($disk) === null;
     }
 
     /**
      * @throws StorageUnavailable
      */
-    public function assertReady(): void
+    public function assertReady(?string $disk = null): void
     {
-        $problem = $this->problem();
+        $problem = $this->problem($disk);
 
         if ($problem !== null) {
-            throw new StorageUnavailable($problem, $this->name());
+            throw new StorageUnavailable($problem, $disk ?? $this->name());
         }
     }
 
@@ -153,15 +157,16 @@ class MediaDisk
      * Copies a local file to the media disk under {directory}/{uuid} (or
      * the given file name) and verifies it arrived complete.
      *
+     * @param  string|null  $disk  Another disk held to the same rules; the media disk by default.
      * @return array{disk: string, path: string}
      *
      * @throws StorageUnavailable
      */
-    public function putFile(string $localPath, string $directory, ?string $fileName = null): array
+    public function putFile(string $localPath, string $directory, ?string $fileName = null, ?string $disk = null): array
     {
-        $this->assertReady();
+        $disk ??= $this->name();
+        $this->assertReady($disk);
 
-        $disk = $this->name();
         $path = trim($directory, '/').'/'.($fileName ?? (string) Str::uuid());
         $size = is_file($localPath) ? (int) filesize($localPath) : -1;
         $stream = $size >= 0 ? @fopen($localPath, 'rb') : false;
@@ -214,15 +219,16 @@ class MediaDisk
      * added ("… (2).jpg"). Choosing the name and writing happen under a
      * short lock per directory, so two files of the same second do not race.
      *
+     * @param  string|null  $disk  Another disk held to the same rules; the media disk by default.
      * @return array{disk: string, path: string}
      *
      * @throws StorageUnavailable
      */
-    public function putNamedFile(string $localPath, string $directory, string $stem, string $extension = ''): array
+    public function putNamedFile(string $localPath, string $directory, string $stem, string $extension = '', ?string $disk = null): array
     {
-        $this->assertReady();
+        $disk ??= $this->name();
+        $this->assertReady($disk);
 
-        $disk = $this->name();
         $directory = trim($directory, '/');
         $suffix = $extension !== '' ? '.'.$extension : '';
 
@@ -241,7 +247,7 @@ class MediaDisk
                 }
 
                 if (! $taken) {
-                    return $this->putFile($localPath, $directory, $name);
+                    return $this->putFile($localPath, $directory, $name, $disk);
                 }
             }
 
@@ -390,10 +396,9 @@ class MediaDisk
      * (mount table and identity marker), on every readiness check and so
      * before every write.
      */
-    private function mountProblem(): ?string
+    private function mountProblem(string $disk): ?string
     {
         $health = app(MountHealth::class);
-        $disk = $this->name();
 
         // The cached probe first: when it says the share is down, the share is not touched at all.
         return MountHealth::configurationProblem($disk) ?? $health->cachedProblem($disk) ?? $health->cheapProblem($disk);

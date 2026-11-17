@@ -38,6 +38,7 @@ import {
 } from '@/components/chat/bubble';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
+import SaveVideoButton from '@/components/video-exports/SaveVideoButton.vue';
 import {
     DELIVERY_UNKNOWN,
     deliveryUnknownLabel,
@@ -750,6 +751,12 @@ async function copyText(): Promise<void> {
                                 :caption="message.body"
                                 :author="author"
                                 :at="time"
+                            />
+                            <SaveVideoButton
+                                v-if="attachment.video_save"
+                                :options="attachment.video_save"
+                                :suggested-name="contactName"
+                                :inherit-color="customColors"
                             />
                             <div
                                 v-if="attachment.delivery_method === 'link'"

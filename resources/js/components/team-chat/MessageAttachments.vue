@@ -3,6 +3,7 @@ import { Download, Eye, Maximize2, Play } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, nextTick, reactive, ref } from 'vue';
 import TeamAudioPlayer from '@/components/team-chat/TeamAudioPlayer.vue';
+import SaveVideoButton from '@/components/video-exports/SaveVideoButton.vue';
 import {
     fileLook,
     groupAttachments,
@@ -264,6 +265,12 @@ const cardSurface = computed(() =>
                     >· {{ formatFileSize(video.size_bytes) }}</span
                 >
             </a>
+            <SaveVideoButton
+                v-if="video.video_save"
+                :options="video.video_save"
+                :inherit-color="custom"
+                class="mt-1"
+            />
         </div>
 
         <TeamAudioPlayer

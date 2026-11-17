@@ -10,6 +10,7 @@ use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
+use App\Services\TeamChat\ControlDesk;
 use App\Services\TeamChat\TeamAttachmentInspector;
 use App\Services\TeamChat\TeamThreadActivity;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -42,6 +43,10 @@ use Throwable;
  * never lands after the author lost access or the group became read-only.
  * Mentions keep only current participants of the group other than the
  * author (nobody else is ever notified).
+ *
+ * On a «Mesa de control» thread, a requester's message on a new or
+ * completed request puts it back on the waiting list, under the same lock
+ * (ControlDesk::messagePosted()).
  */
 class PostTeamMessage
 {
@@ -50,6 +55,7 @@ class PostTeamMessage
         private TeamAttachmentInspector $inspector,
         private MediaDisk $mediaDisk,
         private MediaPaths $mediaPaths,
+        private ControlDesk $desk,
     ) {}
 
     /**
@@ -142,6 +148,10 @@ class PostTeamMessage
                     ->update(['last_read_message_id' => $message->id]);
 
                 $this->activity->messageAdded($thread, $message);
+
+                // «Mesa de control»: a requester writing on a new or completed
+                // request puts it back on the waiting list.
+                $this->desk->messagePosted($locked, $author, $message);
 
                 return $message;
             });

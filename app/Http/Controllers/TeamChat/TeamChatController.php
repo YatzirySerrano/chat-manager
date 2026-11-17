@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\TeamChat;
 
+use App\Actions\TeamChat\DeskInboxQuery;
 use App\Actions\TeamChat\TeamMessageHistory;
 use App\Actions\TeamChat\TeamThreadListQuery;
 use App\Actions\TeamChat\TeamUnreadCounter;
+use App\Enums\TeamChat\TeamDeskStatus;
 use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\Personalization\ChatAppearances;
+use App\Services\TeamChat\ControlDesk;
 use App\Services\TeamChat\TeamChatPresenter;
 use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Http\Request;
@@ -19,7 +22,10 @@ use Inertia\Response;
 
 /**
  * The internal chat page: the person's thread list and, when a thread is
- * open, its latest messages. Only current participants open a thread.
+ * open, its latest messages. Only current participants open a thread
+ * (desk threads: their requester and the auditors, see TeamThreadPolicy).
+ * A requester's list is her «Mesa de control» thread alone; auditors get
+ * the desk section (`desk` tab, DeskInboxQuery) besides their chats.
  */
 class TeamChatController extends Controller
 {
@@ -29,6 +35,8 @@ class TeamChatController extends Controller
         private TeamChatPresenter $presenter,
         private TeamUnreadCounter $unread,
         private ChatAppearances $appearances,
+        private ControlDesk $desk,
+        private DeskInboxQuery $deskInbox,
     ) {}
 
     public function index(Request $request): Response
@@ -49,10 +57,17 @@ class TeamChatController extends Controller
     {
         /** @var User $viewer */
         $viewer = $request->user();
-        $validated = $request->validate([...TeamThreadListQuery::rules(), 'around' => ['nullable', 'integer', 'min:1']]);
+        $validated = $request->validate([...TeamThreadListQuery::rules(), ...DeskInboxQuery::rules(), 'around' => ['nullable', 'integer', 'min:1']]);
 
         // The scope (`filter`) and the «No leídos» / «Menciones» toggles.
         $filters = TeamThreadListQuery::normalize($validated);
+
+        // «Mesa de control»: a requester's chat is her desk thread, created
+        // the first time she opens the chat; an auditor gets the desk section.
+        $isRequester = $this->desk->isRequester($viewer);
+        $attendsDesk = $this->desk->attends($viewer);
+        $deskTab = is_string($validated['desk'] ?? null) ? $validated['desk'] : null;
+        $deskThread = $isRequester ? $this->desk->threadFor($viewer) : null;
 
         $active = null;
         $messages = null;
@@ -86,7 +101,18 @@ class TeamChatController extends Controller
             'threadCounts' => fn (): array => $this->list->counts($viewer, $filters['filter']),
             'can' => [
                 'createGroup' => $viewer->can('createGroup', TeamThread::class),
+                'startDirect' => $viewer->can('startDirect', TeamThread::class),
             ],
+            // null: no desk for this person. A requester only has her desk
+            // thread; an auditor gets the section with its tabs (`desk` in
+            // the URL opens it on that tab).
+            'desk' => match (true) {
+                $isRequester => ['role' => 'requester', 'thread_id' => $deskThread?->id, 'tab' => null],
+                $attendsDesk => ['role' => 'auditor', 'thread_id' => null, 'tab' => $deskTab],
+                default => null,
+            },
+            'deskInbox' => fn (): ?array => $attendsDesk && $deskTab !== null ? $this->deskInbox->handle($viewer, $deskTab) : null,
+            'deskPending' => fn (): ?int => $attendsDesk ? $this->deskInbox->pendingCount() : null,
             'limits' => [
                 'messageMaxLength' => (int) config('team-chat.message_max_length'),
                 'maxFiles' => (int) config('team-chat.attachments.max_files'),
@@ -112,6 +138,8 @@ class TeamChatController extends Controller
     {
         $me = $thread->participationOf($viewer);
         $partner = $thread->isDirect() ? $this->presenter->partner($thread, $viewer) : null;
+        $isDeskRequester = $thread->isDesk() && $thread->desk_requester_id === $viewer->id;
+        $canAttendDesk = Gate::allows('attendDesk', $thread);
 
         return [
             'id' => $thread->id,
@@ -124,7 +152,8 @@ class TeamChatController extends Controller
             'created_at' => $thread->created_at?->toIso8601String(),
             'last_message_id' => $thread->last_message_id,
             'partner' => $partner === null ? null : $this->presenter->person($partner),
-            'participants' => array_values($thread->activeParticipations->map(fn (TeamParticipant $participant): array => [
+            // A requester never sees which auditors hold her desk thread.
+            'participants' => array_values($thread->activeParticipations->filter(fn (TeamParticipant $participant): bool => ! $isDeskRequester || $participant->user_id === $viewer->id)->map(fn (TeamParticipant $participant): array => [
                 ...$this->presenter->person($participant->user),
                 'role' => $participant->role->value,
                 'is_me' => $participant->user_id === $viewer->id,
@@ -142,8 +171,12 @@ class TeamChatController extends Controller
                 'archive' => Gate::allows('archive', $thread),
                 'unarchive' => Gate::allows('unarchive', $thread),
                 'leave' => Gate::allows('leave', $thread),
+                // «Mesa de control»: «Aceptar solicitud» / «Solicitud completa».
+                'acceptDesk' => $canAttendDesk && $thread->desk_status === TeamDeskStatus::Pending,
+                'completeDesk' => $canAttendDesk && $thread->isDeskAssignedTo($viewer),
             ],
             'post_blocked_reason' => $canPost ? null : $postBlockedReason,
+            'desk' => $this->presenter->desk($thread, $viewer),
             // The viewer's own chat colors for this thread (never anyone else's).
             'appearance' => $this->appearances->forViewer($viewer, $thread),
         ];

@@ -30,6 +30,9 @@ class TeamThreadChanged implements ShouldDispatchAfterCommit
 
     public const MESSAGE_DELETED = 'message.deleted';
 
+    /** The request of a «Mesa de control» thread changed (requested, accepted, completed). */
+    public const DESK = 'desk';
+
     /**
      * @param  list<int>  $affectedUserIds
      */

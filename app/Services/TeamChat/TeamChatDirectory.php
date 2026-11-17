@@ -12,6 +12,9 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * - Only active accounts whose active role grants team-chat.use take part;
  *   deleted accounts are never offered nor added.
+ * - Requesters of the «Mesa de control» (team-chat.use without
+ *   team-chat.control-desk.attend) reach nobody and nobody reaches them:
+ *   they only write to the desk (ControlDesk).
  * - Users with organization-wide scope, or holding team-chat.cross-department,
  *   reach every such account.
  * - Everybody else only reaches people sharing at least one department.
@@ -41,7 +44,13 @@ class TeamChatDirectory
             ->active()
             ->whereKeyNot($actor->id)
             ->withoutProtectedFor($actor)
-            ->withPermission(Permission::UseTeamChat);
+            ->withPermission(Permission::UseTeamChat)
+            // Requesters of the «Mesa de control» only talk to the desk.
+            ->withPermission(Permission::AttendControlDesk);
+
+        if (! $actor->holdsPermission(Permission::AttendControlDesk)) {
+            $query->whereRaw('1 = 0');
+        }
 
         if (! $this->reachesEveryone($actor)) {
             $departmentIds = $actor->departmentIds();

@@ -3,7 +3,9 @@
 namespace App\Actions\TeamChat;
 
 use App\Enums\TeamChat\TeamMessageKind;
+use App\Enums\TeamChat\TeamThreadType;
 use App\Models\User;
+use App\Services\TeamChat\ControlDesk;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Database\QueryException;
@@ -17,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  */
 class TeamUnreadCounter
 {
+    public function __construct(private ControlDesk $desk) {}
+
     /**
      * Unread messages for the sidebar badge (muted threads excluded).
      */
@@ -86,6 +90,11 @@ class TeamUnreadCounter
                     ->where('p.user_id', '=', $user->id)
                     ->whereNull('p.left_at');
             })
+            // A requester of the «Mesa de control» only has her desk thread.
+            ->when($this->desk->isRequester($user), fn (Builder $query) => $query->whereExists(fn (Builder $threads) => $threads
+                ->from('team_threads as t')
+                ->whereColumn('t.id', 'm.team_thread_id')
+                ->where('t.type', TeamThreadType::Desk->value)))
             ->where('m.kind', TeamMessageKind::Message->value)
             ->whereNull('m.deleted_at')
             ->where(fn (Builder $authors) => $authors->whereNull('m.user_id')->orWhere('m.user_id', '!=', $user->id))

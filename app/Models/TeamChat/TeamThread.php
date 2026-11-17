@@ -2,6 +2,7 @@
 
 namespace App\Models\TeamChat;
 
+use App\Enums\TeamChat\TeamDeskStatus;
 use App\Enums\TeamChat\TeamThreadType;
 use App\Models\User;
 use App\Policies\TeamChat\TeamThreadPolicy;
@@ -17,9 +18,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * An internal chat: a one-to-one conversation between two employees or a
- * group. It never shares entities with customer conversations. Threads are
- * never deleted; groups can be archived (read-only).
+ * An internal chat: a one-to-one conversation between two employees, a
+ * group, or the «Mesa de control» thread of one requester (`desk_*`
+ * columns hold the state of its current request; see ControlDesk). It
+ * never shares entities with customer conversations. Threads are never
+ * deleted; groups can be archived (read-only).
  *
  * @property int $id
  * @property TeamThreadType $type
@@ -29,6 +32,14 @@ use Illuminate\Support\Carbon;
  * @property int|null $created_by_user_id
  * @property Carbon|null $archived_at
  * @property int|null $archived_by_user_id
+ * @property int|null $desk_requester_id
+ * @property TeamDeskStatus|null $desk_status
+ * @property int|null $desk_assigned_user_id
+ * @property Carbon|null $desk_requested_at
+ * @property int|null $desk_request_message_id
+ * @property Carbon|null $desk_accepted_at
+ * @property Carbon|null $desk_completed_at
+ * @property int|null $desk_completed_by_user_id
  * @property int|null $last_message_id
  * @property Carbon|null $last_message_at
  * @property Carbon|null $created_at
@@ -52,6 +63,10 @@ class TeamThread extends Model
             'type' => TeamThreadType::class,
             'archived_at' => 'datetime',
             'last_message_at' => 'datetime',
+            'desk_status' => TeamDeskStatus::class,
+            'desk_requested_at' => 'datetime',
+            'desk_accepted_at' => 'datetime',
+            'desk_completed_at' => 'datetime',
         ];
     }
 
@@ -71,6 +86,24 @@ class TeamThread extends Model
     public function isDirect(): bool
     {
         return $this->type === TeamThreadType::Direct;
+    }
+
+    /**
+     * The «Mesa de control» thread of one requester.
+     */
+    public function isDesk(): bool
+    {
+        return $this->type === TeamThreadType::Desk;
+    }
+
+    /**
+     * A desk thread whose request the given auditor attends right now.
+     */
+    public function isDeskAssignedTo(User|int $user): bool
+    {
+        $userId = $user instanceof User ? $user->id : $user;
+
+        return $this->isDesk() && $this->desk_status === TeamDeskStatus::Open && $this->desk_assigned_user_id === $userId;
     }
 
     public function isArchived(): bool
@@ -112,6 +145,34 @@ class TeamThread extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * The person whose «Mesa de control» thread this is.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function deskRequester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'desk_requester_id');
+    }
+
+    /**
+     * The auditor attending the current request (open requests only).
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function deskAssignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'desk_assigned_user_id');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function deskCompletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'desk_completed_by_user_id');
     }
 
     /**

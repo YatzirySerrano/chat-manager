@@ -4,6 +4,7 @@ use App\Http\Controllers\TeamChat\TeamAttachmentController;
 use App\Http\Controllers\TeamChat\TeamChatController;
 use App\Http\Controllers\TeamChat\TeamChatPeopleController;
 use App\Http\Controllers\TeamChat\TeamChatSearchController;
+use App\Http\Controllers\TeamChat\TeamDeskController;
 use App\Http\Controllers\TeamChat\TeamMessageController;
 use App\Http\Controllers\TeamChat\TeamParticipantController;
 use App\Http\Controllers\TeamChat\TeamThreadController;
@@ -35,6 +36,10 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
         Route::get('preview', [TeamThreadPreviewController::class, 'show'])->middleware('throttle:120,1')->name('preview');
         Route::post('read', [TeamThreadController::class, 'read'])->name('read');
         Route::post('typing', [TeamThreadController::class, 'typing'])->middleware('throttle:30,1')->name('typing');
+
+        // «Mesa de control»: an auditor accepts a pending request or completes hers.
+        Route::post('desk/accept', [TeamDeskController::class, 'accept'])->middleware('throttle:60,1')->name('desk.accept');
+        Route::post('desk/complete', [TeamDeskController::class, 'complete'])->middleware('throttle:60,1')->name('desk.complete');
 
         Route::post('participants', [TeamParticipantController::class, 'store'])->name('participants.store');
         Route::put('participants/{user}', [TeamParticipantController::class, 'update'])->withoutScopedBindings()->name('participants.update');

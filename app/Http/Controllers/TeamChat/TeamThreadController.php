@@ -165,6 +165,13 @@ class TeamThreadController extends Controller
         /** @var User $viewer */
         $viewer = $request->user();
         $participation = $thread->participationOf($viewer);
+
+        // An auditor reading a desk request she does not attend has no
+        // read marker there: nothing moves.
+        if ($participation === null && $thread->isDesk()) {
+            return response()->json(['last_read_message_id' => null, 'unread_total' => $unread->total($viewer)]);
+        }
+
         abort_if($participation === null, 404);
 
         $markThreadRead->handle($thread, $participation, (int) $validated['message_id']);

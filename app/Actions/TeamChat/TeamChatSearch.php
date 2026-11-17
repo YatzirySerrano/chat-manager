@@ -5,8 +5,8 @@ namespace App\Actions\TeamChat;
 use App\Enums\TeamChat\TeamMessageKind;
 use App\Enums\TeamChat\TeamThreadType;
 use App\Models\TeamChat\TeamMessage;
-use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\TeamChat\ControlDesk;
 use App\Services\TeamChat\TeamChatPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
@@ -22,7 +22,10 @@ class TeamChatSearch
 
     public const LIMIT = 20;
 
-    public function __construct(private TeamChatPresenter $presenter) {}
+    public function __construct(
+        private TeamChatPresenter $presenter,
+        private ControlDesk $desk,
+    ) {}
 
     /**
      * The most recent LIMIT matches; `has_more` tells the interface that
@@ -41,7 +44,8 @@ class TeamChatSearch
         $term = '%'.addcslashes($search, '\\%_').'%';
 
         $messages = TeamMessage::query()
-            ->whereIn('team_thread_id', TeamThread::query()->withActiveParticipant($viewer)->select('id'))
+            // Threads of the person's chat (a requester: only her desk thread).
+            ->whereIn('team_thread_id', $this->desk->chatThreads($viewer)->select('id'))
             ->where('kind', TeamMessageKind::Message)
             ->whereNull('deleted_at')
             ->where('body', 'like', $term)

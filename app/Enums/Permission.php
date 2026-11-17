@@ -265,7 +265,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos de chat interno con varias personas.',
             self::ManageTeamChatGroups => 'Cambiar el nombre y los miembros de los grupos internos en los que participa.',
             self::UseCrossDepartmentTeamChat => 'Escribir por chat interno a personas de otros departamentos.',
-            self::SaveVideosToNas => 'Copiar un video de una conversación o del chat interno a una carpeta del NAS (Synology) y crear carpetas dentro de la carpeta de videos. El original no se mueve.',
+            self::SaveVideosToNas => 'Copiar videos de los chats a una carpeta de Synology y crear carpetas en la carpeta de videos. El original no se mueve.',
             self::ViewReports => 'Consultar los indicadores de atención de la información que le corresponde.',
             self::ExportReports => 'Descargar en Excel o PDF la información de las pantallas que puede consultar.',
             self::ViewSettings => 'Consultar la configuración general de la plataforma.',

@@ -222,6 +222,10 @@ class MediaPaths
         if ($thread->isGroup()) {
             $base = self::clean($thread->name, 70);
             $base = $base !== '' ? $base : 'Grupo sin nombre';
+        } elseif ($thread->isDesk()) {
+            // One folder per requester, whoever attends each request.
+            $requester = self::clean($thread->deskRequester()->value('name'), 50);
+            $base = $requester !== '' ? 'Mesa de control - '.$requester : 'Mesa de control';
         } else {
             $names = $thread->participations()->with('user:id,name')->orderBy('user_id')->get()
                 ->map(fn ($participation): string => self::clean($participation->user?->name, 34))

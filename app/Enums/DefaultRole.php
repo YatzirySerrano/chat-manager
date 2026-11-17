@@ -129,6 +129,7 @@ enum DefaultRole: string
                 Permission::CreateTeamChatGroups,
                 Permission::ManageTeamChatGroups,
                 Permission::UseCrossDepartmentTeamChat,
+                Permission::AttendControlDesk,
             ],
             self::Agent => [
                 Permission::ViewDashboard,
@@ -145,6 +146,7 @@ enum DefaultRole: string
                 Permission::UseQuickReplies,
                 Permission::ViewReports,
                 Permission::UseTeamChat,
+                Permission::AttendControlDesk,
             ],
         };
     }

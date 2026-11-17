@@ -3,7 +3,8 @@
 namespace App\Enums\TeamChat;
 
 /**
- * Changes of a group recorded as system lines inside the thread.
+ * Changes of a group (and of a «Mesa de control» request) recorded as
+ * system lines inside the thread.
  */
 enum TeamChatSystemEvent: string
 {
@@ -17,6 +18,8 @@ enum TeamChatSystemEvent: string
     case AdminRevoked = 'admin_revoked';
     case GroupArchived = 'group_archived';
     case GroupUnarchived = 'group_unarchived';
+    case DeskAccepted = 'desk_accepted';
+    case DeskCompleted = 'desk_completed';
 
     /**
      * Sentence shown in the thread. The actor and target are names already
@@ -41,6 +44,8 @@ enum TeamChatSystemEvent: string
             self::AdminRevoked => "{$actor} quitó a {$target} como administrador del grupo.",
             self::GroupArchived => "{$actor} archivó el grupo. Ya no se pueden enviar mensajes.",
             self::GroupUnarchived => "{$actor} reactivó el grupo.",
+            self::DeskAccepted => "{$actor} aceptó la solicitud.",
+            self::DeskCompleted => "{$actor} marcó la solicitud como completa.",
         };
     }
 }

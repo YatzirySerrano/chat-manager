@@ -23,9 +23,9 @@ function teamChatNotifications(User $user)
 }
 
 beforeEach(function () {
-    $this->author = conversationUser([Permission::UseTeamChat]);
-    $this->reader = conversationUser([Permission::UseTeamChat]);
-    $this->muted = conversationUser([Permission::UseTeamChat]);
+    $this->author = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
+    $this->reader = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
+    $this->muted = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
     $this->thread = TeamThread::factory()->withParticipants([$this->author, $this->reader, $this->muted])->create();
     $this->thread->participations()->where('user_id', $this->muted->id)->update(['muted' => true]);
 });
@@ -118,7 +118,7 @@ test('a message with only files says what kind of file was sent', function (arra
 
 test('folded group messages say how many and who wrote the latest one', function () {
     postTeamMessage($this->thread, $this->author);
-    $other = conversationUser([Permission::UseTeamChat]);
+    $other = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
     $this->thread->participations()->create(['user_id' => $other->id, 'role' => 'member', 'joined_at' => now()]);
     $last = TeamMessage::factory()->in($this->thread, $other)->create(['body' => 'Ya lo reviso']);
     TeamMessagePosted::dispatch($this->thread->id, $last->id, $other->id, 'message');
@@ -146,7 +146,7 @@ test('without access to the thread the notification shows no author, preview nor
 })->with(['left', 'permission']);
 
 test('people outside the thread receive nothing about its messages', function () {
-    $outsider = conversationUser([Permission::UseTeamChat]);
+    $outsider = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
 
     postTeamMessage($this->thread, $this->author);
 

@@ -79,6 +79,7 @@ enum Permission: string
     case CreateTeamChatGroups = 'team-chat.create-groups';
     case ManageTeamChatGroups = 'team-chat.manage-groups';
     case UseCrossDepartmentTeamChat = 'team-chat.cross-department';
+    case AttendControlDesk = 'team-chat.control-desk.attend';
 
     case ViewReports = 'reports.view';
     case ExportReports = 'reports.export';
@@ -174,6 +175,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos internos',
             self::ManageTeamChatGroups => 'Administrar los grupos internos en los que participa',
             self::UseCrossDepartmentTeamChat => 'Iniciar chats internos con personas de otros departamentos',
+            self::AttendControlDesk => 'Atender mesa de control',
             self::ViewReports => 'Ver reportes',
             self::ExportReports => 'Exportar información a Excel y PDF',
             self::ViewSettings => 'Ver configuración',
@@ -262,6 +264,7 @@ enum Permission: string
             self::CreateTeamChatGroups => 'Crear grupos de chat interno con varias personas.',
             self::ManageTeamChatGroups => 'Cambiar el nombre y los miembros de los grupos internos en los que participa.',
             self::UseCrossDepartmentTeamChat => 'Escribir por chat interno a personas de otros departamentos.',
+            self::AttendControlDesk => 'Aceptar, responder y completar las solicitudes de la mesa de control. Quien usa el chat interno sin este permiso solo puede escribir a la mesa de control.',
             self::ViewReports => 'Consultar los indicadores de atención de la información que le corresponde.',
             self::ExportReports => 'Descargar en Excel o PDF la información de las pantallas que puede consultar.',
             self::ViewSettings => 'Consultar la configuración general de la plataforma.',

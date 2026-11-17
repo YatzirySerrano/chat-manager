@@ -2,12 +2,15 @@
 
 namespace App\Listeners\TeamChat;
 
+use App\Enums\TeamChat\TeamThreadType;
 use App\Events\TeamChat\Broadcasts\TeamChatUserSignal;
 use App\Events\TeamChat\Broadcasts\TeamThreadSignal;
 use App\Events\TeamChat\TeamMessagePosted;
 use App\Events\TeamChat\TeamThreadChanged;
 use App\Events\TeamChat\TeamThreadRead;
 use App\Models\TeamChat\TeamParticipant;
+use App\Models\TeamChat\TeamThread;
+use App\Services\TeamChat\ControlDesk;
 
 /**
  * Turns internal chat domain events into real-time invalidation signals:
@@ -18,11 +21,21 @@ use App\Models\TeamChat\TeamParticipant;
  */
 class BroadcastTeamChatActivity
 {
+    public function __construct(private ControlDesk $desk) {}
+
     public function handleMessagePosted(TeamMessagePosted $event): void
     {
         broadcast(new TeamThreadSignal($event->threadId, 'message.created', ['message_id' => $event->messageId]));
 
-        $this->signalUsers($this->participantIds($event->threadId), $event->threadId, 'message');
+        // A «Mesa de control» thread is a shared queue: every auditor's desk
+        // section follows its messages (previews, order, counters).
+        $isDesk = TeamThread::query()->whereKey($event->threadId)->where('type', TeamThreadType::Desk)->exists();
+
+        $this->signalUsers(
+            array_values(array_unique([...$this->participantIds($event->threadId), ...($isDesk ? $this->desk->auditorIds() : [])])),
+            $event->threadId,
+            'message',
+        );
     }
 
     public function handleThreadChanged(TeamThreadChanged $event): void

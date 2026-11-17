@@ -6,6 +6,7 @@ use App\Enums\TeamChat\TeamThreadType;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\TeamChat\ControlDesk;
 use App\Services\TeamChat\TeamChatPresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +14,9 @@ use Illuminate\Validation\Rule;
 
 /**
  * The thread list of a person: only threads where they currently
- * participate, most recent activity first, with unread counters.
+ * participate, most recent activity first, with unread counters. A
+ * requester of the «Mesa de control» only gets her desk thread; auditors
+ * find desk threads in their desk section (DeskInboxQuery), not here.
  *
  * `filter` is the scope: all, direct, groups or archived. Two toggles
  * combine with it: `unread` (threads with messages unread for the person)
@@ -33,6 +36,7 @@ class TeamThreadListQuery
     public function __construct(
         private TeamUnreadCounter $unread,
         private TeamChatPresenter $presenter,
+        private ControlDesk $desk,
     ) {}
 
     /**
@@ -147,6 +151,7 @@ class TeamThreadListQuery
                     'unread' => $unread[$thread->id] ?? 0,
                     'last_activity_at' => ($thread->last_message_at ?? $thread->created_at)?->toIso8601String(),
                     'last_message' => $this->presenter->preview($thread->last_message_id === null ? null : $lastMessages->get($thread->last_message_id), $viewer),
+                    'desk' => $this->presenter->desk($thread, $viewer),
                 ];
             })->all()),
             'has_more' => $hasMore,
@@ -177,7 +182,13 @@ class TeamThreadListQuery
      */
     private function scoped(User $viewer, string $scope): Builder
     {
-        $query = TeamThread::query()->withActiveParticipant($viewer);
+        // A requester's whole chat is her «Mesa de control» thread.
+        if ($this->desk->isRequester($viewer)) {
+            return $this->desk->chatThreads($viewer)->when(! in_array($scope, ['all', 'unread', 'mentions'], true), fn (Builder $none) => $none->whereRaw('1 = 0'));
+        }
+
+        // Desk threads an auditor attends live in the «Mesa de control» section.
+        $query = TeamThread::query()->withActiveParticipant($viewer)->where('type', '!=', TeamThreadType::Desk);
 
         return match ($scope) {
             'archived' => $query->whereNotNull('archived_at'),

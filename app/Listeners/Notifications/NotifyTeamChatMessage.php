@@ -4,11 +4,14 @@ namespace App\Listeners\Notifications;
 
 use App\Enums\Permission;
 use App\Enums\TeamChat\TeamMessageKind;
+use App\Enums\TeamChat\TeamThreadType;
 use App\Events\TeamChat\TeamMessagePosted;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
+use App\Models\TeamChat\TeamThread;
 use App\Notifications\NotificationCenter;
 use App\Notifications\TeamChatMessageNotification;
+use App\Services\TeamChat\ControlDesk;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
@@ -30,7 +33,10 @@ class NotifyTeamChatMessage implements ShouldQueue
     /** @var list<int> */
     public array $backoff = [5, 30];
 
-    public function __construct(private NotificationCenter $center) {}
+    public function __construct(
+        private NotificationCenter $center,
+        private ControlDesk $desk,
+    ) {}
 
     public function viaQueue(): string
     {
@@ -45,6 +51,7 @@ class NotifyTeamChatMessage implements ShouldQueue
             return;
         }
 
+        $isDesk = TeamThread::query()->whereKey($event->threadId)->where('type', TeamThreadType::Desk)->exists();
         $mentions = array_values(array_filter((array) ($message->metadata['mentions'] ?? []), 'is_int'));
 
         $participants = TeamParticipant::query()
@@ -59,6 +66,12 @@ class NotifyTeamChatMessage implements ShouldQueue
             $mentioned = in_array($participant->user_id, $mentions, true);
 
             if ($user === null || ! $user->is_active || ! $user->holdsPermission(Permission::UseTeamChat) || ($participant->muted && ! $mentioned)) {
+                continue;
+            }
+
+            // A requester of the «Mesa de control» only hears from her desk
+            // thread, not from chats she was part of before.
+            if (! $isDesk && $this->desk->isRequester($user)) {
                 continue;
             }
 

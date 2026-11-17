@@ -3,10 +3,12 @@
 namespace App\Policies\TeamChat;
 
 use App\Enums\Permission;
+use App\Enums\TeamChat\TeamDeskStatus;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\TeamChat\ControlDesk;
 use Illuminate\Auth\Access\Response;
 
 /**
@@ -19,9 +21,18 @@ use Illuminate\Auth\Access\Response;
  * team-chat.manage-groups lets someone administer the groups they belong
  * to as if they were a group administrator (rename, participants, archive);
  * it never grants access to groups they are not part of.
+ *
+ * «Mesa de control» (ControlDesk): a requester (team-chat.use without
+ * team-chat.control-desk.attend) only reaches her own desk thread; every
+ * other thread answers as if it did not exist, and she cannot start direct
+ * chats or groups. Desk threads are readable by their requester and by
+ * every auditor (the desk is a shared queue, not a private chat); only the
+ * requester and the auditor who accepted the open request write in them.
  */
 class TeamThreadPolicy
 {
+    public function __construct(private ControlDesk $desk) {}
+
     public function viewAny(User $actor): bool
     {
         return $actor->holdsPermission(Permission::UseTeamChat);
@@ -32,17 +43,34 @@ class TeamThreadPolicy
      */
     public function startDirect(User $actor): bool
     {
-        return $actor->holdsPermission(Permission::UseTeamChat);
+        return $actor->holdsPermission(Permission::UseTeamChat) && ! $this->desk->isRequester($actor);
     }
 
     public function createGroup(User $actor): bool
     {
         return $actor->holdsPermission(Permission::UseTeamChat)
-            && $actor->holdsPermission(Permission::CreateTeamChatGroups);
+            && $actor->holdsPermission(Permission::CreateTeamChatGroups)
+            && ! $this->desk->isRequester($actor);
+    }
+
+    /**
+     * Accept or complete «Mesa de control» requests (state, capacity and
+     * races are checked under lock by AcceptDeskRequest and
+     * CompleteDeskRequest).
+     */
+    public function attendDesk(User $actor, TeamThread $thread): Response
+    {
+        return $thread->isDesk() && $this->desk->attends($actor)
+            ? Response::allow()
+            : Response::denyAsNotFound();
     }
 
     public function view(User $actor, TeamThread $thread): Response
     {
+        if ($thread->isDesk()) {
+            return $this->reachesDesk($actor, $thread) ? Response::allow() : Response::denyAsNotFound();
+        }
+
         return $this->participation($actor, $thread) === null
             ? Response::denyAsNotFound()
             : Response::allow();
@@ -54,6 +82,10 @@ class TeamThreadPolicy
      */
     public function post(User $actor, TeamThread $thread): Response
     {
+        if ($thread->isDesk()) {
+            return $this->postToDesk($actor, $thread);
+        }
+
         if ($this->participation($actor, $thread) === null) {
             return Response::denyAsNotFound();
         }
@@ -171,11 +203,50 @@ class TeamThreadPolicy
     }
 
     /**
+     * The requester of a desk thread, or anyone who attends the desk.
+     */
+    private function reachesDesk(User $actor, TeamThread $thread): bool
+    {
+        if (! $actor->holdsPermission(Permission::UseTeamChat)) {
+            return false;
+        }
+
+        return $thread->desk_requester_id === $actor->id || $this->desk->attends($actor);
+    }
+
+    /**
+     * The requester always writes (a message on a completed request opens a
+     * new one); an auditor only on the open request she accepted.
+     */
+    private function postToDesk(User $actor, TeamThread $thread): Response
+    {
+        if (! $this->reachesDesk($actor, $thread)) {
+            return Response::denyAsNotFound();
+        }
+
+        if ($thread->desk_requester_id === $actor->id || $thread->isDeskAssignedTo($actor)) {
+            return Response::allow();
+        }
+
+        return Response::deny(match ($thread->desk_status) {
+            TeamDeskStatus::Open => 'Otra persona de la mesa de control atiende esta solicitud.',
+            TeamDeskStatus::Closed => 'La solicitud está completa. Se reabre cuando la persona vuelva a escribir.',
+            default => 'Acepta la solicitud para responder.',
+        });
+    }
+
+    /**
      * The actor's current participation when they may use the chat at all.
+     * A requester only takes part in her desk thread: her old direct chats
+     * and groups answer as if she had left them.
      */
     private function participation(User $actor, TeamThread $thread): ?TeamParticipant
     {
         if (! $actor->holdsPermission(Permission::UseTeamChat)) {
+            return null;
+        }
+
+        if (! $thread->isDesk() && $this->desk->isRequester($actor)) {
             return null;
         }
 

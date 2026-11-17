@@ -63,7 +63,67 @@ class TeamChatPresenter
             return (string) $thread->name;
         }
 
+        // «Mesa de control»: the requester sees the desk, auditors see who asks.
+        if ($thread->isDesk()) {
+            return $thread->desk_requester_id === $viewer->id
+                ? ControlDesk::TITLE
+                : $this->userName($this->deskRequester($thread));
+        }
+
         return $this->userName($this->partner($thread, $viewer));
+    }
+
+    /**
+     * State of the request of a desk thread for the viewer, or null for
+     * other threads. The requester sees the state of her request but not
+     * which auditor holds it (only the names on the replies she gets).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function desk(TeamThread $thread, User $viewer): ?array
+    {
+        if (! $thread->isDesk()) {
+            return null;
+        }
+
+        $isRequester = $thread->desk_requester_id === $viewer->id;
+        $status = $thread->desk_status;
+        $assignee = $isRequester || $thread->desk_assigned_user_id === null ? null : $this->deskUser($thread, 'deskAssignee');
+        $completedBy = $isRequester || $thread->desk_completed_by_user_id === null ? null : $this->deskUser($thread, 'deskCompletedBy');
+
+        return [
+            // A thread nobody wrote to yet has no request: «new».
+            'status' => $status->value ?? 'new',
+            'status_label' => $status?->label() ?? 'Sin solicitudes',
+            'is_requester' => $isRequester,
+            'requester' => $isRequester ? null : (($requester = $this->deskRequester($thread)) === null ? null : $this->person($requester)),
+            'assignee' => $assignee === null ? null : $this->person($assignee),
+            'is_mine' => $thread->isDeskAssignedTo($viewer),
+            'requested_at' => $thread->desk_requested_at?->toIso8601String(),
+            'accepted_at' => $thread->desk_accepted_at?->toIso8601String(),
+            'completed_at' => $thread->desk_completed_at?->toIso8601String(),
+            'completed_by' => $completedBy === null ? null : $this->userName($completedBy),
+        ];
+    }
+
+    /**
+     * The requester of a desk thread, loaded once (also when the caller did
+     * not eager load it).
+     */
+    public function deskRequester(TeamThread $thread): ?User
+    {
+        return $this->deskUser($thread, 'deskRequester');
+    }
+
+    private function deskUser(TeamThread $thread, string $relation): ?User
+    {
+        if (! $thread->relationLoaded($relation)) {
+            $thread->setRelation($relation, $thread->{$relation}()->first(['id', 'name', 'is_active']));
+        }
+
+        $user = $thread->getRelation($relation);
+
+        return $user instanceof User ? $user : null;
     }
 
     public function partner(TeamThread $thread, User $viewer): ?User
@@ -87,7 +147,7 @@ class TeamChatPresenter
 
         $text = match (true) {
             $message->isDeleted() => 'Mensaje eliminado',
-            $message->isSystem() => 'Actividad del grupo',
+            $message->isSystem() => str_starts_with((string) ($message->metadata['event'] ?? ''), 'desk_') ? 'Actividad de la solicitud' : 'Actividad del grupo',
             filled($message->body) => Str::limit(Str::squish((string) $message->body), $limit),
             default => $this->attachmentSummary((int) $message->getAttribute('attachments_count')),
         };

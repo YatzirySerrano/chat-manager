@@ -7,7 +7,55 @@ import type { ViewerChatAppearance } from './personalization';
  * TeamChat controllers.
  */
 
-export type TeamThreadType = 'direct' | 'group';
+export type TeamThreadType = 'direct' | 'group' | 'desk';
+
+/** State of a «Mesa de control» request («new»: nobody wrote yet). */
+export type TeamDeskStatus = 'new' | 'pending' | 'open' | 'closed';
+
+/** Request of a desk thread, as the viewer may see it (TeamChatPresenter::desk()). */
+export type TeamDeskInfo = {
+    status: TeamDeskStatus;
+    status_label: string;
+    /** The viewer is the requester (she never sees the auditors' names here). */
+    is_requester: boolean;
+    requester: TeamPerson | null;
+    assignee: TeamPerson | null;
+    /** The viewer attends this open request. */
+    is_mine: boolean;
+    requested_at: string | null;
+    accepted_at: string | null;
+    completed_at: string | null;
+    completed_by: string | null;
+};
+
+export type TeamDeskTab = 'pending' | 'mine' | 'completed';
+
+/** Who the viewer is for the desk: null when the desk does not concern them. */
+export type TeamDeskRole = {
+    role: 'requester' | 'auditor';
+    /** The requester's own desk thread. */
+    thread_id: number | null;
+    /** The auditor's open desk section tab (null: the regular chats). */
+    tab: TeamDeskTab | null;
+} | null;
+
+export type TeamDeskRow = {
+    id: number;
+    title: string;
+    unread: number;
+    last_activity_at: string | null;
+    last_message: TeamMessagePreview | null;
+    desk: TeamDeskInfo;
+};
+
+/** The auditor's «Mesa de control» section (DeskInboxQuery). */
+export type TeamDeskInbox = {
+    tab: TeamDeskTab;
+    threads: TeamDeskRow[];
+    has_more: boolean;
+    counts: { pending: number; mine: number; completed: number };
+    capacity: { limit: number | null; load: number };
+};
 
 export type TeamParticipantRole = 'member' | 'admin';
 
@@ -46,6 +94,7 @@ export type TeamThreadSummary = {
     unread: number;
     last_activity_at: string | null;
     last_message: TeamMessagePreview | null;
+    desk?: TeamDeskInfo | null;
 };
 
 export type TeamThreadList = {
@@ -83,8 +132,13 @@ export type TeamThreadDetail = {
         archive: boolean;
         unarchive: boolean;
         leave: boolean;
+        /** «Aceptar solicitud» on a pending desk request. */
+        acceptDesk?: boolean;
+        /** «Solicitud completa» on the viewer's open desk request. */
+        completeDesk?: boolean;
     };
     post_blocked_reason: string | null;
+    desk?: TeamDeskInfo | null;
     /** The viewer's own chat colors for this thread. */
     appearance?: ViewerChatAppearance;
 };

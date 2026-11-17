@@ -52,7 +52,7 @@ test('creating groups requires its permission and participants within reach', fu
         ->assertForbidden();
 
     $outsider = User::factory()->agent()->inDepartments($this->sales)->create();
-    $creator = conversationUser([Permission::UseTeamChat, Permission::CreateTeamChatGroups], DataScope::Departments, [$this->support]);
+    $creator = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk, Permission::CreateTeamChatGroups], DataScope::Departments, [$this->support]);
 
     $this->actingAs($creator)
         ->post(route('team-chat.groups.store'), ['name' => 'Mi grupo', 'participant_ids' => [$this->beto->id, $outsider->id]])
@@ -197,7 +197,7 @@ test('an archived group keeps its history read-only until it is reactivated', fu
 });
 
 test('the manage groups permission administers groups the person belongs to, never others', function () {
-    $manager = conversationUser([Permission::UseTeamChat, Permission::ManageTeamChatGroups], DataScope::Departments, [$this->support]);
+    $manager = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk, Permission::ManageTeamChatGroups], DataScope::Departments, [$this->support]);
     $member = teamGroup($this->lead, [$manager, $this->ana]);
     $foreign = teamGroup($this->lead, [$this->ana]);
 

@@ -143,8 +143,8 @@ function teamPreviewNotificationSnapshot(User $user): array
 }
 
 test('previewing neither reads nor clears the team chat message and mention notifications', function () {
-    $author = conversationUser([Permission::UseTeamChat]);
-    $reader = conversationUser([Permission::UseTeamChat]);
+    $author = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
+    $reader = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk]);
     $group = TeamThread::factory()->withParticipants([$author, $reader])->create(['name' => 'Ventas']);
 
     $plain = TeamMessage::factory()->in($group, $author)->create(['body' => 'Aviso normal']);

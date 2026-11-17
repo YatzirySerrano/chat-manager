@@ -99,8 +99,8 @@ test('the backend refuses direct chats, groups and old threads to a requester, a
     $this->actingAs($this->requester)->postJson(route('team-chat.threads.messages.store', $old), ['body' => 'Hola'])->assertNotFound();
     $this->actingAs($this->requester)->getJson(route('team-chat.people'))->assertOk()->assertJsonCount(0, 'data');
 
-    // Auditors cannot open a direct chat with her either (she would never see it).
-    $this->actingAs($this->auditor)
+    // Auditors cannot open a new direct chat with her either (she would never see it).
+    $this->actingAs($this->otherAuditor)
         ->post(route('team-chat.direct.store'), ['user_id' => $this->requester->id])
         ->assertSessionHasErrors(['user_id' => 'No puedes iniciar un chat con esta persona.']);
 

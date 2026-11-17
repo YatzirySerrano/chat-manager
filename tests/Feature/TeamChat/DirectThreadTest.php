@@ -45,8 +45,8 @@ test('without the cross department permission people only reach colleagues of th
 });
 
 test('the cross department permission and the global scope reach everyone', function () {
-    $crossDepartment = conversationUser([Permission::UseTeamChat, Permission::UseCrossDepartmentTeamChat], DataScope::Assigned, [$this->support]);
-    $global = conversationUser([Permission::UseTeamChat], DataScope::Global);
+    $crossDepartment = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk, Permission::UseCrossDepartmentTeamChat], DataScope::Assigned, [$this->support]);
+    $global = conversationUser([Permission::UseTeamChat, Permission::AttendControlDesk], DataScope::Global);
 
     $this->actingAs($crossDepartment)->post(route('team-chat.direct.store'), ['user_id' => $this->carla->id])->assertRedirect();
     $this->actingAs($global)->post(route('team-chat.direct.store'), ['user_id' => $this->carla->id])->assertRedirect();

@@ -76,6 +76,7 @@ beforeEach(function () {
         Permission::SendAttentionAlerts,
         Permission::ViewTemplates,
         Permission::UseTeamChat,
+        Permission::AttendControlDesk,
         Permission::UseCrossDepartmentTeamChat,
         Permission::ViewDepartments,
         Permission::UpdateDepartments,

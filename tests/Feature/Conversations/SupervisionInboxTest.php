@@ -48,26 +48,29 @@ beforeEach(function () {
 });
 
 /**
- * Ids the inbox lists for the viewer with the query, sorted.
+ * Ids the inbox lists for the viewer with the query, sorted: the active
+ * conversations unless the query asks for another status (the screen itself
+ * opens on "Pendientes").
  *
  * @param  array<string, string>  $query
  * @return list<int>
  */
 function supervisedIds(User $viewer, array $query = []): array
 {
-    return collect(test()->actingAs($viewer)->getJson(route('conversations.page', [...$query, 'limit' => 500]))->assertOk()->json('data'))
+    return collect(test()->actingAs($viewer)->getJson(route('conversations.page', ['status' => 'active', ...$query, 'limit' => 500]))->assertOk()->json('data'))
         ->pluck('id')->sort()->values()->all();
 }
 
 /**
- * Ids of the first page of /conversations (the Inertia prop), sorted.
+ * Ids of the first page of /conversations (the Inertia prop), sorted; active
+ * unless the query asks for another status.
  *
  * @param  array<string, string>  $query
  * @return list<int>
  */
 function firstPageIds(User $viewer, array $query = []): array
 {
-    $props = test()->actingAs($viewer)->get(route('conversations.index', $query))->assertOk()->viewData('page')['props'];
+    $props = test()->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->assertOk()->viewData('page')['props'];
 
     return collect($props['conversations']['data'])->pluck('id')->sort()->values()->all();
 }
@@ -94,7 +97,7 @@ function readOnlyDepartmentsSupervisor(Department $department): User
     return User::factory()->withRole($role)->inDepartments($department)->create();
 }
 
-test('the administrator opens the inbox on every active conversation of the organization', function () {
+test('the administrator\'s active list holds every active conversation of the organization', function () {
     $everyActive = supervisedIdsOf([
         $this->salesOpen, $this->salesColleagueOpen, $this->salesPending, $this->supportOpen,
         $this->supportPending, $this->unroutedPending, $this->transferred,
@@ -103,9 +106,11 @@ test('the administrator opens the inbox on every active conversation of the orga
     expect(firstPageIds($this->admin))->toBe($everyActive)
         ->and(supervisedIds($this->admin))->toBe($everyActive);
 
+    // The screen itself opens on the pending ones of every conversation.
     $this->actingAs($this->admin)->get(route('conversations.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.view', 'all')
+            ->where('filters.status', 'pending')
             ->where('inbox.views', ['all', 'general', 'mine'])
             ->where('inbox.personal', false)
             ->where('inbox.scope', 'global')
@@ -142,7 +147,7 @@ test('old links keep working for the administrator', function () {
 });
 
 test('operational actions of the administrator\'s rows still follow the policy', function () {
-    $rows = collect($this->actingAs($this->admin)->getJson(route('conversations.page', ['limit' => 500]))->json('data'))->keyBy('id');
+    $rows = collect($this->actingAs($this->admin)->getJson(route('conversations.page', ['status' => 'active', 'limit' => 500]))->json('data'))->keyBy('id');
 
     expect($rows[$this->salesColleagueOpen->id]['can']['assign'])->toBeTrue()
         ->and($rows[$this->salesColleagueOpen->id]['can']['accept'])->toBeFalse()
@@ -179,7 +184,7 @@ test('a departments supervisor never reaches another department by filters', fun
 
 test('a read-only departments supervisor sees their reach and gets no operation', function () {
     $readOnly = readOnlyDepartmentsSupervisor($this->sales);
-    $rows = collect($this->actingAs($readOnly)->getJson(route('conversations.page', ['limit' => 500]))->json('data'));
+    $rows = collect($this->actingAs($readOnly)->getJson(route('conversations.page', ['status' => 'active', 'limit' => 500]))->json('data'));
 
     expect($rows->pluck('id')->sort()->values()->all())->toBe(supervisedIdsOf([$this->salesOpen, $this->salesColleagueOpen, $this->salesPending, $this->transferred]));
 

@@ -279,7 +279,7 @@ test('each conversation row carries its open SLA, loaded with one query for the 
         DB::enableQueryLog();
 
         $rows = $this->actingAs($this->admin)
-            ->get(route('conversations.index', ['view' => 'all']), [
+            ->get(route('conversations.index', ['view' => 'all', 'status' => 'active']), [
                 'X-Inertia' => 'true',
                 'X-Inertia-Partial-Component' => 'conversations/Index',
                 'X-Inertia-Partial-Data' => 'conversations',

@@ -37,7 +37,7 @@ beforeEach(function () {
 function searchedIds(object $test, User $viewer, array $query): array
 {
     $ids = $test->actingAs($viewer)
-        ->get(route('conversations.index', $query))
+        ->get(route('conversations.index', ['status' => 'active', ...$query]))
         ->assertOk()
         ->inertiaProps('conversations.data');
 

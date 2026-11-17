@@ -184,6 +184,15 @@ const baseView = computed<InboxView>(() =>
     defaultView.value === 'general' ? 'general' : 'all',
 );
 const isGeneral = computed(() => baseView.value === 'general');
+
+/*
+ * The order each view opens with (ConversationInboxQuery::defaultSort()):
+ * the newest request on top, except in «Mías», where each agent works their
+ * own ones oldest first.
+ */
+function defaultSort(view: InboxView): ConversationSort {
+    return view === 'mine' ? 'oldest' : 'recent';
+}
 const hasMine = computed(() => props.inbox.views.includes('mine'));
 const channels = computed(() => props.filterOptions.channels);
 const showChannels = computed(() => channels.value.length > 1);
@@ -331,18 +340,6 @@ const closedActive = computed(() => isClosedStatus(state.status));
 const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
     const options: FilterTabOption<InboxTab>[] = [
         {
-            value: 'base',
-            label: isGeneral.value ? 'Bandeja' : 'Todas',
-            count: props.counts.general,
-            title: `${viewLabels.value[baseView.value]}. ${baseTitle.value}`,
-            srLabel: plural(
-                props.counts.general,
-                'conversación activa',
-                'conversaciones activas',
-            ),
-            attrs: { 'data-inbox-chip': 'base', 'data-tour': 'inbox.general' },
-        },
-        {
             value: 'pending',
             label: 'Pendientes',
             icon: pendingCount.value > 0 ? Hourglass : undefined,
@@ -354,6 +351,18 @@ const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
                 'data-inbox-chip': 'pending',
                 'data-tour': 'inbox.pending',
             },
+        },
+        {
+            value: 'base',
+            label: isGeneral.value ? 'Bandeja' : 'Todas',
+            count: props.counts.general,
+            title: `${viewLabels.value[baseView.value]}. ${baseTitle.value}`,
+            srLabel: plural(
+                props.counts.general,
+                'conversación activa',
+                'conversaciones activas',
+            ),
+            attrs: { 'data-inbox-chip': 'base', 'data-tour': 'inbox.general' },
         },
     ];
 
@@ -401,23 +410,34 @@ const tabs = computed<FilterTabOption<InboxTab>[]>(() => {
 
 function chooseTab(tab: InboxTab): void {
     const patches: Record<InboxTab, Partial<InboxFilterState>> = {
-        base: { view: baseView.value, status: 'active' },
-        pending: { view: baseView.value, status: 'pending' },
-        attending: { view: 'all', status: 'open' },
-        mine: { view: 'mine', status: 'active' },
+        base: {
+            view: baseView.value,
+            status: 'active',
+            sort: defaultSort(baseView.value),
+        },
+        pending: {
+            view: baseView.value,
+            status: 'pending',
+            sort: defaultSort(baseView.value),
+        },
+        attending: { view: 'all', status: 'open', sort: defaultSort('all') },
+        // Their own requests, the one waiting the longest first.
+        mine: { view: 'mine', status: 'active', sort: defaultSort('mine') },
         // Closed conversations are never unread nor waiting for an answer.
         closed: {
             view: baseView.value,
             status: 'closed',
+            sort: defaultSort(baseView.value),
             unread: false,
             awaiting: false,
         },
     };
 
-    // A second click on the chosen tab goes back to the base inbox.
+    // A second click on the chosen tab goes back to the default one
+    // («Pendientes»).
     if (tab === activeTab.value) {
-        if (tab !== 'base') {
-            change(patches.base);
+        if (tab !== 'pending') {
+            change(patches.pending);
         }
 
         return;
@@ -490,11 +510,11 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         });
     }
 
-    if (!inTab && filters.status !== 'active') {
+    if (!inTab && filters.status !== 'pending') {
         chips.push({
             key: 'status',
             label: `Estado: ${statusLabels[filters.status] ?? filters.status}`,
-            remove: () => (filters.status = 'active'),
+            remove: () => (filters.status = 'pending'),
         });
     }
 
@@ -583,11 +603,11 @@ function chipsOf(filters: InboxFilterState): ActiveFilterPill[] {
         });
     }
 
-    if (filters.sort !== 'oldest') {
+    if (filters.sort !== defaultSort(filters.view)) {
         chips.push({
             key: 'sort',
             label: `Orden: ${sortOptions.find((option) => option.value === filters.sort)?.label ?? filters.sort}`,
-            remove: () => (filters.sort = 'oldest'),
+            remove: () => (filters.sort = defaultSort(filters.view)),
         });
     }
 
@@ -650,7 +670,8 @@ function query(): Record<string, string | string[]> {
         result.view = state.view;
     }
 
-    if (state.status !== 'active') {
+    // No status is the default «Pendientes» list.
+    if (state.status !== 'pending') {
         result.status = state.status;
     }
 
@@ -675,7 +696,7 @@ function query(): Record<string, string | string[]> {
         }
     }
 
-    if (state.sort !== 'oldest') {
+    if (state.sort !== defaultSort(state.view)) {
         result.sort = state.sort;
     }
 
@@ -770,14 +791,14 @@ function toggleCompleted(): void {
 function defaults(): InboxFilterState {
     return {
         view: defaultView.value,
-        status: 'active',
+        status: 'pending',
         department: ALL,
         agent: ALL,
         connection: ALL,
         channel: ALL,
         tags: [],
         tagMatch: 'any',
-        sort: 'oldest',
+        sort: defaultSort(defaultView.value),
         searchIn: 'contact',
         unread: false,
         awaiting: false,

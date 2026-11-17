@@ -43,7 +43,7 @@ function setCategory(object $test, User $actor, Conversation $conversation, mixe
  */
 function categoryFilteredIds(object $test, User $viewer, array $query): array
 {
-    $rows = $test->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props']['conversations']['data'];
+    $rows = $test->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->viewData('page')['props']['conversations']['data'];
 
     return collect($rows)->pluck('id')->sort()->values()->all();
 }
@@ -137,7 +137,7 @@ test('the inbox row shows the category to everyone and the page offers the activ
     $this->pending->forceFill(['category_id' => $this->billing->id])->save();
     ConversationCategory::factory()->inactive()->create(['name' => 'Antigua']);
 
-    $this->actingAs($this->agent)->get(route('conversations.index'))
+    $this->actingAs($this->agent)->get(route('conversations.index', ['status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('categories', fn ($categories) => collect($categories)->pluck('name')->all() === ['Devoluciones', 'Facturación'])
             ->where('conversations.data', fn ($rows) => collect($rows)->firstWhere('id', $this->pending->id)['category'] === [

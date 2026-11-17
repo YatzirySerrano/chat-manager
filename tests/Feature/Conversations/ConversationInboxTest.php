@@ -100,7 +100,7 @@ test('without the accept permission the pending ones of an agent are always empt
             ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1]));
 
     $this->actingAs($agent)
-        ->get(route('conversations.index'))
+        ->get(route('conversations.index', ['status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id]));
 });
 
@@ -138,7 +138,7 @@ test('supervised team inboxes open on every authorized conversation, with the ge
     $own = Conversation::factory()->inDepartment($this->support)->assignedTo($supervisor)->create();
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index'))
+        ->get(route('conversations.index', ['status' => 'active']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('inbox', ['personal' => false, 'views' => ['all', 'general', 'mine'], 'scope' => 'departments', 'supervises' => true])
@@ -147,13 +147,13 @@ test('supervised team inboxes open on every authorized conversation, with the ge
             ->where('agents', fn ($agents) => collect($agents)->pluck('id')->contains($this->colleague->id)));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['view' => 'general']))
+        ->get(route('conversations.index', ['view' => 'general', 'status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.view', 'general')
             ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $own])));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['view' => 'all']))
+        ->get(route('conversations.index', ['view' => 'all', 'status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.view', 'all')
             ->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->mine, $this->colleagues, $this->queued, $own])));
@@ -163,11 +163,11 @@ test('supervised team inboxes open on every authorized conversation, with the ge
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id]));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['view' => 'all', 'agent' => (string) $this->colleague->id]))
+        ->get(route('conversations.index', ['view' => 'all', 'agent' => (string) $this->colleague->id, 'status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$this->colleagues->id]));
 
     $this->actingAs($supervisor)
-        ->get(route('conversations.index', ['view' => 'all', 'department' => (string) $this->support->id]))
+        ->get(route('conversations.index', ['view' => 'all', 'department' => (string) $this->support->id, 'status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => listedIds($rows) === [$own->id])
             ->where('counts', ['general' => 1, 'mine' => 1, 'pending' => 0, 'attending' => 1]));
@@ -188,7 +188,7 @@ test('a team inbox without attending conversations only has every authorized con
 test('administrators filter the authorized list by department, agent, status and connection', function () {
     $admin = User::factory()->administrator()->create();
 
-    $filter = fn (array $query) => $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all', ...$query]));
+    $filter = fn (array $query) => $this->actingAs($admin)->get(route('conversations.index', ['view' => 'all', 'status' => 'active', ...$query]));
 
     $filter(['department' => 'none'])->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === [$this->unrouted->id]));
     $filter(['agent' => 'none'])->assertInertia(fn (Assert $page) => $page->where('conversations.data', fn ($rows) => listedIds($rows) === listedIds([$this->queued, $this->otherQueue, $this->unrouted])));

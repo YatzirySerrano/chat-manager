@@ -69,7 +69,7 @@ function queueDepartmentRules(Department $department, array $rules): void
 
 function queueRow(object $test, User $viewer, Conversation $conversation, array $query = []): array
 {
-    $rows = $test->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props']['conversations']['data'];
+    $rows = $test->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->viewData('page')['props']['conversations']['data'];
 
     return collect($rows)->firstWhere('id', $conversation->id);
 }

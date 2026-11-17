@@ -49,7 +49,7 @@ test('an agent sets a trimmed alias that only changes what they see', function (
         ->and(ContactAlias::query()->count())->toBe(1);
 
     $this->actingAs($this->agentA)
-        ->get(route('conversations.index', ['c' => $this->mine->id]))
+        ->get(route('conversations.index', ['status' => 'active', 'c' => $this->mine->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversation.contact.alias', 'Proveedora de cajas')
             ->where('conversation.contact.display_name', 'Proveedora de cajas')
@@ -60,7 +60,7 @@ test('an agent sets a trimmed alias that only changes what they see', function (
 
     // The colleague attending the same contact still sees the official name.
     $this->actingAs($this->agentB)
-        ->get(route('conversations.index', ['c' => $this->theirs->id]))
+        ->get(route('conversations.index', ['status' => 'active', 'c' => $this->theirs->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversation.contact.alias', null)
             ->where('conversation.contact.display_name', 'Laura Pérez')
@@ -132,7 +132,7 @@ test('the inbox loads the aliases of a whole page with one query', function () {
     });
 
     $this->actingAs($this->agentA)
-        ->get(route('conversations.index'))
+        ->get(route('conversations.index', ['status' => 'active']))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('conversations.data', 6));
 
@@ -146,7 +146,7 @@ test('the inbox search finds the viewer\'s own aliases, never a colleague\'s, wi
     ContactAlias::factory()->for($this->agentB)->for($other)->create(['alias' => 'Zapatero de B']);
 
     $found = fn (string $search): array => collect($this->actingAs($this->agentA)
-        ->get(route('conversations.index', ['search' => $search]))
+        ->get(route('conversations.index', ['status' => 'active', 'search' => $search]))
         ->assertOk()
         ->inertiaProps('conversations.data'))->pluck('id')->all();
 

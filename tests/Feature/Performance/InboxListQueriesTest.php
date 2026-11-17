@@ -24,7 +24,7 @@ function inboxListQueries(User $viewer, string $view, int $rows, string $props =
     DB::enableQueryLog();
 
     test()->actingAs($viewer)
-        ->get(route('conversations.index', ['view' => $view]), [
+        ->get(route('conversations.index', ['view' => $view, 'status' => 'active']), [
             'X-Inertia' => 'true',
             'X-Inertia-Partial-Component' => 'conversations/Index',
             'X-Inertia-Partial-Data' => $props,

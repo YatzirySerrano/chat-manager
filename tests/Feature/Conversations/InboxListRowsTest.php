@@ -28,14 +28,15 @@ beforeEach(function () {
 });
 
 /**
- * Rows of the list as the viewer gets them.
+ * Rows of the list as the viewer gets them: the active conversations unless
+ * the query asks for another status (the screen itself opens on "Pendientes").
  *
  * @param  array<string, mixed>  $query
  * @return list<array<string, mixed>>
  */
 function inboxRows(User $viewer, array $query = []): array
 {
-    return test()->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props']['conversations']['data'];
+    return test()->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->viewData('page')['props']['conversations']['data'];
 }
 
 /**
@@ -94,30 +95,30 @@ test('accepting from the general inbox uses the chat\'s route and leaves the row
     $queued = Conversation::factory()->inDepartment($this->sales)->create(['last_message_at' => now()->subHour()]);
     $newer = Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => now()]);
 
-    // Oldest first by default: the request waiting longest is taken next.
-    expect(collect(inboxRows($this->agent))->pluck('id')->all())->toBe([$older->id, $queued->id, $newer->id]);
+    // Newest first by default in the general inbox.
+    expect(collect(inboxRows($this->agent))->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id]);
 
     $this->actingAs($this->agent)
-        ->from(route('conversations.index'))
+        ->from(route('conversations.index', ['status' => 'active']))
         ->post(route('conversations.accept', $queued))
         ->assertRedirect(route('conversations.show', $queued))
         ->assertSessionHasNoErrors();
 
     $rows = collect(inboxRows($this->agent));
 
-    expect($rows->pluck('id')->all())->toBe([$older->id, $queued->id, $newer->id])
+    expect($rows->pluck('id')->all())->toBe([$newer->id, $queued->id, $older->id])
         ->and($rows->firstWhere('id', $queued->id)['status'])->toBe('open')
         ->and($rows->firstWhere('id', $queued->id)['can']['accept'])->toBeFalse();
 });
 
-test('accepting from the pending ones opens the general inbox with the conversation, keeping the other filters', function () {
+test('accepting from the pending ones opens "mine" with the conversation, keeping the other filters', function () {
     $queued = Conversation::factory()->inDepartment($this->sales)->create();
 
     inboxRows($this->agent, ['status' => 'pending', 'department' => (string) $this->sales->id]);
 
     $this->actingAs($this->agent)
         ->post(route('conversations.accept', $queued))
-        ->assertRedirect(route('conversations.index', ['department' => (string) $this->sales->id, 'c' => $queued->id]))
+        ->assertRedirect(route('conversations.index', ['department' => (string) $this->sales->id, 'view' => 'mine', 'status' => 'active', 'c' => $queued->id]))
         ->assertSessionHasNoErrors();
 
     $rows = inboxRows($this->agent, ['department' => (string) $this->sales->id]);
@@ -137,7 +138,7 @@ test('a queue remembered in the session is normalized to the pending ones of the
     $this->actingAs($this->agent)
         ->withSession(['conversations.list_query' => ['view' => 'queue']])
         ->post(route('conversations.accept', $queued))
-        ->assertRedirect(route('conversations.index', ['c' => $queued->id]));
+        ->assertRedirect(route('conversations.index', ['view' => 'mine', 'status' => 'active', 'c' => $queued->id]));
 });
 
 test('the second agent accepting from the list gets the conflict, never the conversation', function () {
@@ -225,7 +226,7 @@ test('the unread filter combines with the view, status and department filters an
     Conversation::factory()->inDepartment($this->sales)->assignedTo($this->agent)->create();
 
     $this->actingAs($admin)
-        ->get(route('conversations.index', ['view' => 'all', 'unread' => 1]))
+        ->get(route('conversations.index', ['view' => 'all', 'status' => 'active', 'unread' => 1]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('filters.unread', true)
             ->where('unreadCount', 2)
@@ -323,7 +324,7 @@ test('the rows carry the operational data and the viewer decides the badges', fu
     $supervisor = User::factory()->supervisor()->inDepartments($this->sales)->create();
 
     $payloadFor = function (User $viewer, array $query = []) use ($conversation): array {
-        $props = $this->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props'];
+        $props = $this->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->viewData('page')['props'];
 
         return [$props['viewer']['can_supervise'], collect($props['conversations']['data'])->firstWhere('id', $conversation->id)];
     };

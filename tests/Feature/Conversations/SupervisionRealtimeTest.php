@@ -133,7 +133,7 @@ test('after a transfer out of the department its supervisors keep hearing the co
         ->not->toContain("inbox.departments.{$this->sales->id}");
 
     // The supervisor still lists it: the signal matches their read reach.
-    $listed = collect($this->actingAs($this->supervisor)->getJson(route('conversations.page'))->assertOk()->json('data'))->pluck('id');
+    $listed = collect($this->actingAs($this->supervisor)->getJson(route('conversations.page', ['status' => 'active']))->assertOk()->json('data'))->pluck('id');
     expect($listed)->toContain($conversation->id);
 });
 

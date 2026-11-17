@@ -33,7 +33,7 @@ beforeEach(function () {
  */
 function listedRow(object $test, User $viewer, Conversation $conversation, array $query = []): ?array
 {
-    $rows = $test->actingAs($viewer)->get(route('conversations.index', $query))->viewData('page')['props']['conversations']['data'];
+    $rows = $test->actingAs($viewer)->get(route('conversations.index', ['status' => 'active', ...$query]))->viewData('page')['props']['conversations']['data'];
 
     return collect($rows)->firstWhere('id', $conversation->id);
 }
@@ -128,7 +128,7 @@ test('the list loads incrementally from where the first page ended', function ()
     Conversation::factory()->count(30)->inDepartment($this->department)->assignedTo($this->agent)->create();
 
     $first = $this->actingAs($this->agent)
-        ->get(route('conversations.index'))
+        ->get(route('conversations.index', ['status' => 'active']))
         ->assertInertia(fn (Assert $page) => $page
             ->has('conversations.data', 25)
             ->where('conversations.has_more', true))
@@ -137,7 +137,7 @@ test('the list loads incrementally from where the first page ended', function ()
     expect($first)->toBeString();
 
     $this->actingAs($this->agent)
-        ->getJson(route('conversations.page', ['after' => $first]))
+        ->getJson(route('conversations.page', ['status' => 'active', 'after' => $first]))
         ->assertOk()
         ->assertJsonCount(6, 'data')
         ->assertJsonPath('has_more', false);
@@ -149,13 +149,13 @@ test('the list can be sorted by longest waiting and filtered by tag', function (
     $older->tags()->attach($tag->id, ['tagged_by_user_id' => $this->agent->id, 'created_at' => now()]);
 
     $this->actingAs($this->agent)
-        ->get(route('conversations.index', ['sort' => 'oldest']))
+        ->get(route('conversations.index', ['status' => 'active', 'sort' => 'oldest']))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data.0.id', $older->id)
             ->where('filters.sort', 'oldest'));
 
     $this->actingAs($this->agent)
-        ->get(route('conversations.index', ['tag' => $tag->id]))
+        ->get(route('conversations.index', ['status' => 'active', 'tag' => $tag->id]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('conversations.data', fn ($rows) => collect($rows)->pluck('id')->all() === [$older->id])
             ->where('conversations.data.0.tags.0.id', $tag->id));

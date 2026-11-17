@@ -103,23 +103,24 @@ class ConversationController extends Controller
 
     /**
      * Where accepting a conversation leads: when the list the user left was
-     * narrowed to the pending ones (the "Pendientes" chip, or the legacy
-     * queue), the accepted row would leave it, so they go to the general
-     * inbox with their other filters and the conversation open, where the
-     * row stays in place as "En atención". Null keeps the usual way through
+     * the pending ones (the default "Pendientes" list, or the legacy queue),
+     * the accepted row would leave it, so they go to "Mías" with their other
+     * filters and the conversation open. Null keeps the usual way through
      * show().
      */
     public static function listUrlAfterAccepting(Conversation $conversation): ?string
     {
         $query = self::rememberedQuery();
 
-        if (($query['status'] ?? null) !== ConversationStatus::Pending->value) {
+        // No status is the default "Pendientes" list.
+        if (($query['status'] ?? ConversationStatus::Pending->value) !== ConversationStatus::Pending->value) {
             return null;
         }
 
-        unset($query['view'], $query['status']);
+        unset($query['view'], $query['status'], $query['sort']);
 
-        return route('conversations.index', [...$query, 'c' => $conversation->id]);
+        // Accepted, the request is now the agent's own: "Mías", oldest first.
+        return route('conversations.index', [...$query, 'view' => ConversationInboxQuery::VIEW_MINE, 'status' => 'active', 'c' => $conversation->id]);
     }
 
     /**
@@ -162,7 +163,8 @@ class ConversationController extends Controller
             'c' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $filters = $inbox->filters($actor, $validated);
+        // The inbox opens on the requests waiting to be accepted.
+        $filters = $inbox->filters($actor, $validated, ConversationStatus::Pending->value);
         $views = $filters['views'];
 
         $request->session()->put(self::LIST_QUERY, $this->listQuery($validated, $filters));
@@ -337,7 +339,7 @@ class ConversationController extends Controller
         return response()->json($this->list(
             $inbox,
             $actor,
-            $inbox->filters($actor, $validated),
+            $inbox->filters($actor, $validated, ConversationStatus::Pending->value),
             $request,
             isset($validated['after']) ? ConversationInboxQuery::decodeCursor((string) $validated['after']) : null,
             (int) ($validated['limit'] ?? self::LIST_PAGE),
@@ -375,7 +377,7 @@ class ConversationController extends Controller
             // As normalized: the legacy queue is remembered as the general
             // inbox with status=pending, never as a view.
             'view' => $filters['view'] === $filters['views'][0] ? null : $filters['view'],
-            'status' => $filters['status'] === 'active' ? null : $filters['status'],
+            'status' => $filters['status'] === ConversationStatus::Pending->value ? null : $filters['status'],
         ], fn (mixed $value): bool => $value !== null && $value !== '');
     }
 

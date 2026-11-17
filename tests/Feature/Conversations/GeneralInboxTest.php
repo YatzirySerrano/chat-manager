@@ -61,11 +61,11 @@ function idsOf(array $conversations): array
 }
 
 test('an agent\'s general inbox holds their open conversations and the pending ones they may accept', function () {
-    expect(generalIds($this->agent))->toBe(idsOf([$this->mineOpen, $this->salesPending]));
+    expect(generalIds($this->agent, ['status' => 'active']))->toBe(idsOf([$this->mineOpen, $this->salesPending]));
 });
 
 test('legacy conversations on hold leave the general inbox but stay readable in "mine"', function () {
-    expect(generalIds($this->agent))->not->toContain($this->mineOnHold->id)
+    expect(generalIds($this->agent, ['status' => 'active']))->not->toContain($this->mineOnHold->id)
         ->and(generalIds($this->agent, ['view' => 'mine']))->toBe(idsOf([$this->mineOpen, $this->mineOnHold]));
 });
 
@@ -90,13 +90,13 @@ test('an old link to the on hold chip falls back to the active conversations', f
             ->where('filters.status', 'active')
             ->where('counts', fn ($counts) => ! array_key_exists('on_hold', is_array($counts) ? $counts : $counts->all())));
 
-    expect(generalIds($this->agent, ['status' => 'on_hold']))->toBe(generalIds($this->agent));
+    expect(generalIds($this->agent, ['status' => 'on_hold']))->toBe(generalIds($this->agent, ['status' => 'active']));
 });
 
 test('every counter is exactly what its chip lists with the same filters', function (string $viewer, array $filters) {
     $user = $this->{$viewer};
     $chips = [
-        'general' => [],
+        'general' => ['status' => 'active'],
         'mine' => ['view' => 'mine'],
         'pending' => ['status' => 'pending'],
         'attending' => ['status' => 'open'],
@@ -131,21 +131,21 @@ test('the counters come from a single aggregate query', function () {
     expect($queries)->toHaveCount(1);
 });
 
-test('the general inbox lists the oldest requests first by default, and its cursor reaches every row once', function () {
+test('the general inbox lists the newest requests first by default, and its cursor reaches every row once', function () {
     $same = now()->subHour();
     Conversation::factory()->count(3)->inDepartment($this->sales)->assignedTo($this->agent)->create(['last_message_at' => $same]);
     Conversation::factory()->count(2)->inDepartment($this->sales)->create(['last_message_at' => $same]);
     Conversation::factory()->inDepartment($this->sales)->create(['last_message_at' => null]);
 
     $inbox = app(ConversationInboxQuery::class);
-    $expected = $inbox->handle($this->agent, $inbox->filters($this->agent, []))->pluck('conversations.id')->all();
+    $expected = $inbox->handle($this->agent, $inbox->filters($this->agent, ['status' => 'active']))->pluck('conversations.id')->all();
 
     $listed = [];
     $after = null;
 
     do {
         $page = $this->actingAs($this->agent)
-            ->getJson(route('conversations.page', ['limit' => 2, ...($after === null ? [] : ['after' => $after])]))
+            ->getJson(route('conversations.page', ['status' => 'active', 'limit' => 2, ...($after === null ? [] : ['after' => $after])]))
             ->json();
         $listed = [...$listed, ...array_column($page['data'], 'id')];
         $after = $page['next_cursor'];
@@ -153,7 +153,8 @@ test('the general inbox lists the oldest requests first by default, and its curs
 
     expect($expected)->toHaveCount(8)
         ->and($listed)->toBe($expected)
-        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('oldest');
+        ->and($this->actingAs($this->agent)->get(route('conversations.index'))->viewData('page')['props']['filters']['sort'])->toBe('recent')
+        ->and($this->actingAs($this->agent)->get(route('conversations.index', ['view' => 'mine']))->viewData('page')['props']['filters']['sort'])->toBe('oldest');
 });
 
 test('the closed chip needs the history permission', function () {
@@ -196,7 +197,7 @@ test('the agent filter is only for team inboxes: a personal inbox ignores it', f
             ->where('filters.agent', null));
 
     expect(generalIds($this->agent, ['agent' => (string) $this->colleague->id]))->toBe(generalIds($this->agent))
-        ->and(generalIds($this->supervisor, ['view' => 'all', 'agent' => (string) $this->colleague->id]))->toBe(idsOf([$this->colleagueOpen, $this->colleagueOnHold]));
+        ->and(generalIds($this->supervisor, ['view' => 'all', 'status' => 'active', 'agent' => (string) $this->colleague->id]))->toBe(idsOf([$this->colleagueOpen, $this->colleagueOnHold]));
 });
 
 test('tampering with the view, status or department never widens the general inbox', function (array $query) {

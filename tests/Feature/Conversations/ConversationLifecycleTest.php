@@ -42,7 +42,8 @@ test('an agent accepts a pending conversation of their department and becomes re
 
     $this->actingAs($this->agent)
         ->post(route('conversations.accept', $conversation))
-        ->assertRedirect(route('conversations.show', $conversation))
+        // No list remembered is the default "Pendientes" one: the accepted request opens in "Mías".
+        ->assertRedirect(route('conversations.index', ['view' => 'mine', 'status' => 'active', 'c' => $conversation->id]))
         ->assertSessionHasNoErrors();
 
     $event = $conversation->events()->sole();
@@ -95,18 +96,20 @@ test('losing the race from the conversation page returns the agent to the queue 
 test('the queue keeps the user\'s filters when an operation or the breadcrumb returns to it', function () {
     $queued = pendingIn($this->department);
     $filters = ['status' => 'pending', 'department' => (string) $this->department->id];
+    // "Pendientes" is the default list: it is remembered without the status.
+    $remembered = ['department' => (string) $this->department->id];
 
     $this->actingAs($this->agent)->get(route('conversations.index', $filters))->assertOk();
     $this->actingAs($this->agent)
         ->get(route('conversations.show', $queued))
-        ->assertRedirect(route('conversations.index', [...$filters, 'c' => $queued->id]));
+        ->assertRedirect(route('conversations.index', [...$remembered, 'c' => $queued->id]));
 
     $this->actingAs($this->colleague)->post(route('conversations.accept', $queued));
 
     $this->actingAs($this->agent)
         ->from(route('conversations.show', $queued))
         ->post(route('conversations.accept', $queued))
-        ->assertRedirect(route('conversations.index', $filters));
+        ->assertRedirect(route('conversations.index', $remembered));
 });
 
 test('a database deadlock during an operation is answered as a controlled conflict', function () {

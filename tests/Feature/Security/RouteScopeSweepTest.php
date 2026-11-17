@@ -123,7 +123,7 @@ test('department-scoped lists never show rows of another department', function (
     expect($payload)->toContain($inScope)->not->toContain('Zorzal');
 })->with([
     // «Todas»: the general view leaves out what a colleague already attends.
-    'conversations inbox' => ['conversations.index', ['view' => 'all'], 'Cliente Quetzal'],
+    'conversations inbox' => ['conversations.index', ['view' => 'all', 'status' => 'active'], 'Cliente Quetzal'],
     'contacts directory' => ['contacts.index', [], 'Cliente Quetzal'],
     'dashboard' => ['dashboard', [], 'Agente Quetzal'],
     'reports' => ['reports.index', [], 'Agente Quetzal'],

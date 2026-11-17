@@ -72,7 +72,7 @@ test('the tag filter never reveals conversations outside the viewer\'s reach', f
     $listed = taggedIds($this->agent, ['view' => 'all', 'status' => 'all', 'tags' => [$this->vip->id, $this->urgent->id], 'tag_match' => 'all']);
 
     expect($listed)->not->toContain($this->otherDepartment->id)
-        ->and(taggedIds($this->admin, ['view' => 'all', 'tags' => [$this->vip->id, $this->urgent->id], 'tag_match' => 'all']))
+        ->and(taggedIds($this->admin, ['view' => 'all', 'status' => 'active', 'tags' => [$this->vip->id, $this->urgent->id], 'tag_match' => 'all']))
         ->toContain($this->otherDepartment->id);
 });
 

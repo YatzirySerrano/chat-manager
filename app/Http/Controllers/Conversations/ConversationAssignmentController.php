@@ -49,8 +49,8 @@ class ConversationAssignmentController extends ConversationOperationController
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Aceptaste la conversación. Ahora eres responsable de atenderla.']);
 
-        // From the "Pendientes" chip the row would leave the list: the general
-        // inbox keeps it in place, now in attention (listUrlAfterAccepting()).
+        // From "Pendientes" the row would leave the list: it goes on in
+        // "Mías", now the agent's own (listUrlAfterAccepting()).
         $afterAccepting = ConversationController::listUrlAfterAccepting($conversation);
 
         return $afterAccepting === null

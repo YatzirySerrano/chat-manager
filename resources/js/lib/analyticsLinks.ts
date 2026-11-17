@@ -23,9 +23,8 @@ export function inboxLink(
     const agent = overrides.agent ?? filters?.agent;
     const category = overrides.category ?? filters?.category;
 
-    if (overrides.status) {
-        query.status = overrides.status;
-    }
+    // Explicit: the inbox alone opens on «Pendientes».
+    query.status = overrides.status ?? 'active';
 
     if (department !== undefined && department !== null) {
         query.department = department;

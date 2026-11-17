@@ -109,8 +109,9 @@ class ConversationInboxQuery
     public const VIEW_QUEUE = 'queue';
 
     /**
-     * Orderings of the list: longest waiting first (default: the oldest request
-     * is the one to take next), latest activity, or pending first then
+     * Orderings of the list: latest activity (default: the newest request on
+     * top), longest waiting first (default of "mine": each agent finishes
+     * their oldest request first, defaultSort()), or pending first then
      * latest activity.
      */
     public const SORT_PRIORITY = 'priority';
@@ -201,12 +202,12 @@ class ConversationInboxQuery
      * @param  array<string, mixed>  $validated
      * @return InboxFilters
      */
-    public function filters(User $actor, array $validated): array
+    public function filters(User $actor, array $validated, string $defaultStatus = 'active'): array
     {
         $personal = $this->access->hasPersonalInbox($actor);
         $views = $this->views($actor, $personal);
         $requested = $validated['view'] ?? null;
-        $status = is_string($validated['status'] ?? null) ? (string) $validated['status'] : 'active';
+        $status = is_string($validated['status'] ?? null) ? (string) $validated['status'] : $defaultStatus;
 
         // The legacy queue is the general inbox narrowed to the pending ones.
         if ($requested === self::VIEW_QUEUE) {
@@ -244,7 +245,7 @@ class ConversationInboxQuery
             'search_in' => ($validated['search_in'] ?? null) === self::SEARCH_MESSAGES ? self::SEARCH_MESSAGES : self::SEARCH_CONTACT,
             'tags' => $this->tagIds($validated),
             'tag_match' => ($validated['tag_match'] ?? null) === self::TAG_MATCH_ALL ? self::TAG_MATCH_ALL : self::TAG_MATCH_ANY,
-            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT], true) ? (string) $validated['sort'] : self::SORT_OLDEST,
+            'sort' => in_array($validated['sort'] ?? null, [self::SORT_PRIORITY, self::SORT_RECENT, self::SORT_OLDEST], true) ? (string) $validated['sort'] : self::defaultSort($view),
             'unread' => filter_var($validated['unread'] ?? false, FILTER_VALIDATE_BOOL),
             'awaiting' => filter_var($validated['awaiting'] ?? false, FILTER_VALIDATE_BOOL),
             'channel' => $channel instanceof ConnectionChannel ? $channel->value : (is_string($channel) && ConnectionChannel::tryFrom($channel) !== null ? $channel : null),
@@ -254,6 +255,16 @@ class ConversationInboxQuery
                 ? $readiness->value
                 : (is_string($readiness) && ConversationReadiness::tryFrom($readiness) !== null ? $readiness : null)),
         ];
+    }
+
+    /**
+     * The order a view opens with: the newest request on top, except in
+     * "mine", where each agent works their own ones oldest first (the one
+     * waiting the longest is the next to finish).
+     */
+    public static function defaultSort(string $view): string
+    {
+        return $view === self::VIEW_MINE ? self::SORT_OLDEST : self::SORT_RECENT;
     }
 
     /**

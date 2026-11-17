@@ -42,7 +42,7 @@ beforeEach(function () {
  */
 function previewedUnread(object $test, User $viewer, Conversation $conversation): ?int
 {
-    $rows = $test->actingAs($viewer)->get(route('conversations.index'))->viewData('page')['props']['conversations']['data'];
+    $rows = $test->actingAs($viewer)->get(route('conversations.index', ['status' => 'active']))->viewData('page')['props']['conversations']['data'];
 
     return collect($rows)->firstWhere('id', $conversation->id)['unread_count'] ?? null;
 }

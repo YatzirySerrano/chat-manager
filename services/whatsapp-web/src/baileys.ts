@@ -31,10 +31,11 @@ import type {
  * Privacy and scope:
  * - the chat history WhatsApp hands to a newly linked device is requested
  *   only for sessions linked with `history` (one-to-one chats only; see
- *   Session.onHistory). Such a session registers as a desktop client, which
- *   is what makes the phone share the whole history and not only the last
- *   weeks; a session linked without it keeps registering as before and
- *   refuses every history notification;
+ *   Session.onHistory). Every session registers as Chrome: since
+ *   November 2026 WhatsApp ends with 428 (before any QR) the sockets that
+ *   announce a "Desktop" client, so the history is the one WhatsApp shares
+ *   with a web client; a session linked without `history` refuses every
+ *   history notification;
  * - groups, statuses, broadcasts and channels are ignored at the socket;
  * - the device does not mark the account as online, so the phone keeps
  *   receiving its notifications;
@@ -159,8 +160,9 @@ export function createBaileysFactory(options: {
                 ),
             },
             logger: libraryLogger,
+            // A "Desktop" browser is refused by WhatsApp with 428 (no QR).
             browser: history
-                ? Browsers.macOS('Desktop')
+                ? Browsers.macOS('Chrome')
                 : Browsers.ubuntu('Chrome'),
             syncFullHistory: history,
             shouldSyncHistoryMessage: () => history,

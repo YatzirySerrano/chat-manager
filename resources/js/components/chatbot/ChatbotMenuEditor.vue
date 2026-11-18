@@ -2,8 +2,10 @@
 import { useForm } from '@inertiajs/vue3';
 import {
     ArrowDown,
+    ArrowRight,
     ArrowUp,
-    CornerDownRight,
+    Bot,
+    ListPlus,
     MessageSquareReply,
     Plus,
     Trash2,
@@ -13,6 +15,7 @@ import type { FunctionalComponent } from 'vue';
 import { computed, h, ref } from 'vue';
 import ChatbotPhonePreview from '@/components/chatbot/ChatbotPhonePreview.vue';
 import type { ChatbotPreviewMessage } from '@/components/chatbot/ChatbotPhonePreview.vue';
+import ChatbotStep from '@/components/chatbot/ChatbotStep.vue';
 import ChatbotTextField from '@/components/chatbot/ChatbotTextField.vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -298,66 +301,111 @@ function save(): void {
 </script>
 
 <template>
-    <div class="split-layout gap-6 [--aside-w:24rem]">
+    <div class="split-layout gap-6 [--aside-w:26rem]">
         <form
-            class="grid content-start gap-6"
+            class="grid content-start gap-4"
             novalidate
             @submit.prevent="save"
         >
             <!-- On / off -->
             <label
-                class="flex items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3.5"
+                class="flex items-center gap-4 rounded-xl border bg-card px-4 py-4 transition-colors duration-(--duration-base)"
                 :class="
-                    form.is_enabled && 'border-primary/40 bg-primary-soft/30'
+                    form.is_enabled
+                        ? 'border-success/40 bg-success-soft/50'
+                        : 'border-dashed'
                 "
             >
-                <span class="grid gap-0.5">
+                <span
+                    class="grid size-10 shrink-0 place-items-center rounded-full"
+                    :class="
+                        form.is_enabled
+                            ? 'bg-success text-white'
+                            : 'bg-muted text-muted-foreground'
+                    "
+                    aria-hidden="true"
+                >
+                    <Bot class="size-5" />
+                </span>
+                <span class="grid min-w-0 flex-1 gap-0.5">
                     <span class="font-display text-base font-semibold">
-                        {{ form.is_enabled ? 'Menú activo' : 'Menú apagado' }}
+                        {{
+                            form.is_enabled
+                                ? 'El menú está encendido'
+                                : 'El menú está apagado'
+                        }}
                     </span>
                     <span class="text-sm text-muted-foreground">
-                        Se envía al iniciar una conversación nueva en
-                        {{ connection.name }}.
+                        {{
+                            form.is_enabled
+                                ? `Se manda solo cuando alguien escribe por primera vez a ${connection.name}.`
+                                : 'Nadie lo recibe. Enciéndelo cuando esté listo.'
+                        }}
                     </span>
                 </span>
                 <Switch
                     v-model="form.is_enabled"
                     :disabled="!canUpdate"
-                    aria-label="Activar el menú de bienvenida"
+                    aria-label="Encender el menú de bienvenida"
                     data-test="chatbot-menu-enabled"
                 />
             </label>
 
-            <ChatbotTextField
-                :id="`chatbot-greeting-${connection.id}`"
-                v-model="form.greeting"
-                label="Saludo"
-                :rows="3"
-                :maxlength="limits.message"
-                :variables="variables"
-                :disabled="!canUpdate"
-                :error="form.errors.greeting"
-                placeholder="¡Hola {{nombre}}! 👋 Elige una opción:"
-            />
+            <ChatbotStep
+                :id="`chatbot-step-greeting-${connection.id}`"
+                :number="1"
+                title="Saludo"
+                hint="Lo primero que lee el cliente, antes de la lista de opciones."
+            >
+                <ChatbotTextField
+                    :id="`chatbot-greeting-${connection.id}`"
+                    v-model="form.greeting"
+                    label="Texto del saludo"
+                    :rows="3"
+                    :maxlength="limits.message"
+                    :variables="variables"
+                    :disabled="!canUpdate"
+                    :error="form.errors.greeting"
+                    placeholder="¡{{saludo}} {{nombre}}! 👋 Elige una opción:"
+                />
+            </ChatbotStep>
 
-            <section class="grid gap-3" aria-labelledby="chatbot-options-title">
-                <div class="flex items-baseline justify-between gap-3">
-                    <h3
-                        id="chatbot-options-title"
-                        class="font-display text-base font-semibold"
-                    >
-                        Opciones
-                    </h3>
-                    <span class="text-xs text-muted-foreground tabular-nums"
+            <ChatbotStep
+                :id="`chatbot-step-options-${connection.id}`"
+                :number="2"
+                title="Opciones del menú"
+                hint="Cada número manda al cliente con un departamento."
+            >
+                <template #aside>
+                    <span
+                        class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground tabular-nums"
                         >{{ form.options.length }}/{{ limits.options }}</span
                     >
+                </template>
+
+                <div
+                    v-if="form.options.length === 0"
+                    class="grid place-items-center gap-1 rounded-lg border border-dashed px-4 py-6 text-center"
+                >
+                    <ListPlus
+                        class="size-6 text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <p class="text-sm font-medium">Aún no hay opciones</p>
+                    <p class="text-xs text-muted-foreground">
+                        {{
+                            canUpdate
+                                ? 'Agrega la primera eligiendo un departamento abajo.'
+                                : 'Este número todavía no tiene menú.'
+                        }}
+                    </p>
                 </div>
 
-                <ol class="grid gap-2" data-test="chatbot-options">
+                <ol v-else class="grid gap-2" data-test="chatbot-options">
                     <li
                         v-for="(option, index) in form.options"
                         :key="option.key"
-                        class="grid gap-3 rounded-xl border bg-card p-3 transition-colors duration-(--duration-fast)"
+                        class="grid gap-3 rounded-lg border bg-background p-3 transition-colors duration-(--duration-fast)"
                         :class="
                             !routable(
                                 departmentsById.get(option.department_id),
@@ -365,14 +413,24 @@ function save(): void {
                         "
                     >
                         <div class="flex items-start gap-2">
-                            <span
-                                class="mt-1.5 grid size-7 shrink-0 place-items-center rounded-md bg-primary-soft font-display text-sm font-semibold text-primary-soft-foreground tabular-nums"
-                                aria-hidden="true"
-                                >{{ index + 1 }}</span
-                            >
                             <div
-                                class="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+                                class="grid min-w-0 flex-1 items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]"
                             >
+                                <span
+                                    class="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
+                                >
+                                    <span class="whitespace-nowrap"
+                                        >Si responde</span
+                                    >
+                                    <span
+                                        class="grid size-7 shrink-0 place-items-center rounded-md bg-primary-soft font-display text-sm font-semibold text-primary-soft-foreground tabular-nums"
+                                        >{{ index + 1 }}</span
+                                    >
+                                    <ArrowRight
+                                        class="size-4 shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                </span>
                                 <div class="grid gap-1">
                                     <AppSelect
                                         v-model="option.department_id"
@@ -408,7 +466,7 @@ function save(): void {
                                                 option.department_id,
                                             )?.name ?? 'Texto de la opción'
                                         "
-                                        :aria-label="`Texto de la opción ${index + 1} (opcional)`"
+                                        :aria-label="`Texto que ve el cliente en la opción ${index + 1} (opcional)`"
                                     />
                                     <InputError
                                         :message="optionError(index, 'label')"
@@ -460,47 +518,45 @@ function save(): void {
                                     departmentsById.get(option.department_id),
                                 )
                             "
-                            class="flex items-center gap-1.5 pl-9 text-xs text-warning-soft-foreground"
+                            class="flex items-center gap-1.5 text-xs text-warning-soft-foreground"
                         >
                             <TriangleAlert
                                 class="size-3.5 shrink-0"
                                 aria-hidden="true"
                             />
                             No se muestra: el departamento está inactivo o no
-                            recibe conversaciones de esta conexión.
+                            recibe conversaciones de este número.
                         </p>
 
-                        <div class="pl-9">
-                            <ChatbotTextField
-                                v-if="option.showReply"
-                                :id="`chatbot-option-reply-${connection.id}-${option.key}`"
-                                v-model="option.reply_message"
-                                label="Respuesta al elegirla"
-                                compact
-                                :rows="2"
-                                :maxlength="limits.message"
-                                :variables="variables"
-                                :disabled="!canUpdate"
-                                :error="optionError(index, 'reply_message')"
-                                placeholder="Te atiende {{departamento}}. En breve una analista procesará tu solicitud."
+                        <ChatbotTextField
+                            v-if="option.showReply"
+                            :id="`chatbot-option-reply-${connection.id}-${option.key}`"
+                            v-model="option.reply_message"
+                            label="Lo que contesta el bot al elegirla"
+                            compact
+                            :rows="2"
+                            :maxlength="limits.message"
+                            :variables="variables"
+                            :disabled="!canUpdate"
+                            :error="optionError(index, 'reply_message')"
+                            placeholder="Te atiende {{departamento}}. En un momento te contestamos."
+                        />
+                        <button
+                            v-else-if="canUpdate"
+                            type="button"
+                            class="inline-flex flex-wrap items-center gap-1.5 justify-self-start text-left text-xs font-medium text-primary hover:underline"
+                            @click="option.showReply = true"
+                        >
+                            <MessageSquareReply
+                                class="size-3.5"
+                                aria-hidden="true"
                             />
-                            <button
-                                v-else-if="canUpdate"
-                                type="button"
-                                class="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                                @click="option.showReply = true"
+                            Escribir una respuesta para esta opción
+                            <span class="font-normal text-muted-foreground"
+                                >(si no, se usa la bienvenida del
+                                departamento)</span
                             >
-                                <MessageSquareReply
-                                    class="size-3.5"
-                                    aria-hidden="true"
-                                />
-                                Respuesta propia
-                                <span class="font-normal text-muted-foreground"
-                                    >(si no, la bienvenida del
-                                    departamento)</span
-                                >
-                            </button>
-                        </div>
+                        </button>
                     </li>
                 </ol>
 
@@ -511,7 +567,7 @@ function save(): void {
                     class="flex items-center gap-2"
                 >
                     <Plus
-                        class="size-4 shrink-0 text-muted-foreground"
+                        class="size-4 shrink-0 text-primary"
                         aria-hidden="true"
                     />
                     <AppSelect
@@ -525,28 +581,20 @@ function save(): void {
                         @update:model-value="(value) => addOption(value)"
                     />
                 </div>
-            </section>
+            </ChatbotStep>
 
-            <section
-                class="grid gap-3 rounded-xl border border-dashed p-4"
-                aria-labelledby="chatbot-retry-title"
+            <ChatbotStep
+                :id="`chatbot-step-retry-${connection.id}`"
+                :number="3"
+                title="Si no contesta con un número"
+                hint="Por ejemplo, si escribe «quiero informes» en vez de «1»."
             >
-                <h3
-                    id="chatbot-retry-title"
-                    class="flex items-center gap-1.5 text-sm font-semibold"
-                >
-                    <CornerDownRight
-                        class="size-4 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    Si no responde con una opción
-                </h3>
                 <div
                     class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]"
                 >
                     <div class="grid gap-1.5">
                         <Label :for="`chatbot-retry-${connection.id}`"
-                            >Mensaje</Label
+                            >Le pedimos que lo intente otra vez con</Label
                         >
                         <Input
                             :id="`chatbot-retry-${connection.id}`"
@@ -559,7 +607,7 @@ function save(): void {
                     </div>
                     <div class="grid gap-1.5">
                         <Label :for="`chatbot-attempts-${connection.id}`"
-                            >Reintentos</Label
+                            >¿Cuántas veces?</Label
                         >
                         <AppSelect
                             :id="`chatbot-attempts-${connection.id}`"
@@ -570,11 +618,14 @@ function save(): void {
                         <InputError :message="form.errors.max_attempts" />
                     </div>
                 </div>
-                <p class="text-xs text-muted-foreground">
-                    Después, la conversación sigue en la cola normal de la
-                    conexión.
+                <p
+                    class="flex items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground"
+                >
+                    <ArrowRight class="size-3.5 shrink-0" aria-hidden="true" />
+                    Después, la conversación pasa a la fila normal de este
+                    número y la toma un agente.
                 </p>
-            </section>
+            </ChatbotStep>
 
             <div
                 v-if="canUpdate"
@@ -607,6 +658,11 @@ function save(): void {
         </form>
 
         <aside class="grid content-start gap-3 xl:sticky xl:top-24">
+            <p
+                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+            >
+                Así lo ve el cliente
+            </p>
             <ChatbotPhonePreview
                 :title="connection.name"
                 :subtitle="
@@ -623,13 +679,13 @@ function save(): void {
                 aria-label="Respuesta del cliente en la vista previa"
             >
                 <span class="mr-1 text-muted-foreground"
-                    >El cliente responde:</span
+                    >Prueba qué pasa si responde:</span
                 >
                 <button
                     v-for="choice in answerChoices"
                     :key="String(choice.value)"
                     type="button"
-                    class="rounded-md border px-2 py-0.5 font-medium transition-colors duration-(--duration-fast)"
+                    class="rounded-full border px-2.5 py-0.5 font-medium transition-colors duration-(--duration-fast)"
                     :class="
                         answer === choice.value
                             ? 'border-primary bg-primary text-primary-foreground'

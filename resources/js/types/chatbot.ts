@@ -1,4 +1,5 @@
 import type { AppColor } from './admin';
+import type { ConnectionHealthDescriptor } from './connections';
 
 /** One numbered option of a connection's welcome menu. */
 export type ChatbotMenuOption = {
@@ -25,12 +26,16 @@ export type ChatbotConnection = {
     is_whatsapp_web: boolean;
     is_active: boolean;
     phone: string | null;
+    /** Real state of the connection (QR session or derived health). */
+    status: ConnectionHealthDescriptor;
+    /** Lifecycle messages switched on in the connection form. */
+    automatic_messages: { welcome: boolean; away: boolean; farewell: boolean };
     /** Departments the connection may route to; empty means any. */
     department_ids: number[];
     menu: ChatbotMenu;
     /** Menus offered in the last days, by how they ended. */
     activity: { routed: number; fallback: number; awaiting: number };
-    can: { update: boolean };
+    can: { update: boolean; view: boolean };
 };
 
 export type ChatbotDepartment = {

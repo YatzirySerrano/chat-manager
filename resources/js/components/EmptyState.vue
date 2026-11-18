@@ -48,11 +48,11 @@ const displayedIcon = computed<LucideIcon | undefined>(
     >
         <div
             v-if="displayedIcon"
-            class="flex size-12 shrink-0 items-center justify-center rounded-xl"
+            class="flex size-14 shrink-0 items-center justify-center rounded-full ring-4"
             :class="
                 tone === 'filtered'
-                    ? 'bg-muted text-muted-foreground'
-                    : 'bg-primary-soft text-primary-soft-foreground'
+                    ? 'bg-muted text-muted-foreground ring-muted/40'
+                    : 'bg-primary-soft text-primary-soft-foreground ring-primary-soft/40'
             "
         >
             <component :is="displayedIcon" class="size-6" aria-hidden="true" />

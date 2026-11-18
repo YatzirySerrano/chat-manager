@@ -11,7 +11,7 @@ import './filters.css';
  * copy (`title`, `description`) and the default slot (its next action).
  *
  * Above the text, the list's icon (or a «filter off» icon when the filters
- * are the reason) on a quiet tile. Nothing moves.
+ * are the reason) in a soft tinted circle. Nothing moves.
  */
 withDefaults(
     defineProps<{
@@ -41,13 +41,18 @@ const emit = defineEmits<{ clear: [] }>();
         data-slot="empty-state"
     >
         <span
-            class="mb-4 grid size-10 place-items-center rounded-lg border bg-muted/50 text-muted-foreground"
+            class="mb-4 grid size-14 place-items-center rounded-full ring-6"
+            :class="
+                narrowed
+                    ? 'bg-muted text-muted-foreground ring-muted/40'
+                    : 'bg-primary-soft text-primary-soft-foreground ring-primary-soft/40'
+            "
             aria-hidden="true"
         >
             <component
                 :is="narrowed ? FilterX : icon"
                 v-if="narrowed || icon"
-                class="size-5"
+                class="size-6"
             />
         </span>
         <p class="text-sm leading-snug font-semibold text-balance">
@@ -67,6 +72,7 @@ const emit = defineEmits<{ clear: [] }>();
                 data-filter-empty-clear
                 @click="emit('clear')"
             >
+                <FilterX aria-hidden="true" />
                 Limpiar filtros
             </Button>
             <slot v-else />

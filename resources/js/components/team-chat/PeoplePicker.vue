@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
-import { Check, Search } from '@lucide/vue';
+import { Building2, Check, Search, UserX } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { onMounted, ref, useId } from 'vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
@@ -117,11 +117,12 @@ function choose(contact: TeamContact): void {
             />
         </div>
 
-        <p class="text-xs text-muted-foreground">
+        <p class="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Building2 class="size-3.5 shrink-0" aria-hidden="true" />
             {{
                 reachesEveryone
-                    ? 'Puedes escribir a cualquier persona de la organización que use el chat interno.'
-                    : 'Puedes escribir a las personas de tus departamentos que usan el chat interno.'
+                    ? 'Toda la organización'
+                    : 'Personas de tus departamentos'
             }}
         </p>
 
@@ -142,12 +143,13 @@ function choose(contact: TeamContact): void {
             </p>
             <p
                 v-else-if="contacts.length === 0"
-                class="p-6 text-sm text-muted-foreground"
+                class="flex items-center gap-2 p-6 text-sm text-muted-foreground"
             >
+                <UserX class="size-4 shrink-0" aria-hidden="true" />
                 {{
                     search.trim() === ''
-                        ? 'No hay compañeros disponibles para chatear (solo puedes escribir a personas de tus departamentos).'
-                        : 'Nadie coincide con la búsqueda.'
+                        ? 'Nadie disponible en tus departamentos'
+                        : 'Nadie coincide con la búsqueda'
                 }}
             </p>
             <button

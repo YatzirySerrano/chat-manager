@@ -2,13 +2,17 @@
 import { Head, router, useForm } from '@inertiajs/vue3';
 import {
     BellRing,
+    Info,
     ListChecks,
     MonitorSmartphone,
+    ShieldCheck,
     Trash2,
     Volume2,
+    VolumeOff,
 } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import StatusPill from '@/components/admin/StatusPill.vue';
+import FieldHelp from '@/components/FieldHelp.vue';
 import SettingsSection from '@/components/settings/SettingsSection.vue';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -246,7 +250,7 @@ function submit(): void {
     <SettingsSection
         :icon="BellRing"
         title="Este navegador"
-        description="El permiso para mostrar avisos, la prueba de sonido y los dispositivos que reciben notificaciones con la plataforma cerrada."
+        description="Permiso del navegador, sonido y dispositivos."
         bare
     >
         <div class="grid gap-4 xl:grid-cols-2">
@@ -303,28 +307,46 @@ function submit(): void {
                 </div>
                 <p
                     v-if="notificationSoundState === 'locked'"
-                    class="rounded-lg bg-warning-soft/60 px-3 py-2 text-xs text-warning-soft-foreground"
+                    class="flex items-center gap-2 rounded-lg bg-warning-soft/60 px-3 py-2 text-xs text-warning-soft-foreground"
                     role="status"
                     data-test="sound-locked-notice"
                 >
-                    El navegador bloquea el sonido hasta que interactúes con la
-                    página (un clic o una tecla) después de abrirla o
-                    recargarla. Con la pestaña en segundo plano puede no sonar;
-                    activa las notificaciones del navegador para no perder
-                    avisos.
+                    <VolumeOff class="size-3.5 shrink-0" aria-hidden="true" />
+                    <span class="min-w-0 flex-1"
+                        >Haz clic en la página para activar el sonido</span
+                    >
+                    <FieldHelp title="Sonido bloqueado">
+                        <p class="text-muted-foreground">
+                            El navegador bloquea el sonido hasta que interactúes
+                            con la página (un clic o una tecla) después de
+                            abrirla o recargarla. Con la pestaña en segundo
+                            plano puede no sonar; activa las notificaciones del
+                            navegador para no perder avisos.
+                        </p>
+                    </FieldHelp>
                 </p>
                 <p
                     v-else-if="notificationSoundState === 'unsupported'"
-                    class="text-xs text-muted-foreground"
+                    class="flex items-center gap-2 text-xs text-muted-foreground"
                     role="status"
                 >
-                    Este navegador no permite reproducir el sonido de aviso.
+                    <VolumeOff class="size-3.5 shrink-0" aria-hidden="true" />
+                    Este navegador no reproduce el sonido de aviso
                 </p>
-                <p class="mt-auto text-xs text-pretty text-muted-foreground">
-                    Con varias pestañas abiertas el aviso suena una sola vez.
-                    Los mensajes del chat interno que tienes abierto y a la
-                    vista no suenan. El sonido depende también del volumen y de
-                    los ajustes de tu dispositivo.
+                <p
+                    class="mt-auto flex items-center gap-2 text-xs text-muted-foreground"
+                >
+                    <Info class="size-3.5 shrink-0" aria-hidden="true" />
+                    <span class="min-w-0 flex-1">Suena una vez por aviso</span>
+                    <FieldHelp title="Cuándo suena">
+                        <p class="text-muted-foreground">
+                            Con varias pestañas abiertas el aviso suena una sola
+                            vez. Los mensajes del chat interno que tienes
+                            abierto y a la vista no suenan. El sonido depende
+                            también del volumen y de los ajustes de tu
+                            dispositivo.
+                        </p>
+                    </FieldHelp>
                 </p>
             </div>
 
@@ -443,19 +465,27 @@ function submit(): void {
         <SettingsSection
             :icon="ListChecks"
             title="Qué te avisamos"
-            description="Elige, aviso por aviso, si aparece dentro de la plataforma, si suena y si llega como notificación del navegador."
+            description="Dónde y cómo te llega cada aviso."
             flush
         >
             <template #aside>
                 <p
-                    class="max-w-prose pt-1 text-xs text-pretty text-muted-foreground"
+                    class="flex items-center gap-2 pt-1 text-xs text-muted-foreground"
                 >
-                    Si desactivas un aviso en la app tampoco sonará ni aparecerá
-                    en el navegador. «Navegador» viene activado para los
-                    mensajes y los avisos urgentes. Cada aviso del navegador
-                    muestra su título y un resumen seguro (quién escribió y en
-                    qué conversación), nunca el texto de los mensajes de los
-                    clientes; los del chat interno no incluyen vista previa.
+                    <ShieldCheck class="size-3.5 shrink-0" aria-hidden="true" />
+                    Nunca muestra el texto de los clientes
+                    <FieldHelp title="Cómo funcionan los avisos">
+                        <p class="text-muted-foreground">
+                            Si desactivas un aviso en la app tampoco sonará ni
+                            aparecerá en el navegador. «Navegador» viene
+                            activado para los mensajes y los avisos urgentes.
+                            Cada aviso del navegador muestra su título y un
+                            resumen seguro (quién escribió y en qué
+                            conversación), nunca el texto de los mensajes de los
+                            clientes; los del chat interno no incluyen vista
+                            previa.
+                        </p>
+                    </FieldHelp>
                 </p>
             </template>
             <div>

@@ -2,17 +2,24 @@
 import { Head, Link, router, useHttp } from '@inertiajs/vue3';
 import {
     AtSign,
+    Gauge,
+    Hand,
     Headset,
     Inbox,
+    ListFilter,
+    LockKeyhole,
     MailWarning,
     MessageCircle,
     MessagesSquare,
+    Paperclip,
     Plus,
+    SearchX,
     UserRound,
     UsersRound,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import ChatPaneEmpty from '@/components/chat/ChatPaneEmpty.vue';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FilterSearch from '@/components/filters/FilterSearch.vue';
 import FilterTabs from '@/components/filters/FilterTabs.vue';
@@ -171,8 +178,14 @@ const deskCapacity = computed(() => {
     }
 
     return capacity.limit === null
-        ? `Atiendes ${capacity.load} ${capacity.load === 1 ? 'solicitud' : 'solicitudes'} (sin límite).`
-        : `Atiendes ${capacity.load} de ${capacity.limit} solicitudes simultáneas.`;
+        ? {
+              text: `Atiendes ${capacity.load}, sin límite`,
+              title: `Atiendes ${capacity.load} ${capacity.load === 1 ? 'solicitud' : 'solicitudes'} (sin límite).`,
+          }
+        : {
+              text: `Atiendes ${capacity.load} de ${capacity.limit}`,
+              title: `Atiendes ${capacity.load} de ${capacity.limit} solicitudes simultáneas.`,
+          };
 });
 
 const deskEmptyCopy = computed(
@@ -180,8 +193,7 @@ const deskEmptyCopy = computed(
         ({
             pending: {
                 title: 'No hay solicitudes en espera',
-                description:
-                    'Cuando alguien escriba a la mesa de control, su solicitud aparecerá aquí.',
+                description: 'Las nuevas solicitudes aparecerán aquí.',
             },
             mine: {
                 title: 'No atiendes ninguna solicitud',
@@ -190,8 +202,7 @@ const deskEmptyCopy = computed(
             },
             completed: {
                 title: 'Sin solicitudes completadas',
-                description:
-                    'Las solicitudes que se marquen como completas aparecerán aquí.',
+                description: 'Aquí verás las que se completen.',
             },
         })[deskTab.value ?? 'pending'],
 );
@@ -700,22 +711,20 @@ const narrowedCopy = computed(() => {
     if (search.value.trim() !== '') {
         return {
             title: 'No hay chats con estos filtros',
-            description:
-                'Prueba con otro nombre, revisa los resultados en mensajes o limpia los filtros.',
+            description: 'Prueba otro nombre o limpia los filtros.',
         };
     }
 
     if (mentionsOnly.value && showMentions.value) {
         return {
             title: 'Nadie te ha mencionado',
-            description:
-                'Aquí aparecen los grupos con mensajes sin leer que te mencionan (@).',
+            description: 'Aquí verás tus menciones (@) sin leer.',
         };
     }
 
     return {
         title: 'Estás al día',
-        description: 'No tienes mensajes internos sin leer con estos filtros.',
+        description: 'Nada sin leer con estos filtros.',
     };
 });
 
@@ -735,8 +744,7 @@ const emptyListCopy = computed(() => {
     return {
         archived: {
             title: 'Sin grupos archivados',
-            description:
-                'Los grupos que se archiven aparecerán aquí con su historial.',
+            description: 'Aquí verás los grupos archivados.',
         },
         direct: {
             title: 'Sin chats privados',
@@ -827,10 +835,13 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 <!-- A requester: one contact, the desk. -->
                 <p
                     v-if="isRequester"
-                    class="px-1 py-1 text-sm text-muted-foreground"
+                    class="flex items-center gap-2 px-1 py-1 text-sm text-muted-foreground"
                 >
-                    Escribe a la mesa de control: tus mensajes los atiende el
-                    equipo que revisa las solicitudes.
+                    <Headset
+                        class="size-4 shrink-0 text-primary"
+                        aria-hidden="true"
+                    />
+                    Tus solicitudes van a la mesa de control
                 </p>
 
                 <template v-else-if="deskTab !== null">
@@ -845,10 +856,12 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </div>
                     <p
                         v-if="deskCapacity"
-                        class="px-1 text-xs text-muted-foreground"
+                        class="ml-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                        :title="deskCapacity.title"
                         data-desk-capacity
                     >
-                        {{ deskCapacity }}
+                        <Gauge class="size-3.5 shrink-0" aria-hidden="true" />
+                        {{ deskCapacity.text }}
                     </p>
                 </template>
 
@@ -1086,10 +1099,11 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 <p v-if="deskTab !== null" class="sr-only" />
                 <p
                     v-else-if="reachedListLimit"
-                    class="px-3 py-2 text-xs text-muted-foreground"
+                    class="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground"
+                    title="Usa la búsqueda o los filtros para encontrar otros."
                 >
-                    Se muestran los {{ limits.maxThreads }} chats más recientes.
-                    Usa la búsqueda o los filtros para encontrar otros.
+                    <ListFilter class="size-3.5 shrink-0" aria-hidden="true" />
+                    Solo los {{ limits.maxThreads }} chats más recientes
                 </p>
                 <div
                     v-else-if="threads.has_more"
@@ -1138,9 +1152,10 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </div>
                     <p
                         v-else-if="messageResults.length === 0"
-                        class="px-3 py-2 text-xs text-muted-foreground"
+                        class="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground"
                     >
-                        Ningún mensaje coincide.
+                        <SearchX class="size-3.5 shrink-0" aria-hidden="true" />
+                        Ningún mensaje coincide
                     </p>
                     <ul v-else class="grid gap-0.5">
                         <li
@@ -1180,11 +1195,14 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     </ul>
                     <p
                         v-if="!searchingMessages && moreMessageResults"
-                        class="px-3 py-2 text-xs text-muted-foreground"
+                        class="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground"
+                        title="Escribe más palabras para acotar la búsqueda."
                     >
-                        Se muestran los {{ messageResults.length }} mensajes más
-                        recientes que coinciden. Escribe más palabras para
-                        acotar la búsqueda.
+                        <ListFilter
+                            class="size-3.5 shrink-0"
+                            aria-hidden="true"
+                        />
+                        Solo los {{ messageResults.length }} más recientes
                     </p>
                 </section>
             </div>
@@ -1260,109 +1278,56 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                 :class="CHAT_CANVAS"
             >
                 <!-- A requester: her only contact is the desk. -->
-                <div
+                <ChatPaneEmpty
                     v-if="isRequester"
-                    class="grid reveal justify-items-start gap-2"
+                    :icon="Headset"
+                    title="Mesa de control"
+                    hint="Envía tus solicitudes con fotos, videos o documentos"
+                    :hint-icon="Paperclip"
                 >
-                    <span
-                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
-                        aria-hidden="true"
-                    >
-                        <Headset class="size-6" />
-                    </span>
-                    <h2
-                        class="font-display text-3xl font-semibold tracking-tight text-balance"
-                    >
-                        Mesa de control
-                    </h2>
-                    <p
-                        class="max-w-prose text-base text-pretty text-muted-foreground"
-                    >
-                        Envía aquí tus solicitudes con fotos, videos y
-                        documentos. El equipo de la mesa de control las atiende
-                        en orden y te responde en este mismo chat.
-                    </p>
-                    <div v-if="desk?.thread_id" class="mt-4">
-                        <Button as-child>
-                            <Link :href="showThread(desk.thread_id)">
-                                <MessageCircle /> Escribir a la mesa de control
-                            </Link>
-                        </Button>
-                    </div>
-                </div>
-                <div
+                    <Button v-if="desk?.thread_id" as-child>
+                        <Link :href="showThread(desk.thread_id)">
+                            <MessageCircle /> Escribir a la mesa de control
+                        </Link>
+                    </Button>
+                </ChatPaneEmpty>
+                <ChatPaneEmpty
                     v-else-if="deskTab !== null"
-                    class="grid reveal justify-items-start gap-2"
+                    :icon="Headset"
+                    :title="
+                        (deskPending ?? 0) > 0
+                            ? deskPending === 1
+                                ? '1 solicitud en espera'
+                                : `${deskPending} solicitudes en espera`
+                            : 'Elige una solicitud'
+                    "
+                    hint="Acepta una de «Pendientes» para atenderla"
+                    :hint-icon="Hand"
+                />
+                <ChatPaneEmpty
+                    v-else
+                    :icon="MessageCircle"
+                    :title="
+                        unreadTotal > 0
+                            ? unreadTotal === 1
+                                ? 'Tienes 1 mensaje sin leer'
+                                : `Tienes ${unreadTotal} mensajes sin leer`
+                            : 'Elige un chat'
+                    "
+                    hint="Privado para tu equipo, nunca llega a clientes"
+                    :hint-icon="LockKeyhole"
                 >
-                    <span
-                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
-                        aria-hidden="true"
+                    <Button v-if="canStartDirect" @click="newDirectOpen = true">
+                        <Plus /> Nuevo chat privado
+                    </Button>
+                    <Button
+                        v-if="can.createGroup"
+                        variant="outline"
+                        @click="newGroupOpen = true"
                     >
-                        <Headset class="size-6" />
-                    </span>
-                    <h2
-                        class="font-display text-3xl font-semibold tracking-tight text-balance"
-                    >
-                        {{
-                            (deskPending ?? 0) > 0
-                                ? deskPending === 1
-                                    ? '1 solicitud en espera'
-                                    : `${deskPending} solicitudes en espera`
-                                : 'Elige una solicitud'
-                        }}
-                    </h2>
-                    <p
-                        class="max-w-prose text-base text-pretty text-muted-foreground"
-                    >
-                        Acepta una solicitud de «Pendientes» para atenderla:
-                        queda en «Mías» hasta que la marques como completa. Si
-                        la persona vuelve a escribir después, regresa a
-                        «Pendientes».
-                    </p>
-                </div>
-                <div v-else class="grid reveal justify-items-start gap-2">
-                    <span
-                        class="mb-2 grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground"
-                        aria-hidden="true"
-                    >
-                        <MessageCircle class="size-6" />
-                    </span>
-                    <h2
-                        class="font-display text-3xl font-semibold tracking-tight text-balance"
-                    >
-                        {{
-                            unreadTotal > 0
-                                ? unreadTotal === 1
-                                    ? 'Tienes 1 mensaje sin leer'
-                                    : `Tienes ${unreadTotal} mensajes sin leer`
-                                : 'Elige un chat'
-                        }}
-                    </h2>
-                    <p
-                        class="max-w-prose text-base text-pretty text-muted-foreground"
-                    >
-                        Los mensajes internos son privados entre sus
-                        participantes y nunca se envían a WhatsApp ni se mezclan
-                        con las conversaciones de clientes. Puedes pegar
-                        capturas de pantalla y arrastrar archivos a cualquier
-                        chat.
-                    </p>
-                    <div class="mt-4 flex flex-wrap gap-2">
-                        <Button
-                            v-if="canStartDirect"
-                            @click="newDirectOpen = true"
-                        >
-                            <Plus /> Nuevo chat privado
-                        </Button>
-                        <Button
-                            v-if="can.createGroup"
-                            variant="outline"
-                            @click="newGroupOpen = true"
-                        >
-                            <UsersRound /> Nuevo grupo
-                        </Button>
-                    </div>
-                </div>
+                        <UsersRound /> Nuevo grupo
+                    </Button>
+                </ChatPaneEmpty>
             </div>
         </main>
 

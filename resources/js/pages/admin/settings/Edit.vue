@@ -291,7 +291,7 @@ const integrationConnected = computed(
             <PageHeader
                 help="configuracion"
                 title="Configuración"
-                description="Parámetros generales de la plataforma. Los cambios quedan registrados en la auditoría."
+                description="Parámetros generales; cada cambio queda en la auditoría."
             />
 
             <StatusNote v-if="!can.update" tone="info" :icon="Lock">
@@ -311,7 +311,7 @@ const integrationConnected = computed(
                     class="reveal scroll-mt-32"
                     data-tour="settings.general"
                     title="General"
-                    description="Nombre visible y zona horaria usada para mostrar fechas y calcular indicadores diarios."
+                    description="Nombre visible y zona horaria."
                 >
                     <div class="field-grid [--col-min:18rem]">
                         <FormField
@@ -360,7 +360,7 @@ const integrationConnected = computed(
                     class="scroll-mt-32"
                     data-tour="settings.hours"
                     title="Horario de atención"
-                    description="Define cuándo se envía la bienvenida o el mensaje fuera de horario. Cada departamento puede tener uno propio."
+                    description="Cuándo se envían la bienvenida y el aviso fuera de horario."
                     flush
                 >
                     <div>
@@ -469,7 +469,7 @@ const integrationConnected = computed(
                     :icon="CalendarOff"
                     class="scroll-mt-32"
                     title="Días no laborables"
-                    description="Fechas en las que no se atiende. Se guardan aparte del resto de la configuración."
+                    description="Fechas en las que no se atiende."
                     bare
                 >
                     <PlatformHolidaysCard
@@ -484,7 +484,7 @@ const integrationConnected = computed(
                     class="scroll-mt-32"
                     data-tour="settings.operations"
                     title="Operación"
-                    description="Cómo llegan las conversaciones a los agentes. Cada departamento elige además su forma de distribución en su propia ficha."
+                    description="Cómo llegan las conversaciones a los agentes."
                 >
                     <div class="field-grid [--col-min:18rem]">
                         <FormField
@@ -744,7 +744,7 @@ const integrationConnected = computed(
                     class="scroll-mt-32"
                     data-tour="settings.sla-alerts"
                     title="Alertas automáticas de SLA"
-                    description="Avisos que la plataforma envía sola cuando una solicitud se acerca a su tiempo máximo de respuesta o lo supera."
+                    description="Avisos automáticos cuando una respuesta se retrasa."
                 >
                     <template #aside>
                         <p

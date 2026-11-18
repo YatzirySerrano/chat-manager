@@ -972,16 +972,14 @@ const emptyCopy = computed(() => {
     if (state.status === 'completed') {
         return {
             title: 'Aún no hay solicitudes completadas',
-            description:
-                'Aquí aparecen las conversaciones cerradas como «Solicitud completada».',
+            description: 'Aquí verás las cerradas como completadas.',
         };
     }
 
     if (closedActive.value) {
         return {
             title: 'No hay conversaciones cerradas',
-            description:
-                'Las conversaciones que se cierren quedan aquí como historial.',
+            description: 'Aquí queda el historial de las cerradas.',
         };
     }
 
@@ -989,16 +987,15 @@ const emptyCopy = computed(() => {
         return {
             title: 'No hay pendientes por aceptar',
             description: isGeneral.value
-                ? 'Si tus departamentos distribuyen las conversaciones de forma manual, un supervisor te las asigna y aparecerán en tu bandeja al recibirlas.'
-                : 'Cuando un cliente escriba y nadie lo haya aceptado, aparecerá aquí.',
+                ? 'Las asignadas a ti llegarán a tu bandeja.'
+                : 'Los clientes nuevos aparecerán aquí.',
         };
     }
 
     if (generalActive.value && isGeneral.value) {
         return {
             title: 'Tu bandeja está al día',
-            description:
-                'Aquí aparecen las pendientes que puedes aceptar y las que atiendes. Si tus departamentos distribuyen las conversaciones de forma manual, un supervisor te las asigna y aparecerán aquí al recibirlas.',
+            description: 'Sin pendientes ni conversaciones en atención.',
         };
     }
 
@@ -1006,8 +1003,8 @@ const emptyCopy = computed(() => {
         title: 'No hay conversaciones aquí',
         description:
             props.inbox.scope === 'global'
-                ? 'Las conversaciones aparecen cuando un cliente escribe a cualquiera de las conexiones de la organización, sin importar quién las atienda.'
-                : 'Las conversaciones aparecen cuando un cliente escribe a una de tus conexiones. Solo ves las de tus departamentos o las asignadas a ti, según tu rol.',
+                ? 'Llegan cuando un cliente escribe a cualquier conexión.'
+                : 'Llegan cuando un cliente escribe a tus conexiones.',
     };
 });
 
@@ -1300,8 +1297,8 @@ const scopeButton =
                 narrowed-title="No hay conversaciones con estos filtros"
                 :narrowed-description="
                     search.trim() !== ''
-                        ? 'Revisa cómo escribiste la búsqueda, busca en los mensajes o limpia los filtros para ver toda tu bandeja.'
-                        : 'Quita algún filtro o límpialos para ver toda tu bandeja.'
+                        ? 'Revisa la búsqueda o limpia los filtros.'
+                        : 'Quita algún filtro para ver más.'
                 "
                 :icon="Inbox"
                 :title="emptyCopy.title"

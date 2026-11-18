@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
 import {
+    CircleHelp,
     Copy,
     ExternalLink,
     History,
@@ -678,12 +679,17 @@ function safeUrl(url: string | null): string | null {
                         >
                     </div>
                 </template>
-                <p v-else class="text-sm text-muted-foreground">
-                    {{
+                <p
+                    v-else
+                    class="flex items-center gap-2 text-sm text-muted-foreground"
+                    :title="
                         isWebChat
-                            ? 'Origen no identificado.'
-                            : 'Origen no identificado: Meta no envió una referencia con esta conversación.'
-                    }}
+                            ? undefined
+                            : 'Meta no envió una referencia con esta conversación.'
+                    "
+                >
+                    <CircleHelp class="size-4 shrink-0" aria-hidden="true" />
+                    Origen no identificado
                 </p>
             </section>
 
@@ -735,8 +741,12 @@ function safeUrl(url: string | null): string | null {
                         </component>
                     </li>
                 </ul>
-                <p v-else class="text-sm text-muted-foreground">
-                    No hay otras conversaciones de este cliente que puedas ver.
+                <p
+                    v-else
+                    class="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                    <History class="size-4 shrink-0" aria-hidden="true" />
+                    Sin conversaciones anteriores
                 </p>
             </section>
 

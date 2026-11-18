@@ -72,7 +72,7 @@ function submit(): void {
     <FormDialog
         v-model:open="open"
         title="Nuevo grupo"
-        description="Los grupos son privados: solo sus participantes ven los mensajes. Serás su administrador."
+        description="Privado para sus participantes. Tú lo administras."
         size="lg"
         :processing="form.processing"
         :validation="validation"

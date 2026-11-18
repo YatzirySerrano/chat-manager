@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { TriangleAlert } from '@lucide/vue';
+import { History, ShieldAlert, TriangleAlert } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
@@ -284,8 +284,8 @@ function agentLabel(agent: TransferAgentOption): string {
                     <DialogDescription>
                         {{
                             isTransfer
-                                ? 'Se conservan el contacto, los mensajes, las notas, las etiquetas y la procedencia. No se envía ningún mensaje al cliente.'
-                                : 'La persona elegida será responsable de atenderla dentro de su departamento.'
+                                ? 'Se conserva todo; el cliente no recibe aviso.'
+                                : 'Quedará como responsable en su departamento.'
                         }}
                     </DialogDescription>
                 </DialogHeader>
@@ -360,20 +360,20 @@ function agentLabel(agent: TransferAgentOption): string {
 
                     <div
                         v-if="selectedIsAtCapacity"
-                        class="grid gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+                        class="grid gap-3 rounded-lg border border-warning/50 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
                         role="alert"
                     >
-                        <p class="flex gap-2">
+                        <p
+                            class="flex gap-2"
+                            title="Es una excepción que quedará registrada en el historial; su límite no cambiará."
+                        >
                             <TriangleAlert
                                 class="mt-0.5 size-4 shrink-0"
                                 aria-hidden="true"
                             />
                             <span
-                                >{{ selectedAgent?.name }} ya atiende el máximo
-                                de conversaciones permitido. Asignársela supera
-                                su límite de carga; es una excepción que quedará
-                                registrada en el historial y su límite no
-                                cambiará.</span
+                                >{{ selectedAgent?.name }} está en su límite de
+                                carga. Quedará registrado como excepción.</span
                             >
                         </p>
                         <label
@@ -419,15 +419,19 @@ function agentLabel(agent: TransferAgentOption): string {
                     class="grid gap-2 rounded-lg border border-warning/50 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
                     data-queue-override
                 >
-                    <p class="font-medium">
-                        Puedes hacer una excepción a la regla «{{
+                    <p class="flex items-center gap-2 font-medium">
+                        <ShieldAlert
+                            class="size-4 shrink-0"
+                            aria-hidden="true"
+                        />
+                        Excepción a la regla «{{
                             QUEUE_RULE_LABELS[queueException.rule] ??
                             'de la cola'
                         }}».
                     </p>
-                    <p class="text-xs">
-                        Tu nombre, el motivo y las reglas omitidas quedan en el
-                        historial de la conversación y en la auditoría.
+                    <p class="flex items-center gap-2 text-xs">
+                        <History class="size-3.5 shrink-0" aria-hidden="true" />
+                        Queda en el historial y la auditoría
                     </p>
                     <FormField
                         id="route-override-reason"

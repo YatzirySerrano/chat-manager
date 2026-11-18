@@ -44,9 +44,7 @@ const contactName = computed(() => {
                     Etiquetas de la conversación
                 </DialogTitle>
                 <DialogDescription class="text-sm">
-                    Estas etiquetas se aplican a esta conversación con
-                    {{ contactName }}. Las etiquetas del contacto se administran
-                    desde su ficha de contacto.
+                    Solo esta conversación con {{ contactName }}.
                 </DialogDescription>
             </DialogHeader>
             <TagPickerBody

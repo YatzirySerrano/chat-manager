@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { Head, router, useHttp, usePage } from '@inertiajs/vue3';
-import { Hourglass, Inbox, MailWarning, SearchX } from '@lucide/vue';
+import {
+    Hourglass,
+    Inbox,
+    Lock,
+    MailWarning,
+    MousePointerClick,
+    SearchX,
+} from '@lucide/vue';
+import ChatPaneEmpty from '@/components/chat/ChatPaneEmpty.vue';
 import { useMediaQuery } from '@vueuse/core';
 import {
     computed,
@@ -844,33 +852,21 @@ function onAliasSaved(): void {
                 :class="CHAT_CANVAS"
                 data-empty-chat
             >
-                <div class="grid reveal gap-2">
-                    <span
-                        class="mb-2 grid size-12 place-items-center rounded-xl border bg-card text-primary"
-                        aria-hidden="true"
-                    >
-                        <SearchX v-if="selectionMissing" class="size-6" />
-                        <Inbox v-else class="size-6" />
-                    </span>
-                    <h2
-                        class="font-display text-3xl font-semibold text-balance"
-                    >
-                        {{
-                            selectionMissing
-                                ? 'La conversación no está disponible'
-                                : 'Elige una conversación'
-                        }}
-                    </h2>
-                    <p
-                        class="max-w-prose text-base text-pretty text-muted-foreground"
-                    >
-                        {{
-                            selectionMissing
-                                ? 'No existe o ya no tienes acceso (por ejemplo, otra persona la aceptó o se transfirió).'
-                                : 'Selecciona una conversación de la lista para ver sus mensajes y atender al cliente.'
-                        }}
-                    </p>
-                </div>
+                <ChatPaneEmpty
+                    :icon="selectionMissing ? SearchX : Inbox"
+                    :tone="selectionMissing ? 'muted' : 'primary'"
+                    :title="
+                        selectionMissing
+                            ? 'La conversación no está disponible'
+                            : 'Elige una conversación'
+                    "
+                    :hint="
+                        selectionMissing
+                            ? 'Otra persona la tomó o ya no tienes acceso'
+                            : 'Ábrela desde la lista para atender al cliente'
+                    "
+                    :hint-icon="selectionMissing ? Lock : MousePointerClick"
+                />
 
                 <div
                     class="mt-8 grid reveal-stagger grid-cols-[repeat(auto-fill,minmax(13rem,17rem))] gap-3"

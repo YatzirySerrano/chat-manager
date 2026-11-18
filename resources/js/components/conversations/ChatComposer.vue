@@ -241,13 +241,13 @@ const replyBlock = computed<string | null>(() => {
 
     /* Retired state, only on old conversations not migrated yet. */
     if (conversation.status === 'on_hold') {
-        return 'La conversación quedó «En espera», un estado que ya no se usa. Pide a un administrador que la pase a «Pendiente» para volver a atenderla.';
+        return 'Estado «En espera» retirado: pide a un administrador pasarla a «Pendiente».';
     }
 
     if (!canReply.value) {
         return conversation.assignee
-            ? `Solo ${conversation.assignee.name}, responsable de la conversación, puede responder al cliente.`
-            : 'No tienes permiso para responder a esta conversación.';
+            ? `Solo ${conversation.assignee.name}, su responsable, puede responder.`
+            : 'No tienes permiso para responder aquí.';
     }
 
     if (!conversation.connection.can_send) {
@@ -265,9 +265,9 @@ const replyBlock = computed<string | null>(() => {
             liveWindow.value.block_reason ??
             (windowApplies.value
                 ? conversation.can.send_templates
-                    ? 'La ventana de atención de 24 horas está cerrada: solo puedes enviar una plantilla aprobada.'
-                    : 'La ventana de atención de 24 horas está cerrada. Podrás responder cuando el cliente vuelva a escribir; las plantillas solo las envía un administrador.'
-                : 'No se pueden enviar mensajes por esta conexión en este momento.')
+                    ? 'Ventana de 24 h cerrada: envía una plantilla aprobada.'
+                    : 'Ventana de 24 h cerrada: responde cuando el cliente vuelva a escribir.'
+                : 'Esta conexión no puede enviar mensajes ahora.')
         );
     }
 

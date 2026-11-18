@@ -1213,8 +1213,11 @@ onBeforeUnmount(() => {
                 role="status"
             >
                 <Archive class="size-3.5 shrink-0" aria-hidden="true" />
-                Grupo archivado: puedes consultar su historial, pero ya no se
-                pueden enviar mensajes.
+                <span class="font-medium">Grupo archivado</span>
+                <span
+                    class="rounded-full bg-background/70 px-2 py-0.5 text-[0.6875rem]"
+                    >Solo lectura</span
+                >
             </div>
             <!-- Extra state under the header (the «Mesa de control» request). -->
             <slot name="banner" />
@@ -1418,7 +1421,7 @@ onBeforeUnmount(() => {
         <ConfirmDialog
             :open="toDelete !== null"
             title="¿Eliminar el mensaje?"
-            description="Su texto y sus archivos se borrarán para todos los participantes y no se podrán recuperar. En el chat quedará la marca «Mensaje eliminado»."
+            description="Se borra para todos y no se puede recuperar."
             confirm-label="Eliminar mensaje"
             destructive
             :processing="deleting"

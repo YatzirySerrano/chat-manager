@@ -686,7 +686,7 @@ defineExpose({ scrollToBottom });
                     :class="customColors ? 'bg-background' : 'bg-transparent'"
                     :icon="MessagesSquare"
                     title="Sin mensajes todavía"
-                    description="Cuando el cliente escriba o alguien responda, los mensajes aparecerán aquí."
+                    description="Aquí verás los mensajes del chat."
                 />
 
                 <!--

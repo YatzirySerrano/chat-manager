@@ -23,7 +23,7 @@ defineOptions({
     <SettingsSection
         :icon="Palette"
         title="Tema"
-        description="Claro, oscuro o el que use tu sistema. Solo cambia en este navegador; los colores de la plataforma los define la administración."
+        description="Claro, oscuro o el de tu sistema, en este navegador."
     >
         <AppearanceTabs />
     </SettingsSection>

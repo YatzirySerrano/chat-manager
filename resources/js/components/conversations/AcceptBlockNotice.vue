@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { TriangleAlert } from '@lucide/vue';
+import { Timer, TriangleAlert } from '@lucide/vue';
 import { computed, inject } from 'vue';
 import {
     ACCEPT_BLOCK,
@@ -31,14 +31,17 @@ const state = computed(() => (block.value?.blocked ? block.value : null));
             <TriangleAlert class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>{{ state.message }}</span>
         </p>
-        <p class="text-xs">
+        <p
+            class="inline-flex w-fit items-center gap-1.5 rounded-full bg-background/70 px-2 py-0.5 text-xs font-medium"
+            title="Podrás aceptar conversaciones nuevas en cuanto les respondas."
+        >
+            <Timer class="size-3.5 shrink-0" aria-hidden="true" />
             {{
                 state.overdue === 1
-                    ? 'Un cliente lleva más de'
-                    : `${state.overdue} clientes llevan más de`
+                    ? '1 cliente espera'
+                    : `${state.overdue} clientes esperan`
             }}
-            {{ state.tolerance_minutes }} minutos esperando tu respuesta. Podrás
-            aceptar conversaciones nuevas en cuanto les respondas.
+            más de {{ state.tolerance_minutes }} min
         </p>
         <ul
             class="grid grid-cols-[minmax(0,1fr)] gap-1"

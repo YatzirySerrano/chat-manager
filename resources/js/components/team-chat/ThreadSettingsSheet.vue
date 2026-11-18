@@ -262,10 +262,10 @@ function restoreGroup(): void {
                 <SheetDescription>
                     {{
                         isGroup
-                            ? 'Solo los participantes ven este grupo y sus mensajes.'
+                            ? 'Solo lo ven sus participantes.'
                             : thread.type === 'desk'
-                              ? 'Mesa de control: estos mensajes los ven quien hace la solicitud y el equipo que atiende la mesa.'
-                              : 'Chat privado: solo ustedes dos ven estos mensajes.'
+                              ? 'Lo ven quien solicita y la mesa de control.'
+                              : 'Solo lo ven ustedes dos.'
                     }}
                 </SheetDescription>
             </SheetHeader>
@@ -385,8 +385,7 @@ function restoreGroup(): void {
                             >Silenciar este chat</Label
                         >
                         <p class="text-xs text-muted-foreground">
-                            Sus mensajes no sumarán al contador del menú
-                            lateral.
+                            Sin contador en el menú lateral
                         </p>
                     </div>
                     <Switch

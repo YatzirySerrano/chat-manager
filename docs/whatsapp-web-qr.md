@@ -34,9 +34,12 @@ archivos con `MediaDisk` (Synology); usar las mismas conversaciones, departament
 rápidas, auditoría, notificaciones y tiempo real que el resto de la plataforma; mostrar el estado real de la sesión en
 Conexiones y en Sistema.
 
-No hace, a propósito: respuestas automáticas (bienvenida, fuera de horario, despedida), menús, mensajes programados,
-plantillas, campañas, envíos masivos, guardar contactos en el directorio por su cuenta, grupos ni estados. Solo envía
-lo que escribe una persona con permiso en Conversaciones.
+No hace, a propósito: mensajes programados, plantillas, campañas, envíos masivos, guardar contactos en el directorio
+por su cuenta, grupos ni estados. Envía lo que escribe una persona con permiso en Conversaciones y, solo si el
+administrador los activa, los mensajes automáticos de la conexión (bienvenida, fuera de horario, despedida) y el
+chatbot (menú de bienvenida y palabras clave), igual que WhatsApp Cloud API pero sin ventana de 24 horas: ver
+[notificaciones-y-horarios.md](notificaciones-y-horarios.md) §3 y §3.4. La despedida por cierre automático por
+inactividad solo se envía si el cliente escribió en las últimas 24 horas.
 
 Comportamientos a conocer:
 
@@ -276,17 +279,17 @@ cd /var/www/mensajes && php artisan whatsapp-web:sync           # reconcilia est
 tail -n 50 /var/www/mensajes/storage/logs/laravel.log | grep -i whatsapp
 ```
 
-| Síntoma                                | Causa habitual y arreglo                                                                                 |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| «El servicio no responde» en la ficha  | El programa de Supervisor está caído o `WHATSAPP_WEB_URL` no coincide con `WAWEB_HOST`/`WAWEB_PORT`.     |
-| El QR no aparece y el estado no cambia | Los eventos no llegan a Laravel: revisa el vhost `127.0.0.1:8091` y que los dos secretos sean idénticos. |
-| `401` en el log del servicio           | Secretos distintos o reloj del servidor desfasado más de 60 s.                                           |
-| «Sesión cerrada» sin haberla cerrado   | WhatsApp revocó la sesión (otro dispositivo, inactividad del teléfono, restricción). Vincula de nuevo.   |
-| «Error» tras varios minutos sin red    | Se agotaron los reintentos. Pulsa «Reconectar».                                                          |
-| Archivos «no disponibles»              | Superan el límite, el NAS no respondía o WhatsApp ya caducó la descarga.                                 |
+| Síntoma                                | Causa habitual y arreglo                                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| «El servicio no responde» en la ficha  | El programa de Supervisor está caído o `WHATSAPP_WEB_URL` no coincide con `WAWEB_HOST`/`WAWEB_PORT`.       |
+| El QR no aparece y el estado no cambia | Los eventos no llegan a Laravel: revisa el vhost `127.0.0.1:8091` y que los dos secretos sean idénticos.   |
+| `401` en el log del servicio           | Secretos distintos o reloj del servidor desfasado más de 60 s.                                             |
+| «Sesión cerrada» sin haberla cerrado   | WhatsApp revocó la sesión (otro dispositivo, inactividad del teléfono, restricción). Vincula de nuevo.     |
+| «Error» tras varios minutos sin red    | Se agotaron los reintentos. Pulsa «Reconectar».                                                            |
+| Archivos «no disponibles»              | Superan el límite, el NAS no respondía o WhatsApp ya caducó la descarga.                                   |
 | Archivos «en camino» que nunca llegan  | Ningún worker atiende la cola `media`: `sudo supervisorctl status` debe mostrar `chatmanager-queue-media`. |
-| No aparece historial tras vincular     | El número se vinculó con una versión anterior o con `WAWEB_SYNC_HISTORY=false`: cerrar sesión y vincular. |
-| El historial tarda en aparecer         | Se importa por la cola `default`: revisa que haya un worker que la atienda (`php artisan queue:work`).   |
+| No aparece historial tras vincular     | El número se vinculó con una versión anterior o con `WAWEB_SYNC_HISTORY=false`: cerrar sesión y vincular.  |
+| El historial tarda en aparecer         | Se importa por la cola `default`: revisa que haya un worker que la atienda (`php artisan queue:work`).     |
 
 Recuperar una sesión: «Reconectar» si las credenciales siguen vigentes; si WhatsApp la revocó, «Vincular teléfono».
 Las credenciales no se pueden copiar a otro servidor sin `WAWEB_SESSION_KEY` y el directorio de datos completo.

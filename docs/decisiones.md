@@ -54,6 +54,7 @@ dentro de cada prefijo.
 - [ADR-AUT-1 — Notificaciones con recibos de deduplicación y agrupación en base de datos](#adr-aut-1--notificaciones-con-recibos-de-deduplicación-y-agrupación-en-base-de-datos)
 - [ADR-AUT-2 — El texto de una notificación se construye al leerla](#adr-aut-2--el-texto-de-una-notificación-se-construye-al-leerla)
 - [ADR-AUT-3 — Prioridad de mensajes automáticos y una sola ranura de saludo por ciclo](#adr-aut-3--prioridad-de-mensajes-automáticos-y-una-sola-ranura-de-saludo-por-ciclo)
+- [ADR-AUT-4 — Chatbot: cola provisional sin distribuir mientras el cliente elige](#adr-aut-4--chatbot-cola-provisional-sin-distribuir-mientras-el-cliente-elige)
 - [ADR-AUT-4 — Web Push sin carga útil y sin dependencias](#adr-aut-4--web-push-sin-carga-útil-y-sin-dependencias)
 - [ADR-AUT-5 — Sin aviso de pestaña si el navegador ya tiene push](#adr-aut-5--sin-aviso-de-pestaña-si-el-navegador-ya-tiene-push)
 
@@ -288,6 +289,17 @@ Departamento antes que conexión; fuera de horario (incluidos días no laborable
 horario, nunca la bienvenida; la despedida es solo de la conexión. Bienvenida y fuera de horario comparten la ranura
 «saludo» con referencia determinista por (conversación, ranura, ciclo), única en `messages.client_reference`. Solo
 dentro de la ventana de 24 h, sin plantillas, y no cuentan como primera respuesta.
+
+## ADR-AUT-4 — Chatbot: cola provisional sin distribuir mientras el cliente elige
+
+Mientras el menú de bienvenida espera la opción, la conversación nace _Pendiente_ en el departamento del enrutamiento
+normal, pero no se distribuye ni se anuncia hasta la elección (o el agotamiento de reintentos). Alternativas
+descartadas: dejarla sin departamento (solo la verían usuarios de alcance global) o marcarla «Necesita información»
+(regla de servicio con otro significado y otros permisos). Así nunca queda invisible, una persona puede tomarla (el
+menú se cancela) y el departamento elegido recibe su aviso y su distribución normales. La despedida al cerrar se
+conserva también para el cierre por inactividad (diseño previo); en WhatsApp Web (QR), sin ventana de 24 h, ese caso
+solo despide si el cliente escribió en las últimas 24 horas. Ver
+[notificaciones-y-horarios.md](notificaciones-y-horarios.md) §3.4.
 
 ## ADR-REP-1 — Métricas por conversación recalculadas desde la fuente
 

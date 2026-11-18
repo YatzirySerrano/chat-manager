@@ -381,30 +381,44 @@ permita al VPS llegar al puerto 445 del NAS. Respaldos con instantáneas o Hyper
 borrado mediante el proceso con tiempo límite). Para volver atrás basta `MEDIA_DISK=local` (o `s3`): las filas `nas`
 siguen leyéndose mientras el disco `nas` siga definido y montado.
 
-#### Guardar videos en Synology
+#### Guardar archivos en Synology
 
-En los mensajes con video (conversaciones con clientes y chat interno) aparece el botón **«Guardar video»** para
-quien tenga el permiso `videos.save-to-nas` («Guardar videos en Synology»; se otorga a los roles de
-Superadministrador y Administrador al migrar y a los demás desde Roles). Además del permiso, el servidor exige que la
+Cada archivo de los chats (conversaciones con clientes, chat interno y mesa de control) tiene un botón para guardar
+una copia en el NAS: **«Guardar video»**, **«Guardar imagen»**, **«Guardar PDF»**, **«Guardar documento»** (Word, Excel,
+PowerPoint, CSV, ZIP…) o **«Guardar audio»**. Lo ve quien tenga el permiso `videos.save-to-nas` («Guardar archivos en
+Synology»; la clave no cambió desde que solo se guardaban videos; se otorga a los roles de Superadministrador y
+Administrador al migrar y a los demás desde Roles). Además del permiso, el servidor exige que la
 persona pueda ver esa conversación o ese chat interno (las mismas políticas que el chat y sus archivos; si no, 404).
 
-**El diálogo es un explorador de carpetas del NAS** (`App\Services\VideoExports\VideoFolders`):
+**El botón:** es un ícono compacto (el del tipo de archivo con una pequeña insignia de subida) con su nombre como
+información al pasar el cursor. Sobre fotos y videos flota en la miniatura y aparece al pasar el cursor o al enfocarlo
+(siempre visible en pantallas táctiles); en audios y documentos va debajo del archivo. A su lado, una etiqueta de
+estado con ícono y color: «En cola», «En espera» (NAS caído; el motivo al pasar el cursor), «Guardando…» (con
+indicador), la carpeta donde quedó con ✓ (la ruta completa al pasar el cursor) o «Error» con el motivo y el botón
+«Reintentar». En el chat interno, si un mensaje trae más de cuatro fotos, las que quedan detrás de «+N» no muestran el
+botón.
 
-- Se abre en la carpeta donde la persona guardó su último video (o en la raíz si ya no existe) y lista las carpetas
-  **que ya existen** ahí: ruta de navegación (clic en cualquier nivel), lista de carpetas (clic para entrar) y botón
-  «Subir». Nunca se puede subir por encima de la raíz.
-- **«Crear carpeta»** crea una carpeta dentro de la actual, con el nombre limpiado como el resto de los archivos
+**El diálogo** muestra el archivo (miniatura en fotos y videos; ícono, extensión y tamaño en los demás) y un
+explorador de carpetas del NAS (`App\Services\VideoExports\VideoFolders`):
+
+- Se abre en la carpeta donde la persona guardó su último archivo (o en la raíz si ya no existe) y lista las carpetas
+  **que ya existen** ahí: ruta de navegación con íconos (clic en cualquier nivel), cuadrícula de carpetas (clic para
+  entrar) y botón «Subir» (también la tecla Retroceso). Nunca se puede subir por encima de la raíz.
+- **«Nueva carpeta»** crea una carpeta dentro de la actual, con el nombre limpiado como el resto de los archivos
   (`MediaPaths::clean`: ASCII sin acentos, sin `/`, `..` ni caracteres prohibidos en SMB/Windows). Así el equipo crea
   una sola vez las carpetas de sucursal, mes, tipo y día y después solo navega.
-- **«Nombre del video»**: el nombre lo escribe la persona (en conversaciones se propone el nombre del contacto); se
-  limpia igual y la extensión se agrega sola según el tipo real del video. Si ya existe un archivo con ese nombre se
-  agrega un contador legible, `… (2).mp4`; nunca se reemplaza un archivo.
+- **«Nombre»**: lo escribe la persona; se propone el último nombre usado para ese archivo, en PDF y documentos el
+  nombre con el que llegó, y en lo demás el nombre del contacto. Se limpia igual y **la extensión es siempre la del
+  original** (`MediaPaths::extensionFor`: la del tipo real detectado, o la del nombre original en detecciones genéricas
+  como los documentos de Office); se muestra como sufijo fijo junto al campo, y si la persona la escribe no se
+  duplica (`Recibo.pdf` → `Recibo.pdf`, no `Recibo.pdf.pdf`). Si ya existe un archivo con ese nombre se agrega un
+  contador legible, `… (2).mp4`; nunca se reemplaza un archivo.
 
 **Estructura recomendada (cinco niveles de carpetas y después el archivo).** La aplicación no la impone, pero es la
 que usan las sucursales:
 
-1. Carpeta general de videos: el ajuste «Carpeta de videos de solicitudes» (Configuración › Videos en Synology),
-   `VIDEOS` por omisión. Es la raíz del explorador; siempre es una sola carpeta (las diagonales se convierten en
+1. Carpeta general: el ajuste «Carpeta de archivos en Synology» (Configuración › Archivos en Synology; clave
+   `video_exports.root_folder`), `VIDEOS` por omisión, la misma para todos los tipos de archivo. Es la raíz del explorador; siempre es una sola carpeta (las diagonales se convierten en
    espacios).
 2. Sucursal: `ORIZABA`.
 3. Mes: `11-Noviembre 2026`.
@@ -421,10 +435,10 @@ con punto). En un disco local o montado, la ruta real (`realpath`) debe quedar d
 enlace simbólico no lleva fuera de ella, y los enlaces no se listan. La carpeta se vuelve a comprobar al guardar y en la
 tarea en cola.
 
-**La copia:** al confirmar se registra (`video_exports`: video de origen, carpeta, nombre, estado, error, usuario), se
-anota en la auditoría («Video enviado a guardar en Synology», con la carpeta y el nombre) y una tarea en cola
-(`SaveVideoToNas`, cola `media`) **copia** el archivo; el original no se mueve, así que el video se sigue reproduciendo
-en el chat. La escritura usa el temporal `.part` + renombrado + verificación de `MediaDisk`.
+**La copia:** al confirmar se registra (`video_exports`, que guarda copias de cualquier tipo de archivo pese a su
+nombre: archivo de origen, carpeta, nombre, estado, error, usuario), se anota en la auditoría («Archivo enviado a
+guardar en Synology», con la carpeta, el nombre y el tipo) y una tarea en cola (`SaveVideoToNas`, cola `media`)
+**copia** el archivo; el original no se mueve, así que se sigue viendo en el chat. La escritura usa el temporal `.part` + renombrado + verificación de `MediaDisk`.
 
 **Dónde se escribe:** en el disco de archivos (`MEDIA_DISK`, el NAS montado con `MEDIA_DISK=nas`), o en otro disco con
 `VIDEO_EXPORTS_DISK=<disco>` (debe existir en `config/filesystems.php`; se le aplican las mismas reglas que a
@@ -438,11 +452,13 @@ reintenta sola (4 intentos, a 1, 5 y 15 minutos); tras el último queda en **«E
 explicación. Si la carpeta elegida se borró mientras tanto, falla con «La carpeta elegida ya no existe en Synology».
 Nunca se escribe en el disco local del VPS en lugar del NAS.
 
-**En el chat:** el globo muestra «Guardando…», «Guardado en Synology» (la ruta como información al pasar el cursor) o
-«Error al guardar · Reintentar»; mientras la copia está en curso consulta su estado cada 4 s.
+**En el chat:** mientras la copia está en curso el botón consulta su estado cada 4 s. El servidor manda en cada adjunto
+`file_save` (ruta para guardar, tipo `video|image|pdf|document|audio`, extensión, nombre original, tamaño y última
+copia); los videos conservan además `video_save` con su ruta original.
 
 **Rutas:** `GET /video-exports/folders?path=` (listar), `POST /video-exports/folders` (crear), `POST
-…/attachments/{attachment}/save-video` (conversación o chat interno), `GET /video-exports/{id}` (estado) y `POST
+…/attachments/{attachment}/save-file` (conversación o chat interno; la ruta anterior `…/save-video` sigue funcionando
+y acepta cualquier archivo), `GET /video-exports/{id}` (estado) y `POST
 /video-exports/{id}/retry`. Todas exigen `videos.save-to-nas`.
 
 **Despliegue:** `php artisan migrate --force` crea `video_exports` y el permiso. Los workers deben atender la cola

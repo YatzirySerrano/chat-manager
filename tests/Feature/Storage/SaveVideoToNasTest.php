@@ -345,13 +345,14 @@ test('the permission and the access to the conversation are both enforced', func
     Queue::assertPushed(SaveVideoToNas::class);
 });
 
-test('only videos can be saved', function () {
+test('only files that are available can be saved', function () {
     $admin = User::factory()->superAdministrator()->create();
     $conversation = Conversation::factory()->create();
     $attachment = savedVideoAttachment($conversation);
-    $attachment->forceFill(['mime_type' => 'image/png'])->save();
+    $attachment->forceFill(['path' => null])->save();
 
-    $this->actingAs($admin)->postJson(saveVideoUrl($conversation, $attachment), ['folder' => '', 'file_name' => 'Foto'])->assertStatus(422);
+    $this->actingAs($admin)->postJson(saveVideoUrl($conversation, $attachment), ['folder' => '', 'file_name' => 'Video'])->assertStatus(422);
+    expect(VideoExport::query()->count())->toBe(0);
 });
 
 /* -------------------------------------------------------- the internal chat */

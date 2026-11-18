@@ -4,10 +4,10 @@ namespace App\Jobs;
 
 use App\Enums\VideoExportStatus;
 use App\Exceptions\StorageUnavailable;
-use App\Models\MessageAttachment;
 use App\Models\VideoExport;
 use App\Services\Storage\MediaDisk;
 use App\Services\Storage\MediaPaths;
+use App\Services\VideoExports\VideoExports;
 use App\Services\VideoExports\VideoFolders;
 use App\Support\Queues;
 use Illuminate\Bus\Queueable;
@@ -20,8 +20,10 @@ use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
- * Copies (never moves) the video of a VideoExport into the folder of the
- * NAS the person chose, under the name they typed, through MediaDisk: the
+ * Copies (never moves) the file of a VideoExport (a video, image, PDF,
+ * document or audio of a chat; the class keeps its original name) into the
+ * folder of the NAS the person chose, under the name they typed and the
+ * extension of the original, through MediaDisk: the
  * target disk must be ready (a mounted NAS is verified with MountHealth
  * before writing), the file is written next to its final name and renamed
  * when complete, and a name already taken gets " (2)".
@@ -34,6 +36,13 @@ use Throwable;
 class SaveVideoToNas implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
+
+    /**
+     * Name used when the typed one is left empty once cleaned.
+     *
+     * @var array<string, string>
+     */
+    private const DEFAULT_NAMES = ['video' => 'Video', 'image' => 'Imagen', 'pdf' => 'Documento', 'document' => 'Documento', 'audio' => 'Audio'];
 
     public int $tries = 4;
 
@@ -66,15 +75,15 @@ class SaveVideoToNas implements ShouldQueue
         $sourcePath = $source?->path;
 
         if ($source === null || $sourcePath === null || $sourcePath === '') {
-            $this->markFailed($export, 'El video original ya no está disponible.');
+            $this->markFailed($export, 'El archivo original ya no está disponible.');
 
             return;
         }
 
-        $originalName = $source instanceof MessageAttachment ? $source->file_name : $source->original_name;
-        $extension = app(MediaPaths::class)->extensionFor((string) $source->mime_type, $originalName);
+        // The copy keeps the extension of the original (never one typed by the person).
+        $extension = app(VideoExports::class)->extensionOf($source);
         $stem = MediaPaths::clean($export->file_name, 120);
-        $stem = $stem !== '' ? $stem : 'Video';
+        $stem = $stem !== '' ? $stem : self::DEFAULT_NAMES[VideoExports::kindOf($source)];
         $temporary = null;
 
         try {
@@ -90,7 +99,7 @@ class SaveVideoToNas implements ShouldQueue
             }
 
             if (! $exists) {
-                $this->markFailed($export, 'La carpeta elegida ya no existe en Synology. Guarda el video otra vez en otra carpeta.');
+                $this->markFailed($export, 'La carpeta elegida ya no existe en Synology. Guarda el archivo otra vez en otra carpeta.');
 
                 return;
             }
@@ -98,7 +107,7 @@ class SaveVideoToNas implements ShouldQueue
             $copy = $this->localCopy((string) $source->disk, $sourcePath);
 
             if ($copy === null) {
-                $this->markFailed($export, 'El video original ya no está disponible.');
+                $this->markFailed($export, 'El archivo original ya no está disponible.');
 
                 return;
             }
@@ -151,7 +160,7 @@ class SaveVideoToNas implements ShouldQueue
     {
         $export->forceFill(['status' => VideoExportStatus::Failed, 'error' => $message])->save();
 
-        Log::warning('A video could not be saved to the NAS.', ['video_export_id' => $export->id]);
+        Log::warning('A chat file could not be saved to the NAS.', ['video_export_id' => $export->id]);
     }
 
     /**

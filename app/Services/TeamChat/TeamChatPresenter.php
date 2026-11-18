@@ -256,6 +256,8 @@ class TeamChatPresenter
     public function attachment(TeamMessage $message, TeamAttachment $attachment, ?User $viewer = null): array
     {
         $parameters = ['thread' => $message->team_thread_id, 'message' => $message->id, 'attachment' => $attachment->id];
+        $exports = app(VideoExports::class);
+        $fileSave = $exports->forTeamAttachment($message, $attachment, $viewer);
 
         return [
             'id' => $attachment->id,
@@ -272,8 +274,10 @@ class TeamChatPresenter
                 : null,
             // Audio and video played in place, with byte ranges.
             'stream_url' => $attachment->isPlayable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
-            // «Guardar video» (videos.save-to-nas): null when the viewer may not save it.
-            'video_save' => app(VideoExports::class)->forTeamAttachment($message, $attachment, $viewer),
+            // «Guardar archivo» (videos.save-to-nas): null when the viewer may not save it.
+            'file_save' => $fileSave,
+            // The original «Guardar video» options, for videos only.
+            'video_save' => $exports->videoForTeamAttachment($message, $attachment, $fileSave),
         ];
     }
 

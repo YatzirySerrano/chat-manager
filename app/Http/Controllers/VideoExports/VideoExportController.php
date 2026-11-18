@@ -24,12 +24,13 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
- * «Guardar video»: JSON endpoints of the button of video bubbles, in
+ * «Guardar archivo» (born as «Guardar video»): JSON endpoints of the save
+ * button of every attachment (videos, images, PDFs, documents, audios), in
  * customer conversations and in the internal chat, and of its folder
  * browser over the NAS. Every route requires videos.save-to-nas; saving and
- * reading a copy also require that the user can see the chat of the video
+ * reading a copy also require that the user can see the chat of the file
  * (the same policies as the chat and its files: 404 otherwise, as if the
- * video did not exist). With the NAS down the folder routes answer 503 with
+ * file did not exist). With the NAS down the folder routes answer 503 with
  * the reason in Spanish.
  */
 class VideoExportController extends Controller
@@ -80,7 +81,7 @@ class VideoExportController extends Controller
     {
         abort_unless(Gate::allows('view', $conversation), 404);
         abort_unless($message->conversation_id === $conversation->id && $attachment->message_id === $message->id, 404);
-        abort_unless($this->videoExports->isSavableMessageAttachment($attachment), 422, 'Solo se pueden guardar videos disponibles.');
+        abort_unless($this->videoExports->isSavableMessageAttachment($attachment), 422, 'Solo se pueden guardar archivos disponibles.');
 
         return $this->onNas(fn (): JsonResponse => $this->save($request, $requestExport, $attachment, $conversation));
     }
@@ -89,7 +90,7 @@ class VideoExportController extends Controller
     {
         abort_unless(Gate::allows('view', $thread), 404);
         abort_unless($message->team_thread_id === $thread->id && $attachment->team_message_id === $message->id && ! $message->isDeleted(), 404);
-        abort_unless($this->videoExports->isSavableTeamAttachment($attachment), 422, 'Solo se pueden guardar videos disponibles.');
+        abort_unless($this->videoExports->isSavableTeamAttachment($attachment), 422, 'Solo se pueden guardar archivos disponibles.');
 
         return $this->onNas(fn (): JsonResponse => $this->save($request, $requestExport, $attachment, $thread));
     }
@@ -110,7 +111,7 @@ class VideoExportController extends Controller
     public function retry(Request $request, VideoExport $export): JsonResponse
     {
         $this->ensureReachable($request, $export);
-        abort_unless($export->status === VideoExportStatus::Failed, 409, 'Este video no tiene un error por reintentar.');
+        abort_unless($export->status === VideoExportStatus::Failed, 409, 'Este archivo no tiene un error por reintentar.');
 
         $export->forceFill(['status' => VideoExportStatus::Queued, 'error' => null, 'attempts' => 0])->save();
         SaveVideoToNas::dispatch($export->id);
@@ -126,7 +127,11 @@ class VideoExportController extends Controller
         $this->folders->ready();
         $this->folders->assertExists($folder);
 
-        $export = $requestExport->handle($request->user(), $attachment, $chat, $folder, $request->fileName());
+        // A typed extension of this same file is dropped (the copy keeps the original's).
+        $fileName = $request->fileName($this->videoExports->extensionOf($attachment));
+        $fileName = $fileName !== '' ? $fileName : $request->fileName();
+
+        $export = $requestExport->handle($request->user(), $attachment, $chat, $folder, $fileName);
 
         return response()->json(['export' => $this->videoExports->present($export)], 201);
     }

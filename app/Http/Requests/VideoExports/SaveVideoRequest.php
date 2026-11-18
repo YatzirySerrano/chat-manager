@@ -10,9 +10,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
 /**
- * The «Guardar video» dialog: the folder chosen in the NAS browser
- * (relative to the root of saved videos, "" for the root) and the name of
- * the video, without extension. Requires videos.save-to-nas; access to the
+ * The «Guardar archivo» dialog (videos, images, PDFs, documents, audios):
+ * the folder chosen in the NAS browser (relative to the root of saved
+ * files, "" for the root) and the name of the file, without extension. Requires videos.save-to-nas; access to the
  * chat is checked by the controller with the chat's own policy.
  */
 class SaveVideoRequest extends FormRequest
@@ -41,7 +41,7 @@ class SaveVideoRequest extends FormRequest
         return [
             function (Validator $validator): void {
                 if (! $validator->errors()->has('file_name') && $this->fileName() === '') {
-                    $validator->errors()->add('file_name', 'Escribe el nombre del video con letras o números.');
+                    $validator->errors()->add('file_name', 'Escribe el nombre del archivo con letras o números.');
                 }
             },
         ];
@@ -54,7 +54,7 @@ class SaveVideoRequest extends FormRequest
     {
         return [
             'folder' => 'carpeta',
-            'file_name' => 'nombre del video',
+            'file_name' => 'nombre del archivo',
         ];
     }
 
@@ -68,12 +68,18 @@ class SaveVideoRequest extends FormRequest
 
     /**
      * The name as it is written on the NAS: SMB-safe, without extension
-     * (the original's is added); a typed ".mp4" is dropped.
+     * (the original's is added); a typed extension of the same file (or of
+     * a video, as before) is dropped, so "Recibo.pdf" does not become
+     * "Recibo.pdf.pdf".
      */
-    public function fileName(): string
+    public function fileName(?string $extension = null): string
     {
         $name = $this->string('file_name')->trim()->value();
         $name = (string) preg_replace('/\.(mp4|mov|3gp|webm|ogv|avi|m4v|mkv)$/i', '', $name);
+
+        if ($extension !== null && $extension !== '') {
+            $name = (string) preg_replace('/\.'.preg_quote($extension, '/').'$/i', '', $name);
+        }
 
         return MediaPaths::clean($name, 120);
     }

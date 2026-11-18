@@ -21,7 +21,7 @@ defineProps<{
 
 <template>
     <div
-        class="overflow-hidden rounded-2xl border bg-muted/40 shadow-float"
+        class="overflow-hidden rounded-xl border bg-muted/40 shadow-float"
         aria-label="Vista previa de los mensajes automáticos"
     >
         <div class="flex items-center gap-2 border-b glass-card px-4 py-3">
@@ -43,7 +43,7 @@ defineProps<{
         <div class="flex flex-col gap-4 p-4">
             <div class="flex justify-start">
                 <p
-                    class="max-w-[80%] rounded-2xl rounded-bl-md border bg-card px-3 py-2 text-sm text-muted-foreground"
+                    class="max-w-[80%] rounded-bubble rounded-bl-sm border bg-card px-3 py-2 text-sm text-muted-foreground"
                 >
                     Hola, quisiera información.
                 </p>
@@ -66,14 +66,14 @@ defineProps<{
                 </span>
                 <div
                     v-if="message.text.trim() !== ''"
-                    class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-opacity"
+                    class="max-w-[85%] rounded-bubble rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground transition-opacity"
                     :class="!message.enabled && 'opacity-50'"
                 >
                     <WhatsAppText :text="message.text" />
                 </div>
                 <div
                     v-else
-                    class="flex max-w-[85%] items-center gap-2 rounded-2xl rounded-br-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
+                    class="flex max-w-[85%] items-center gap-2 rounded-bubble rounded-br-sm border border-dashed px-3 py-2 text-xs text-muted-foreground"
                 >
                     <MessageCircleDashed class="size-3.5" aria-hidden="true" />
                     Sin texto

@@ -2,6 +2,7 @@
 import { Form, Head } from '@inertiajs/vue3';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,12 +27,9 @@ defineProps<{
 <template>
     <Head title="Iniciar sesión" />
 
-    <div
-        v-if="status"
-        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
-    >
+    <StatusNote v-if="status" tone="success" live="polite" class="mb-6">
         {{ status }}
-    </div>
+    </StatusNote>
 
     <Form
         v-bind="store.form()"

@@ -718,10 +718,7 @@ const flaggedSections = computed(() =>
                             prefetch
                             class="group/back inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                         >
-                            <ArrowLeft
-                                class="size-4 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/back:-translate-x-0.5"
-                                aria-hidden="true"
-                            />
+                            <ArrowLeft class="size-4" aria-hidden="true" />
                             Conexiones
                         </Link>
                         <span class="h-4 w-px bg-border" aria-hidden="true" />
@@ -1670,7 +1667,7 @@ const flaggedSections = computed(() =>
         <div
             v-if="can.update"
             data-dock-bottom
-            class="sticky bottom-0 z-10 flex items-center gap-3 border-t border-border/70 bg-background/75 px-4 py-3 shadow-[0_-12px_24px_-20px_color-mix(in_oklch,var(--shadow-ink,black)_50%,transparent)] backdrop-blur-[14px] backdrop-saturate-150 md:px-6 lg:px-8 min-[100rem]:px-10"
+            class="sticky bottom-0 z-10 flex items-center gap-3 border-t bg-background px-4 py-3 md:px-6 lg:px-8 min-[100rem]:px-10"
         >
             <Button
                 type="submit"

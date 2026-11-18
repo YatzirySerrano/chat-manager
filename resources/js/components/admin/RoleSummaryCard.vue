@@ -54,7 +54,7 @@ const description = computed(() =>
     >
         <template #leading>
             <span
-                class="flex size-11 shrink-0 items-center justify-center rounded-xl transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/card:scale-105 group-hover/card:-rotate-3"
+                class="flex size-11 shrink-0 items-center justify-center rounded-lg"
                 :class="
                     role.is_deleted
                         ? 'bg-muted text-muted-foreground'

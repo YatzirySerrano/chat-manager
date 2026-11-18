@@ -10,8 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
  *
  * The figure is set in the display face with tabular numerals. A plain
  * number (or a string made only of digits) counts up to its value; any
- * other text ("3 min", "85 %") is shown as is. A light follows the pointer
- * over the card (`spotlight` utility).
+ * other text ("3 min", "85 %") is shown as is. The hairline darkens on
+ * hover (`spotlight` utility); the card itself does not move.
  *
  * `compact` (default) is meant for metric rows: small padding, the icon
  * inline with the label. The label and the hint are never cut: they wrap
@@ -59,7 +59,7 @@ const decimals = computed(() => {
 
 <template>
     <div
-        class="spotlight flex min-w-0 hover-lift flex-col rounded-xl border border-[color-mix(in_oklch,var(--border)_85%,transparent)] bg-card shadow-float"
+        class="spotlight flex min-w-0 flex-col rounded-xl border bg-card shadow-float"
         :class="size === 'compact' ? 'gap-1 px-4 py-3.5' : 'gap-3 p-5'"
         data-stat-card
     >
@@ -87,7 +87,7 @@ const decimals = computed(() => {
             >
             <span
                 v-if="icon"
-                class="flex size-9 items-center justify-center rounded-[0.7rem] accent-gradient shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_4px_10px_-4px_color-mix(in_oklch,var(--primary)_60%,transparent)]"
+                class="flex size-9 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground"
             >
                 <component :is="icon" class="size-4.5" aria-hidden="true" />
             </span>

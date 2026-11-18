@@ -308,10 +308,7 @@ const compact = computed(() => props.size === 'compact');
             data-kpi-link
         >
             {{ hrefLabel }}
-            <ArrowRight
-                class="size-3.5 transition-transform duration-(--duration-base) group-hover/kpi-link:translate-x-0.5"
-                aria-hidden="true"
-            />
+            <ArrowRight class="size-3.5" aria-hidden="true" />
         </Link>
     </div>
 </template>

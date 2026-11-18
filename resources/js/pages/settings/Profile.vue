@@ -63,7 +63,7 @@ function submit(): void {
         >
             <!-- How teammates see you, updated while you type. -->
             <div
-                class="mb-5 flex min-w-0 items-center gap-3 rounded-xl accent-gradient-soft px-3 py-3 ring-1 ring-primary/15 ring-inset sm:px-4"
+                class="mb-5 flex min-w-0 items-center gap-3 rounded-lg border bg-surface-sunken px-3 py-3 sm:px-4"
                 aria-hidden="true"
             >
                 <ListAvatar

@@ -93,13 +93,17 @@ columna.
 
 ## 3. Tokens
 
-- **Tipografía.** `font-display` (Bricolage Grotesque 500/600/700): `<h1>` de página, títulos de sección, de panel,
-  de diálogo y de estado vacío, y cifras de indicadores (siempre con `tabular-nums`). Instrument Sans para todo lo
-  demás. Roles: h1 `font-display text-3xl font-semibold` (lo pone `PageHeader`), h2 de sección `font-display text-xl`
+- **Tipografía.** `font-display` (Familjen Grotesk 500/600/700): `<h1>` de página, títulos de sección, de panel,
+  de diálogo y de estado vacío, y cifras de indicadores (siempre con `tabular-nums`). Hanken Grotesk para todo lo
+  demás (ambas autoalojadas desde Bunny Fonts por `laravel-vite-plugin/fonts`, con precarga). Roles: h1 `font-display text-3xl font-semibold` (lo pone `PageHeader`), h2 de sección `font-display text-xl`
   (`SectionHeading`, `FormSection`), título de panel `font-display text-lg` (`SurfaceCard`), cuerpo `text-sm`,
   metadatos `text-xs text-muted-foreground`. Sin mayúsculas sostenidas ni etiquetas decorativas sobre los títulos.
-- **Radios por jerarquía.** `rounded-md` (8 px) controles · `rounded-lg` (10 px) popovers e ítems agrupados ·
-  `rounded-xl` (14 px) paneles · `rounded-2xl` (18 px) diálogos.
+- **Radios por jerarquía («Mostrador»).** `rounded-sm` (4 px) chips, `rounded-md` (6 px) controles, `rounded-lg`
+  (8 px) popovers e ítems agrupados, `rounded-xl` (10 px) paneles, `rounded-2xl` (14 px) diálogos.
+- **Sin adornos.** Nada de degradados, halos de color, desenfoques ni luces que siguen al puntero. Las utilidades
+  `accent-gradient`, `accent-gradient-soft`, `text-gradient`, `glow`, `canvas-ambient`, `border-gradient` y
+  `spotlight` se conservan por compatibilidad y resuelven a color plano o a un cambio de borde. Las tarjetas no se
+  elevan ni se mueven al pasar el puntero; los iconos tampoco giran ni crecen.
 - **Sombras** (teñidas con `--shadow-ink`, que sigue a la paleta): `shadow-card` es **vacía** a propósito (los
   paneles descansan planos; no hace falta quitarla, pero no la agregues), `shadow-(--shadow-control)` para botones
   y pulgares, `shadow-hover` al pasar sobre algo navegable, `shadow-popover`, `shadow-elevated`.
@@ -107,9 +111,14 @@ columna.
   **superficie de tinta** derivada de ellas en ambos temas. Cualquier bloque puede ser tinta con el atributo
   `data-ink` (lo usa el escenario del inicio de sesión): dentro de él `text-foreground`, `text-muted-foreground`,
   `bg-primary`, `border`, etc. ya valen para fondo oscuro.
-- **Movimiento.** `--duration-fast` 150 ms (controles), `--duration-base` 200 ms (popovers, conmutadores),
-  `--duration-panel` 280 ms (paneles, indicadores deslizantes), `--stagger` 36 ms. Curvas: `ease-(--ease-standard)`,
-  `ease-(--ease-out-quint)` (entradas), `ease-(--ease-spring)` (pulgares e iconos).
+- **Movimiento.** `--duration-fast` 140 ms (controles), `--duration-base` 180 ms (popovers, conmutadores),
+  `--duration-panel` 240 ms (paneles, cambios de página, indicadores deslizantes), `--stagger` 22 ms. Curvas:
+  `ease-(--ease-standard)`, `ease-(--ease-out-quint)` (entradas), `ease-(--ease-spring)` (solo un leve rebote al
+  soltar un botón o un pulgar; `--ease-spring-soft` ya no rebota). Sin desenfoque en ninguna entrada.
+- **Listas animadas.** `<ListTransition>` (`components/ui/list-transition`) envuelve `<TransitionGroup name="list">`;
+  para cuadrículas que se reacomodan al filtrar, la directiva `vAutoAnimate` de `@formkit/auto-animate/vue`
+  (importada en la página que la usa). `<Transition name="fade">` y `name="fade-up"` sirven para intercambios.
+  Todo queda instantáneo con `prefers-reduced-motion`.
 
 ## 4. Componentes compartidos (API sin cambios incompatibles)
 

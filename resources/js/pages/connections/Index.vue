@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vAutoAnimate } from '@formkit/auto-animate/vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     CircleAlert,
@@ -639,6 +640,7 @@ function phoneLabel(connection: Connection): string {
 
                 <ul
                     v-else-if="viewMode === 'cards'"
+                    v-auto-animate="{ duration: 220 }"
                     role="list"
                     class="grid reveal-stagger grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3 p-3 sm:p-4"
                     :class="loading && 'admin-loading'"

@@ -68,18 +68,23 @@
     --ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
     --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
-    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-    /* Gentler overshoot for larger surfaces (dialogs, panels, indicators). */
-    --ease-spring-soft: cubic-bezier(0.22, 1.25, 0.36, 1);
+    /*
+      "Mostrador" motion: things settle, they do not bounce. The spring
+      names are kept for the components that use them, but the overshoot is
+      only a hint (press release, badges) and none for larger surfaces.
+    */
+    --ease-spring: cubic-bezier(0.3, 1.25, 0.5, 1);
+    --ease-spring-soft: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
     /*
-      Radius by hierarchy, soft but not bubbly: controls 8 px (rounded-md),
-      popovers 10 px (rounded-lg), panels 14 px (rounded-xl), dialogs 18 px
-      (rounded-2xl). Chat bubbles keep their own radius.
+      Radius by hierarchy, firm rather than soft: chips 4 px (rounded-sm),
+      controls 6 px (rounded-md), popovers 8 px (rounded-lg), panels 10 px
+      (rounded-xl), dialogs 14 px (rounded-2xl). Chat bubbles keep their own
+      radius.
     */
-    --radius-2xl: calc(var(--radius) + 8px);
-    --radius-xl: calc(var(--radius) + 4px);
+    --radius-2xl: calc(var(--radius) + 6px);
+    --radius-xl: calc(var(--radius) + 2px);
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
@@ -154,29 +159,26 @@
         0 1px 1px color-mix(in oklch, var(--shadow-ink) 6%, transparent),
         0 1px 2px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent);
     /*
-      Second redesign ("Pulso"): panels float on the canvas. shadow-float is
-      the resting elevation of a floating panel (contact + ambient + a light
-      lip on top in dark mode via --edge-highlight); shadow-glow is a halo in
-      the palette colour for the primary action, the active indicator and
-      focused fields.
+      "Mostrador" (third pass): panels are sheets of paper on the desk, not
+      objects hovering above it. shadow-float is the same paper edge as
+      shadow-card (plus the faint top lip of dark mode, --edge-highlight);
+      shadow-lift is a short contact shadow for a hovered card. There is no
+      coloured halo anywhere: shadow-glow is kept as a name and resolves to
+      the neutral control shadow, and shadow-glow-ring is a plain focus ring.
     */
     --shadow-float:
         inset 0 1px 0 var(--edge-highlight),
-        0 0 0 1px color-mix(in oklch, var(--shadow-ink) 3%, transparent),
-        0 1px 2px color-mix(in oklch, var(--shadow-ink) 5%, transparent),
-        0 6px 16px -6px color-mix(in oklch, var(--shadow-ink) 10%, transparent),
-        0 18px 40px -24px
-            color-mix(in oklch, var(--shadow-ink) 18%, transparent);
+        0 1px 0 color-mix(in oklch, var(--shadow-ink) 5%, transparent),
+        0 1px 3px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent);
     --shadow-lift:
         inset 0 1px 0 var(--edge-highlight),
-        0 2px 4px -1px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
-        0 12px 28px -10px
-            color-mix(in oklch, var(--shadow-ink) 22%, transparent);
+        0 1px 2px color-mix(in oklch, var(--shadow-ink) 6%, transparent),
+        0 4px 12px -6px color-mix(in oklch, var(--shadow-ink) 16%, transparent);
     --shadow-glow:
-        0 1px 2px color-mix(in oklch, var(--primary) 30%, transparent),
-        0 6px 18px -6px color-mix(in oklch, var(--primary) 55%, transparent);
-    --shadow-glow-ring: 0 0 0 4px
-        color-mix(in oklch, var(--primary) 18%, transparent);
+        0 1px 1px color-mix(in oklch, var(--shadow-ink) 8%, transparent),
+        0 1px 2px -1px color-mix(in oklch, var(--shadow-ink) 10%, transparent);
+    --shadow-glow-ring: 0 0 0 3px
+        color-mix(in oklch, var(--primary) 20%, transparent);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -298,7 +300,7 @@
     --chart-3: var(--chart-cat-3);
     --chart-4: var(--chart-cat-4);
     --chart-5: var(--chart-cat-5);
-    --radius: 0.625rem;
+    --radius: 0.5rem;
     /* Top lip of floating panels (only visible in dark mode). */
     --edge-highlight: oklch(1 0 0 / 0.6);
     /*
@@ -352,15 +354,16 @@
     --touch-min: 2.75rem;
 
     /*
-      Motion: controls 150 ms, toggles/popovers 200 ms, panels and page
-      changes 280 ms. --stagger is the delay between items of a staggered
-      entrance (reveal / reveal-stagger utilities).
+      Motion: controls 150 ms, toggles/popovers 180 ms, panels and page
+      changes 240 ms. --stagger is the delay between items of a staggered
+      entrance (reveal / reveal-stagger utilities): short, so a list reads
+      as arriving together rather than as a cascade.
     */
-    --duration-fast: 150ms;
-    --duration-base: 200ms;
-    --duration-panel: 280ms;
-    --duration-slow: 420ms;
-    --stagger: 36ms;
+    --duration-fast: 140ms;
+    --duration-base: 180ms;
+    --duration-panel: 240ms;
+    --duration-slow: 320ms;
+    --stagger: 22ms;
     /* Also exposed as ease-standard / ease-emphasized utilities via @theme. */
     --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.15);
 
@@ -447,14 +450,19 @@
 */
 :root,
 [data-palette='emerald'] {
-    --brand-hue: 160;
-    --brand-chroma: 0.14;
-    --ink-chroma: 0.038;
-    --primary: oklch(0.53 0.13 160);
+    /*
+      Default palette: a deep pine green, the green of a ledger rather than
+      of a messaging app. Lower chroma than the other palettes so the
+      accent reads as ink on paper, not as a highlight.
+    */
+    --brand-hue: 166;
+    --brand-chroma: 0.11;
+    --ink-chroma: 0.034;
+    --primary: oklch(0.5 0.105 166);
     --primary-foreground: oklch(0.99 0 0);
-    --primary-soft: oklch(0.96 0.033 160);
-    --primary-soft-foreground: oklch(0.43 0.13 160);
-    --ring: oklch(0.53 0.13 160 / 0.6);
+    --primary-soft: oklch(0.955 0.028 166);
+    --primary-soft-foreground: oklch(0.41 0.1 166);
+    --ring: oklch(0.5 0.105 166 / 0.6);
 }
 
 [data-palette='teal'] {
@@ -537,11 +545,11 @@
 .dark,
 [data-palette='emerald'].dark,
 .dark [data-palette='emerald'] {
-    --primary: oklch(0.74 0.14 160);
-    --primary-foreground: oklch(0.18 0.03 160);
-    --primary-soft: oklch(0.3 0.056 160);
-    --primary-soft-foreground: oklch(0.86 0.14 160);
-    --ring: oklch(0.74 0.14 160 / 0.65);
+    --primary: oklch(0.74 0.115 166);
+    --primary-foreground: oklch(0.18 0.03 166);
+    --primary-soft: oklch(0.3 0.048 166);
+    --primary-soft-foreground: oklch(0.86 0.11 166);
+    --ring: oklch(0.74 0.115 166 / 0.65);
 }
 
 [data-palette='teal'].dark,
@@ -818,78 +826,45 @@
 
 /*
   Navigable cards and rows (RecordCard with href, linked chart cards, scope
-  options): a border tinted by the palette, a 2 px lift and a tinted shadow
-  on hover.
+  options): on hover the border takes a trace of the palette and a short
+  contact shadow appears. Nothing moves: the card stays where the pointer
+  is aiming.
 */
 @utility interactive-surface {
-    transition-property: background-color, border-color, box-shadow, translate;
+    transition-property: background-color, border-color, box-shadow;
     transition-duration: var(--duration-base);
-    transition-timing-function: var(--ease-out-quint);
+    transition-timing-function: var(--ease-standard);
 
     @media (hover: hover) {
         &:hover {
             border-color: color-mix(
                 in oklch,
-                var(--primary) 45%,
+                var(--primary) 35%,
                 var(--border-strong)
             );
-            box-shadow: var(--shadow-hover);
-            translate: 0 -2px;
+            box-shadow: var(--shadow-lift);
         }
     }
 
     &:active {
-        translate: 0 0;
         box-shadow: none;
     }
 }
 
 /*
-  Spotlight: a soft light and a border glow follow the pointer (indicator
-  cards). --mx / --my are written by lib/spotlight.ts for any element with
-  this utility; without JavaScript the light simply stays at the top.
+  Spotlight (indicator cards): on hover the hairline darkens one step. The
+  pointer-following light of earlier passes is gone; the name is kept so
+  the cards that use it need no change.
 */
 @utility spotlight {
     position: relative;
-    isolation: isolate;
-
-    &::before,
-    &::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity var(--duration-panel) var(--ease-standard);
-    }
-
-    &::before {
-        z-index: -1;
-        background: radial-gradient(
-            18rem circle at var(--mx, 50%) var(--my, 0%),
-            color-mix(in oklch, var(--primary) 13%, transparent),
-            transparent 70%
-        );
-    }
-
-    &::after {
-        inset: -1px;
-        padding: 1px;
-        background: radial-gradient(
-            12rem circle at var(--mx, 50%) var(--my, 0%),
-            color-mix(in oklch, var(--primary) 75%, transparent),
-            transparent 70%
-        );
-        mask:
-            linear-gradient(#000 0 0) content-box exclude,
-            linear-gradient(#000 0 0);
-    }
+    transition-property: border-color, background-color;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-standard);
 
     @media (hover: hover) {
-        &:hover::before,
-        &:hover::after {
-            opacity: 1;
+        &:hover {
+            border-color: var(--border-strong);
         }
     }
 }
@@ -933,13 +908,14 @@
   the entrance ends.
 */
 @utility reveal {
-    animation: reveal-up 360ms var(--ease-spring-soft) backwards;
+    animation: reveal-up var(--duration-panel) var(--ease-out-quint) backwards;
     animation-delay: calc(var(--i, 0) * var(--stagger));
 }
 
 @utility reveal-stagger {
     & > * {
-        animation: reveal-up 360ms var(--ease-spring-soft) backwards;
+        animation: reveal-up var(--duration-panel) var(--ease-out-quint)
+            backwards;
         animation-delay: calc(11 * var(--stagger));
     }
 
@@ -996,58 +972,57 @@
     &[data-state='open'],
     &[data-state='delayed-open'],
     &[data-state='instant-open'] {
-        animation: pop-in 240ms var(--ease-spring-soft);
+        animation: pop-in 160ms var(--ease-out-quint);
     }
 
     &[data-state='closed'] {
-        animation: pop-out 120ms var(--ease-exit) forwards;
+        animation: pop-out 100ms var(--ease-exit) forwards;
     }
 }
 
 @utility dialog-motion {
     &[data-state='open'] {
-        animation: dialog-in 340ms var(--ease-spring-soft);
+        animation: dialog-in 220ms var(--ease-out-quint);
     }
 
     &[data-state='closed'] {
-        animation: dialog-out var(--duration-fast) var(--ease-exit) forwards;
+        animation: dialog-out 130ms var(--ease-exit) forwards;
     }
 }
 
 @keyframes reveal-up {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(6px);
     }
 }
 
+/* Floating layers grow a little out of their trigger; no blur. */
 @keyframes pop-in {
     from {
         opacity: 0;
-        transform: scale(0.94) translateY(-2px);
-        filter: blur(2px);
+        transform: scale(0.97);
     }
 }
 
 @keyframes pop-out {
     to {
         opacity: 0;
-        transform: scale(0.97);
+        transform: scale(0.98);
     }
 }
 
 @keyframes dialog-in {
     from {
         opacity: 0;
-        transform: translateY(16px) scale(0.96);
-        filter: blur(3px);
+        transform: translateY(8px) scale(0.985);
     }
 }
 
 @keyframes dialog-out {
     to {
         opacity: 0;
-        transform: translateY(6px) scale(0.985);
+        transform: translateY(4px) scale(0.99);
     }
 }
 
@@ -1074,8 +1049,7 @@
 @keyframes page-in {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.995);
-        filter: blur(2px);
+        transform: translateY(6px);
     }
 }
 
@@ -1100,11 +1074,11 @@
 }
 
 ::view-transition-old(page) {
-    animation: page-out 110ms var(--ease-standard) both;
+    animation: page-out 90ms var(--ease-standard) both;
 }
 
 ::view-transition-new(page) {
-    animation: page-in 320ms var(--ease-spring-soft) 50ms both;
+    animation: page-in 220ms var(--ease-out-quint) 40ms both;
 }
 
 ::view-transition-old(shell-sidebar),
@@ -1152,9 +1126,8 @@
     background-image: linear-gradient(
         100deg,
         transparent 25%,
-        color-mix(in oklch, var(--card) 75%, transparent) 45%,
-        color-mix(in oklch, var(--primary) 7%, transparent) 52%,
-        transparent 72%
+        color-mix(in oklch, var(--card) 70%, transparent) 50%,
+        transparent 75%
     );
     background-size: 220% 100%;
     background-repeat: no-repeat;
@@ -1400,26 +1373,17 @@
   colour, and all motion collapses under prefers-reduced-motion (above).
 ------------------------------------------------------------------------ */
 
-/* Ambient canvas: the page background with a faint palette glow on top. */
+/*
+  Page canvas. It used to carry a palette glow; the canvas is now plain so
+  colour is only spent where it means something (actions, state).
+*/
 @utility canvas-ambient {
     background-color: var(--background);
-    background-image:
-        radial-gradient(
-            60rem 28rem at 12% -8%,
-            color-mix(in oklch, var(--primary) 7%, transparent),
-            transparent 70%
-        ),
-        radial-gradient(
-            48rem 24rem at 100% 0%,
-            color-mix(in oklch, var(--primary) 4%, transparent),
-            transparent 70%
-        );
-    background-repeat: no-repeat;
 }
 
-/* Floating panel: hairline, generous radius and layered elevation. */
+/* Panel on the canvas: hairline, panel radius and the paper edge. */
 @utility surface-float {
-    border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+    border: 1px solid var(--border);
     border-radius: var(--radius-xl);
     background-color: var(--card);
     box-shadow: var(--shadow-float);
@@ -1444,42 +1408,26 @@
 }
 
 /*
-  Accent gradient: the palette primary sweeping to a neighbour hue. For hero
-  elements only (avatars, the primary button, active indicators).
-  accent-gradient fills; accent-gradient-soft is a tinted wash; text-gradient
-  paints text.
+  Accent fills. The gradients of the "Pulso" pass read as decoration, so
+  these names now resolve to flat colour: accent-gradient is the solid
+  primary with its foreground (logo mark, avatars, the active indicator);
+  accent-gradient-soft is a flat tint of the primary over the card
+  (selected cards, highlighted rows); text-gradient is plain ink.
 */
 @utility accent-gradient {
     background-color: var(--primary);
-    background-image: linear-gradient(
-        135deg,
-        oklch(from var(--primary) calc(l + 0.07) c calc(h - 18)),
-        var(--primary) 55%,
-        oklch(from var(--primary) calc(l - 0.04) c calc(h + 14))
-    );
     color: var(--primary-foreground);
 }
 
 @utility accent-gradient-soft {
-    background-image: linear-gradient(
-        135deg,
-        color-mix(in oklch, var(--primary) 14%, var(--card)),
-        color-mix(in oklch, var(--primary) 4%, var(--card))
-    );
+    background-color: color-mix(in oklch, var(--primary) 7%, var(--card));
 }
 
 @utility text-gradient {
-    background-image: linear-gradient(
-        120deg,
-        var(--foreground) 10%,
-        color-mix(in oklch, var(--primary) 80%, var(--foreground))
-    );
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
+    color: var(--foreground);
 }
 
-/* Halo in the palette colour (primary action, active pill). */
+/* Kept for compatibility: a neutral control shadow, no coloured halo. */
 @utility glow {
     box-shadow: var(--shadow-glow);
 }
@@ -1498,26 +1446,23 @@
     }
 }
 
-/* Hover lift for anything clickable that is not a list row. */
+/*
+  Hover for anything clickable that is not a list row: a short contact
+  shadow, no movement.
+*/
 @utility hover-lift {
-    transition-property: translate, box-shadow, border-color, background-color;
+    transition-property: box-shadow, border-color, background-color;
     transition-duration: var(--duration-base);
-    transition-timing-function: var(--ease-spring);
+    transition-timing-function: var(--ease-standard);
 
     @media (hover: hover) {
         &:hover {
-            translate: 0 -1px;
             box-shadow: var(--shadow-lift);
         }
     }
-
-    &:active {
-        translate: 0 0;
-        transition-duration: 80ms;
-    }
 }
 
-/* Springy press: shrinks on press and bounces back on release. */
+/* Press: shrinks a touch while held and settles back on release. */
 @utility press-spring {
     transition-property:
         color, background-color, border-color, opacity, box-shadow, scale,
@@ -1526,7 +1471,7 @@
     transition-timing-function: var(--ease-spring);
 
     &:active:not(:disabled, [aria-disabled='true']) {
-        scale: 0.96;
+        scale: 0.97;
         transition-duration: 90ms;
         transition-timing-function: var(--ease-standard);
     }
@@ -1538,9 +1483,8 @@
     background-image: linear-gradient(
         100deg,
         transparent 25%,
-        color-mix(in oklch, var(--card) 75%, transparent) 45%,
-        color-mix(in oklch, var(--primary) 7%, transparent) 52%,
-        transparent 72%
+        color-mix(in oklch, var(--card) 70%, transparent) 50%,
+        transparent 75%
     );
     background-size: 220% 100%;
     background-repeat: no-repeat;
@@ -1549,7 +1493,8 @@
 
 /* One-shot entrances. Stagger with style="--i: n". */
 @utility enter-spring {
-    animation: enter-spring 420ms var(--ease-spring-soft) backwards;
+    animation: enter-spring var(--duration-panel) var(--ease-out-quint)
+        backwards;
     animation-delay: calc(var(--i, 0) * var(--stagger));
 }
 
@@ -1564,9 +1509,9 @@
     animation-delay: calc(var(--i, 0) * var(--stagger));
 }
 
-/* A value that just changed (counters, badges): a quick springy bump. */
+/* A value that just changed (counters, badges): a quick bump. */
 @utility bump {
-    animation: bump 380ms var(--ease-spring);
+    animation: bump 280ms var(--ease-spring);
 }
 
 /* Moving indicators (tabs underline, sliding pills, selection bars). */
@@ -1574,8 +1519,8 @@
     transition-property:
         transform, translate, left, top, width, height, opacity,
         background-color;
-    transition-duration: 360ms;
-    transition-timing-function: var(--ease-spring-soft);
+    transition-duration: var(--duration-panel);
+    transition-timing-function: var(--ease-out-quint);
 }
 
 /* Live status dot: a ring breathes out of it (online, new activity). */
@@ -1603,33 +1548,65 @@
     );
 }
 
-/* Gradient hairline border (active cards, the focused composer). */
+/* Accent hairline border (active cards): a flat tint of the primary. */
 @utility border-gradient {
-    position: relative;
+    border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+}
 
-    &::before {
-        content: '';
-        position: absolute;
-        inset: -1px;
-        padding: 1px;
-        border-radius: inherit;
-        pointer-events: none;
-        background: linear-gradient(
-            135deg,
-            color-mix(in oklch, var(--primary) 70%, transparent),
-            color-mix(in oklch, var(--primary) 10%, transparent) 60%,
-            color-mix(in oklch, var(--primary) 40%, transparent)
-        );
-        mask:
-            linear-gradient(#000 0 0) content-box exclude,
-            linear-gradient(#000 0 0);
-    }
+/*
+  List enter / leave for <TransitionGroup name="list"> (or the ListTransition
+  component): new rows fade in from a few pixels above, removed rows fade
+  out, and the rest slide into place. Leaving rows are taken out of the flow
+  so the move transition can run.
+*/
+.list-enter-active,
+.list-leave-active,
+.list-move {
+    transition:
+        opacity var(--duration-base) var(--ease-standard),
+        transform var(--duration-panel) var(--ease-out-quint);
+}
+
+.list-enter-from {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+.list-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+}
+
+.list-leave-active {
+    position: absolute;
+    inset-inline: 0;
+}
+
+/* <Transition name="fade"> and <Transition name="fade-up"> for swaps. */
+.fade-enter-active,
+.fade-leave-active,
+.fade-up-enter-active,
+.fade-up-leave-active {
+    transition:
+        opacity var(--duration-base) var(--ease-standard),
+        transform var(--duration-base) var(--ease-out-quint);
+}
+
+.fade-enter-from,
+.fade-leave-to,
+.fade-up-leave-to {
+    opacity: 0;
+}
+
+.fade-up-enter-from {
+    opacity: 0;
+    transform: translateY(4px);
 }
 
 @keyframes enter-spring {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.98);
+        transform: translateY(6px);
     }
 }
 
@@ -1642,13 +1619,13 @@
 @keyframes enter-slide-right {
     from {
         opacity: 0;
-        transform: translateX(-10px);
+        transform: translateX(-6px);
     }
 }
 
 @keyframes bump {
     40% {
-        transform: scale(1.18);
+        transform: scale(1.12);
     }
 }
 

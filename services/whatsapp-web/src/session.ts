@@ -100,6 +100,13 @@ const OUTBOUND_KINDS: readonly OutboundKind[] = [
     'sticker',
 ];
 
+/** 500 closes in a row (no open between them) before credentials are dropped. */
+const BAD_SESSION_LIMIT = 5;
+/** 440 closes tolerated within REPLACED_WINDOW_SECONDS before stopping. */
+const REPLACED_LIMIT = 3;
+const REPLACED_WINDOW_SECONDS = 15 * 60;
+const REPLACED_RETRY_MS = 30_000;
+
 const REASON_MESSAGES: Record<StateReason, string> = {
     qr_timeout: 'El código QR caducó sin escanearse.',
     logged_out_from_phone: 'La sesión se cerró desde el teléfono.',
@@ -152,6 +159,10 @@ export class Session {
     private qrCount = 0;
     private attempts = 0;
     private reconnects = 0;
+    /** Consecutive 500 closes without a successful open in between. */
+    private badSessions = 0;
+    /** When the recent 440 ("replaced") closes happened, in seconds. */
+    private replacedAt: number[] = [];
     private connectedSince: number | null = null;
     private lastEventAt: number | null = null;
     private lastInboundAt: number | null = null;
@@ -598,6 +609,7 @@ export class Session {
         name: string | null;
     }): Promise<void> {
         this.attempts = 0;
+        this.badSessions = 0;
         this.qrCount = 0;
         this.meta.linked = true;
         this.meta.linked_at ??= this.seconds();
@@ -642,6 +654,23 @@ export class Session {
             return;
         }
 
+        /*
+         * Baileys closes with 500 for any unknown stream error too (a network
+         * hiccup, a WhatsApp server restart), not only for broken
+         * credentials. A linked session keeps its credentials and reconnects;
+         * only a run of 500s without one successful open in between means
+         * the credentials are really gone.
+         */
+        if (
+            statusCode === CLOSE.badSession &&
+            linked &&
+            ++this.badSessions < BAD_SESSION_LIMIT
+        ) {
+            await this.scheduleReconnect();
+
+            return;
+        }
+
         const revoked: Record<number, StateReason> = {
             [CLOSE.loggedOut]: 'logged_out_from_phone',
             [CLOSE.forbidden]: 'banned',
@@ -663,7 +692,38 @@ export class Session {
             return;
         }
 
-        // Another process took the session: reconnecting would start a fight.
+        /*
+         * 440: WhatsApp saw this session open somewhere else. A single one is
+         * usually a restart overlapping the previous process, or a stale
+         * stream on WhatsApp's side: try again after a pause. Several in a
+         * short time mean another process really holds it: reconnecting
+         * would start a fight, so the session stops (credentials kept).
+         */
+        if (statusCode === CLOSE.connectionReplaced) {
+            const now = this.seconds();
+            this.replacedAt = [
+                ...this.replacedAt.filter(
+                    (at) => now - at < REPLACED_WINDOW_SECONDS,
+                ),
+                now,
+            ];
+        }
+
+        if (
+            statusCode === CLOSE.connectionReplaced &&
+            linked &&
+            this.replacedAt.length < REPLACED_LIMIT
+        ) {
+            if (this.state !== 'reconnecting') {
+                this.reconnects += 1;
+                this.transition('reconnecting', 'network');
+            }
+
+            this.scheduleOpen(REPLACED_RETRY_MS);
+
+            return;
+        }
+
         if (statusCode === CLOSE.connectionReplaced) {
             this.meta.desired = 'stopped';
             this.meta.terminal = 'error';
@@ -694,6 +754,32 @@ export class Session {
     private async scheduleReconnect(): Promise<void> {
         this.attempts += 1;
 
+        /*
+         * A linked session never gives up: WhatsApp keeps it valid for
+         * weeks while the phone is online. Past the fast attempts it keeps
+         * trying every few minutes, so a long outage (the VPS network, the
+         * NAS, WhatsApp itself) heals on its own without a new QR.
+         */
+        if (
+            this.meta.linked &&
+            this.attempts > this.options.limits.reconnectMaxAttempts
+        ) {
+            this.meta.last_error = {
+                code: 'network',
+                message: REASON_MESSAGES.network,
+            };
+            await this.saveMeta();
+
+            if (this.state !== 'reconnecting') {
+                this.reconnects += 1;
+                this.transition('reconnecting', 'network');
+            }
+
+            this.scheduleOpen(this.slowBackoff());
+
+            return;
+        }
+
         if (this.attempts > this.options.limits.reconnectMaxAttempts) {
             this.meta.last_error = {
                 code: 'network',
@@ -721,10 +807,15 @@ export class Session {
             this.transition('starting');
         }
 
-        const delay = this.backoff(this.attempts);
+        this.scheduleOpen(this.backoff(this.attempts));
+    }
+
+    /** Opens the socket again after `delay`, unless the session moved on. */
+    private scheduleOpen(delay: number): void {
         const generation = this.generation;
         const schedule = this.options.schedule ?? defaultSchedule;
 
+        this.retry?.();
         this.retry = schedule(() => {
             this.retry = null;
 
@@ -734,6 +825,13 @@ export class Session {
                 );
             }
         }, delay);
+    }
+
+    /** Every 5 minutes (±25 %) once the fast attempts are spent. */
+    private slowBackoff(): number {
+        const random = this.options.random ?? Math.random;
+
+        return Math.round(5 * 60_000 * (0.75 + random() * 0.5));
     }
 
     /** Exponential backoff (2 s, 4 s, 8 s... capped at 60 s) with ±25 % of jitter. */

@@ -286,7 +286,7 @@ describe('máquina de estados de la sesión (§3)', () => {
         );
     });
 
-    test('agotados los reintentos queda en error y ya no insiste', async () => {
+    test('agotados los reintentos rápidos una sesión vinculada sigue intentando cada pocos minutos', async () => {
         await linkSession(harness, 1);
 
         // WAWEB_RECONNECT_MAX_ATTEMPTS = 3 en las pruebas.
@@ -309,18 +309,28 @@ describe('máquina de estados de la sesión (§3)', () => {
         });
         await harness.settle();
 
-        const failed = await state(1);
+        const waiting = await state(1);
 
-        assert.equal(failed.state, 'error');
-        assert.equal(failed.last_error.code, 'network');
-        assert.equal(harness.timers.pending, 0);
+        assert.equal(waiting.state, 'reconnecting');
+        assert.equal(waiting.last_error.code, 'network');
+        assert.equal(harness.timers.pending, 1, 'nunca se rinde');
+        const slow = harness.timers.delays.at(-1) as number;
+        assert.ok(slow >= 225_000 && slow <= 375_000, 'unos 5 minutos');
+        assert.equal(
+            existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
+            true,
+            'las credenciales se conservan',
+        );
 
-        // «Reconectar» sigue disponible: las credenciales no se perdieron.
-        const retried = await harness.call('POST', '/v1/sessions/1/start', {
-            mode: 'restore',
+        // Al volver la red, se conecta sin pedir QR.
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'open',
+            me: { jid: '5215500000001:1@s.whatsapp.net', name: null },
         });
-
-        assert.equal(retried.json.state, 'starting');
+        await harness.settle();
+        assert.equal((await state(1)).state, 'connected');
     });
 
     test('si no se puede abrir el socket se trata como una caída de red', async () => {
@@ -407,8 +417,22 @@ describe('máquina de estados de la sesión (§3)', () => {
         assert.equal(harness.timers.pending, 0);
     });
 
-    test('sesión reemplazada por otra instancia: error, sin pelear por la conexión', async () => {
+    test('una sesión reemplazada reintenta tras una pausa; varias seguidas la detienen sin borrar credenciales', async () => {
         await linkSession(harness, 1);
+
+        for (let close = 0; close < 2; close++) {
+            harness.whatsapp.last.emit({
+                type: 'close',
+                statusCode: 440,
+                detail: 'conflict',
+            });
+            await flush();
+            assert.equal((await state(1)).state, 'reconnecting');
+            assert.equal(harness.timers.delays.at(-1), 30_000);
+            harness.timers.runNext();
+            await flush();
+        }
+
         harness.whatsapp.last.emit({
             type: 'close',
             statusCode: 440,
@@ -424,6 +448,33 @@ describe('máquina de estados de la sesión (§3)', () => {
             true,
             'las credenciales se conservan',
         );
+    });
+
+    test('un cierre 500 de una sesión vinculada reconecta sin borrar credenciales ni pedir QR', async () => {
+        await linkSession(harness, 1);
+
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 500,
+            detail: 'Stream Errored (unknown)',
+        });
+        await flush();
+
+        assert.equal((await state(1)).state, 'reconnecting');
+        assert.equal(harness.timers.pending, 1);
+        assert.equal(
+            existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
+            true,
+        );
+
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'open',
+            me: { jid: '5215500000001:1@s.whatsapp.net', name: null },
+        });
+        await harness.settle();
+        assert.equal((await state(1)).state, 'connected');
     });
 
     test('desconectar temporalmente conserva las credenciales y reconectar no pide QR', async () => {

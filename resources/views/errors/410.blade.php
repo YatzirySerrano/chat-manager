@@ -1,4 +1,4 @@
-@extends('errors::minimal')
+@extends('errors.layout')
 
 @section('title', 'Enlace no disponible')
 @section('code', '410')

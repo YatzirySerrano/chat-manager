@@ -496,13 +496,17 @@ Es un estado de preparación **independiente** del estado de la conversación (`
   plataforma): si un administrador la apaga, la cola se libera sin reescribir nada.
 - La conversación sigue recibiendo los mensajes del cliente y nunca pierde historial.
 
-**Confirmar o devolver:** `POST /conversations/{conversation}/readiness` con `{readiness: ready|needs_info, reason?,
-version?}` (`SetConversationReadiness`).
+**Confirmar o devolver:** `POST /conversations/{conversation}/readiness` con `{readiness: ready|needs_info,
+missing_items?, missing_other?, send_message?, client_reference?, reason?, version?}` (`SetConversationReadiness`).
 
 - Requiere `conversations.confirm-ready` y el **alcance operativo** sobre la conversación (el mismo de las demás
   operaciones: `ConversationPolicy::permits('confirmReadiness')`). Fuera de alcance: `404`; visible sin permiso: `403`.
 - Se permite en conversaciones pendientes y abiertas. Cerrada: `409` (`closed`). Importada: `403` (solo consulta).
-- `reason` es obligatorio (mínimo 5 caracteres) al devolver a `needs_info`; opcional al confirmar.
+- Al devolver a `needs_info` hay que decir qué falta: opciones del catálogo (`missing_items[]`, deben existir en él) y/o
+  un texto libre «Otro» (`missing_other`, mínimo 5 caracteres). Sin ninguno de los dos se acepta, como antes, un
+  `reason` libre (mínimo 5 caracteres); sin nada responde `422` (`reason`). La lista (catálogo en su orden y después
+  «Otro», unidos con «; ») es el motivo que queda en el evento y en la auditoría. Al confirmar no se pide nada.
+- «Confirmar solicitud completa» se aplica directo desde la interfaz, sin ventana ni comentario.
 - Corre bajo el bloqueo de la conversación. Es **idempotente**: pedir el estado que ya tiene no cambia ni registra
   nada, aunque la petición traiga una versión vieja (un reintento encuentra su trabajo hecho). Si el estado sí cambia y
   la versión enviada es vieja, responde `409` (`state_changed`). El cambio incrementa `version`.
@@ -511,6 +515,22 @@ version?}` (`SetConversationReadiness`).
   `conversation.readiness_reverted`, con `previous_readiness`, `new_readiness` y `reason`).
 - Al confirmar una solicitud en cola de un departamento **automático**, su cola se vuelve a ofrecer tras el commit.
 - Marcar `needs_info` una conversación **abierta** la deja con su agente: importa cuando vuelva a una cola.
+
+**Mensaje al cliente con lo que falta** (`SendMissingInformation`): con `send_message` (marcado por defecto en la
+ventana «Marcar que necesita información») y `client_reference` (UUID: un reintento no lo envía dos veces), tras
+guardar el cambio se envía al cliente, como respuesta normal del agente que actúa y por el mismo camino que el
+compositor (`QueueOutboundMessage`), el texto «{mensaje inicial}» seguido de una viñeta «• …» por cada elemento. Si no
+se puede enviar ahora (la conversación no está en atención o la atiende otra persona, la conexión no puede enviar, la
+ventana de 24 horas está cerrada, historial importado) la solicitud **sí** queda marcada, no se envía nada y el aviso
+(`warning`) dice por qué. Quien puede marcar una pendiente sin poder responderla (p. ej. supervisión) la marca sin
+enviar. La interfaz deshabilita la casilla «Enviar mensaje al cliente», con el motivo, cuando ya sabe que no se puede
+(`can.reply`, `connection.can_send`, la ventana de la conversación abierta); el servidor lo comprueba de nuevo.
+
+**Catálogo «Información faltante»** (Configuración › Información faltante, solo con `FEATURE_PHASE_TWO`): ajuste de
+plataforma `missing_info = {intro, items[]}` (lista de hasta 30 textos únicos de hasta 80 caracteres, en su orden, y
+el mensaje inicial, por defecto «Para continuar con tu solicitud nos falta:»). Se guarda aparte con
+`PUT /admin/settings/missing-info` (`settings.update`, auditado como `settings.updated`), igual que los días no
+laborables. La bandeja lo recibe en la prop `missingInfo`. Quitar una opción no cambia los motivos ya registrados.
 
 ### El reloj de la cola: `queued_at`
 

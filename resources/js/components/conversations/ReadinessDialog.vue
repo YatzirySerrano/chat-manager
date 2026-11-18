@@ -2,80 +2,191 @@
 import { router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
-import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
+import { newClientReference } from '@/components/conversations/messageFormat';
+import FormField from '@/components/FormField.vue';
+import InputError from '@/components/InputError.vue';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
     conversationConflictFromErrors,
     withoutConflictCode,
 } from '@/lib/conversations/actionErrors';
 import { update as updateReadiness } from '@/routes/conversations/readiness';
-import type { ConversationReadinessValue, ConversationSummary } from '@/types';
+import type {
+    ConversationReadinessValue,
+    ConversationSummary,
+    CustomerWindow,
+    MissingInfoCatalog,
+} from '@/types';
 
 /**
  * «Confirmar solicitud completa» is applied at once, with no dialog or
- * comment. «Marcar que necesita información» asks what is missing. The
- * server authorizes again under lock and records who changed it and why.
+ * comment. «Marcar que necesita información» asks what is missing: items of
+ * the catalog (Configuración › Información faltante) and an optional «Otro».
+ * The list is recorded as the reason and, by default, sent to the customer
+ * as a reply of the agent. The server authorizes again under lock; when the
+ * message cannot be sent the request is still marked and the toast says why.
  */
 const props = defineProps<{
     target: {
         conversation: ConversationSummary;
         readiness: ConversationReadinessValue;
     } | null;
+    /** The catalog; null while phase two is off. */
+    catalog: MissingInfoCatalog | null;
+    /** Customer service window of the open conversation, when it is the target. */
+    window: CustomerWindow | null;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
 
+const OTHER_MIN = 5;
+const OTHER_MAX = 200;
+
 const processing = ref(false);
+const selected = ref<string[]>([]);
+const other = ref('');
+const send = ref<boolean | 'indeterminate'>(true);
 const error = ref<string | undefined>(undefined);
+let clientReference = newClientReference();
 
 const open = computed({
     get: () => props.target !== null && props.target.readiness !== 'ready',
     set: (value: boolean) => {
         if (!value && !processing.value) {
-            error.value = undefined;
             emit('close');
         }
     },
 });
 
-const confirming = computed(() => props.target?.readiness === 'ready');
+const items = computed(() => props.catalog?.items ?? []);
 
-const copy = computed(() =>
-    confirming.value
-        ? {
-              title: 'Confirmar solicitud completa',
-              description:
-                  'La solicitud quedará «Lista para atención» y entrará a la cola desde este momento: el tiempo mínimo de espera y el orden de llegada cuentan a partir de la confirmación.',
-              confirm: 'Confirmar como completa',
-              label: 'Comentario',
-          }
-        : {
-              title: 'Marcar que necesita información',
-              description:
-                  'La solicitud quedará como «Necesita información». Donde la confirmación es obligatoria no podrá tomarse de la cola hasta que se confirme como completa. El cliente puede seguir escribiendo y no se pierde nada del historial.',
-              confirm: 'Marcar que necesita información',
-              label: 'Qué información falta',
-          },
+/** Why the message cannot be sent now, as far as the page knows. */
+const sendBlock = computed<string | null>(() => {
+    const conversation = props.target?.conversation;
+
+    if (!conversation) {
+        return null;
+    }
+
+    if (!conversation.can.reply) {
+        return conversation.status === 'pending'
+            ? 'La conversación todavía no está en atención: solo quien la atiende puede escribirle al cliente.'
+            : 'Solo quien atiende la conversación puede escribirle al cliente.';
+    }
+
+    if (!conversation.connection.can_send) {
+        return (
+            conversation.connection.send_block_reason ??
+            'La conexión no puede enviar mensajes ahora.'
+        );
+    }
+
+    if (
+        props.window &&
+        props.window.status !== 'not_applicable' &&
+        !props.window.allows_free_form
+    ) {
+        return (
+            props.window.block_reason ??
+            'La ventana de atención no permite enviar mensajes.'
+        );
+    }
+
+    return null;
+});
+
+const sending = computed(() => send.value === true && sendBlock.value === null);
+
+const missing = computed(() => {
+    const picked = items.value.filter((item) => selected.value.includes(item));
+    const text = other.value.trim().replace(/\s+/g, ' ');
+
+    return text === '' ? picked : [...picked, text];
+});
+
+const preview = computed(() =>
+    [
+        props.catalog?.intro ?? '',
+        ...missing.value.map((item) => `• ${item}`),
+    ].join('\n'),
 );
+
+watch(open, (isOpen) => {
+    if (isOpen) {
+        selected.value = [];
+        other.value = '';
+        send.value = true;
+        error.value = undefined;
+        clientReference = newClientReference();
+    }
+});
+
+function toggle(item: string, checked: boolean | 'indeterminate'): void {
+    selected.value =
+        checked === true
+            ? [...selected.value, item]
+            : selected.value.filter((value) => value !== item);
+    error.value = undefined;
+}
 
 watch(
     () => props.target,
     (target) => {
         if (target?.readiness === 'ready') {
-            submit('');
+            post(target, {});
         }
     },
 );
 
-function submit(reason: string): void {
+function submit(): void {
     const target = props.target;
 
     if (target === null || processing.value) {
         return;
     }
 
-    if (!confirming.value && reason.length < 5) {
-        error.value = 'Indica qué información falta (al menos 5 caracteres).';
+    const text = other.value.trim();
 
+    if (selected.value.length === 0 && text.length < OTHER_MIN) {
+        error.value =
+            text === ''
+                ? 'Selecciona la información que falta o descríbela en «Otro».'
+                : `Describe la otra información con al menos ${OTHER_MIN} caracteres.`;
+
+        return;
+    }
+
+    if (text !== '' && text.length < OTHER_MIN) {
+        error.value = `Describe la otra información con al menos ${OTHER_MIN} caracteres.`;
+
+        return;
+    }
+
+    post(target, {
+        missing_items: items.value.filter((item) =>
+            selected.value.includes(item),
+        ),
+        missing_other: text === '' ? null : text,
+        send_message: sending.value,
+        client_reference: sending.value ? clientReference : null,
+    });
+}
+
+function post(
+    target: NonNullable<typeof props.target>,
+    extra: Record<string, unknown>,
+): void {
+    if (processing.value) {
         return;
     }
 
@@ -83,8 +194,8 @@ function submit(reason: string): void {
         updateReadiness.url(target.conversation.id),
         {
             readiness: target.readiness,
-            reason: reason === '' ? null : reason,
             version: target.conversation.version,
+            ...extra,
         },
         {
             preserveScroll: true,
@@ -95,8 +206,16 @@ function submit(reason: string): void {
             },
             onSuccess: () => emit('close'),
             onError: (errors) => {
-                if (errors.reason) {
-                    error.value = errors.reason;
+                const field =
+                    errors.reason ??
+                    errors.missing_other ??
+                    errors.missing_items ??
+                    Object.entries(errors).find(([key]) =>
+                        key.startsWith('missing_items.'),
+                    )?.[1];
+
+                if (field && target.readiness !== 'ready') {
+                    error.value = field;
 
                     return;
                 }
@@ -116,15 +235,126 @@ function submit(reason: string): void {
 </script>
 
 <template>
-    <ConversationReasonDialog
-        v-model:open="open"
-        :title="copy.title"
-        :description="copy.description"
-        :confirm-label="copy.confirm"
-        :reason-label="copy.label"
-        :reason-required="!confirming"
-        :processing="processing"
-        :error="error"
-        @confirm="submit"
-    />
+    <Dialog v-model:open="open">
+        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+            <form
+                class="grid gap-4"
+                novalidate
+                data-readiness-dialog
+                @submit.prevent="submit"
+            >
+                <DialogHeader>
+                    <DialogTitle>Marcar que necesita información</DialogTitle>
+                    <DialogDescription>
+                        La solicitud quedará como «Necesita información». Donde
+                        la confirmación es obligatoria no podrá tomarse de la
+                        cola hasta que se confirme como completa.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <fieldset class="grid gap-2">
+                    <legend class="mb-2 text-sm font-medium">
+                        Qué información falta
+                    </legend>
+                    <p
+                        v-if="items.length === 0"
+                        class="text-sm text-muted-foreground"
+                    >
+                        No hay opciones configuradas. Descríbela en «Otro».
+                    </p>
+                    <label
+                        v-for="(item, index) in items"
+                        :key="item"
+                        :for="`missing-item-${index}`"
+                        class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/50 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5"
+                    >
+                        <Checkbox
+                            :id="`missing-item-${index}`"
+                            :model-value="selected.includes(item)"
+                            :data-missing-item="item"
+                            @update:model-value="(value) => toggle(item, value)"
+                        />
+                        {{ item }}
+                    </label>
+                </fieldset>
+
+                <FormField
+                    id="missing-other"
+                    label="Otro (opcional)"
+                    hint="Lo que falte y no esté en la lista."
+                >
+                    <Textarea
+                        id="missing-other"
+                        v-model="other"
+                        rows="2"
+                        :maxlength="OTHER_MAX"
+                        @input="error = undefined"
+                    />
+                </FormField>
+
+                <InputError :message="error" />
+
+                <div class="grid gap-2 rounded-xl border p-3">
+                    <label
+                        for="missing-send"
+                        class="flex items-start gap-3 text-sm"
+                        :class="
+                            sendBlock === null
+                                ? 'cursor-pointer'
+                                : 'cursor-not-allowed opacity-70'
+                        "
+                    >
+                        <Checkbox
+                            id="missing-send"
+                            v-model="send"
+                            class="mt-0.5"
+                            :disabled="sendBlock !== null"
+                            data-missing-send
+                        />
+                        <span class="grid gap-1">
+                            <span class="font-medium"
+                                >Enviar mensaje al cliente</span
+                            >
+                            <span class="text-xs text-muted-foreground">
+                                {{
+                                    sendBlock ??
+                                    'Se envía en el chat a tu nombre, como una respuesta normal.'
+                                }}
+                            </span>
+                        </span>
+                    </label>
+                    <p
+                        v-if="sending && missing.length > 0"
+                        class="rounded-lg bg-muted/60 px-3 py-2 text-sm whitespace-pre-line"
+                        aria-label="Vista previa del mensaje"
+                        data-missing-preview
+                    >
+                        {{ preview }}
+                    </p>
+                </div>
+
+                <DialogFooter class="gap-2 pointer-coarse:*:h-10">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        :disabled="processing"
+                        @click="open = false"
+                    >
+                        Cancelar
+                    </Button>
+                    <Button
+                        type="submit"
+                        :disabled="processing"
+                        :loading="processing"
+                    >
+                        {{
+                            sending
+                                ? 'Marcar y enviar al cliente'
+                                : 'Marcar que necesita información'
+                        }}
+                    </Button>
+                </DialogFooter>
+            </form>
+        </DialogContent>
+    </Dialog>
 </template>

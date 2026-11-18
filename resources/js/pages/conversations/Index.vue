@@ -69,6 +69,7 @@ import type {
     CustomerWindow,
     InboxCounts,
     InboxViewer,
+    MissingInfoCatalog,
     TagOption,
 } from '@/types';
 
@@ -117,6 +118,8 @@ const props = defineProps<{
     serverTime?: string | null;
     /** Active request categories (filter and details panel). */
     categories?: ConversationCategoryRef[];
+    /** Catalog of «Marcar que necesita información» (null while phase two is off). */
+    missingInfo?: MissingInfoCatalog | null;
 }>();
 
 /** Props of the list (left panel). */
@@ -1001,6 +1004,12 @@ function onAliasSaved(): void {
 
         <ReadinessDialog
             :target="readinessTarget"
+            :catalog="missingInfo ?? null"
+            :window="
+                readinessTarget?.conversation.id === conversation?.id
+                    ? window
+                    : null
+            "
             @close="readinessTarget = null"
         />
 

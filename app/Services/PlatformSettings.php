@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Cache;
  *     queue: array{min_wait_minutes: int, chronological_order: bool},
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  *     video_exports: array{root_folder: string},
+ *     missing_info: array{intro: string, items: list<string>},
  * }
  */
 #[Scoped]
@@ -68,6 +69,14 @@ class PlatformSettings
         foreach ($defaults as $group => $values) {
             $storedGroup = $stored[$group] ?? [];
             $settings[$group] = is_array($storedGroup) ? array_replace_recursive($values, $storedGroup) : $values;
+
+            // A stored list replaces the default one whole: merged by index,
+            // a shorter saved list would get the rest of the defaults back.
+            foreach ($values as $key => $default) {
+                if (is_array($storedGroup) && is_array($default) && array_is_list($default) && is_array($storedGroup[$key] ?? null)) {
+                    $settings[$group][$key] = $storedGroup[$key];
+                }
+            }
         }
 
         /** @var SettingsShape $settings */
@@ -207,6 +216,19 @@ class PlatformSettings
             // the disk of saved videos (VideoFolders).
             'video_exports' => [
                 'root_folder' => 'VIDEOS',
+            ],
+            // «Marcar que necesita información»: the catalog the agent picks
+            // from and the first line of the message sent to the customer
+            // (MissingInformation).
+            'missing_info' => [
+                'intro' => 'Para continuar con tu solicitud nos falta:',
+                'items' => [
+                    'INE por ambos lados',
+                    'Comprobante de domicilio',
+                    'Estado de cuenta',
+                    'Comprobante de ingresos',
+                    'CURP',
+                ],
             ],
         ];
     }

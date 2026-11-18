@@ -631,6 +631,16 @@ export type CustomerWindowStatus =
     | 'expired'
     | 'not_applicable';
 
+/**
+ * Catalog of «Marcar que necesita información» (Configuración ›
+ * Información faltante): the items the agent picks and the first line of
+ * the message sent to the customer.
+ */
+export type MissingInfoCatalog = {
+    intro: string;
+    items: string[];
+};
+
 /** WhatsApp's 24 hour customer service window, computed by the server in UTC. */
 export type CustomerWindow = {
     status: CustomerWindowStatus;

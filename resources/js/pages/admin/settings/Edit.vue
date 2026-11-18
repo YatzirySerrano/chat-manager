@@ -6,6 +6,7 @@ import {
     Clock,
     Gauge,
     HardDriveDownload,
+    ListChecks,
     Lock,
     PlugZap,
     Settings2,
@@ -21,6 +22,7 @@ import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import ServiceRulesCard from '@/components/service-rules/ServiceRulesCard.vue';
+import MissingInfoCard from '@/components/settings/MissingInfoCard.vue';
 import SettingsSection from '@/components/settings/SettingsSection.vue';
 import StatusNote from '@/components/StatusNote.vue';
 import { AppSelect } from '@/components/ui/app-select';
@@ -172,6 +174,9 @@ const sections = computed(() => [
     { id: 'operacion', label: 'Operación' },
     { id: 'objetivos', label: 'Objetivos de servicio' },
     ...(phaseTwo.value ? [{ id: 'alertas-sla', label: 'Alertas de SLA' }] : []),
+    ...(phaseTwo.value
+        ? [{ id: 'informacion-faltante', label: 'Información faltante' }]
+        : []),
     { id: 'videos', label: 'Videos en Synology' },
     { id: 'meta', label: 'Integración con Meta' },
 ]);
@@ -878,6 +883,21 @@ const integrationConnected = computed(
                             </FormField>
                         </div>
                     </div>
+                </SettingsSection>
+
+                <SettingsSection
+                    v-if="phaseTwo && settings.missing_info"
+                    id="informacion-faltante"
+                    :icon="ListChecks"
+                    class="scroll-mt-32"
+                    title="Información faltante"
+                    description="Opciones que el agente marca en «Marcar que necesita información» y mensaje que recibe el cliente con la lista. Se guardan aparte del resto de la configuración."
+                    bare
+                >
+                    <MissingInfoCard
+                        :catalog="settings.missing_info"
+                        :can-update="can.update"
+                    />
                 </SettingsSection>
 
                 <SettingsSection

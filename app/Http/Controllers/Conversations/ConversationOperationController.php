@@ -65,9 +65,9 @@ abstract class ConversationOperationController extends Controller
      * Back to the page the user was on, or to the list when the operation
      * moved the conversation out of their reach (e.g. after a transfer).
      */
-    protected function done(Conversation $conversation, User $actor, string $message): RedirectResponse
+    protected function done(Conversation $conversation, User $actor, string $message, string $type = 'success'): RedirectResponse
     {
-        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+        Inertia::flash('toast', ['type' => $type, 'message' => $message]);
 
         $conversation->refresh();
 

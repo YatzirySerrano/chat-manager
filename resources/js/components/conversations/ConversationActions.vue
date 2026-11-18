@@ -382,8 +382,10 @@ const completeAsButton = computed(
     () => can.value.close && primary.value.length === 0,
 );
 
+/** Direct, with no comment: the request is done and leaves the list. */
 function openCompleted(): void {
-    openReasonDialog('close', true);
+    errors.value = {};
+    operate(close.url(id.value), { completed: true });
 }
 
 /** «Eliminar chat definitivamente»: only with the permission, always last. */

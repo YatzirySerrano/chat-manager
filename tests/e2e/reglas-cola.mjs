@@ -822,17 +822,10 @@ const run = async () => {
             'confirm-complete',
             '«Confirmar como completa»',
             clean(async () => {
+                // Applied at once: no dialog, no comment.
                 await confirmButton().click();
-                await dialog(sofia).waitFor();
-                const title = await dialog(sofia)
-                    .getByRole('heading')
-                    .innerText();
-                await shot(sofia, 'cola-confirmar-dialogo');
-                await dialog(sofia)
-                    .getByRole('button', { name: 'Confirmar como completa' })
-                    .click();
-                await dialog(sofia).waitFor({ state: 'detached' });
                 await sofia.waitForLoadState('networkidle');
+                const noDialog = (await dialog(sofia).count()) === 0;
                 const box = rowBox(sofia, 'Cliente Incompleto');
                 await sofia
                     .locator('div[data-readiness="ready"] [data-inbox-item]', {
@@ -854,7 +847,7 @@ const run = async () => {
                 await shot(sofia, 'cola-confirmada');
 
                 return [
-                    title === 'Confirmar solicitud completa' &&
+                    noDialog &&
                         code === 'min_wait' &&
                         /^0[01]:\d\d$/.test(countdown) &&
                         stored.readiness === 'ready' &&

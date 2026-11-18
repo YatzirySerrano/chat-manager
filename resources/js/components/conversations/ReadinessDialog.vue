@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
 import {
@@ -11,8 +11,8 @@ import { update as updateReadiness } from '@/routes/conversations/readiness';
 import type { ConversationReadinessValue, ConversationSummary } from '@/types';
 
 /**
- * «Confirmar solicitud completa» / «Marcar que necesita información», with
- * confirmation. Returning a request requires saying what is missing. The
+ * «Confirmar solicitud completa» is applied at once, with no dialog or
+ * comment. «Marcar que necesita información» asks what is missing. The
  * server authorizes again under lock and records who changed it and why.
  */
 const props = defineProps<{
@@ -28,7 +28,7 @@ const processing = ref(false);
 const error = ref<string | undefined>(undefined);
 
 const open = computed({
-    get: () => props.target !== null,
+    get: () => props.target !== null && props.target.readiness !== 'ready',
     set: (value: boolean) => {
         if (!value && !processing.value) {
             error.value = undefined;
@@ -55,6 +55,15 @@ const copy = computed(() =>
               confirm: 'Marcar que necesita información',
               label: 'Qué información falta',
           },
+);
+
+watch(
+    () => props.target,
+    (target) => {
+        if (target?.readiness === 'ready') {
+            submit('');
+        }
+    },
 );
 
 function submit(reason: string): void {

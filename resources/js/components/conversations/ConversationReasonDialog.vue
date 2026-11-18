@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { BadgeCheck } from '@lucide/vue';
+import { BadgeCheck, RotateCcw } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FormField from '@/components/FormField.vue';
 import { Button } from '@/components/ui/button';
@@ -143,10 +143,15 @@ function submit(): void {
                             />
                             La solicitud fue completada
                         </span>
-                        <span class="text-xs text-muted-foreground">
-                            Si este número vuelve a escribir, no se reabre esta
-                            conversación: entra como solicitud nueva a la lista
-                            de espera («Pendientes»).
+                        <span
+                            class="flex items-center gap-1.5 text-xs text-muted-foreground"
+                            title="Si este número vuelve a escribir, no se reabre esta conversación: entra como solicitud nueva a «Pendientes»."
+                        >
+                            <RotateCcw
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Si vuelve a escribir, entra como nueva
                         </span>
                     </span>
                 </label>

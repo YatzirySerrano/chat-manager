@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useForm } from '@inertiajs/vue3';
-import { ShieldAlert } from '@lucide/vue';
+import { Gauge, History, Layers, ShieldAlert } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import {
@@ -132,9 +132,8 @@ function submit(): void {
                 <DialogHeader>
                     <DialogTitle>Hacer una excepción</DialogTitle>
                     <DialogDescription>
-                        Vas a aceptar la conversación con
-                        {{ conversation?.contact.display_name }} aunque una
-                        regla de la cola todavía no lo permite.
+                        Aceptar a {{ conversation?.contact.display_name }} antes
+                        de que la cola lo permita.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -152,19 +151,36 @@ function submit(): void {
                         >
                     </p>
                     <p v-if="consequence">{{ consequence }}</p>
-                    <ul class="list-disc pl-5 text-xs">
-                        <li>
-                            Si aplica más de una regla de la cola a esta
-                            solicitud, se omiten todas y cada una queda
-                            registrada.
+                    <ul class="grid gap-1.5 text-xs">
+                        <li
+                            class="flex items-center gap-2"
+                            title="Si aplica más de una regla de la cola, se omiten todas y cada una queda registrada."
+                        >
+                            <Layers
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Se omiten todas las reglas que apliquen
                         </li>
-                        <li>
-                            Tu nombre, el motivo y las reglas omitidas quedan en
-                            el historial de la conversación y en la auditoría.
+                        <li
+                            class="flex items-center gap-2"
+                            title="Tu nombre, el motivo y las reglas omitidas quedan en el historial de la conversación y en la auditoría."
+                        >
+                            <History
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Queda en el historial y la auditoría
                         </li>
-                        <li>
-                            No omite tu límite de conversaciones ni el control
-                            de conversaciones pendientes de atención.
+                        <li
+                            class="flex items-center gap-2"
+                            title="No omite tu límite de conversaciones ni el control de conversaciones pendientes de atención."
+                        >
+                            <Gauge
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Tu límite y tus pendientes siguen aplicando
                         </li>
                     </ul>
                 </div>

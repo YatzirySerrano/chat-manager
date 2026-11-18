@@ -711,8 +711,8 @@ watch(conversationId, () => (dragDepth.value = 0));
             "
             :description="
                 dropAllowed
-                    ? `Los archivos se preparan para ${conversation.contact.display_name}. Nada se envía hasta que pulses «Enviar».`
-                    : 'Para enviar archivos necesitas poder responder al cliente en esta conversación.'
+                    ? `Para ${conversation.contact.display_name}; se envían al pulsar «Enviar»`
+                    : 'Necesitas poder responder en esta conversación'
             "
             data-drop-overlay
             :data-drop-allowed="dropAllowed"

@@ -12,6 +12,8 @@ import {
 } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import type { Component } from 'vue';
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
+import LocationCard from '@/components/chat/LocationCard.vue';
 import type {
     ChatPreviewAttachment,
     ChatPreviewItem,
@@ -27,6 +29,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import WhatsAppText from '@/components/WhatsAppText.vue';
 import {
     CUSTOM_BUBBLE_CLASSES,
     chatColorVariables,
@@ -43,7 +46,9 @@ import type { ChatColors } from '@/types';
  * the close button or clicking outside) never navigates; «Abrir» opens the
  * chat normally, which is when messages count as read. With the viewer's
  * personal colors it looks like their chat: the same CSS variables and
- * bubble classes, light and dark side by side.
+ * bubble classes, light and dark side by side. Links in the text open in
+ * a new tab, with the same preview card as the chat, and a shared location
+ * is drawn as a place with «Abrir en Google Maps».
  */
 const props = defineProps<{
     open: boolean;
@@ -376,12 +381,33 @@ watch(
                                         </span>
                                     </li>
                                 </ul>
-                                <p
+                                <LocationCard
+                                    v-if="item.location"
+                                    class="mt-1"
+                                    :name="item.location.name"
+                                    :address="item.location.address"
+                                    :latitude="item.location.latitude"
+                                    :longitude="item.location.longitude"
+                                    :live="item.location.live ?? false"
+                                    :website="item.location.website ?? null"
+                                    :comment="item.location.comment ?? null"
+                                    :custom="customBubble(item)"
+                                />
+                                <WhatsAppText
                                     v-if="item.text"
-                                    class="mt-0.5 [overflow-wrap:anywhere] whitespace-pre-line"
-                                >
-                                    {{ item.text }}
-                                </p>
+                                    :text="item.text"
+                                    links
+                                    :plain="!item.formatted"
+                                    :inherit-color="customBubble(item)"
+                                    class="mt-0.5 block [overflow-wrap:anywhere] whitespace-pre-line"
+                                />
+                                <LinkPreviewCard
+                                    v-if="item.link"
+                                    :url="item.link.url"
+                                    :endpoint="item.link.endpoint"
+                                    :custom="customBubble(item)"
+                                    class="mt-1"
+                                />
                             </article>
                         </li>
                     </template>

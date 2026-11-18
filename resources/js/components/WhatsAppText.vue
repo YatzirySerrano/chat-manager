@@ -10,20 +10,34 @@ import { parseWhatsAppText } from '@/lib/whatsappFormatting';
  * new tab without giving the destination access to this page.
  * With `inheritColor` (personal chat colors), links and monospace follow the
  * surrounding text color, the only one whose contrast is guaranteed.
+ * With `plain` the text keeps its asterisks and underscores as written
+ * (internal notes): only the links are drawn.
  */
 const props = withDefaults(
     defineProps<{
         text: string;
         links?: boolean;
         inheritColor?: boolean;
+        plain?: boolean;
     }>(),
-    { links: false, inheritColor: false },
+    { links: false, inheritColor: false, plain: false },
 );
 
 const URL_PATTERN = /(https?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]])/giu;
 
 const segments = computed(() =>
-    parseWhatsAppText(props.text).map((segment) => ({
+    (props.plain
+        ? [
+              {
+                  text: props.text,
+                  bold: false,
+                  italic: false,
+                  strike: false,
+                  mono: false,
+              },
+          ]
+        : parseWhatsAppText(props.text)
+    ).map((segment) => ({
         ...segment,
         parts:
             props.links && !segment.mono

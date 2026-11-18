@@ -10,6 +10,7 @@ use App\Models\TeamChat\TeamMessageReaction;
 use App\Models\TeamChat\TeamParticipant;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\LinkPreviews\LinkPreviews;
 use App\Services\VideoExports\VideoExports;
 use App\Support\ProtectedAccounts;
 use Illuminate\Support\Collection;
@@ -203,6 +204,10 @@ class TeamChatPresenter
             'id' => $message->id,
             'kind' => $message->kind->value,
             'body' => $message->isDeleted() ? null : $message->body,
+            // Where the card of its first link is read (null: no link).
+            'link_preview_url' => $message->isDeleted() || $message->isSystem() || LinkPreviews::firstUrl($message->body) === null
+                ? null
+                : route('team-chat.threads.messages.link-preview', ['thread' => $message->team_thread_id, 'message' => $message->id]),
             'system_text' => $message->isSystem() ? $this->systemText($message, $targets) : null,
             'author' => $message->isSystem() && $message->author === null ? null : [
                 'id' => $message->user_id,

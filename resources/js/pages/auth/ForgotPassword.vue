@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
 import InputError from '@/components/InputError.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,12 +25,9 @@ defineProps<{
 <template>
     <Head title="Recuperar contraseña" />
 
-    <div
-        v-if="status"
-        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
-    >
+    <StatusNote v-if="status" tone="success" live="polite" class="mb-6">
         {{ status }}
-    </div>
+    </StatusNote>
 
     <div class="space-y-6">
         <Form v-bind="email.form()" v-slot="{ errors, processing }">

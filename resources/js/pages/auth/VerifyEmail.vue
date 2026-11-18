@@ -2,6 +2,7 @@
 import { Form, Head } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import LogoutConfirmDialog from '@/components/LogoutConfirmDialog.vue';
+import StatusNote from '@/components/StatusNote.vue';
 import { Button } from '@/components/ui/button';
 import { send } from '@/routes/verification';
 
@@ -23,12 +24,14 @@ const logoutDialogOpen = ref(false);
 <template>
     <Head title="Verificación de correo" />
 
-    <div
+    <StatusNote
         v-if="status === 'verification-link-sent'"
-        class="mb-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-soft-foreground"
+        tone="success"
+        live="polite"
+        class="mb-6"
     >
         Enviamos un nuevo enlace de verificación al correo registrado.
-    </div>
+    </StatusNote>
 
     <Form v-bind="send.form()" class="space-y-6" v-slot="{ processing }">
         <Button :loading="processing" variant="secondary">
@@ -37,7 +40,7 @@ const logoutDialogOpen = ref(false);
 
         <button
             type="button"
-            class="block cursor-pointer text-sm text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
+            class="block cursor-pointer rounded-sm text-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-current"
             data-test="logout-button"
             @click="logoutDialogOpen = true"
         >

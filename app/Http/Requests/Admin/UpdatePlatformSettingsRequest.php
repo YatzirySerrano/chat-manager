@@ -93,7 +93,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'operations.transfer_reason_required' => 'motivo obligatorio al transferir',
             'operations.pending_block_enabled' => 'control de conversaciones pendientes',
             'operations.pending_block_after_minutes' => 'tolerancia antes de bloquear',
-            'video_exports.root_folder' => 'carpeta de videos de solicitudes',
+            'video_exports.root_folder' => 'carpeta de archivos en Synology',
             ...app(ServiceRules::class)->validationAttributes(ServiceRules::LEVEL_PLATFORM),
             'sla.first_response_minutes' => 'objetivo de primera respuesta',
             'sla.resolution_minutes' => 'objetivo de resolución',

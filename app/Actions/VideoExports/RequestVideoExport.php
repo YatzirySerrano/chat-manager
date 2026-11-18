@@ -18,9 +18,10 @@ use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 /**
- * Records a «Guardar video» request (a VideoExport with the chosen folder
- * and file name), audits it and queues the copy (SaveVideoToNas) once
- * committed. A video whose previous copy is still on its way is refused
+ * Records a «Guardar archivo» request for any attachment (a VideoExport
+ * with the chosen folder and file name), audits it and queues the copy
+ * (SaveVideoToNas) once committed. A file whose previous copy is still on
+ * its way is refused
  * (409), so a double click does not write it twice. The caller has already
  * checked the permission, the access to the chat and that the folder exists.
  */
@@ -50,7 +51,7 @@ class RequestVideoExport
                 ->exists();
 
             if ($pending) {
-                throw new ConflictHttpException('Este video ya se está guardando en Synology.');
+                throw new ConflictHttpException('Este archivo ya se está guardando en Synology.');
             }
 
             $export = new VideoExport;
@@ -67,6 +68,7 @@ class RequestVideoExport
                 'video_export_id' => $export->id,
                 'attachment_id' => $attachment->getKey(),
                 'source' => $column === 'message_attachment_id' ? 'conversation' : 'team_chat',
+                'kind' => VideoExports::kindOf($attachment),
                 'folder' => $this->folders->pathOnDisk($folder),
                 'file_name' => $fileName,
             ], $actor);

@@ -9,14 +9,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One copy of a video to the NAS folder of saved videos, requested from a
- * conversation (message_attachment_id) or from the internal chat
- * (team_attachment_id); exactly one of the two is set. The original file
- * stays where it is, so the chat keeps playing it.
+ * One copy of a chat file (video, image, PDF, document or audio; the name
+ * comes from when only videos were saved) to the NAS folder of saved files,
+ * requested from a conversation (message_attachment_id) or from the
+ * internal chat (team_attachment_id); exactly one of the two is set. The
+ * original file stays where it is, so the chat keeps showing it.
  *
  * `folder` is the folder the person chose, relative to the root of saved
- * videos ("" is the root itself), and `file_name` the name they typed,
- * without extension. `target_path` is the final path on `disk` (with its
+ * files ("" is the root itself), and `file_name` the name they typed,
+ * without extension (the copy keeps the original's). `target_path` is the final path on `disk` (with its
  * " (2)" counter, if any) once saved.
  *
  * @property int $id

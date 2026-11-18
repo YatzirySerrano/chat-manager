@@ -38,7 +38,7 @@ import {
 } from '@/components/chat/bubble';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
-import SaveVideoButton from '@/components/video-exports/SaveVideoButton.vue';
+import SaveFileButton from '@/components/video-exports/SaveFileButton.vue';
 import {
     DELIVERY_UNKNOWN,
     deliveryUnknownLabel,
@@ -478,6 +478,13 @@ function canRevokeLink(attachment: MessageAttachment): boolean {
     return Boolean(attachment.link_revoke_url) && !attachment.link_revoked_at;
 }
 
+/** Photos and videos carry their «Guardar» button over the thumbnail. */
+function saveOverlay(attachment: MessageAttachment): boolean {
+    const kind = attachment.file_save?.kind;
+
+    return attachment.available && (kind === 'image' || kind === 'video');
+}
+
 const time = computed(() => props.message.sent_at ?? props.message.created_at);
 
 /** A file the channel cannot carry (ZIP on WhatsApp) went as a secure download link. */
@@ -736,25 +743,55 @@ async function copyText(): Promise<void> {
                             v-for="attachment in attachments"
                             :key="attachment.id"
                         >
-                            <MessageAttachmentPreview
-                                :attachment="attachment"
-                                :channel-label="channelLabel"
-                                :sticker="
-                                    message.type === 'sticker'
-                                        ? { animated: stickerAnimated }
-                                        : null
+                            <div
+                                class="relative max-w-full min-w-0"
+                                :class="
+                                    saveOverlay(attachment) &&
+                                    'group/save w-fit'
                                 "
-                                :voice="voice"
-                                :seconds="mediaSeconds"
-                                :gif="gif"
-                                :placeholder="thumbnail"
-                                :caption="message.body"
-                                :author="author"
-                                :at="time"
-                            />
-                            <SaveVideoButton
-                                v-if="attachment.video_save"
-                                :options="attachment.video_save"
+                            >
+                                <MessageAttachmentPreview
+                                    :attachment="attachment"
+                                    :channel-label="channelLabel"
+                                    :sticker="
+                                        message.type === 'sticker'
+                                            ? { animated: stickerAnimated }
+                                            : null
+                                    "
+                                    :voice="voice"
+                                    :seconds="mediaSeconds"
+                                    :gif="gif"
+                                    :placeholder="thumbnail"
+                                    :caption="message.body"
+                                    :author="author"
+                                    :at="time"
+                                />
+                                <SaveFileButton
+                                    v-if="
+                                        attachment.file_save &&
+                                        saveOverlay(attachment)
+                                    "
+                                    overlay
+                                    :class="[
+                                        'left-1.5',
+                                        gif ||
+                                        attachment.mime_type === 'image/gif'
+                                            ? 'top-7'
+                                            : 'top-1.5',
+                                    ]"
+                                    :options="attachment.file_save"
+                                    :suggested-name="contactName"
+                                    :preview-url="
+                                        attachment.thumb_url ?? attachment.url
+                                    "
+                                />
+                            </div>
+                            <SaveFileButton
+                                v-if="
+                                    attachment.file_save &&
+                                    !saveOverlay(attachment)
+                                "
+                                :options="attachment.file_save"
                                 :suggested-name="contactName"
                                 :inherit-color="customColors"
                             />

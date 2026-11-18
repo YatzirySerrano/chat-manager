@@ -3,7 +3,7 @@ import { Download, Eye, Maximize2, Play } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
 import { computed, nextTick, reactive, ref } from 'vue';
 import TeamAudioPlayer from '@/components/team-chat/TeamAudioPlayer.vue';
-import SaveVideoButton from '@/components/video-exports/SaveVideoButton.vue';
+import SaveFileButton from '@/components/video-exports/SaveFileButton.vue';
 import {
     fileLook,
     groupAttachments,
@@ -118,8 +118,15 @@ const cardSurface = computed(() =>
     >
         <div
             v-if="tiles.length === 1"
-            class="max-w-full overflow-hidden rounded-xl"
+            class="group/save relative max-w-full overflow-hidden rounded-xl"
         >
+            <SaveFileButton
+                v-if="tiles[0].file_save"
+                overlay
+                class="top-1.5 left-1.5"
+                :options="tiles[0].file_save"
+                :preview-url="tiles[0].thumb_url ?? tiles[0].preview_url"
+            />
             <a
                 :href="tiles[0].preview_url ?? tiles[0].download_url"
                 target="_blank"
@@ -153,41 +160,50 @@ const cardSurface = computed(() =>
             v-else-if="tiles.length > 1"
             class="grid w-72 max-w-full grid-cols-2 gap-0.5 overflow-hidden rounded-xl"
         >
-            <a
+            <div
                 v-for="(image, index) in tiles"
                 :key="image.id"
-                :href="image.preview_url ?? image.download_url"
-                target="_blank"
-                rel="noopener"
-                :class="
-                    cn(
-                        'group/image relative block overflow-hidden bg-current/10 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                        tileClass(index),
-                    )
-                "
-                :title="image.name"
-                :aria-label="`Ver imagen ${image.name}`"
-                @click.exact.prevent="emit('view', image.id)"
-                @pointerenter="warmImage(image.preview_url)"
-                @focus="warmImage(image.preview_url)"
+                :class="cn('group/save relative min-w-0', tileClass(index))"
             >
-                <img
-                    v-if="!brokenImages.has(image.id)"
-                    :src="image.thumb_url ?? image.preview_url ?? ''"
-                    :alt="image.name"
-                    loading="lazy"
-                    decoding="async"
-                    class="size-full object-cover transition-[filter,scale] duration-(--duration-base) ease-(--ease-out-quint) group-hover/image:scale-[1.03] group-hover/image:brightness-95"
-                    @error="brokenImages.add(image.id)"
-                />
-                <span
-                    v-if="hiddenImages > 0 && index === tiles.length - 1"
-                    class="absolute inset-0 grid place-items-center bg-black/55 font-display text-2xl font-semibold text-white"
-                    :aria-label="`y ${hiddenImages} más`"
+                <a
+                    :href="image.preview_url ?? image.download_url"
+                    target="_blank"
+                    rel="noopener"
+                    class="group/image relative block size-full overflow-hidden bg-current/10 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    :title="image.name"
+                    :aria-label="`Ver imagen ${image.name}`"
+                    @click.exact.prevent="emit('view', image.id)"
+                    @pointerenter="warmImage(image.preview_url)"
+                    @focus="warmImage(image.preview_url)"
                 >
-                    +{{ hiddenImages }}
-                </span>
-            </a>
+                    <img
+                        v-if="!brokenImages.has(image.id)"
+                        :src="image.thumb_url ?? image.preview_url ?? ''"
+                        :alt="image.name"
+                        loading="lazy"
+                        decoding="async"
+                        class="size-full object-cover transition-[filter,scale] duration-(--duration-base) ease-(--ease-out-quint) group-hover/image:scale-[1.03] group-hover/image:brightness-95"
+                        @error="brokenImages.add(image.id)"
+                    />
+                    <span
+                        v-if="hiddenImages > 0 && index === tiles.length - 1"
+                        class="absolute inset-0 grid place-items-center bg-black/55 font-display text-2xl font-semibold text-white"
+                        :aria-label="`y ${hiddenImages} más`"
+                    >
+                        +{{ hiddenImages }}
+                    </span>
+                </a>
+                <SaveFileButton
+                    v-if="
+                        image.file_save &&
+                        !(hiddenImages > 0 && index === tiles.length - 1)
+                    "
+                    overlay
+                    class="top-1.5 left-1.5"
+                    :options="image.file_save"
+                    :preview-url="image.thumb_url ?? image.preview_url"
+                />
+            </div>
         </div>
 
         <div
@@ -197,7 +213,7 @@ const cardSurface = computed(() =>
             data-team-video
         >
             <div
-                class="relative aspect-video overflow-hidden rounded-xl bg-black"
+                class="group/save relative aspect-video overflow-hidden rounded-xl bg-black"
             >
                 <p
                     v-if="brokenVideos.has(video.id)"
@@ -253,6 +269,13 @@ const cardSurface = computed(() =>
                 >
                     <Maximize2 class="size-4" aria-hidden="true" />
                 </button>
+                <SaveFileButton
+                    v-if="video.file_save"
+                    overlay
+                    class="top-1.5 left-1.5"
+                    :options="video.file_save"
+                    :preview-url="video.stream_url"
+                />
             </div>
             <a
                 :href="video.download_url"
@@ -265,86 +288,94 @@ const cardSurface = computed(() =>
                     >· {{ formatFileSize(video.size_bytes) }}</span
                 >
             </a>
-            <SaveVideoButton
-                v-if="video.video_save"
-                :options="video.video_save"
-                :inherit-color="custom"
-                class="mt-1"
+        </div>
+
+        <template v-for="audio in groups.audios" :key="audio.id">
+            <TeamAudioPlayer
+                :src="audio.stream_url ?? ''"
+                :name="audio.name"
+                :download-url="audio.download_url"
+                :size-bytes="audio.size_bytes"
             />
-        </div>
+            <SaveFileButton
+                v-if="audio.file_save"
+                :options="audio.file_save"
+                :inherit-color="custom"
+            />
+        </template>
 
-        <TeamAudioPlayer
-            v-for="audio in groups.audios"
-            :key="audio.id"
-            :src="audio.stream_url ?? ''"
-            :name="audio.name"
-            :download-url="audio.download_url"
-            :size-bytes="audio.size_bytes"
-        />
-
-        <div
-            v-for="file in groups.files"
-            :key="file.id"
-            :class="
-                cn(
-                    'flex w-72 max-w-full items-center gap-2.5 rounded-xl p-2 transition-colors duration-(--duration-fast)',
-                    cardSurface,
-                )
-            "
-            data-team-file
-        >
-            <component
-                :is="isPdf(file) ? 'button' : 'a'"
-                :type="isPdf(file) ? 'button' : undefined"
-                :href="isPdf(file) ? undefined : file.download_url"
-                class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-current"
-                :aria-label="
-                    isPdf(file) ? `Ver ${file.name}` : `Descargar ${file.name}`
+        <template v-for="file in groups.files" :key="file.id">
+            <div
+                :class="
+                    cn(
+                        'flex w-72 max-w-full items-center gap-2.5 rounded-xl p-2 transition-colors duration-(--duration-fast)',
+                        cardSurface,
+                    )
                 "
-                :title="
-                    isPdf(file) ? 'Ver el documento' : 'Descargar el archivo'
-                "
-                @click="isPdf(file) && emit('view', file.id)"
+                data-team-file
             >
-                <span
-                    :class="
-                        cn(
-                            'grid size-10 shrink-0 place-items-center rounded-lg',
-                            fileLook(file.name, file.kind).tone,
-                        )
-                    "
-                    aria-hidden="true"
-                >
-                    <component
-                        :is="fileLook(file.name, file.kind).icon"
-                        class="size-5"
-                    />
-                </span>
-                <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm font-medium">{{
-                        file.name
-                    }}</span>
-                    <span class="block text-xs" :class="quiet">
-                        {{ fileLook(file.name, file.kind).label }} ·
-                        {{ formatFileSize(file.size_bytes) }}
-                    </span>
-                </span>
                 <component
-                    :is="isPdf(file) ? Eye : Download"
-                    class="mr-1 size-4 shrink-0"
-                    :class="quiet"
-                    aria-hidden="true"
-                />
-            </component>
-            <a
-                v-if="isPdf(file)"
-                :href="file.download_url"
-                class="grid size-8 shrink-0 place-items-center rounded-full outline-none hover:bg-current/15 focus-visible:ring-2 focus-visible:ring-current pointer-coarse:size-10"
-                :aria-label="`Descargar ${file.name}`"
-                title="Descargar"
-            >
-                <Download class="size-4" aria-hidden="true" />
-            </a>
-        </div>
+                    :is="isPdf(file) ? 'button' : 'a'"
+                    :type="isPdf(file) ? 'button' : undefined"
+                    :href="isPdf(file) ? undefined : file.download_url"
+                    class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-current"
+                    :aria-label="
+                        isPdf(file)
+                            ? `Ver ${file.name}`
+                            : `Descargar ${file.name}`
+                    "
+                    :title="
+                        isPdf(file)
+                            ? 'Ver el documento'
+                            : 'Descargar el archivo'
+                    "
+                    @click="isPdf(file) && emit('view', file.id)"
+                >
+                    <span
+                        :class="
+                            cn(
+                                'grid size-10 shrink-0 place-items-center rounded-lg',
+                                fileLook(file.name, file.kind).tone,
+                            )
+                        "
+                        aria-hidden="true"
+                    >
+                        <component
+                            :is="fileLook(file.name, file.kind).icon"
+                            class="size-5"
+                        />
+                    </span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block truncate text-sm font-medium">{{
+                            file.name
+                        }}</span>
+                        <span class="block text-xs" :class="quiet">
+                            {{ fileLook(file.name, file.kind).label }} ·
+                            {{ formatFileSize(file.size_bytes) }}
+                        </span>
+                    </span>
+                    <component
+                        :is="isPdf(file) ? Eye : Download"
+                        class="mr-1 size-4 shrink-0"
+                        :class="quiet"
+                        aria-hidden="true"
+                    />
+                </component>
+                <a
+                    v-if="isPdf(file)"
+                    :href="file.download_url"
+                    class="grid size-8 shrink-0 place-items-center rounded-full outline-none hover:bg-current/15 focus-visible:ring-2 focus-visible:ring-current pointer-coarse:size-10"
+                    :aria-label="`Descargar ${file.name}`"
+                    title="Descargar"
+                >
+                    <Download class="size-4" aria-hidden="true" />
+                </a>
+            </div>
+            <SaveFileButton
+                v-if="file.file_save"
+                :options="file.file_save"
+                :inherit-color="custom"
+            />
+        </template>
     </div>
 </template>

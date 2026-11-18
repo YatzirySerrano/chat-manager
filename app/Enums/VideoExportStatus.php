@@ -3,7 +3,7 @@
 namespace App\Enums;
 
 /**
- * Progress of the copy of a video to the NAS (VideoExport).
+ * Progress of the copy of a chat file (video, image, PDF, document, audio) to the NAS (VideoExport).
  */
 enum VideoExportStatus: string
 {

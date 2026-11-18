@@ -12,19 +12,23 @@ use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\User;
 use App\Models\VideoExport;
+use App\Services\Storage\MediaPaths;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * «Guardar video»: who may copy a video of a chat to the NAS, which videos
+ * «Guardar archivo» (born as «Guardar video»): who may copy a file of a
+ * chat to the NAS (videos, images, PDFs, documents and audios), which files
  * can be copied, and what the chat bubble is told about it.
  *
- * The bubble receives `video_save` for each video attachment the viewer may
- * save (the permission videos.save-to-nas, on top of seeing the chat):
- * where to send the request and the latest copy of that video, if any.
- * Viewers without the permission get null, so the button does not exist
- * for them.
+ * The bubble receives `file_save` for each available attachment the viewer
+ * may save (the permission videos.save-to-nas, on top of seeing the chat):
+ * where to send the request, the kind of file (icon and label), the
+ * extension the copy keeps, and the latest copy of that file, if any.
+ * Videos also keep receiving the original `video_save` (same options, on
+ * the original save-video route). Viewers without the permission get null,
+ * so the button does not exist for them.
  *
  * The latest copies are read once per conversation or internal thread and
  * request (the class is scoped), never one query per bubble.
@@ -56,13 +60,57 @@ class VideoExports
         $status = $attachment->getAttribute('status');
 
         return $attachment->path !== null && $attachment->path !== ''
-            && ($status === null || $status === AttachmentStatus::Available || $status === AttachmentStatus::Available->value)
-            && str_starts_with(strtolower((string) $attachment->mime_type), 'video/');
+            && ($status === null || $status === AttachmentStatus::Available || $status === AttachmentStatus::Available->value);
     }
 
     public function isSavableTeamAttachment(TeamAttachment $attachment): bool
     {
-        return ! $attachment->isPurged() && $attachment->kind === TeamAttachmentKind::Video;
+        return ! $attachment->isPurged() && $attachment->path !== null && $attachment->path !== '';
+    }
+
+    /**
+     * The kind of file, for the icon and the label of the button: video,
+     * image, pdf, audio or document (anything else).
+     */
+    public static function kindOf(MessageAttachment|TeamAttachment $attachment): string
+    {
+        $mime = strtolower(trim(explode(';', (string) $attachment->mime_type)[0]));
+
+        if ($mime === '' && $attachment instanceof TeamAttachment) {
+            return match ($attachment->kind) {
+                TeamAttachmentKind::Video => 'video',
+                TeamAttachmentKind::Image => 'image',
+                TeamAttachmentKind::Audio => 'audio',
+                default => 'document',
+            };
+        }
+
+        return match (true) {
+            str_starts_with($mime, 'video/') => 'video',
+            str_starts_with($mime, 'image/') => 'image',
+            str_starts_with($mime, 'audio/') => 'audio',
+            $mime === 'application/pdf' => 'pdf',
+            default => 'document',
+        };
+    }
+
+    /**
+     * The name the file arrived with, if any.
+     */
+    public static function originalName(MessageAttachment|TeamAttachment $attachment): ?string
+    {
+        $name = $attachment instanceof MessageAttachment ? $attachment->file_name : $attachment->original_name;
+
+        return $name === null || trim($name) === '' ? null : $name;
+    }
+
+    /**
+     * The extension the copy keeps: the one of the detected type (or of the
+     * original name for generic detections), never one typed by the person.
+     */
+    public function extensionOf(MessageAttachment|TeamAttachment $attachment): string
+    {
+        return app(MediaPaths::class)->extensionFor((string) $attachment->mime_type, self::originalName($attachment));
     }
 
     /**
@@ -84,7 +132,7 @@ class VideoExports
     }
 
     /**
-     * The folder the user saved their last video in (relative to the root),
+     * The folder the user saved their last file in (relative to the root),
      * where the browser opens next time; "" for the root.
      */
     public function lastFolder(User $user): string
@@ -93,10 +141,10 @@ class VideoExports
     }
 
     /**
-     * What the bubble of a conversation video is told; null when the viewer
+     * What the bubble of a conversation file is told; null when the viewer
      * may not save it.
      *
-     * @return array{url: string, export: array<string, mixed>|null}|null
+     * @return array{url: string, kind: string, extension: string, name: string|null, size_bytes: int|null, export: array<string, mixed>|null}|null
      */
     public function forMessageAttachment(Message $message, MessageAttachment $attachment, ?User $viewer): ?array
     {
@@ -106,17 +154,33 @@ class VideoExports
 
         $latest = $this->latestInConversation($message->conversation_id)[$attachment->id] ?? null;
 
-        return [
+        return $this->options(
+            route('conversations.messages.attachments.save-file', ['conversation' => $message->conversation_id, 'message' => $message->id, 'attachment' => $attachment->id]),
+            $attachment,
+            $latest,
+        );
+    }
+
+    /**
+     * The original «Guardar video» options of a conversation video (on its
+     * save-video route); null for other files or viewers who may not save.
+     *
+     * @param  array<string, mixed>|null  $options  What forMessageAttachment() answered.
+     * @return array<string, mixed>|null
+     */
+    public function videoForMessageAttachment(Message $message, MessageAttachment $attachment, ?array $options): ?array
+    {
+        return $options === null || $options['kind'] !== 'video' ? null : [
+            ...$options,
             'url' => route('conversations.messages.attachments.save-video', ['conversation' => $message->conversation_id, 'message' => $message->id, 'attachment' => $attachment->id]),
-            'export' => $latest === null ? null : $this->present($latest),
         ];
     }
 
     /**
-     * What the bubble of an internal chat video is told; null when the
+     * What the bubble of an internal chat file is told; null when the
      * viewer may not save it.
      *
-     * @return array{url: string, export: array<string, mixed>|null}|null
+     * @return array{url: string, kind: string, extension: string, name: string|null, size_bytes: int|null, export: array<string, mixed>|null}|null
      */
     public function forTeamAttachment(TeamMessage $message, TeamAttachment $attachment, ?User $viewer): ?array
     {
@@ -126,8 +190,41 @@ class VideoExports
 
         $latest = $this->latestInThread($message->team_thread_id)[$attachment->id] ?? null;
 
-        return [
+        return $this->options(
+            route('team-chat.attachments.save-file', ['thread' => $message->team_thread_id, 'message' => $message->id, 'attachment' => $attachment->id]),
+            $attachment,
+            $latest,
+        );
+    }
+
+    /**
+     * The original «Guardar video» options of an internal chat video (on
+     * its save-video route); null for other files or viewers who may not save.
+     *
+     * @param  array<string, mixed>|null  $options  What forTeamAttachment() answered.
+     * @return array<string, mixed>|null
+     */
+    public function videoForTeamAttachment(TeamMessage $message, TeamAttachment $attachment, ?array $options): ?array
+    {
+        return $options === null || $options['kind'] !== 'video' ? null : [
+            ...$options,
             'url' => route('team-chat.attachments.save-video', ['thread' => $message->team_thread_id, 'message' => $message->id, 'attachment' => $attachment->id]),
+        ];
+    }
+
+    /**
+     * @return array{url: string, kind: string, extension: string, name: string|null, size_bytes: int|null, export: array<string, mixed>|null}
+     */
+    private function options(string $url, MessageAttachment|TeamAttachment $attachment, ?VideoExport $latest): array
+    {
+        $size = $attachment->size_bytes;
+
+        return [
+            'url' => $url,
+            'kind' => self::kindOf($attachment),
+            'extension' => $this->extensionOf($attachment),
+            'name' => self::originalName($attachment),
+            'size_bytes' => $size === null ? null : (int) $size,
             'export' => $latest === null ? null : $this->present($latest),
         ];
     }

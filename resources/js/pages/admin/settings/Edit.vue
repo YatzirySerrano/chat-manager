@@ -106,7 +106,7 @@ const validation = useFormValidation(form, {
                 integerBetween(1, 10),
             ],
             'video_exports.root_folder': [
-                required('Escribe el nombre de la carpeta de videos.'),
+                required('Escribe el nombre de la carpeta de archivos.'),
                 maxLength(120),
             ],
         };
@@ -177,7 +177,7 @@ const sections = computed(() => [
     ...(phaseTwo.value
         ? [{ id: 'informacion-faltante', label: 'Información faltante' }]
         : []),
-    { id: 'videos', label: 'Videos en Synology' },
+    { id: 'videos', label: 'Archivos en Synology' },
     { id: 'meta', label: 'Integración con Meta' },
 ]);
 
@@ -904,13 +904,13 @@ const integrationConnected = computed(
                     id="videos"
                     :icon="HardDriveDownload"
                     class="scroll-mt-32"
-                    title="Videos en Synology"
-                    description="Carpeta del NAS donde el botón «Guardar video» de los chats guarda las copias de los videos."
+                    title="Archivos en Synology"
+                    description="Carpeta del NAS donde el botón «Guardar» de los archivos de los chats deja las copias."
                 >
                     <FormField
                         id="video-root-folder"
-                        label="Carpeta de videos de solicitudes"
-                        hint="Carpeta principal dentro del NAS donde se abre «Guardar video». Dentro de ella el equipo crea sus carpetas: sucursal › mes › Solicitud o Desembolso › día de atención."
+                        label="Carpeta de archivos en Synology"
+                        hint="Carpeta principal dentro del NAS donde se abre «Guardar». Dentro de ella el equipo crea sus carpetas: sucursal › mes › Solicitud o Desembolso › día de atención."
                         :error="validation.error('video_exports.root_folder')"
                     >
                         <Input

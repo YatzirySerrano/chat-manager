@@ -264,6 +264,8 @@ class ConversationMessageResource extends JsonResource
         $status = $status instanceof AttachmentStatus ? $status->value : $status;
         $delivery = $attachment->getAttribute('delivery_method');
         $delivery = $delivery instanceof AttachmentDeliveryMethod ? $delivery : AttachmentDeliveryMethod::Native;
+        $exports = app(VideoExports::class);
+        $fileSave = $exports->forMessageAttachment($this->resource, $attachment, request()->user());
 
         return [
             'id' => $attachment->id,
@@ -288,8 +290,10 @@ class ConversationMessageResource extends JsonResource
             'link_revoke_url' => $delivery === AttachmentDeliveryMethod::Link && $this->direction === MessageDirection::Outbound
                 ? route('conversations.messages.attachments.revoke-link', ['conversation' => $this->conversation_id, 'message' => $this->id, 'attachment' => $attachment->id])
                 : null,
-            // «Guardar video» (videos.save-to-nas): null when the viewer may not save it.
-            'video_save' => app(VideoExports::class)->forMessageAttachment($this->resource, $attachment, request()->user()),
+            // «Guardar archivo» (videos.save-to-nas): null when the viewer may not save it.
+            'file_save' => $fileSave,
+            // The original «Guardar video» options, for videos only.
+            'video_save' => $exports->videoForMessageAttachment($this->resource, $attachment, $fileSave),
         ];
     }
 

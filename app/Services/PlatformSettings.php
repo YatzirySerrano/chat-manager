@@ -212,8 +212,8 @@ class PlatformSettings
                 'reminder_minutes' => null,
                 'reminder_limit' => 3,
             ],
-            // «Guardar video»: root folder of the NAS browser, relative to
-            // the disk of saved videos (VideoFolders).
+            // «Guardar archivo»: root folder of the NAS browser, relative to
+            // the disk of saved files (VideoFolders). Kept as VIDEOS so nothing moves.
             'video_exports' => [
                 'root_folder' => 'VIDEOS',
             ],

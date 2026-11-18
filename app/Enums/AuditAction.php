@@ -268,7 +268,7 @@ enum AuditAction: string
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::RecordPermanentlyDeleted => 'Registro eliminado definitivamente',
-            self::VideoSaveRequested => 'Video enviado a guardar en Synology',
+            self::VideoSaveRequested => 'Archivo enviado a guardar en Synology',
         };
     }
 

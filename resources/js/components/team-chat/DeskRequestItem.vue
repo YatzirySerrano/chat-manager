@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { CheckCheck, Clock, Hand } from '@lucide/vue';
+import { CheckCheck, Clock, Hand, Headset } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CountBadge from '@/components/filters/CountBadge.vue';
 import ListAvatar from '@/components/filters/ListAvatar.vue';
@@ -60,6 +60,14 @@ const detail = computed(() => {
         ? `En espera desde ${formatRelative(since.value)}`
         : 'En espera';
 });
+
+const chipTone = computed(() =>
+    props.tab === 'completed'
+        ? 'bg-success-soft text-success-soft-foreground'
+        : props.tab === 'mine'
+          ? 'bg-primary-soft text-primary-soft-foreground'
+          : 'bg-warning-soft text-warning-soft-foreground',
+);
 
 function acceptRow(): void {
     router.post(
@@ -136,10 +144,20 @@ function acceptRow(): void {
                     >{{ row.last_message?.text ?? 'Sin mensajes todavía' }}
                 </span>
                 <span
-                    class="flex items-center gap-1 text-[0.6875rem] leading-4 text-muted-foreground"
+                    :class="
+                        cn(
+                            'mt-0.5 inline-flex max-w-full items-center gap-1 rounded-full px-1.5 py-px text-[0.6875rem] leading-4 font-medium',
+                            chipTone,
+                        )
+                    "
                 >
                     <CheckCheck
                         v-if="tab === 'completed'"
+                        class="size-3 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <Headset
+                        v-else-if="tab === 'mine'"
                         class="size-3 shrink-0"
                         aria-hidden="true"
                     />
@@ -159,7 +177,7 @@ function acceptRow(): void {
         <button
             v-if="tab === 'pending'"
             type="button"
-            class="absolute top-1/2 right-2 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-md border bg-background px-2 text-xs font-medium shadow-(--shadow-control) outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 pointer-coarse:h-9"
+            class="absolute top-1/2 right-2 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-full border bg-background px-2 text-xs font-medium shadow-(--shadow-control) outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 pointer-coarse:h-9"
             :disabled="accepting"
             :aria-label="`Aceptar la solicitud de ${row.title}`"
             data-desk-accept

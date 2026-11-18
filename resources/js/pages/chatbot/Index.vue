@@ -64,7 +64,13 @@ watch(tab, (value) => {
 });
 
 /* Menú de bienvenida: one connection at a time. */
-const selectedId = ref<number | null>(props.connections[0]?.id ?? null);
+/* First the connections whose menu is on: that is what people come to adjust. */
+const selectedId = ref<number | null>(
+    (
+        props.connections.find((connection) => connection.menu.is_enabled) ??
+        props.connections[0]
+    )?.id ?? null,
+);
 const selected = computed(
     () =>
         props.connections.find(

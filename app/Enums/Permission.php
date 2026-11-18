@@ -112,6 +112,7 @@ enum Permission: string
     case PurgeTags = 'permanent-deletion.tags';
     case PurgeCategories = 'permanent-deletion.categories';
     case PurgeQuickReplies = 'permanent-deletion.quick-replies';
+    case PurgeConnections = 'permanent-deletion.connections';
 
     public function group(): PermissionGroup
     {
@@ -200,6 +201,7 @@ enum Permission: string
             self::PurgeTags => 'Eliminar definitivamente etiquetas ya eliminadas',
             self::PurgeCategories => 'Eliminar definitivamente categorías ya eliminadas',
             self::PurgeQuickReplies => 'Eliminar definitivamente respuestas rápidas ya eliminadas',
+            self::PurgeConnections => 'Eliminar conexiones definitivamente',
         };
     }
 
@@ -290,6 +292,7 @@ enum Permission: string
             self::PurgeTags => 'Borrar para siempre una etiqueta ya eliminada. Se quita de los contactos y conversaciones que la tenían. No se puede deshacer.',
             self::PurgeCategories => 'Borrar para siempre una categoría ya eliminada. Sus conversaciones quedan sin categoría. No se puede deshacer.',
             self::PurgeQuickReplies => 'Borrar para siempre una respuesta rápida ya eliminada, compartida o personal. No se puede deshacer.',
+            self::PurgeConnections => 'Borrar para siempre una conexión con todas sus conversaciones, mensajes, archivos, plantillas y registros. No se puede deshacer; los contactos se conservan.',
         };
     }
 
@@ -446,6 +449,7 @@ enum Permission: string
             self::PurgeTags,
             self::PurgeCategories,
             self::PurgeQuickReplies,
+            self::PurgeConnections,
         ];
     }
 

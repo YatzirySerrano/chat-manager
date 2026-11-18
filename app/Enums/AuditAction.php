@@ -135,6 +135,8 @@ enum AuditAction: string
     case ConversationCategoryChanged = 'conversation.category_changed';
     case ConversationPermanentlyDeleted = 'conversation.permanently_deleted';
     case RecordPermanentlyDeleted = 'record.permanently_deleted';
+    case ConnectionPermanentlyDeleted = 'connection.permanently_deleted';
+    case ConnectionConversationsMoved = 'connection.conversations_moved';
     case VideoSaveRequested = 'video.save_requested';
 
     /**
@@ -268,6 +270,8 @@ enum AuditAction: string
             self::ConversationCategoryChanged => 'Categoría de la solicitud cambiada',
             self::ConversationPermanentlyDeleted => 'Chat eliminado definitivamente',
             self::RecordPermanentlyDeleted => 'Registro eliminado definitivamente',
+            self::ConnectionPermanentlyDeleted => 'Conexión eliminada definitivamente',
+            self::ConnectionConversationsMoved => 'Conversaciones movidas a otra conexión',
             self::VideoSaveRequested => 'Archivo enviado a guardar en Synology',
         };
     }
@@ -287,7 +291,7 @@ enum AuditAction: string
             self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
             self::ConnectionWebLoggedOut, self::ConnectionWebSessionLost,
             self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached,
-            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted => 'danger',
+            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::ConnectionWebLinkRequested, self::ConnectionWebDisconnected, self::ConnectionWebReconnectRequested,
@@ -300,7 +304,8 @@ enum AuditAction: string
             self::SupervisionPersonalItemUpdated, self::UserPersonalQuickRepliesRevoked,
             self::HistoryImportRequested, self::HistoryImportDiscarded,
             self::DepartmentServiceRulesUpdated, self::ConversationCategoryRulesUpdated,
-            self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden => 'warning',
+            self::ConversationReadinessReverted, self::ConversationQueueRulesOverridden,
+            self::ConnectionConversationsMoved => 'warning',
             self::UserCreated, self::UserActivated, self::DepartmentCreated, self::DepartmentMemberAdded,
             self::RoleCreated, self::ConnectionCreated, self::ConnectionActivated,
             self::ConnectionCredentialsVerified, self::ConnectionNumberRegistered, self::ConnectionWebLinked, self::ContactCreated, self::ContactRestored, self::TagCreated,
@@ -329,7 +334,7 @@ enum AuditAction: string
             self::HistoryImportCreated, self::HistoryImportFileAdded, self::HistoryImportClassified,
             self::HistoryImportRuleApplied, self::HistoryImportRequested, self::HistoryImportCompleted,
             self::HistoryImportFailed, self::HistoryImportDiscarded,
-            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted,
+            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
         ], true);
     }
 

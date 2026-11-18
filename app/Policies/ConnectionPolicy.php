@@ -85,6 +85,29 @@ class ConnectionPolicy
         return $this->update($actor, $connection);
     }
 
+    /**
+     * «Eliminar definitivamente»: erasing the connection with everything it
+     * holds (DeleteConnectionPermanently). Reserved to the root authority
+     * (permanent-deletion.connections), whether or not the connection was
+     * already deleted logically.
+     */
+    public function deletePermanently(User $actor, Connection $connection): bool
+    {
+        return $actor->holdsPermission(Permission::PurgeConnections);
+    }
+
+    /**
+     * Moving conversations out of this connection into another one of the
+     * same channel (MoveConnectionConversations). The source may be deleted
+     * (the historical Whaticket connection is created deleted); the
+     * destination is checked by the action.
+     */
+    public function moveConversations(User $actor, Connection $connection): bool
+    {
+        return $actor->holdsPermission(Permission::ManageConnections)
+            && $this->view($actor, $connection)->allowed();
+    }
+
     public function restore(User $actor, Connection $connection): bool
     {
         return $connection->isDeleted()

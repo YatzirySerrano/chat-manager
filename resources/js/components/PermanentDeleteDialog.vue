@@ -37,6 +37,10 @@ const props = withDefaults(
         confirmLabel?: string;
         /** Word to type; must match the server (ELIMINAR). */
         word?: string;
+        /** Extra fields sent with the confirmation (default slot choices). */
+        data?: Record<string, unknown>;
+        /** Keeps the confirm button disabled (a choice of the slot is missing). */
+        blocked?: boolean;
     }>(),
     {
         kept: () => [],
@@ -67,7 +71,7 @@ watch(open, (isOpen) => {
 });
 
 function confirm(): void {
-    if (!matches.value || processing.value) {
+    if (!matches.value || props.blocked || processing.value) {
         return;
     }
 
@@ -75,7 +79,7 @@ function confirm(): void {
     error.value = null;
 
     router.delete(props.url, {
-        data: { confirmation: typed.value },
+        data: { ...props.data, confirmation: typed.value },
         preserveScroll: true,
         onSuccess: () => {
             open.value = false;
@@ -128,6 +132,8 @@ function confirm(): void {
                     </ul>
                 </div>
 
+                <slot />
+
                 <form class="space-y-1.5" @submit.prevent="confirm">
                     <Label for="permanent-delete-word">
                         Escribe {{ word }} para confirmar
@@ -167,7 +173,7 @@ function confirm(): void {
                 <Button
                     variant="destructive"
                     :loading="processing"
-                    :disabled="!matches"
+                    :disabled="!matches || blocked"
                     data-permanent-delete="confirm"
                     @click="confirm"
                 >

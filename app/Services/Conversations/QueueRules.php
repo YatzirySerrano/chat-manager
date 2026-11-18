@@ -144,13 +144,17 @@ class QueueRules
     }
 
     /**
-     * Rule 1: the request is marked «Necesita información» and the
-     * confirmation rule is on for it right now.
+     * Rule 1: the request is marked «Necesita información» and either the
+     * confirmation rule is on for it right now, or a person marked it so
+     * (readiness_changed_by_user_id): a request somebody returned for
+     * missing information waits in the queue, but nobody can take it until
+     * it is confirmed complete, in any department.
      */
     public function needsInformation(Conversation $conversation, int|false|null $departmentId = false): bool
     {
         return $conversation->readiness === ConversationReadiness::NeedsInfo
-            && $this->rulesFor($conversation, $departmentId)->confirmationRequired();
+            && ($conversation->readiness_changed_by_user_id !== null
+                || $this->rulesFor($conversation, $departmentId)->confirmationRequired());
     }
 
     /**
@@ -423,6 +427,11 @@ class QueueRules
         $static = function (Builder $query, ResolvedRules $resolved) use ($now): void {
             if ($resolved->confirmationRequired()) {
                 $query->where('readiness', '!=', ConversationReadiness::NeedsInfo->value);
+            } else {
+                // Marked by a person: held whatever the rule (needsInformation()).
+                $query->where(fn (Builder $held) => $held
+                    ->where('readiness', '!=', ConversationReadiness::NeedsInfo->value)
+                    ->orWhereNull('readiness_changed_by_user_id'));
             }
 
             if ($resolved->minWaitSeconds() > 0) {

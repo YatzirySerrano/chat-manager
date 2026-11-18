@@ -14,7 +14,8 @@ use Illuminate\Http\RedirectResponse;
  * engine authorizes the actor again under lock and records the change.
  * Marking that information is missing may also send the customer the list
  * (SendMissingInformation): a message that cannot be sent never undoes the
- * change, the toast says why it was not sent.
+ * change, the toast says why it was not sent. A conversation in attention
+ * then goes back to «Pendiente» in its queue (SetConversationReadiness).
  */
 class ConversationReadinessController extends ConversationOperationController
 {
@@ -24,7 +25,7 @@ class ConversationReadinessController extends ConversationOperationController
         $this->ensurePermitted($request->user(), 'confirmReadiness', $conversation);
 
         $target = $request->readiness();
-        $setReadiness->handle($conversation, $target, $request->user(), $request->reason(), $request->version(), listed: $request->missingList() !== []);
+        $setReadiness->handle($conversation, $target, $request->user(), $request->reason(), $request->version(), listed: $request->missingList() !== [], returnToQueue: ! $request->sendsMessage());
 
         if ($target === ConversationReadiness::Ready) {
             return $this->done($conversation, $request->user(), 'Solicitud confirmada como completa. Ya puede tomarse cuando las reglas de la cola lo permitan.');
@@ -35,6 +36,9 @@ class ConversationReadinessController extends ConversationOperationController
         }
 
         $notSent = $sendMissing->handle($conversation, $request->user(), $request->missingList(), $request->clientReference());
+
+        // Sent (or not) while still in attention; now it waits as pending.
+        $setReadiness->returnToQueue($conversation, $request->user());
 
         return $notSent === null
             ? $this->done($conversation, $request->user(), 'La solicitud quedó marcada como «Necesita información» y se envió al cliente lo que falta.')

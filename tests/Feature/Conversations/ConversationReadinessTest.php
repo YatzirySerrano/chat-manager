@@ -164,16 +164,15 @@ test('a closed conversation has nothing to confirm and imported history is read-
     expect($closed->fresh()->readiness)->toBe(ConversationReadiness::NeedsInfo);
 });
 
-test('an open conversation marked as needing information stays with its agent', function () {
+test('an open conversation marked as needing information goes back to pending, without agent', function () {
     $open = Conversation::factory()->inDepartment($this->department)->assignedTo($this->agent)->create(['queued_at' => CarbonImmutable::parse('2026-11-10 15:00', 'UTC')]);
 
     setReadiness($this, $this->supervisor, $open, ['readiness' => 'needs_info', 'reason' => 'Falta la factura'])->assertRedirect();
 
     expect($open->fresh())
         ->readiness->toBe(ConversationReadiness::NeedsInfo)
-        ->status->toBe(ConversationStatus::Open)
-        ->assigned_user_id->toBe($this->agent->id)
-        ->queued_at->toEqual(CarbonImmutable::parse('2026-11-10 15:00', 'UTC'));
+        ->status->toBe(ConversationStatus::Pending)
+        ->assigned_user_id->toBeNull();
 });
 
 test('confirming a request of an automatic department offers its queue again', function () {
@@ -195,4 +194,23 @@ test('the readiness changes are shown in the chat timeline with their reason', f
 
     expect($events->pluck('label')->all())->toContain('Solicitud confirmada como completa', 'Marcada como «Necesita información»')
         ->and($events->firstWhere('type', 'readiness_reverted'))->toMatchArray(['note' => 'Falta el comprobante', 'actor' => 'Sofía']);
+});
+
+test('marked as needing information it waits in the queue, nobody can accept it until it is confirmed complete, then it is taken', function () {
+    $department = Department::factory()->create(['service_rules' => ['intake.confirmation_required' => false]]);
+    $agent = User::factory()->agent()->available()->inDepartments($department)->create();
+    $supervisor = User::factory()->supervisor()->inDepartments($department)->create();
+    $open = Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
+
+    setReadiness($this, $agent, $open, ['readiness' => 'needs_info', 'reason' => 'Falta el INE'])->assertRedirect();
+
+    expect($open->fresh())->status->toBe(ConversationStatus::Pending)->assigned_user_id->toBeNull();
+
+    $this->actingAs($agent)->postJson(route('conversations.accept', $open))->assertStatus(409);
+    expect($open->fresh()->status)->toBe(ConversationStatus::Pending);
+
+    setReadiness($this, $supervisor, $open->fresh(), ['readiness' => 'ready'])->assertRedirect();
+    $this->actingAs($agent)->postJson(route('conversations.accept', $open))->assertRedirect();
+
+    expect($open->fresh())->status->toBe(ConversationStatus::Open)->assigned_user_id->toBe($agent->id);
 });

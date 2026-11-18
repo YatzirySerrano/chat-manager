@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Connections\ConnectionConversations;
 use App\Actions\Connections\ConnectionListQuery;
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Connections\DeleteConnection;
+use App\Actions\Connections\DeleteConnectionPermanently;
+use App\Actions\Connections\MoveConnectionConversations;
 use App\Actions\Connections\RestoreConnection;
 use App\Actions\Connections\UpdateConnection;
 use App\Enums\ConnectionChannel;
@@ -15,6 +18,7 @@ use App\Enums\WebChatAvailabilityMode;
 use App\Enums\WebChatIdentityMode;
 use App\Enums\WebChatPosition;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Conversations\ConversationPermanentDeletionController;
 use App\Http\Requests\Admin\ConnectionRequest;
 use App\Http\Requests\Admin\WebChatWidgetRequest;
 use App\Http\Resources\ConnectionResource;
@@ -149,7 +153,8 @@ class ConnectionController extends Controller
             'diagnostics' => null,
             'whatsappWeb' => null,
             ...$this->formOptions($channel, null, $provider),
-            'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false],
+            'can' => ['update' => true, 'changeStatus' => false, 'verify' => false, 'delete' => false, 'deletePermanently' => false, 'restore' => false, 'syncTemplates' => false, 'viewTemplates' => false, 'moveConversations' => false],
+            'moveTargets' => [],
         ]);
     }
 
@@ -198,10 +203,29 @@ class ConnectionController extends Controller
                 'changeStatus' => $actor->can('changeStatus', $connection),
                 'verify' => $actor->can('verify', $connection),
                 'delete' => $actor->can('delete', $connection),
+                'deletePermanently' => $actor->can('deletePermanently', $connection),
                 'restore' => $actor->can('restore', $connection),
                 'syncTemplates' => $actor->can('sync', [MessageTemplate::class, $connection]),
                 'viewTemplates' => $actor->can('viewAny', MessageTemplate::class),
+                'moveConversations' => $actor->can('moveConversations', $connection),
             ],
+            // Where its conversations can be moved: the other connections of
+            // the same channel that are not deleted.
+            'moveTargets' => fn (): array => $actor->can('moveConversations', $connection)
+                ? Connection::query()
+                    ->notDeleted()
+                    ->where('channel', $connection->channel->value)
+                    ->whereKeyNot($connection->id)
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'display_phone_number', 'is_active', 'provider'])
+                    ->map(fn (Connection $target): array => [
+                        'id' => $target->id,
+                        'name' => $target->name,
+                        'phone' => $target->display_phone_number,
+                        'active' => $target->is_active,
+                        'provider' => $target->provider->label(),
+                    ])->values()->all()
+                : [],
         ]);
     }
 
@@ -229,6 +253,54 @@ class ConnectionController extends Controller
             : "Conexión {$connection->name} eliminada. Sus conversaciones e historial se conservan."]);
 
         return to_route('connections.index');
+    }
+
+    /**
+     * «Eliminar definitivamente» (root only): the connection stops at once
+     * and is erased in the background with every conversation it holds.
+     * Asks for the same typed confirmation as erasing a chat.
+     */
+    public function destroyPermanently(Request $request, Connection $connection, DeleteConnectionPermanently $delete, ConnectionConversations $list, MoveConnectionConversations $move): RedirectResponse
+    {
+        Gate::authorize('view', $connection);
+        Gate::authorize('deletePermanently', $connection);
+
+        $word = ConversationPermanentDeletionController::CONFIRMATION;
+        $reminder = "Escribe {$word} para confirmar que quieres borrar esta conexión para siempre.";
+
+        $validated = $request->validate([
+            'confirmation' => ['required', 'string', fn (string $attribute, mixed $value, callable $fail) => mb_strtoupper(trim((string) $value)) === $word ? null : $fail($reminder)],
+            // «¿Transferir mensajes a otra conexión?»: where the conversations go before the connection is erased.
+            'transfer_to' => ['nullable', 'integer', 'exists:connections,id'],
+            'show_archived' => ['boolean'],
+        ], ['confirmation.required' => $reminder]);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $transferred = null;
+
+        if (($validated['transfer_to'] ?? null) !== null) {
+            /** @var Connection $target */
+            $target = Connection::query()->findOrFail((int) $validated['transfer_to']);
+            $move->ensureValidTarget($connection, $target);
+
+            $ids = $list->query($connection, [])->pluck('conversations.id')->map(fn (mixed $id): int => (int) $id)->all();
+            $transferred = [...$move->handle($connection, $target, $ids, $request->boolean('show_archived'), $actor), 'target' => $target->name];
+        }
+
+        $conversations = $delete->start($connection, $actor);
+
+        $message = $conversations === 0
+            ? "Conexión {$connection->name} eliminada definitivamente."
+            : "Conexión {$connection->name} detenida. Se está borrando definitivamente con sus {$conversations} conversaciones; desaparecerá de la lista al terminar.";
+
+        if ($transferred !== null) {
+            $message = "{$transferred['moved']} conversaciones transferidas a {$transferred['target']}. ".$message;
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return to_route('connections.index', $conversations === 0 ? [] : ['record' => 'deleted']);
     }
 
     /**

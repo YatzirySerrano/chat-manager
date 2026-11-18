@@ -102,12 +102,12 @@ class ConversationResource extends JsonResource
                 'is_active' => $this->category->is_active,
             ]),
             // Preparation state, independent of the status: it only restrains the queue where the confirmation rule applies.
-            // `tracked`: the confirmation rule applies to it right now (otherwise the state is only informative).
+            // `tracked`: the confirmation rule applies to it right now, or a person marked it as needing information (otherwise the state is only informative).
             'readiness' => [
                 // Phase one (FEATURE_PHASE_TWO off): every request is «Lista para atención».
                 'value' => ($readiness = Features::phaseTwo() ? ($this->readiness ?? ConversationReadiness::Ready) : ConversationReadiness::Ready)->value,
                 'label' => $readiness->label(),
-                'tracked' => app(QueueRules::class)->rulesFor($this->resource)->confirmationRequired(),
+                'tracked' => app(QueueRules::class)->rulesFor($this->resource)->confirmationRequired() || app(QueueRules::class)->needsInformation($this->resource),
             ],
             // When it entered the ready queue: clock of the minimum wait and of the chronological order.
             // Masked while phase two is off (still written and used for the distribution order).

@@ -18,6 +18,8 @@ import { toast } from 'vue-sonner';
 import StatusPill from '@/components/admin/StatusPill.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
+import ConnectionConversationsPanel from '@/components/connections/ConnectionConversationsPanel.vue';
+import type { MoveTarget } from '@/components/connections/ConnectionConversationsPanel.vue';
 import AutoMessagePreview from '@/components/connections/AutoMessagePreview.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
 import ConnectionDiagnosticsCard from '@/components/connections/ConnectionDiagnosticsCard.vue';
@@ -40,6 +42,7 @@ import FormField from '@/components/FormField.vue';
 import FormSection from '@/components/FormSection.vue';
 import InputError from '@/components/InputError.vue';
 import PageHeader from '@/components/PageHeader.vue';
+import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -63,6 +66,7 @@ import {
 import type { FieldRule } from '@/lib/validation';
 import {
     destroy as destroyConnection,
+    destroyPermanently as destroyConnectionPermanently,
     index as connectionsIndex,
     restore as restoreConnection,
     store,
@@ -108,10 +112,14 @@ const props = defineProps<{
         changeStatus: boolean;
         verify: boolean;
         delete: boolean;
+        deletePermanently: boolean;
         restore: boolean;
         syncTemplates: boolean;
         viewTemplates: boolean;
+        moveConversations: boolean;
     };
+    /** Connections of the same channel its conversations can be moved to. */
+    moveTargets?: MoveTarget[];
 }>();
 
 type ConnectionForm = {
@@ -496,6 +504,76 @@ const verifying = ref(false);
 const statusProcessing = ref(false);
 const registerOpen = ref(false);
 const confirmDeactivateOpen = ref(false);
+const purgeOpen = ref(false);
+/** «¿Transferir mensajes a otra conexión?» of the permanent deletion. */
+const purgeTransfer = ref<'yes' | 'no'>('yes');
+const purgeTarget = ref<number | null>(null);
+const purgeShowArchived = ref(true);
+
+const hasConversations = computed(
+    () => (connection.value?.conversations_count ?? 0) > 0,
+);
+
+const purgeTargetOptions = computed(() =>
+    (props.moveTargets ?? []).map((target) => ({
+        value: target.id,
+        label: target.name,
+        description: [
+            target.provider,
+            target.phone,
+            target.active ? null : 'inactiva',
+        ]
+            .filter(Boolean)
+            .join(' · '),
+    })),
+);
+
+function openPurge(): void {
+    const targets = props.moveTargets ?? [];
+    purgeTransfer.value =
+        hasConversations.value && targets.length > 0 ? 'yes' : 'no';
+    purgeTarget.value = targets.length === 1 ? targets[0].id : null;
+    purgeShowArchived.value = true;
+    purgeOpen.value = true;
+}
+
+const purgeTargetName = computed(
+    () =>
+        (props.moveTargets ?? []).find(
+            (target) => target.id === purgeTarget.value,
+        )?.name ?? 'la conexión que elijas',
+);
+
+const transfersOnPurge = computed(
+    () => hasConversations.value && purgeTransfer.value === 'yes',
+);
+
+const purgeErased = computed(() => [
+    'La conexión y su configuración (credenciales, plantillas, widget y registro de webhooks)',
+    ...(transfersOnPurge.value || !hasConversations.value
+        ? []
+        : [
+              `${(connection.value?.conversations_count ?? 0).toLocaleString('es-MX')} conversaciones con todos sus mensajes, archivos, notas e historial, incluido lo importado de Whaticket`,
+          ]),
+]);
+
+const purgeKept = computed(() => [
+    ...(transfersOnPurge.value
+        ? [
+              `Sus ${(connection.value?.conversations_count ?? 0).toLocaleString('es-MX')} conversaciones, con todos sus mensajes, pasan a ${purgeTargetName.value}`,
+          ]
+        : []),
+    'Los contactos, sus notas y sus otras conversaciones',
+]);
+
+const purgeData = computed(() =>
+    purgeTransfer.value === 'yes' && purgeTarget.value !== null
+        ? {
+              transfer_to: purgeTarget.value,
+              show_archived: purgeShowArchived.value,
+          }
+        : {},
+);
 
 const deletion = useRecordDeletion<Connection>({
     destroy: (record) => destroyConnection(record.id),
@@ -652,6 +730,9 @@ const sections = computed(() => [
         ? []
         : [{ id: 'mensajes', label: 'Mensajes automáticos' }]),
     { id: 'reapertura', label: 'Reapertura' },
+    ...(connection.value
+        ? [{ id: 'conversaciones', label: 'Conversaciones' }]
+        : []),
     ...(connection.value && props.diagnostics && !isWhatsappWeb.value
         ? [{ id: 'integracion', label: 'Integración' }]
         : []),
@@ -667,6 +748,7 @@ const showStatusActions = computed(
         connection.value !== null &&
         (props.can.changeStatus ||
             props.can.restore ||
+            props.can.deletePermanently ||
             (!isWhatsappWeb.value && (props.can.verify || props.can.delete))),
 );
 
@@ -977,6 +1059,19 @@ const flaggedSections = computed(() =>
                         >
                             <Trash2 />
                             Eliminar conexión
+                        </Button>
+                        <Button
+                            v-if="can.deletePermanently"
+                            type="button"
+                            variant="destructive"
+                            data-test="purge-connection"
+                            :class="
+                                (!can.delete || isWhatsappWeb) && 'sm:ml-auto'
+                            "
+                            @click="openPurge"
+                        >
+                            <Trash2 />
+                            Eliminar definitivamente
                         </Button>
 
                         <div
@@ -1649,6 +1744,20 @@ const flaggedSections = computed(() =>
                 </fieldset>
 
                 <FormSection
+                    v-if="connection"
+                    id="conversaciones"
+                    class="scroll-mt-32"
+                    title="Conversaciones"
+                    description="Todo lo que tiene esta conexión, incluido el historial importado de Whaticket. Ábrelas desde aquí o muévelas en bloque a otra conexión."
+                >
+                    <ConnectionConversationsPanel
+                        :connection-id="connection.id"
+                        :can-move="can.moveConversations"
+                        :targets="moveTargets ?? []"
+                    />
+                </FormSection>
+
+                <FormSection
                     v-if="connection && diagnostics && !isWhatsappWeb"
                     id="integracion"
                     class="scroll-mt-32"
@@ -1727,6 +1836,73 @@ const flaggedSections = computed(() =>
             v-bind="deletion.dialog"
             @confirm="deletion.confirm"
         />
+
+        <PermanentDeleteDialog
+            v-if="connection && can.deletePermanently"
+            v-model:open="purgeOpen"
+            :title="`¿Eliminar ${connection.name} definitivamente?`"
+            description="La conexión deja de funcionar al instante y se borra en segundo plano. A diferencia de «Eliminar conexión», no se puede restaurar."
+            :erased="purgeErased"
+            :kept="purgeKept"
+            :blocked="
+                purgeTransfer === 'yes' &&
+                hasConversations &&
+                purgeTarget === null
+            "
+            :url="destroyConnectionPermanently.url(connection.id)"
+            :data="purgeData"
+            confirm-label="Eliminar conexión definitivamente"
+        >
+            <fieldset
+                v-if="hasConversations"
+                class="grid gap-2 rounded-lg border px-3.5 py-3"
+                data-test="purge-transfer"
+            >
+                <legend class="px-1 font-medium text-foreground">
+                    ¿Transferir mensajes a otra conexión?
+                </legend>
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input
+                        v-model="purgeTransfer"
+                        type="radio"
+                        value="yes"
+                        :disabled="(moveTargets ?? []).length === 0"
+                    />
+                    Sí, pasar todas sus conversaciones a:
+                </label>
+                <AppSelect
+                    v-if="purgeTransfer === 'yes'"
+                    v-model="purgeTarget"
+                    :options="purgeTargetOptions"
+                    placeholder="Elige la conexión que se queda con todo"
+                    aria-label="Conexión que recibe las conversaciones"
+                />
+                <label
+                    v-if="purgeTransfer === 'yes'"
+                    class="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+                >
+                    <Checkbox
+                        :model-value="purgeShowArchived"
+                        @update:model-value="
+                            (checked) => (purgeShowArchived = checked === true)
+                        "
+                    />
+                    Mostrar también en la bandeja el historial archivado de
+                    Whaticket
+                </label>
+                <p
+                    v-if="(moveTargets ?? []).length === 0"
+                    class="text-xs text-muted-foreground"
+                >
+                    No hay otra conexión del mismo canal: crea o restaura una
+                    para poder transferir.
+                </p>
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="purgeTransfer" type="radio" value="no" />
+                    No, borrarlas junto con la conexión
+                </label>
+            </fieldset>
+        </PermanentDeleteDialog>
 
         <RegisterNumberDialog
             v-if="connection && isWhatsapp && can.verify"

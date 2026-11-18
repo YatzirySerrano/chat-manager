@@ -543,6 +543,22 @@ conversaciones siguen resolviendo porque las conexiones eliminadas conservan su 
 ([ADR-MIG-5](decisiones.md#adr-mig-5--conexión-histórica-sin-envío-para-el-historial-importado)). Mapear a una conexión
 existente también es válido: la conversación importada sigue siendo solo lectura y nada se envía por ella.
 
+**Ver el historial en la conexión real.** Como la conexión histórica nace eliminada, su historial no aparece entre las
+conexiones operativas. En Conexiones → (filtro «Eliminadas») → la conexión histórica → sección **«Conversaciones»** se
+listan todas (en vivo, importadas y archivadas) con «Abrir». Para pasarlas a la conexión real: «Seleccionar las N» →
+«Mover a otra conexión» (opción «Mostrar en la bandeja el historial archivado»). Por consola:
+
+```
+php artisan connections:merge <id destino> --all --show-archived --purge
+```
+
+deja todas las conversaciones del canal en una sola conexión y, con `--purge`, borra definitivamente las demás (ver
+`--help`). Si un contacto tiene una conversación activa en las dos, queda activa la más reciente y la otra se cierra.
+
+**Eliminar definitivamente una conexión** (solo Superadministrador, permiso `permanent-deletion.connections`): botón
+aparte de «Eliminar conexión» (lógica). Pregunta «¿Transferir mensajes a otra conexión?»: con «Sí» las conversaciones
+pasan primero a la elegida; con «No» se borran con la conexión, en segundo plano (trabajo `PurgeConnection`).
+
 ### Permisos y auditoría
 
 | Permiso                       | Qué permite                                                       | Reservado a raíz | Alcance global | Quién lo tiene al migrar                                        |

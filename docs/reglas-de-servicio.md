@@ -479,6 +479,12 @@ interfaz, y todas están apagadas por defecto. La única implementación es `App
 | 2   | Tiempo mínimo de espera | `queue.min_wait_minutes`       | `min_wait`      | «Podrás tomarla dentro de 3 minutos.» (con `available_at` exacto)                              |
 | 3   | Orden de llegada        | `queue.chronological_order`    | `queue_order`   | «Existe una solicitud anterior que debe atenderse primero.» (con `blocking_conversation_id`)   |
 
+**Marcada por una persona.** «Marcar que necesita información» sobre una conversación en atención la regresa a
+«Pendiente» en la cola de su departamento, sin agente (si se envía al cliente lo que falta, primero se envía). Desde
+ese momento la regla 1 la retiene **en cualquier departamento**, aunque `intake.confirmation_required` esté apagada:
+nadie la puede aceptar ni se reparte hasta que alguien la confirme como completa; entonces se acepta y pasa a «Mías».
+
+
 El **límite de capacidad** y el **control de conversaciones pendientes de atención** son reglas del agente, anteriores
 a esta fase, con sus propios mecanismos ([bandejas-y-asignacion.md §4](bandejas-y-asignacion.md)). Se evalúan después y
 una excepción a las reglas de la cola **nunca** las omite. El control de conversaciones pendientes es fase uno pero llega

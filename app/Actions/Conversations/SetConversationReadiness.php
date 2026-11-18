@@ -6,6 +6,7 @@ use App\Enums\AuditAction;
 use App\Enums\ConversationConflict as ConversationConflictReason;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationReadiness;
+use App\Enums\ConversationStatus;
 use App\Exceptions\ConversationStateConflict;
 use App\Models\Conversation;
 use App\Models\User;
@@ -32,8 +33,11 @@ use Illuminate\Validation\ValidationException;
  * - Confirming a request waiting in a queue starts its queue clock
  *   (`queued_at`): the minimum wait and the chronological order count from
  *   the confirmation. Returning it takes it out of the ready queue while the
- *   confirmation rule applies to it. An open conversation stays with its
- *   agent: its readiness matters when it goes back to a queue.
+ *   confirmation rule applies to it. An open conversation (in attention)
+ *   goes back to «Pendiente» in its department queue, without agent: while
+ *   information is missing nobody attends it and, where the confirmation
+ *   rule applies, nobody takes it until it is confirmed complete. The
+ *   agent's freed room is offered to their other queues.
  * - Recorded as a conversation event and in the audit log, with the
  *   previous and the new state and the reason. Once committed, the queue of
  *   an automatic department is offered again.
@@ -52,7 +56,50 @@ class SetConversationReadiness
     /**
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, ConversationReadiness $target, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $listed = false): Conversation
+    public function handle(Conversation $conversation, ConversationReadiness $target, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $listed = false, bool $returnToQueue = true): Conversation
+    {
+        $conversation = $this->change($conversation, $target, $actor, $reason, $expectedVersion, $listed);
+
+        // The caller that still sends the customer the missing list (only
+        // possible in attention) returns it afterwards (returnToQueue()).
+        return $target === ConversationReadiness::NeedsInfo && $returnToQueue ? $this->returnToQueue($conversation, $actor) : $conversation;
+    }
+
+    /**
+     * A conversation in attention that needs information goes back to
+     * «Pendiente» in its department queue, without agent. Nothing happens
+     * when it is not open or no longer needs information.
+     */
+    public function returnToQueue(Conversation $conversation, User $actor): Conversation
+    {
+        return DB::transaction(function () use ($conversation, $actor): Conversation {
+            $conversation = $this->lifecycle->lock($conversation);
+
+            if ($conversation->readiness !== ConversationReadiness::NeedsInfo || $conversation->status !== ConversationStatus::Open) {
+                return $conversation;
+            }
+
+            $releasedFrom = $conversation->assigned_user_id;
+            $this->lifecycle->lockDepartment($conversation->department_id, exclusive: true);
+            $this->lifecycle->apply($conversation, ConversationStatus::Pending, $this->lifecycle->queued($conversation));
+            $this->lifecycle->record($conversation, ConversationEventType::Unassigned, $actor, [
+                'from_user_id' => $releasedFrom,
+                'from_department_id' => $conversation->department_id,
+                'note' => 'Necesita información',
+            ]);
+
+            if ($releasedFrom !== null) {
+                $this->assignAutomatically->distributeForAgentAfterCommit($releasedFrom, [$conversation->id]);
+            }
+
+            return $conversation;
+        });
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function change(Conversation $conversation, ConversationReadiness $target, User $actor, ?string $reason, ?int $expectedVersion, bool $listed): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 

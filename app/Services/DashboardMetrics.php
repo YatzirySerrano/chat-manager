@@ -406,15 +406,19 @@ class DashboardMetrics
     /**
      * Whether any active channel (a WhatsApp number or the web chat) already
      * exchanged real traffic (cached briefly: it requires inspecting every
-     * active connection).
+     * active connection). A message received by an active connection is
+     * proof enough by itself (a QR number whose session state lags, a
+     * connection whose last check failed after real traffic): the panel
+     * never stays empty while conversations are coming in.
      */
     private function messagingConnected(): bool
     {
-        return Cache::remember('dashboard:messaging-connected', 60, fn (): bool => Connection::query()
-            ->active()
-            ->with('webChatWidget')
-            ->get()
-            ->contains(fn (Connection $connection): bool => $connection->configurationHealth()->hasConfirmedTraffic()));
+        return Cache::remember('dashboard:messaging-connected:v2', 60, fn (): bool => Connection::query()->active()->whereNotNull('last_inbound_at')->exists()
+            || Connection::query()
+                ->active()
+                ->with('webChatWidget')
+                ->get()
+                ->contains(fn (Connection $connection): bool => $connection->configurationHealth()->hasConfirmedTraffic()));
     }
 
     /**

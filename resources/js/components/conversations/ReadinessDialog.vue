@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { newClientReference } from '@/components/conversations/messageFormat';
@@ -16,10 +16,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { usePermissions } from '@/composables/usePermissions';
 import {
     conversationConflictFromErrors,
     withoutConflictCode,
 } from '@/lib/conversations/actionErrors';
+import { edit as editSettings } from '@/routes/admin/settings';
 import { update as updateReadiness } from '@/routes/conversations/readiness';
 import type {
     ConversationReadinessValue,
@@ -48,6 +50,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ close: [] }>();
+
+/** Shortcut to the catalog (Configuración › Información faltante). */
+const { can: holdsPermission } = usePermissions();
+const catalogUrl = `${editSettings.url()}#informacion-faltante`;
 
 const OTHER_MIN = 5;
 const OTHER_MAX = 200;
@@ -78,10 +84,9 @@ const sendBlock = computed<string | null>(() => {
         return null;
     }
 
-    if (!conversation.can.reply) {
-        return conversation.status === 'pending'
-            ? 'La conversación todavía no está en atención: solo quien la atiende puede escribirle al cliente.'
-            : 'Solo quien atiende la conversación puede escribirle al cliente.';
+    // Whoever marks the request may send the list, also from the queue.
+    if (!conversation.can.confirm_ready) {
+        return 'No puedes escribirle al cliente en esta conversación.';
     }
 
     if (!conversation.connection.can_send) {
@@ -253,14 +258,25 @@ function post(
                 </DialogHeader>
 
                 <fieldset class="grid gap-2">
-                    <legend class="mb-2 text-sm font-medium">
+                    <legend
+                        class="mb-2 flex w-full items-center justify-between gap-2 text-sm font-medium"
+                    >
                         Qué información falta
+                        <Link
+                            v-if="holdsPermission('settings.update')"
+                            :href="catalogUrl"
+                            class="text-xs font-normal text-primary underline-offset-4 hover:underline"
+                            data-missing-catalog-link
+                        >
+                            Editar opciones
+                        </Link>
                     </legend>
                     <p
                         v-if="items.length === 0"
                         class="text-sm text-muted-foreground"
                     >
-                        No hay opciones configuradas. Descríbela en «Otro».
+                        No hay opciones configuradas. Descríbela en «Otro» o
+                        agrégalas en Configuración › Información faltante.
                     </p>
                     <label
                         v-for="(item, index) in items"

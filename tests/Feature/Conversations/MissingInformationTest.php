@@ -3,8 +3,10 @@
 use App\Enums\AuditAction;
 use App\Enums\ConversationEventType;
 use App\Enums\ConversationReadiness;
+use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\MessageDirection;
+use App\Enums\MessageStatus;
 use App\Enums\Permission;
 use App\Jobs\DeliverOutboundMessage;
 use App\Models\AuditLog;
@@ -12,6 +14,8 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Meta\SendResult;
+use App\Services\Meta\WhatsAppTransport;
 use App\Services\PlatformSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
@@ -123,24 +127,62 @@ test('with the customer window closed the request is marked and the toast says w
     Queue::assertNothingPushed();
 });
 
-test('someone who may mark a pending request but not answer it marks it without sending', function () {
+test('someone who may mark a pending request sends the list from the queue', function () {
     $supervisor = User::factory()->supervisor()->inDepartments($this->department)->create();
     $pending = Conversation::factory()->inDepartment($this->department)->create([
         'last_inbound_at' => CarbonImmutable::parse('2026-11-18 15:30:00', 'UTC'),
     ]);
 
     markMissing($this, $supervisor, $pending, [
-        'missing_items' => ['INE por ambos lados'],
+        'missing_other' => 'Foto de la fachada',
         'send_message' => true,
         'client_reference' => (string) Str::uuid(),
     ])->assertSessionHasNoErrors()
-        ->assertInertiaFlash('toast', [
-            'type' => 'warning',
-            'message' => 'La solicitud quedó marcada como «Necesita información», pero el mensaje al cliente no se envió. La conversación todavía no está en atención: solo quien la atiende puede escribirle al cliente.',
-        ]);
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'La solicitud quedó marcada como «Necesita información» y se envió al cliente lo que falta.']);
+
+    $message = Message::query()->where('conversation_id', $pending->id)->sole();
 
     expect($pending->fresh()->readiness)->toBe(ConversationReadiness::NeedsInfo)
-        ->and(Message::query()->count())->toBe(0);
+        ->and($message->sender_user_id)->toBe($supervisor->id)
+        ->and($message->body)->toBe('Para continuar con tu solicitud nos falta:
+• Foto de la fachada');
+});
+
+test('the list is delivered after the conversation went back to the queue', function () {
+    $transport = new class implements WhatsAppTransport
+    {
+        /** @var list<int> */
+        public array $sent = [];
+
+        public function send(Message $message): SendResult
+        {
+            $this->sent[] = $message->id;
+
+            return new SendResult('wamid.out.'.$message->id);
+        }
+
+        public function name(): string
+        {
+            return 'recording';
+        }
+    };
+    app()->instance(WhatsAppTransport::class, $transport);
+
+    markMissing($this, $this->agent, $this->open, [
+        'missing_items' => ['CURP'],
+        'send_message' => true,
+        'client_reference' => (string) Str::uuid(),
+    ])->assertSessionHasNoErrors();
+
+    // The worker picks it up once the conversation is already pending, without agent.
+    expect($this->open->fresh())->status->toBe(ConversationStatus::Pending)->assigned_user_id->toBeNull();
+
+    $message = Message::query()->where('conversation_id', $this->open->id)->sole();
+    app()->call([new DeliverOutboundMessage($message->id), 'handle']);
+
+    expect($message->refresh()->status)->not->toBe(MessageStatus::Failed)
+        ->and($message->error_code)->toBeNull()
+        ->and($transport->sent)->toBe([$message->id]);
 });
 
 test('what is missing must be picked or described', function (array $data, string $field) {

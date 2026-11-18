@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Conversations\SendMissingInformation;
 use App\Enums\AttachmentDeliveryMethod;
 use App\Enums\ConnectionChannel;
 use App\Enums\ConversationEventType;
@@ -568,7 +569,14 @@ class DeliverOutboundMessage implements ShouldQueue
         $sender = User::query()->with(['roles', 'departments'])->find($senderId);
 
         // A template is an administrative send: its sender must still hold templates.send.
-        $ability = $message->type === MessageType::Template ? 'sendTemplate' : 'reply';
+        // The list of missing information is sent by whoever marked the
+        // request, and the conversation goes back to the queue right after:
+        // its sender must still be able to mark it, not be its assignee.
+        $ability = match (true) {
+            $message->type === MessageType::Template => 'sendTemplate',
+            ($message->metadata[SendMissingInformation::MESSAGE_FLAG] ?? false) === true => 'confirmReadiness',
+            default => 'reply',
+        };
 
         return $sender !== null && Gate::forUser($sender)->allows($ability, $conversation);
     }

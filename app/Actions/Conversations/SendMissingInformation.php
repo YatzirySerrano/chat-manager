@@ -25,6 +25,9 @@ use Illuminate\Validation\ValidationException;
  */
 class SendMissingInformation
 {
+    /** Metadata key that marks the message as the list of missing information. */
+    public const MESSAGE_FLAG = 'missing_information';
+
     public function __construct(
         private QueueOutboundMessage $queue,
         private MissingInformation $missingInformation,
@@ -38,17 +41,19 @@ class SendMissingInformation
     {
         $conversation->refresh();
 
-        if (Gate::forUser($actor)->denies('reply', $conversation)) {
+        // Whoever may mark the request may send the list, also while it waits
+        // in the queue: the conversation goes back to «Pendiente» right after,
+        // and the delivery job checks this same ability (MESSAGE_FLAG).
+        if (Gate::forUser($actor)->denies('confirmReadiness', $conversation)) {
             return match (true) {
                 $conversation->isImported() => 'La conversación es historial importado.',
                 $conversation->status === ConversationStatus::Closed => 'La conversación está cerrada.',
-                $conversation->status === ConversationStatus::Pending => 'La conversación todavía no está en atención: solo quien la atiende puede escribirle al cliente.',
-                default => 'Solo quien atiende la conversación puede escribirle al cliente.',
+                default => 'No puedes escribirle al cliente en esta conversación.',
             };
         }
 
         try {
-            $this->queue->handle($conversation, $actor, $this->missingInformation->message($missing), $clientReference);
+            $this->queue->handle($conversation, $actor, $this->missingInformation->message($missing), $clientReference, ability: 'confirmReadiness', metadata: [self::MESSAGE_FLAG => true]);
         } catch (ConversationConflict|AuthorizationException $exception) {
             return $exception->getMessage();
         } catch (ValidationException $exception) {

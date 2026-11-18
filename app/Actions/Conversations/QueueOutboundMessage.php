@@ -77,7 +77,14 @@ class QueueOutboundMessage
         private MediaPaths $mediaPaths,
     ) {}
 
-    public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null): Message
+    /**
+     * @param  string  $ability  What authorizes the send: 'reply' for the
+     *                           responsible agent; 'confirmReadiness' for the list of missing
+     *                           information, which whoever marks the request may send even
+     *                           while it waits in the queue.
+     * @param  array<string, mixed>  $metadata  Extra metadata stored on the message.
+     */
+    public function handle(Conversation $conversation, User $actor, ?string $body, string $clientReference, ?UploadedFile $attachment = null, ?int $replyToMessageId = null, string $ability = 'reply', array $metadata = []): Message
     {
         $body = $body === null || trim($body) === '' ? null : $body;
         $inspected = null;
@@ -89,7 +96,7 @@ class QueueOutboundMessage
         // read-only viewer): the permission is checked before touching the
         // file; the full authorization runs again under the lock.
         if ($attachment !== null) {
-            $this->lifecycle->ensurePermitted($actor, 'reply', $conversation);
+            $this->lifecycle->ensurePermitted($actor, $ability, $conversation);
         }
 
         // A repeated submission answers the stored message: its file is
@@ -111,10 +118,10 @@ class QueueOutboundMessage
         }
 
         try {
-            $message = DB::transaction(function () use ($conversation, $actor, $body, $clientReference, $attachment, $replyToMessageId, $inspected, $refusal, $stored, &$duplicate): Message {
+            $message = DB::transaction(function () use ($conversation, $actor, $body, $clientReference, $attachment, $replyToMessageId, $inspected, $refusal, $stored, $ability, $metadata, &$duplicate): Message {
                 $conversation = $this->lifecycle->lock($conversation);
                 $this->lifecycle->lockDepartment($conversation->department_id);
-                $actor = $this->lifecycle->authorize($actor, 'reply', $conversation);
+                $actor = $this->lifecycle->authorize($actor, $ability, $conversation);
 
                 $existing = Message::query()->where('client_reference', $clientReference)->first();
 
@@ -163,9 +170,9 @@ class QueueOutboundMessage
                     'body' => $body,
                     'sender_user_id' => $actor->id,
                     'reply_to_message_id' => $this->replyTarget($conversation, $replyToMessageId),
-                    'metadata' => $file['delivery'] === AttachmentDeliveryMethod::Link
+                    'metadata' => (($file['delivery'] === AttachmentDeliveryMethod::Link
                         ? [AttachmentDownloadLink::METADATA_KEY => ['expires_at' => AttachmentDownloadLink::newExpiry()->toIso8601String()]]
-                        : null,
+                        : []) + $metadata) ?: null,
                 ]);
 
                 try {

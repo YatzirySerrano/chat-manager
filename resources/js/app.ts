@@ -7,7 +7,6 @@ import { initializeDataFreshness } from '@/lib/dataFreshness';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { initializePwa } from '@/lib/pwa/register';
 import { initializeRealtime } from '@/lib/realtime';
-import { initializeSpotlight } from '@/lib/spotlight';
 import { initializeThemePalette } from '@/lib/theme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -87,6 +86,3 @@ initializeRealtime();
 
 // Service worker (offline page, updates, install) for signed-in pages...
 initializePwa();
-
-// Pointer-following light of the `spotlight` utility (indicator cards)...
-initializeSpotlight();

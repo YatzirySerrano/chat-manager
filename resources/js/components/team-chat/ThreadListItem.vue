@@ -9,6 +9,7 @@ import { listTime } from '@/components/team-chat/teamChatFormat';
 import { useLongPress } from '@/composables/useLongPress';
 import { useTeamPresence } from '@/composables/useTeamPresence';
 import { formatDateTime } from '@/lib/format';
+import { compactLinks } from '@/lib/links';
 import { cn } from '@/lib/utils';
 import { show } from '@/routes/team-chat/threads';
 import type { TeamThreadSummary } from '@/types/team-chat';
@@ -57,7 +58,7 @@ const preview = computed(() => {
             : 'Sin mensajes todavía';
     }
 
-    return message.text;
+    return message.text ? compactLinks(message.text) : message.text;
 });
 
 const { isOnline } = useTeamPresence();

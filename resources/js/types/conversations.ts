@@ -394,6 +394,8 @@ export type ConversationMessage = {
     direction: MessageDirection;
     type: MessageTypeValue;
     body: string | null;
+    /** Where the card of its first link is read (null: no link; absent while unsent). */
+    link_preview_url?: string | null;
     status: MessageStatusValue;
     sender?: { id: number | null; name: string } | null;
     error_code: string | null;
@@ -481,6 +483,8 @@ export type ConversationMessage = {
 export type ConversationNote = {
     id: number;
     body: string;
+    /** Where the card of its first link is read (null: no link). */
+    link_preview_url?: string | null;
     author?: { id: number | null; name: string } | null;
     created_at: string | null;
     edited_at: string | null;

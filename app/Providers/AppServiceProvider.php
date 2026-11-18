@@ -22,6 +22,8 @@ use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Models\WebChatSession;
 use App\Models\WebChatWidget;
+use App\Services\LinkPreviews\DnsHostResolver;
+use App\Services\LinkPreviews\HostResolver;
 use App\Services\Meta\MetaCloudWhatsAppTransport;
 use App\Services\Meta\SimulatedWhatsAppTransport;
 use App\Services\Meta\UnavailableWhatsAppTransport;
@@ -52,6 +54,9 @@ class AppServiceProvider extends ServiceProvider
             'simulated' => $app->isProduction() ? new UnavailableWhatsAppTransport : new SimulatedWhatsAppTransport,
             default => new UnavailableWhatsAppTransport,
         });
+
+        // DNS of the link previews (tests answer without the network).
+        $this->app->bind(HostResolver::class, DnsHostResolver::class);
     }
 
     /**

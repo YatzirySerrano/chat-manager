@@ -6,12 +6,10 @@ import {
     CircleAlert,
     CircleQuestionMark,
     Copy,
-    ExternalLink,
     FlaskConical,
     LayoutTemplate,
     Link2,
     Link2Off,
-    MapPin,
     MessageSquareDashed,
     MousePointerClick,
     Plug,
@@ -36,6 +34,8 @@ import {
     quoteClasses,
     reactionChip,
 } from '@/components/chat/bubble';
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
+import LocationCard from '@/components/chat/LocationCard.vue';
 import MessageAttachmentPreview from '@/components/conversations/MessageAttachmentPreview.vue';
 import MessageStatusIndicator from '@/components/conversations/MessageStatusIndicator.vue';
 import SaveFileButton from '@/components/video-exports/SaveFileButton.vue';
@@ -54,6 +54,7 @@ import {
 } from '@/lib/chatAppearance';
 import { googleMapsUrl } from '@/lib/conversations/media';
 import { formatDate, formatDateTime } from '@/lib/format';
+import { firstUrl } from '@/lib/links';
 import { formatPhone } from '@/lib/phone';
 import type { ConversationMessage, MessageAttachment } from '@/types';
 
@@ -185,10 +186,27 @@ const location = computed(() => {
     const latitude = numberOrNull(content.value?.latitude);
     const longitude = numberOrNull(content.value?.longitude);
     const located = latitude !== null && longitude !== null;
+    const name = textOrNull(content.value?.name);
+    const address = textOrNull(content.value?.address);
+    const body = textOrNull(props.message.body);
+    /*
+     * The body repeats the place (its name, address or point) unless the
+     * customer wrote something with it (WhatsApp's comment).
+     */
+    const repeatsPlace =
+        !body ||
+        body === name ||
+        body === address ||
+        body === [name, address].filter(Boolean).join(', ') ||
+        /^(Ubicación: )?-?\d+(\.\d+)?, ?-?\d+(\.\d+)?$/u.test(body);
 
     return {
-        name: textOrNull(content.value?.name),
-        address: textOrNull(content.value?.address),
+        name,
+        address,
+        latitude,
+        longitude,
+        website: textOrNull(content.value?.website),
+        comment: repeatsPlace ? null : body,
         live: content.value?.live === true,
         url: located ? googleMapsUrl(latitude, longitude) : null,
         coordinates: located
@@ -317,6 +335,9 @@ const text = computed(() => {
 
     return props.message.body;
 });
+
+/* The first link of the text gets a preview card under it. */
+const link = computed(() => firstUrl(text.value));
 
 /**
  * What to say when there is nothing to draw: a type this version does not
@@ -890,75 +911,18 @@ async function copyText(): Promise<void> {
                     </p>
 
                     <!-- A place: what it is called, where it is and the way there. -->
-                    <div
+                    <LocationCard
                         v-if="location"
-                        class="mb-1 w-72 max-w-full overflow-hidden rounded-xl border"
-                        :class="themed('bg-background/60', 'border-current/30')"
-                        data-location-card
-                    >
-                        <div class="flex items-start gap-2.5 p-2.5">
-                            <span
-                                class="grid size-9 shrink-0 place-items-center rounded-full"
-                                :class="
-                                    themed(
-                                        'bg-destructive-soft text-destructive-soft-foreground',
-                                        'border border-current/40',
-                                    )
-                                "
-                                aria-hidden="true"
-                            >
-                                <MapPin class="size-4.5" />
-                            </span>
-                            <div class="min-w-0 flex-1">
-                                <p class="font-medium">
-                                    {{
-                                        location.name ??
-                                        (location.live
-                                            ? 'Ubicación en tiempo real'
-                                            : 'Ubicación compartida')
-                                    }}
-                                </p>
-                                <p
-                                    v-if="location.address"
-                                    class="text-xs"
-                                    :class="secondaryText"
-                                >
-                                    {{ location.address }}
-                                </p>
-                                <p
-                                    v-if="location.coordinates"
-                                    class="text-xs tabular-nums"
-                                    :class="secondaryText"
-                                >
-                                    {{ location.coordinates }}
-                                </p>
-                                <p
-                                    v-else
-                                    class="text-xs"
-                                    :class="secondaryText"
-                                >
-                                    El mensaje llegó sin coordenadas.
-                                </p>
-                            </div>
-                        </div>
-                        <a
-                            v-if="location.url"
-                            :href="location.url"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="flex items-center justify-center gap-1.5 border-t px-3 py-2 text-xs font-semibold transition-colors duration-(--duration-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset pointer-coarse:py-3"
-                            :class="
-                                themed(
-                                    'text-primary hover:bg-accent/60',
-                                    'border-current/30 hover:underline',
-                                )
-                            "
-                            data-location-link
-                        >
-                            <ExternalLink class="size-3.5" aria-hidden="true" />
-                            Abrir en Google Maps
-                        </a>
-                    </div>
+                        class="mb-1"
+                        :name="location.name"
+                        :address="location.address"
+                        :latitude="location.latitude"
+                        :longitude="location.longitude"
+                        :live="location.live"
+                        :website="location.website"
+                        :comment="location.comment"
+                        :custom="customColors"
+                    />
 
                     <ul
                         v-if="sharedContacts.length > 0"
@@ -1099,6 +1063,13 @@ async function copyText(): Promise<void> {
                         links
                         :inherit-color="customColors"
                         class="block px-1 wrap-anywhere whitespace-pre-line"
+                    />
+                    <LinkPreviewCard
+                        v-if="link"
+                        :url="link"
+                        :endpoint="message.link_preview_url ?? null"
+                        :custom="customColors"
+                        class="mt-1"
                     />
                     <p
                         v-else-if="fallback"

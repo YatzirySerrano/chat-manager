@@ -30,6 +30,23 @@ export type ChatPreviewItem = {
     note?: string | null;
     /** A deleted message keeps the theme's look, as in the chat. */
     deleted?: boolean;
+    /** WhatsApp formatting (*bold*, _italic_…) applies to the text. */
+    formatted?: boolean;
+    /** A shared location, drawn as a place with «Abrir en Google Maps». */
+    location?: ChatPreviewLocation | null;
+    /** The first link of the text, with the endpoint of its preview card. */
+    link?: { url: string; endpoint: string | null } | null;
+};
+
+/** A place shared in the chat (see LocationCard). */
+export type ChatPreviewLocation = {
+    name: string | null;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    live?: boolean;
+    website?: string | null;
+    comment?: string | null;
 };
 
 /**

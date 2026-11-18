@@ -11,6 +11,7 @@ use App\Models\Message;
 use App\Models\MessageAttachment;
 use App\Models\User;
 use App\Policies\HistoryImportPolicy;
+use App\Services\LinkPreviews\LinkPreviews;
 use App\Services\Storage\MediaThumbnails;
 use App\Services\VideoExports\VideoExports;
 use App\Support\Attachments\AttachmentDownloadLink;
@@ -99,6 +100,10 @@ class ConversationMessageResource extends JsonResource
             'direction' => $this->direction->value,
             'type' => $this->type->value,
             'body' => $signature['body'] ?? $this->body,
+            // Where the card of its first link is read (null: no link, or deleted for everyone).
+            'link_preview_url' => $this->revoked_at === null && LinkPreviews::firstUrl($this->body) !== null
+                ? route('conversations.messages.link-preview', ['conversation' => $this->conversation_id, 'message' => $this->id])
+                : null,
             'status' => $this->status->value,
             'sender' => $this->whenLoaded('sender', fn (): ?array => $this->sender === null ? null : [
                 'id' => app(ProtectedAccounts::class)->idForRequest($this->sender, $request),
@@ -358,6 +363,8 @@ class ConversationMessageResource extends JsonResource
                 'longitude' => is_numeric($content['longitude'] ?? null) ? (float) $content['longitude'] : null,
                 'name' => $this->text($content['name'] ?? null),
                 'address' => $this->text($content['address'] ?? null),
+                // The place's own web page (WhatsApp Cloud "url"), http/https only; absent otherwise.
+                ...($this->webAddress($content['url'] ?? null) !== null ? ['website' => $this->webAddress($content['url'])] : []),
                 // Shared in real time (only the position it was shared from is known); absent otherwise.
                 ...(($content['live'] ?? null) === true ? ['live' => true] : []),
             ],
@@ -427,6 +434,11 @@ class ConversationMessageResource extends JsonResource
         $thumbnail = $content['thumbnail'] ?? null;
 
         return is_string($thumbnail) && $thumbnail !== '' ? 'data:image/jpeg;base64,'.$thumbnail : null;
+    }
+
+    private function webAddress(mixed $value): ?string
+    {
+        return is_string($value) && strlen($value) <= 2048 && preg_match('#^https?://[^\s<>"\'`]+$#i', $value) === 1 ? $value : null;
     }
 
     private function text(mixed $value): ?string

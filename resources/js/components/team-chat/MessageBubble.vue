@@ -25,6 +25,7 @@ import {
     quoteClasses,
     reactionChip,
 } from '@/components/chat/bubble';
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
 import MessageAttachments from '@/components/team-chat/MessageAttachments.vue';
 import TeamAvatar from '@/components/team-chat/TeamAvatar.vue';
 import {
@@ -52,6 +53,7 @@ import {
     CUSTOM_CHAT_COLORS,
 } from '@/lib/chatAppearance';
 import { formatDateTime } from '@/lib/format';
+import { firstUrl } from '@/lib/links';
 import { cn } from '@/lib/utils';
 import type { TeamMessage } from '@/types/team-chat';
 
@@ -136,6 +138,11 @@ const hasActions = computed(
 const canReact = computed(
     () => !props.message.deleted && props.reactions.length > 0,
 );
+/* The first link of the text gets a preview card under it. */
+const link = computed(() =>
+    props.message.deleted ? null : firstUrl(props.message.body),
+);
+
 const segments = computed(() =>
     textSegments(props.message.body, props.message.mentions),
 );
@@ -443,6 +450,14 @@ function onEditKeydown(event: KeyboardEvent): void {
                                 ><template v-else>{{ segment.text }}</template>
                             </template>
                         </p>
+
+                        <LinkPreviewCard
+                            v-if="link && !editing"
+                            :url="link"
+                            :endpoint="message.link_preview_url ?? null"
+                            :custom="custom"
+                            class="px-1.5 pt-1"
+                        />
 
                         <MessageAttachments
                             v-if="message.attachments.length > 0 && !editing"

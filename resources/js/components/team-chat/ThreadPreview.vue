@@ -8,6 +8,7 @@ import type {
     ChatPreviewItem,
 } from '@/components/chat-preview/types';
 import { useChannel } from '@/composables/useChannel';
+import { firstUrl } from '@/lib/links';
 import { preview as previewRoute } from '@/routes/team-chat/threads';
 import type { TeamMessage, TeamThreadSummary } from '@/types/team-chat';
 
@@ -101,6 +102,15 @@ const items = computed<ChatPreviewItem[]>(() =>
             : message.kind === 'system'
               ? message.system_text
               : message.body,
+        link:
+            !message.deleted &&
+            message.kind !== 'system' &&
+            firstUrl(message.body)
+                ? {
+                      url: firstUrl(message.body) as string,
+                      endpoint: message.link_preview_url ?? null,
+                  }
+                : null,
         attachments: message.deleted
             ? []
             : message.attachments.map((attachment) => ({

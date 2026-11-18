@@ -170,6 +170,8 @@ export type TeamMessage = {
     id: number;
     kind: 'message' | 'system';
     body: string | null;
+    /** Where the card of its first link is read (null: no link; absent while unsent). */
+    link_preview_url?: string | null;
     system_text: string | null;
     author: { id: number | null; name: string; deleted: boolean } | null;
     is_mine: boolean;

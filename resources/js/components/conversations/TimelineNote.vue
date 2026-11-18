@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
 import { Lock, Pencil } from '@lucide/vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import LinkPreviewCard from '@/components/chat/LinkPreviewCard.vue';
 import { formatTime } from '@/components/conversations/messageFormat';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import WhatsAppText from '@/components/WhatsAppText.vue';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { formatDateTime } from '@/lib/format';
+import { firstUrl } from '@/lib/links';
 import '@/components/chat/chat.css';
 import { maxLength, required } from '@/lib/validation';
 import { update as updateNote } from '@/routes/conversations/notes';
@@ -30,6 +33,8 @@ const emit = defineEmits<{
 }>();
 
 const editing = ref(false);
+/* The first link of the note gets a preview card under it. */
+const link = computed(() => firstUrl(props.note.body));
 const form = useForm({ body: '' });
 const validation = useFormValidation(form, {
     rules: {
@@ -124,9 +129,18 @@ function save(): void {
             </div>
         </form>
         <template v-else>
-            <p class="wrap-anywhere whitespace-pre-line text-foreground">
-                {{ note.body }}
-            </p>
+            <WhatsAppText
+                :text="note.body"
+                links
+                plain
+                class="block wrap-anywhere whitespace-pre-line text-foreground"
+            />
+            <LinkPreviewCard
+                v-if="link"
+                :url="link"
+                :endpoint="note.link_preview_url ?? null"
+                class="mt-1.5 text-foreground"
+            />
             <footer
                 class="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground"
             >

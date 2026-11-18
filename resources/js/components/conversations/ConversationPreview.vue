@@ -4,6 +4,7 @@ import {
     CircleCheckBig,
     Clock,
     Hourglass,
+    MapPin,
     MessagesSquare,
     Paperclip,
     Sparkles,
@@ -16,6 +17,7 @@ import type {
     ChatPreviewAppearance,
     ChatPreviewAttachment,
     ChatPreviewItem,
+    ChatPreviewLocation,
 } from '@/components/chat-preview/types';
 import {
     previewText,
@@ -27,6 +29,7 @@ import DepartmentTag from '@/components/DepartmentTag.vue';
 import { useChannel } from '@/composables/useChannel';
 import { useFeatures } from '@/composables/useFeatures';
 import { formatDateTime } from '@/lib/format';
+import { compactLinks, firstUrl } from '@/lib/links';
 import { preview as previewRoute } from '@/routes/conversations';
 import type {
     AppColor,
@@ -197,6 +200,44 @@ function author(message: ConversationMessage): string {
     );
 }
 
+function numberOrNull(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function textOrNull(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() !== ''
+        ? value.trim()
+        : null;
+}
+
+/** A shared location, as the chat draws it (MessageBubble). */
+function locationOf(message: ConversationMessage): ChatPreviewLocation | null {
+    if (message.type !== 'location' || message.revoked_at) {
+        return null;
+    }
+
+    const content = (message.content ?? {}) as Record<string, unknown>;
+    const name = textOrNull(content.name);
+    const address = textOrNull(content.address);
+    const body = textOrNull(message.body);
+    const repeatsPlace =
+        !body ||
+        body === name ||
+        body === address ||
+        body === [name, address].filter(Boolean).join(', ') ||
+        /^(Ubicación: )?-?\d+(\.\d+)?, ?-?\d+(\.\d+)?$/u.test(body);
+
+    return {
+        name,
+        address,
+        latitude: numberOrNull(content.latitude),
+        longitude: numberOrNull(content.longitude),
+        live: content.live === true,
+        website: textOrNull(content.website),
+        comment: repeatsPlace ? null : body,
+    };
+}
+
 function toItem(message: ConversationMessage): ChatPreviewItem {
     const media = ['image', 'sticker', 'audio', 'video', 'document'];
     const attachments: ChatPreviewAttachment[] = message.attachments.map(
@@ -219,16 +260,22 @@ function toItem(message: ConversationMessage): ChatPreviewItem {
         });
     }
 
-    const text =
-        message.type === 'text' || media.includes(message.type)
-            ? (message.body?.trim() ?? '') || null
-            : previewText(message);
+    const location = locationOf(message);
+    const text = location
+        ? null
+        : message.type === 'text' || media.includes(message.type)
+          ? (message.body?.trim() ?? '') || null
+          : previewText(message, false);
+    const url = firstUrl(text);
 
     return {
         id: message.id,
         author: author(message),
         mine: message.direction === 'outbound',
         text,
+        formatted: true,
+        location,
+        link: url ? { url, endpoint: message.link_preview_url ?? null } : null,
         attachments,
         at: message.sent_at ?? message.created_at,
         note:
@@ -449,7 +496,21 @@ const availability = computed(() => {
                         v-if="first.text"
                         class="line-clamp-3 text-sm wrap-anywhere whitespace-pre-line"
                     >
-                        {{ first.text }}
+                        {{ compactLinks(first.text) }}
+                    </p>
+                    <p
+                        v-else-if="first.location"
+                        class="flex items-center gap-1 text-sm"
+                    >
+                        <MapPin
+                            class="size-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                        <span class="truncate">{{
+                            first.location.name ??
+                            first.location.address ??
+                            'Ubicación compartida'
+                        }}</span>
                     </p>
                     <p
                         v-for="(file, index) in first.attachments"

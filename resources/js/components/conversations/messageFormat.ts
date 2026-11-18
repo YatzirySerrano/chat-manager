@@ -3,6 +3,7 @@ import {
     calendarDayLabel,
 } from '@/components/conversations/dayGroups';
 import { formatDateTime, platformTimezone } from '@/lib/format';
+import { compactLinks } from '@/lib/links';
 import type {
     ConversationMessagePreview,
     MessageStatusValue,
@@ -121,17 +122,34 @@ export function typeLabel(type: string): string {
 }
 
 /**
- * Text of a list row preview: the body, or the kind of content.
+ * Text of a list row preview: the body, or the kind of content. A shared
+ * location reads «📍 Ubicación» and, with `compact` (one-line rows), web
+ * addresses are reduced to their domain («🔗 tienda.com»).
  */
-export function previewText(message: ConversationMessagePreview): string {
+export function previewText(
+    message: ConversationMessagePreview,
+    compact = true,
+): string {
     const body = message.body?.trim();
+    const shown = (text: string): string =>
+        compact ? compactLinks(text) : text;
+
+    if (message.type === 'location') {
+        // The body names the place, or only repeats its point.
+        const place = body
+            ?.replace(/^Ubicación:\s*/u, '')
+            .replace(/^-?\d+(\.\d+)?, ?-?\d+(\.\d+)?$/u, '')
+            .trim();
+
+        return place ? `📍 Ubicación: ${place}` : '📍 Ubicación';
+    }
 
     if (message.type === 'text' || message.type === 'button') {
-        return body || typeLabel(message.type);
+        return body ? shown(body) : typeLabel(message.type);
     }
 
     return body
-        ? `${typeLabel(message.type)}: ${body}`
+        ? `${typeLabel(message.type)}: ${shown(body)}`
         : typeLabel(message.type);
 }
 

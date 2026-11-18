@@ -576,6 +576,12 @@ Secretos fuera del repositorio: `.env` vive en `shared/` (chmod 640) y en el ges
       adjuntos y los ZIP entregados por enlace (no se borran al vencer el enlace; se rigen por la retención general).
     - `APP_URL` debe ser la URL pública https: las URLs firmadas de descarga (`/descargas/{id}`) se generan con ella
       desde los workers.
+6. **Compresión y caché de estáticos.** La plantilla ya trae gzip (JS, CSS, JSON de Inertia, SVG) y caché inmutable
+   de un año para `/build/`. Brotli, caché corta de iconos y por qué los adjuntos no deben pasar por una caché de
+   nginx: [rendimiento-y-carga.md §15.3](rendimiento-y-carga.md#153-nginx-recomendado-sin-cambiar-la-plantilla).
+   Tras desplegar la migración `2026_11_18_140000_add_dimensions_to_team_attachments_table`, ejecutar una vez
+   `php artisan media:warm-thumbnails` (encola en la cola `media` las miniaturas y medidas que falten; se puede
+   repetir).
 
 ## 7. Webhooks públicos de Meta
 

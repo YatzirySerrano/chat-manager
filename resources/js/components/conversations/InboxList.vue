@@ -1132,6 +1132,7 @@ const scopeButton =
                     :options="tabs"
                     :model-value="activeTab"
                     label="Filtrar la bandeja"
+                    wrap
                     class="px-1"
                     @update:model-value="chooseTab"
                 >

@@ -27,13 +27,19 @@ const props = defineProps<{
     modelValue: T | null;
     /** Accessible name of the group. */
     label: string;
+    /**
+     * Wrap onto more rows instead of scrolling sideways: every tab and
+     * toggle stays visible (the inbox, where «Cerradas» used to hide past
+     * the right edge of a narrow list).
+     */
+    wrap?: boolean;
 }>();
 
 const emit = defineEmits<{ 'update:modelValue': [value: T] }>();
 
 const scroller = ref<HTMLElement | null>(null);
 const track = ref<HTMLElement | null>(null);
-const thumb = ref({ x: 0, width: 0, visible: false });
+const thumb = ref({ x: 0, y: 0, width: 0, height: 0, visible: false });
 /* No glide on the first placement: the thumb appears where it belongs. */
 const placed = ref(false);
 
@@ -50,7 +56,9 @@ function measure(): void {
 
     thumb.value = {
         x: element.offsetLeft,
+        y: element.offsetTop,
         width: element.offsetWidth,
+        height: element.offsetHeight,
         visible: true,
     };
 
@@ -103,6 +111,26 @@ function updateFade(): void {
 useResizeObserver(scroller, updateFade);
 onMounted(updateFade);
 
+/*
+ * A mouse wheel scrolls the strip sideways: without it, reaching the tabs
+ * past the edge needed a trackpad or Shift + wheel.
+ */
+function onWheel(event: WheelEvent): void {
+    const strip = scroller.value;
+
+    if (
+        props.wrap ||
+        !strip ||
+        strip.scrollWidth <= strip.clientWidth ||
+        Math.abs(event.deltaX) >= Math.abs(event.deltaY)
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+    strip.scrollLeft += event.deltaY;
+}
+
 function onKeydown(event: KeyboardEvent): void {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
         return;
@@ -136,7 +164,8 @@ function onKeydown(event: KeyboardEvent): void {
 
 const thumbStyle = computed(() => ({
     width: `${thumb.value.width}px`,
-    transform: `translateX(${thumb.value.x}px)`,
+    height: `${thumb.value.height}px`,
+    transform: `translate(${thumb.value.x}px, ${thumb.value.y}px)`,
     opacity: thumb.value.visible ? 1 : 0,
 }));
 </script>
@@ -144,20 +173,26 @@ const thumbStyle = computed(() => ({
 <template>
     <div
         ref="scroller"
-        class="filter-tabs-scroll flex min-w-0 items-center gap-1 overflow-x-auto"
-        :data-fade="fade || undefined"
+        :class="
+            wrap
+                ? 'flex min-w-0 flex-wrap items-center gap-1.5'
+                : 'filter-tabs-scroll flex min-w-0 items-center gap-1 overflow-x-auto'
+        "
+        :data-fade="(!wrap && fade) || undefined"
         @scroll.passive="updateFade"
+        @wheel="onWheel"
     >
         <div
             ref="track"
-            class="relative flex shrink-0 items-center gap-px rounded-lg border border-border bg-muted p-0.5"
+            class="relative flex items-center gap-px rounded-lg border border-border bg-muted p-0.5"
+            :class="wrap ? 'max-w-full min-w-0 flex-wrap' : 'shrink-0'"
             role="group"
             :aria-label="label"
             @keydown="onKeydown"
         >
             <!-- The thumb: a quiet tint under the chosen tab. -->
             <span
-                class="pointer-events-none absolute inset-y-0.5 left-0 rounded-md border border-border bg-card shadow-(--shadow-control)"
+                class="pointer-events-none absolute top-0 left-0 rounded-md border border-border bg-card shadow-(--shadow-control)"
                 :class="placed && 'filter-tabs-thumb'"
                 :style="thumbStyle"
                 aria-hidden="true"

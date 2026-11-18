@@ -5,6 +5,8 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import FormDialog from '@/components/FormDialog.vue';
 import FormField from '@/components/FormField.vue';
 import InputError from '@/components/InputError.vue';
+import { AppSelect } from '@/components/ui/app-select';
+import type { AppSelectOption } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useFormValidation } from '@/composables/useFormValidation';
@@ -18,13 +20,43 @@ import {
 } from '@/lib/validation';
 import type { FieldRule, FieldRules } from '@/lib/validation';
 import { save, show, store, update } from '@/routes/contacts';
-import type { Contact, DuplicateCheck, DuplicateContact } from '@/types';
+import type {
+    Contact,
+    ContactDepartmentOption,
+    DuplicateCheck,
+    DuplicateContact,
+} from '@/types';
 
 const MAX_CUSTOM_FIELDS = 10;
 
 const props = defineProps<{
     contact: Contact | null;
+    /** Active departments within the actor's scope. */
+    departments: ContactDepartmentOption[];
 }>();
+
+/*
+ * The contact's current department stays selectable even when it is no
+ * longer offered (deactivated or outside the actor's scope), so saving
+ * other changes keeps it.
+ */
+const departmentOptions = computed<AppSelectOption<number | null>[]>(() => {
+    const options: AppSelectOption<number | null>[] = props.departments.map(
+        (department) => ({ value: department.id, label: department.name }),
+    );
+    const current = props.contact?.department;
+
+    if (current && !props.departments.some((d) => d.id === current.id)) {
+        options.unshift({
+            value: current.id,
+            label: current.is_active
+                ? current.name
+                : `${current.name} (inactivo)`,
+        });
+    }
+
+    return [{ value: null, label: 'Sin departamento' }, ...options];
+});
 
 const open = defineModel<boolean>('open', { required: true });
 
@@ -36,12 +68,14 @@ const form = useForm<{
     name: string;
     phone: string;
     email: string;
+    department_id: number | null;
     custom_fields: CustomFieldRow[];
     confirm_duplicate: boolean;
 }>({
     name: '',
     phone: '',
     email: '',
+    department_id: null,
     custom_fields: [],
     confirm_duplicate: false,
 });
@@ -58,6 +92,7 @@ watch(open, (isOpen) => {
         name: props.contact?.name ?? '',
         phone: props.contact?.phone_e164 ?? '',
         email: props.contact?.email ?? '',
+        department_id: props.contact?.department_id ?? null,
         custom_fields: Object.entries(props.contact?.custom_fields ?? {}).map(
             ([label, value]) => ({ label, value }),
         ),
@@ -394,6 +429,24 @@ function submit(confirmDuplicate = false): void {
                     />
                 </FormField>
             </div>
+
+            <FormField
+                id="contact-department"
+                label="Departamento"
+                hint="Las conversaciones nuevas de este contacto llegan a este departamento (si la conexión puede enviarle conversaciones)."
+                :error="validation.error('department_id')"
+            >
+                <AppSelect
+                    id="contact-department"
+                    v-model="form.department_id"
+                    :options="departmentOptions"
+                    placeholder="Sin departamento"
+                    searchable
+                    search-placeholder="Buscar departamento…"
+                    clearable
+                    :invalid="!!validation.error('department_id')"
+                />
+            </FormField>
 
             <fieldset class="grid gap-3">
                 <div class="flex items-center justify-between gap-2">

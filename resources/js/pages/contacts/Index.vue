@@ -22,6 +22,7 @@ import ContactTagList from '@/components/contacts/ContactTagList.vue';
 import UnsavedContactBadge from '@/components/contacts/UnsavedContactBadge.vue';
 import DataPagination from '@/components/DataPagination.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
+import DepartmentTag from '@/components/DepartmentTag.vue';
 import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
 import DirectoryRow from '@/components/directory/DirectoryRow.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
@@ -79,6 +80,7 @@ import { index as reviewsIndex } from '@/routes/contacts/reviews';
 import type {
     ConnectionChannel,
     Contact,
+    ContactDepartmentOption,
     ContactEnumOption,
     ContactFilters,
     ContactOriginTypeValue,
@@ -105,6 +107,8 @@ const props = defineProps<{
     sources: ContactEnumOption<ContactSourceValue>[];
     originTypes: ContactEnumOption<ContactOriginTypeValue>[];
     can: { create: boolean; reviewDuplicates: boolean; import?: boolean };
+    /** Departments the contact form offers. */
+    departments: ContactDepartmentOption[];
     canExport?: boolean;
     openReviews: number | null;
 }>();
@@ -765,6 +769,7 @@ function contactSubtitle(contact: Contact): string | null {
                             contact.is_deleted ||
                             !contact.is_saved ||
                             contact.origin ||
+                            contact.department ||
                             (contact.tags ?? []).length > 0
                         "
                         #badges
@@ -774,6 +779,11 @@ function contactSubtitle(contact: Contact): string | null {
                         <ContactOriginBadge
                             v-if="contact.origin"
                             :origin="contact.origin"
+                        />
+                        <DepartmentTag
+                            v-if="contact.department"
+                            :name="contact.department.name"
+                            :color="contact.department.color"
                         />
                         <ContactTagList
                             v-if="(contact.tags ?? []).length > 0"
@@ -926,6 +936,7 @@ function contactSubtitle(contact: Contact): string | null {
             v-if="canEditAny"
             v-model:open="formOpen"
             :contact="editingContact"
+            :departments="departments"
         />
 
         <ConfirmDialog

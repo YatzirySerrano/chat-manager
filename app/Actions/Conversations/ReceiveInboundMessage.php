@@ -347,7 +347,7 @@ class ReceiveInboundMessage
             }
         }
 
-        ['department' => $department, 'routed_by' => $routedBy] = $this->router->route($connection);
+        ['department' => $department, 'routed_by' => $routedBy] = $this->router->route($connection, $contact);
 
         // An automatic department is locked before the conversation row is
         // inserted: the insert's foreign key check takes a shared lock on the

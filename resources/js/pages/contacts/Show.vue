@@ -50,6 +50,7 @@ import type {
     Contact,
     ContactAttribution,
     ContactConversation,
+    ContactDepartmentOption,
     ContactEnumOption,
     ContactNote,
     ContactOriginTypeValue,
@@ -71,6 +72,8 @@ const props = defineProps<{
     whatsappProfile?: WhatsAppProfile | null;
     originTypes: ContactEnumOption<ContactOriginTypeValue>[];
     availableTags: ContactTag[];
+    /** Departments the contact form offers. */
+    departments: ContactDepartmentOption[];
     can: {
         update: boolean;
         delete: boolean;
@@ -348,6 +351,30 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                             </dt>
                             <dd>{{ contact.profile_name ?? '—' }}</dd>
                         </div>
+                        <div>
+                            <dt class="text-xs text-muted-foreground">
+                                Departamento
+                            </dt>
+                            <dd>
+                                <template v-if="contact.department">
+                                    <DepartmentTag
+                                        :name="contact.department.name"
+                                        :color="contact.department.color"
+                                    />
+                                    <p
+                                        v-if="!contact.department.is_active"
+                                        class="mt-1 text-xs text-muted-foreground"
+                                    >
+                                        Inactivo: sus conversaciones nuevas
+                                        llegan al departamento de la conexión.
+                                    </p>
+                                </template>
+                                <span v-else class="text-muted-foreground"
+                                    >Sin departamento (se usa el de la
+                                    conexión)</span
+                                >
+                            </dd>
+                        </div>
                         <div
                             class="grid grid-cols-2 gap-3 rounded-xl bg-surface-sunken/60 p-3"
                         >
@@ -489,7 +516,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
                                 aria-hidden="true"
                             />
                             <article
-                                class="flex hover-lift flex-col gap-2 rounded-xl border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-card p-3.5 shadow-(--shadow-control) sm:flex-row sm:items-start sm:justify-between"
+                                class="flex flex-col gap-2 rounded-xl border border-[color-mix(in_oklch,var(--border)_80%,transparent)] bg-card p-3.5 shadow-(--shadow-control) hover-lift sm:flex-row sm:items-start sm:justify-between"
                             >
                                 <div class="min-w-0 space-y-1.5">
                                     <div
@@ -642,6 +669,7 @@ const conversationTone: Record<ContactConversation['status'], string> = {
             v-if="can.update"
             v-model:open="editOpen"
             :contact="contact"
+            :departments="departments"
         />
 
         <SaveContactDialog

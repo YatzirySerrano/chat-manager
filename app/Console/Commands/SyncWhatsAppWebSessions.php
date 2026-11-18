@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\Log;
  * the Node service really has (scheduled every minute). Events normally do
  * that; this is the safety net for what events cannot say:
  *
- * - the service is down: sessions believed connected are marked with an
- *   error ("the service does not answer"), so nothing looks healthy only
- *   because it was a minute ago;
+ * - the service is down: sessions believed connected are marked as
+ *   reconnecting ("the service does not answer"), so nothing looks healthy
+ *   only because it was a minute ago, yet nothing asks for a new QR;
  * - the service came back (restart, deployment, reboot): each session's
  *   current state is read again;
  * - the service lost a session ChatManager believed linked: it is shown as
@@ -51,10 +51,12 @@ class SyncWhatsAppWebSessions extends Command
             foreach ($connections as $connection) {
                 $state = $connection->webSessionState();
 
-                // A phone that stays linked: the session is not usable while the service is down.
-                if ($state === WhatsAppWebState::Connected || $state === WhatsAppWebState::Reconnecting) {
+                // The phone stays linked and the service restores it when it
+                // comes back (a restart, a deployment): «Reconectando», never
+                // an error that asks for a new QR. It cannot send meanwhile.
+                if ($state === WhatsAppWebState::Connected) {
                     $sessions->apply($connection, [
-                        'state' => WhatsAppWebState::Error->value,
+                        'state' => WhatsAppWebState::Reconnecting->value,
                         'last_error' => ['code' => 'service_unreachable', 'message' => null],
                     ], 'service_unreachable');
                     $marked++;

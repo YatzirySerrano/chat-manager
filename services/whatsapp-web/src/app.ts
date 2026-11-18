@@ -148,8 +148,8 @@ export async function createService(
         listen: async () => {
             await outbox.load();
 
-            const restored = await activeManager.restore();
-
+            // The port is bound before any socket opens: it is a second
+            // guard against two instances (EADDRINUSE), next to the lock.
             await new Promise<void>((resolve, reject) => {
                 server.once('error', reject);
                 server.listen(config.port, config.host, () => {
@@ -157,6 +157,8 @@ export async function createService(
                     resolve();
                 });
             });
+
+            const restored = await activeManager.restore();
 
             const address = server.address();
             const port =

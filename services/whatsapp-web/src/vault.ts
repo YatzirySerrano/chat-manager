@@ -2,10 +2,10 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import {
     chmod,
     mkdir,
+    open,
     readFile,
     rename,
     rm,
-    writeFile,
 } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
@@ -64,22 +64,38 @@ export class Vault {
         }
     }
 
-    /** Atomic write: a reader sees the old file or the new one, never half. */
+    /**
+     * Atomic and durable write: a reader sees the old file or the new one,
+     * never half of it, and once it resolves the new file survives a crash
+     * or a power cut (the data is flushed before the rename, and the
+     * directory after it). A process killed in the middle leaves at most a
+     * stray temporary file, never a truncated credential.
+     */
     async write(path: string, plain: Buffer, label: string): Promise<void> {
-        await ensurePrivateDir(dirname(path));
+        const directory = dirname(path);
+
+        await ensurePrivateDir(directory);
 
         const temporary = `${path}.${randomBytes(6).toString('hex')}.tmp`;
 
         try {
-            await writeFile(temporary, this.seal(plain, label), {
-                mode: 0o600,
-            });
+            const handle = await open(temporary, 'wx', 0o600);
+
+            try {
+                await handle.writeFile(this.seal(plain, label));
+                await handle.sync();
+            } finally {
+                await handle.close();
+            }
+
             await rename(temporary, path);
         } catch (error) {
             await rm(temporary, { force: true });
 
             throw error;
         }
+
+        await syncDirectory(directory);
     }
 
     /** Null when the file does not exist. */
@@ -117,6 +133,21 @@ export class Vault {
         return plain === null
             ? null
             : (JSON.parse(plain.toString('utf8')) as T);
+    }
+}
+
+/** Flushes a directory entry (the rename) to disk; best effort where it is not supported. */
+async function syncDirectory(path: string): Promise<void> {
+    try {
+        const handle = await open(path, 'r');
+
+        try {
+            await handle.sync();
+        } finally {
+            await handle.close();
+        }
+    } catch {
+        // Windows and some filesystems cannot open or sync a directory.
     }
 }
 

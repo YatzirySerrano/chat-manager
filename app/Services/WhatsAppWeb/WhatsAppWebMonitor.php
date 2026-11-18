@@ -137,7 +137,7 @@ class WhatsAppWebMonitor
             $connection = is_array($session) && is_int($session['connection_id'] ?? null) ? $connections->firstWhere('id', $session['connection_id']) : null;
 
             if ($connection instanceof Connection) {
-                $this->sessions->apply($connection, $session);
+                $this->sessions->apply($connection, $session, live: true);
             }
         }
 

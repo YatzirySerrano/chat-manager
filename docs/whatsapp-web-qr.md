@@ -285,11 +285,36 @@ tail -n 50 /var/www/mensajes/storage/logs/laravel.log | grep -i whatsapp
 | El QR no aparece y el estado no cambia | Los eventos no llegan a Laravel: revisa el vhost `127.0.0.1:8091` y que los dos secretos sean idénticos.   |
 | `401` en el log del servicio           | Secretos distintos o reloj del servidor desfasado más de 60 s.                                             |
 | «Sesión cerrada» sin haberla cerrado   | WhatsApp revocó la sesión (otro dispositivo, inactividad del teléfono, restricción). Vincula de nuevo.     |
-| «Error» tras varios minutos sin red    | Se agotaron los reintentos. Pulsa «Reconectar».                                                            |
+| «Reconectando» por mucho tiempo         | Sin red hacia WhatsApp o el servicio caído: revisa los comandos del §7.1. Reintenta solo, sin QR.          |
 | Archivos «no disponibles»              | Superan el límite, el NAS no respondía o WhatsApp ya caducó la descarga.                                   |
 | Archivos «en camino» que nunca llegan  | Ningún worker atiende la cola `media`: `sudo supervisorctl status` debe mostrar `chatmanager-queue-media`. |
 | No aparece historial tras vincular     | El número se vinculó con una versión anterior o con `WAWEB_SYNC_HISTORY=false`: cerrar sesión y vincular.  |
 | El historial tarda en aparecer         | Se importa por la cola `default`: revisa que haya un worker que la atienda (`php artisan queue:work`).     |
+
+### 7.1 Que la sesión no se pierda (QR estable)
+
+- **Abre WhatsApp en el celular vinculado al menos una vez cada pocos días**, con internet. WhatsApp desvincula los
+  dispositivos vinculados si el teléfono principal pasa unos 14 días sin conexión; eso no se puede evitar desde el
+  servidor y obliga a escanear de nuevo.
+- No quites el dispositivo en el teléfono (Dispositivos vinculados) y no ejecutes el servicio en dos servidores con la
+  misma carpeta de datos.
+- Todo lo demás se recupera solo: caídas de red, reinicios de WhatsApp (cierres 408, 428, 500, 503, 515), reinicios
+  del servicio, despliegues y reinicios del VPS. Una sesión vinculada reintenta para siempre, con una espera máxima de
+  un minuto, y se muestra como «Reconectando». Si el servicio deja de responder un momento, Laravel la muestra como
+  «Reconectando», nunca pide QR por eso.
+- Solo un cierre 401 (dispositivo quitado desde el teléfono) o 403 (número bloqueado), **confirmado por un segundo
+  intento** unos segundos después, deja la sesión en «Requiere nueva vinculación» y avisa a los administradores.
+- Un perro guardián cierra y reabre el socket si pasan 3 minutos sin datos de WhatsApp estando «Conectada».
+
+Diagnóstico de por qué cayó una sesión:
+
+```bash
+sudo supervisorctl status chatmanager-whatsapp-web          # RUNNING y su uptime (un uptime corto = reinicio)
+grep -E '"msg":"(WhatsApp connection closed|Session state|Closing a WhatsApp socket|The session opened again)'      /var/log/chatmanager/whatsapp-web.log | tail -n 50      # "status": código de cierre (401, 408, 440, 500, 515...)
+grep -E 'credential file could not be opened|metadata could not be read|Unhandled|Uncaught|could not start'      /var/log/chatmanager/whatsapp-web.log | tail -n 20
+grep -E 'exited|FATAL|spawned' /var/log/supervisor/supervisord.log | grep whatsapp | tail -n 20
+grep -i 'whatsapp web' /var/www/mensajes/storage/logs/laravel.log | tail -n 20
+```
 
 Recuperar una sesión: «Reconectar» si las credenciales siguen vigentes; si WhatsApp la revocó, «Vincular teléfono».
 Las credenciales no se pueden copiar a otro servidor sin `WAWEB_SESSION_KEY` y el directorio de datos completo.

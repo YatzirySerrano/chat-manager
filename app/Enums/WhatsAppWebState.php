@@ -41,10 +41,10 @@ enum WhatsAppWebState: string
             self::Starting => 'El servicio está preparando la sesión.',
             self::QrPending => 'Hay un código QR vigente: escanéalo desde WhatsApp, en Dispositivos vinculados.',
             self::Pairing => 'El teléfono escaneó el código; WhatsApp está terminando la vinculación.',
-            self::Connected => 'El teléfono está vinculado y la sesión puede recibir y enviar mensajes.',
-            self::Reconnecting => 'Se perdió la conexión con WhatsApp; se está reintentando.',
+            self::Connected => 'El teléfono está vinculado y la sesión puede recibir y enviar mensajes. Abre WhatsApp en el celular al menos una vez cada pocos días para que no desvincule este dispositivo.',
+            self::Reconnecting => 'Se perdió la conexión con WhatsApp; se reintenta sola, sin código QR.',
             self::Disconnected => 'La sesión se detuvo desde ChatManager. El teléfono sigue vinculado: reconéctala cuando quieras.',
-            self::LoggedOut => 'WhatsApp cerró la sesión de este dispositivo. Hay que vincular el teléfono de nuevo con un código QR.',
+            self::LoggedOut => 'WhatsApp cerró la sesión de este dispositivo. Hay que vincular el teléfono de nuevo con un código QR. Para evitarlo, abre WhatsApp en el celular al menos una vez cada pocos días: WhatsApp desvincula los dispositivos si el teléfono pasa unos 14 días sin conexión.',
             self::Error => 'La sesión no pudo recuperarse sola. Revisa el último error y reconecta.',
         };
     }

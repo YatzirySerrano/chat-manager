@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
-import { flush, linkSession, startHarness } from './helpers.js';
+import {
+    flush,
+    linkSession,
+    startHarness,
+    type FakeSocket,
+} from './helpers.js';
 
 type Harness = Awaited<ReturnType<typeof startHarness>>;
 
@@ -29,6 +34,23 @@ describe('máquina de estados de la sesión (§3)', () => {
 
     const state = async (connectionId: number): Promise<any> =>
         (await harness.call('GET', `/v1/sessions/${connectionId}`)).json;
+
+    /** WhatsApp refuses the device and refuses it again on the confirming socket. */
+    const revoke = async (
+        socket: FakeSocket,
+        statusCode: number,
+    ): Promise<void> => {
+        socket.emit({ type: 'close', statusCode, detail: 'refused' });
+        await flush();
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode,
+            detail: 'Connection Failure',
+        });
+        await harness.settle();
+    };
 
     test('una conexión desconocida está sin configurar y no se puede restaurar', async () => {
         assert.equal((await state(9)).state, 'unconfigured');
@@ -286,36 +308,30 @@ describe('máquina de estados de la sesión (§3)', () => {
         );
     });
 
-    test('agotados los reintentos rápidos una sesión vinculada sigue intentando cada pocos minutos', async () => {
+    test('una sesión vinculada nunca se rinde: reintenta para siempre con espera tope de un minuto', async () => {
         await linkSession(harness, 1);
 
-        // WAWEB_RECONNECT_MAX_ATTEMPTS = 3 en las pruebas.
-        for (let attempt = 0; attempt < 3; attempt++) {
+        // WAWEB_RECONNECT_MAX_ATTEMPTS = 3 en las pruebas: se rebasa con mucho.
+        for (let attempt = 0; attempt < 12; attempt++) {
             harness.whatsapp.last.emit({
                 type: 'close',
-                statusCode: 408,
+                statusCode: attempt % 2 === 0 ? 408 : 500,
                 detail: 'timed out',
             });
             await flush();
             assert.equal((await state(1)).state, 'reconnecting');
+            assert.equal(harness.timers.pending, 1, 'nunca se rinde');
+            assert.ok(
+                (harness.timers.delays.at(-1) as number) <= 60_000,
+                'la espera nunca pasa de un minuto',
+            );
             harness.timers.runNext();
             await flush();
         }
 
-        harness.whatsapp.last.emit({
-            type: 'close',
-            statusCode: 408,
-            detail: 'timed out',
-        });
-        await harness.settle();
-
         const waiting = await state(1);
 
-        assert.equal(waiting.state, 'reconnecting');
         assert.equal(waiting.last_error.code, 'network');
-        assert.equal(harness.timers.pending, 1, 'nunca se rinde');
-        const slow = harness.timers.delays.at(-1) as number;
-        assert.ok(slow >= 225_000 && slow <= 375_000, 'unos 5 minutos');
         assert.equal(
             existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
             true,
@@ -323,14 +339,72 @@ describe('máquina de estados de la sesión (§3)', () => {
         );
 
         // Al volver la red, se conecta sin pedir QR.
-        harness.timers.runNext();
-        await flush();
         harness.whatsapp.last.emit({
             type: 'open',
             me: { jid: '5215500000001:1@s.whatsapp.net', name: null },
         });
         await harness.settle();
         assert.equal((await state(1)).state, 'connected');
+        assert.equal((await state(1)).last_error, null);
+    });
+
+    test('cualquier cierre que no sea 401/403 reconecta sin borrar credenciales', async () => {
+        await linkSession(harness, 1);
+
+        for (const statusCode of [428, 408, 411, 500, 503, 440, null]) {
+            harness.whatsapp.last.emit({
+                type: 'close',
+                statusCode,
+                detail: 'closed',
+            });
+            await flush();
+            assert.equal(
+                (await state(1)).state,
+                'reconnecting',
+                `cierre ${statusCode}`,
+            );
+            assert.equal(harness.timers.pending, 1, `cierre ${statusCode}`);
+            harness.timers.runNext();
+            await flush();
+        }
+
+        assert.equal(
+            existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
+            true,
+        );
+        assert.equal(
+            harness.events.some(
+                (event) =>
+                    (event.data as { state?: string }).state === 'logged_out',
+            ),
+            false,
+        );
+    });
+
+    test('515 repetidos se atienden al instante unas veces y después con espera', async () => {
+        await linkSession(harness, 1);
+        const opened = harness.whatsapp.sockets.length;
+
+        for (let restart = 0; restart < 3; restart++) {
+            harness.whatsapp.last.emit({
+                type: 'close',
+                statusCode: 515,
+                detail: 'restart required',
+            });
+            await flush();
+        }
+
+        assert.equal(harness.whatsapp.sockets.length, opened + 3);
+        assert.equal(harness.timers.pending, 0);
+
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 515,
+            detail: 'restart required',
+        });
+        await flush();
+        assert.equal(harness.timers.pending, 1, 'el cuarto espera');
+        assert.equal((await state(1)).state, 'reconnecting');
     });
 
     test('si no se puede abrir el socket se trata como una caída de red', async () => {
@@ -352,6 +426,24 @@ describe('máquina de estados de la sesión (§3)', () => {
     test('sesión revocada desde el teléfono: logged_out, sin credenciales y sin regenerarse sola', async () => {
         await linkSession(harness, 1);
 
+        // El primer 401 se confirma con un socket más (5 s después).
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 401,
+            detail: 'Stream Errored (conflict)',
+        });
+        await flush();
+        assert.equal((await state(1)).state, 'reconnecting');
+        assert.deepEqual(harness.timers.delays, [5000]);
+        assert.equal(
+            existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
+            true,
+            'aún no se borra nada',
+        );
+        harness.timers.runNext();
+        await flush();
+
+        // WhatsApp vuelve a rechazarlo al iniciar sesión: es real.
         harness.whatsapp.last.emit({
             type: 'close',
             statusCode: 401,
@@ -371,8 +463,8 @@ describe('máquina de estados de la sesión (§3)', () => {
         assert.equal(harness.timers.pending, 0);
         assert.equal(
             harness.whatsapp.sockets.length,
-            2,
-            'no se abrió ningún socket nuevo',
+            3,
+            'solo el socket de confirmación',
         );
 
         const reason = harness.events
@@ -403,21 +495,79 @@ describe('máquina de estados de la sesión (§3)', () => {
         );
     });
 
-    test('un número rechazado por WhatsApp (403) también exige vincular de nuevo', async () => {
+    test('un 401 pasajero no cierra la sesión: si el socket de confirmación abre, sigue vinculada', async () => {
         await linkSession(harness, 1);
+
         harness.whatsapp.last.emit({
             type: 'close',
-            statusCode: 403,
-            detail: 'forbidden',
+            statusCode: 401,
+            detail: 'Connection Failure',
+        });
+        await flush();
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'open',
+            me: { jid: '5215512345678:3@s.whatsapp.net', name: 'Central' },
         });
         await harness.settle();
+
+        assert.equal((await state(1)).state, 'connected');
+        assert.equal((await state(1)).phone, '5215512345678');
+        assert.equal(
+            existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
+            true,
+        );
+
+        // Un 401 posterior vuelve a confirmarse antes de borrar nada.
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 401,
+            detail: 'Connection Failure',
+        });
+        await flush();
+        assert.equal((await state(1)).state, 'reconnecting');
+    });
+
+    test('una red caída entre el 401 y su confirmación no confunde: el siguiente 401 lo confirma', async () => {
+        await linkSession(harness, 1);
+
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 401,
+            detail: 'Connection Failure',
+        });
+        await flush();
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 408,
+            detail: 'timed out',
+        });
+        await flush();
+        assert.equal((await state(1)).state, 'reconnecting');
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'close',
+            statusCode: 401,
+            detail: 'Connection Failure',
+        });
+        await harness.settle();
+        assert.equal((await state(1)).state, 'logged_out');
+    });
+
+    test('un número rechazado por WhatsApp (403) también exige vincular de nuevo', async () => {
+        await linkSession(harness, 1);
+        await revoke(harness.whatsapp.last, 403);
 
         assert.equal((await state(1)).state, 'logged_out');
         assert.equal((await state(1)).last_error.code, 'banned');
         assert.equal(harness.timers.pending, 0);
     });
 
-    test('una sesión reemplazada reintenta tras una pausa; varias seguidas la detienen sin borrar credenciales', async () => {
+    test('una sesión reemplazada (440) reintenta tras una pausa y, si se repite, más despacio, sin rendirse nunca', async () => {
         await linkSession(harness, 1);
 
         for (let close = 0; close < 2; close++) {
@@ -440,14 +590,26 @@ describe('máquina de estados de la sesión (§3)', () => {
         });
         await harness.settle();
 
-        assert.equal((await state(1)).state, 'error');
-        assert.equal((await state(1)).last_error.code, 'replaced');
-        assert.equal(harness.timers.pending, 0);
+        const replaced = await state(1);
+
+        assert.equal(replaced.state, 'reconnecting');
+        assert.equal(replaced.last_error.code, 'replaced');
+        assert.equal(harness.timers.pending, 1, 'nunca se rinde');
+        assert.equal(harness.timers.delays.at(-1), 300_000, 'unos 5 minutos');
         assert.equal(
             existsSync(join(harness.dataDir, 'sessions', '1', 'auth')),
             true,
             'las credenciales se conservan',
         );
+
+        harness.timers.runNext();
+        await flush();
+        harness.whatsapp.last.emit({
+            type: 'open',
+            me: { jid: '5215512345678:3@s.whatsapp.net', name: 'Central' },
+        });
+        await harness.settle();
+        assert.equal((await state(1)).state, 'connected');
     });
 
     test('un cierre 500 de una sesión vinculada reconecta sin borrar credenciales ni pedir QR', async () => {
@@ -571,8 +733,7 @@ describe('máquina de estados de la sesión (§3)', () => {
         const first = await linkSession(harness, 1);
         const second = await linkSession(harness, 2, '5215587654321');
 
-        first.emit({ type: 'close', statusCode: 401, detail: 'logged out' });
-        await harness.settle();
+        await revoke(first, 401);
 
         assert.equal((await state(1)).state, 'logged_out');
         assert.equal((await state(2)).state, 'connected');
@@ -618,6 +779,14 @@ describe('reinicio del servicio', () => {
         await linkSession(first, 3, '5215500000003');
         await first.call('POST', '/v1/sessions/2/stop');
         first.whatsapp.sockets[5]?.emit({
+            type: 'close',
+            statusCode: 401,
+            detail: 'logged out',
+        });
+        await flush();
+        first.timers.runNext();
+        await flush();
+        first.whatsapp.last.emit({
             type: 'close',
             statusCode: 401,
             detail: 'logged out',

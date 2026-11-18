@@ -9,6 +9,7 @@ use App\Actions\Departments\RestoreDepartment;
 use App\Actions\Departments\SummarizeDepartmentConversations;
 use App\Actions\Departments\UpdateDepartment;
 use App\Enums\ColorSwatch;
+use App\Enums\ConversationStatus;
 use App\Enums\DataScope;
 use App\Enums\DistributionMode;
 use App\Enums\Permission;
@@ -18,6 +19,7 @@ use App\Http\Requests\Admin\DepartmentRequest;
 use App\Http\Resources\DepartmentMemberResource;
 use App\Http\Resources\DepartmentResource;
 use App\Models\Connection;
+use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\QuickReply;
 use App\Models\Role;
@@ -30,6 +32,8 @@ use App\Services\ServiceRules;
 use App\Support\Features;
 use App\Support\SaveToast;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -57,6 +61,7 @@ class DepartmentController extends Controller
 
         return Inertia::render('departments/Index', [
             'departments' => DepartmentResource::collection($departments)->resolve($request),
+            'previews' => $this->previews($departments, $user),
             'filters' => ['record' => $record->value],
             'recordStates' => RecordState::optionsFor($user),
             'colors' => ColorSwatch::values(),
@@ -65,6 +70,76 @@ class DepartmentController extends Controller
             ],
             'canExport' => $exporter->allowsReport('departments', $user),
         ]);
+    }
+
+    /**
+     * What each card of the list shows at a glance: the first members (for
+     * the avatars), the authorized connections and the conversations that
+     * are waiting or being attended right now. Members and connections hide
+     * what the viewer cannot see, exactly like the counters; conversations
+     * count like the department's own metrics (live, not archived history).
+     *
+     * @param  Collection<int, Department>  $departments
+     * @return array<int, array{members: list<array{id: int, name: string}>, connections: list<array{id: int, name: string, channel: string, is_active: bool}>, conversations: array{pending: int, open: int}}>
+     */
+    private function previews(Collection $departments, User $actor): array
+    {
+        if ($departments->isEmpty()) {
+            return [];
+        }
+
+        $departments->load([
+            'members' => fn (BelongsToMany $members) => $members
+                ->withoutProtectedFor($actor)
+                ->hidingDeletedFrom($actor)
+                ->select('users.id', 'users.name')
+                ->orderBy('users.name'),
+            'connections' => fn (BelongsToMany $connections) => $connections
+                ->hidingDeletedFrom($actor)
+                ->select('connections.id', 'connections.name', 'connections.channel', 'connections.is_active')
+                ->orderByDesc('connections.is_active')
+                ->orderBy('connections.name'),
+        ]);
+
+        $counts = Conversation::query()
+            ->whereIn('department_id', $departments->modelKeys())
+            ->live()
+            ->notHistoryOnly()
+            ->toBase()
+            ->select('department_id')
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending', [ConversationStatus::Pending->value])
+            ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS open', array_map(fn (ConversationStatus $status): string => $status->value, ConversationStatus::attending()))
+            ->groupBy('department_id')
+            ->get()
+            ->keyBy('department_id');
+
+        $previews = [];
+
+        foreach ($departments as $department) {
+            /** @var object{pending: int|string|null, open: int|string|null}|null $count */
+            $count = $counts->get($department->id);
+
+            $previews[$department->id] = [
+                'members' => array_values($department->members
+                    ->take(5)
+                    ->map(fn (User $member): array => ['id' => $member->id, 'name' => $member->name])
+                    ->all()),
+                'connections' => array_values($department->connections
+                    ->map(fn (Connection $connection): array => [
+                        'id' => $connection->id,
+                        'name' => $connection->name,
+                        'channel' => $connection->channel->value,
+                        'is_active' => $connection->is_active,
+                    ])
+                    ->all()),
+                'conversations' => [
+                    'pending' => (int) ($count->pending ?? 0),
+                    'open' => (int) ($count->open ?? 0),
+                ],
+            ];
+        }
+
+        return $previews;
     }
 
     public function store(DepartmentRequest $request, CreateDepartment $createDepartment): RedirectResponse
@@ -187,7 +262,7 @@ class DepartmentController extends Controller
      * association is edited from the connection form; only users who can
      * view connections receive a link to it. No credential is exposed.
      *
-     * @return list<array{id: int, name: string, display_phone_number: string|null, is_active: bool, is_deleted: bool, is_default: bool, reopen_window_minutes: int|null, messages: array{welcome: bool, away: bool, farewell: bool}, health: array{value: string, label: string, tone: string}, url: string|null}>
+     * @return list<array{id: int, name: string, channel: string, display_phone_number: string|null, is_active: bool, is_deleted: bool, is_default: bool, reopen_window_minutes: int|null, messages: array{welcome: bool, away: bool, farewell: bool}, health: array{value: string, label: string, tone: string}, url: string|null}>
      */
     private function connections(Department $department, User $actor): array
     {
@@ -205,6 +280,7 @@ class DepartmentController extends Controller
                 return [
                     'id' => $connection->id,
                     'name' => $connection->name,
+                    'channel' => $connection->channel->value,
                     'display_phone_number' => $connection->display_phone_number,
                     'is_active' => $connection->is_active,
                     'is_deleted' => $connection->isDeleted(),

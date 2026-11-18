@@ -63,19 +63,17 @@ export const connectionFieldHelp = {
             'Se guarda cifrado y no podrás volver a verlo aquí; cópialo antes de guardar si lo necesitas.',
     },
     departments: {
-        description:
-            'Departamentos que pueden recibir conversaciones de este número.',
-        howTo: 'Marca uno o varios. Solo se pueden autorizar departamentos activos.',
+        description: 'Departamentos que pueden recibir conversaciones de aquí.',
+        howTo: 'Marca uno o varios (solo activos).',
         warning:
-            'Si no autorizas ninguno, las conversaciones nuevas irán al departamento predeterminado de la plataforma.',
+            'Sin ninguno, las nuevas van al predeterminado de la plataforma.',
     },
     defaultDepartment: {
         description:
-            'Departamento que recibe las conversaciones nuevas de este número cuando ninguna otra regla aplica.',
-        howTo: 'Elige uno de los departamentos autorizados. Si lo dejas vacío se usa el departamento predeterminado de la plataforma.',
+            'Recibe las conversaciones nuevas cuando ninguna otra regla aplica.',
+        howTo: 'Pulsa la estrella de un departamento autorizado; sin estrella se usa el predeterminado de la plataforma.',
         example: 'Atención a clientes',
-        warning:
-            'Debe ser uno de los departamentos autorizados; si quitas su autorización, se limpia.',
+        warning: 'Si le quitas la autorización, pierde la estrella.',
     },
     automaticMessages: {
         description:

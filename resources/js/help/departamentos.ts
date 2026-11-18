@@ -3,7 +3,7 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Departamentos',
     objective:
-        'Organiza a los equipos y define quién atiende cada tipo de conversación: sus miembros, la forma de distribuir conversaciones, el límite de carga, el horario, los mensajes automáticos y las reglas de servicio propias.',
+        'Equipos que atienden las conversaciones: sus miembros, cómo se reparten, su horario y sus reglas.',
     mainActions: [
         'Crear, editar, eliminar y restaurar departamentos.',
         'Agregar y retirar miembros (supervisores y agentes).',

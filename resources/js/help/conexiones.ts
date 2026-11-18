@@ -3,12 +3,12 @@ import type { ModuleHelp } from './types';
 const help: ModuleHelp = {
     title: 'Conexiones',
     objective:
-        'Canales por los que los clientes escriben a la empresa: números de WhatsApp Business (WhatsApp Cloud API), chats para sitios web (Chat web), páginas de Facebook (Facebook Messenger) y cuentas profesionales de Instagram. Todos llegan a la misma bandeja, con los mismos departamentos, agentes y transferencias. Cada conexión muestra su estado real de configuración, recepción y envío.',
+        'Los canales por los que te escriben (WhatsApp, Chat web, Messenger e Instagram), su estado real y qué departamentos los atienden.',
     mainActions: [
         'Crear una conexión con «Nueva conexión» y elegir el canal (no se puede cambiar después).',
         'Capturar las credenciales de Meta y pulsar «Verificar credenciales».',
         'Revisar el webhook y la suscripción de la app en el diagnóstico de la conexión.',
-        'Configurar departamentos autorizados, departamento predeterminado y mensajes automáticos.',
+        'Marcar los departamentos autorizados y, con la estrella, el predeterminado; configurar mensajes automáticos.',
         'Configurar el widget de Chat web y copiar el fragmento de código para el sitio.',
         'Conectar una página de Facebook o una cuenta de Instagram con «Autorizar acceso», volver a autorizarla o desconectarla.',
         'Activar, desactivar, eliminar y restaurar conexiones.',
@@ -19,7 +19,7 @@ const help: ModuleHelp = {
         'WhatsApp: captura Phone number ID, WABA ID, token de acceso, app secret y token de verificación del webhook, y guarda.',
         'Pulsa «Verificar credenciales». Meta debe aceptarlas y reportar el número como CONNECTED.',
         'Registra en Meta la URL del webhook y el token de verificación que muestra el diagnóstico, y usa «Suscribir app».',
-        'Elige los departamentos que recibirán las conversaciones y el predeterminado.',
+        'Marca los departamentos que recibirán las conversaciones y pulsa la estrella del predeterminado.',
         'Activa la conexión. La lista de verificación se completa cuando se confirma la recepción y el envío de mensajes.',
         'Chat web: agrega al menos un dominio autorizado, personaliza el widget y pega el fragmento antes de </body> en tu sitio.',
         'Messenger e Instagram: revisa los requisitos, pulsa «Autorizar acceso», inicia sesión en Facebook o Instagram, acepta los permisos y elige la página o la cuenta. La conexión queda inactiva: asigna departamentos y actívala.',
@@ -43,7 +43,7 @@ const help: ModuleHelp = {
         {
             name: 'Departamentos autorizados / predeterminado',
             description:
-                'Qué departamentos pueden recibir conversaciones de esta conexión y a cuál llegan las nuevas.',
+                'Qué departamentos pueden recibir sus conversaciones; la estrella marca a cuál llegan las nuevas (sin estrella, al predeterminado de la plataforma).',
         },
         {
             name: 'Mensajes automáticos',

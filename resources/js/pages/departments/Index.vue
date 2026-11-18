@@ -3,6 +3,8 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     Building2,
     Eye,
+    Inbox,
+    MessagesSquare,
     Pencil,
     Plug,
     Plus,
@@ -13,6 +15,8 @@ import { computed, onUnmounted, ref } from 'vue';
 import DepartmentFormDialog from '@/components/admin/DepartmentFormDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
+import ConnectionChips from '@/components/departments/ConnectionChips.vue';
+import MemberAvatarStack from '@/components/departments/MemberAvatarStack.vue';
 import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
 import DirectoryPanel from '@/components/directory/DirectoryPanel.vue';
 import DirectoryRow from '@/components/directory/DirectoryRow.vue';
@@ -40,6 +44,7 @@ import {
 } from '@/routes/departments';
 import type {
     ColorSwatch,
+    DepartmentPreview,
     DepartmentSummary,
     RecordAction,
     RecordStateOption,
@@ -54,6 +59,8 @@ defineOptions({
 
 const props = defineProps<{
     departments: DepartmentSummary[];
+    /** Members, connections and live conversations per department id. */
+    previews?: Record<number, DepartmentPreview>;
     filters: { record: RecordStateValue };
     recordStates: RecordStateOption[];
     colors: ColorSwatch[];
@@ -184,6 +191,16 @@ function plural(count: number | undefined, one: string, many: string): string {
     return `${value} ${value === 1 ? one : many}`;
 }
 
+const EMPTY_PREVIEW: DepartmentPreview = {
+    members: [],
+    connections: [],
+    conversations: { pending: 0, open: 0 },
+};
+
+function previewOf(department: DepartmentSummary): DepartmentPreview {
+    return props.previews?.[department.id] ?? EMPTY_PREVIEW;
+}
+
 function leadersLabel(department: DepartmentSummary): string {
     return department.leaders && department.leaders.length > 0
         ? department.leaders.map((leader) => leader.name).join(', ')
@@ -200,7 +217,7 @@ function leadersLabel(department: DepartmentSummary): string {
             title="Departamentos"
             :description="
                 can.create
-                    ? 'Organiza a los equipos y define quién atiende cada tipo de conversación.'
+                    ? 'Equipos, sus miembros y los canales que atienden.'
                     : 'Departamentos a los que perteneces.'
             "
         >
@@ -224,7 +241,7 @@ function leadersLabel(department: DepartmentSummary): string {
 
         <div
             v-if="departments.length > 0 && record === 'active'"
-            class="grid reveal-stagger gap-3 sm:grid-cols-2 xl:grid-cols-4"
+            class="grid reveal-stagger grid-cols-2 gap-3 lg:grid-cols-4"
         >
             <StatCard
                 label="Departamentos"
@@ -235,19 +252,16 @@ function leadersLabel(department: DepartmentSummary): string {
                 label="Sin responsable"
                 :value="overview.withoutLeader"
                 :icon="UserRound"
-                hint="Nadie supervisa sus conversaciones."
             />
             <StatCard
                 label="Sin miembros"
                 :value="overview.withoutMembers"
                 :icon="Users"
-                hint="No tienen quién atienda."
             />
             <StatCard
-                label="Sin conexión asociada"
+                label="Sin conexión"
                 :value="overview.withoutConnection"
                 :icon="Plug"
-                hint="Ningún canal les envía conversaciones."
             />
         </div>
 
@@ -273,17 +287,12 @@ function leadersLabel(department: DepartmentSummary): string {
                     <ViewModeToggle v-model="viewMode" />
                 </div>
                 <p
+                    v-if="narrowed"
                     class="mt-2 px-1 text-xs text-muted-foreground"
                     aria-live="polite"
                 >
                     {{
-                        narrowed
-                            ? `${plural(visibleDepartments.length, 'departamento', 'departamentos')} de ${departments.length}`
-                            : plural(
-                                  departments.length,
-                                  'departamento',
-                                  'departamentos',
-                              )
+                        `${plural(visibleDepartments.length, 'departamento', 'departamentos')} de ${departments.length}`
                     }}
                 </p>
             </template>
@@ -322,8 +331,8 @@ function leadersLabel(department: DepartmentSummary): string {
                         />
                     </template>
                     <template #title>{{ department.name }}</template>
-                    <template #subtitle>
-                        {{ department.description || 'Sin descripción.' }}
+                    <template v-if="department.description" #subtitle>
+                        {{ department.description }}
                     </template>
                     <template #badges>
                         <DeletedBadge v-if="department.is_deleted" />
@@ -344,66 +353,56 @@ function leadersLabel(department: DepartmentSummary): string {
                             }}</span>
                         </span>
                         <span
-                            class="inline-flex items-center gap-3 text-xs text-muted-foreground md:hidden"
+                            v-if="
+                                previewOf(department).conversations.pending > 0
+                            "
+                            class="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground tabular-nums"
+                            :title="`${previewOf(department).conversations.pending} pendientes de tomar`"
                         >
-                            <span class="inline-flex items-center gap-1">
-                                <Users class="size-3.5" aria-hidden="true" />
-                                {{
-                                    plural(
-                                        department.members_count,
-                                        'miembro',
-                                        'miembros',
-                                    )
-                                }}
-                            </span>
-                            <span class="inline-flex items-center gap-1">
-                                <Plug class="size-3.5" aria-hidden="true" />
-                                {{
-                                    plural(
-                                        department.connections_count,
-                                        'conexión',
-                                        'conexiones',
-                                    )
-                                }}
-                            </span>
+                            <Inbox class="size-3" aria-hidden="true" />
+                            {{ previewOf(department).conversations.pending }}
+                            <span class="sr-only">pendientes</span>
+                        </span>
+                        <span
+                            v-if="previewOf(department).conversations.open > 0"
+                            class="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary-soft-foreground tabular-nums"
+                            :title="`${previewOf(department).conversations.open} en atención`"
+                        >
+                            <MessagesSquare class="size-3" aria-hidden="true" />
+                            {{ previewOf(department).conversations.open }}
+                            <span class="sr-only">en atención</span>
                         </span>
                     </template>
+                    <div
+                        class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 md:hidden"
+                    >
+                        <MemberAvatarStack
+                            :members="previewOf(department).members"
+                            :total="department.members_count ?? 0"
+                            :max="3"
+                        />
+                        <ConnectionChips
+                            :connections="previewOf(department).connections"
+                            :limit="2"
+                        />
+                    </div>
                     <template #aside>
-                        <span
-                            class="inline-flex w-28 items-center gap-1.5 tabular-nums"
-                            :class="
-                                (department.members_count ?? 0) === 0 &&
-                                'text-warning-soft-foreground'
-                            "
-                        >
-                            <Users class="size-4 shrink-0" aria-hidden="true" />
-                            {{
-                                plural(
-                                    department.members_count,
-                                    'miembro',
-                                    'miembros',
-                                )
-                            }}
+                        <span class="flex w-36 items-center">
+                            <MemberAvatarStack
+                                :members="previewOf(department).members"
+                                :total="department.members_count ?? 0"
+                            />
                         </span>
-                        <span
-                            class="inline-flex w-32 items-center gap-1.5 tabular-nums"
-                            :class="
-                                (department.connections_count ?? 0) === 0 &&
-                                'text-warning-soft-foreground'
-                            "
-                        >
-                            <Plug class="size-4 shrink-0" aria-hidden="true" />
-                            {{
-                                plural(
-                                    department.connections_count,
-                                    'conexión',
-                                    'conexiones',
-                                )
-                            }}
+                        <span class="flex w-[23rem] items-center">
+                            <ConnectionChips
+                                :connections="previewOf(department).connections"
+                                :limit="2"
+                            />
                         </span>
                     </template>
                     <template #actions>
                         <RecordActions
+                            collapse-on-phone
                             :actions="actionsFor(department)"
                             :record="department.name"
                             :busy="deletion.processingId === department.id"
@@ -447,40 +446,72 @@ function leadersLabel(department: DepartmentSummary): string {
                         <template v-if="department.is_deleted" #badges>
                             <DeletedBadge />
                         </template>
-                        <p class="line-clamp-2 text-muted-foreground">
-                            {{ department.description || 'Sin descripción.' }}
-                        </p>
                         <p
-                            class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                            v-if="department.description"
+                            class="line-clamp-1 text-muted-foreground"
                         >
-                            <UserRound
-                                class="size-3.5 shrink-0"
-                                aria-hidden="true"
-                            />
-                            <span class="truncate">{{
-                                leadersLabel(department)
-                            }}</span>
+                            {{ department.description }}
                         </p>
-                        <template #meta>
-                            <span class="inline-flex items-center gap-1">
-                                <Users class="size-3.5" aria-hidden="true" />
-                                {{
-                                    plural(
-                                        department.members_count,
-                                        'miembro',
-                                        'miembros',
-                                    )
-                                }}
+                        <div class="flex items-center justify-between gap-3">
+                            <MemberAvatarStack
+                                :members="previewOf(department).members"
+                                :total="department.members_count ?? 0"
+                            />
+                            <span
+                                class="flex items-center gap-1.5 text-xs tabular-nums"
+                            >
+                                <span
+                                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
+                                    :class="
+                                        previewOf(department).conversations
+                                            .pending > 0
+                                            ? 'bg-warning-soft font-medium text-warning-soft-foreground'
+                                            : 'bg-muted text-muted-foreground'
+                                    "
+                                    :title="`${previewOf(department).conversations.pending} pendientes de tomar`"
+                                >
+                                    <Inbox class="size-3" aria-hidden="true" />
+                                    {{
+                                        previewOf(department).conversations
+                                            .pending
+                                    }}
+                                    <span class="sr-only">pendientes</span>
+                                </span>
+                                <span
+                                    class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-muted-foreground"
+                                    :title="`${previewOf(department).conversations.open} en atención`"
+                                >
+                                    <MessagesSquare
+                                        class="size-3"
+                                        aria-hidden="true"
+                                    />
+                                    {{
+                                        previewOf(department).conversations.open
+                                    }}
+                                    <span class="sr-only">en atención</span>
+                                </span>
                             </span>
-                            <span class="inline-flex items-center gap-1">
-                                <Plug class="size-3.5" aria-hidden="true" />
-                                {{
-                                    plural(
-                                        department.connections_count,
-                                        'conexión',
-                                        'conexiones',
-                                    )
-                                }}
+                        </div>
+                        <ConnectionChips
+                            :connections="previewOf(department).connections"
+                            :limit="3"
+                        />
+                        <template #meta>
+                            <span
+                                class="inline-flex min-w-0 items-center gap-1"
+                                :class="
+                                    (department.leaders ?? []).length === 0 &&
+                                    'text-warning-soft-foreground'
+                                "
+                                :title="`Responsables: ${leadersLabel(department)}`"
+                            >
+                                <UserRound
+                                    class="size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                                <span class="truncate">{{
+                                    leadersLabel(department)
+                                }}</span>
                             </span>
                         </template>
                         <template #actions>

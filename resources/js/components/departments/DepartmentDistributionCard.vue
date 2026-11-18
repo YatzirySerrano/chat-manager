@@ -90,7 +90,7 @@ const current = () =>
 <template>
     <SurfaceCard
         title="Distribución de conversaciones"
-        description="Cómo llegan las conversaciones pendientes de este departamento a sus agentes."
+        description="Cómo llegan las pendientes a los agentes."
         body-class="p-5"
     >
         <form v-if="canUpdate" class="space-y-4" @submit.prevent="submit">

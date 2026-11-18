@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ChevronRight, Plug, Star } from '@lucide/vue';
+import { ChevronRight, Star } from '@lucide/vue';
+import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import SurfaceCard from '@/components/SurfaceCard.vue';
 import type { DepartmentConnection } from '@/types';
+import '@/components/admin/admin.css';
 
 /**
  * Read-only list of the connections authorized to route conversations to the
@@ -26,8 +28,8 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
 
 <template>
     <SurfaceCard
-        title="Conexiones asociadas"
-        description="Números que pueden enviar conversaciones a este departamento."
+        title="Conexiones"
+        description="Se asignan desde cada conexión."
     >
         <template v-if="manageUrl" #actions>
             <Link
@@ -39,32 +41,53 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
         </template>
 
         <ul v-if="connections.length > 0" class="grid gap-0.5 p-2">
-            <li v-for="connection in connections" :key="connection.id">
+            <li
+                v-for="connection in connections"
+                :key="connection.id"
+                class="min-w-0"
+            >
                 <component
                     :is="connection.url ? Link : 'div'"
-                    v-bind="connection.url ? { href: connection.url } : {}"
-                    class="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                    v-bind="
+                        connection.url
+                            ? { href: `${connection.url}#departamentos` }
+                            : {}
+                    "
+                    class="flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5"
                     :class="
                         connection.url &&
                         'group/connection hover-lift outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring'
                     "
                 >
                     <span
-                        class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-soft-foreground"
+                        class="channel-tile size-9 shrink-0"
+                        :class="
+                            !connection.is_active &&
+                            'opacity-55 grayscale-[0.6]'
+                        "
+                        :data-channel-theme="connection.channel"
+                        aria-hidden="true"
                     >
-                        <Plug class="size-4" aria-hidden="true" />
+                        <ChannelIcon
+                            :channel="connection.channel"
+                            class="size-4"
+                        />
                     </span>
                     <div class="min-w-0 flex-1">
                         <p
-                            class="flex items-center gap-1.5 truncate text-sm font-medium"
+                            class="flex min-w-0 items-center gap-1.5 text-sm font-medium"
                         >
-                            {{ connection.name }}
+                            <span class="truncate">{{ connection.name }}</span>
                             <span
                                 v-if="connection.is_default"
-                                class="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground"
+                                class="inline-flex shrink-0 items-center"
+                                title="Departamento predeterminado de esta conexión"
                             >
-                                <Star class="size-3" aria-hidden="true" />
-                                Predeterminado
+                                <Star
+                                    class="size-3 fill-current text-warning"
+                                    aria-hidden="true"
+                                />
+                                <span class="sr-only">(predeterminado)</span>
                             </span>
                         </p>
                         <p class="truncate text-xs text-muted-foreground">
@@ -77,7 +100,8 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
                     <DeletedBadge v-if="connection.is_deleted" feminine />
                     <span
                         v-else
-                        class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                        class="max-w-28 shrink-0 truncate rounded-full px-2 py-0.5 text-xs font-medium sm:max-w-none"
+                        :title="connection.health.label"
                         :class="toneClasses[connection.health.tone]"
                     >
                         {{ connection.health.label }}
@@ -90,17 +114,8 @@ const toneClasses: Record<DepartmentConnection['health']['tone'], string> = {
                 </component>
             </li>
         </ul>
-        <div v-else class="px-5 py-6">
-            <p class="text-sm font-medium">Sin conexiones asociadas</p>
-            <p class="text-sm text-muted-foreground">
-                Ninguna conexión envía conversaciones a este departamento.
-            </p>
-        </div>
-
-        <p
-            class="border-t bg-surface-sunken/50 px-5 py-3 text-xs text-muted-foreground"
-        >
-            La asociación se edita desde el formulario de cada conexión.
+        <p v-else class="px-5 py-6 text-sm text-muted-foreground">
+            Ninguna conexión le envía conversaciones.
         </p>
     </SurfaceCard>
 </template>

@@ -17,6 +17,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
 import DeletedRecordNotice from '@/components/DeletedRecordNotice.vue';
 import DepartmentAutomationCard from '@/components/departments/DepartmentAutomationCard.vue';
+import ConnectionChips from '@/components/departments/ConnectionChips.vue';
 import DepartmentConnectionsCard from '@/components/departments/DepartmentConnectionsCard.vue';
 import DepartmentHoursCard from '@/components/departments/DepartmentHoursCard.vue';
 import DepartmentDistributionCard from '@/components/departments/DepartmentDistributionCard.vue';
@@ -26,7 +27,6 @@ import DepartmentWelcomeMessageCard from '@/components/departments/DepartmentWel
 import DepartmentServiceRulesCard from '@/components/service-rules/DepartmentServiceRulesCard.vue';
 import DirectoryAvatar from '@/components/directory/DirectoryAvatar.vue';
 import DirectoryHero from '@/components/directory/DirectoryHero.vue';
-import DirectoryRow from '@/components/directory/DirectoryRow.vue';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import RoleBadge from '@/components/RoleBadge.vue';
@@ -128,6 +128,11 @@ const memberGroups = computed(() => {
     );
 });
 
+/** Members in the order of their role groups, for one flat grid. */
+const sortedMembers = computed(() =>
+    memberGroups.value.flatMap((group) => group.members),
+);
+
 const deletion = useRecordDeletion<DepartmentSummary>({
     destroy: (department) => destroyDepartment(department.id),
     restore: (department) => restoreDepartment(department.id),
@@ -218,10 +223,6 @@ function confirmRemoval(): void {
                         <RotateCcw />
                         Restaurar
                     </Button>
-                    <Button v-if="can.manageMembers" @click="addOpen = true">
-                        <UserPlus />
-                        Agregar miembros
-                    </Button>
                 </template>
             </PageHeader>
             <template #footer>
@@ -251,8 +252,11 @@ function confirmRemoval(): void {
                     <span class="font-semibold tabular-nums">{{
                         connections.length
                     }}</span>
-                    {{ connections.length === 1 ? 'conexión' : 'conexiones' }}
+                    <span class="sr-only">{{
+                        connections.length === 1 ? 'conexión' : 'conexiones'
+                    }}</span>
                 </span>
+                <ConnectionChips :connections="connections" :limit="4" />
                 <span
                     class="dir-stat inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
                 >
@@ -278,15 +282,135 @@ function confirmRemoval(): void {
             v-if="department.is_deleted"
             title="Este departamento está eliminado"
         >
-            No recibe ni atiende conversaciones. Sus miembros conservan la
-            membresía sin efecto y el historial mantiene el departamento
-            original. Restáuralo para volver a operar con él.
+            No recibe ni atiende conversaciones; su historial se conserva.
+            Restáuralo para volver a operar.
         </DeletedRecordNotice>
 
         <DepartmentMetricsCard
             :metrics="metrics"
             :members-count="department.members_count ?? members.length"
         />
+
+        <section
+            class="dir-panel"
+            aria-labelledby="department-members-title"
+            data-tour="department.members"
+        >
+            <header
+                class="flex flex-wrap items-center gap-3 border-b border-[color-mix(in_oklch,var(--border)_70%,transparent)] px-4 py-3"
+            >
+                <h2
+                    id="department-members-title"
+                    class="flex items-center gap-2 font-display text-lg font-semibold"
+                >
+                    Miembros
+                    <span
+                        class="rounded-full bg-muted px-2 font-sans text-xs font-medium text-muted-foreground tabular-nums"
+                        >{{ members.length }}</span
+                    >
+                </h2>
+                <ul
+                    v-if="memberGroups.length > 1"
+                    class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                    aria-label="Por rol"
+                >
+                    <li
+                        v-for="group in memberGroups"
+                        :key="group.key"
+                        class="rounded-full border px-2 py-0.5"
+                    >
+                        {{ group.title }}
+                        <span
+                            class="font-medium text-foreground tabular-nums"
+                            >{{ group.members.length }}</span
+                        >
+                    </li>
+                </ul>
+                <Button
+                    v-if="can.manageMembers"
+                    size="sm"
+                    class="ml-auto max-sm:min-h-10"
+                    @click="addOpen = true"
+                >
+                    <UserPlus />
+                    Agregar miembros
+                </Button>
+            </header>
+
+            <FilteredEmpty
+                v-if="members.length === 0"
+                :narrowed="false"
+                narrowed-title=""
+                title="Sin miembros"
+                :description="
+                    can.manageMembers
+                        ? 'Agrega a quienes atenderán sus conversaciones.'
+                        : 'Un administrador debe asignar miembros.'
+                "
+                :icon="Users"
+            />
+
+            <ul
+                v-else
+                class="auto-grid p-3 [--col-min:17rem] [--grid-gap:0.5rem] sm:p-4"
+                role="list"
+            >
+                <li
+                    v-for="member in sortedMembers"
+                    :key="member.id"
+                    class="flex min-w-0 items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
+                    :class="member.is_deleted && 'opacity-60'"
+                >
+                    <DirectoryAvatar
+                        :name="member.name"
+                        :tone="member.is_deleted ? 'muted' : 'auto'"
+                    />
+                    <div class="min-w-0 flex-1">
+                        <p
+                            class="flex min-w-0 items-center gap-1.5 text-sm font-medium"
+                        >
+                            <span class="truncate">{{ member.name }}</span>
+                            <DeletedBadge v-if="member.is_deleted" />
+                        </p>
+                        <p
+                            class="truncate text-xs text-muted-foreground"
+                            :title="
+                                member.last_login_at
+                                    ? `${member.email} · último acceso ${formatDateTime(member.last_login_at)}`
+                                    : member.email
+                            "
+                        >
+                            <span
+                                class="mr-1 inline-block size-1.5 rounded-full align-middle"
+                                :class="
+                                    member.last_login_at
+                                        ? 'bg-success'
+                                        : 'bg-muted-foreground/40'
+                                "
+                                aria-hidden="true"
+                            />
+                            {{
+                                member.last_login_at
+                                    ? `Entró ${formatRelative(member.last_login_at)}`
+                                    : 'Nunca ha entrado'
+                            }}
+                        </p>
+                    </div>
+                    <RoleBadge :role="member.role" class="shrink-0" />
+                    <Button
+                        v-if="removableMemberIds.includes(member.id)"
+                        variant="ghost"
+                        size="icon-sm"
+                        class="size-9 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:size-8"
+                        :aria-label="`Retirar a ${member.name}`"
+                        :title="`Retirar a ${member.name}`"
+                        @click="askRemoval(member)"
+                    >
+                        <UserMinus />
+                    </Button>
+                </li>
+            </ul>
+        </section>
 
         <!--
           Settings cards have very different heights: columns pack them
@@ -334,162 +458,6 @@ function confirmRemoval(): void {
             :rules="serviceRules"
             :can-update="can.update"
         />
-
-        <section class="grid gap-4" aria-labelledby="department-members-title">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <h2
-                        id="department-members-title"
-                        class="font-display text-xl font-semibold"
-                    >
-                        Miembros
-                    </h2>
-                    <p class="text-sm text-muted-foreground">
-                        Quienes atienden o supervisan las conversaciones del
-                        departamento, por rol.
-                    </p>
-                </div>
-                <Button
-                    v-if="can.manageMembers && members.length > 0"
-                    variant="outline"
-                    size="sm"
-                    class="rounded-full max-sm:min-h-11 max-sm:w-full"
-                    @click="addOpen = true"
-                >
-                    <UserPlus />
-                    Agregar miembros
-                </Button>
-            </div>
-
-            <div
-                v-if="members.length === 0"
-                class="surface-float"
-                data-tour="department.members"
-            >
-                <FilteredEmpty
-                    :narrowed="false"
-                    narrowed-title=""
-                    title="Este departamento no tiene miembros"
-                    :description="
-                        can.manageMembers
-                            ? 'Agrega a las personas que atenderán o supervisarán sus conversaciones.'
-                            : 'Un administrador debe asignar miembros.'
-                    "
-                    :icon="Users"
-                >
-                    <Button v-if="can.manageMembers" @click="addOpen = true">
-                        <UserPlus />
-                        Agregar miembros
-                    </Button>
-                </FilteredEmpty>
-            </div>
-
-            <template v-else>
-                <section
-                    v-for="(group, position) in memberGroups"
-                    :key="group.key"
-                    :data-tour="
-                        position === 0 ? 'department.members' : undefined
-                    "
-                    class="dir-panel"
-                    :aria-labelledby="`members-group-${group.key}`"
-                >
-                    <header
-                        class="flex items-center gap-2 border-b border-[color-mix(in_oklch,var(--border)_70%,transparent)] px-4 py-3"
-                    >
-                        <h3
-                            :id="`members-group-${group.key}`"
-                            class="text-sm font-semibold"
-                        >
-                            {{ group.title }}
-                        </h3>
-                        <span
-                            class="rounded-full bg-muted px-2 text-xs font-medium text-muted-foreground tabular-nums"
-                        >
-                            {{ group.members.length }}
-                        </span>
-                    </header>
-                    <ul class="dir-rows" role="list">
-                        <DirectoryRow
-                            v-for="member in group.members"
-                            :key="member.id"
-                            :muted="member.is_deleted"
-                        >
-                            <template #leading>
-                                <DirectoryAvatar
-                                    :name="member.name"
-                                    :tone="member.is_deleted ? 'muted' : 'auto'"
-                                />
-                            </template>
-                            <template #title>
-                                <span class="font-sans">{{ member.name }}</span>
-                            </template>
-                            <template #subtitle>{{ member.email }}</template>
-                            <template #badges>
-                                <RoleBadge :role="member.role" />
-                                <DeletedBadge v-if="member.is_deleted" />
-                                <span
-                                    class="text-xs text-muted-foreground md:hidden"
-                                    :title="
-                                        member.last_login_at
-                                            ? formatDateTime(
-                                                  member.last_login_at,
-                                              )
-                                            : undefined
-                                    "
-                                >
-                                    {{
-                                        member.last_login_at
-                                            ? `Último acceso ${formatRelative(member.last_login_at)}`
-                                            : 'Nunca ha entrado'
-                                    }}
-                                </span>
-                            </template>
-                            <template #aside>
-                                <span
-                                    class="w-40 text-right text-xs"
-                                    :title="
-                                        member.last_login_at
-                                            ? formatDateTime(
-                                                  member.last_login_at,
-                                              )
-                                            : undefined
-                                    "
-                                >
-                                    <span class="block text-muted-foreground"
-                                        >Último acceso</span
-                                    >
-                                    <span class="text-foreground">{{
-                                        member.last_login_at
-                                            ? formatRelative(
-                                                  member.last_login_at,
-                                              )
-                                            : 'Nunca'
-                                    }}</span>
-                                </span>
-                            </template>
-                            <template
-                                v-if="removableMemberIds.includes(member.id)"
-                                #actions
-                            >
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive max-sm:size-10 max-sm:p-0"
-                                    :aria-label="`Retirar a ${member.name}`"
-                                    @click="askRemoval(member)"
-                                >
-                                    <UserMinus />
-                                    <span class="hidden sm:inline"
-                                        >Retirar</span
-                                    >
-                                </Button>
-                            </template>
-                        </DirectoryRow>
-                    </ul>
-                </section>
-            </template>
-        </section>
 
         <DepartmentFormDialog
             v-if="can.update"

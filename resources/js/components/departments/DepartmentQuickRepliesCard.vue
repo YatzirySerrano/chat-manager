@@ -20,7 +20,7 @@ defineProps<{
 <template>
     <SurfaceCard
         title="Respuestas rápidas disponibles"
-        description="Respuestas compartidas específicamente con este departamento."
+        description="Las exclusivas de este departamento."
     >
         <template v-if="manageUrl" #actions>
             <Link
@@ -69,10 +69,9 @@ defineProps<{
                 quickReplies.global_count === 0
                     ? 'No hay respuestas globales activas.'
                     : quickReplies.global_count === 1
-                      ? 'Además, 1 respuesta global activa está disponible para todos los departamentos.'
-                      : `Además, ${quickReplies.global_count} respuestas globales activas están disponibles para todos los departamentos.`
+                      ? 'Además, 1 respuesta global para todos.'
+                      : `Además, ${quickReplies.global_count} respuestas globales para todos.`
             }}
-            La disponibilidad se edita desde el formulario de cada respuesta.
         </p>
     </SurfaceCard>
 </template>

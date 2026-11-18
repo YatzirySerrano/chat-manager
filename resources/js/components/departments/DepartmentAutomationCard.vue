@@ -63,7 +63,7 @@ function messagesLabel(connection: DepartmentConnection): string {
 <template>
     <SurfaceCard
         title="Atención en este momento"
-        description="Cómo opera hoy el departamento según su horario, los días no laborables, el límite de carga y la reapertura de sus conexiones."
+        description="Horario, días no laborables, carga y reapertura."
         body-class="divide-y"
     >
         <div class="flex items-start gap-3 px-5 py-4">

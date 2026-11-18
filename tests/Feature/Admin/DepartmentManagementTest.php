@@ -252,3 +252,37 @@ test('a real change to a department is confirmed with a success toast', function
 
     expect(AuditLog::query()->where('action', AuditAction::DepartmentUpdated)->sole()->properties['changes'])->toHaveKey('color');
 });
+
+test('the list previews members, connections and live conversations of each department', function () {
+    $admin = User::factory()->superAdministrator()->create();
+    $department = Department::factory()->create();
+    $empty = Department::factory()->create();
+
+    $agent = User::factory()->agent()->inDepartments($department)->create(['name' => 'Ana Ruiz']);
+    $other = User::factory()->agent()->inDepartments($department)->create(['name' => 'Beto Soto']);
+
+    $whatsapp = Connection::factory()->create(['name' => 'Ventas WhatsApp']);
+    $whatsapp->departments()->attach($department);
+    $chat = Connection::factory()->webChat()->inactive()->create(['name' => 'Chat del sitio']);
+    $chat->departments()->attach($department);
+
+    Conversation::factory()->inDepartment($department)->count(2)->create();
+    Conversation::factory()->inDepartment($department)->assignedTo($agent)->create();
+    Conversation::factory()->inDepartment($department)->closed()->create();
+
+    $this->actingAs($admin)
+        ->get(route('departments.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where("previews.{$department->id}.members", [
+                ['id' => $agent->id, 'name' => 'Ana Ruiz'],
+                ['id' => $other->id, 'name' => 'Beto Soto'],
+            ])
+            ->where("previews.{$department->id}.connections", [
+                ['id' => $whatsapp->id, 'name' => 'Ventas WhatsApp', 'channel' => 'whatsapp', 'is_active' => true],
+                ['id' => $chat->id, 'name' => 'Chat del sitio', 'channel' => 'web_chat', 'is_active' => false],
+            ])
+            ->where("previews.{$department->id}.conversations", ['pending' => 2, 'open' => 1])
+            ->where("previews.{$empty->id}.members", [])
+            ->where("previews.{$empty->id}.conversations", ['pending' => 0, 'open' => 0])
+        );
+});

@@ -34,25 +34,21 @@ defineProps<{
                 label="Pendientes"
                 :value="metrics.pending"
                 :icon="Inbox"
-                hint="Esperando a que un agente las tome."
             />
             <StatCard
                 label="En atención"
                 :value="metrics.open"
                 :icon="MessagesSquare"
-                hint="Con una persona responsable."
             />
             <StatCard
                 label="Sin asignar"
                 :value="metrics.unassigned"
                 :icon="UserRoundX"
-                hint="Abiertas sin agente responsable."
             />
             <StatCard
                 label="Finalizadas hoy"
                 :value="metrics.closed_today"
                 :icon="Clock"
-                hint="Según la zona horaria de la plataforma."
             />
             <StatCard
                 label="Finalizadas en total"

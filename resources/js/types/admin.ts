@@ -1,4 +1,5 @@
 import type { RecordStateValue } from './ui';
+import type { ConnectionChannel } from './connections';
 import type { MissingInfoCatalog } from './conversations';
 
 export type DataScopeValue = 'global' | 'departments' | 'assigned';
@@ -247,6 +248,20 @@ export type DepartmentSummary = {
     can?: { view: boolean; update: boolean; delete: boolean; restore: boolean };
 };
 
+/** What a card of the departments list shows at a glance (by department id). */
+export type DepartmentPreview = {
+    /** First members by name (up to five); `members_count` has the total. */
+    members: { id: number; name: string }[];
+    connections: {
+        id: number;
+        name: string;
+        channel: ConnectionChannel;
+        is_active: boolean;
+    }[];
+    /** Live conversations waiting (pending) or being attended (open). */
+    conversations: { pending: number; open: number };
+};
+
 /** Real conversation counts of a department (never estimated). */
 export type DepartmentMetrics = {
     total: number;
@@ -260,6 +275,7 @@ export type DepartmentMetrics = {
 export type DepartmentConnection = {
     id: number;
     name: string;
+    channel: ConnectionChannel;
     display_phone_number: string | null;
     is_active: boolean;
     is_deleted: boolean;

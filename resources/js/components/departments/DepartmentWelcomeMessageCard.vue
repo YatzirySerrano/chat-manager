@@ -88,7 +88,7 @@ function submit(): void {
 <template>
     <SurfaceCard
         title="Mensajes automáticos"
-        description="Bienvenida y respuesta fuera de horario para las conversaciones de este departamento. Tienen prioridad sobre los de la conexión."
+        description="Tienen prioridad sobre los de la conexión."
         body-class="p-5"
     >
         <form

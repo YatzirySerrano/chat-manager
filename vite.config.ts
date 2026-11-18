@@ -5,6 +5,7 @@ import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
 import { defineConfig, lazyPlugins } from 'vite-plus';
+import { wayfinderTreeShaking } from './vite-plugins/wayfinder-tree-shaking';
 
 export default defineConfig({
     plugins: lazyPlugins(() => [
@@ -43,7 +44,35 @@ export default defineConfig({
         wayfinder({
             formVariants: true,
         }),
+        wayfinderTreeShaking(),
     ]),
+    build: {
+        rolldownOptions: {
+            output: {
+                codeSplitting: {
+                    /*
+                     * The runtime every page needs (Vue and Inertia) in chunks
+                     * of their own: their names only change when the
+                     * dependencies are updated, so after a deploy the browser
+                     * keeps them and only downloads the application code
+                     * that changed. Everything else stays split per page.
+                     */
+                    groups: [
+                        {
+                            name: 'vendor-vue',
+                            test: /[\\/]node_modules[\\/](@vue|vue)[\\/]/,
+                            priority: 20,
+                        },
+                        {
+                            name: 'vendor-inertia',
+                            test: /[\\/]node_modules[\\/](@inertiajs|laravel-precognition|es-toolkit)[\\/]/,
+                            priority: 10,
+                        },
+                    ],
+                },
+            },
+        },
+    },
     server: {
         watch: {
             ignored: [

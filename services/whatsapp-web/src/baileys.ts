@@ -6,6 +6,7 @@ import {
     makeCacheableSignalKeyStore,
     makeWASocket,
     type AnyMessageContent,
+    type proto,
     type WABusinessProfile,
     type WAMessage,
     type WAVersion,
@@ -14,14 +15,15 @@ import { pino } from 'pino';
 import type { Logger } from './logger.js';
 import { isIgnoredJid, isUserJid, phoneOfJid } from './normalize.js';
 import type { MediaDescriptor } from './types.js';
-import type {
-    MediaDownloader,
-    WaBusinessProfile,
-    WaConnection,
-    WaFactory,
-    WaOutgoing,
-    WaProfile,
-    WaQuoted,
+import {
+    CLOSE,
+    type MediaDownloader,
+    type WaBusinessProfile,
+    type WaConnection,
+    type WaFactory,
+    type WaOutgoing,
+    type WaProfile,
+    type WaQuoted,
 } from './wa.js';
 
 /**
@@ -45,6 +47,104 @@ import type {
 const FIRST_QR_MS = 60_000;
 const NEXT_QR_MS = 20_000;
 const VERSION_TTL_MS = 6 * 3600 * 1000;
+
+/**
+ * Socket timings, explicit so a library update never changes them
+ * silently. Baileys pings every KEEP_ALIVE_MS and ends the socket itself
+ * (408) when nothing arrived for that long plus 5 s.
+ */
+const KEEP_ALIVE_MS = 25_000;
+const CONNECT_TIMEOUT_MS = 30_000;
+const QUERY_TIMEOUT_MS = 60_000;
+const RETRY_REQUEST_DELAY_MS = 500;
+const MAX_MESSAGE_RETRIES = 5;
+
+/**
+ * Watchdog on top of the library's keepalive: a socket that receives no
+ * frame for WATCHDOG_SILENCE_MS while open, or that never opens within
+ * WATCHDOG_OPEN_MS with registered credentials, is closed and reported as
+ * a lost connection (408), so the session reconnects instead of staying
+ * "connected" on a dead stream (a half-open TCP connection, a hung
+ * handshake, a library bug).
+ */
+export const WATCHDOG_INTERVAL_MS = 30_000;
+export const WATCHDOG_SILENCE_MS = 3 * 60_000;
+export const WATCHDOG_OPEN_MS = 2 * 60_000;
+
+/**
+ * Messages sent in the last hours, kept in memory only, so a recipient
+ * whose phone could not decrypt one can ask for it again (getMessage) and
+ * does not stay on "waiting for this message".
+ */
+const SENT_CACHE_LIMIT = 2000;
+const SENT_CACHE_TTL_MS = 6 * 3600 * 1000;
+
+export class RecentMessages {
+    private readonly entries = new Map<
+        string,
+        { message: proto.IMessage; at: number }
+    >();
+
+    constructor(private readonly now: () => number = Date.now) {}
+
+    remember(key: string, message: proto.IMessage | null | undefined): void {
+        if (!message) {
+            return;
+        }
+
+        this.entries.delete(key);
+        this.entries.set(key, { message, at: this.now() });
+
+        while (this.entries.size > SENT_CACHE_LIMIT) {
+            const oldest = this.entries.keys().next().value;
+
+            if (oldest === undefined) {
+                break;
+            }
+
+            this.entries.delete(oldest);
+        }
+    }
+
+    find(key: string): proto.IMessage | undefined {
+        const entry = this.entries.get(key);
+
+        if (!entry) {
+            return undefined;
+        }
+
+        if (this.now() - entry.at > SENT_CACHE_TTL_MS) {
+            this.entries.delete(key);
+
+            return undefined;
+        }
+
+        return entry.message;
+    }
+}
+
+/** Decides when a socket must be given up as dead (see WATCHDOG_*). */
+export function watchdogVerdict(options: {
+    now: number;
+    createdAt: number;
+    lastFrameAt: number;
+    open: boolean;
+    registered: boolean;
+}): string | null {
+    if (options.open && options.now - options.lastFrameAt > WATCHDOG_SILENCE_MS) {
+        return 'watchdog: no frames from WhatsApp while connected';
+    }
+
+    if (
+        !options.open &&
+        options.registered &&
+        options.now - options.createdAt > WATCHDOG_OPEN_MS
+    ) {
+        return 'watchdog: the connection never opened';
+    }
+
+    return null;
+}
 
 /** proto.WebMessageInfo.StubType.REVOKE. */
 const STUB_REVOKE = 1;
@@ -144,11 +244,20 @@ export function createBaileysFactory(options: {
         level: options.libraryLogLevel,
         base: { component: 'baileys' },
     });
+    const recent = new RecentMessages();
 
-    return async ({ auth, history, onEvent }): Promise<WaConnection> => {
+    return async ({
+        connectionId,
+        auth,
+        history,
+        onEvent,
+    }): Promise<WaConnection> => {
         const version = await currentVersion(options.logger);
         let closed = false;
+        let open = false;
         let qrCount = 0;
+        const createdAt = Date.now();
+        let lastFrameAt = createdAt;
 
         const socket = makeWASocket({
             ...(version ? { version } : {}),
@@ -161,6 +270,8 @@ export function createBaileysFactory(options: {
             },
             logger: libraryLogger,
             // A "Desktop" browser is refused by WhatsApp with 428 (no QR).
+            // Fixed for the life of the device (it depends only on how it
+            // was linked), so WhatsApp sees the same companion on every start.
             browser: history
                 ? Browsers.macOS('Chrome')
                 : Browsers.ubuntu('Chrome'),
@@ -169,13 +280,63 @@ export function createBaileysFactory(options: {
             markOnlineOnConnect: false,
             emitOwnEvents: false,
             generateHighQualityLinkPreview: false,
+            keepAliveIntervalMs: KEEP_ALIVE_MS,
+            connectTimeoutMs: CONNECT_TIMEOUT_MS,
+            defaultQueryTimeoutMs: QUERY_TIMEOUT_MS,
+            retryRequestDelayMs: RETRY_REQUEST_DELAY_MS,
+            maxMsgRetryCount: MAX_MESSAGE_RETRIES,
             shouldIgnoreJid: (jid) => isIgnoredJid(jid),
-            getMessage: async () => undefined,
+            getMessage: async (key) =>
+                key.id ? recent.find(`${connectionId}:${key.id}`) : undefined,
         });
 
         socket.ev.on('creds.update', () => {
-            void auth.saveCreds();
+            void auth.saveCreds().catch((error: unknown) => {
+                options.logger.error(
+                    { connection_id: connectionId, err: String(error) },
+                    'The session credentials could not be saved',
+                );
+            });
         });
+
+        socket.ws.on('frame', () => {
+            lastFrameAt = Date.now();
+        });
+
+        const watchdog = setInterval(() => {
+            if (closed) {
+                clearInterval(watchdog);
+
+                return;
+            }
+
+            const verdict = watchdogVerdict({
+                now: Date.now(),
+                createdAt,
+                lastFrameAt,
+                open,
+                registered: auth.isRegistered(),
+            });
+
+            if (verdict === null) {
+                return;
+            }
+
+            options.logger.warn(
+                { connection_id: connectionId, detail: verdict },
+                'Closing a WhatsApp socket that stopped answering',
+            );
+            closed = true;
+            clearInterval(watchdog);
+            onEvent({
+                type: 'close',
+                statusCode: CLOSE.timedOut,
+                detail: verdict,
+            });
+            void socket.end(undefined).catch(() => undefined);
+        }, WATCHDOG_INTERVAL_MS);
+
+        watchdog.unref();
 
         socket.ev.on('connection.update', (update) => {
             if (closed) {
@@ -196,6 +357,8 @@ export function createBaileysFactory(options: {
             }
 
             if (update.connection === 'open') {
+                open = true;
+                lastFrameAt = Date.now();
                 onEvent({
                     type: 'open',
                     me: {
@@ -207,6 +370,7 @@ export function createBaileysFactory(options: {
 
             if (update.connection === 'close') {
                 closed = true;
+                clearInterval(watchdog);
 
                 const error = update.lastDisconnect?.error as
                     | (Error & { output?: { statusCode?: number } })
@@ -346,6 +510,8 @@ export function createBaileysFactory(options: {
                     throw new Error('WhatsApp returned no message');
                 }
 
+                recent.remember(`${connectionId}:${sent.key.id}`, sent.message);
+
                 const timestamp =
                     Number(sent.messageTimestamp ?? 0) ||
                     Math.floor(Date.now() / 1000);
@@ -390,11 +556,13 @@ export function createBaileysFactory(options: {
 
             async logout() {
                 closed = true;
+                clearInterval(watchdog);
                 await socket.logout();
             },
 
             close() {
                 closed = true;
+                clearInterval(watchdog);
                 void socket.end(undefined).catch(() => undefined);
             },
         };

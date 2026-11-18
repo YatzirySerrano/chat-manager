@@ -245,7 +245,9 @@ class WhatsAppWebSessions
             return false;
         }
 
-        $this->apply($connection, $payload);
+        // A live answer is the state right now, even when its last
+        // transition is older than a mark stored meanwhile (a brief outage).
+        $this->apply($connection, $payload, live: true);
 
         return true;
     }
@@ -254,9 +256,12 @@ class WhatsAppWebSessions
      * Store a Session payload of the contract (from an event, an answer of
      * the control API or a synchronization) on the connection.
      *
+     * A live payload (asked to the service right now) always wins over the
+     * stored state; an event older than the last stored report is ignored.
+     *
      * @param  array<array-key, mixed>  $payload
      */
-    public function apply(Connection $connection, array $payload, ?string $reason = null): Connection
+    public function apply(Connection $connection, array $payload, ?string $reason = null, bool $live = false): Connection
     {
         $state = WhatsAppWebState::tryFrom(is_string($payload['state'] ?? null) ? $payload['state'] : '');
 
@@ -270,7 +275,7 @@ class WhatsAppWebSessions
         $activateFor = null;
         $lost = false;
 
-        $updated = DB::transaction(function () use ($connection, $payload, $state, $eventAt, $reason, &$activateFor, &$lost): ?Connection {
+        $updated = DB::transaction(function () use ($connection, $payload, $state, $eventAt, $reason, $live, &$activateFor, &$lost): ?Connection {
             $current = Connection::query()->whereKey($connection->id)->lockForUpdate()->first();
 
             if ($current === null || $current->isDeleted()) {
@@ -279,7 +284,11 @@ class WhatsAppWebSessions
 
             // A report older than the last one stored never moves the session back.
             if ($eventAt !== null && $current->web_session_event_at !== null && $eventAt->lessThan($current->web_session_event_at)) {
-                return $current;
+                if (! $live) {
+                    return $current;
+                }
+
+                $eventAt = CarbonImmutable::instance($current->web_session_event_at);
             }
 
             $previous = $current->webSessionState() ?? WhatsAppWebState::Unconfigured;
@@ -544,12 +553,12 @@ class WhatsAppWebSessions
         $known = match ($reason ?? $code) {
             'qr_timeout' => 'El código QR caducó sin que nadie lo escaneara. Genera uno nuevo.',
             'logged_out_from_phone' => 'La sesión se cerró desde el teléfono (WhatsApp → Dispositivos vinculados). Hay que vincularlo de nuevo.',
-            'replaced' => 'Otra sesión de WhatsApp Web reemplazó a esta. Vincula el teléfono de nuevo.',
+            'replaced' => 'WhatsApp abrió esta sesión en otro lugar varias veces seguidas; se sigue reintentando sola. Revisa que el servicio no corra también en otro servidor.',
             'banned' => 'WhatsApp bloqueó o suspendió este número. Revisa la cuenta en el teléfono antes de volver a vincularlo.',
             'bad_session' => 'La sesión guardada de este teléfono quedó inservible. Hay que vincularlo de nuevo.',
             'network' => 'No hay conexión con los servidores de WhatsApp.',
             'session_missing' => 'El servicio ya no tiene la sesión de este teléfono. Hay que vincularlo de nuevo.',
-            'service_unreachable' => 'El servicio de WhatsApp Web no responde en este servidor.',
+            'service_unreachable' => 'El servicio de WhatsApp Web no responde en este servidor; la sesión sigue vinculada y se recupera sola al volver.',
             default => null,
         };
 

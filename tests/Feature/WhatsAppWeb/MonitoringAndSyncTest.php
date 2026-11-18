@@ -99,7 +99,7 @@ test('installations that do not use the modality see no new health check', funct
     Http::assertNothingSent();
 });
 
-test('while the service is down the synchronization marks linked sessions with an error instead of leaving them connected', function () {
+test('while the service is down the synchronization marks linked sessions as reconnecting instead of leaving them connected', function () {
     Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect'));
     $stopped = Connection::factory()->whatsAppWeb()->create(['web_session_state' => WhatsAppWebState::Disconnected]);
 
@@ -107,7 +107,7 @@ test('while the service is down the synchronization marks linked sessions with a
 
     $connection = $this->connection->refresh();
 
-    expect($connection->webSessionState())->toBe(WhatsAppWebState::Error)
+    expect($connection->webSessionState())->toBe(WhatsAppWebState::Reconnecting)
         ->and($connection->web_session_error)->toContain('no responde')
         ->and($connection->sendingBlockReason())->not->toBeNull()
         // The phone stays linked: it comes back when the service does.

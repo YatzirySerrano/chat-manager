@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
     clearAuthState,
+    hasStoredCredentials,
     useEncryptedAuthState,
     type EncryptedAuthState,
 } from './auth-state.js';
@@ -100,17 +101,21 @@ const OUTBOUND_KINDS: readonly OutboundKind[] = [
     'sticker',
 ];
 
-/** 500 closes in a row (no open between them) before credentials are dropped. */
-const BAD_SESSION_LIMIT = 5;
-/** 440 closes tolerated within REPLACED_WINDOW_SECONDS before stopping. */
+/** 440 closes within REPLACED_WINDOW_SECONDS retried after REPLACED_RETRY_MS; more wait REPLACED_SLOW_MS. */
 const REPLACED_LIMIT = 3;
 const REPLACED_WINDOW_SECONDS = 15 * 60;
 const REPLACED_RETRY_MS = 30_000;
+const REPLACED_SLOW_MS = 5 * 60_000;
+/** Pause before checking with a new socket that a 401/403 of a linked session is real. */
+export const REVOKE_CONFIRM_MS = 5000;
+/** 515 answered with a new socket at once this many times in a row; then with backoff. */
+const IMMEDIATE_RESTARTS = 3;
 
 const REASON_MESSAGES: Record<StateReason, string> = {
     qr_timeout: 'El código QR caducó sin escanearse.',
     logged_out_from_phone: 'La sesión se cerró desde el teléfono.',
-    replaced: 'Otra instancia abrió esta misma sesión.',
+    replaced:
+        'WhatsApp abrió esta misma sesión en otro lugar varias veces seguidas; se sigue reintentando sola.',
     banned: 'WhatsApp rechazó la sesión de este número.',
     network: 'No se pudo restablecer la conexión con WhatsApp.',
     restart: 'WhatsApp pidió reiniciar la conexión.',
@@ -159,8 +164,14 @@ export class Session {
     private qrCount = 0;
     private attempts = 0;
     private reconnects = 0;
-    /** Consecutive 500 closes without a successful open in between. */
-    private badSessions = 0;
+    /** Consecutive 515 closes without a successful open in between. */
+    private restarts = 0;
+    /**
+     * A linked session closed with 401/403 and is being checked with one
+     * more socket: WhatsApp repeats the refusal at login when the device is
+     * really unlinked (or the number banned), while a transient one opens.
+     */
+    private revokeSuspected: number | null = null;
     /** When the recent 440 ("replaced") closes happened, in seconds. */
     private replacedAt: number[] = [];
     private connectedSince: number | null = null;
@@ -183,9 +194,46 @@ export class Session {
 
     static async load(options: SessionOptions): Promise<Session> {
         const session = new Session(options);
-        const stored = await options.vault
-            .readJson<Meta>(session.metaPath, 'meta')
-            .catch(() => null);
+        let stored: Meta | null = null;
+
+        for (const [path, label] of [
+            [session.metaPath, 'meta'],
+            [session.metaBackupPath, 'meta-backup'],
+        ] as const) {
+            try {
+                stored = await options.vault.readJson<Meta>(path, label);
+            } catch (error) {
+                options.logger.error(
+                    {
+                        connection_id: options.connectionId,
+                        file: label,
+                        err: safeErrorMessage(error),
+                    },
+                    'The session metadata could not be read',
+                );
+            }
+
+            if (stored !== null) {
+                break;
+            }
+        }
+
+        /*
+         * Credentials on disk without readable metadata (a file damaged by
+         * a disk error): the phone is still linked, so the session is
+         * restored instead of looking unlinked, which would lead an
+         * administrator to link it again and throw the credentials away.
+         */
+        if (
+            stored === null &&
+            (await hasStoredCredentials(session.authDirectory))
+        ) {
+            options.logger.warn(
+                { connection_id: options.connectionId },
+                'Session credentials found without metadata; restoring it as linked',
+            );
+            stored = { ...emptyMeta(), linked: true, desired: 'running' };
+        }
 
         if (stored !== null) {
             session.meta = { ...emptyMeta(), ...stored };
@@ -257,6 +305,8 @@ export class Session {
         }
 
         this.attempts = 0;
+        this.restarts = 0;
+        this.revokeSuspected = null;
         await this.saveMeta();
         this.transition('starting');
         await this.open();
@@ -488,6 +538,16 @@ export class Session {
             const auth = await useEncryptedAuthState(
                 this.authDirectory,
                 this.options.vault,
+                (file, error) => {
+                    this.options.logger.error(
+                        {
+                            connection_id: this.connectionId,
+                            file: file.replace(/-.*$/, ''),
+                            err: safeErrorMessage(error),
+                        },
+                        'A stored credential file could not be opened; it is treated as missing',
+                    );
+                },
             );
 
             this.auth = auth;
@@ -609,8 +669,21 @@ export class Session {
         name: string | null;
     }): Promise<void> {
         this.attempts = 0;
-        this.badSessions = 0;
+        this.restarts = 0;
         this.qrCount = 0;
+        this.replacedAt = [];
+
+        if (this.revokeSuspected !== null) {
+            this.options.logger.warn(
+                {
+                    connection_id: this.connectionId,
+                    status: this.revokeSuspected,
+                },
+                'The session opened again after a refusal: it was transient and the device stays linked',
+            );
+            this.revokeSuspected = null;
+        }
+
         this.meta.linked = true;
         this.meta.linked_at ??= this.seconds();
         this.meta.phone =
@@ -649,24 +722,11 @@ export class Session {
                 this.transition('reconnecting', 'restart');
             }
 
-            await this.open();
-
-            return;
-        }
-
-        /*
-         * Baileys closes with 500 for any unknown stream error too (a network
-         * hiccup, a WhatsApp server restart), not only for broken
-         * credentials. A linked session keeps its credentials and reconnects;
-         * only a run of 500s without one successful open in between means
-         * the credentials are really gone.
-         */
-        if (
-            statusCode === CLOSE.badSession &&
-            linked &&
-            ++this.badSessions < BAD_SESSION_LIMIT
-        ) {
-            await this.scheduleReconnect();
+            if (++this.restarts <= IMMEDIATE_RESTARTS) {
+                await this.open();
+            } else {
+                await this.scheduleReconnect();
+            }
 
             return;
         }
@@ -674,65 +734,107 @@ export class Session {
         const revoked: Record<number, StateReason> = {
             [CLOSE.loggedOut]: 'logged_out_from_phone',
             [CLOSE.forbidden]: 'banned',
-            [CLOSE.multideviceMismatch]: 'bad_session',
-            [CLOSE.badSession]: 'bad_session',
         };
-        const reason = statusCode === null ? undefined : revoked[statusCode];
+        const revokedReason =
+            statusCode === null ? undefined : revoked[statusCode];
 
-        if (reason !== undefined) {
+        /*
+         * 401 (device removed from the phone) and 403 (number refused) are
+         * the only closes that end a linked session. Before the credentials
+         * are deleted for good, one more socket confirms it: an unlinked
+         * device is refused again at login, so a real logout still ends
+         * here a few seconds later, while a transient refusal reconnects.
+         */
+        if (
+            revokedReason !== undefined &&
+            linked &&
+            this.revokeSuspected === null
+        ) {
+            this.revokeSuspected = statusCode;
+            this.reconnects += 1;
+            this.transition('reconnecting', 'network');
+            this.scheduleOpen(REVOKE_CONFIRM_MS);
+
+            return;
+        }
+
+        if (revokedReason !== undefined) {
+            this.revokeSuspected = null;
             await this.clearCredentials();
             this.meta = {
                 ...emptyMeta(),
                 terminal: linked ? 'logged_out' : null,
-                last_error: { code: reason, message: REASON_MESSAGES[reason] },
+                last_error: {
+                    code: revokedReason,
+                    message: REASON_MESSAGES[revokedReason],
+                },
             };
             await this.saveMeta();
-            this.transition(linked ? 'logged_out' : 'unconfigured', reason);
+            this.transition(
+                linked ? 'logged_out' : 'unconfigured',
+                revokedReason,
+            );
 
             return;
         }
 
         /*
-         * 440: WhatsApp saw this session open somewhere else. A single one is
-         * usually a restart overlapping the previous process, or a stale
-         * stream on WhatsApp's side: try again after a pause. Several in a
-         * short time mean another process really holds it: reconnecting
-         * would start a fight, so the session stops (credentials kept).
+         * A link in progress whose credentials WhatsApp refused (411: the
+         * account cannot use linked devices; 500 before the first open):
+         * nothing valid is on disk, so the linking ends.
          */
-        if (statusCode === CLOSE.connectionReplaced) {
+        if (
+            !linked &&
+            (statusCode === CLOSE.multideviceMismatch ||
+                statusCode === CLOSE.badSession)
+        ) {
+            const reason: StateReason = 'bad_session';
+
+            await this.clearCredentials();
+            this.meta = {
+                ...emptyMeta(),
+                last_error: { code: reason, message: REASON_MESSAGES[reason] },
+            };
+            await this.saveMeta();
+            this.transition('unconfigured', reason);
+
+            return;
+        }
+
+        /*
+         * 440: WhatsApp saw this session open somewhere else. The instance
+         * lock rules out a second process on this server, so it is usually
+         * a restart overlapping the previous stream on WhatsApp's side: try
+         * again after a pause. Several in a short time are retried more
+         * slowly (if another server really holds the credentials, they do
+         * not fight every few seconds), but never given up: the device
+         * stays linked and comes back on its own.
+         */
+        if (statusCode === CLOSE.connectionReplaced && linked) {
             const now = this.seconds();
+
             this.replacedAt = [
                 ...this.replacedAt.filter(
                     (at) => now - at < REPLACED_WINDOW_SECONDS,
                 ),
                 now,
             ];
-        }
 
-        if (
-            statusCode === CLOSE.connectionReplaced &&
-            linked &&
-            this.replacedAt.length < REPLACED_LIMIT
-        ) {
-            if (this.state !== 'reconnecting') {
-                this.reconnects += 1;
-                this.transition('reconnecting', 'network');
+            const repeated = this.replacedAt.length >= REPLACED_LIMIT;
+
+            if (repeated) {
+                this.meta.last_error = {
+                    code: 'replaced',
+                    message: REASON_MESSAGES.replaced,
+                };
+                await this.saveMeta();
             }
 
-            this.scheduleOpen(REPLACED_RETRY_MS);
-
-            return;
-        }
-
-        if (statusCode === CLOSE.connectionReplaced) {
-            this.meta.desired = 'stopped';
-            this.meta.terminal = 'error';
-            this.meta.last_error = {
-                code: 'replaced',
-                message: REASON_MESSAGES.replaced,
-            };
-            await this.saveMeta();
-            this.transition('error', 'replaced');
+            this.reconnects += 1;
+            this.transition('reconnecting', repeated ? 'replaced' : 'network');
+            this.scheduleOpen(
+                repeated ? this.jitter(REPLACED_SLOW_MS) : REPLACED_RETRY_MS,
+            );
 
             return;
         }
@@ -748,6 +850,12 @@ export class Session {
             return;
         }
 
+        /*
+         * Everything else reconnects: 428 (closed), 408 (lost, timed out),
+         * 500 (any unknown stream or WebSocket error: Baileys uses it as its
+         * default code, so it says nothing about the credentials), 411, 503,
+         * network errors and sockets that could not be opened.
+         */
         await this.scheduleReconnect();
     }
 
@@ -755,55 +863,46 @@ export class Session {
         this.attempts += 1;
 
         /*
-         * A linked session never gives up: WhatsApp keeps it valid for
-         * weeks while the phone is online. Past the fast attempts it keeps
-         * trying every few minutes, so a long outage (the VPS network, the
-         * NAS, WhatsApp itself) heals on its own without a new QR.
+         * A linked session never gives up and never waits more than about
+         * a minute: WhatsApp keeps the device valid for weeks while the
+         * phone is online, so any outage (the VPS network, WhatsApp
+         * itself) heals on its own as soon as it ends, without a new QR.
          */
-        if (
-            this.meta.linked &&
-            this.attempts > this.options.limits.reconnectMaxAttempts
-        ) {
-            this.meta.last_error = {
-                code: 'network',
-                message: REASON_MESSAGES.network,
-            };
-            await this.saveMeta();
-
-            if (this.state !== 'reconnecting') {
-                this.reconnects += 1;
-                this.transition('reconnecting', 'network');
+        if (this.meta.linked) {
+            if (
+                this.attempts > this.options.limits.reconnectMaxAttempts &&
+                this.meta.last_error?.code !== 'network'
+            ) {
+                this.meta.last_error = {
+                    code: 'network',
+                    message: REASON_MESSAGES.network,
+                };
+                await this.saveMeta();
             }
 
-            this.scheduleOpen(this.slowBackoff());
+            this.reconnects += 1;
+            this.transition('reconnecting', 'network');
+            this.scheduleOpen(this.backoff(this.attempts));
 
             return;
         }
 
         if (this.attempts > this.options.limits.reconnectMaxAttempts) {
-            this.meta.last_error = {
-                code: 'network',
-                message: REASON_MESSAGES.network,
+            await this.clearCredentials();
+            this.meta = {
+                ...emptyMeta(),
+                last_error: {
+                    code: 'network',
+                    message: REASON_MESSAGES.network,
+                },
             };
-
-            if (!this.meta.linked) {
-                await this.clearCredentials();
-                this.meta = {
-                    ...emptyMeta(),
-                    last_error: this.meta.last_error,
-                };
-            }
-
             await this.saveMeta();
             this.transition('error', 'network');
 
             return;
         }
 
-        if (this.meta.linked) {
-            this.reconnects += 1;
-            this.transition('reconnecting', 'network');
-        } else if (this.state !== 'starting' && this.state !== 'pairing') {
+        if (this.state !== 'starting' && this.state !== 'pairing') {
             this.transition('starting');
         }
 
@@ -827,19 +926,18 @@ export class Session {
         }, delay);
     }
 
-    /** Every 5 minutes (±25 %) once the fast attempts are spent. */
-    private slowBackoff(): number {
+    /** ±25 % of jitter, so many sessions never retry in lockstep. */
+    private jitter(ms: number): number {
         const random = this.options.random ?? Math.random;
 
-        return Math.round(5 * 60_000 * (0.75 + random() * 0.5));
+        return Math.round(ms * (0.75 + random() * 0.5));
     }
 
     /** Exponential backoff (2 s, 4 s, 8 s... capped at 60 s) with ±25 % of jitter. */
     private backoff(attempt: number): number {
-        const base = Math.min(60_000, 2000 * 2 ** Math.min(attempt - 1, 10));
-        const random = this.options.random ?? Math.random;
-
-        return Math.round(base * (0.75 + random() * 0.5));
+        return this.jitter(
+            Math.min(60_000, 2000 * 2 ** Math.min(attempt - 1, 10)),
+        );
     }
 
     private async endLinking(reason: StateReason): Promise<void> {
@@ -1324,9 +1422,19 @@ export class Session {
         return join(this.options.directory, 'meta.bin');
     }
 
+    private get metaBackupPath(): string {
+        return join(this.options.directory, 'meta-backup.bin');
+    }
+
+    /** Two copies, one after the other: a damaged file never makes a linked phone look unlinked. */
     private async saveMeta(): Promise<void> {
         await ensurePrivateDir(this.options.directory);
         await this.options.vault.writeJson(this.metaPath, this.meta, 'meta');
+        await this.options.vault.writeJson(
+            this.metaBackupPath,
+            this.meta,
+            'meta-backup',
+        );
     }
 }
 

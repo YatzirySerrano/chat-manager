@@ -79,7 +79,8 @@ describe('cifrado en reposo (§7)', () => {
 
             const files = await readdir(temporary.path);
 
-            assert.equal(files.length, 4);
+            // creds, su copia de respaldo y tres claves.
+            assert.equal(files.length, 5);
             assert.ok(files.every((file) => file.endsWith('.bin')));
 
             for (const file of files) {
@@ -209,7 +210,10 @@ describe('instancia única', () => {
 
             const second = acquireLock(path, process.pid);
 
-            assert.equal(readFileSync(path, 'utf8'), String(process.pid));
+            assert.equal(
+                JSON.parse(readFileSync(path, 'utf8')).pid,
+                process.pid,
+            );
             second();
             assert.equal(existsSync(path), false);
             release();
@@ -233,7 +237,10 @@ describe('instancia única', () => {
             const service = await createService(dependencies);
             const lock = join(temporary.path, 'service.lock');
 
-            assert.equal(readFileSync(lock, 'utf8'), String(process.pid));
+            assert.equal(
+                JSON.parse(readFileSync(lock, 'utf8')).pid,
+                process.pid,
+            );
 
             // El mismo directorio en manos de otro proceso vivo impide un segundo arranque.
             writeFileSync(lock, String(process.ppid));

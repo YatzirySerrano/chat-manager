@@ -1,4 +1,4 @@
-import { readdir, rm } from 'node:fs/promises';
+import { readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
     BufferJSON,
@@ -30,6 +30,15 @@ export type EncryptedAuthState = {
 };
 
 const CREDS_FILE = 'creds';
+/**
+ * Second copy of the credentials, written right after the main one: if the
+ * main file can no longer be opened (disk error, a copy restored by hand),
+ * the session comes back from this one instead of asking for a new QR.
+ */
+const CREDS_BACKUP_FILE = 'creds-backup';
+
+/** Reports a stored file that could not be opened (never its content). */
+export type CorruptFileReporter = (name: string, error: unknown) => void;
 
 /** File name of a key: only characters every filesystem accepts. */
 export function keyFileName(name: string): string {
@@ -44,8 +53,10 @@ export function keyFileName(name: string): string {
 export async function useEncryptedAuthState(
     directory: string,
     vault: Vault,
+    onCorrupt: CorruptFileReporter = () => undefined,
 ): Promise<EncryptedAuthState> {
     await ensurePrivateDir(directory);
+    await removeStrayTemporaryFiles(directory);
 
     const queue = new KeyedQueue();
     const pending = new Set<Promise<unknown>>();
@@ -83,12 +94,79 @@ export async function useEncryptedAuthState(
                 : JSON.parse(plain.toString('utf8'), BufferJSON.reviver);
         });
 
+    /**
+     * A key file that cannot be opened (altered, truncated by a disk error)
+     * is treated as missing and removed: Baileys recreates what it needs
+     * (a Signal session is renegotiated with a retry, a pre-key is uploaded
+     * again, an app-state key is asked to the phone). One bad file must
+     * never stop the socket nor unlink the device.
+     */
+    const readKey = async (name: string): Promise<unknown> => {
+        try {
+            return await read(name);
+        } catch (error) {
+            onCorrupt(name, error);
+            // Kept aside (never read again) instead of deleted, for diagnosis.
+            await track(
+                queue.run(name, () =>
+                    rename(pathOf(name), `${pathOf(name)}.corrupt`),
+                ),
+            ).catch(() => undefined);
+
+            return null;
+        }
+    };
+
     const remove = (name: string): Promise<void> =>
         track(queue.run(name, () => rm(pathOf(name), { force: true })));
 
-    const creds =
-        ((await read(CREDS_FILE)) as AuthenticationCreds | null) ??
-        initAuthCreds();
+    /**
+     * The main copy, else the backup. When copies exist but none opens
+     * (most likely a different WAWEB_SESSION_KEY), it throws: new
+     * credentials must never silently replace the stored ones.
+     */
+    const readCreds = async (): Promise<AuthenticationCreds | null> => {
+        let failure: unknown = null;
+
+        for (const name of [CREDS_FILE, CREDS_BACKUP_FILE]) {
+            try {
+                const value = (await read(name)) as AuthenticationCreds | null;
+
+                if (value !== null) {
+                    return value;
+                }
+            } catch (error) {
+                onCorrupt(name, error);
+                failure ??= error;
+            }
+        }
+
+        if (failure !== null) {
+            throw failure;
+        }
+
+        return null;
+    };
+
+    const creds = (await readCreds()) ?? initAuthCreds();
+
+    /** Both copies, one after the other: there is always one complete. */
+    const saveCreds = (): Promise<void> =>
+        track(
+            queue.run(CREDS_FILE, async () => {
+                const plain = Buffer.from(
+                    JSON.stringify(creds, BufferJSON.replacer),
+                    'utf8',
+                );
+
+                await vault.write(pathOf(CREDS_FILE), plain, CREDS_FILE);
+                await vault.write(
+                    pathOf(CREDS_BACKUP_FILE),
+                    plain,
+                    CREDS_BACKUP_FILE,
+                );
+            }),
+        );
 
     return {
         state: {
@@ -102,7 +180,7 @@ export async function useEncryptedAuthState(
 
                     await Promise.all(
                         ids.map(async (id) => {
-                            let value = await read(`${type}-${id}`);
+                            let value = await readKey(`${type}-${id}`);
 
                             if (type === 'app-state-sync-key' && value) {
                                 value =
@@ -138,7 +216,7 @@ export async function useEncryptedAuthState(
                 },
             },
         },
-        saveCreds: () => write(CREDS_FILE, creds),
+        saveCreds,
         isRegistered: () => Boolean(creds.me?.id && creds.account),
         settled: async () => {
             while (pending.size > 0) {
@@ -158,8 +236,24 @@ export async function hasStoredCredentials(
     directory: string,
 ): Promise<boolean> {
     try {
-        return (await readdir(directory)).includes(keyFileName(CREDS_FILE));
+        const files = await readdir(directory);
+
+        return (
+            files.includes(keyFileName(CREDS_FILE)) ||
+            files.includes(keyFileName(CREDS_BACKUP_FILE))
+        );
     } catch {
         return false;
     }
+}
+
+/** Temporary files of writes interrupted by a crash (never complete). */
+async function removeStrayTemporaryFiles(directory: string): Promise<void> {
+    const files = await readdir(directory).catch(() => [] as string[]);
+
+    await Promise.all(
+        files
+            .filter((file) => file.endsWith('.tmp'))
+            .map((file) => rm(join(directory, file), { force: true })),
+    );
 }

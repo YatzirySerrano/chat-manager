@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
-import { Bot, ListOrdered, MessageSquareText, Plus } from '@lucide/vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import {
+    ArrowRight,
+    Bot,
+    ListOrdered,
+    MessageSquareText,
+    Plus,
+    Smartphone,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import ChatbotAutoMessagesCard from '@/components/chatbot/ChatbotAutoMessagesCard.vue';
+import ChatbotConnectionPicker from '@/components/chatbot/ChatbotConnectionPicker.vue';
 import ChatbotMenuEditor from '@/components/chatbot/ChatbotMenuEditor.vue';
 import KeywordRuleCard from '@/components/chatbot/KeywordRuleCard.vue';
 import KeywordRuleDialog from '@/components/chatbot/KeywordRuleDialog.vue';
@@ -9,6 +18,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import PageHeader from '@/components/PageHeader.vue';
 import { Button } from '@/components/ui/button';
+import { Segmented } from '@/components/ui/segmented';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { index as chatbotIndex } from '@/routes/admin/chatbot';
 import {
@@ -16,6 +26,7 @@ import {
     destroy as destroyRule,
     order as orderRules,
 } from '@/routes/admin/chatbot/rules';
+import { index as connectionsIndex } from '@/routes/connections';
 import type {
     ChatbotConnection,
     ChatbotDepartment,
@@ -63,8 +74,7 @@ watch(tab, (value) => {
     }
 });
 
-/* Menú de bienvenida: one connection at a time. */
-/* First the connections whose menu is on: that is what people come to adjust. */
+/* The number being configured. First the ones whose menu is on: that is what people come to adjust. */
 const selectedId = ref<number | null>(
     (
         props.connections.find((connection) => connection.menu.is_enabled) ??
@@ -78,18 +88,32 @@ const selected = computed(
         ) ?? null,
 );
 
-const enabledMenus = computed(
-    () => props.connections.filter((item) => item.menu.is_enabled).length,
+/** Whether a rule answers on a connection (no connections chosen: all of them). */
+const appliesTo = (rule: ChatbotKeywordRule, connectionId: number): boolean =>
+    rule.connection_ids.length === 0 ||
+    rule.connection_ids.includes(connectionId);
+
+/** Active keyword rules per connection, for the picker. */
+const ruleCounts = computed(
+    () =>
+        new Map(
+            props.connections.map((connection) => [
+                connection.id,
+                props.rules.filter(
+                    (rule) => rule.is_active && appliesTo(rule, connection.id),
+                ).length,
+            ]),
+        ),
 );
 
 function activityLabel(connection: ChatbotConnection): string {
     const { routed, fallback } = connection.activity;
 
     if (routed + fallback === 0) {
-        return `Sin uso en ${props.activityDays} días`;
+        return `Nadie lo ha usado en ${props.activityDays} días`;
     }
 
-    return `${routed} eligieron · ${fallback} sin opción`;
+    return `Últimos ${props.activityDays} días: ${routed} eligieron una opción · ${fallback} no contestaron con un número`;
 }
 
 /* Palabras clave. */
@@ -103,9 +127,27 @@ const departmentNames = computed(
 const names = (ids: number[], map: Map<number, string>): string[] =>
     ids.map((id) => map.get(id)).filter((name): name is string => !!name);
 
-const activeRules = computed(
-    () => props.rules.filter((rule) => rule.is_active).length,
+const ruleScope = ref<'connection' | 'all'>('connection');
+
+const rulesForSelected = computed(() => {
+    const connection = selected.value;
+
+    return connection === null
+        ? props.rules
+        : props.rules.filter((rule) => appliesTo(rule, connection.id));
+});
+
+const shownRules = computed(() =>
+    ruleScope.value === 'all' ? props.rules : rulesForSelected.value,
 );
+
+const scopeOptions = computed(() => [
+    {
+        value: 'connection' as const,
+        label: `Aplican a ${selected.value?.name ?? 'este número'} (${rulesForSelected.value.length})`,
+    },
+    { value: 'all' as const, label: `Todas (${props.rules.length})` },
+]);
 
 const dialogOpen = ref(false);
 const editing = ref<ChatbotKeywordRule | null>(null);
@@ -135,16 +177,24 @@ function toggle(rule: ChatbotKeywordRule, value: boolean): void {
     );
 }
 
-function move(position: number, offset: -1 | 1): void {
-    const ids = props.rules.map((rule) => rule.id);
-    const target = position + offset;
+/**
+ * Moves a rule one place among the ones shown: it swaps with its visible
+ * neighbour, so the order of the hidden ones never changes.
+ */
+function move(rule: ChatbotKeywordRule, offset: -1 | 1): void {
+    const visible = shownRules.value;
+    const neighbour = visible[visible.indexOf(rule) + offset];
 
-    if (target < 0 || target >= ids.length) {
+    if (neighbour === undefined) {
         return;
     }
 
-    [ids[position], ids[target]] = [ids[target], ids[position]];
-    busyId.value = ids[target];
+    const ids = props.rules.map((item) => item.id);
+    const from = ids.indexOf(rule.id);
+    const to = ids.indexOf(neighbour.id);
+
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    busyId.value = rule.id;
     router.put(
         orderRules.url(),
         { ids },
@@ -186,7 +236,7 @@ function confirmRemove(): void {
     <div class="page-shell">
         <PageHeader
             title="Chatbot"
-            description="Respuestas automáticas: un menú al iniciar cada conversación y respuestas por palabras clave. El equipo recibe aviso de lo que se respondió."
+            description="Respuestas automáticas para tus números de WhatsApp: contestan al instante mientras tu equipo atiende."
         >
             <template v-if="can.manage && tab === 'keywords'" #actions>
                 <Button
@@ -200,93 +250,110 @@ function confirmRemove(): void {
             </template>
         </PageHeader>
 
-        <Tabs v-model="tab" class="grid gap-6">
-            <TabsList aria-label="Partes del chatbot">
-                <TabsTrigger value="menu" class="gap-2">
-                    <ListOrdered class="size-4" aria-hidden="true" />
-                    Menú de bienvenida
-                    <span
-                        class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
-                        >{{ enabledMenus }}/{{ connections.length }}</span
-                    >
-                </TabsTrigger>
-                <TabsTrigger value="keywords" class="gap-2">
-                    <MessageSquareText class="size-4" aria-hidden="true" />
-                    Palabras clave
-                    <span
-                        class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
-                        >{{ activeRules }}/{{ rules.length }}</span
-                    >
-                </TabsTrigger>
-            </TabsList>
+        <EmptyState
+            v-if="connections.length === 0"
+            :icon="Smartphone"
+            title="Primero conecta un número de WhatsApp"
+            description="El chatbot se configura por número. Agrega uno en Conexiones y regresa aquí."
+        >
+            <Button as-child>
+                <Link :href="connectionsIndex()">
+                    Ir a Conexiones
+                    <ArrowRight />
+                </Link>
+            </Button>
+        </EmptyState>
 
-            <TabsContent value="menu" class="grid gap-5">
-                <EmptyState
-                    v-if="connections.length === 0"
-                    :icon="Bot"
-                    title="Aún no hay conexiones"
-                    description="El menú se configura por conexión: crea una en Conexiones."
+        <template v-else>
+            <!-- Which number -->
+            <section class="grid gap-3" aria-labelledby="chatbot-picker-title">
+                <div class="grid gap-0.5">
+                    <h2
+                        id="chatbot-picker-title"
+                        class="flex items-center gap-2 font-display text-lg font-semibold"
+                    >
+                        <Smartphone
+                            class="size-5 shrink-0 text-primary"
+                            aria-hidden="true"
+                        />
+                        Elige el número de WhatsApp que vas a configurar
+                    </h2>
+                    <p class="text-sm text-muted-foreground">
+                        Cada número tiene su propio menú de bienvenida.
+                    </p>
+                </div>
+
+                <ChatbotConnectionPicker
+                    v-model="selectedId"
+                    :connections="connections"
+                    :rule-counts="ruleCounts"
                 />
 
-                <template v-else>
-                    <div
-                        class="flex gap-2 overflow-x-auto pb-1"
-                        role="radiogroup"
-                        aria-label="Conexión"
-                    >
-                        <button
-                            v-for="connection in connections"
-                            :key="connection.id"
-                            type="button"
-                            role="radio"
-                            :aria-checked="connection.id === selectedId"
-                            class="grid min-w-52 shrink-0 gap-1 rounded-xl border bg-card px-3.5 py-2.5 text-left transition-[border-color,background-color] duration-(--duration-fast) hover:border-border-strong"
+                <ChatbotAutoMessagesCard
+                    v-if="selected"
+                    :key="selected.id"
+                    :connection="selected"
+                />
+            </section>
+
+            <Tabs v-model="tab" class="grid gap-5">
+                <TabsList
+                    :aria-label="`Qué configurar en ${selected?.name ?? 'el número'}`"
+                >
+                    <TabsTrigger value="menu" class="gap-2">
+                        <ListOrdered class="size-4" aria-hidden="true" />
+                        Menú de bienvenida
+                        <span
+                            class="size-2 rounded-full"
                             :class="
-                                connection.id === selectedId &&
-                                'border-primary bg-primary-soft/40 hover:border-primary'
+                                selected?.menu.is_enabled
+                                    ? 'bg-success'
+                                    : 'bg-border-strong'
                             "
-                            :data-connection="connection.id"
-                            @click="selectedId = connection.id"
+                            :title="
+                                selected?.menu.is_enabled
+                                    ? 'Encendido'
+                                    : 'Apagado'
+                            "
+                            aria-hidden="true"
+                        />
+                    </TabsTrigger>
+                    <TabsTrigger value="keywords" class="gap-2">
+                        <MessageSquareText class="size-4" aria-hidden="true" />
+                        Palabras clave
+                        <span
+                            class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
+                            >{{
+                                selected
+                                    ? (ruleCounts.get(selected.id) ?? 0)
+                                    : 0
+                            }}</span
                         >
-                            <span
-                                class="flex items-center justify-between gap-2"
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="menu" class="grid gap-5">
+                    <div
+                        class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-primary-soft/40 px-4 py-3 text-sm"
+                    >
+                        <ListOrdered
+                            class="size-5 shrink-0 text-primary"
+                            aria-hidden="true"
+                        />
+                        <p class="min-w-0 flex-1">
+                            Cuando alguien escribe por primera vez, el bot le
+                            manda un menú con números y lo pasa al departamento
+                            que elija.
+                            <span class="text-muted-foreground"
+                                >Ej.: «1 - Ventas · 2 - Soporte».</span
                             >
-                                <span class="truncate text-sm font-semibold">{{
-                                    connection.name
-                                }}</span>
-                                <span
-                                    class="inline-flex shrink-0 items-center gap-1 text-xs"
-                                    :class="
-                                        connection.menu.is_enabled
-                                            ? 'text-success-soft-foreground'
-                                            : 'text-muted-foreground'
-                                    "
-                                >
-                                    <span
-                                        class="size-1.5 rounded-full"
-                                        :class="
-                                            connection.menu.is_enabled
-                                                ? 'bg-success'
-                                                : 'bg-border-strong'
-                                        "
-                                        aria-hidden="true"
-                                    />
-                                    {{
-                                        connection.menu.is_enabled
-                                            ? 'Activo'
-                                            : 'Apagado'
-                                    }}
-                                </span>
-                            </span>
-                            <span class="truncate text-xs text-muted-foreground"
-                                >{{
-                                    connection.is_whatsapp_web
-                                        ? 'WhatsApp (QR)'
-                                        : connection.channel.label
-                                }}
-                                · {{ activityLabel(connection) }}</span
-                            >
-                        </button>
+                        </p>
+                        <p
+                            v-if="selected"
+                            class="text-xs text-muted-foreground"
+                        >
+                            {{ activityLabel(selected) }}
+                        </p>
                     </div>
 
                     <ChatbotMenuEditor
@@ -298,54 +365,114 @@ function confirmRemove(): void {
                         :limits="limits"
                         :default-retry="defaults.retry_message"
                     />
-                </template>
-            </TabsContent>
+                </TabsContent>
 
-            <TabsContent value="keywords" class="grid gap-5">
-                <EmptyState
-                    v-if="rules.length === 0"
-                    :icon="MessageSquareText"
-                    title="Sin palabras clave"
-                    description="Cuando un cliente escriba una palabra que definas (por ejemplo «horario»), el chatbot responderá solo y avisará al equipo."
-                >
-                    <Button v-if="can.manage" @click="openCreate">
-                        <Plus />
-                        Nueva palabra clave
-                    </Button>
-                </EmptyState>
-
-                <template v-else>
-                    <p class="max-w-prose text-sm text-muted-foreground">
-                        Se revisan en orden: responde la primera que coincide.
-                    </p>
-                    <ul
-                        class="auto-grid reveal-stagger [--col-min:20rem]"
-                        role="list"
+                <TabsContent value="keywords" class="grid gap-5">
+                    <div
+                        class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-primary-soft/40 px-4 py-3 text-sm"
                     >
-                        <li v-for="(rule, position) in rules" :key="rule.id">
-                            <KeywordRuleCard
-                                :rule="rule"
-                                :position="position"
-                                :total="rules.length"
-                                :connection-names="
-                                    names(rule.connection_ids, connectionNames)
-                                "
-                                :department-names="
-                                    names(rule.department_ids, departmentNames)
-                                "
-                                :activity-days="activityDays"
-                                :can-manage="can.manage"
-                                :busy="busyId === rule.id"
-                                @toggle="(value) => toggle(rule, value)"
-                                @edit="openEdit(rule)"
-                                @remove="askRemove(rule)"
-                                @move="(offset) => move(position, offset)"
+                        <MessageSquareText
+                            class="size-5 shrink-0 text-primary"
+                            aria-hidden="true"
+                        />
+                        <p class="min-w-0 flex-1">
+                            Si el cliente escribe ciertas palabras, el bot le
+                            contesta al momento y avisa al agente.
+                            <span class="text-muted-foreground"
+                                >Ej.: escribe «precio» → «Nuestros precios están
+                                en…».</span
+                            >
+                        </p>
+                    </div>
+
+                    <EmptyState
+                        v-if="rules.length === 0"
+                        :icon="Bot"
+                        title="Aún no hay palabras clave"
+                        description="Crea la primera: por ejemplo, que el bot conteste el horario cuando alguien escriba «horario» o «a qué hora abren»."
+                    >
+                        <Button v-if="can.manage" @click="openCreate">
+                            <Plus />
+                            Crear la primera palabra clave
+                        </Button>
+                    </EmptyState>
+
+                    <template v-else>
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-3"
+                        >
+                            <Segmented
+                                v-model="ruleScope"
+                                :options="scopeOptions"
+                                size="sm"
+                                aria-label="Qué palabras clave mostrar"
                             />
-                        </li>
-                    </ul>
-                </template>
-            </TabsContent>
-        </Tabs>
+                            <p class="text-xs text-muted-foreground">
+                                Se revisan en orden: contesta la primera que
+                                coincide.
+                            </p>
+                        </div>
+
+                        <EmptyState
+                            v-if="shownRules.length === 0"
+                            :icon="MessageSquareText"
+                            :title="`Ninguna palabra clave aplica a ${selected?.name ?? 'este número'}`"
+                            description="Las que ya existen están limitadas a otros números."
+                        >
+                            <Button
+                                variant="outline"
+                                @click="ruleScope = 'all'"
+                            >
+                                Ver todas
+                            </Button>
+                            <Button v-if="can.manage" @click="openCreate">
+                                <Plus />
+                                Nueva palabra clave
+                            </Button>
+                        </EmptyState>
+
+                        <ul
+                            v-else
+                            class="auto-grid reveal-stagger [--col-min:20rem]"
+                            role="list"
+                        >
+                            <li
+                                v-for="(rule, index) in shownRules"
+                                :key="rule.id"
+                            >
+                                <KeywordRuleCard
+                                    :rule="rule"
+                                    :position="rules.indexOf(rule)"
+                                    :can-move-up="index > 0"
+                                    :can-move-down="
+                                        index < shownRules.length - 1
+                                    "
+                                    :connection-names="
+                                        names(
+                                            rule.connection_ids,
+                                            connectionNames,
+                                        )
+                                    "
+                                    :department-names="
+                                        names(
+                                            rule.department_ids,
+                                            departmentNames,
+                                        )
+                                    "
+                                    :activity-days="activityDays"
+                                    :can-manage="can.manage"
+                                    :busy="busyId === rule.id"
+                                    @toggle="(value) => toggle(rule, value)"
+                                    @edit="openEdit(rule)"
+                                    @remove="askRemove(rule)"
+                                    @move="(offset) => move(rule, offset)"
+                                />
+                            </li>
+                        </ul>
+                    </template>
+                </TabsContent>
+            </Tabs>
+        </template>
     </div>
 
     <KeywordRuleDialog

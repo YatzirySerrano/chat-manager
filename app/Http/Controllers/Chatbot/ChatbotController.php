@@ -6,6 +6,7 @@ use App\Actions\Chatbot\ManageChatbotKeywordRules;
 use App\Actions\Chatbot\SaveChatbotKeywordRule;
 use App\Actions\Chatbot\SaveChatbotMenu;
 use App\Enums\ChatbotSessionStatus;
+use App\Enums\ConnectionHealth;
 use App\Enums\ConnectionProvider;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ConnectionRequest;
@@ -21,6 +22,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Automation\AutomaticMessageKind;
 use App\Services\Chatbot\ChatbotText;
+use App\Support\PhoneNumber;
 use App\Support\SaveToast;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -49,7 +51,7 @@ class ChatbotController extends Controller
 
         $connections = Connection::query()
             ->notDeleted()
-            ->with(['departments:id'])
+            ->with(['departments:id', 'webChatWidget'])
             ->orderBy('name')
             ->orderBy('id')
             ->get();
@@ -93,7 +95,15 @@ class ChatbotController extends Controller
                     'channel' => ['value' => $connection->channel->value, 'label' => $connection->channel->label()],
                     'is_whatsapp_web' => $connection->provider === ConnectionProvider::WhatsappWeb,
                     'is_active' => $connection->is_active,
-                    'phone' => $connection->display_phone_number ?? $connection->web_session_phone,
+                    'phone' => $connection->display_phone_number ?? ($connection->web_session_phone === null ? null : PhoneNumber::format(PhoneNumber::normalize('+'.$connection->web_session_phone) ?? '+'.$connection->web_session_phone)),
+                    'status' => $this->status($connection),
+                    // Lifecycle messages live in the connection form («Mensajes
+                    // automáticos»); the page only links to them.
+                    'automatic_messages' => [
+                        'welcome' => $connection->welcome_enabled && filled($connection->welcome_message),
+                        'away' => $connection->away_enabled && filled($connection->away_message),
+                        'farewell' => $connection->farewell_enabled && filled($connection->farewell_message),
+                    ],
                     'department_ids' => $connection->departments->modelKeys(),
                     'menu' => [
                         'is_enabled' => $menu->is_enabled ?? false,
@@ -112,7 +122,10 @@ class ChatbotController extends Controller
                         'fallback' => $count(ChatbotSessionStatus::Fallback),
                         'awaiting' => $count(ChatbotSessionStatus::Awaiting),
                     ],
-                    'can' => ['update' => Gate::allows('configureChatbot', $connection)],
+                    'can' => [
+                        'update' => Gate::allows('configureChatbot', $connection),
+                        'view' => Gate::allows('view', $connection),
+                    ],
                 ];
             })->values()->all(),
             'departments' => Department::query()
@@ -160,6 +173,37 @@ class ChatbotController extends Controller
                 'manage' => $actor->can('create', ChatbotKeywordRule::class),
             ],
         ]);
+    }
+
+    /**
+     * State of the connection as the picker shows it: the real session of a
+     * QR phone while it is active, the derived health otherwise.
+     *
+     * @return array{value: string, label: string, description: string, tone: string}
+     */
+    private function status(Connection $connection): array
+    {
+        $health = $connection->health();
+        $state = $connection->webSessionState();
+
+        if ($state !== null && $health !== ConnectionHealth::Inactive) {
+            return [
+                'value' => $health->value,
+                'label' => $state->label(),
+                'description' => $state->description(),
+                'tone' => match ($state->tone()) {
+                    'info' => 'primary',
+                    default => $state->tone(),
+                },
+            ];
+        }
+
+        return [
+            'value' => $health->value,
+            'label' => $health->label(),
+            'description' => $health->description(),
+            'tone' => $health->tone(),
+        ];
     }
 
     public function updateMenu(ChatbotMenuRequest $request, Connection $connection, SaveChatbotMenu $saveMenu): RedirectResponse

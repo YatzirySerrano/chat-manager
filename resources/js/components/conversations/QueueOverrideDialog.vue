@@ -24,6 +24,7 @@ import {
 } from '@/lib/conversations/actionErrors';
 import { accept } from '@/routes/conversations';
 import type { ConversationSummary } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Justified exception to the queue rules (only for holders of
@@ -125,7 +126,10 @@ function submit(): void {
 <template>
     <Dialog v-model:open="open">
         <DialogContent
-            class="max-h-[90dvh] overflow-y-auto sm:max-w-md"
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-md',
+                PHONE_SHEET_DIALOG,
+            ]"
             data-queue-override-dialog
         >
             <form class="grid gap-4" novalidate @submit.prevent="submit">

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { store as storeDirect } from '@/routes/team-chat/direct';
 import type { TeamContact } from '@/types/team-chat';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Choose a person to open (or start) the private chat with them. There is a
@@ -43,7 +44,7 @@ function pick(contact: TeamContact): void {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-md">
+        <DialogContent :class="['sm:max-w-md', PHONE_SHEET_DIALOG]">
             <DialogHeader>
                 <DialogTitle>Nuevo chat privado</DialogTitle>
                 <DialogDescription>

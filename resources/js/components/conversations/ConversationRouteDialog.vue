@@ -27,6 +27,7 @@ import type {
     TransferAgentOption,
     TransferOptions,
 } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Assigns the conversation to an agent of its department, or transfers it to
@@ -271,7 +272,12 @@ function agentLabel(agent: TransferAgentOption): string {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogContent
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-lg',
+                PHONE_SHEET_DIALOG,
+            ]"
+        >
             <form class="grid gap-4" novalidate @submit.prevent="submit">
                 <DialogHeader>
                     <DialogTitle>

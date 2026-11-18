@@ -130,4 +130,4 @@ export const COMPOSER_CARD = 'chat-composer mx-auto max-w-[60rem] rounded-xl';
 
 /** A round icon tool of the composer toolbar. */
 export const COMPOSER_TOOL =
-    'size-8 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-10';
+    'size-8 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-11';

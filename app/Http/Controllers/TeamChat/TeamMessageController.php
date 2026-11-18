@@ -13,6 +13,7 @@ use App\Http\Requests\TeamChat\UpdateTeamMessageRequest;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\Personalization\ComposerDrafts;
 use App\Services\TeamChat\TeamChatPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -69,11 +70,12 @@ class TeamMessageController extends Controller
         ]);
     }
 
-    public function store(StoreTeamMessageRequest $request, TeamThread $thread, PostTeamMessage $postTeamMessage): JsonResponse
+    public function store(StoreTeamMessageRequest $request, TeamThread $thread, PostTeamMessage $postTeamMessage, ComposerDrafts $drafts): JsonResponse
     {
         /** @var User $author */
         $author = $request->user();
         $message = $postTeamMessage->handle($thread, $author, $request->body(), $request->replyToMessageId(), $request->attachments(), $request->mentions(), $request->clientReference());
+        $drafts->forget($author, $thread, ComposerDrafts::MODE_MESSAGE);
 
         // A retry of a message already stored answers it as it is now (200).
         return response()->json(

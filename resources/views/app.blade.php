@@ -2,7 +2,9 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-palette="{{ $page['props']['platform']['palette'] ?? 'emerald' }}" @class(['dark' => ($appearance ?? 'system') == 'dark'])>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        {{-- interactive-widget: on Android the on-screen keyboard shrinks the page, so a
+             docked message composer stays visible right above it. --}}
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
         <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)">
         <meta name="theme-color" content="#0a0e12" media="(prefers-color-scheme: dark)">
         <meta name="application-name" content="Chat Manager">

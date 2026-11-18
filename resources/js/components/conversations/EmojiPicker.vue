@@ -183,7 +183,7 @@ function choose(emoji: string): void {
                 type="button"
                 variant="ghost"
                 size="icon"
-                class="shrink-0 text-muted-foreground pointer-coarse:size-10"
+                class="shrink-0 text-muted-foreground pointer-coarse:size-11"
                 :disabled="disabled"
                 title="Insertar emoji"
                 aria-label="Insertar emoji"

@@ -79,7 +79,9 @@ export default {
             target: 'chat.details',
             title: 'Detalles del cliente',
             body: 'Consulta datos, etiquetas y otras conversaciones del cliente.',
-            when: chatOpen,
+            // On phones the button lives in «Más acciones» (and the name opens them).
+            when: () =>
+                document.querySelector('[data-tour="chat.details"]') !== null,
         },
     ],
 } satisfies TourSteps;

@@ -4,6 +4,7 @@ import { ArrowLeft, Palette, PanelRight, PanelRightClose } from '@lucide/vue';
 import {
     useDocumentVisibility,
     useElementSize,
+    useMediaQuery,
     watchDebounced,
 } from '@vueuse/core';
 import { computed, onScopeDispose, provide, ref, toRef, watch } from 'vue';
@@ -27,6 +28,7 @@ import { reportMessageStatus } from '@/components/conversations/useInboxMessageS
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ChatAppearanceDialog from '@/components/personalization/ChatAppearanceDialog.vue';
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useChannel } from '@/composables/useChannel';
 import { useInitials } from '@/composables/useInitials';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
@@ -344,6 +346,13 @@ const appearance = ref<ViewerChatAppearance | null>(
 );
 const appearanceOpen = ref(false);
 
+/*
+ * Phones: the header keeps the way back, the name (which opens the
+ * details), the main operation and «Más acciones»; the details and the
+ * chat colors move into that menu, so the name has room.
+ */
+const phoneLayout = useMediaQuery('(max-width: 639px)');
+
 watch(
     () => props.conversation.appearance,
     (value) => (appearance.value = value ?? null),
@@ -471,7 +480,7 @@ watch(conversationId, () => (dragDepth.value = 0));
                 <Button
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 lg:hidden pointer-coarse:size-10"
+                    class="shrink-0 lg:hidden pointer-coarse:size-11"
                     title="Volver a la lista"
                     aria-label="Volver a la lista de conversaciones"
                     @click="emit('back')"
@@ -634,12 +643,32 @@ watch(conversationId, () => (dragDepth.value = 0));
                     data-tour="chat.actions"
                     :conversation="conversation"
                     :transfer-reason-required="transferReasonRequired"
-                />
+                >
+                    <template v-if="phoneLayout" #menu-extra>
+                        <DropdownMenuItem
+                            class="pointer-coarse:min-h-11"
+                            data-chat-menu="details"
+                            @select="emit('toggleDetails')"
+                        >
+                            <PanelRight aria-hidden="true" />
+                            Detalles del cliente
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            v-if="appearance"
+                            class="pointer-coarse:min-h-11"
+                            data-chat-menu="appearance"
+                            @select="appearanceOpen = true"
+                        >
+                            <Palette aria-hidden="true" />
+                            Apariencia del chat
+                        </DropdownMenuItem>
+                    </template>
+                </ConversationActions>
                 <Button
-                    v-if="appearance"
+                    v-if="appearance && !phoneLayout"
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-10"
+                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-11"
                     title="Apariencia del chat"
                     aria-label="Cambiar los colores de tu chat"
                     @click="appearanceOpen = true"
@@ -647,9 +676,10 @@ watch(conversationId, () => (dragDepth.value = 0));
                     <Palette aria-hidden="true" />
                 </Button>
                 <Button
+                    v-if="!phoneLayout"
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 rounded-full text-muted-foreground aria-pressed:bg-primary-soft aria-pressed:text-primary-soft-foreground pointer-coarse:size-10"
+                    class="shrink-0 rounded-full text-muted-foreground aria-pressed:bg-primary-soft aria-pressed:text-primary-soft-foreground pointer-coarse:size-11"
                     :title="
                         detailsOpen ? 'Ocultar detalles' : 'Mostrar detalles'
                     "

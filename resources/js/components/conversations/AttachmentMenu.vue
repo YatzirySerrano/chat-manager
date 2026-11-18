@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { FileText, Image, Mic, Paperclip, Video } from '@lucide/vue';
+import { Camera, FileText, Image, Mic, Paperclip, Video } from '@lucide/vue';
+import { useMediaQuery } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -63,7 +64,19 @@ const accept = computed(() => {
     return option ? option.accept : acceptFor(props.rules?.kinds ?? []);
 });
 
-function pick(category: AttachmentCategory): void {
+/*
+ * Phones and tablets: «Tomar foto» opens the camera directly (the photo is
+ * checked and sent like any image). «Imagen» still opens the gallery, where
+ * the system also offers the camera.
+ */
+const touchScreen = useMediaQuery('(pointer: coarse)');
+const cameraOption = computed(() =>
+    touchScreen.value
+        ? (options.value.find((option) => option.category === 'image') ?? null)
+        : null,
+);
+
+function pick(category: AttachmentCategory, camera = false): void {
     const input = fileInput.value;
 
     if (!input) {
@@ -76,6 +89,13 @@ function pick(category: AttachmentCategory): void {
         (candidate) => candidate.category === category,
     );
     input.accept = option?.accept ?? '';
+
+    if (camera) {
+        input.setAttribute('capture', 'environment');
+    } else {
+        input.removeAttribute('capture');
+    }
+
     input.click();
 }
 
@@ -172,6 +192,26 @@ function changed(): void {
                 >
                     Adjuntar por {{ channelLabel }}
                 </DropdownMenuLabel>
+                <DropdownMenuItem
+                    v-if="cameraOption"
+                    class="items-start gap-3 py-2 pointer-coarse:min-h-12"
+                    data-category="camera"
+                    @select="pick('image', true)"
+                >
+                    <span
+                        class="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+                        aria-hidden="true"
+                    >
+                        <Camera class="size-4 text-primary" />
+                    </span>
+                    <span class="grid min-w-0 gap-0.5">
+                        <span class="font-medium">Tomar foto</span>
+                        <span
+                            class="text-xs wrap-anywhere text-muted-foreground"
+                            >Abre la cámara del teléfono</span
+                        >
+                    </span>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                     v-for="option in options"
                     :key="option.category"

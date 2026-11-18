@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
 import { Paperclip, Smile } from '@lucide/vue';
-import { useDebounceFn } from '@vueuse/core';
+import { useDebounceFn, useMediaQuery } from '@vueuse/core';
 import {
     computed,
     defineAsyncComponent,
@@ -37,11 +37,13 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import { useComposerDrafts } from '@/composables/useComposerDrafts';
 import { useUploadProgress } from '@/composables/useUploadProgress';
 import { formatFileSize } from '@/lib/format';
 import { UPLOAD_CODE_FIELD } from '@/lib/uploads';
 import { cn } from '@/lib/utils';
 import { typing as announceTyping } from '@/routes/team-chat/threads';
+import { show as draftRoute } from '@/routes/team-chat/threads/draft';
 import { store as storeMessage } from '@/routes/team-chat/threads/messages';
 import type {
     TeamChatLimits,
@@ -81,7 +83,12 @@ const TeamEmojiPicker = defineAsyncComponent(
  * did store is answered back instead of being stored and notified twice.
  *
  * The text being written is remembered per chat for this browser tab
- * (sessionStorage), so changing chats does not lose it. Files are not.
+ * (sessionStorage), so changing chats does not lose it, and on the server
+ * (useComposerDrafts), so it follows the person from the phone to the
+ * computer. Files are not.
+ *
+ * On a phone (touch screen) the keyboard's Enter adds a line break, as in
+ * WhatsApp; the send button sends.
  */
 const props = defineProps<{
     threadId: number;
@@ -133,13 +140,20 @@ let lastTypingAt = 0;
 /* ------------------------------------------------------- remembered text */
 
 const draftKey = computed(() => `team-chat.draft.${props.threadId}`);
+/* When the text was last remembered here, to compare with the server's copy. */
+const draftTimeKey = computed(() => `${draftKey.value}.at`);
 
 function rememberDraft(): void {
     try {
         if (http.body.trim() === '') {
             window.sessionStorage.removeItem(draftKey.value);
+            window.sessionStorage.removeItem(draftTimeKey.value);
         } else {
             window.sessionStorage.setItem(draftKey.value, http.body);
+            window.sessionStorage.setItem(
+                draftTimeKey.value,
+                String(Date.now()),
+            );
         }
     } catch {
         // Storage may be unavailable (private mode): the text is not remembered.
@@ -147,6 +161,26 @@ function rememberDraft(): void {
 }
 
 const rememberDraftSoon = useDebounceFn(rememberDraft, 400);
+
+/*
+ * The same text on the server: `known` is the text last loaded or saved,
+ * so only real changes are saved and a saved copy never replaces what was
+ * already typed here.
+ */
+const serverDrafts = useComposerDrafts(() => draftRoute.url(props.threadId));
+let known = '';
+
+watch(
+    () => http.body,
+    (value) => {
+        if (value !== known) {
+            known = value;
+            serverDrafts.save('message', value);
+        }
+    },
+);
+
+const phoneKeyboard = useMediaQuery('(pointer: coarse) and (max-width: 639px)');
 
 /*
  * The idempotency key of the next send. It is kept only while the same
@@ -391,7 +425,12 @@ function onKeydown(event: KeyboardEvent): void {
         }
     }
 
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        !event.isComposing &&
+        !phoneKeyboard.value
+    ) {
         event.preventDefault();
         void send();
     } else if (event.key === 'Escape' && props.replyTo) {
@@ -625,6 +664,8 @@ async function send(): Promise<void> {
         }
 
         renewReference();
+        known = '';
+        serverDrafts.sent('message');
 
         // A successful request makes the sent values the form defaults, so
         // reset() would bring the sent text back: empty the composer instead.
@@ -658,16 +699,39 @@ async function send(): Promise<void> {
 }
 
 onMounted(async () => {
+    let rememberedAt = 0;
+
     try {
         const remembered = window.sessionStorage.getItem(draftKey.value);
+        rememberedAt = Number(
+            window.sessionStorage.getItem(draftTimeKey.value) ?? 0,
+        );
 
         if (remembered && http.body === '') {
-            http.body = remembered.slice(0, props.limits.messageMaxLength);
+            known = remembered.slice(0, props.limits.messageMaxLength);
+            http.body = known;
             await nextTick();
             resize();
         }
     } catch {
         // Storage may be unavailable: start empty.
+    }
+
+    // Started or changed on another device (or in another tab): taken while
+    // nothing new was typed here since this chat opened.
+    const before = http.body;
+    const saved = (await serverDrafts.load()).message;
+
+    if (
+        saved !== undefined &&
+        http.body === before &&
+        (before === '' || saved.savedAt > rememberedAt)
+    ) {
+        known = saved.body.slice(0, props.limits.messageMaxLength);
+        http.body = known;
+        rememberDraft();
+        await nextTick();
+        resize();
     }
 });
 
@@ -683,7 +747,12 @@ defineExpose({ focus, addFiles });
 </script>
 
 <template>
-    <div :class="COMPOSER_DOCK" data-tour="team-chat.composer" data-safe-bottom>
+    <div
+        :class="COMPOSER_DOCK"
+        data-tour="team-chat.composer"
+        data-safe-bottom
+        data-composer-dock
+    >
         <!-- One floating card: the quote, the files and the text with its tools. -->
         <div :class="COMPOSER_CARD" data-composer-surface>
             <Transition name="chat-attach">
@@ -825,6 +894,7 @@ defineExpose({ focus, addFiles });
                         ref="textarea"
                         v-model="http.body"
                         rows="1"
+                        :enterkeyhint="phoneKeyboard ? 'enter' : 'send'"
                         class="max-h-[200px] min-h-10 flex-1 resize-none rounded-lg border-0 bg-transparent px-2 py-2.5 text-base leading-snug outline-none placeholder:text-muted-foreground md:text-sm md:leading-5"
                         placeholder="Escribe un mensaje interno…"
                         :aria-invalid="errors.length > 0"

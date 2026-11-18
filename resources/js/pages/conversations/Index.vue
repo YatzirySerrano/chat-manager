@@ -46,6 +46,7 @@ import {
     SheetDescription,
     SheetTitle,
 } from '@/components/ui/sheet';
+import { useChatViewport } from '@/composables/useChatViewport';
 import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
@@ -238,6 +239,15 @@ function currentQuery(): ListQuery {
     return inboxList.value?.query() ?? listQuery.value;
 }
 
+/*
+ * Phones: opening a chat from the list adds one history entry on top of the
+ * list's, so the system back (Android gesture, iOS swipe, the browser's
+ * button) returns to the list, and so does the arrow of the chat header
+ * (it goes back through that same entry). Moving from one chat to another
+ * replaces the entry, so back never walks through every chat that was open.
+ */
+let chatEntryOnList = false;
+
 function select(id: number | null): void {
     if (id === props.selectedId && id !== null) {
         mobilePane.value = 'chat';
@@ -245,9 +255,17 @@ function select(id: number | null): void {
         return;
     }
 
+    const phoneLayout = !wide.value;
+    const replace = phoneLayout && (id === null || mobilePane.value === 'chat');
+
+    if (phoneLayout) {
+        chatEntryOnList = id !== null && (chatEntryOnList || !replace);
+    }
+
     router.get(url(id, currentQuery()), undefined, {
         preserveState: true,
         preserveScroll: true,
+        replace,
         only: SELECTION_PROPS,
         onStart: () => (loadingSelection.value = true),
         onFinish: () => (loadingSelection.value = false),
@@ -679,6 +697,9 @@ async function markReadFromList(id: number): Promise<void> {
 /* Layout: three panels on wide screens, list ↔ chat on small ones. */
 const wide = useMediaQuery('(min-width: 1024px)');
 
+/* Phones: the page follows the visible area (on-screen keyboard) and never bounces. */
+useChatViewport();
+
 // No PageHeader here: the global help button offers this module's tour
 // and guide.
 onBeforeUnmount(useGuidedTour().registerPageModule('conversaciones'));
@@ -690,9 +711,32 @@ watch(
     (id) => {
         if (id === null) {
             mobilePane.value = 'list';
+        } else if (!wide.value && mobilePane.value === 'list') {
+            // History forward (or a restored entry) brought a chat back.
+            mobilePane.value = 'chat';
         }
     },
 );
+
+/* The arrow of the chat header: back to the list. */
+function backToList(): void {
+    if (chatEntryOnList && !wide.value) {
+        chatEntryOnList = false;
+        globalThis.history.back();
+
+        return;
+    }
+
+    select(null);
+}
+
+/* The system back already left the chat entry. */
+function onPopState(): void {
+    chatEntryOnList = false;
+}
+
+globalThis.addEventListener?.('popstate', onPopState);
+onScopeDispose(() => globalThis.removeEventListener?.('popstate', onPopState));
 
 const detailsKey = computed(
     () => `chat-manager:inbox-details:${page.props.auth?.user?.id ?? 0}`,
@@ -772,7 +816,7 @@ function onAliasSaved(): void {
     <Head :title="title" />
 
     <div
-        class="grid h-[calc(100dvh-3.5rem)] min-h-0 grid-cols-1 overflow-hidden sm:h-[calc(100dvh-4rem)] [@media(max-height:32rem)]:h-[calc(100dvh-3rem)]!"
+        class="grid h-[calc(var(--app-height,100dvh)-3.5rem)] min-h-0 grid-cols-1 overflow-hidden sm:h-[calc(var(--app-height,100dvh)-4rem)] [@media(max-height:32rem)]:h-[calc(var(--app-height,100dvh)-3rem)]!"
         :data-pane="showChat && !wide ? 'chat' : 'list'"
         :class="
             showDetailsColumn
@@ -845,7 +889,7 @@ function onAliasSaved(): void {
                     loadingSelection &&
                     'opacity-80 transition-opacity duration-(--duration-fast)'
                 "
-                @back="select(null)"
+                @back="backToList"
                 @read="onRead"
                 @toggle-details="toggleDetails"
             />

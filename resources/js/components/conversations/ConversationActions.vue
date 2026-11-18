@@ -488,7 +488,11 @@ const secondary = computed<Action[]>(() => {
 
 <template>
     <div
-        v-if="primary.length + secondary.length > 0 || completeAsButton"
+        v-if="
+            primary.length + secondary.length > 0 ||
+            completeAsButton ||
+            $slots['menu-extra']
+        "
         class="flex shrink-0 items-center gap-1.5"
         role="group"
         aria-label="Operaciones de la conversación"
@@ -497,7 +501,7 @@ const secondary = computed<Action[]>(() => {
             v-for="action in primary"
             :key="action.key"
             size="sm"
-            class="h-9 rounded-full px-3.5 pointer-coarse:h-10"
+            class="h-9 rounded-full px-3.5 pointer-coarse:h-11"
             :disabled="processing || action.disabled"
             :aria-describedby="action.describedBy"
             :data-conversation-action="action.key"
@@ -514,7 +518,7 @@ const secondary = computed<Action[]>(() => {
         <button
             v-if="completeAsButton"
             type="button"
-            class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:px-3.5 pointer-coarse:h-10"
+            class="group/complete inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-success/35 bg-success-soft px-2.5 text-sm font-semibold text-success-soft-foreground shadow-(--shadow-control) transition-[background-color,border-color,box-shadow,scale] duration-(--duration-base) ease-(--ease-spring) outline-none hover:border-success/60 hover:shadow-(--shadow-lift) focus-visible:ring-[3px] focus-visible:ring-success/35 active:not-disabled:scale-95 disabled:pointer-events-none disabled:opacity-50 sm:px-3.5 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
             :disabled="processing"
             aria-label="Solicitud completada"
             title="Cerrar la conversación como solicitud completada"
@@ -527,12 +531,16 @@ const secondary = computed<Action[]>(() => {
             />
             <span class="hidden sm:inline"> Solicitud completada </span>
         </button>
-        <DropdownMenu v-if="secondary.length > 0">
+        <!--
+            «menu-extra»: chat controls the header moves into this menu on
+            phones (details, colors), after the conversation's operations.
+        -->
+        <DropdownMenu v-if="secondary.length > 0 || $slots['menu-extra']">
             <DropdownMenuTrigger as-child>
                 <Button
                     variant="outline"
                     size="icon"
-                    class="rounded-full pointer-coarse:size-10"
+                    class="rounded-full pointer-coarse:size-11"
                     :disabled="processing"
                     title="Más acciones"
                     aria-label="Más acciones de la conversación"
@@ -574,6 +582,10 @@ const secondary = computed<Action[]>(() => {
                         <component :is="action.icon" aria-hidden="true" />
                         {{ action.label }}
                     </DropdownMenuItem>
+                </template>
+                <template v-if="$slots['menu-extra']">
+                    <DropdownMenuSeparator v-if="secondary.length > 0" />
+                    <slot name="menu-extra" />
                 </template>
             </DropdownMenuContent>
         </DropdownMenu>

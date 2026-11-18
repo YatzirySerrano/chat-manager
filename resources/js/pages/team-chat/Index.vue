@@ -18,7 +18,14 @@ import {
     UsersRound,
 } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    onBeforeUnmount,
+    onMounted,
+    onScopeDispose,
+    ref,
+    watch,
+} from 'vue';
 import ChatPaneEmpty from '@/components/chat/ChatPaneEmpty.vue';
 import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
 import FilterSearch from '@/components/filters/FilterSearch.vue';
@@ -45,6 +52,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useChatViewport } from '@/composables/useChatViewport';
 import { useGuidedTour } from '@/composables/useGuidedTour';
 import { useLiveReload } from '@/composables/useLiveReload';
 import { userChannelName } from '@/composables/useUserChannel';
@@ -94,6 +102,35 @@ const props = defineProps<{
     /** Requests waiting, for the auditor's «Mesa de control» badge. */
     deskPending?: number | null;
 }>();
+
+/* Phones: the page follows the visible area (on-screen keyboard) and never bounces. */
+useChatViewport();
+
+/*
+ * Phones: a chat opened from the list sits on top of the list's history
+ * entry, so the chat's arrow goes back through history, exactly like the
+ * system back gesture (Android, iOS swipe), instead of stacking the list
+ * again. A chat reached by history, a link or a reload keeps the link.
+ */
+const threadEntryOnList = ref(false);
+let poppedState = false;
+
+function onPopState(): void {
+    poppedState = true;
+    threadEntryOnList.value = false;
+}
+
+globalThis.addEventListener?.('popstate', onPopState);
+onScopeDispose(() => globalThis.removeEventListener?.('popstate', onPopState));
+
+watch(
+    () => props.activeThread?.id ?? null,
+    (id, previous) => {
+        threadEntryOnList.value =
+            id !== null && previous === null && !poppedState;
+        poppedState = false;
+    },
+);
 
 /*
  * «Mesa de control». A requester's chat is a single contact, her desk
@@ -792,7 +829,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
     />
 
     <div
-        class="flex h-[calc(100dvh-3.5rem)] min-h-0 sm:h-[calc(100dvh-4rem)] [@media(max-height:32rem)]:h-[calc(100dvh-3rem)]!"
+        class="flex h-[calc(var(--app-height,100dvh)-3.5rem)] min-h-0 sm:h-[calc(var(--app-height,100dvh)-4rem)] [@media(max-height:32rem)]:h-[calc(var(--app-height,100dvh)-3rem)]!"
     >
         <aside
             :class="
@@ -976,7 +1013,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
             </div>
 
             <div
-                class="relative min-h-0 flex-1 overflow-y-auto p-1.5"
+                class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
                 :aria-busy="loadingList"
                 @scroll.passive="onListScroll"
             >
@@ -1259,6 +1296,7 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     :around="around"
                     :limits="limits"
                     :back-query="backQuery"
+                    :back-by-history="threadEntryOnList"
                     @open-settings="settingsOpen = true"
                     @unread-changed="onUnreadChanged"
                 >

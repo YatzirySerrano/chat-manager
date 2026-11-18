@@ -13,6 +13,22 @@
     "theme_color": "#f5f7f9",
     "categories": ["business", "productivity"],
     "prefer_related_applications": false,
+    "shortcuts": [
+        {
+            "name": "Conversaciones",
+            "short_name": "Conversaciones",
+            "description": "Atender a los clientes desde la bandeja",
+            "url": "/conversations",
+            "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+        },
+        {
+            "name": "Chat interno",
+            "short_name": "Chat interno",
+            "description": "Escribir al equipo",
+            "url": "/team-chat",
+            "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+        }
+    ],
     "icons": [
         {
             "src": "/icons/icon-192.png",

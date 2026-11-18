@@ -34,7 +34,7 @@ defineEmits<{ cancel: [] }>();
         </div>
         <button
             type="button"
-            class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-[color,background-color,scale] duration-(--duration-fast) outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-10"
+            class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-[color,background-color,scale] duration-(--duration-fast) outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors pointer-coarse:size-11"
             :aria-label="cancelLabel ?? 'Quitar la cita'"
             :title="cancelLabel ?? 'Quitar la cita'"
             @click="$emit('cancel')"

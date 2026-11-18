@@ -408,6 +408,8 @@ export type ConversationMessage = {
         source: string;
         sender_name: string | null;
         from_me: boolean;
+        /** A Whaticket operation line («Jennifer resuelto la conversación»). */
+        event?: { actor: string; action: string } | null;
     } | null;
     /** Sent by the explicitly labelled simulated transport (development). */
     simulated: boolean;
@@ -489,6 +491,8 @@ export type ConversationEvent = {
     id: number;
     type: string;
     label: string;
+    /** What the actor did («cerró la conversación»), read after their name. */
+    action?: string | null;
     actor: string | null;
     from_user: string | null;
     to_user: string | null;

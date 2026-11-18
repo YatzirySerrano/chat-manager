@@ -39,6 +39,7 @@ import { platformTimezone } from '@/lib/format';
 import { retry as retryRoute } from '@/routes/conversations/messages';
 import { revokeLink as revokeLinkRoute } from '@/routes/conversations/messages/attachments';
 import type {
+    ConversationEvent,
     ConversationMessage,
     ConversationSummary,
     MessageAttachment,
@@ -155,7 +156,29 @@ function authorKey(message: ConversationMessage): string {
         ? 'out:auto'
         : message.integration
           ? `out:api:${message.integration.name}`
-          : `out:${message.sender?.id ?? message.sender?.name ?? 'team'}`;
+          : `out:${message.sender?.id ?? message.sender?.name ?? message.imported?.sender_name ?? 'team'}`;
+}
+
+/** A Whaticket operation line drawn like an event of this system. */
+function importedEvent(message: ConversationMessage): ConversationEvent {
+    const event = message.imported?.event;
+
+    return {
+        id: message.id,
+        type: 'imported',
+        label: message.body ?? '',
+        action: event?.action ?? null,
+        actor: event?.actor ?? null,
+        from_user: null,
+        to_user: null,
+        from_department: null,
+        to_department: null,
+        note: null,
+        trigger: null,
+        message_id: message.id,
+        reason: null,
+        created_at: message.sent_at ?? message.created_at ?? '',
+    };
 }
 
 function sameGroup(
@@ -241,7 +264,9 @@ const gallery = computed<ViewerItem[]>(() =>
                           author:
                               message.direction === 'inbound'
                                   ? props.conversation.contact.display_name
-                                  : (message.sender?.name ?? 'Equipo'),
+                                  : (message.sender?.name ??
+                                    message.imported?.sender_name ??
+                                    'Equipo'),
                           at: message.sent_at ?? message.created_at,
                       },
                   ]
@@ -718,8 +743,17 @@ defineExpose({ scrollToBottom });
                         } in group.rows"
                         :key="item.key"
                     >
+                        <!-- A Whaticket operation line: who did what, as an event. -->
+                        <TimelineEvent
+                            v-if="
+                                item.kind === 'message' &&
+                                item.message.imported?.event
+                            "
+                            class="mt-2.5"
+                            :event="importedEvent(item.message)"
+                        />
                         <MessageBubble
-                            v-if="item.kind === 'message'"
+                            v-else-if="item.kind === 'message'"
                             :message="item.message"
                             :contact-name="conversation.contact.display_name"
                             :channel-label="

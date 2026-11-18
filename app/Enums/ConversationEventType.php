@@ -52,4 +52,31 @@ enum ConversationEventType: string
             self::SlaBreached => 'Objetivo de respuesta incumplido',
         };
     }
+
+    /**
+     * What the person did, to read after their name in the timeline:
+     * «Jennifer cerró la conversación». Null when nobody acts (the system,
+     * a missed deadline): then the label is shown alone.
+     */
+    public function action(): ?string
+    {
+        return match ($this) {
+            self::Created => 'creó la conversación',
+            self::Accepted => 'aceptó la conversación',
+            self::Assigned => 'asignó la conversación',
+            self::Unassigned => 'devolvió la conversación a Pendientes',
+            self::Transferred => 'transfirió la conversación',
+            self::PutOnHold => 'puso la conversación en espera',
+            self::Resumed => 'retomó la atención',
+            self::Closed => 'cerró la conversación',
+            self::Reopened => 'reabrió la conversación',
+            self::NoteAdded => 'agregó una nota interna',
+            self::NoteEdited => 'editó una nota interna',
+            self::MessageRetried => 'pidió reintentar el envío',
+            self::ReadinessConfirmed => 'confirmó la solicitud como completa',
+            self::ReadinessReverted => 'marcó la solicitud como «Necesita información»',
+            self::CategoryChanged => 'cambió la categoría',
+            self::AutoAssigned, self::OutboundBlocked, self::MessageFailed, self::SlaBreached => null,
+        };
+    }
 }

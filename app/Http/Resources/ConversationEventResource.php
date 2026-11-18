@@ -22,6 +22,8 @@ class ConversationEventResource extends JsonResource
         return [
             'id' => $this->id,
             'type' => $this->type->value,
+            // «cerró la conversación»: read after the actor's name.
+            'action' => $this->type->action(),
             'label' => $this->type->label(),
             'actor' => $protected->nameForRequest($this->actor, $request),
             'from_user' => $protected->nameForRequest($this->fromUser, $request),

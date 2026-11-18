@@ -457,8 +457,10 @@ const author = computed(() => {
         return `Integración: ${props.message.integration.name}`;
     }
 
+    // Imported from Whaticket: the agent who signed it.
     return (
         props.message.sender?.name ??
+        props.message.imported?.sender_name ??
         (props.message.sent_from_phone ? 'Desde el teléfono' : 'Equipo')
     );
 });

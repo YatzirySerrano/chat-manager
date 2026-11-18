@@ -25,10 +25,9 @@ const triggers: Record<string, string> = {
 };
 
 /* An unconfirmed delivery is not a "message not sent": it may have arrived. */
+const deliveryUnknown = computed(() => props.event.reason === DELIVERY_UNKNOWN);
 const label = computed(() =>
-    props.event.reason === DELIVERY_UNKNOWN
-        ? deliveryUnknownLabel
-        : props.event.label,
+    deliveryUnknown.value ? deliveryUnknownLabel : props.event.label,
 );
 
 const detail = computed(() => {
@@ -99,12 +98,30 @@ const detail = computed(() => {
             >
                 <History class="size-3" />
             </span>
-            <span class="font-medium text-foreground/80">{{ label }}</span>
+            <!-- Who did it first: «Jennifer cerró la conversación». -->
+            <span v-if="event.actor && event.action && !deliveryUnknown"
+                ><strong class="font-semibold text-foreground">{{
+                    event.actor
+                }}</strong>
+                <span class="text-foreground/80">
+                    {{ event.action }}</span
+                ></span
+            >
+            <span v-else class="font-medium text-foreground/80">{{
+                label
+            }}</span>
             <span v-if="detail">· {{ detail }}</span>
             <span v-if="event.note" class="min-w-0 wrap-anywhere"
                 >· «{{ event.note }}»</span
             >
-            <span>· {{ event.actor ?? 'Sistema' }}</span>
+            <span v-if="!(event.actor && event.action) || deliveryUnknown"
+                >·
+                <strong
+                    v-if="event.actor"
+                    class="font-semibold text-foreground"
+                    >{{ event.actor }}</strong
+                ><template v-else>Sistema</template></span
+            >
             <time
                 :datetime="event.created_at"
                 :title="formatDateTime(event.created_at)"

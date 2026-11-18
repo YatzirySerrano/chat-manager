@@ -14,6 +14,7 @@ use App\Policies\HistoryImportPolicy;
 use App\Services\Storage\MediaThumbnails;
 use App\Services\VideoExports\VideoExports;
 use App\Support\Attachments\AttachmentDownloadLink;
+use App\Support\ImportedWhaticketLine;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -87,12 +88,17 @@ class ConversationMessageResource extends JsonResource
     public function toArray(Request $request): array
     {
         $metadata = is_array($this->metadata) ? $this->metadata : [];
+        // Whaticket signs the agent inside the text («Jennifer:» + line
+        // break): shown as the author, not as part of the message.
+        $signature = is_array($metadata['import'] ?? null) && $this->direction === MessageDirection::Outbound
+            ? ImportedWhaticketLine::signature($this->body)
+            : null;
 
         return [
             'id' => $this->id,
             'direction' => $this->direction->value,
             'type' => $this->type->value,
-            'body' => $this->body,
+            'body' => $signature['body'] ?? $this->body,
             'status' => $this->status->value,
             'sender' => $this->whenLoaded('sender', fn (): ?array => $this->sender === null ? null : [
                 'id' => app(ProtectedAccounts::class)->idForRequest($this->sender, $request),
@@ -103,7 +109,7 @@ class ConversationMessageResource extends JsonResource
             'delivery_warning' => is_string($metadata['delivery_warning'] ?? null) ? $metadata['delivery_warning'] : null,
             'automatic' => ($metadata['automatic'] ?? false) === true,
             'integration' => $this->integration($metadata),
-            'imported' => $this->imported($metadata),
+            'imported' => $this->imported($metadata, $signature['name'] ?? null),
             'simulated' => ($metadata['simulated'] ?? false) === true || ($metadata['transport'] ?? null) === 'simulated',
             'template' => $this->template($metadata),
             'content' => $this->content($metadata),
@@ -430,9 +436,10 @@ class ConversationMessageResource extends JsonResource
 
     /**
      * @param  array<string, mixed>  $metadata
-     * @return array{source: string, sender_name: string|null, from_me: bool}|null
+     * @param  string|null  $signed  The agent who signed the text (Whaticket signature), if any.
+     * @return array{source: string, sender_name: string|null, from_me: bool, event: array{actor: string, action: string}|null}|null
      */
-    private function imported(array $metadata): ?array
+    private function imported(array $metadata, ?string $signed): ?array
     {
         $import = $metadata['import'] ?? null;
 
@@ -442,8 +449,12 @@ class ConversationMessageResource extends JsonResource
 
         return [
             'source' => is_string($import['source'] ?? null) ? $import['source'] : 'whaticket',
-            'sender_name' => is_string($import['sender_name'] ?? null) && $import['sender_name'] !== '' ? $import['sender_name'] : null,
+            // The signature names the agent who wrote it: it wins over the
+            // export's sender column, which may hold the connection.
+            'sender_name' => $signed ?? (is_string($import['sender_name'] ?? null) && $import['sender_name'] !== '' ? $import['sender_name'] : null),
             'from_me' => ($import['from_me'] ?? false) === true,
+            // «Jennifer resuelto la conversación»: an operation, shown as an event.
+            'event' => $signed === null ? ImportedWhaticketLine::event($this->body) : null,
         ];
     }
 }

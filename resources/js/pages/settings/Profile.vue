@@ -59,7 +59,7 @@ function submit(): void {
         <SettingsSection
             :icon="UserRound"
             title="Perfil"
-            description="Tu nombre es el que ven tus compañeros en las conversaciones y en el chat interno. El correo es con el que inicias sesión."
+            description="Tu nombre visible y el correo con el que entras."
         >
             <!-- How teammates see you, updated while you type. -->
             <div

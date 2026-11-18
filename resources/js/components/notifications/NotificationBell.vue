@@ -507,8 +507,8 @@ function onOpenChange(value: boolean): void {
                     >
                         {{
                             center.onlyUnread.value
-                                ? 'Ya leíste todo. Las nuevas asignaciones y mensajes aparecerán aquí.'
-                                : 'Aquí verás asignaciones, transferencias, mensajes nuevos y avisos importantes.'
+                                ? 'Ya leíste todo.'
+                                : 'Aquí verás asignaciones, mensajes y avisos.'
                         }}
                     </p>
                     <Button

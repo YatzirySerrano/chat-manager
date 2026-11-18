@@ -79,7 +79,7 @@ defineOptions({
         <SettingsSection
             :icon="KeyRound"
             title="Contraseña"
-            description="Usa una contraseña larga y que no repitas en otro sitio. Al cambiarla se cierran tus demás sesiones."
+            description="Al cambiarla se cierran tus demás sesiones."
         >
             <div class="field-grid [--col-min:20rem]">
                 <div class="col-span-full grid max-w-xl gap-2">

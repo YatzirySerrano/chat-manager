@@ -45,7 +45,7 @@ watch(() => page.url, update, { flush: 'post' });
                 Mi cuenta
             </h1>
             <p class="max-w-prose text-sm text-pretty text-muted-foreground">
-                Tus datos, tu acceso y la forma en que la plataforma te avisa.
+                Tus datos, tu acceso y tus avisos.
             </p>
         </header>
 

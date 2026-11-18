@@ -7,7 +7,7 @@ import {
     usePage,
     usePoll,
 } from '@inertiajs/vue3';
-import { ArrowRight } from '@lucide/vue';
+import { ChartColumn } from '@lucide/vue';
 import { computed, onUnmounted, ref } from 'vue';
 import BacklogChart from '@/components/charts/BacklogChart.vue';
 import ChannelChart from '@/components/charts/ChannelChart.vue';
@@ -412,14 +412,11 @@ const loadingCards = [
                 <Link
                     v-if="canViewReports"
                     :href="reportsIndex({ query: filters })"
-                    class="group/reports inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors"
+                    class="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors"
                     data-tour="dashboard.reports-link"
                 >
+                    <ChartColumn class="size-4" aria-hidden="true" />
                     Ver reportes
-                    <ArrowRight
-                        class="size-4 transition-transform duration-(--duration-base) group-hover/reports:translate-x-0.5"
-                        aria-hidden="true"
-                    />
                 </Link>
                 <span
                     v-if="canExport"

@@ -328,7 +328,7 @@ function roleDescription(role: ManagedRole): string {
                             <TableCell class="w-full max-w-0 py-3 pl-5">
                                 <div class="flex min-w-0 items-center gap-3">
                                     <span
-                                        class="flex size-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/row:scale-105"
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-lg"
                                         :class="
                                             role.is_deleted
                                                 ? 'bg-muted text-muted-foreground'

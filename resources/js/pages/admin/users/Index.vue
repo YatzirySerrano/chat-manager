@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vAutoAnimate } from '@formkit/auto-animate/vue';
 import { Head, router } from '@inertiajs/vue3';
 import {
     Pencil,
@@ -647,6 +648,7 @@ function actionsFor(user: AdminUser): RecordAction[] {
 
                 <RecordGrid
                     v-else-if="users.data.length > 0"
+                    v-auto-animate="{ duration: 220 }"
                     class="reveal-stagger"
                     :class="loading && 'admin-loading'"
                 >

@@ -133,10 +133,7 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
                         :data-provider="choice.provider"
                     >
                         <span class="channel-wash -z-10" aria-hidden="true" />
-                        <span
-                            class="channel-tile size-11 transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/choice:scale-105"
-                            aria-hidden="true"
-                        >
+                        <span class="channel-tile size-11" aria-hidden="true">
                             <QrCode
                                 v-if="choice.provider === WHATSAPP_WEB_PROVIDER"
                                 class="size-5"
@@ -165,7 +162,7 @@ function needsMetaApp(channel: ConnectionChannel): boolean {
                             </span>
                         </span>
                         <ChevronRight
-                            class="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-base) ease-(--ease-spring) group-hover/choice:translate-x-0.5 group-hover/choice:text-foreground"
+                            class="size-4 shrink-0 text-muted-foreground group-hover/choice:text-foreground"
                             aria-hidden="true"
                         />
                     </Link>

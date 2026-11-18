@@ -13,60 +13,67 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Queues the chat previews of images stored before previews were made in the
- * background (WarmMediaThumbnail), so old conversations open as fast as new
- * ones. Safe to run again: images that already have a preview are skipped.
+ * background (WarmMediaThumbnail), and the measuring of images whose size in
+ * pixels is not known yet, so old conversations and internal threads open as
+ * fast as new ones and without jumps. Safe to run again: images that already
+ * have a preview and a size are skipped.
  */
 class WarmMediaThumbnails extends Command
 {
     protected $signature = 'media:warm-thumbnails {--limit=0 : Como máximo esta cantidad de imágenes (0 = todas)}';
 
-    protected $description = 'Genera en segundo plano las miniaturas de las imágenes que aún no tienen';
+    protected $description = 'Genera en segundo plano las miniaturas y medidas de las imágenes que aún no tienen';
+
+    /** @var list<string> */
+    private const IMAGES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     public function handle(MediaThumbnails $thumbnails): int
     {
         $limit = max(0, (int) $this->option('limit'));
         $queued = 0;
 
-        $queue = function (string $disk, ?string $path, string $mime, ?int $size, ?string $table, ?int $id) use ($thumbnails, &$queued): bool {
-            if ($path === null || $path === '' || ! $thumbnails->supports($mime, $size)) {
-                return true;
+        $queue = function (string $disk, ?string $path, string $mime, ?int $size, string $table, int $id, bool $measured) use ($thumbnails, &$queued): void {
+            if ($path === null || $path === '') {
+                return;
             }
 
-            if (Storage::disk($disk)->exists(MediaPaths::thumbnailFor($path))) {
-                return true;
+            $needsPreview = $thumbnails->supports($mime, $size) && ! Storage::disk($disk)->exists(MediaPaths::thumbnailFor($path));
+
+            if (! $needsPreview && ($measured || ! WarmMediaThumbnail::worthIt($mime, $size, true))) {
+                return;
             }
 
             WarmMediaThumbnail::dispatch($disk, $path, $mime, $size, $table, $id);
             $queued++;
-
-            return true;
         };
 
         MessageAttachment::query()
             ->where('status', AttachmentStatus::Available)
-            ->whereIn('mime_type', ['image/jpeg', 'image/png'])
+            ->whereIn('mime_type', self::IMAGES)
             ->whereNotNull('path')
             ->orderByDesc('id')
             ->lazyById(500)
             ->each(function (MessageAttachment $attachment) use ($queue, $limit, &$queued): bool {
-                $queue((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, 'message_attachments', $attachment->id);
+                $queue((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, 'message_attachments', $attachment->id, $attachment->width !== null);
 
                 return $limit === 0 || $queued < $limit;
             });
 
-        TeamAttachment::query()
-            ->whereNull('purged_at')
-            ->whereIn('mime_type', ['image/jpeg', 'image/png'])
-            ->whereNotNull('path')
-            ->orderByDesc('id')
-            ->lazyById(500)
-            ->each(function (TeamAttachment $attachment) use ($queue, $limit, &$queued): bool {
-                $queue((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, null, null);
+        if ($limit === 0 || $queued < $limit) {
+            TeamAttachment::query()
+                ->whereNull('purged_at')
+                ->whereIn('mime_type', self::IMAGES)
+                ->whereNotNull('path')
+                ->orderByDesc('id')
+                ->lazyById(500)
+                ->each(function (TeamAttachment $attachment) use ($queue, $limit, &$queued): bool {
+                    $queue((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, 'team_attachments', $attachment->id, $attachment->width !== null);
 
-                return $limit === 0 || $queued < $limit;
-            });
+                    return $limit === 0 || $queued < $limit;
+                });
+        }
 
-        $this->info("Miniaturas en cola: {$queued}.");
+        $this->info("Imágenes en cola: {$queued}.");
 
         return self::SUCCESS;
     }

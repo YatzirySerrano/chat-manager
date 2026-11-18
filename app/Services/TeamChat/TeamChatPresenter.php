@@ -270,6 +270,9 @@ class TeamChatPresenter
             'thumb_url' => $attachment->isPreviewable() && $attachment->kind === TeamAttachmentKind::Image
                 ? route('team-chat.attachments.show', [...$parameters, 'thumb' => 1])
                 : null,
+            // Size of an image once measured: the bubble reserves its box before it loads.
+            'width' => $attachment->width,
+            'height' => $attachment->height,
             // Audio and video played in place, with byte ranges.
             'stream_url' => $attachment->isPlayable() ? route('team-chat.attachments.show', [...$parameters, 'inline' => 1]) : null,
             // «Guardar video» (videos.save-to-nas): null when the viewer may not save it.

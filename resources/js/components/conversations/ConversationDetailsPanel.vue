@@ -13,7 +13,7 @@ import {
     UserRound,
     X,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import SaveContactDialog from '@/components/contacts/SaveContactDialog.vue';
@@ -24,7 +24,6 @@ import ConversationStatusBadge from '@/components/conversations/ConversationStat
 import SlaBadge from '@/components/sla/SlaBadge.vue';
 import CustomerWindowIndicator from '@/components/conversations/CustomerWindowIndicator.vue';
 import CategoryBadge from '@/components/categories/CategoryBadge.vue';
-import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import ReadinessBadge from '@/components/conversations/ReadinessBadge.vue';
 import DepartmentTag from '@/components/DepartmentTag.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
@@ -47,6 +46,11 @@ import type {
     ConversationSummary,
     CustomerWindow,
 } from '@/types';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const MediaViewer = defineAsyncComponent(
+    () => import('@/components/conversations/MediaViewer.vue'),
+);
 
 /**
  * Right panel of the inbox: who the customer is, where they verifiably came

@@ -43,6 +43,8 @@ const hiddenImages = computed(() =>
 );
 
 const brokenImages = reactive(new Set<number>());
+/* A tile pulses softly until its picture has arrived. */
+const loadedImages = reactive(new Set<number>());
 
 function tileClass(index: number): string {
     const count = tiles.value.length;
@@ -144,7 +146,16 @@ const cardSurface = computed(() =>
                     :alt="tiles[0].name"
                     loading="lazy"
                     decoding="async"
-                    class="h-56 w-auto max-w-full min-w-36 bg-current/10 object-cover transition-[filter] duration-(--duration-fast) group-hover/image:brightness-95"
+                    :width="tiles[0].width ?? undefined"
+                    :height="tiles[0].height ?? undefined"
+                    :class="
+                        cn(
+                            'h-56 w-auto max-w-full min-w-36 bg-current/10 object-cover transition-[filter] duration-(--duration-fast) group-hover/image:brightness-95',
+                            !loadedImages.has(tiles[0].id) &&
+                                'motion-safe:animate-pulse',
+                        )
+                    "
+                    @load="loadedImages.add(tiles[0].id)"
                     @error="brokenImages.add(tiles[0].id)"
                 />
             </a>
@@ -163,6 +174,9 @@ const cardSurface = computed(() =>
                     cn(
                         'group/image relative block overflow-hidden bg-current/10 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
                         tileClass(index),
+                        !loadedImages.has(image.id) &&
+                            !brokenImages.has(image.id) &&
+                            'motion-safe:animate-pulse',
                     )
                 "
                 :title="image.name"
@@ -178,6 +192,7 @@ const cardSurface = computed(() =>
                     loading="lazy"
                     decoding="async"
                     class="size-full object-cover transition-[filter,scale] duration-(--duration-base) ease-(--ease-out-quint) group-hover/image:scale-[1.03] group-hover/image:brightness-95"
+                    @load="loadedImages.add(image.id)"
                     @error="brokenImages.add(image.id)"
                 />
                 <span

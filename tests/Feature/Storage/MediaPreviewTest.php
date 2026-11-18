@@ -2,6 +2,7 @@
 
 use App\Enums\MessageDirection;
 use App\Enums\MessageType;
+use App\Jobs\WarmMediaThumbnail;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
@@ -75,7 +76,7 @@ test('the bubble gets a small preview and the original stays untouched', functio
 
     expect($preview->headers->get('Content-Type'))->toBeIn(['image/webp', 'image/jpeg'])
         ->and($preview->headers->get('X-Content-Type-Options'))->toBe('nosniff')
-        ->and((string) $preview->headers->get('Cache-Control'))->toContain('private')->toContain('no-cache')
+        ->and((string) $preview->headers->get('Cache-Control'))->toContain('private')->toContain('max-age=604800')->not->toContain('public')
         ->and($size[0])->toBe(MediaThumbnails::EDGE)
         ->and($size[1])->toBe(427)
         ->and(strlen($bytes))->toBeLessThan((int) (strlen($original) / 4));
@@ -122,6 +123,33 @@ test('files that cannot or need not be reduced are served as they are', function
     expect(app(MediaThumbnails::class)->supports('image/gif', 10))->toBeFalse()
         ->and(app(MediaThumbnails::class)->supports('video/mp4', 10))->toBeFalse()
         ->and(app(MediaThumbnails::class)->supports('image/jpeg', 200 * 1024 * 1024))->toBeFalse();
+});
+
+test('images that get no preview are still measured in the background, from their header only', function () {
+    $gif = imagecreatetruecolor(48, 32);
+    ob_start();
+    imagegif($gif);
+    $gifBytes = (string) ob_get_clean();
+
+    $animated = previewAttachment($this->conversation, 'image/gif', 'animado.gif', $gifBytes);
+    $small = previewAttachment($this->conversation, 'image/jpeg', 'icono.jpg', photoBytes(40, 24));
+    $broken = previewAttachment($this->conversation, 'image/png', 'rota.png', 'not-a-png');
+    $video = previewAttachment($this->conversation, 'video/mp4', 'clip.mp4', 'mp4-bytes');
+
+    // Saving a stored image queues the job for any image whose row keeps a size; a video gets none.
+    Queue::assertPushed(WarmMediaThumbnail::class, fn (WarmMediaThumbnail $job): bool => $job->attachmentId === $animated->id && $job->dimensionsTable === 'message_attachments');
+    Queue::assertNotPushed(WarmMediaThumbnail::class, fn (WarmMediaThumbnail $job): bool => $job->attachmentId === $video->id);
+
+    foreach ([$animated, $small, $broken] as $attachment) {
+        (new WarmMediaThumbnail('local', $attachment->path, $attachment->mime_type, $attachment->size_bytes, 'message_attachments', $attachment->id))
+            ->handle(app(MediaThumbnails::class));
+    }
+
+    expect([$animated->fresh()->width, $animated->fresh()->height])->toBe([48, 32])
+        ->and([$small->fresh()->width, $small->fresh()->height])->toBe([40, 24])
+        ->and([$broken->fresh()->width, $broken->fresh()->height])->toBe([null, null])
+        // Measuring writes no preview next to anything.
+        ->and(Storage::disk('local')->allFiles())->toHaveCount(4);
 });
 
 test('discarding a file removes its preview too', function () {

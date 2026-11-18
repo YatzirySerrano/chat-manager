@@ -9,9 +9,8 @@ import {
     Play,
 } from '@lucide/vue';
 import { useIntersectionObserver } from '@vueuse/core';
-import { computed, inject, ref } from 'vue';
+import { computed, defineAsyncComponent, inject, ref } from 'vue';
 import AudioPlayer from '@/components/conversations/AudioPlayer.vue';
-import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import { CUSTOM_CHAT_COLORS } from '@/lib/chatAppearance';
 import {
     FILE_TONE_CLASSES,
@@ -25,6 +24,11 @@ import {
 import type { ViewerItem } from '@/lib/conversations/media';
 import { formatFileSize } from '@/lib/format';
 import type { MessageAttachment } from '@/types';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const MediaViewer = defineAsyncComponent(
+    () => import('@/components/conversations/MediaViewer.vue'),
+);
 
 /**
  * One file of a message, always loaded through the authorized attachment
@@ -396,7 +400,7 @@ function pauseVideo(): void {
                             : 'max-h-80 w-auto max-w-full rounded-xl object-contain',
                         intrinsic ? 'h-auto' : '',
                         !sticker && !loaded
-                            ? 'min-h-28 min-w-40 bg-current/10'
+                            ? 'min-h-28 min-w-40 bg-current/10 motion-safe:animate-pulse'
                             : '',
                     ]"
                     :data-preview="

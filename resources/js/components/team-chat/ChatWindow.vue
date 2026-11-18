@@ -10,6 +10,7 @@ import {
 } from '@vueuse/core';
 import {
     computed,
+    defineAsyncComponent,
     nextTick,
     onBeforeUnmount,
     onMounted,
@@ -41,7 +42,6 @@ import {
     isPdf,
     viewable,
 } from '@/components/team-chat/teamChatFormat';
-import TeamMediaViewer from '@/components/team-chat/TeamMediaViewer.vue';
 import type { ViewerItem } from '@/components/team-chat/TeamMediaViewer.vue';
 import { Button } from '@/components/ui/button';
 import { useChannel } from '@/composables/useChannel';
@@ -73,6 +73,11 @@ import type {
     TeamMessagePage,
     TeamThreadDetail,
 } from '@/types/team-chat';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const TeamMediaViewer = defineAsyncComponent(
+    () => import('@/components/team-chat/TeamMediaViewer.vue'),
+);
 
 /**
  * The open internal chat: header, history (cursor pagination in both
@@ -393,6 +398,12 @@ const days = computed<Day[]>(() => {
 
 const viewerOpen = ref(false);
 const viewerIndex = ref(0);
+/* Mounted the first time it opens (and kept, so it can animate out). */
+const viewerUsed = ref(false);
+
+watch(viewerOpen, (open) => {
+    viewerUsed.value ||= open;
+});
 const viewerItems = computed<ViewerItem[]>(() =>
     messages.value.flatMap((message) =>
         message.deleted
@@ -1410,6 +1421,7 @@ onBeforeUnmount(() => {
         />
 
         <TeamMediaViewer
+            v-if="viewerUsed"
             v-model:open="viewerOpen"
             v-model:index="viewerIndex"
             :items="viewerItems"

@@ -5,6 +5,7 @@ let playingNow: HTMLAudioElement | null = null;
 
 <script setup lang="ts">
 import { Download, Pause, Play } from '@lucide/vue';
+import { useIntersectionObserver } from '@vueuse/core';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { mediaClock } from '@/components/team-chat/teamChatFormat';
 import { formatFileSize } from '@/lib/format';
@@ -25,7 +26,24 @@ const props = defineProps<{
 
 const SPEEDS = [1, 1.5, 2] as const;
 
+const root = ref<HTMLElement | null>(null);
 const audio = ref<HTMLAudioElement | null>(null);
+
+/*
+ * Nothing is requested until the player is near the screen: a long thread
+ * does not ask the file storage for every audio's header at once.
+ */
+const near = ref(false);
+const { stop: stopWatchingNear } = useIntersectionObserver(
+    root,
+    ([entry]) => {
+        if (entry?.isIntersecting) {
+            near.value = true;
+            stopWatchingNear();
+        }
+    },
+    { rootMargin: '300px' },
+);
 const track = ref<HTMLElement | null>(null);
 const playing = ref(false);
 const failed = ref(false);
@@ -158,10 +176,12 @@ onBeforeUnmount(() => {
 
 <template>
     <div
+        ref="root"
         class="flex w-72 max-w-full items-center gap-2.5 rounded-xl bg-current/8 p-2"
         data-team-audio
     >
         <audio
+            v-if="near"
             ref="audio"
             :src="src"
             preload="metadata"

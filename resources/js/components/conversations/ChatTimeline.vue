@@ -9,6 +9,7 @@ import {
 } from '@vueuse/core';
 import {
     computed,
+    defineAsyncComponent,
     inject,
     nextTick,
     onMounted,
@@ -23,7 +24,6 @@ import ChatDivider from '@/components/chat/ChatDivider.vue';
 import ChatHistoryStart from '@/components/chat/ChatHistoryStart.vue';
 import ChatJumpButton from '@/components/chat/ChatJumpButton.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import MediaViewer from '@/components/conversations/MediaViewer.vue';
 import MessageBubble from '@/components/conversations/MessageBubble.vue';
 import { groupByCalendarDay } from '@/components/conversations/dayGroups';
 import { todayKey } from '@/components/conversations/messageFormat';
@@ -43,6 +43,11 @@ import type {
     ConversationSummary,
     MessageAttachment,
 } from '@/types';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const MediaViewer = defineAsyncComponent(
+    () => import('@/components/conversations/MediaViewer.vue'),
+);
 
 /**
  * The scrolling history of the chat. It opens at the newest message, loads

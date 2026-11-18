@@ -14,14 +14,13 @@ import {
     UserPlus,
     XCircle,
 } from '@lucide/vue';
-import { computed, inject, ref } from 'vue';
+import { computed, defineAsyncComponent, inject, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import {
     ACCEPT_BLOCK,
     noAcceptBlock,
 } from '@/components/conversations/acceptBlock';
 import ConversationReasonDialog from '@/components/conversations/ConversationReasonDialog.vue';
-import ConversationRouteDialog from '@/components/conversations/ConversationRouteDialog.vue';
 import PermanentDeleteDialog from '@/components/PermanentDeleteDialog.vue';
 import {
     noQueueActions,
@@ -54,6 +53,11 @@ import {
     transfer,
 } from '@/routes/conversations';
 import type { ConversationSummary, TransferOptions } from '@/types';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const ConversationRouteDialog = defineAsyncComponent(
+    () => import('@/components/conversations/ConversationRouteDialog.vue'),
+);
 
 /**
  * Operations of the engine on the open conversation (accept, assign,

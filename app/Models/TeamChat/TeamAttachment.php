@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string $mime_type
  * @property TeamAttachmentKind $kind
  * @property int $size_bytes
+ * @property int|null $width Pixels of an image (upright), once measured (WarmMediaThumbnail or its preview).
+ * @property int|null $height
  * @property string $sha256
  * @property Carbon|null $purged_at
  * @property Carbon|null $created_at
@@ -35,14 +37,15 @@ class TeamAttachment extends Model
     use HasFactory;
 
     /**
-     * The chat preview of an image is made in the background as soon as it
-     * is stored, so the thread paints it without waiting.
+     * The chat preview of an image is made, and its size measured, in the
+     * background as soon as it is stored, so the thread paints it without
+     * waiting and reserves its box before it loads.
      */
     protected static function booted(): void
     {
         static::created(function (TeamAttachment $attachment): void {
             if ($attachment->kind === TeamAttachmentKind::Image && $attachment->isPreviewable()) {
-                WarmMediaThumbnail::warm((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes);
+                WarmMediaThumbnail::warm((string) $attachment->disk, $attachment->path, (string) $attachment->mime_type, $attachment->size_bytes, 'team_attachments', $attachment->id);
             }
         });
     }
@@ -57,6 +60,8 @@ class TeamAttachment extends Model
         return [
             'kind' => TeamAttachmentKind::class,
             'size_bytes' => 'integer',
+            'width' => 'integer',
+            'height' => 'integer',
             'purged_at' => 'datetime',
         ];
     }

@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $mime_type
  * @property string|null $file_name
  * @property int|null $size_bytes
- * @property int|null $width Pixels of an image (upright), once its preview was made.
+ * @property int|null $width Pixels of an image (upright), once measured (WarmMediaThumbnail or its preview).
  * @property int|null $height
  * @property string|null $sha256
  * @property AttachmentStatus $status

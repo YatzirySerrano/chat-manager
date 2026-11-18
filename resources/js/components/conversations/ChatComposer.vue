@@ -142,7 +142,8 @@ const windowApplies = computed(
     () => liveWindow.value.status !== 'not_applicable',
 );
 const canNote = computed(() => props.conversation.can.addNote);
-const mode = ref<Mode>(canReply.value || !canNote.value ? 'reply' : 'note');
+/* Always opens on «Responder»; «Nota interna» is chosen on purpose. */
+const mode = ref<Mode>('reply');
 
 /* Drafts survive switching between conversations during the session. */
 const drafts = new Map<string, string>();
@@ -186,7 +187,7 @@ watch(
 watch(
     () => props.conversation.id,
     () => {
-        mode.value = canReply.value || !canNote.value ? 'reply' : 'note';
+        mode.value = 'reply';
     },
 );
 

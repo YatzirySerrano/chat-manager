@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ConversationEventType;
 use App\Models\ConversationEvent;
 use App\Support\ProtectedAccounts;
 use Illuminate\Http\Request;
@@ -24,7 +25,7 @@ class ConversationEventResource extends JsonResource
             'type' => $this->type->value,
             // «cerró la conversación»: read after the actor's name.
             'action' => $this->type->action(),
-            'label' => $this->type->label(),
+            'label' => $this->label(),
             'actor' => $protected->nameForRequest($this->actor, $request),
             'from_user' => $protected->nameForRequest($this->fromUser, $request),
             'to_user' => $protected->nameForRequest($this->toUser, $request),
@@ -46,5 +47,22 @@ class ConversationEventResource extends JsonResource
             ] : null,
             'created_at' => $this->created_at->toIso8601String(),
         ];
+    }
+
+    /**
+     * The chatbot's routing says where it sent the conversation («El
+     * chatbot la envió a Mesa de control») or that no option was chosen.
+     */
+    private function label(): string
+    {
+        if ($this->type !== ConversationEventType::ChatbotRouted) {
+            return $this->type->label();
+        }
+
+        if (($this->metadata['outcome'] ?? null) === 'fallback') {
+            return 'El chatbot no recibió una opción válida';
+        }
+
+        return $this->toDepartment !== null ? "El chatbot la envió a {$this->toDepartment->name}" : $this->type->label();
     }
 }

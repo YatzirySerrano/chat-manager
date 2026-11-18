@@ -52,6 +52,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFormValidation } from '@/composables/useFormValidation';
 import { useRecordDeletion } from '@/composables/useRecordDeletion';
+import { defaultSample, renderChatbotText } from '@/lib/chatbotText';
 import { colorPresentations } from '@/lib/colors';
 import { connectionDeletionCopy } from '@/lib/deletionCopy';
 import { toastFirstError } from '@/lib/toastErrors';
@@ -195,17 +196,6 @@ const META_FIELDS = [
     'access_token',
     'app_secret',
     'webhook_verify_token',
-] as const;
-
-/** Everything a connection can send by itself (never a QR connection). */
-const AUTOMATIC_MESSAGE_FIELDS = [
-    'welcome_enabled',
-    'welcome_message',
-    'away_enabled',
-    'away_message',
-    'away_in_open_conversations',
-    'farewell_enabled',
-    'farewell_message',
 ] as const;
 
 const form = useForm<ConnectionForm>({
@@ -375,7 +365,7 @@ const messageDefinitions: {
         kind: 'farewell',
         label: 'Despedida',
         trigger:
-            'Cuando se cierra la conversación (por un asesor o por inactividad), si el cliente escribió en las últimas 24 horas',
+            'Cuando un asesor cierra o resuelve la conversación («Solicitud completada» incluida) o se cierra por inactividad, si el cliente escribió en las últimas 24 horas',
         placeholder:
             'Gracias por contactarnos. Si necesitas algo más, escríbenos aquí.',
     },
@@ -397,12 +387,33 @@ function setMessageEnabled(kind: ConnectionMessageKind, value: boolean): void {
     form[`${kind}_enabled`] = value;
 }
 
+/* A phone linked by QR has no 24 hour window: closing always says goodbye. */
+function triggerFor(definition: {
+    kind: ConnectionMessageKind;
+    trigger: string;
+}): string {
+    return isWhatsappWeb.value && definition.kind === 'farewell'
+        ? 'Cuando un asesor cierra o resuelve la conversación; al cerrarse por inactividad, solo si el cliente escribió en las últimas 24 horas'
+        : definition.trigger;
+}
+
+const variablesHint =
+    'Puedes usar {{nombre}}, {{departamento}}, {{conexion}} y {{saludo}}.';
+
+/* Variables ({{nombre}}…) are shown with sample values, as the chatbot does. */
+const previewSample = computed(() =>
+    defaultSample({ conexion: form.name.trim() || 'Tu conexión' }),
+);
+
 const previewMessages = computed(() =>
     messageDefinitions.map((definition) => ({
         key: definition.kind,
         label: definition.label,
-        trigger: definition.trigger,
-        text: messageText(definition.kind),
+        trigger: triggerFor(definition),
+        text: renderChatbotText(
+            messageText(definition.kind),
+            previewSample.value,
+        ),
         enabled: messageEnabled(definition.kind),
     })),
 );
@@ -472,11 +483,6 @@ function submit(): void {
 
         if (!isWhatsapp.value) {
             META_FIELDS.forEach((field) => delete payload[field]);
-        }
-
-        // WhatsApp Web (QR) sends nothing by itself: no automatic messages.
-        if (isWhatsappWeb.value) {
-            AUTOMATIC_MESSAGE_FIELDS.forEach((field) => delete payload[field]);
         }
 
         if (!connection.value) {
@@ -724,9 +730,7 @@ const sections = computed(() => [
           ]
         : []),
     { id: 'departamentos', label: 'Departamentos' },
-    ...(isWhatsappWeb.value
-        ? []
-        : [{ id: 'mensajes', label: 'Mensajes automáticos' }]),
+    { id: 'mensajes', label: 'Mensajes automáticos' },
     { id: 'reapertura', label: 'Reapertura' },
     ...(connection.value
         ? [{ id: 'conversaciones', label: 'Conversaciones' }]
@@ -876,9 +880,9 @@ const flaggedSections = computed(() =>
                     class="mt-0.5 size-4 shrink-0"
                     aria-hidden="true"
                 />
-                En esta modalidad solo se envían mensajes escritos por una
-                persona autorizada: no hay respuestas automáticas, menús ni
-                campañas.
+                En esta modalidad no hay plantillas, campañas ni envíos masivos:
+                además de lo que escriben las personas autorizadas, solo salen
+                los mensajes automáticos que actives aquí y el chatbot.
             </p>
 
             <SectionNav
@@ -1559,7 +1563,6 @@ const flaggedSections = computed(() =>
                     </FormSection>
 
                     <FormSection
-                        v-if="!isWhatsappWeb"
                         id="mensajes"
                         class="scroll-mt-32"
                         title="Mensajes automáticos"
@@ -1596,7 +1599,13 @@ const flaggedSections = computed(() =>
                                 class="mt-0.5 size-4 shrink-0"
                                 aria-hidden="true"
                             />
-                            <p v-if="isWebChat" class="max-w-prose">
+                            <p v-if="isWhatsappWeb" class="max-w-prose">
+                                Estos mensajes se envían solos, solo como texto,
+                                desde el teléfono vinculado y mientras la sesión
+                                está conectada. El mensaje de ausencia o
+                                bienvenida del departamento tiene prioridad.
+                            </p>
+                            <p v-else-if="isWebChat" class="max-w-prose">
                                 Estos mensajes se envían solos, solo como texto,
                                 y solo mientras la conexión está activa. El
                                 mensaje de ausencia o bienvenida del
@@ -1610,6 +1619,13 @@ const flaggedSections = computed(() =>
                                 o bienvenida del departamento tiene prioridad.
                             </p>
                         </div>
+
+                        <p
+                            class="text-xs text-muted-foreground"
+                            data-test="automatic-message-variables"
+                        >
+                            {{ variablesHint }}
+                        </p>
 
                         <div
                             class="auto-grid [--col-min:21rem] [--grid-gap:1rem]"
@@ -1656,7 +1672,7 @@ const flaggedSections = computed(() =>
                                     />
                                 </div>
                                 <p class="text-xs text-muted-foreground">
-                                    {{ definition.trigger }}
+                                    {{ triggerFor(definition) }}
                                 </p>
                                 <Textarea
                                     :id="`connection-${definition.kind}-message`"

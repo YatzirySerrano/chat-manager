@@ -341,13 +341,6 @@ class ConnectionRequest extends FormRequest
                 'farewell_enabled' => $this->boolean('farewell_enabled'),
                 'farewell_message' => $this->nullableString('farewell_message'),
                 'reopen_window_minutes' => $this->filled('reopen_window_minutes') ? $this->integer('reopen_window_minutes') : null,
-                // WhatsApp Web (QR): no automatic answers at all (welcome, away,
-                // farewell); only people write. Reopening and departments apply.
-                ...($this->provider() === ConnectionProvider::WhatsappWeb ? [
-                    'welcome_enabled' => false, 'welcome_message' => null,
-                    'away_enabled' => false, 'away_message' => null, 'away_in_open_conversations' => false,
-                    'farewell_enabled' => false, 'farewell_message' => null,
-                ] : []),
             ],
             'secrets' => $secrets,
             'department_ids' => $this->departmentIds(),

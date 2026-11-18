@@ -14,9 +14,9 @@ use App\Models\Message;
 use App\Services\Automation\AutomaticMessageKind;
 use App\Services\Automation\AutomaticMessagePlan;
 use App\Services\BusinessHours;
+use App\Services\Chatbot\ChatbotText;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\CustomerServiceWindow;
-use App\Services\Messaging\ConnectionModality;
 use Carbon\CarbonInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -24,8 +24,12 @@ use Illuminate\Support\Facades\Log;
 use Ramsey\Uuid\Uuid;
 
 /**
- * Queues an automatic text message (welcome, away or farewell) to the
- * customer, with no human sender. Guarantees:
+ * Queues an automatic text message (welcome, away, farewell and the
+ * chatbot's menu, retries and replies) to the customer, with no human
+ * sender, through every channel that can send: WhatsApp Cloud API inside
+ * the customer service window, WhatsApp Web (QR), which has no window, and
+ * the web chat. Variables of the text ({{nombre}}...) are replaced here
+ * (ChatbotText). Guarantees:
  *
  * - idempotency: its client reference is derived from (conversation, slot,
  *   cycle), and `messages.client_reference` is unique, so duplicated
@@ -66,11 +70,42 @@ class QueueAutomaticMessage
         private ConversationLifecycle $lifecycle,
         private CustomerServiceWindow $window,
         private BusinessHours $hours,
+        private ChatbotText $text,
     ) {}
 
     public static function reference(int $conversationId, AutomaticMessageKind $kind, int $cycle): string
     {
         return Uuid::uuid5(self::REFERENCE_NAMESPACE, "conversation:{$conversationId}:{$kind->slot()}:{$cycle}")->toString();
+    }
+
+    /**
+     * Reference of a chatbot message that is not one per cycle: a retry
+     * (by attempt) or a keyword reply (by rule and customer message).
+     */
+    public static function chatbotReference(int $conversationId, AutomaticMessageKind $kind, string $discriminator): string
+    {
+        return Uuid::uuid5(self::REFERENCE_NAMESPACE, "conversation:{$conversationId}:{$kind->slot()}:{$discriminator}")->toString();
+    }
+
+    /**
+     * Queues a message for a conversation the caller already holds locked
+     * inside its transaction (the chatbot answering a customer message),
+     * once per reference. Returns null when nothing was sent (already sent,
+     * conversation closed, window closed, connection not operational).
+     *
+     * @param  array<string, int|string|null>  $trace
+     */
+    public function queueLocked(Conversation $conversation, AutomaticMessagePlan $plan, string $reference, array $trace = []): ?Message
+    {
+        if (Message::query()->where('client_reference', $reference)->exists()) {
+            return null;
+        }
+
+        if ($conversation->status === ConversationStatus::Closed) {
+            return $this->skipped($conversation, $plan, 'conversation_state_changed');
+        }
+
+        return $this->deliver($conversation, $plan, $reference, ['cycle' => $conversation->reopen_count, ...$trace]);
     }
 
     /**
@@ -100,11 +135,6 @@ class QueueAutomaticMessage
      */
     public function handleAwayInOpenConversation(Conversation $conversation, AutomaticMessagePlan $plan, string $period, int $triggerMessageId): ?Message
     {
-        // Second barrier: nothing automatic through WhatsApp Web (QR).
-        if (app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
-            return null;
-        }
-
         try {
             return DB::transaction(function () use ($conversation, $plan, $period, $triggerMessageId): ?Message {
                 $conversation = $this->lifecycle->lock($conversation);
@@ -141,11 +171,6 @@ class QueueAutomaticMessage
      */
     public function handle(Conversation $conversation, AutomaticMessagePlan $plan, int $cycle, ?int $triggerEventId = null): ?Message
     {
-        // Second barrier: nothing automatic through WhatsApp Web (QR).
-        if (app(ConnectionModality::class)->isWhatsAppWeb($conversation)) {
-            return null;
-        }
-
         try {
             return DB::transaction(fn (): ?Message => $this->queue($conversation, $plan, $cycle, $triggerEventId));
         } catch (UniqueConstraintViolationException) {
@@ -210,7 +235,8 @@ class QueueAutomaticMessage
             'direction' => MessageDirection::Outbound,
             'type' => MessageType::Text,
             'status' => MessageStatus::Queued,
-            'body' => $plan->body,
+            // {{nombre}}, {{departamento}}, {{conexion}}, {{saludo}} (ChatbotText).
+            'body' => $this->text->render($plan->body, $conversation),
             'sender_user_id' => null,
             'metadata' => [
                 'automatic' => true,

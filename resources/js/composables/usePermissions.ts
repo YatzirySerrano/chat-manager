@@ -34,6 +34,7 @@ export type PermissionName =
     | 'reports.export'
     | 'connections.view'
     | 'connections.manage'
+    | 'connections.chatbot'
     | 'integrations.view'
     | 'integrations.manage'
     | 'templates.view'

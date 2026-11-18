@@ -25,6 +25,7 @@ enum NotificationKind: string
     case AccessChanged = 'account.access-changed';
     case SlaWarning = 'sla.warning';
     case SlaBreach = 'sla.breach';
+    case ChatbotReply = 'chatbot.reply';
 
     public function label(): string
     {
@@ -41,6 +42,7 @@ enum NotificationKind: string
             self::AccessChanged => 'Cambios en mi rol, permisos o departamentos',
             self::SlaWarning => 'Alertas automáticas de SLA: solicitudes por vencer',
             self::SlaBreach => 'Alertas automáticas de SLA: solicitudes vencidas',
+            self::ChatbotReply => 'Respuestas automáticas del chatbot',
         };
     }
 
@@ -58,6 +60,7 @@ enum NotificationKind: string
             self::ConnectionProblem => 'Cuando una conexión (WhatsApp, Messenger, Instagram o chat web) deja de funcionar o Meta rechaza sus credenciales, y cuando vuelve a funcionar.',
             self::AccessChanged => 'Cuando un administrador cambia tu rol, tus permisos o tus departamentos.',
             self::SlaWarning => 'Aviso automático del sistema cuando una solicitud a tu cargo (o, si supervisas, de tu equipo) está por agotar su tiempo máximo de respuesta. No lo envía ninguna persona: es distinto de los recordatorios que escriben los administradores.',
+            self::ChatbotReply => 'Cuando el chatbot responde solo a un cliente porque su mensaje tenía una palabra clave, en una conversación que atiendes o que puedes tomar de tu cola.',
             self::SlaBreach => 'Aviso automático del sistema cuando una solicitud a tu cargo (o, si supervisas, de tu equipo) superó su tiempo máximo de respuesta, y sus recordatorios mientras siga sin respuesta. Si supervisas, recibes un solo aviso por departamento.',
         };
     }
@@ -88,7 +91,8 @@ enum NotificationKind: string
         return $this->level() === NotificationLevel::Urgent
             || $this === self::ConversationMessage
             || $this === self::TeamChatMessage
-            || $this === self::SlaWarning;
+            || $this === self::SlaWarning
+            || $this === self::ChatbotReply;
     }
 
     /**
@@ -123,6 +127,8 @@ enum NotificationKind: string
             self::ConversationAssigned,
             self::ConversationTransferred,
             self::ConversationMessage => $user->holdsPermission(Permission::ViewConversations) && $user->holdsPermission(Permission::ReplyConversations),
+            self::ChatbotReply => $user->holdsPermission(Permission::ViewConversations)
+                && ($user->holdsPermission(Permission::ReplyConversations) || $user->holdsPermission(Permission::AcceptConversations)),
             self::TeamChatMention,
             self::TeamChatMessage => $user->holdsPermission(Permission::UseTeamChat),
             self::ExportFinished => $user->holdsPermission(Permission::ExportReports) || $user->holdsPermission(Permission::ExportAuditLog),

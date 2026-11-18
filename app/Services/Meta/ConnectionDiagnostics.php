@@ -167,7 +167,7 @@ class ConnectionDiagnostics
             'greeting_now' => $plan === null ? null : ['kind' => $plan->kind->value, 'label' => $plan->kind->label(), 'source' => $plan->source],
             'auto_close_after_hours' => $this->settings->get('operations.auto_close_after_hours'),
             'days' => self::AUTOMATIC_DAYS,
-            'sent' => collect(AutomaticMessageKind::cases())->mapWithKeys(fn (AutomaticMessageKind $kind): array => [
+            'sent' => collect(AutomaticMessageKind::lifecycle())->mapWithKeys(fn (AutomaticMessageKind $kind): array => [
                 $kind->value => (clone $recent)->where('metadata->automatic_kind', $kind->value)->whereNot('status', MessageStatus::Failed)->count(),
             ])->all(),
             'failed' => (clone $recent)->where('status', MessageStatus::Failed)->count(),

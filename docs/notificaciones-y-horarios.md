@@ -34,6 +34,7 @@ Código: `app/Notifications/*` (tipos, canal `Channels\InAppChannel`, `Notificat
 | `conversation.assigned`    | Urgente                  | Asignación manual, automática o regreso al agente al reabrirse                                                                                                                                                           | El nuevo responsable si aún la tiene y puede verla; nunca quien se la asignó a sí mismo (aceptar)                                                                                                                        | Recibo por evento                                                                                                                                                                                              |
 | `conversation.transferred` | Urgente                  | Transferencia directa a un agente                                                                                                                                                                                        | El agente que la recibe                                                                                                                                                                                                  | Recibo por evento                                                                                                                                                                                              |
 | `conversation.message`     | Informativa              | Mensaje entrante del cliente                                                                                                                                                                                             | El responsable actual, si puede verla                                                                                                                                                                                    | Una sin leer por conversación; se marca leída al abrir la conversación (evento `ConversationChanged` con razón `read`)                                                                                         |
+| `chatbot.reply`            | Informativa (con aviso)  | El chatbot respondió solo a un cliente porque su mensaje tenía una palabra clave (§3.4)                                                                                                                                  | El responsable si puede verla; sin responsable, quienes pueden aceptarla de su cola (`forPendingConversation`)                                                                                                           | Recibo por mensaje automático; un fallo al notificar nunca deshace la respuesta                                                                                                                                |
 | `team-chat.message`        | Informativa              | Mensaje en un hilo interno                                                                                                                                                                                               | Participantes actuales, excepto el autor, quien silenció el hilo y quien ya leyó ese mensaje                                                                                                                             | Una sin leer por hilo; se marca leída al leer el hilo (`ReadTeamChatNotifications`)                                                                                                                            |
 | `team-chat.mention`        | Urgente                  | Mención (`metadata.mentions` del mensaje)                                                                                                                                                                                | El mencionado, aunque haya silenciado el hilo                                                                                                                                                                            | Una sin leer por hilo                                                                                                                                                                                          |
 | `export.finished`          | Informativa              | Exportación en cola completada o fallida                                                                                                                                                                                 | El dueño de la exportación                                                                                                                                                                                               | Recibo por transferencia y estado                                                                                                                                                                              |
@@ -279,8 +280,21 @@ mensaje entrante dentro de la ventana de reapertura de la conexión.
    inmediata sería engañosa fuera de horario).
 2. Dentro del horario → bienvenida del **departamento**; si está vacía, la de la **conexión** si está activada.
 
-**Despedida** al cerrar (por agente o por inactividad): la de la conexión si está activada (los departamentos no
-tienen despedida propia).
+**Despedida** al cerrar (por agente —«Cerrar» o «Solicitud completada»— o por inactividad): la de la conexión si está
+activada (los departamentos no tienen despedida propia). Se envía una sola vez por ciclo (referencia determinista).
+Decisión: se conserva el envío también al cerrar por inactividad, como ya estaba diseñado; en WhatsApp Cloud API lo
+acota la ventana de 24 h. En WhatsApp Web (QR), que no tiene ventana, el cierre por inactividad solo despide si el
+cliente escribió en las últimas 24 horas (`SendAutomaticMessages::QR_INACTIVITY_FAREWELL_HOURS`, motivo
+`customer_inactive` en el log); el cierre por un agente siempre despide.
+
+**WhatsApp Web (QR)**: bienvenida, fuera de horario (también «en conversaciones abiertas») y despedida funcionan igual
+que en las demás conexiones cuando el administrador las activa; salen por el teléfono vinculado, sin ventana de 24 h.
+
+**Variables** en todos los textos automáticos (conexión, departamento y chatbot), reemplazadas al encolar
+(`App\Services\Chatbot\ChatbotText`): `{{nombre}}` (alias `{{userName}}` y `{{name}}`, como en Whaticket; un contacto
+provisional se nombra por su perfil de WhatsApp y un número telefónico nunca se usa como nombre), `{{departamento}}`,
+`{{conexion}}` y `{{saludo}}` («Buenos días», «Buenas tardes» o «Buenas noches» según la zona horaria de la plataforma).
+Sin espacios ni mayúsculas obligatorios (`{{ Nombre }}` funciona); una variable vacía no deja espacios sueltos.
 
 El horario evaluado es el del departamento de la conversación al momento del saludo. Un departamento eliminado o
 inactivo no aporta mensajes (se usa la conexión).
@@ -339,6 +353,53 @@ periodo)` para el mensaje fuera de horario en conversaciones abiertas); la colum
   (ranura `away_in_open_conversation` o saludo con el interruptor activado), `conversation_state_changed`,
   `connection_not_operational` o `customer_window_closed`. Nunca el texto ni el teléfono del cliente. Si se encoló y Meta
   lo rechazó, el mensaje aparece en la conversación como fallido con el error del proveedor.
+
+### 3.4 Chatbot
+
+_Administración › Chatbot_ (permiso `connections.chatbot`, concedido a los roles que ya administraban conexiones; rutas
+`admin/chatbot/*`, auditado como `chatbot.menu_updated` sobre la conexión y `chatbot.rule_*` sobre la regla). Dos partes:
+
+**Menú de bienvenida** (por conexión: `chatbot_menus`, `chatbot_menu_options`; `App\Services\Chatbot\ChatbotConversations`).
+
+1. Una conversación **nueva creada por un mensaje entrante** en una conexión con el menú activo abre una sesión
+   (`chatbot_sessions`, única por conversación) en la misma transacción que la crea. No se ofrece si el contacto tiene
+   departamento propio (`ConversationRouter` la enrutó por contacto), ni a conversaciones reabiertas, importadas o
+   creadas por personas. Los grupos de WhatsApp Web nunca llegan como conversación.
+2. Se envía el saludo seguido de las opciones numeradas («1 - Mesa de control»). Dentro del horario el menú ocupa el
+   lugar de la bienvenida; fuera de horario se envía primero el mensaje fuera de horario y luego el menú. Las opciones
+   cuyo departamento está inactivo o no autorizado para la conexión se omiten y las demás se renumeran.
+3. **Estado mientras espera la opción** (decisión, ADR-AUT-4): la conversación queda _Pendiente_ en el departamento que
+   eligió el enrutamiento normal (cola provisional, visible para quien la atiende, así nunca se pierde), pero **no se
+   distribuye automáticamente ni se anuncia** («Nueva conversación pendiente») hasta que el cliente elige. Una persona
+   puede tomarla antes; entonces el menú termina (`cancelled`) sin mover nada. No se usa «Necesita información» porque
+   es una regla de servicio con otro significado.
+4. La respuesta (el número —«1», «1.», «opción 1»— o el texto de la opción, sin importar mayúsculas, acentos ni
+   emojis) mueve la conversación al departamento de la opción conservando su reloj de cola, registra el evento
+   `chatbot_routed` («El chatbot la envió a X»), envía la respuesta de la opción (o, si no tiene, la bienvenida del
+   departamento, o su mensaje fuera de horario fuera del horario) y deja que el departamento la distribuya y la
+   anuncie.
+5. Cualquier otra respuesta recibe el reintento corto («Responde con el número de una opción.» con las opciones otra
+   vez) hasta `max_attempts` veces (0 a 5, por omisión 2); una más y sigue el enrutamiento normal (`fallback`: evento
+   «El chatbot no recibió una opción válida», distribución y aviso de cola).
+6. Concurrencia: todo ocurre con la fila de la conversación bloqueada (la recepción ya la tiene) y la sesión bloqueada;
+   el menú y la respuesta tienen referencias deterministas, así que webhooks repetidos o dos mensajes simultáneos no
+   duplican nada.
+
+**Palabras clave** (`chatbot_keyword_rules` con alcance opcional por conexiones y departamentos;
+`App\Actions\Chatbot\ReplyToChatbotKeyword`, job `SendChatbotKeywordReply` en la cola `messages`).
+
+- Un mensaje de texto del cliente (conversación nueva, abierta o reabierta; nunca mientras elige en el menú) que
+  contiene una palabra clave de una regla activa —palabras completas, sin importar mayúsculas ni acentos— recibe la
+  respuesta de la **primera** regla que coincide (en el orden de la pantalla).
+- La misma regla responde a la misma conversación a lo sumo una vez cada `throttle_minutes` (30 por omisión), revisado
+  bajo el bloqueo de la conversación: sin bucles.
+- Se avisa al equipo con `chatbot.reply` (§1.2): al responsable o, sin responsable, a quienes pueden tomarla.
+- No se responde a conversaciones cerradas o importadas ni a mensajes procesados con más de 60 minutos de retraso.
+
+Todo lo que envía el chatbot pasa por `QueueAutomaticMessage` (misma ruta que bienvenida y despedida): estado de
+entrega, ventana de 24 h de Meta, WhatsApp Web y chat web. En la conversación se ve como «Mensaje automático» con
+`metadata.automatic_kind` = `chatbot_menu`, `chatbot_retry`, `chatbot_reply` o `keyword_reply` (más
+`chatbot_rule_id`/`keyword`, `chatbot_option_id` o `attempt`). No cuenta como primera respuesta del equipo.
 
 ## 4. Configuración de departamentos
 

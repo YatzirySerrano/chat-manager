@@ -138,6 +138,10 @@ enum AuditAction: string
     case ConnectionPermanentlyDeleted = 'connection.permanently_deleted';
     case ConnectionConversationsMoved = 'connection.conversations_moved';
     case VideoSaveRequested = 'video.save_requested';
+    case ChatbotMenuUpdated = 'chatbot.menu_updated';
+    case ChatbotRuleCreated = 'chatbot.rule_created';
+    case ChatbotRuleUpdated = 'chatbot.rule_updated';
+    case ChatbotRuleDeleted = 'chatbot.rule_deleted';
 
     /**
      * Human readable description of the action.
@@ -273,6 +277,10 @@ enum AuditAction: string
             self::ConnectionPermanentlyDeleted => 'Conexión eliminada definitivamente',
             self::ConnectionConversationsMoved => 'Conversaciones movidas a otra conexión',
             self::VideoSaveRequested => 'Archivo enviado a guardar en Synology',
+            self::ChatbotMenuUpdated => 'Menú de bienvenida del chatbot actualizado',
+            self::ChatbotRuleCreated => 'Palabra clave del chatbot creada',
+            self::ChatbotRuleUpdated => 'Palabra clave del chatbot actualizada',
+            self::ChatbotRuleDeleted => 'Palabra clave del chatbot eliminada',
         };
     }
 
@@ -291,7 +299,8 @@ enum AuditAction: string
             self::SupervisionPersonalItemDeleted, self::ConnectionMetaDisconnected, self::AttachmentLinkRevoked,
             self::ConnectionWebLoggedOut, self::ConnectionWebSessionLost,
             self::HistoryImportFailed, self::ConversationCategoryDeleted, self::ConversationSlaBreached,
-            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted => 'danger',
+            self::ConversationPermanentlyDeleted, self::RecordPermanentlyDeleted, self::ConnectionPermanentlyDeleted,
+            self::ChatbotRuleDeleted => 'danger',
             self::UserRoleChanged, self::UserPasswordReset, self::SettingsUpdated, self::RolePermissionsChanged,
             self::AppearanceUpdated, self::ConnectionCredentialsUpdated,
             self::ConnectionWebLinkRequested, self::ConnectionWebDisconnected, self::ConnectionWebReconnectRequested,
@@ -316,7 +325,7 @@ enum AuditAction: string
             self::ApiTokenIssued, self::ContactSaved, self::UserPersonalQuickRepliesGranted,
             self::ConnectionMetaAuthorized, self::HistoryImportCompleted,
             self::ConversationCategoryCreated, self::ConversationCategoryRestored,
-            self::ConversationReadinessConfirmed => 'success',
+            self::ConversationReadinessConfirmed, self::ChatbotRuleCreated => 'success',
             default => 'neutral',
         };
     }
@@ -345,9 +354,9 @@ enum AuditAction: string
      */
     public static function options(): array
     {
-        return array_map(fn (self $action): array => [
+        return array_values(array_map(fn (self $action): array => [
             'value' => $action->value,
             'label' => $action->label(),
-        ], self::cases());
+        ], self::cases()));
     }
 }

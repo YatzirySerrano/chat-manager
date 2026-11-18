@@ -17,6 +17,7 @@ use App\Events\Messaging\MessageRecorded;
 use App\Jobs\DownloadInboundMedia;
 use App\Jobs\DownloadWhatsAppWebMedia;
 use App\Jobs\SendAwayInOpenConversation;
+use App\Jobs\SendChatbotKeywordReply;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAttribution;
@@ -25,6 +26,8 @@ use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
 use App\Models\MessageAttachment;
+use App\Services\Chatbot\ChatbotConversations;
+use App\Services\Chatbot\ChatbotKeywords;
 use App\Services\Conversations\ConversationLifecycle;
 use App\Services\Conversations\ConversationRouter;
 use App\Services\Conversations\QueueRules;
@@ -82,6 +85,7 @@ class ReceiveInboundMessage
         private ReopenConversation $reopenConversation,
         private AssignAutomatically $assignAutomatically,
         private ReadCommittedTransaction $transaction,
+        private ChatbotConversations $chatbot,
     ) {}
 
     public function handle(Connection $connection, InboundMessage $inbound): InboundMessageReceipt
@@ -118,7 +122,7 @@ class ReceiveInboundMessage
         $contact = $registration->contact;
         $sentAt = $inbound->sender->occurredAt;
 
-        [$conversation, $outcome] = $this->conversationFor($connection, $contact, $sentAt);
+        [$conversation, $outcome, $menuOffered] = $this->conversationFor($connection, $contact, $sentAt);
 
         $message = new Message([
             'conversation_id' => $conversation->id,
@@ -158,9 +162,15 @@ class ReceiveInboundMessage
         // The customer waits for a human answer from now on (response cycle).
         app(ResponseClock::class)->customerWrote($conversation, $sentAt);
 
-        if ($outcome === InboundMessageOutcome::Created) {
+        // While the chatbot's welcome menu waits for the customer's choice,
+        // the conversation is not distributed (ChatbotConversations).
+        if ($outcome === InboundMessageOutcome::Created && ! $menuOffered) {
             $this->assignAutomatically->handle($conversation);
         }
+
+        // The answer to the welcome menu routes the conversation (and is not
+        // answered by a keyword rule).
+        $answeredByMenu = $outcome === InboundMessageOutcome::Appended && $this->chatbot->answer($conversation, $message);
 
         // One event per message: its real-time listener already refreshes the
         // conversation and every inbox that lists it.
@@ -169,8 +179,19 @@ class ReceiveInboundMessage
         // A customer writing again in an open or queued conversation may get
         // the away message once per period outside hours, only where the
         // connection's administrator turned it on.
-        if ($outcome === InboundMessageOutcome::Appended && $connection->away_in_open_conversations && ! $connection->isWhatsAppWeb()) {
+        if ($outcome === InboundMessageOutcome::Appended && $connection->away_in_open_conversations) {
             SendAwayInOpenConversation::dispatch($conversation->id, $message->id)->afterCommit();
+        }
+
+        // «Chatbot · Palabras clave»: matched and answered on the messages
+        // queue, never inside this receipt; only for text a customer just
+        // wrote in a live conversation that is not choosing from the menu.
+        if (! $menuOffered && ! $answeredByMenu
+            && in_array($outcome, [InboundMessageOutcome::Created, InboundMessageOutcome::Appended, InboundMessageOutcome::Reopened], true)
+            && $message->type === MessageType::Text
+            && ChatbotKeywords::normalize((string) $message->body) !== ''
+            && SendChatbotKeywordReply::anyRule()) {
+            SendChatbotKeywordReply::dispatch($conversation->id, $message->id)->afterCommit();
         }
 
         if ($attachment !== null && $attachment->status === AttachmentStatus::Pending) {
@@ -305,7 +326,10 @@ class ReceiveInboundMessage
     }
 
     /**
-     * @return array{Conversation, InboundMessageOutcome}
+     * The conversation, what happened to it and whether the chatbot's
+     * welcome menu was opened for it (only for a new one).
+     *
+     * @return array{Conversation, InboundMessageOutcome, bool}
      */
     private function conversationFor(Connection $connection, Contact $contact, CarbonImmutable $sentAt): array
     {
@@ -318,7 +342,7 @@ class ReceiveInboundMessage
             ->first();
 
         if ($unclosed !== null) {
-            return [$unclosed, InboundMessageOutcome::Appended];
+            return [$unclosed, InboundMessageOutcome::Appended, false];
         }
 
         // Imported history is never reopened nor receives a late message:
@@ -335,7 +359,7 @@ class ReceiveInboundMessage
 
         if ($lastClosed !== null && $lastClosed->closed_at !== null) {
             if ($sentAt->lessThanOrEqualTo($lastClosed->closed_at)) {
-                return [$lastClosed, InboundMessageOutcome::LateArrival];
+                return [$lastClosed, InboundMessageOutcome::LateArrival, false];
             }
 
             $window = $connection->reopen_window_minutes;
@@ -343,7 +367,7 @@ class ReceiveInboundMessage
             // A request closed as completed is finished for good: the next
             // message is a new request and enters the waiting list.
             if ($window !== null && $lastClosed->completed_at === null && $sentAt->lessThanOrEqualTo($lastClosed->closed_at->addMinutes($window))) {
-                return [$this->reopenConversation->reopen($lastClosed, null, 'inbound'), InboundMessageOutcome::Reopened];
+                return [$this->reopenConversation->reopen($lastClosed, null, 'inbound'), InboundMessageOutcome::Reopened, false];
             }
         }
 
@@ -366,12 +390,15 @@ class ReceiveInboundMessage
         // right now; otherwise ready, with its queue clock started (QueueRules).
         $conversation->forceFill(app(QueueRules::class)->born($department?->id))->save();
 
+        // The chatbot's welcome menu, before the event its listeners read.
+        $menuOffered = $this->chatbot->offer($connection, $conversation, $routedBy);
+
         $this->lifecycle->record($conversation, ConversationEventType::Created, null, [
             'to_department_id' => $department?->id,
-            'metadata' => ['source' => 'inbound', 'routed_by' => $routedBy],
+            'metadata' => ['source' => 'inbound', 'routed_by' => $routedBy, ...($menuOffered ? ['chatbot_menu' => true] : [])],
         ]);
 
-        return [$conversation, InboundMessageOutcome::Created];
+        return [$conversation, InboundMessageOutcome::Created, $menuOffered];
     }
 
     /**

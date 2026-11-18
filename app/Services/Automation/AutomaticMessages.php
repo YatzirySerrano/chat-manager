@@ -24,6 +24,9 @@ use Carbon\CarbonInterface;
  * Farewell, when a conversation closes: the farewell message of the
  * connection if enabled (departments have no farewell of their own).
  *
+ * Every channel that can send follows these priorities, WhatsApp Web (QR)
+ * included since the administrator turns each message on per connection.
+ *
  * This class only chooses the text; QueueAutomaticMessage enforces the
  * customer service window, the connection state and idempotency.
  */
@@ -33,13 +36,6 @@ class AutomaticMessages
 
     public function greeting(Connection $connection, ?Department $department, CarbonInterface $at): ?AutomaticMessagePlan
     {
-        // WhatsApp Web (QR): only people write, never the platform by itself
-        // (no welcome, away or farewell), whatever the connection or its
-        // department have configured.
-        if ($connection->isWhatsAppWeb()) {
-            return null;
-        }
-
         if (! $this->hours->isOpenAt($department, $at)) {
             return $this->pick(AutomaticMessageKind::Away, $department?->away_message, $connection->away_enabled ? $connection->away_message : null);
         }
@@ -49,10 +45,6 @@ class AutomaticMessages
 
     public function farewell(Connection $connection): ?AutomaticMessagePlan
     {
-        if ($connection->isWhatsAppWeb()) {
-            return null;
-        }
-
         return $this->pick(AutomaticMessageKind::Farewell, null, $connection->farewell_enabled ? $connection->farewell_message : null);
     }
 

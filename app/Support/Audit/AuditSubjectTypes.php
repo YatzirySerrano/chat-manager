@@ -30,6 +30,7 @@ final class AuditSubjectTypes
         'team_thread' => 'Chat interno',
         'api_token' => 'Token de API',
         'web_chat_widget' => 'Chat web',
+        'chatbot_rule' => 'Palabra clave del chatbot',
         'setting' => 'Configuración',
     ];
 

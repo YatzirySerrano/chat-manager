@@ -33,6 +33,11 @@ const props = defineProps<{
     record: string;
     /** Disables every action while a request for this record is running. */
     busy?: boolean;
+    /**
+     * On phones (below `sm`) every action goes into one «Acciones» menu,
+     * so a table row keeps its width for the record itself.
+     */
+    collapseOnPhone?: boolean;
     class?: HTMLAttributes['class'];
 }>();
 
@@ -48,6 +53,21 @@ const overflow = computed(() =>
     props.actions.length > MAX_VISIBLE
         ? props.actions.filter((action) => action.secondary)
         : [],
+);
+
+/** Collapsing only pays off with more than one action. */
+const collapses = computed(
+    () => props.collapseOnPhone === true && props.actions.length > 1,
+);
+
+/** Menu entries: the overflow, plus (on phones) the inline ones. */
+const menuActions = computed(() =>
+    collapses.value
+        ? [
+              ...visible.value.map((action) => ({ action, phoneOnly: true })),
+              ...overflow.value.map((action) => ({ action, phoneOnly: false })),
+          ]
+        : overflow.value.map((action) => ({ action, phoneOnly: false })),
 );
 
 function buttonClass(action: RecordAction): string {
@@ -67,7 +87,7 @@ function buttonClass(action: RecordAction): string {
         "
     >
         <Tooltip v-for="action in visible" :key="action.key">
-            <TooltipTrigger as-child>
+            <TooltipTrigger as-child :class="collapses && 'max-sm:hidden'">
                 <Button
                     v-if="action.href && !action.disabled && !busy"
                     variant="ghost"
@@ -100,9 +120,12 @@ function buttonClass(action: RecordAction): string {
             <TooltipContent>{{ action.label }}</TooltipContent>
         </Tooltip>
 
-        <DropdownMenu v-if="overflow.length > 0">
+        <DropdownMenu v-if="menuActions.length > 0">
             <Tooltip>
-                <TooltipTrigger as-child>
+                <TooltipTrigger
+                    as-child
+                    :class="overflow.length === 0 && 'sm:hidden'"
+                >
                     <DropdownMenuTrigger as-child>
                         <Button
                             type="button"
@@ -110,19 +133,25 @@ function buttonClass(action: RecordAction): string {
                             size="icon-sm"
                             class="size-9 text-muted-foreground hover:text-foreground sm:size-8"
                             :disabled="busy"
-                            :aria-label="`Más acciones de ${record}`"
+                            :aria-label="`${collapses ? 'Acciones' : 'Más acciones'} de ${record}`"
                         >
                             <Ellipsis aria-hidden="true" />
                         </Button>
                     </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent>Más acciones</TooltipContent>
+                <TooltipContent>{{
+                    collapses ? 'Acciones' : 'Más acciones'
+                }}</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" class="w-52">
-                <template v-for="action in overflow" :key="action.key">
+                <template
+                    v-for="{ action, phoneOnly } in menuActions"
+                    :key="action.key"
+                >
                     <DropdownMenuItem
                         v-if="action.href"
                         as-child
+                        :class="phoneOnly && 'sm:hidden'"
                         :disabled="action.disabled"
                         :variant="
                             action.destructive ? 'destructive' : 'default'
@@ -135,7 +164,8 @@ function buttonClass(action: RecordAction): string {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                         v-else
-                        :disabled="action.disabled"
+                        :class="phoneOnly && 'sm:hidden'"
+                        :disabled="action.disabled || busy"
                         :variant="
                             action.destructive ? 'destructive' : 'default'
                         "

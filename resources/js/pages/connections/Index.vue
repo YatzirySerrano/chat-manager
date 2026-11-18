@@ -21,11 +21,11 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import ChannelIcon from '@/components/connections/ChannelIcon.vue';
 import ChannelPicker from '@/components/connections/ChannelPicker.vue';
 import ConnectionChecklist from '@/components/connections/ConnectionChecklist.vue';
+import ConnectionDepartmentChips from '@/components/connections/ConnectionDepartmentChips.vue';
 import ConnectionEvidenceLabel from '@/components/connections/ConnectionEvidenceLabel.vue';
 import ConnectionHealthBadge from '@/components/connections/ConnectionHealthBadge.vue';
 import WhatsAppWebStateBadge from '@/components/connections/WhatsAppWebStateBadge.vue';
 import DeletedBadge from '@/components/DeletedBadge.vue';
-import DepartmentTag from '@/components/DepartmentTag.vue';
 import EmptyState from '@/components/EmptyState.vue';
 import ExportMenu from '@/components/ExportMenu.vue';
 import ActiveFilters from '@/components/filters/ActiveFilters.vue';
@@ -380,6 +380,44 @@ function actionsFor(connection: Connection): RecordAction[] {
     );
 }
 
+/**
+ * Verified or rejected credentials of a Meta connection in a few words (web
+ * chat and QR sessions have none); the date or Meta's error goes to the
+ * tooltip.
+ */
+function credentialsHint(connection: Connection): {
+    icon: typeof ShieldCheck;
+    label: string;
+    tone: string;
+    title?: string;
+} | null {
+    if (connection.channel.value === 'web_chat' || isWhatsAppWeb(connection)) {
+        return null;
+    }
+
+    const credentials = connection.checks.credentials;
+
+    switch (credentials.state) {
+        case 'verified':
+            return {
+                icon: ShieldCheck,
+                label: 'Credenciales verificadas',
+                tone: 'text-success',
+                title: formatDateTime(credentials.verified_at),
+            };
+        case 'invalid':
+            return {
+                icon: CircleAlert,
+                label: 'Rechazadas por Meta',
+                tone: 'text-destructive',
+                title: credentials.error ?? undefined,
+            };
+        default:
+            // Unverified or incomplete: the health pill already says so.
+            return null;
+    }
+}
+
 function phoneLabel(connection: Connection): string {
     if (connection.meta_account) {
         return connection.meta_account.authorized
@@ -423,11 +461,7 @@ function phoneLabel(connection: Connection): string {
         <PageHeader
             help="conexiones"
             title="Conexiones"
-            :description="
-                whatsappWebEnabled
-                    ? 'Números de WhatsApp (API oficial de Meta o WhatsApp Web por QR), chats para sitios web y su estado real.'
-                    : 'Números de WhatsApp Business conectados mediante la API oficial de Meta, chats para sitios web y su estado real.'
-            "
+            description="Tus canales, su estado y quién los atiende."
         >
             <template v-if="can.create || canExport" #actions>
                 <ExportMenu
@@ -448,32 +482,20 @@ function phoneLabel(connection: Connection): string {
 
         <div
             v-if="stats.total > 0"
-            class="auto-grid reveal-stagger [--col-min:14rem]"
+            class="grid reveal-stagger grid-cols-2 gap-3 lg:grid-cols-4"
             data-tour="connections.stats"
         >
+            <StatCard label="Conexiones" :value="stats.total" :icon="Plug" />
+            <StatCard label="Activas" :value="stats.active" :icon="Power" />
             <StatCard
-                label="Conexiones"
-                :value="stats.total"
-                :icon="Plug"
-                hint="Registradas en la plataforma"
-            />
-            <StatCard
-                label="Activas"
-                :value="stats.active"
-                :icon="Power"
-                hint="Encendidas por un administrador"
-            />
-            <StatCard
-                label="Credenciales verificadas"
+                label="Verificadas"
                 :value="stats.verified"
                 :icon="ShieldCheck"
-                hint="Conexiones de WhatsApp aceptadas por Meta"
             />
             <StatCard
                 label="Requieren atención"
                 :value="stats.attention"
                 :icon="CircleAlert"
-                hint="Sin configurar, rechazadas o con error"
             />
         </div>
 
@@ -482,7 +504,7 @@ function phoneLabel(connection: Connection): string {
             class="enter-spring border-solid accent-gradient-soft shadow-float"
             :icon="Unplug"
             title="Aún no hay conexiones"
-            description="Registra tu número de WhatsApp Business con los datos de tu app de Meta o crea un chat para tu sitio web. Podrás guardar la configuración aunque todavía no esté completa; ningún indicador se marcará como funcionando hasta que exista evidencia real."
+            description="Conecta un número de WhatsApp o un chat para tu sitio web."
         >
             <Button v-if="can.create" @click="channelPickerOpen = true">
                 <Plus />
@@ -502,7 +524,6 @@ function phoneLabel(connection: Connection): string {
                     />
                     <FilterTabs
                         v-if="recordTabs.length > 0"
-                        class="max-sm:w-full"
                         :options="recordTabs"
                         :model-value="filterState.record"
                         label="Mostrar activas o eliminadas"
@@ -542,14 +563,14 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full bg-card sm:w-52"
+                                class="w-full bg-card sm:w-48"
                                 aria-label="Filtrar por estado de salud"
                             >
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem :value="ALL"
-                                    >Cualquier estado de salud</SelectItem
+                                    >Todos los estados</SelectItem
                                 >
                                 <SelectItem
                                     v-for="option in healthOptions"
@@ -565,7 +586,7 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full bg-card sm:w-48"
+                                class="w-full bg-card sm:w-56"
                                 aria-label="Filtrar por departamento"
                             >
                                 <SelectValue />
@@ -588,13 +609,15 @@ function phoneLabel(connection: Connection): string {
                             @update:model-value="applyFilters"
                         >
                             <SelectTrigger
-                                class="w-full bg-card sm:w-36"
+                                class="w-full bg-card sm:w-48"
                                 aria-label="Filtrar por activación"
                             >
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem :value="ALL">Todas</SelectItem>
+                                <SelectItem :value="ALL"
+                                    >Activas e inactivas</SelectItem
+                                >
                                 <SelectItem value="active">Activas</SelectItem>
                                 <SelectItem value="inactive"
                                     >Inactivas</SelectItem
@@ -731,22 +754,10 @@ function phoneLabel(connection: Connection): string {
                                 />
                             </div>
                             <template #meta>
-                                <DepartmentTag
-                                    v-for="department in connection.departments.slice(
-                                        0,
-                                        2,
-                                    )"
-                                    :key="department.id"
-                                    :name="department.name"
-                                    :color="department.color"
-                                    :muted="!department.is_active"
+                                <ConnectionDepartmentChips
+                                    :departments="connection.departments"
+                                    :limit="2"
                                 />
-                                <span v-if="connection.departments.length > 2">
-                                    +{{ connection.departments.length - 2 }}
-                                </span>
-                                <span v-if="connection.departments.length === 0"
-                                    >Sin departamentos autorizados</span
-                                >
                             </template>
                             <template #actions>
                                 <RecordActions
@@ -770,13 +781,10 @@ function phoneLabel(connection: Connection): string {
                             <TableHead class="hidden sm:table-cell"
                                 >Estado</TableHead
                             >
-                            <TableHead class="hidden lg:table-cell"
-                                >Credenciales</TableHead
-                            >
-                            <TableHead class="hidden xl:table-cell"
+                            <TableHead class="hidden md:table-cell"
                                 >Departamentos</TableHead
                             >
-                            <TableHead class="hidden 2xl:table-cell"
+                            <TableHead class="hidden xl:table-cell"
                                 >Última actividad</TableHead
                             >
                             <TableHead class="pr-5 text-right">
@@ -854,11 +862,12 @@ function phoneLabel(connection: Connection): string {
                                                 "
                                             />
                                         </div>
-                                        <!-- The status column is hidden on phones. -->
-                                        <ConnectionEvidenceLabel
-                                            class="mt-1 sm:hidden"
-                                            :monitoring="connection.monitoring"
-                                            with-warnings
+                                        <ConnectionDepartmentChips
+                                            class="mt-1.5 md:hidden"
+                                            :departments="
+                                                connection.departments
+                                            "
+                                            :limit="2"
                                         />
                                     </div>
                                 </div>
@@ -886,99 +895,28 @@ function phoneLabel(connection: Connection): string {
                                     :monitoring="connection.monitoring"
                                     with-warnings
                                 />
-                            </TableCell>
-                            <TableCell class="hidden text-sm lg:table-cell">
-                                <span
-                                    v-if="
-                                        connection.channel.value === 'web_chat'
-                                    "
-                                    class="text-muted-foreground"
-                                    >No aplica</span
+                                <p
+                                    v-if="credentialsHint(connection)"
+                                    class="mt-0.5 flex items-center gap-1 text-xs"
+                                    :class="credentialsHint(connection)?.tone"
+                                    :title="credentialsHint(connection)?.title"
                                 >
-                                <span
-                                    v-else-if="isWhatsAppWeb(connection)"
-                                    class="text-muted-foreground"
-                                    >Vinculación por QR</span
-                                >
-                                <span
-                                    v-else-if="
-                                        connection.checks.credentials.state ===
-                                        'verified'
-                                    "
-                                    class="inline-flex items-center gap-1 text-success"
-                                    :title="
-                                        formatDateTime(
-                                            connection.checks.credentials
-                                                .verified_at,
-                                        )
-                                    "
-                                    ><ShieldCheck
+                                    <component
+                                        :is="credentialsHint(connection)?.icon"
                                         class="size-3.5"
                                         aria-hidden="true"
-                                    />Verificadas
-                                    {{
-                                        formatRelative(
-                                            connection.checks.credentials
-                                                .verified_at,
-                                        )
-                                    }}</span
-                                >
-                                <span
-                                    v-else-if="
-                                        connection.checks.credentials.state ===
-                                        'invalid'
-                                    "
-                                    class="inline-flex items-center gap-1 text-destructive"
-                                    :title="
-                                        connection.checks.credentials.error ??
-                                        undefined
-                                    "
-                                    ><CircleAlert
-                                        class="size-3.5"
-                                        aria-hidden="true"
-                                    />Rechazadas por Meta</span
-                                >
-                                <span
-                                    v-else-if="
-                                        connection.checks.credentials.state ===
-                                        'unverified'
-                                    "
-                                    class="text-muted-foreground"
-                                    >Sin verificar</span
-                                >
-                                <span v-else class="text-muted-foreground"
-                                    >Incompletas</span
-                                >
-                            </TableCell>
-                            <TableCell class="hidden xl:table-cell">
-                                <div
-                                    v-if="connection.departments.length > 0"
-                                    class="flex flex-wrap gap-1"
-                                >
-                                    <DepartmentTag
-                                        v-for="department in connection.departments.slice(
-                                            0,
-                                            3,
-                                        )"
-                                        :key="department.id"
-                                        :name="department.name"
-                                        :color="department.color"
-                                        :muted="!department.is_active"
                                     />
-                                    <span
-                                        v-if="connection.departments.length > 3"
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        +{{ connection.departments.length - 3 }}
-                                    </span>
-                                </div>
-                                <span
-                                    v-else
-                                    class="text-xs text-muted-foreground"
-                                    >Sin asignar</span
-                                >
+                                    {{ credentialsHint(connection)?.label }}
+                                </p>
                             </TableCell>
-                            <TableCell class="hidden text-sm 2xl:table-cell">
+                            <TableCell class="hidden min-w-64 md:table-cell">
+                                <ConnectionDepartmentChips
+                                    :departments="connection.departments"
+                                />
+                            </TableCell>
+                            <TableCell
+                                class="hidden text-sm whitespace-nowrap xl:table-cell"
+                            >
                                 <span
                                     v-if="connection.last_activity_at"
                                     :title="
@@ -995,12 +933,13 @@ function phoneLabel(connection: Connection): string {
                                 <span
                                     v-else
                                     class="text-xs text-muted-foreground"
-                                    >Sin actividad registrada</span
+                                    >Sin actividad</span
                                 >
                             </TableCell>
                             <TableCell class="w-px pr-5 text-right">
                                 <RecordActions
                                     class="admin-row-actions"
+                                    collapse-on-phone
                                     :actions="actionsFor(connection)"
                                     :record="connection.name"
                                     :busy="

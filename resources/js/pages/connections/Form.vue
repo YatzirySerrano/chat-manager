@@ -9,6 +9,7 @@ import {
     PowerOff,
     RotateCcw,
     ShieldCheck,
+    Star,
     Trash2,
     TriangleAlert,
     UserRoundCheck,
@@ -323,32 +324,29 @@ function toggleDepartment(id: number, checked: boolean): void {
     }
 }
 
-const defaultDepartmentOptions = computed(() => {
-    const options = [
-        {
-            value: null as number | null,
-            label: 'Usar el predeterminado de la plataforma',
-        },
-        ...selectedDepartments.value.map((department) => ({
-            value: department.id as number | null,
-            label: department.name,
-        })),
-    ];
+/**
+ * The default department is picked with the star on an authorized chip;
+ * pressing the star of the current default leaves it empty (the platform's
+ * default applies).
+ */
+function toggleDefaultDepartment(id: number): void {
+    form.default_department_id = form.default_department_id === id ? null : id;
+}
 
-    // A saved default that is no longer authorized stays visible, so it can
-    // be read and replaced.
+/** A saved default that is no longer authorized: shown so it can be cleared. */
+const orphanDefault = computed(() => {
     const current = form.default_department_id;
 
-    if (current !== null && !options.some((o) => o.value === current)) {
-        const department = props.departments.find((d) => d.id === current);
-
-        options.push({
-            value: current,
-            label: `${department?.name ?? 'Departamento'} (no autorizado)`,
-        });
+    if (current === null || form.department_ids.includes(current)) {
+        return null;
     }
 
-    return options;
+    return {
+        id: current,
+        name:
+            props.departments.find((department) => department.id === current)
+                ?.name ?? 'Departamento',
+    };
 });
 
 const messageDefinitions: {
@@ -787,10 +785,10 @@ const flaggedSections = computed(() =>
                     isEditing
                         ? `${channel.label} · ${provider.label}`
                         : isWebChat
-                          ? 'Crea un chat para tu sitio web. Después de guardarlo configurarás sus dominios, su apariencia y el código para insertarlo.'
+                          ? 'Chat para tu sitio web. Al guardar configuras dominios, apariencia y código.'
                           : isWhatsappWeb
-                            ? 'Conecta un WhatsApp normal escaneando un código QR, sin cuenta de Meta Business. Primero guarda la conexión; después vincularás el teléfono.'
-                            : 'Registra un número de WhatsApp Business conectado mediante la API oficial de Meta.'
+                            ? 'WhatsApp normal por código QR. Guarda y luego vincula el teléfono.'
+                            : 'Número de WhatsApp Business por la API oficial de Meta.'
                 "
             >
                 <template #eyebrow>
@@ -1376,31 +1374,71 @@ const flaggedSections = computed(() =>
                         id="departamentos"
                         class="scroll-mt-32"
                         title="Departamentos"
-                        :description="
-                            isWebChat
-                                ? 'Quién atiende las conversaciones que lleguen por este chat.'
-                                : 'Quién atiende las conversaciones que lleguen a este número.'
-                        "
+                        description="Quién atiende lo que llega aquí."
                     >
-                        <div class="grid gap-6">
-                            <fieldset class="grid gap-2">
-                                <legend
-                                    class="mb-2 flex items-center gap-1.5 text-sm font-medium"
-                                >
-                                    Departamentos autorizados
+                        <fieldset class="grid gap-3">
+                            <legend
+                                class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium"
+                            >
+                                <span class="inline-flex items-center gap-1.5">
+                                    Autorizados
                                     <FieldHelp
                                         title="Departamentos autorizados"
                                         :help="help.departments"
                                     />
-                                </legend>
-                                <div
-                                    v-if="departmentChoices.length > 0"
-                                    class="auto-grid [--col-min:13rem] [--grid-gap:0.5rem]"
+                                </span>
+                                <span
+                                    class="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground"
+                                >
+                                    <Star
+                                        class="size-3.5 fill-current text-warning"
+                                        aria-hidden="true"
+                                    />
+                                    Predeterminado
+                                    <FieldHelp
+                                        title="Departamento predeterminado"
+                                        :help="help.defaultDepartment"
+                                    />
+                                </span>
+                            </legend>
+                            <ul
+                                v-if="departmentChoices.length > 0"
+                                class="auto-grid [--col-min:13rem] [--grid-gap:0.5rem]"
+                                role="list"
+                            >
+                                <li
+                                    v-for="department in departmentChoices"
+                                    :key="department.id"
+                                    class="flex items-center rounded-lg border transition-colors"
+                                    :class="
+                                        form.department_ids.includes(
+                                            department.id,
+                                        )
+                                            ? [
+                                                  'border-transparent',
+                                                  colorPresentations(
+                                                      department.color,
+                                                  ).soft.class,
+                                              ]
+                                            : 'hover:border-border-strong'
+                                    "
+                                    :style="
+                                        form.department_ids.includes(
+                                            department.id,
+                                        )
+                                            ? colorPresentations(
+                                                  department.color,
+                                              ).soft.style
+                                            : undefined
+                                    "
                                 >
                                     <label
-                                        v-for="department in departmentChoices"
-                                        :key="department.id"
-                                        class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:border-border-strong has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary-soft/40"
+                                        class="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pr-1 pl-3 text-sm font-medium"
+                                        :class="
+                                            can.update
+                                                ? 'cursor-pointer'
+                                                : 'cursor-default'
+                                        "
                                     >
                                         <Checkbox
                                             :model-value="
@@ -1418,7 +1456,7 @@ const flaggedSections = computed(() =>
                                             "
                                         />
                                         <span
-                                            class="size-2 shrink-0 rounded-full"
+                                            class="size-2.5 shrink-0 rounded-full"
                                             v-bind="
                                                 colorPresentations(
                                                     department.color,
@@ -1431,42 +1469,93 @@ const flaggedSections = computed(() =>
                                         }}</span>
                                         <span
                                             v-if="!department.is_active"
-                                            class="ml-auto text-xs text-muted-foreground"
-                                            >Eliminado</span
+                                            class="text-xs font-normal opacity-75"
+                                            >(eliminado)</span
                                         >
                                     </label>
-                                </div>
-                                <p v-else class="text-sm text-muted-foreground">
-                                    No hay departamentos activos. Crea uno en
-                                    Departamentos para poder autorizarlo.
-                                </p>
-                                <InputError
-                                    :message="
-                                        validation.error('department_ids')
-                                    "
-                                />
-                            </fieldset>
-
-                            <div class="field-grid [--col-min:18rem]">
-                                <FormField
-                                    id="connection-default-department"
-                                    label="Departamento predeterminado"
-                                    :error="
-                                        validation.error(
-                                            'default_department_id',
-                                        )
-                                    "
-                                    :help="help.defaultDepartment"
-                                >
-                                    <AppSelect
-                                        id="connection-default-department"
-                                        v-model="form.default_department_id"
-                                        :options="defaultDepartmentOptions"
+                                    <button
+                                        v-if="
+                                            form.department_ids.includes(
+                                                department.id,
+                                            )
+                                        "
+                                        type="button"
+                                        class="mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-md transition-colors outline-none hover:bg-background/60 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+                                        :aria-pressed="
+                                            form.default_department_id ===
+                                            department.id
+                                        "
+                                        :aria-label="`Predeterminado: ${department.name}`"
+                                        :title="
+                                            form.default_department_id ===
+                                            department.id
+                                                ? 'Predeterminado (quitar)'
+                                                : 'Hacer predeterminado'
+                                        "
                                         :disabled="!can.update"
-                                    />
-                                </FormField>
-                            </div>
-                        </div>
+                                        @click="
+                                            toggleDefaultDepartment(
+                                                department.id,
+                                            )
+                                        "
+                                    >
+                                        <Star
+                                            class="size-4"
+                                            :class="
+                                                form.default_department_id ===
+                                                department.id
+                                                    ? 'fill-current'
+                                                    : 'opacity-40'
+                                            "
+                                            aria-hidden="true"
+                                        />
+                                    </button>
+                                </li>
+                            </ul>
+                            <p v-else class="text-sm text-muted-foreground">
+                                No hay departamentos activos.
+                            </p>
+                            <p
+                                v-if="
+                                    form.default_department_id === null &&
+                                    form.department_ids.length > 0
+                                "
+                                class="text-xs text-muted-foreground"
+                            >
+                                Sin estrella: usa el predeterminado de la
+                                plataforma.
+                            </p>
+                            <p
+                                v-if="orphanDefault"
+                                class="flex flex-wrap items-center gap-1.5 text-xs text-warning-soft-foreground"
+                                role="status"
+                            >
+                                <TriangleAlert
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
+                                {{ orphanDefault.name }} es el predeterminado
+                                pero no está autorizado.
+                                <Button
+                                    v-if="can.update"
+                                    type="button"
+                                    variant="link"
+                                    size="sm"
+                                    class="h-auto p-0 text-xs"
+                                    @click="form.default_department_id = null"
+                                >
+                                    Quitar
+                                </Button>
+                            </p>
+                            <InputError
+                                :message="validation.error('department_ids')"
+                            />
+                            <InputError
+                                :message="
+                                    validation.error('default_department_id')
+                                "
+                            />
+                        </fieldset>
                     </FormSection>
 
                     <FormSection

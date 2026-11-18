@@ -4,12 +4,14 @@ import { Paperclip, Smile } from '@lucide/vue';
 import { useDebounceFn } from '@vueuse/core';
 import {
     computed,
+    defineAsyncComponent,
     nextTick,
     onBeforeUnmount,
     onMounted,
     ref,
     shallowRef,
     useId,
+    watch,
 } from 'vue';
 import {
     COMPOSER_CARD,
@@ -28,8 +30,6 @@ import {
     newClientReference,
     screenFiles,
 } from '@/components/team-chat/teamChatFormat';
-import TeamEmojiPicker from '@/components/team-chat/TeamEmojiPicker.vue';
-import TeamMediaViewer from '@/components/team-chat/TeamMediaViewer.vue';
 import type { ViewerItem } from '@/components/team-chat/TeamMediaViewer.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,6 +48,16 @@ import type {
     TeamMention,
     TeamMessage,
 } from '@/types/team-chat';
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const TeamMediaViewer = defineAsyncComponent(
+    () => import('@/components/team-chat/TeamMediaViewer.vue'),
+);
+
+// Loaded the first time it is shown: it is not needed to paint the page.
+const TeamEmojiPicker = defineAsyncComponent(
+    () => import('@/components/team-chat/TeamEmojiPicker.vue'),
+);
 
 /**
  * Writes internal messages: multiline text (Enter sends, Shift+Enter adds a
@@ -498,6 +508,12 @@ function removeFile(index: number): void {
 /* The attached images and videos, to look at them before sending. */
 const viewerOpen = ref(false);
 const viewerIndex = ref(0);
+/* Mounted the first time it opens (and kept, so it can animate out). */
+const viewerUsed = ref(false);
+
+watch(viewerOpen, (open) => {
+    viewerUsed.value ||= open;
+});
 const viewerItems = computed<ViewerItem[]>(() =>
     http.attachments.flatMap((file, position) => {
         const url = previewUrls.value.get(file);
@@ -874,6 +890,7 @@ defineExpose({ focus, addFiles });
         </div>
 
         <TeamMediaViewer
+            v-if="viewerUsed"
             v-model:open="viewerOpen"
             v-model:index="viewerIndex"
             :items="viewerItems"

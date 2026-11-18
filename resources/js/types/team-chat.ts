@@ -155,6 +155,9 @@ export type TeamAttachment = {
     preview_url: string | null;
     /** Small preview of an image for the bubble (the original when none can be made). */
     thumb_url?: string | null;
+    /** Pixels of an image once measured (reserves its box before it loads). */
+    width?: number | null;
+    height?: number | null;
     /** Audio and video played in place (served with byte ranges). */
     stream_url?: string | null;
     /** «Guardar archivo» (videos.save-to-nas): absent or null when the viewer may not save it. */

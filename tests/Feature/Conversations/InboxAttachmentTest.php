@@ -3,6 +3,7 @@
 use App\Enums\MessageDirection;
 use App\Enums\MessageType;
 use App\Events\Messaging\MessageRecorded;
+use App\Http\Controllers\Conversations\MessageAttachmentController;
 use App\Models\Conversation;
 use App\Models\Department;
 use App\Models\Message;
@@ -264,7 +265,7 @@ test('the composer receives the same limits the server enforces', function () {
                 && in_array('application/pdf', collect($rules)->firstWhere('key', 'document')['mimes'], true)));
 });
 
-test('attachments are revalidated on every open so they never outlive the session or the access', function () {
+test('attachments are kept a week by the viewer\'s own browser only, and revalidated with their tag after that', function () {
     $image = storedAttachment($this->conversation, 'image/png', 'foto.png', 'png-bytes');
     $url = route('conversations.messages.attachments.show', [$this->conversation, $image->message_id, $image]);
 
@@ -273,8 +274,9 @@ test('attachments are revalidated on every open so they never outlive the sessio
     $etag = (string) $first->headers->get('ETag');
 
     expect($cacheControl)->toContain('private')
-        ->toContain('no-cache')
-        ->not->toContain('max-age=300')
+        ->toContain('max-age='.MessageAttachmentController::BROWSER_CACHE_SECONDS)
+        ->not->toContain('public')
+        ->not->toContain('no-store')
         ->and($etag)->not->toBe('')
         ->and($first->headers->get('Last-Modified'))->not->toBeNull();
 

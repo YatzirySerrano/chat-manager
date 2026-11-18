@@ -818,7 +818,8 @@ tareas: las cifras tienen un ruido de ±20 %.
 
 Lo que **no** mejoró: se probó marcar como puras las copias `Object.assign` de los archivos generados por Wayfinder
 para que el empaquetador descartara rutas sin uso (135 kB de definiciones en el _chunk_ de entrada); rolldown conserva
-las asignaciones de propiedades (`ruta.url = …`) y el _chunk_ solo bajó 5 kB, así que se descartó.
+las asignaciones de propiedades (`ruta.url = …`) y el _chunk_ solo bajó 5 kB, así que se descartó. Resuelto en §15.1
+reescribiendo esas asignaciones en la compilación.
 
 ### 14.3 Imágenes y video en las conversaciones
 
@@ -838,10 +839,12 @@ las asignaciones de propiedades (`ruta.url = …`) y el _chunk_ solo bajó 5 kB,
   responde `206 Partial Content`, así que el video se puede adelantar y se reproduce en Safari; se copia en bloques de
   64 kB, nunca entero en memoria. Los discos locales y el recurso montado del NAS ya respondían rangos.
 - **No se cambió** la política `private, no-cache`: los adjuntos se revalidan en cada apertura para no sobrevivir a la
-  sesión ni al acceso (prueba `InboxAttachmentTest`); un 304 no reenvía el archivo.
+  sesión ni al acceso (prueba `InboxAttachmentTest`); un 304 no reenvía el archivo. _Cambiado después (2026-11-16):
+  `private, max-age=604800`, ver §15.2._
 
 Pendiente: el chat interno (`TeamAttachmentController`) sigue sirviendo el original con `no-store`; el camino de rangos
 se probó con un flujo en memoria, no contra un S3 real; no hay póster de video (requeriría ffmpeg en el servidor).
+_Lo del chat interno quedó resuelto (miniaturas, caché privada, `ETag` y medidas, §15.2)._
 
 ### 14.4 Recomendaciones de entorno
 
@@ -855,3 +858,84 @@ se probó con un flujo en memoria, no contra un S3 real; no hay póster de video
   `SESSION_DRIVER=database` cada petición hace 3 consultas de infraestructura; Redis las evita.
 - La extensión `gd` es necesaria para las miniaturas (ya es obligatoria); con `exif` se respeta la orientación de las
   fotos de cámara (sin ella, una foto con datos EXIF se sirve sin reducir).
+
+## 15. Paquete de JavaScript y multimedia de los chats (2026-11-18)
+
+Medido con `npm run build` (Vite 8 / rolldown) sobre la misma rama, antes y después; «inicial» es lo que pide la
+primera carga de la página (entrada `app.ts`, la página y sus importaciones estáticas). gzip nivel 6 y brotli por
+defecto de Node, como los haría nginx.
+
+### 15.1 Paquete
+
+| Medida                                   |                     Antes |                   Después |
+| ---------------------------------------- | ------------------------: | ------------------------: |
+| _Chunk_ de entrada `app-*.js`            |  417,7 kB (gzip 95,4 kB) |  275,0 kB (gzip 69,0 kB) |
+| Inicial de `/conversations` (JS)         | 1 274 kB (gz 399, br 342) | 1 193 kB (gz 393, br 342) |
+| Inicial de Chat interno (JS)             | 1 013 kB (gz 313, br 268) |   938 kB (gz 306, br 267) |
+| Inicial de Contactos (JS)                |   911 kB (gz 280, br 239) |   830 kB (gz 275, br 240) |
+| Inicial de Reportes (JS)                 | 1 053 kB (gz 311, br 267) |   967 kB (gz 304, br 267) |
+
+- **Rutas de Wayfinder que sí se descartan** (`vite-plugins/wayfinder-tree-shaking.ts`, solo en `build`): cada ayudante
+  generado (`index`, `index.url = …`, `index.form = indexForm`) se reescribe como una sola expresión pura
+  (`/* @__PURE__ */ Object.assign(fn, { url, get, form… })`) en el lugar de su última asignación, y el
+  `Object.assign(x, x)` de la exportación por defecto (sin efecto) pasa a `x`. Importar un ayudante ya no arrastra
+  todas las rutas del archivo: el _chunk_ de entrada pierde ~140 kB sin comprimir (~26 kB gzip). Las rutas se repiten
+  mucho y comprimen bien, así que lo ganado en la red es menor que lo ganado en análisis y compilación del JS (70–85 kB
+  menos por página). El complemento solo reescribe un archivo si **todas** sus sentencias tienen la forma generada; si
+  Wayfinder cambia su salida, el archivo queda como estaba. Se comprobó que los 277 archivos generados dan exactamente
+  los mismos valores (URLs, métodos y variantes de formulario) antes y después.
+- **Vue e Inertia en _chunks_ propios** (`vendor-vue`, `vendor-inertia`; `build.rolldownOptions.output.codeSplitting`):
+  su nombre solo cambia al actualizar dependencias, así que tras un despliegue el navegador conserva ~250 kB (~86 kB
+  gzip) y solo descarga el código de la aplicación que cambió. El resto sigue dividido por página.
+- **Ya estaba bien y se verificó:** cada página es un _chunk_ propio (`import.meta.glob` perezoso del plugin de
+  Inertia); `laravel-echo` y `pusher-js` se cargan con `import()` (§14.2); la ayuda de cada módulo y los recorridos se
+  cargan al abrirlos; las gráficas son SVG propios (sin librería); las fuentes son locales, con `font-display: swap` y
+  `preload` (`@fonts`).
+- **Cargados al abrirse** (`defineAsyncComponent`, montados solo la primera vez): el visor de archivos de
+  Conversaciones (`MediaViewer`) y del chat interno (`TeamMediaViewer`), el diálogo de transferir o devolver
+  (`ConversationRouteDialog`) y el selector de emojis del chat interno.
+
+### 15.2 Archivos de los chats
+
+- **Caché del navegador:** desde 2026-11-16 los adjuntos de Conversaciones y del chat interno se responden con
+  `Cache-Control: private, max-age=604800` (una semana, solo en el navegador de quien los abrió; nunca `public`): el
+  archivo detrás de una URL de adjunto no cambia, y la versión anterior (`no-cache`/`no-store`) costaba una petición
+  con sesión y autorización cada vez que se pintaba el chat. Pasada la semana se revalidan con `ETag` y
+  `Last-Modified` (304 sin reenviar el archivo, y solo después de autorizar de nuevo). El chat interno ahora también
+  envía `ETag` (hash guardado del archivo y variante) y responde 304. Pruebas: `InboxAttachmentTest`,
+  `MediaPreviewTest`, `TeamAttachmentsTest`, `TeamMediaPlaybackTest`.
+- **Medidas también en el chat interno:** `team_attachments.width/height` (migración
+  `2026_11_18_140000_add_dimensions_to_team_attachments_table`); la imagen de un mensaje reserva su caja con ellas.
+- **Medidas de las imágenes sin miniatura** (GIF, stickers WebP, imágenes ya pequeñas): `WarmMediaThumbnail` las mide
+  leyendo solo la cabecera del archivo (`MediaThumbnails::measure`; en un disco remoto, los primeros 256 kB) para
+  reservar su caja; antes solo se medía una imagen cuando se le hacía miniatura.
+- **Marcador mientras carga:** la caja de una imagen pulsa suavemente hasta que llega (`motion-safe:animate-pulse`, sin
+  animación con «reducir movimiento»).
+- **Audio del chat interno:** no pide nada hasta que el reproductor está cerca de la pantalla (como el de
+  Conversaciones); antes cada audio de un hilo largo pedía su cabecera al abrirlo.
+- **Rellenar lo existente:** `php artisan media:warm-thumbnails` encola en la cola `media` las miniaturas que falten y
+  ahora también las medidas que falten, de Conversaciones y del chat interno. Se puede repetir (salta lo ya hecho) y
+  limitar con `--limit=`.
+- **Sin cambio:** no hay póster de video: haría falta `ffmpeg` en el servidor y la aplicación no lo usa; el video
+  muestra su primer fotograma con `preload="metadata"` solo cuando está cerca de la pantalla.
+
+### 15.3 Nginx (recomendado, sin cambiar la plantilla)
+
+La plantilla `deploy/nginx/chat-manager.conf` ya comprime con gzip el JS, el CSS y el JSON de Inertia y sirve
+`/build/` con `expires 1y` + `immutable`. Opcional en el VPS:
+
+- **Brotli** (~13 % menos que gzip en el JS de esta compilación) con el módulo `ngx_brotli` (Debian/Ubuntu:
+  `libnginx-mod-http-brotli-filter` y `-static`), junto a gzip para clientes que no lo aceptan:
+
+    ```nginx
+    brotli on;
+    brotli_comp_level 5;
+    brotli_types text/css text/plain application/javascript application/json application/manifest+json image/svg+xml;
+    ```
+
+- **Fuentes y otros estáticos de `public/`** (iconos, `manifest.webmanifest` aparte): las fuentes ya viven en
+  `/build/assets` (caché inmutable). Para los iconos sin hash basta una caché corta:
+  `location ~* \.(?:ico|png|svg|webp)$ { expires 7d; access_log off; try_files $uri =404; }` (no aplicar a
+  `/sw.js` ni a `manifest.webmanifest`, que deben revisarse en cada carga).
+- **No** poner caché de nginx ni `proxy_cache` delante de los adjuntos: pasan por PHP para autorizar y su
+  `Cache-Control` privado lo decide la aplicación.

@@ -135,6 +135,56 @@ class MediaThumbnails
     }
 
     /**
+     * Size in pixels (upright) of a stored image no preview is made of (a
+     * GIF, a sticker, a picture already small), so the chat can still reserve
+     * its box. Only the header is read: the whole file on a local disk is
+     * never decoded, and a remote one is read up to its first 256 kB. Null
+     * when it cannot be told.
+     *
+     * @return array{width: int, height: int}|null
+     */
+    public function measure(string $disk, string $path, string $mime): ?array
+    {
+        $mime = strtolower($mime);
+
+        if (! in_array($mime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
+            return null;
+        }
+
+        try {
+            $filesystem = Storage::disk($disk);
+
+            if (config("filesystems.disks.{$disk}.driver") === 'local') {
+                $source = $filesystem->path($path);
+                $info = is_file($source) ? @getimagesize($source) : false;
+                $orientation = $info !== false && $mime === 'image/jpeg' ? $this->orientation($source) : 1;
+            } else {
+                $stream = $filesystem->readStream($path);
+                $head = is_resource($stream) ? (string) stream_get_contents($stream, 256 * 1024) : '';
+
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+
+                $info = $head === '' ? false : @getimagesizefromstring($head);
+                // Without the whole file the EXIF block cannot be trusted:
+                // a camera photo is only measured when it has none.
+                $orientation = $mime === 'image/jpeg' && str_contains(substr($head, 0, 65536), "Exif\0\0") ? null : 1;
+            }
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($info === false || $orientation === null || $info[0] < 1 || $info[1] < 1) {
+            return null;
+        }
+
+        $rotated = in_array($orientation, [5, 6, 7, 8], true);
+
+        return ['width' => $rotated ? $info[1] : $info[0], 'height' => $rotated ? $info[0] : $info[1]];
+    }
+
+    /**
      * @return array{string, int, int}|null Preview bytes and the size of the ORIGINAL in pixels (upright).
      */
     private function make(string $source, string $mime): ?array

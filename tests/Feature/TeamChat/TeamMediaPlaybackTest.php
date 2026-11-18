@@ -57,7 +57,7 @@ test('a playable file answers byte ranges and is never cached as public', functi
         ->and($whole->headers->get('Content-Type'))->toBe('video/mp4')
         ->and($whole->headers->get('Content-Disposition'))->toStartWith('inline')
         ->and($whole->headers->get('X-Content-Type-Options'))->toBe('nosniff')
-        ->and($whole->headers->get('Cache-Control'))->toContain('private')->toContain('no-store')->not->toContain('public');
+        ->and($whole->headers->get('Cache-Control'))->toContain('private')->toContain('max-age=604800')->not->toContain('public');
 
     $part = $this->actingAs($this->beto)->get($url, ['Range' => 'bytes=0-99'])->assertStatus(206);
     expect($part->headers->get('Content-Range'))->toBe('bytes 0-99/'.$size)

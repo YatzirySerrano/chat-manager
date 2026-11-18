@@ -9,13 +9,16 @@ use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamThread;
 use App\Services\Storage\MediaThumbnails;
 use App\Support\Attachments\RangedStream;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Serves an internal attachment to a current participant of its thread.
@@ -55,6 +58,26 @@ class TeamAttachmentController extends Controller
         }
 
         /*
+         * Revalidation after the week of private caching: the stored file
+         * never changes (its name is random and its hash is kept), so an
+         * unchanged tag answers 304 without reading the disk again. It is
+         * only answered after the authorization above.
+         */
+        $etag = sha1(implode('|', [
+            $attachment->id,
+            $attachment->path,
+            $attachment->sha256,
+            $request->boolean('thumb') ? 'thumb' : 'original',
+            $request->boolean('inline') ? 'inline' : 'attachment',
+        ]));
+        $lastModified = $attachment->created_at;
+        $notModified = $this->cached(new Response, $etag, $lastModified);
+
+        if ($notModified->isNotModified($request)) {
+            return $notModified;
+        }
+
+        /*
          * `?thumb=1`: the small preview of an image the bubble shows
          * (MediaThumbnails keeps it in the system folder of the same private
          * disk and MediaDisk::discard() removes it with the original), so the
@@ -69,13 +92,14 @@ class TeamAttachmentController extends Controller
             $thumbnail = $thumbnails->ensure($attachment->disk, $attachment->path, $attachment->mime_type, $attachment->size_bytes);
 
             if ($thumbnail !== null) {
-                return $disk->response($thumbnail['path'], (pathinfo($attachment->original_name, PATHINFO_FILENAME) ?: 'imagen').'.jpg', [
+                $this->rememberDimensions($attachment, $thumbnail['width'], $thumbnail['height']);
+
+                return $this->cached($disk->response($thumbnail['path'], (pathinfo($attachment->original_name, PATHINFO_FILENAME) ?: 'imagen').'.jpg', [
                     'Content-Type' => $thumbnail['mime'],
                     'X-Content-Type-Options' => 'nosniff',
-                    'Cache-Control' => self::CACHE_CONTROL,
                     'Referrer-Policy' => 'no-referrer',
                     'Content-Security-Policy' => self::SANDBOX,
-                ], 'inline');
+                ], 'inline'), $etag, $lastModified);
             }
         }
 
@@ -84,7 +108,6 @@ class TeamAttachmentController extends Controller
         $headers = [
             'Content-Type' => $attachment->mime_type,
             'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => self::CACHE_CONTROL,
             'Referrer-Policy' => 'no-referrer',
         ];
 
@@ -115,14 +138,46 @@ class TeamAttachmentController extends Controller
                 ? response()->file($disk->path($attachment->path), $headers)
                 : RangedStream::response($request, fn () => $disk->readStream($attachment->path), (int) $disk->size($attachment->path), $headers);
 
-            // A file response marks itself public: internal files never are.
-            $response->headers->set('Cache-Control', self::CACHE_CONTROL);
-
-            return $response;
+            return $this->cached($response, $etag, $lastModified);
         }
 
-        return $inline
+        return $this->cached($inline
             ? $disk->response($attachment->path, $attachment->original_name, $headers, 'inline')
-            : $disk->download($attachment->path, $attachment->original_name, $headers);
+            : $disk->download($attachment->path, $attachment->original_name, $headers), $etag, $lastModified);
+    }
+
+    /**
+     * Private caching in the viewer's own browser only, with a validator for
+     * when the week is over. Set after the response is built because a file
+     * response marks itself public: internal files never are.
+     */
+    private function cached(Response $response, string $etag, ?CarbonInterface $lastModified): Response
+    {
+        $response->headers->set('Cache-Control', self::CACHE_CONTROL);
+        $response->setEtag($etag);
+
+        if ($lastModified !== null) {
+            $response->setLastModified($lastModified);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Keeps the size of an image the first time its preview is made, so the
+     * thread reserves its box before the file loads.
+     */
+    private function rememberDimensions(TeamAttachment $attachment, ?int $width, ?int $height): void
+    {
+        if ($width === null || $height === null || $attachment->width !== null) {
+            return;
+        }
+
+        try {
+            // Not an edit of the attachment: its timestamps stay as they are.
+            DB::table('team_attachments')->where('id', $attachment->id)->whereNull('width')->update(['width' => $width, 'height' => $height]);
+        } catch (Throwable) {
+            // Only a layout hint: never a reason to fail the file.
+        }
     }
 }

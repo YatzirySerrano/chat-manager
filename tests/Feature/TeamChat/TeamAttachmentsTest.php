@@ -233,7 +233,7 @@ test('the bubble gets a small preview of a photo, authorized like the original a
     expect($thumbnail->headers->get('Content-Type'))->toBe('image/jpeg')
         ->and($thumbnail->headers->get('Content-Disposition'))->toStartWith('inline')
         ->and($thumbnail->headers->get('X-Content-Type-Options'))->toBe('nosniff')
-        ->and($thumbnail->headers->get('Cache-Control'))->toContain('private')->toContain('no-store');
+        ->and($thumbnail->headers->get('Cache-Control'))->toContain('private')->toContain('max-age=604800')->not->toContain('public');
 
     [$width] = getimagesizefromstring((string) $thumbnail->streamedContent());
 
@@ -248,6 +248,52 @@ test('the bubble gets a small preview of a photo, authorized like the original a
     expect(Storage::disk('local')->allFiles())->toBe([])
         ->and($photo->fresh()->isPurged())->toBeTrue();
     $this->actingAs($this->beto)->get($response->json('data.attachments.0.thumb_url'))->assertNotFound();
+});
+
+test('the size of an internal image is measured when it is stored, so the thread reserves its box', function () {
+    $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), [
+            'attachments' => [UploadedFile::fake()->image('foto.jpg', 1600, 1200), UploadedFile::fake()->image('icono.png', 20, 30), teamPdfUpload()],
+        ], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    [$photo, $icon, $pdf] = TeamAttachment::query()->orderBy('id')->get()->all();
+
+    // The photo gets its preview, the small icon is only measured, the PDF is left alone.
+    expect([$photo->width, $photo->height])->toBe([1600, 1200])
+        ->and([$icon->width, $icon->height])->toBe([20, 30])
+        ->and([$pdf->width, $pdf->height])->toBe([null, null])
+        ->and($photo->updated_at->equalTo($photo->created_at))->toBeTrue();
+
+    $this->actingAs($this->beto)
+        ->getJson(route('team-chat.threads.messages.index', $this->thread))
+        ->assertOk()
+        ->assertJsonFragment(['id' => $photo->id, 'width' => 1600, 'height' => 1200]);
+});
+
+test('an internal file is kept privately by the browser and revalidated with its tag, authorized again', function () {
+    $this->actingAs($this->ana)
+        ->post(route('team-chat.threads.messages.store', $this->thread), ['attachments' => [teamPdfUpload()]], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    $attachment = TeamAttachment::query()->firstOrFail();
+    $url = route('team-chat.attachments.show', ['thread' => $this->thread, 'message' => $attachment->team_message_id, 'attachment' => $attachment]);
+
+    $first = $this->actingAs($this->beto)->get($url)->assertOk();
+    $etag = (string) $first->headers->get('ETag');
+
+    expect((string) $first->headers->get('Cache-Control'))->toContain('private')->toContain('max-age=604800')->not->toContain('public')
+        ->and($etag)->not->toBe('')
+        ->and($first->headers->get('Last-Modified'))->not->toBeNull();
+
+    $this->actingAs($this->beto)->get($url, ['If-None-Match' => $etag])->assertStatus(304)->assertHeader('ETag', $etag);
+
+    // Each variant of the same file has its own tag.
+    $inline = $this->actingAs($this->beto)->get($url.'?inline=1')->assertOk();
+    expect($inline->headers->get('ETag'))->not->toBe($etag);
+
+    // Someone outside the thread gets nothing, even with the tag.
+    $this->actingAs(User::factory()->agent()->create())->get($url, ['If-None-Match' => $etag])->assertNotFound();
 });
 
 test('an image that needs no preview is answered itself, inline', function () {

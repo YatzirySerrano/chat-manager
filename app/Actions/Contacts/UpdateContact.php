@@ -16,7 +16,10 @@ class UpdateContact
      * The data arrives normalized (E.164 phone, lowercase email, squished
      * text), so a submission that only differs in formatting writes nothing.
      *
-     * @param  array{name: string, phone_e164: string|null, email: string|null, custom_fields: array<string, string>|null}  $data
+     * The department is only written when the data carries it (the contact
+     * form does; the importer and the directory save leave it as it is).
+     *
+     * @param  array{name: string, phone_e164: string|null, email: string|null, department_id?: int|null, custom_fields: array<string, string>|null}  $data
      * @return bool Whether anything changed.
      */
     public function handle(Contact $contact, array $data, User $actor, bool $confirmedDuplicate = false): bool

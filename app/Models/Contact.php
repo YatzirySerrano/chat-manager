@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $phone_e164 Normalized with App\Support\PhoneNumber; not unique.
  * @property string|null $profile_name Name the person set on their WhatsApp profile.
  * @property string|null $email
+ * @property int|null $department_id Department where the contact's new conversations arrive (see ConversationRouter).
  * @property ContactStatus $status
  * @property Carbon|null $archived_at
  * @property ContactSource $source
@@ -43,7 +44,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'phone_e164', 'profile_name', 'email', 'custom_fields'])]
+#[Fillable(['name', 'phone_e164', 'profile_name', 'email', 'department_id', 'custom_fields'])]
 class Contact extends Model
 {
     /** @use HasFactory<ContactFactory> */
@@ -149,6 +150,17 @@ class Contact extends Model
         return $this->belongsToMany(Connection::class)
             ->withPivot(['first_interaction_at', 'last_interaction_at'])
             ->withTimestamps();
+    }
+
+    /**
+     * Department where the contact's new conversations arrive, when the
+     * connection may route to it (see ConversationRouter).
+     *
+     * @return BelongsTo<Department, $this>
+     */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
     }
 
     /**

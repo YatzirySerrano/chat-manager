@@ -22,6 +22,7 @@ use App\Models\Contact;
 use App\Models\ContactNote;
 use App\Models\ContactReviewCase;
 use App\Models\Conversation;
+use App\Models\Department;
 use App\Models\Tag;
 use App\Models\User;
 use App\Services\Conversations\ContactConversationHistory;
@@ -71,6 +72,7 @@ class ContactController extends Controller
                     ->select('tags.id', 'tags.name', 'tags.color', 'tags.is_active')
                     ->orderBy('tags.name'),
                 'attributions',
+                'department:id,name,color,is_active',
             ])
             ->paginate(15)
             ->withQueryString();
@@ -110,6 +112,7 @@ class ContactController extends Controller
                 'reviewDuplicates' => $actor->can('reviewDuplicates', Contact::class),
                 'import' => $actor->holdsPermission(Permission::ImportContacts),
             ],
+            'departments' => $this->departmentOptions($actor),
             'canExport' => $exporter->allowsReport('contacts', $actor),
             'openReviews' => $actor->can('reviewDuplicates', Contact::class)
                 ? ContactReviewCase::query()->open()->count()
@@ -144,6 +147,7 @@ class ContactController extends Controller
 
         $contact->load([
             'creator:id,name',
+            'department:id,name,color,is_active',
             'whatsappIdentity',
             'identities' => fn ($query) => $query->orderBy('id'),
             'tags' => fn (BelongsToMany $query) => $query
@@ -190,6 +194,7 @@ class ContactController extends Controller
                         'is_active' => $tag->is_active,
                     ])
                 : [],
+            'departments' => $this->departmentOptions($actor),
             'can' => [
                 'update' => $actor->can('update', $contact),
                 'delete' => $actor->can('delete', $contact),
@@ -298,6 +303,27 @@ class ContactController extends Controller
             'email' => $emailTaken ? 'Ya existe un contacto con este correo electrónico.' : null,
             'confirm_duplicate' => 'Revisa los posibles duplicados. Si se trata de otra persona, confirma para guardarlo de todos modos.',
         ]));
+    }
+
+    /**
+     * Departments the contact form offers for «Departamento»: the active ones
+     * within the actor's scope (the same set ContactRequest accepts).
+     *
+     * @return list<array{id: int, name: string, color: string}>
+     */
+    private function departmentOptions(User $actor): array
+    {
+        return array_values(Department::query()
+            ->active()
+            ->visibleTo($actor)
+            ->orderBy('name')
+            ->get(['id', 'name', 'color'])
+            ->map(fn (Department $department): array => [
+                'id' => $department->id,
+                'name' => $department->name,
+                'color' => $department->color->value,
+            ])
+            ->all());
     }
 
     /**

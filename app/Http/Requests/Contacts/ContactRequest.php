@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Contacts;
 
 use App\Models\Contact;
+use App\Models\Department;
 use App\Support\PhoneNumber;
 use Closure;
 use Illuminate\Auth\Access\Response;
@@ -55,6 +56,25 @@ class ContactRequest extends FormRequest
                 },
             ],
             'email' => ['nullable', 'string', 'email', 'max:255', 'required_without:phone'],
+            'department_id' => [
+                'nullable',
+                'integer',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_numeric($value) || $this->keepsCurrentDepartment((int) $value)) {
+                        return;
+                    }
+
+                    $selectable = Department::query()
+                        ->active()
+                        ->visibleTo($this->user())
+                        ->whereKey((int) $value)
+                        ->exists();
+
+                    if (! $selectable) {
+                        $fail('Elige un departamento activo de la lista.');
+                    }
+                },
+            ],
             'custom_fields' => ['nullable', 'array', 'max:'.self::MAX_CUSTOM_FIELDS],
             'custom_fields.*' => ['array:label,value'],
             'custom_fields.*.label' => ['required', 'string', 'max:60'],
@@ -113,6 +133,7 @@ class ContactRequest extends FormRequest
             'name' => 'nombre',
             'phone' => 'teléfono',
             'email' => 'correo electrónico',
+            'department_id' => 'departamento',
             'custom_fields' => 'campos personalizados',
             'custom_fields.*.label' => 'nombre del campo',
             'custom_fields.*.value' => 'valor del campo',
@@ -132,7 +153,7 @@ class ContactRequest extends FormRequest
     }
 
     /**
-     * @return array{name: string, phone_e164: string|null, email: string|null, custom_fields: array<string, string>|null}
+     * @return array{name: string, phone_e164: string|null, email: string|null, department_id?: int|null, custom_fields: array<string, string>|null}
      */
     public function payload(): array
     {
@@ -147,7 +168,20 @@ class ContactRequest extends FormRequest
             'phone_e164' => PhoneNumber::normalize($this->input('phone')),
             'email' => $this->filled('email') ? mb_strtolower($this->string('email')->trim()->value()) : null,
             'custom_fields' => $customFields === [] ? null : $customFields,
+            // Left out when the form does not send it, so the department is kept.
+            ...($this->has('department_id') ? ['department_id' => $this->filled('department_id') ? $this->integer('department_id') : null] : []),
         ];
+    }
+
+    /**
+     * Saving the contact without touching its department never fails, even
+     * when that department was deactivated or is outside the actor's scope.
+     */
+    private function keepsCurrentDepartment(int $departmentId): bool
+    {
+        $contact = $this->route('contact');
+
+        return $contact instanceof Contact && $contact->department_id === $departmentId;
     }
 
     public function confirmsDuplicate(): bool

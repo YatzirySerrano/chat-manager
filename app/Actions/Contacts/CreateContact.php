@@ -21,7 +21,7 @@ class CreateContact
      * A contact registered by a person is saved into the directory at once
      * (only automatic registrations of unknown senders are provisional).
      *
-     * @param  array{name: string, phone_e164: string|null, email: string|null, custom_fields: array<string, string>|null}  $data
+     * @param  array{name: string, phone_e164: string|null, email: string|null, department_id?: int|null, custom_fields: array<string, string>|null}  $data
      */
     public function handle(array $data, User $actor, bool $confirmedDuplicate = false, ContactSource $source = ContactSource::Manual): Contact
     {
@@ -39,6 +39,7 @@ class CreateContact
                 'source' => $source->value,
                 'has_phone' => $contact->phone_e164 !== null,
                 'has_email' => $contact->email !== null,
+                'department_id' => $contact->department_id,
                 'confirmed_duplicate' => $confirmedDuplicate ?: null,
             ], fn (mixed $value): bool => $value !== null), $actor);
 

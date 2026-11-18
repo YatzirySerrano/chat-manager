@@ -43,6 +43,14 @@ class ContactResource extends JsonResource
             'first_interaction_at' => $this->first_interaction_at?->toIso8601String(),
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            // Department where the contact's new conversations arrive (when the connection may route to it).
+            'department_id' => $this->department_id,
+            'department' => $this->whenLoaded('department', fn (): ?array => $this->department === null ? null : [
+                'id' => $this->department->id,
+                'name' => $this->department->name,
+                'color' => $this->department->color->value,
+                'is_active' => $this->department->is_active,
+            ]),
             'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator === null ? null : [
                 'id' => app(ProtectedAccounts::class)->idForRequest($this->creator, $request),
                 'name' => app(ProtectedAccounts::class)->nameForRequest($this->creator, $request),

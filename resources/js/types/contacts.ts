@@ -51,6 +51,21 @@ export type ContactOriginSummary = {
     reliability: AttributionReliabilityValue;
 };
 
+/** Department chosen on a contact. */
+export type ContactDepartment = {
+    id: number;
+    name: string;
+    color: AppColor;
+    is_active: boolean;
+};
+
+/** A department the contact form offers (active, within the actor's scope). */
+export type ContactDepartmentOption = {
+    id: number;
+    name: string;
+    color: AppColor;
+};
+
 export type Contact = {
     id: number;
     name: string;
@@ -71,6 +86,9 @@ export type Contact = {
     first_interaction_at: string | null;
     last_interaction_at: string | null;
     created_at: string | null;
+    /** Department where the contact's new conversations arrive (if the connection may route to it). */
+    department_id?: number | null;
+    department?: ContactDepartment | null;
     creator?: { id: number | null; name: string } | null;
     tags?: ContactTag[];
     identities?: ContactIdentitySummary[];

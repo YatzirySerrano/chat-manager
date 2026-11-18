@@ -384,7 +384,7 @@ el motor). El orden es fijo:
 | `POST /conversations/{id}/read`                        | Avanza tu marcador de lectura.                                                                                                     |
 | `PUT /conversations/{id}/tags`                         | Reemplaza las etiquetas (`tag_ids`).                                                                                               |
 | `POST /conversations/{id}/accept`                      | Acepta; `override_reason` opcional (excepción a las reglas de la cola, solo con el permiso).                                       |
-| `POST /conversations/{id}/readiness`                   | Confirma la solicitud como completa o la devuelve a «Necesita información» (`readiness`, `reason`, `version`).                     |
+| `POST /conversations/{id}/readiness`                   | Confirma o devuelve a «Necesita información» (`readiness`, `missing_items[]`, `missing_other`, `send_message`, `reason`, `version`). |
 | `PUT /conversations/{id}/category`                     | Fija o quita la categoría de la solicitud (`category_id`).                                                                         |
 | `GET /conversations/{id}/preview`                      | JSON de solo lectura: mensajes recientes, mensaje inicial y resumen de la solicitud (no cambia nada).                              |
 | `POST /conversations/{id}/messages`                    | Respuesta: `body`, `client_reference`, `attachment` (archivo) y `reply_to_message_id` opcionales.                                  |

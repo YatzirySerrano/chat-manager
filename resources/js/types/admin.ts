@@ -1,4 +1,5 @@
 import type { RecordStateValue } from './ui';
+import type { MissingInfoCatalog } from './conversations';
 
 export type DataScopeValue = 'global' | 'departments' | 'assigned';
 
@@ -417,6 +418,8 @@ export type PlatformSettings = {
     };
     /** «Guardar video»: root folder of the NAS browser. */
     video_exports: { root_folder: string };
+    /** «Marcar que necesita información»: catalog and message intro (saved apart). */
+    missing_info: MissingInfoCatalog;
 };
 
 /**

@@ -24,6 +24,7 @@ use App\Services\Conversations\ContactConversationHistory;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\Conversations\ConversationTimeline;
 use App\Services\Conversations\CustomerServiceWindow;
+use App\Services\Conversations\MissingInformation;
 use App\Services\Conversations\PendingAttention;
 use App\Services\Conversations\QueueRules;
 use App\Services\Exports\ReportExporter;
@@ -32,6 +33,7 @@ use App\Services\PlatformSettings;
 use App\Services\Sla\SlaSnapshot;
 use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
 use App\Support\Attachments\ChannelAttachmentPolicy;
+use App\Support\Features;
 use App\Support\Personalization\ViewerAlias;
 use App\Support\ProtectedAccounts;
 use Illuminate\Database\Eloquent\Collection;
@@ -291,6 +293,8 @@ class ConversationController extends Controller
             'details' => fn (): ?array => ($selected = $selection()) === null ? null : $this->details($selected, $actor, $request, $tagCatalog),
             'contactUrl' => fn (): ?string => ($selected = $selection()) !== null && $actor->can('view', $selected->contact) ? route('contacts.show', $selected->contact) : null,
             'transferReasonRequired' => fn (): bool => (bool) $settings->get('operations.transfer_reason_required'),
+            // «Marcar que necesita información»: the catalog the agent picks from.
+            'missingInfo' => fn (): ?array => Features::phaseTwo() ? app(MissingInformation::class)->describe() : null,
         ]);
     }
 

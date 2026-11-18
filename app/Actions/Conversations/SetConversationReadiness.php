@@ -26,7 +26,9 @@ use Illuminate\Validation\ValidationException;
  *   reach; never on closed or imported ones.
  * - Idempotent: asking for the state it already has changes nothing and
  *   records nothing (a retried request succeeds).
- * - Returning it to «Necesita información» requires a reason.
+ * - Returning it to «Necesita información» requires a reason: a free text
+ *   of at least REASON_MIN characters, or the list picked from the catalog
+ *   of missing information (`$listed`, any length).
  * - Confirming a request waiting in a queue starts its queue clock
  *   (`queued_at`): the minimum wait and the chronological order count from
  *   the confirmation. Returning it takes it out of the ready queue while the
@@ -50,11 +52,11 @@ class SetConversationReadiness
     /**
      * @throws ValidationException
      */
-    public function handle(Conversation $conversation, ConversationReadiness $target, User $actor, ?string $reason = null, ?int $expectedVersion = null): Conversation
+    public function handle(Conversation $conversation, ConversationReadiness $target, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $listed = false): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
-        if ($target === ConversationReadiness::NeedsInfo && mb_strlen((string) $reason) < self::REASON_MIN) {
+        if ($target === ConversationReadiness::NeedsInfo && mb_strlen((string) $reason) < ($listed ? 1 : self::REASON_MIN)) {
             throw ValidationException::withMessages(['reason' => 'Indica qué información falta (al menos '.self::REASON_MIN.' caracteres).']);
         }
 

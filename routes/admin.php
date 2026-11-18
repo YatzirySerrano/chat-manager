@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\HistoryImportController;
 use App\Http\Controllers\Admin\HistoryImportFileController;
 use App\Http\Controllers\Admin\HistoryImportInventoryController;
 use App\Http\Controllers\Admin\HistoryImportRuleController;
+use App\Http\Controllers\Admin\MissingInfoController;
 use App\Http\Controllers\Admin\PlatformSettingsController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
@@ -60,6 +61,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('settings', [PlatformSettingsController::class, 'edit'])->name('settings.edit');
         Route::put('settings', [PlatformSettingsController::class, 'update'])->name('settings.update');
+        // Catalog of «Marcar que necesita información» (settings.update).
+        Route::put('settings/missing-info', [MissingInfoController::class, 'update'])->middleware('phase-two')->name('settings.missing-info.update');
 
         Route::get('appearance', [AppearanceController::class, 'edit'])->name('appearance.edit');
         Route::put('appearance', [AppearanceController::class, 'update'])->name('appearance.update');

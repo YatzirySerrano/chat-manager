@@ -21,7 +21,7 @@ import {
     conversationConflictFromErrors,
     withoutConflictCode,
 } from '@/lib/conversations/actionErrors';
-import { edit as editSettings } from '@/routes/admin/settings';
+import { edit as missingInfoEdit } from '@/routes/admin/missing-info';
 import { update as updateReadiness } from '@/routes/conversations/readiness';
 import type {
     ConversationReadinessValue,
@@ -53,7 +53,7 @@ const emit = defineEmits<{ close: [] }>();
 
 /** Shortcut to the catalog (Configuración › Información faltante). */
 const { can: holdsPermission } = usePermissions();
-const catalogUrl = `${editSettings.url()}#informacion-faltante`;
+const catalogUrl = missingInfoEdit.url();
 
 const OTHER_MIN = 5;
 const OTHER_MAX = 200;
@@ -276,7 +276,7 @@ function post(
                         class="text-sm text-muted-foreground"
                     >
                         No hay opciones configuradas. Descríbela en «Otro» o
-                        agrégalas en Configuración › Información faltante.
+                        agrégalas en Administración › Información faltante.
                     </p>
                     <label
                         v-for="(item, index) in items"

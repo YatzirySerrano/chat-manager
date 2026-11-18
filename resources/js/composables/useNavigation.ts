@@ -18,6 +18,7 @@ import {
     ScrollText,
     ServerCog,
     FolderTree,
+    ListChecks,
     Settings,
     ShieldCheck,
     Tags,
@@ -25,12 +26,14 @@ import {
     Users,
 } from '@lucide/vue';
 import { computed } from 'vue';
+import { useFeatures } from '@/composables/useFeatures';
 import { usePermissions } from '@/composables/usePermissions';
 import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
 import { index as chatbotIndex } from '@/routes/admin/chatbot';
+import { edit as missingInfoEdit } from '@/routes/admin/missing-info';
 import { index as attentionIndex } from '@/routes/attention';
 import { index as historyIndex } from '@/routes/admin/history';
 import { index as historyImportIndex } from '@/routes/admin/history-import';
@@ -67,6 +70,7 @@ export type NavSection = {
 export function useNavigation() {
     const { can, canAny } = usePermissions();
     const teamChatUnread = useTeamChatUnread();
+    const { phaseTwo } = useFeatures();
 
     const sections = computed<NavSection[]>(() => {
         const result: NavSection[] = [];
@@ -295,6 +299,15 @@ export function useNavigation() {
                 description: 'Tipos de solicitud y sus reglas de servicio',
                 href: categoriesIndex(),
                 icon: FolderTree,
+            });
+        }
+
+        if (can('settings.view') && phaseTwo.value) {
+            admin.push({
+                title: 'Información faltante',
+                description: 'Lo que se le pide al cliente cuando falta algo',
+                href: missingInfoEdit(),
+                icon: ListChecks,
             });
         }
 

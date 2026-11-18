@@ -62,6 +62,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('settings', [PlatformSettingsController::class, 'edit'])->name('settings.edit');
         Route::put('settings', [PlatformSettingsController::class, 'update'])->name('settings.update');
         // Catalog of «Marcar que necesita información» (settings.update).
+        Route::get('missing-info', [MissingInfoController::class, 'edit'])->middleware('phase-two')->name('missing-info.edit');
         Route::put('settings/missing-info', [MissingInfoController::class, 'update'])->middleware('phase-two')->name('settings.missing-info.update');
 
         Route::get('appearance', [AppearanceController::class, 'edit'])->name('appearance.edit');

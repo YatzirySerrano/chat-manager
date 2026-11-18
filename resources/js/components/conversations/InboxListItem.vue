@@ -532,7 +532,12 @@ const label = computed(() => {
                         </span>
                         <span
                             v-if="showOperational && conversation.department"
-                            class="inline-flex max-w-32 min-w-0 shrink items-center gap-1"
+                            class="inline-flex max-w-36 min-w-0 shrink items-center gap-1 rounded-full px-1.5 py-px font-medium text-foreground/85"
+                            v-bind="
+                                colorPresentations(
+                                    conversation.department.color,
+                                ).soft
+                            "
                             :class="
                                 !conversation.department.is_active &&
                                 'line-through'

@@ -136,7 +136,8 @@ class ConversationResource extends JsonResource
                 'transfer' => $viewer->can('transfer', $this->resource),
                 'release' => $viewer->can('release', $this->resource),
                 'close' => $viewer->can('close', $this->resource),
-                'reopen' => $viewer->can('reopen', $this->resource),
+                // Imported history: «Reabrir» continues in a live conversation.
+                'reopen' => $viewer->can('reopen', $this->resource) || $viewer->can('continueImported', $this->resource),
                 'addNote' => $viewer->can('addNote', $this->resource),
                 'reply' => $viewer->can('reply', $this->resource),
                 'tag' => $viewer->can('tag', $this->resource),

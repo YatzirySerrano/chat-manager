@@ -62,6 +62,7 @@ import {
     read as markConversationRead,
 } from '@/routes/conversations';
 import type {
+    AppColor,
     AcceptBlock,
     ComposerSettings,
     ConversationDetails,
@@ -93,7 +94,12 @@ const props = defineProps<{
     counts: InboxCounts;
     inbox: ConversationInbox;
     statuses: { value: ConversationStatusValue; label: string }[];
-    departments: { id: number; name: string; is_active: boolean }[];
+    departments: {
+        id: number;
+        name: string;
+        color?: AppColor | null;
+        is_active: boolean;
+    }[];
     agents: { id: number; name: string; is_active: boolean }[];
     connections: {
         id: number;
@@ -876,7 +882,7 @@ function onAliasSaved(): void {
                 >
                     <button
                         type="button"
-                        class="spotlight grid interactive-surface gap-1 rounded-xl border bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                        class="spotlight grid gap-1 rounded-xl border interactive-surface bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
                         data-empty-chat-shortcut="pending"
                         @click="inboxList?.showPending()"
                     >
@@ -899,7 +905,7 @@ function onAliasSaved(): void {
                     </button>
                     <button
                         type="button"
-                        class="spotlight grid interactive-surface gap-1 rounded-xl border bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
+                        class="spotlight grid gap-1 rounded-xl border interactive-surface bg-card p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-primary/25"
                         data-empty-chat-shortcut="unread"
                         @click="inboxList?.showUnread()"
                     >

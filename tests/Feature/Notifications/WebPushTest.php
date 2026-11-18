@@ -14,6 +14,7 @@ use App\Services\Operations\Preflight;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /*
@@ -379,4 +380,22 @@ test('the preflight reports the state of the VAPID keys', function () {
 
     config(['webpush.public_key' => Vapid::generateKeys()['public_key']]);
     expect(app(Preflight::class)->webPush()->status)->toBe(HealthStatus::Warning);
+});
+
+test('«Enviar notificación de prueba» queues one push per browser of the user and explains when it cannot', function () {
+    Queue::fake();
+    configureVapid();
+    $user = User::factory()->agent()->create();
+
+    $this->actingAs($user)->post(route('notifications.push-test'))
+        ->assertInertiaFlash('toast', ['type' => 'warning', 'message' => 'Primero activa las notificaciones en este navegador.']);
+    Queue::assertNothingPushed();
+
+    PushSubscription::factory()->for($user)->count(2)->create();
+    PushSubscription::factory()->create();
+
+    $this->actingAs($user)->post(route('notifications.push-test'))->assertRedirect();
+
+    Queue::assertPushed(SendWebPush::class, 2);
+    Queue::assertPushed(SendWebPush::class, fn (SendWebPush $job): bool => $job->urgency === 'high');
 });

@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Conversations;
 
 use App\Actions\Conversations\CloseConversation;
+use App\Actions\Conversations\ContinueImportedConversation;
 use App\Actions\Conversations\ReopenConversation;
 use App\Enums\ConnectionChannel;
 use App\Http\Requests\Conversations\ConversationOperationRequest;
 use App\Models\Conversation;
+use App\Models\User;
 use App\Services\Messaging\ConnectionModality;
 use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
 
 class ConversationStatusController extends ConversationOperationController
 {
@@ -29,9 +32,31 @@ class ConversationStatusController extends ConversationOperationController
     {
         $this->ensureVisible($conversation);
 
+        // Imported history (Whaticket) is read-only: «Reabrir» continues with
+        // the customer in a live conversation of the same connection.
+        if ($conversation->isImported()) {
+            return $this->continueImported($conversation, $request->user());
+        }
+
         $reopen->handle($conversation, $request->user(), $request->version());
 
         return $this->done($conversation, $request->user(), $this->reopenedMessage($conversation));
+    }
+
+    private function continueImported(Conversation $imported, User $actor): RedirectResponse
+    {
+        ['conversation' => $live, 'outcome' => $outcome] = app(ContinueImportedConversation::class)->handle($imported, $actor);
+
+        Inertia::flash('toast', ['type' => $outcome === 'queued' ? 'warning' : 'success', 'message' => match ($outcome) {
+            'existing' => 'Este cliente ya tiene una conversación abierta en esta conexión: te llevamos a ella. El historial importado se conserva de solo consulta.',
+            'reopened' => $this->reopenedMessage($live),
+            'created' => 'Conversación reabierta con el cliente y asignada a ti. El historial importado de Whaticket se conserva de solo consulta.',
+            'queued' => 'Conversación reabierta con el cliente; quedó en «Pendientes» de su departamento porque las reglas de la cola no te la asignan ahora.',
+        }]);
+
+        return $actor->can('view', $live)
+            ? redirect()->route('conversations.show', $live)
+            : redirect()->to(ConversationController::listUrl());
     }
 
     /**

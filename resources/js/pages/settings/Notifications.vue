@@ -36,6 +36,7 @@ import type {
     PushSupport,
 } from '@/lib/notifications/push';
 import { formatDate, formatUserAgent } from '@/lib/format';
+import { pushTest } from '@/routes/notifications';
 import { edit, update } from '@/routes/notifications/preferences';
 import {
     destroy as destroyPushSubscription,
@@ -120,6 +121,20 @@ const canOfferPush = computed(
         support.value === 'supported' &&
         permission.value !== 'denied',
 );
+
+const testingPush = ref(false);
+
+function sendTestPush(): void {
+    router.post(
+        pushTest.url(),
+        {},
+        {
+            preserveScroll: true,
+            onStart: () => (testingPush.value = true),
+            onFinish: () => (testingPush.value = false),
+        },
+    );
+}
 
 async function enablePush(): Promise<void> {
     const publicKey = props.push.public_key;
@@ -406,6 +421,18 @@ function submit(): void {
                         @click="enablePush"
                     >
                         Activar en este navegador
+                    </Button>
+                    <!-- Proves the whole chain: server keys, queue worker, push service and this device. -->
+                    <Button
+                        v-if="push.subscriptions.length > 0"
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        :disabled="pushBusy || testingPush"
+                        :loading="testingPush"
+                        @click="sendTestPush"
+                    >
+                        Enviar notificación de prueba
                     </Button>
                 </div>
                 <ul

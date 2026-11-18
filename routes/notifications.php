@@ -20,5 +20,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('settings/notifications', [NotificationPreferenceController::class, 'update'])->name('notifications.preferences.update');
 
     Route::post('settings/notifications/push-subscriptions', [PushSubscriptionController::class, 'store'])->middleware('throttle:20,1')->name('notifications.push-subscriptions.store');
+    Route::post('settings/notifications/push-test', [PushSubscriptionController::class, 'test'])->middleware('throttle:5,1')->name('notifications.push-test');
     Route::delete('settings/notifications/push-subscriptions/{subscription}', [PushSubscriptionController::class, 'destroy'])->whereNumber('subscription')->middleware('throttle:20,1')->name('notifications.push-subscriptions.destroy');
 });

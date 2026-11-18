@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Notifications;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Notifications\StorePushSubscriptionRequest;
+use App\Jobs\SendWebPush;
 use App\Models\PushSubscription;
 use App\Models\User;
+use App\Notifications\Push\Vapid;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -53,6 +55,40 @@ class PushSubscriptionController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Notificaciones del navegador activadas. Te avisaremos aunque la plataforma no esté a la vista.']);
+
+        return back();
+    }
+
+    /**
+     * «Enviar notificación de prueba»: one push to every browser of the
+     * user, through the same notifications queue as the real ones, so it
+     * also proves the queue worker is running. The device shows the
+     * platform's summary notice (there is no new notification to show).
+     */
+    public function test(Request $request, Vapid $vapid): RedirectResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        if (! $vapid->isConfigured()) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => 'El servidor no tiene configuradas las claves de notificaciones (VAPID). Pide a Sistemas que corra php artisan webpush:vapid.']);
+
+            return back();
+        }
+
+        $ids = PushSubscription::query()->where('user_id', $user->id)->pluck('id');
+
+        if ($ids->isEmpty()) {
+            Inertia::flash('toast', ['type' => 'warning', 'message' => 'Primero activa las notificaciones en este navegador.']);
+
+            return back();
+        }
+
+        foreach ($ids as $id) {
+            SendWebPush::dispatch((int) $id, 'high');
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => sprintf('Enviamos una notificación de prueba a %d dispositivo(s). Si no aparece en un minuto, revisa los permisos de notificaciones del sistema; si no llega a ninguno, el proceso de notificaciones del servidor no está corriendo.', $ids->count())]);
 
         return back();
     }

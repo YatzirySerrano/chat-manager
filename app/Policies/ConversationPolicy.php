@@ -89,6 +89,23 @@ class ConversationPolicy
         return $this->permits($actor, 'reopen', $conversation) && $this->state->allows($actor, 'reopen', $conversation);
     }
 
+    /**
+     * «Reabrir» on imported history (Whaticket): the history stays read-only,
+     * but whoever may reopen conversations continues with that customer in a
+     * live conversation of the same connection (ContinueImportedConversation),
+     * as long as the connection still exists.
+     */
+    public function continueImported(User $actor, Conversation $conversation): bool
+    {
+        if (! $conversation->isImported() || ! $actor->holdsPermission(Permission::ReopenConversations) || ! $this->view($actor, $conversation)) {
+            return false;
+        }
+
+        $connection = $conversation->channelConnection;
+
+        return $connection instanceof Connection && ! $connection->isDeleted();
+    }
+
     public function addNote(User $actor, Conversation $conversation): bool
     {
         return $this->permits($actor, 'addNote', $conversation);

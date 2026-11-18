@@ -32,8 +32,10 @@ import ListSkeleton from '@/components/filters/ListSkeleton.vue';
 import { useRowMotion } from '@/components/filters/useRowMotion';
 import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
 import { Button } from '@/components/ui/button';
+import { colorPresentations } from '@/lib/colors';
 import { formatPhone } from '@/lib/phone';
 import type {
+    AppColor,
     ConnectionChannel,
     ConversationCategoryRef,
     ConversationFilters,
@@ -83,7 +85,12 @@ const props = withDefaults(
         filters: ConversationFilters;
         counts: InboxCounts;
         inbox: ConversationInbox;
-        departments: { id: number; name: string; is_active: boolean }[];
+        departments: {
+            id: number;
+            name: string;
+            color?: AppColor | null;
+            is_active: boolean;
+        }[];
         agents: { id: number; name: string; is_active: boolean }[];
         connections: {
             id: number;
@@ -776,6 +783,24 @@ function applyDraft(): void {
     void announceFilters();
 }
 
+/*
+ * One-click department filter for whoever sees more than one department
+ * (administrators, supervisors): a chip per department above the list.
+ * An agent of a single department never sees it.
+ */
+const departmentChips = computed(() =>
+    (props.inbox.scope === 'global' || props.inbox.scope === 'departments') &&
+    props.departments.length > 1
+        ? props.departments.filter((department) => department.is_active)
+        : [],
+);
+
+function chooseDepartment(id: number | null): void {
+    const value = id === null ? ALL : String(id);
+
+    change({ department: state.department === value ? ALL : value });
+}
+
 function toggleUnread(): void {
     change({ unread: !state.unread });
 }
@@ -1207,6 +1232,50 @@ const scopeButton =
                     </template>
                 </FilterTabs>
             </nav>
+
+            <!-- Departments as one-click chips (admins and supervisors). -->
+            <div
+                v-if="departmentChips.length > 0"
+                class="-mx-1 flex flex-wrap items-center gap-1.5 px-1"
+                role="group"
+                aria-label="Filtrar por departamento"
+                data-inbox-departments
+            >
+                <button
+                    type="button"
+                    class="inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                    :class="
+                        state.department === ''
+                            ? 'border-foreground/20 bg-foreground text-background'
+                            : 'border-border text-muted-foreground hover:text-foreground'
+                    "
+                    :aria-pressed="state.department === ''"
+                    @click="chooseDepartment(null)"
+                >
+                    Todos
+                </button>
+                <button
+                    v-for="department in departmentChips"
+                    :key="department.id"
+                    type="button"
+                    class="inline-flex h-7 max-w-44 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-9"
+                    :class="
+                        state.department === String(department.id)
+                            ? 'border-primary/50 bg-primary-soft text-foreground'
+                            : 'border-border text-muted-foreground hover:text-foreground'
+                    "
+                    :aria-pressed="state.department === String(department.id)"
+                    :title="`Solo las conversaciones de ${department.name}`"
+                    @click="chooseDepartment(department.id)"
+                >
+                    <span
+                        class="size-2 shrink-0 rounded-full"
+                        v-bind="colorPresentations(department.color).dot"
+                        aria-hidden="true"
+                    />
+                    <span class="truncate">{{ department.name }}</span>
+                </button>
+            </div>
 
             <p class="sr-only" role="status" aria-live="polite">
                 {{ pendingAnnouncement }}

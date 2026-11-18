@@ -249,7 +249,7 @@ class ConversationController extends Controller
             // Active request categories: the filter and the details panel.
             'categories' => fn (): array => ConversationCategory::options(),
             'statuses' => fn (): array => ConversationStatus::options(),
-            'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
+            'departments' => fn () => Department::query()->visibleTo($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'color', 'is_active']),
             'agents' => fn () => $filters['personal'] ? [] : User::query()->visibleTo($actor)->withoutProtectedFor($actor)->hidingDeletedFrom($actor)->orderBy('name')->get(['id', 'name', 'is_active']),
             'connections' => fn (): array => array_values($connections()->map(fn (Connection $connection): array => [
                 'id' => $connection->id,

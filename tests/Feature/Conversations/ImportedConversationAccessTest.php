@@ -53,7 +53,7 @@ test('every operation on an imported conversation is a 403 that says it is read-
     expect($this->imported->refresh()->status->value)->toBe('closed')
         ->and($this->imported->events()->count())->toBe(0);
 })->with([
-    'reopen' => ['conversations.reopen', []],
+    // «Reabrir» continues in a live conversation: ContinueImportedConversationTest.
     'close' => ['conversations.close', []],
     'release' => ['conversations.release', []],
     'assign' => ['conversations.assign', ['user_id' => 'agent']],
@@ -77,7 +77,7 @@ test('tags and templates are refused on imported conversations too, and Inertia 
     $this->actingAs($this->admin)
         ->withHeaders(['X-Inertia' => 'true'])
         ->from(route('conversations.index'))
-        ->post(route('conversations.reopen', $this->imported), ['version' => 0])
+        ->post(route('conversations.close', $this->imported), ['version' => 0])
         ->assertRedirect(route('conversations.index'))
         ->assertInertiaFlash('toast', ['type' => 'error', 'message' => IMPORTED_TEXT]);
 });
@@ -168,7 +168,7 @@ test('imported messages tell the chat where they come from', function () {
 
     $messages = collect($this->actingAs($this->admin)->getJson(route('conversations.timeline', $this->imported))->assertOk()->json('messages'));
 
-    expect($messages->firstWhere('body', 'Hola')['imported'])->toBe(['source' => 'whaticket', 'sender_name' => 'Laura', 'from_me' => false])
+    expect($messages->firstWhere('body', 'Hola')['imported'])->toBe(['source' => 'whaticket', 'sender_name' => 'Laura', 'from_me' => false, 'event' => null])
         ->and($messages->firstWhere('body', 'Sin metadatos')['imported'])->toBeNull();
 });
 

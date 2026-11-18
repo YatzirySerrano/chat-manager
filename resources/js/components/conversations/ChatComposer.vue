@@ -10,6 +10,7 @@ import {
     TriangleAlert,
     X,
 } from '@lucide/vue';
+import { useMediaQuery } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import {
     COMPOSER_CARD,
@@ -29,6 +30,7 @@ import {
 import QuickReplyPicker from '@/components/quick-replies/QuickReplyPicker.vue';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { useComposerDrafts } from '@/composables/useComposerDrafts';
 import { usePermissions } from '@/composables/usePermissions';
 import { useLiveCustomerWindow } from '@/composables/useLiveCustomerWindow';
 import { useUploadProgress } from '@/composables/useUploadProgress';
@@ -51,6 +53,7 @@ import { pastedFileName } from '@/lib/conversations/media';
 import { formatDuration, formatFileSize } from '@/lib/format';
 import { UPLOAD_CODE_FIELD, isRetryableUpload } from '@/lib/uploads';
 import { formatPhone } from '@/lib/phone';
+import { show as draftRoute } from '@/routes/conversations/draft';
 import { store as storeMessage } from '@/routes/conversations/messages';
 import { store as storeNote } from '@/routes/conversations/notes';
 import type {
@@ -149,6 +152,19 @@ const mode = ref<Mode>('reply');
 const drafts = new Map<string, string>();
 const draftKey = (id: number, draftMode: Mode): string => `${id}:${draftMode}`;
 
+/*
+ * The unsent text is also kept on the server (per agent, conversation and
+ * mode), so a reply started on the phone is waiting on the computer and
+ * the other way around. `known` is the text of each mode as last loaded or
+ * saved: only real changes are saved, and a draft read from the server
+ * never replaces what the agent already started typing here.
+ */
+const serverDrafts = useComposerDrafts(() =>
+    draftRoute.url(props.conversation.id),
+);
+const known = new Map<Mode, string>();
+let typedHere = false;
+
 const text = ref('');
 const attachment = ref<File | null>(null);
 /* The menu entry the file was chosen from (null: set without the menu). */
@@ -173,16 +189,61 @@ watch(
         }
 
         text.value = drafts.get(draftKey(id, currentMode)) ?? '';
+        known.set(currentMode, text.value);
         error.value = null;
 
         if (!previous || previous[0] !== id) {
             queued.value = [];
             clearAttachment();
             clientReference = newClientReference();
+            typedHere = false;
+            void loadServerDrafts(id);
         }
     },
     { immediate: true },
 );
+
+watch(text, (value) => {
+    if (known.get(mode.value) === value) {
+        return;
+    }
+
+    known.set(mode.value, value);
+    typedHere = true;
+    serverDrafts.save(mode.value, value);
+});
+
+async function loadServerDrafts(id: number): Promise<void> {
+    const saved = await serverDrafts.load();
+
+    if (props.conversation.id !== id) {
+        return;
+    }
+
+    for (const draftMode of ['reply', 'note'] as const) {
+        const body = saved[draftMode]?.body;
+
+        if (body === undefined) {
+            continue;
+        }
+
+        if (draftMode === mode.value) {
+            // What the agent already typed here wins over the saved copy.
+            if (!typedHere && text.value === '') {
+                known.set(draftMode, body);
+                text.value = body;
+            }
+        } else if (!drafts.get(draftKey(id, draftMode))) {
+            drafts.set(draftKey(id, draftMode), body);
+        }
+    }
+}
+
+/* The message or note left: its draft is gone here and on the server. */
+function draftSent(sentMode: Mode): void {
+    known.set(sentMode, '');
+    serverDrafts.sent(sentMode);
+}
 
 watch(
     () => props.conversation.id,
@@ -201,6 +262,13 @@ watch(canReply, (now, before) => {
         mode.value = 'reply';
     }
 });
+
+/*
+ * On a phone (touch screen, no room for the «Enter para enviar» switch)
+ * the on-screen keyboard's Enter adds a line break, as in WhatsApp: the
+ * message goes out with the send button.
+ */
+const phoneKeyboard = useMediaQuery('(pointer: coarse) and (max-width: 639px)');
 
 /* Enter to send: a per-user preference kept in this browser. */
 const enterKey = computed(() => `chat-manager:composer-enter:${userId.value}`);
@@ -648,7 +716,9 @@ function onKeydown(event: KeyboardEvent): void {
 
     const shortcut = event.ctrlKey || event.metaKey;
 
-    if ((enterSends.value && !event.shiftKey && !event.altKey) || shortcut) {
+    const enterSendsHere = enterSends.value && !phoneKeyboard.value;
+
+    if ((enterSendsHere && !event.shiftKey && !event.altKey) || shortcut) {
         event.preventDefault();
         submit();
     }
@@ -750,6 +820,7 @@ async function submit(): Promise<void> {
 
             if (response) {
                 emit('noteSaved', response.data);
+                draftSent('note');
 
                 if (mode.value === submittedMode) {
                     text.value = '';
@@ -815,6 +886,7 @@ async function submit(): Promise<void> {
             }
 
             emit('sent', response.data);
+            draftSent('reply');
 
             if (mode.value === submittedMode) {
                 text.value = '';
@@ -941,6 +1013,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
             '[@media(max-height:32rem)]:pt-1 [@media(max-height:32rem)]:pb-1.5',
         ]"
         data-safe-bottom
+        data-composer-dock
     >
         <!--
             One floating card for the whole composer: the switch, what is
@@ -976,7 +1049,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         :aria-pressed="mode === 'reply'"
                         aria-label="Responder al cliente"
                         :disabled="sending"
-                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-11 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                         :class="
                             mode === 'reply'
                                 ? 'text-foreground'
@@ -997,7 +1070,7 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         :aria-pressed="mode === 'note'"
                         aria-label="Nota interna"
                         :disabled="sending"
-                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-10 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
+                        class="relative z-[1] inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors duration-(--duration-base) ease-(--ease-out-quint) outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed pointer-coarse:min-h-11 [@media(max-height:32rem)]:py-0.5 [@media(max-height:32rem)]:pointer-coarse:min-h-8"
                         :class="
                             mode === 'note'
                                 ? 'text-background'
@@ -1193,6 +1266,9 @@ defineExpose({ focus, addFiles, acceptsFiles });
                         ref="textarea"
                         v-model="text"
                         rows="2"
+                        :enterkeyhint="
+                            enterSends && !phoneKeyboard ? 'send' : 'enter'
+                        "
                         role="combobox"
                         aria-autocomplete="list"
                         :aria-expanded="trigger !== null"

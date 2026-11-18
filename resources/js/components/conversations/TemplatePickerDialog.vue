@@ -23,6 +23,7 @@ import {
     store as storeTemplate,
 } from '@/routes/conversations/templates';
 import type { ConversationSummary } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Sends an approved WhatsApp template, the only way to write to the customer
@@ -297,7 +298,12 @@ async function send(): Promise<void> {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-3xl',
+                PHONE_SHEET_DIALOG,
+            ]"
+        >
             <DialogHeader>
                 <DialogTitle>Enviar una plantilla aprobada</DialogTitle>
                 <DialogDescription>

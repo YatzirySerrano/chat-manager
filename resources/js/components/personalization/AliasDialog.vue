@@ -18,6 +18,7 @@ import {
     update as updateAlias,
 } from '@/routes/conversations/alias';
 import type { ContactAliasResponse } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Edits the viewer's private alias of the contact of a conversation. It
@@ -125,7 +126,12 @@ async function remove(): Promise<void> {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        <DialogContent
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-md',
+                PHONE_SHEET_DIALOG,
+            ]"
+        >
             <form class="grid gap-4" novalidate @submit.prevent="save">
                 <DialogHeader>
                     <DialogTitle>Alias personal</DialogTitle>

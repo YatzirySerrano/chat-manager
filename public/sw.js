@@ -48,7 +48,7 @@
  * to sign in), so no customer data is exposed.
  */
 
-const VERSION = '2026-11-16.1';
+const VERSION = '2026-11-19.1';
 const CACHE_PREFIX = 'chat-manager-static-';
 const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 const OFFLINE_URL = '/offline.html';

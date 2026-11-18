@@ -39,6 +39,7 @@ import type {
     ChatColorSet,
     ViewerChatAppearance,
 } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * Editor of the viewer's own chat colors: a preset or custom colors (light
@@ -414,7 +415,12 @@ function previewStyle(mode: Mode, part: 'chat' | 'sent' | 'received') {
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-2xl',
+                PHONE_SHEET_DIALOG,
+            ]"
+        >
             <form class="grid gap-5" novalidate @submit.prevent="save">
                 <DialogHeader>
                     <DialogTitle>Apariencia del chat</DialogTitle>

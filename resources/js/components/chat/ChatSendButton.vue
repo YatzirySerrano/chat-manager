@@ -39,9 +39,9 @@ defineEmits<{ click: [event: MouseEvent] }>();
 <template>
     <button
         :type="type"
-        class="chat-send inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed pointer-coarse:h-10"
+        class="chat-send inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed pointer-coarse:h-11"
         :class="[
-            showLabel ? 'min-w-9 px-3 sm:px-4' : 'w-9 pointer-coarse:w-10',
+            showLabel ? 'min-w-9 px-3 sm:px-4' : 'w-9 pointer-coarse:w-11',
             sending ? 'cursor-progress' : '',
             ready || sending
                 ? tone === 'note'

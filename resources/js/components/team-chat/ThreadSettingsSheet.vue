@@ -10,6 +10,7 @@ import {
     UserMinus,
     UserPlus,
 } from '@lucide/vue';
+import { useMediaQuery } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FormField from '@/components/FormField.vue';
@@ -248,12 +249,32 @@ function confirmPending(): void {
 function restoreGroup(): void {
     router.post(unarchive.url(props.thread.id), {}, { preserveScroll: true });
 }
+
+/*
+ * On a touch screen opening the settings must not focus the name field:
+ * the on-screen keyboard would cover the sheet. The sheet itself takes the
+ * focus, so screen readers still start inside it.
+ */
+const touchScreen = useMediaQuery('(pointer: coarse)');
+
+function keepKeyboardClosed(event: Event): void {
+    if (!touchScreen.value) {
+        return;
+    }
+
+    event.preventDefault();
+
+    if (event.target instanceof HTMLElement) {
+        event.target.focus({ preventScroll: true });
+    }
+}
 </script>
 
 <template>
     <Sheet v-model:open="open">
         <SheetContent
-            class="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md"
+            class="flex w-full flex-col gap-0 overflow-y-auto p-0 pb-[env(safe-area-inset-bottom)] sm:max-w-md"
+            @open-auto-focus="keepKeyboardClosed"
         >
             <SheetHeader class="border-b p-4">
                 <SheetTitle>{{

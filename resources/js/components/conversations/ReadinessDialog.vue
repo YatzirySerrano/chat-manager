@@ -29,6 +29,7 @@ import type {
     CustomerWindow,
     MissingInfoCatalog,
 } from '@/types';
+import { PHONE_SHEET_DIALOG } from '@/lib/phoneSheet';
 
 /**
  * «Confirmar solicitud completa» is applied at once, with no dialog or
@@ -241,7 +242,12 @@ function post(
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        <DialogContent
+            :class="[
+                'max-h-[90dvh] overflow-y-auto sm:max-w-md',
+                PHONE_SHEET_DIALOG,
+            ]"
+        >
             <form
                 class="grid gap-4"
                 novalidate

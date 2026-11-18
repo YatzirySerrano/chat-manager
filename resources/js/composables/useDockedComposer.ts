@@ -56,11 +56,18 @@ function isDocked(block: HTMLElement, viewportHeight: number): boolean {
     return probe !== undefined && block.contains(probe);
 }
 
-/** The docked block around a visible text area (outside dialogs). */
+/**
+ * The docked block around a visible text area (outside dialogs), or a
+ * composer marked `data-composer-dock`: a composer that cannot be used
+ * right now (closed conversation, someone else's) shows its reason instead
+ * of the text area and is still docked.
+ */
 function dockedComposer(viewportHeight: number): HTMLElement | null {
     let found: HTMLElement | null = null;
 
-    for (const textarea of document.querySelectorAll('textarea')) {
+    for (const textarea of document.querySelectorAll<HTMLElement>(
+        'textarea, [data-composer-dock]',
+    )) {
         if (
             textarea.offsetParent === null ||
             textarea.closest('[role="dialog"], [role="alertdialog"]')

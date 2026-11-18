@@ -6,6 +6,7 @@ use App\Actions\Conversations\QueueOutboundMessage;
 use App\Http\Requests\Conversations\OutboundMessageRequest;
 use App\Http\Resources\ConversationMessageResource;
 use App\Models\Conversation;
+use App\Services\Personalization\ComposerDrafts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -17,7 +18,7 @@ use Inertia\Inertia;
  */
 class ConversationMessageController extends ConversationOperationController
 {
-    public function store(OutboundMessageRequest $request, Conversation $conversation, QueueOutboundMessage $queue): RedirectResponse|JsonResponse
+    public function store(OutboundMessageRequest $request, Conversation $conversation, QueueOutboundMessage $queue, ComposerDrafts $drafts): RedirectResponse|JsonResponse
     {
         $this->ensureVisible($conversation);
 
@@ -29,6 +30,9 @@ class ConversationMessageController extends ConversationOperationController
             $request->file('attachment'),
             $request->filled('reply_to_message_id') ? $request->integer('reply_to_message_id') : null,
         );
+
+        // The reply left: its unsent copy no longer follows the agent to other devices.
+        $drafts->forget($request->user(), $conversation, ComposerDrafts::MODE_REPLY);
 
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             $message->load(['sender', 'attachments', 'replyTo']);

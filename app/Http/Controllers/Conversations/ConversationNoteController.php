@@ -8,6 +8,7 @@ use App\Http\Requests\Conversations\ConversationNoteRequest;
 use App\Http\Resources\ConversationNoteResource;
 use App\Models\Conversation;
 use App\Models\ConversationNote;
+use App\Services\Personalization\ComposerDrafts;
 use App\Support\SaveToast;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -19,11 +20,12 @@ class ConversationNoteController extends ConversationOperationController
      * The inbox composer (note mode) asks for JSON to show the note at once;
      * other forms get the usual redirect with a toast.
      */
-    public function store(ConversationNoteRequest $request, Conversation $conversation, AddConversationNote $addNote): RedirectResponse|JsonResponse
+    public function store(ConversationNoteRequest $request, Conversation $conversation, AddConversationNote $addNote, ComposerDrafts $drafts): RedirectResponse|JsonResponse
     {
         $this->ensureVisible($conversation);
 
         $note = $addNote->handle($conversation, $request->user(), $request->string('body')->value());
+        $drafts->forget($request->user(), $conversation, ComposerDrafts::MODE_NOTE);
 
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             $note->load('author');

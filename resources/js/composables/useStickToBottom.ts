@@ -46,7 +46,31 @@ export function useStickToBottom(
         }
     }
 
+    /*
+     * The list got shorter or taller (the on-screen keyboard opened or
+     * closed, the composer grew with a quote or a long text): whoever was
+     * following the end keeps seeing the newest message.
+     */
+    let lastHeight = 0;
+    const resizer =
+        typeof ResizeObserver === 'undefined'
+            ? null
+            : new ResizeObserver(() => {
+                  const element = scroller.value;
+
+                  if (!element || element.clientHeight === lastHeight) {
+                      return;
+                  }
+
+                  lastHeight = element.clientHeight;
+
+                  if (following) {
+                      element.scrollTop = element.scrollHeight;
+                  }
+              });
+
     function detach(element: HTMLElement): void {
+        resizer?.unobserve(element);
         element.removeEventListener('scroll', onScroll);
         // "load" and "loadedmetadata" do not bubble: listen while capturing.
         element.removeEventListener('load', onMediaReady, true);
@@ -64,6 +88,8 @@ export function useStickToBottom(
                 element.addEventListener('scroll', onScroll, { passive: true });
                 element.addEventListener('load', onMediaReady, true);
                 element.addEventListener('loadedmetadata', onMediaReady, true);
+                lastHeight = element.clientHeight;
+                resizer?.observe(element);
             }
         },
         { immediate: true, flush: 'post' },
@@ -73,6 +99,8 @@ export function useStickToBottom(
         if (scroller.value) {
             detach(scroller.value);
         }
+
+        resizer?.disconnect();
     });
 
     return {

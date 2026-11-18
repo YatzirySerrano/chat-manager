@@ -97,7 +97,17 @@ const props = defineProps<{
     limits: TeamChatLimits;
     /** Query of the list to return to (keeps the «Mesa de control» tab). */
     backQuery?: Record<string, string>;
+    /**
+     * The chat was opened from the list just before (phones): the arrow
+     * goes back through history, like the system back gesture, instead of
+     * adding the list again on top.
+     */
+    backByHistory?: boolean;
 }>();
+
+function goBack(): void {
+    globalThis.history.back();
+}
 
 const emit = defineEmits<{
     openSettings: [];
@@ -1118,9 +1128,21 @@ onBeforeUnmount(() => {
                 class="chat-header flex h-14 shrink-0 items-center gap-1 px-1.5 sm:h-16 sm:gap-2 sm:px-4"
             >
                 <Button
+                    v-if="backByHistory"
                     variant="ghost"
                     size="icon"
-                    class="rounded-full lg:hidden"
+                    class="rounded-full lg:hidden pointer-coarse:size-11"
+                    aria-label="Volver a la lista de chats"
+                    data-chat-back
+                    @click="goBack"
+                >
+                    <ArrowLeft />
+                </Button>
+                <Button
+                    v-else
+                    variant="ghost"
+                    size="icon"
+                    class="rounded-full lg:hidden pointer-coarse:size-11"
                     as-child
                     aria-label="Volver a la lista de chats"
                 >
@@ -1191,7 +1213,7 @@ onBeforeUnmount(() => {
                     v-if="appearance"
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 rounded-full text-muted-foreground"
+                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-11"
                     title="Apariencia del chat"
                     aria-label="Cambiar los colores de tu chat"
                     @click="appearanceOpen = true"
@@ -1201,7 +1223,7 @@ onBeforeUnmount(() => {
                 <Button
                     variant="ghost"
                     size="icon"
-                    class="shrink-0 rounded-full text-muted-foreground"
+                    class="shrink-0 rounded-full text-muted-foreground pointer-coarse:size-11"
                     :aria-label="
                         isGroup
                             ? 'Información y ajustes del grupo'

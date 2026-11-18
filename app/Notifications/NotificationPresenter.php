@@ -8,6 +8,7 @@ use App\Enums\Permission;
 use App\Enums\ResponseCycleKind;
 use App\Enums\TeamChat\TeamAttachmentKind;
 use App\Listeners\Notifications\NotifyConnectionProblem;
+use App\Models\ChatbotKeywordRule;
 use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\DataTransfer;
@@ -115,6 +116,7 @@ class NotificationPresenter
             NotificationKind::ConversationAssigned => $this->assigned($data, $viewer),
             NotificationKind::ConversationTransferred => $this->transferred($data, $viewer),
             NotificationKind::ConversationMessage => $this->message($data, $viewer, $occurrences),
+            NotificationKind::ChatbotReply => $this->chatbotReply($data, $viewer),
             NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage => $this->teamChat($kind, $data, $viewer, $occurrences),
             NotificationKind::ExportFinished, NotificationKind::ImportFinished => $this->transfer($kind, $data, $viewer),
             NotificationKind::ConnectionProblem => $this->connection($data, $viewer),
@@ -376,6 +378,33 @@ class NotificationPresenter
         return [
             $occurrences > 1 ? "{$occurrences} mensajes nuevos de {$name}" : "Mensaje nuevo de {$name}",
             'Abre la conversación para leerlo.',
+            $this->routeOrNull('conversations.show', $conversation),
+            true,
+        ];
+    }
+
+    /**
+     * The chatbot answered by keyword: who, and with which rule (its name as
+     * it is now; «una palabra clave» if it was deleted since).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{string, string|null, string|null, bool}
+     */
+    private function chatbotReply(array $data, User $viewer): array
+    {
+        $conversation = $this->visibleConversation($data['conversation_id'] ?? null, $viewer);
+
+        if ($conversation === null) {
+            return $this->noAccess('Respuesta automática del chatbot');
+        }
+
+        $this->aboutContact($conversation);
+
+        $rule = is_int($data['rule_id'] ?? null) ? ChatbotKeywordRule::query()->whereKey($data['rule_id'])->value('name') : null;
+
+        return [
+            "El chatbot respondió a {$this->contactName($conversation)}",
+            is_string($rule) ? "Respuesta automática por la palabra clave «{$rule}»." : 'Respuesta automática por una palabra clave.',
             $this->routeOrNull('conversations.show', $conversation),
             true,
         ];

@@ -3,6 +3,7 @@ import {
     ArrowLeftRight,
     AtSign,
     Bell,
+    Bot,
     FileDown,
     FileUp,
     Hourglass,
@@ -109,6 +110,12 @@ const KINDS: Record<NotificationKindValue, KindMeta> = {
         label: 'SLA vencido',
         tone: 'danger',
         unit: ['recordatorio', 'recordatorios'],
+    },
+    'chatbot.reply': {
+        icon: Bot,
+        label: 'Chatbot',
+        tone: 'accent',
+        unit: ['respuesta', 'respuestas'],
     },
 };
 

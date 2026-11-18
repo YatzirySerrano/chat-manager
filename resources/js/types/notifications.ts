@@ -12,7 +12,8 @@ export type NotificationKindValue =
     | 'connection.problem'
     | 'account.access-changed'
     | 'sla.warning'
-    | 'sla.breach';
+    | 'sla.breach'
+    | 'chatbot.reply';
 
 /** How the user wants to receive one kind of notification. */
 export type NotificationPreference = {

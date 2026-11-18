@@ -1,6 +1,7 @@
 import {
     Archive,
     BellRing,
+    Bot,
     Building2,
     ChartNoAxesCombined,
     ContactRound,
@@ -29,6 +30,7 @@ import { useTeamChatUnread } from '@/composables/useTeamChatUnread';
 import { dashboard } from '@/routes';
 import { edit as appearanceEdit } from '@/routes/admin/appearance';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as chatbotIndex } from '@/routes/admin/chatbot';
 import { index as attentionIndex } from '@/routes/attention';
 import { index as historyIndex } from '@/routes/admin/history';
 import { index as historyImportIndex } from '@/routes/admin/history-import';
@@ -196,6 +198,15 @@ export function useNavigation() {
                 description: 'Canales de atención y su estado',
                 href: connectionsIndex(),
                 icon: PlugZap,
+            });
+        }
+
+        if (can('connections.chatbot')) {
+            admin.push({
+                title: 'Chatbot',
+                description: 'Menú de bienvenida y palabras clave',
+                href: chatbotIndex(),
+                icon: Bot,
             });
         }
 

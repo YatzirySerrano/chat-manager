@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { History } from '@lucide/vue';
+import { Bot, History } from '@lucide/vue';
 import { computed } from 'vue';
 import { QUEUE_RULE_LABELS } from '@/components/conversations/queueRules';
 import {
@@ -26,6 +26,11 @@ const triggers: Record<string, string> = {
 
 /* An unconfirmed delivery is not a "message not sent": it may have arrived. */
 const deliveryUnknown = computed(() => props.event.reason === DELIVERY_UNKNOWN);
+
+/* Who did it when no person did: the chatbot's menu, or the system. */
+const systemActor = computed(() =>
+    props.event.type === 'chatbot_routed' ? 'Chatbot' : 'Sistema',
+);
 const label = computed(() =>
     deliveryUnknown.value ? deliveryUnknownLabel : props.event.label,
 );
@@ -50,7 +55,12 @@ const detail = computed(() => {
         );
     }
 
-    if (event.to_department && event.to_department !== event.from_department) {
+    // The chatbot's routing already names the department in its label.
+    if (
+        event.type !== 'chatbot_routed' &&
+        event.to_department &&
+        event.to_department !== event.from_department
+    ) {
         parts.push(
             event.from_department
                 ? `${event.from_department} → ${event.to_department}`
@@ -96,7 +106,10 @@ const detail = computed(() => {
                 class="grid size-5 shrink-0 place-items-center rounded-full bg-primary-soft text-primary-soft-foreground"
                 aria-hidden="true"
             >
-                <History class="size-3" />
+                <component
+                    :is="event.type === 'chatbot_routed' ? Bot : History"
+                    class="size-3"
+                />
             </span>
             <!-- Who did it first: «Jennifer cerró la conversación». -->
             <span v-if="event.actor && event.action && !deliveryUnknown"
@@ -120,7 +133,7 @@ const detail = computed(() => {
                     v-if="event.actor"
                     class="font-semibold text-foreground"
                     >{{ event.actor }}</strong
-                ><template v-else>Sistema</template></span
+                ><template v-else>{{ systemActor }}</template></span
             >
             <time
                 :datetime="event.created_at"

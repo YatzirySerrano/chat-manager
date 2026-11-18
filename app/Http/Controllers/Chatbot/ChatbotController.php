@@ -1,0 +1,244 @@
+<?php
+
+namespace App\Http\Controllers\Chatbot;
+
+use App\Actions\Chatbot\ManageChatbotKeywordRules;
+use App\Actions\Chatbot\SaveChatbotKeywordRule;
+use App\Actions\Chatbot\SaveChatbotMenu;
+use App\Enums\ChatbotSessionStatus;
+use App\Enums\ConnectionProvider;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ConnectionRequest;
+use App\Http\Requests\Chatbot\ChatbotKeywordRuleRequest;
+use App\Http\Requests\Chatbot\ChatbotMenuRequest;
+use App\Models\ChatbotKeywordRule;
+use App\Models\ChatbotMenu;
+use App\Models\ChatbotMenuOption;
+use App\Models\ChatbotSession;
+use App\Models\Connection;
+use App\Models\Department;
+use App\Models\Message;
+use App\Models\User;
+use App\Services\Automation\AutomaticMessageKind;
+use App\Services\Chatbot\ChatbotText;
+use App\Support\SaveToast;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Inertia\Inertia;
+use Inertia\Response;
+
+/**
+ * «Chatbot» (Administración): the welcome menu of each connection and the
+ * keyword replies. Everything the chatbot does at runtime lives in
+ * App\Services\Chatbot and App\Actions\Chatbot; this controller only shows
+ * and saves the configuration.
+ */
+class ChatbotController extends Controller
+{
+    /** Days of the activity figures shown on the page. */
+    public const ACTIVITY_DAYS = 7;
+
+    public function index(Request $request): Response
+    {
+        Gate::authorize('viewAny', ChatbotKeywordRule::class);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $since = now()->subDays(self::ACTIVITY_DAYS);
+
+        $connections = Connection::query()
+            ->notDeleted()
+            ->with(['departments:id'])
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+        $menus = ChatbotMenu::query()
+            ->whereIn('connection_id', $connections->modelKeys())
+            ->with('options')
+            ->get()
+            ->keyBy('connection_id');
+        $sessions = ChatbotSession::query()
+            ->where('created_at', '>=', $since)
+            ->selectRaw('connection_id, status, count(*) as total')
+            ->groupBy('connection_id', 'status')
+            ->get();
+
+        $rules = ChatbotKeywordRule::query()
+            ->with(['connections:id', 'departments:id', 'updatedBy:id,name'])
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get();
+        $replies = Message::query()
+            ->where('created_at', '>=', $since)
+            ->where('metadata->automatic_kind', AutomaticMessageKind::KeywordReply->value)
+            ->get(['id', 'metadata'])
+            ->countBy(fn (Message $message): int => (int) ($message->metadata['chatbot_rule_id'] ?? 0));
+
+        $usedDepartmentIds = $menus->flatMap(fn (ChatbotMenu $menu) => $menu->options->pluck('department_id'))
+            ->merge($rules->flatMap(fn (ChatbotKeywordRule $rule) => $rule->departments->modelKeys()))
+            ->unique()
+            ->all();
+
+        return Inertia::render('chatbot/Index', [
+            'connections' => $connections->map(function (Connection $connection) use ($menus, $sessions): array {
+                /** @var ChatbotMenu|null $menu */
+                $menu = $menus->get($connection->id);
+                $activity = $sessions->where('connection_id', $connection->id);
+                $count = fn (ChatbotSessionStatus $status): int => (int) $activity->firstWhere('status', $status)?->getAttribute('total');
+
+                return [
+                    'id' => $connection->id,
+                    'name' => $connection->name,
+                    'channel' => ['value' => $connection->channel->value, 'label' => $connection->channel->label()],
+                    'is_whatsapp_web' => $connection->provider === ConnectionProvider::WhatsappWeb,
+                    'is_active' => $connection->is_active,
+                    'phone' => $connection->display_phone_number ?? $connection->web_session_phone,
+                    'department_ids' => $connection->departments->modelKeys(),
+                    'menu' => [
+                        'is_enabled' => $menu->is_enabled ?? false,
+                        'greeting' => $menu->greeting ?? '',
+                        'retry_message' => $menu->retry_message ?? '',
+                        'max_attempts' => $menu->max_attempts ?? 2,
+                        'options' => $menu === null ? [] : $menu->options->map(fn (ChatbotMenuOption $option): array => [
+                            'department_id' => $option->department_id,
+                            'label' => $option->label ?? '',
+                            'reply_message' => $option->reply_message ?? '',
+                        ])->values()->all(),
+                        'updated_at' => $menu?->updated_at?->toIso8601String(),
+                    ],
+                    'activity' => [
+                        'routed' => $count(ChatbotSessionStatus::Routed),
+                        'fallback' => $count(ChatbotSessionStatus::Fallback),
+                        'awaiting' => $count(ChatbotSessionStatus::Awaiting),
+                    ],
+                    'can' => ['update' => Gate::allows('configureChatbot', $connection)],
+                ];
+            })->values()->all(),
+            'departments' => Department::query()
+                ->where(fn ($query) => $query->active()->orWhereIn('id', $usedDepartmentIds))
+                ->orderBy('name')
+                ->get(['id', 'name', 'color', 'is_active', 'welcome_message', 'away_message'])
+                ->map(fn (Department $department): array => [
+                    'id' => $department->id,
+                    'name' => $department->name,
+                    'color' => $department->color->value,
+                    'is_active' => $department->is_active,
+                    'has_welcome' => trim((string) $department->welcome_message) !== '',
+                ])->values()->all(),
+            'rules' => $rules->map(fn (ChatbotKeywordRule $rule): array => [
+                'id' => $rule->id,
+                'name' => $rule->name,
+                'keywords' => $rule->keywords,
+                'reply_message' => $rule->reply_message,
+                'is_active' => $rule->is_active,
+                'throttle_minutes' => $rule->throttle_minutes,
+                'connection_ids' => $rule->connections->modelKeys(),
+                'department_ids' => $rule->departments->modelKeys(),
+                'replies' => (int) $replies->get($rule->id, 0),
+                'updated_at' => $rule->updated_at?->toIso8601String(),
+                'updated_by' => $rule->updatedBy?->name,
+            ])->values()->all(),
+            'variables' => ChatbotText::CATALOG,
+            'limits' => [
+                'message' => ConnectionRequest::MESSAGE_MAX_LENGTH,
+                'retry' => ChatbotMenuRequest::RETRY_MAX_LENGTH,
+                'label' => ChatbotMenuRequest::LABEL_MAX_LENGTH,
+                'options' => ChatbotMenuRequest::MAX_OPTIONS,
+                'attempts' => ChatbotMenu::MAX_ATTEMPTS_LIMIT,
+                'name' => ChatbotKeywordRuleRequest::NAME_MAX_LENGTH,
+                'keywords' => ChatbotKeywordRuleRequest::MAX_KEYWORDS,
+                'keyword' => ChatbotKeywordRuleRequest::KEYWORD_MAX_LENGTH,
+                'throttle' => ChatbotKeywordRuleRequest::MAX_THROTTLE_MINUTES,
+            ],
+            'defaults' => [
+                'retry_message' => ChatbotMenu::DEFAULT_RETRY_MESSAGE,
+                'throttle_minutes' => ChatbotKeywordRule::DEFAULT_THROTTLE_MINUTES,
+            ],
+            'activityDays' => self::ACTIVITY_DAYS,
+            'can' => [
+                'manage' => $actor->can('create', ChatbotKeywordRule::class),
+            ],
+        ]);
+    }
+
+    public function updateMenu(ChatbotMenuRequest $request, Connection $connection, SaveChatbotMenu $saveMenu): RedirectResponse
+    {
+        /** @var User $actor */
+        $actor = $request->user();
+        $payload = $request->payload();
+        $changed = $saveMenu->handle($connection, $payload, $actor);
+
+        SaveToast::flash($changed, $payload['is_enabled'] ? "Menú de bienvenida de {$connection->name} guardado y activo." : "Menú de bienvenida de {$connection->name} guardado (desactivado).");
+
+        return back();
+    }
+
+    public function storeRule(ChatbotKeywordRuleRequest $request, SaveChatbotKeywordRule $saveRule): RedirectResponse
+    {
+        /** @var User $actor */
+        $actor = $request->user();
+        $result = $saveRule->handle(null, $request->payload(), $actor);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Palabra clave «{$result['rule']->name}» creada."]);
+
+        return back();
+    }
+
+    public function updateRule(ChatbotKeywordRuleRequest $request, ChatbotKeywordRule $rule, SaveChatbotKeywordRule $saveRule): RedirectResponse
+    {
+        /** @var User $actor */
+        $actor = $request->user();
+        $result = $saveRule->handle($rule, $request->payload(), $actor);
+
+        SaveToast::flash($result['changed'], 'Palabra clave actualizada.');
+
+        return back();
+    }
+
+    public function activateRule(Request $request, ChatbotKeywordRule $rule, ManageChatbotKeywordRules $rules): RedirectResponse
+    {
+        Gate::authorize('update', $rule);
+
+        $active = (bool) $request->validate(['is_active' => ['required', 'boolean']])['is_active'];
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $rules->setActive($rule, $active, $actor);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $active ? "«{$rule->name}» activada." : "«{$rule->name}» desactivada."]);
+
+        return back();
+    }
+
+    public function reorderRules(Request $request, ManageChatbotKeywordRules $rules): RedirectResponse
+    {
+        Gate::authorize('create', ChatbotKeywordRule::class);
+
+        $ids = $request->validate([
+            'ids' => ['required', 'array', 'max:500'],
+            'ids.*' => ['integer', 'distinct'],
+        ])['ids'];
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $changed = $rules->reorder(array_values(array_map('intval', $ids)), $actor);
+
+        SaveToast::flash($changed, 'Orden de las palabras clave guardado.');
+
+        return back();
+    }
+
+    public function destroyRule(Request $request, ChatbotKeywordRule $rule, ManageChatbotKeywordRules $rules): RedirectResponse
+    {
+        Gate::authorize('delete', $rule);
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $rules->delete($rule, $actor);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Palabra clave «{$rule->name}» eliminada."]);
+
+        return back();
+    }
+}

@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Enums\Permission;
 use App\Models\ApiToken;
 use App\Models\ChatAppearance;
+use App\Models\ChatbotKeywordRule;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\ContactAlias;
@@ -228,6 +229,7 @@ class AppServiceProvider extends ServiceProvider
             'team_thread' => TeamThread::class,
             'api_token' => ApiToken::class,
             'web_chat_widget' => WebChatWidget::class,
+            'chatbot_rule' => ChatbotKeywordRule::class,
         ]);
 
         DB::prohibitDestructiveCommands($this->destructiveCommandsAreProhibited());

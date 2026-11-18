@@ -15,6 +15,7 @@ use App\Services\Conversations\CustomerServiceWindow;
 use App\Services\Messaging\ChannelTransports;
 use App\Services\Meta\WhatsAppTransport;
 use App\Services\WhatsAppWeb\WhatsAppWebTransport;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\WhatsAppFixtures;
@@ -240,7 +241,7 @@ test('health never calls a stopped, recovering or revoked session healthy', func
     'waiting for the scan' => [WhatsAppWebState::QrPending, null, ConnectionHealth::NotConfigured],
 ]);
 
-test('a WhatsApp Web connection never keeps automatic messages, whatever the form sends', function () {
+test('a WhatsApp Web connection keeps the automatic messages its administrator turns on', function () {
     $this->actingAs($this->admin)
         ->post(route('connections.store'), [
             'channel' => 'whatsapp',
@@ -260,38 +261,38 @@ test('a WhatsApp Web connection never keeps automatic messages, whatever the for
 
     $connection = Connection::query()->where('name', 'Cobranza QR')->sole();
 
-    expect($connection->welcome_enabled)->toBeFalse()
-        ->and($connection->welcome_message)->toBeNull()
-        ->and($connection->away_enabled)->toBeFalse()
-        ->and($connection->away_message)->toBeNull()
-        ->and($connection->away_in_open_conversations)->toBeFalse()
-        ->and($connection->farewell_enabled)->toBeFalse()
-        ->and($connection->farewell_message)->toBeNull()
-        // Reopening still applies.
+    expect($connection->welcome_enabled)->toBeTrue()
+        ->and($connection->welcome_message)->toBe('Hola, gracias por escribir')
+        ->and($connection->away_enabled)->toBeTrue()
+        ->and($connection->away_message)->toBe('Estamos fuera de horario')
+        ->and($connection->away_in_open_conversations)->toBeTrue()
+        ->and($connection->farewell_enabled)->toBeTrue()
+        ->and($connection->farewell_message)->toBe('Hasta luego')
         ->and($connection->reopen_window_minutes)->toBe(60);
 });
 
-test('nothing automatic is ever sent through a phone linked by QR, even with messages stored', function () {
-    $messages = ['welcome_enabled' => true, 'welcome_message' => 'Hola', 'away_enabled' => true, 'away_message' => 'Fuera de horario', 'away_in_open_conversations' => true, 'farewell_enabled' => true, 'farewell_message' => 'Adiós'];
+test('a phone linked by QR follows the same automatic message priorities as WhatsApp Cloud API, and nothing when they are off', function () {
+    $messages = ['welcome_enabled' => true, 'welcome_message' => 'Hola', 'away_enabled' => true, 'away_message' => 'Fuera de horario', 'farewell_enabled' => true, 'farewell_message' => 'Adiós'];
     $department = Department::factory()->create(['welcome_message' => 'Bienvenida del departamento']);
-    $web = Connection::factory()->whatsAppWeb()->create([...$messages, 'default_department_id' => $department->id]);
-    $web->departments()->sync([$department->id]);
+    $web = Connection::factory()->whatsAppWeb()->create($messages);
+    $silent = Connection::factory()->whatsAppWeb()->create();
     $cloud = Connection::factory()->verified()->create($messages);
     $planner = app(AutomaticMessages::class);
 
-    expect($planner->greeting($web, $department, now()))->toBeNull()
-        ->and($planner->greeting($web, null, now()))->toBeNull()
-        ->and($planner->farewell($web))->toBeNull()
-        // WhatsApp Cloud API keeps its automatic messages exactly as before.
-        ->and($planner->farewell($cloud))->not->toBeNull()
-        ->and($planner->greeting($cloud, null, now()))->not->toBeNull();
+    expect($planner->greeting($web, $department, now())?->body)->toBe($planner->greeting($cloud, $department, now())?->body)
+        ->and($planner->greeting($web, null, now())?->source)->toBe('connection')
+        ->and($planner->farewell($web)?->body)->toBe('Adiós')
+        ->and($planner->greeting($silent, null, now()))->toBeNull()
+        ->and($planner->farewell($silent))->toBeNull();
 
-    // End to end: a new conversation and a second message of the customer produce no outbound message.
-    WhatsAppWebFixtures::event($this, $web, 'message.inbound', WhatsAppWebFixtures::inbound())->assertOk();
-    WhatsAppWebFixtures::event($this, $web, 'message.inbound', WhatsAppWebFixtures::inbound())->assertOk();
+    // End to end without messages configured: the customer gets nothing automatic
+    // (the contact's profile may still be read from the linked phone).
+    Http::fake([WhatsAppWebFixtures::SERVICE.'/*/profile' => Http::response(['message' => 'not found'], 404)]);
+    WhatsAppWebFixtures::event($this, $silent, 'message.inbound', WhatsAppWebFixtures::inbound())->assertOk();
+    WhatsAppWebFixtures::event($this, $silent, 'message.inbound', WhatsAppWebFixtures::inbound())->assertOk();
 
     expect(Message::query()->where('direction', 'inbound')->count())->toBe(2)
         ->and(Message::query()->where('direction', 'outbound')->count())->toBe(0);
 
-    Http::assertNothingSent();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/messages'));
 });

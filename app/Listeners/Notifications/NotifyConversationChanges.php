@@ -14,6 +14,7 @@ use App\Notifications\ConversationPendingNotification;
 use App\Notifications\ConversationTransferredNotification;
 use App\Notifications\NotificationCenter;
 use App\Notifications\NotificationRecipients;
+use App\Services\Chatbot\ChatbotConversations;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Notification;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\Notification;
  * (the conversation may have moved on since the event):
  *
  * - entering the queue (created, released, transferred to a department,
- *   reopened without agent) notifies the active users who can accept it,
+ *   reopened without agent, routed by the chatbot's menu) notifies the active users who can accept it,
  *   unless it was already taken;
  * - assignments (manual, automatic, return on reopen) notify the new
  *   responsible agent, never the person who did it themselves;
@@ -45,6 +46,7 @@ class NotifyConversationChanges implements ShouldQueue
         private NotificationRecipients $recipients,
         private NotificationCenter $center,
         private RealtimeSignals $signals,
+        private ChatbotConversations $chatbot,
     ) {}
 
     public function viaQueue(): string
@@ -64,6 +66,7 @@ class NotifyConversationChanges implements ShouldQueue
         ConversationEventType::Reopened,
         ConversationEventType::Assigned,
         ConversationEventType::AutoAssigned,
+        ConversationEventType::ChatbotRouted,
     ];
 
     /**
@@ -108,8 +111,11 @@ class NotifyConversationChanges implements ShouldQueue
         $this->forgetForPreviousAgent($conversation, $record);
 
         match ($type) {
-            ConversationEventType::Created,
-            ConversationEventType::Unassigned => $this->notifyQueue($conversation, $record),
+            // While the chatbot's welcome menu waits for the customer's choice
+            // nobody is told yet: the choice (or its fallback) announces it.
+            ConversationEventType::Created => $this->chatbot->isAwaiting($conversation->id) ? null : $this->notifyQueue($conversation, $record),
+            ConversationEventType::Unassigned,
+            ConversationEventType::ChatbotRouted => $this->notifyQueue($conversation, $record),
             ConversationEventType::Transferred => $record->to_user_id === null
                 ? $this->notifyQueue($conversation, $record)
                 : $this->notifyTransfer($conversation, $record),

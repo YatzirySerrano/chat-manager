@@ -48,6 +48,15 @@ class ConnectionPolicy
         return ! $connection->isDeleted() && $actor->holdsPermission(Permission::ManageConnections);
     }
 
+    /**
+     * The chatbot's welcome menu of the connection (connections.chatbot,
+     * without needing connections.manage). A deleted connection has none.
+     */
+    public function configureChatbot(User $actor, Connection $connection): bool
+    {
+        return ! $connection->isDeleted() && $actor->holdsPermission(Permission::ManageChatbot);
+    }
+
     public function changeStatus(User $actor, Connection $connection): bool
     {
         return $this->update($actor, $connection);

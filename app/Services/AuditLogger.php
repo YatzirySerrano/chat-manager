@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AuditAction;
 use App\Models\ApiToken;
 use App\Models\AuditLog;
+use App\Models\ChatbotKeywordRule;
 use App\Models\Connection;
 use App\Models\Contact;
 use App\Models\Conversation;
@@ -116,6 +117,7 @@ class AuditLogger
             $subject instanceof QuickReply => "{$subject->title} (/{$subject->shortcut})",
             $subject instanceof TeamThread => $subject->name ?? 'Chat interno',
             $subject instanceof ApiToken => "Token de API «{$subject->name}»",
+            $subject instanceof ChatbotKeywordRule => "Palabra clave «{$subject->name}»",
             default => null,
         };
     }

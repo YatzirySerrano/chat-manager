@@ -48,7 +48,7 @@
  * to sign in), so no customer data is exposed.
  */
 
-const VERSION = '2026-11-19.2';
+const VERSION = '2026-11-19.3';
 const CACHE_PREFIX = 'chat-manager-static-';
 const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -220,11 +220,28 @@ self.addEventListener('fetch', (event) => {
     // is left to the browser: straight to the network, never stored here.
 });
 
-async function hasFocusedWindow() {
+/**
+ * The application's own tabs. The web chat widget runs in an iframe of this
+ * same origin inside customers' sites (e.g. a shop page): it is a window
+ * client too, but it must never be focused, navigated or counted as the
+ * app being in front, or a notification would open the conversation inside
+ * the customer's site (where framing it is refused) and break the widget.
+ */
+async function appWindows() {
     const windows = await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
     });
+
+    return windows.filter(
+        (client) =>
+            client.frameType === 'top-level' &&
+            !new URL(client.url).pathname.startsWith('/widget/'),
+    );
+}
+
+async function hasFocusedWindow() {
+    const windows = await appWindows();
 
     return windows.some(
         (client) => client.visibilityState === 'visible' && client.focused,
@@ -314,7 +331,11 @@ async function handlePush() {
         const shown = await self.registration.getNotifications({ tag });
         const teamChat = String(item.kind ?? '').startsWith('team-chat.');
 
-        if (!shown.some((notification) => notification.data?.version === version)) {
+        if (
+            !shown.some(
+                (notification) => notification.data?.version === version,
+            )
+        ) {
             await self.registration.showNotification(item.title || TITLE, {
                 // Internal chat alerts say who wrote, never what they wrote.
                 body: teamChat ? undefined : (item.body ?? undefined),
@@ -338,8 +359,12 @@ async function handlePush() {
         });
 
         if (focused) {
-            await new Promise((resolve) => setTimeout(resolve, FOCUSED_CLOSE_MS));
-            const shown = await self.registration.getNotifications({ tag: TAG });
+            await new Promise((resolve) =>
+                setTimeout(resolve, FOCUSED_CLOSE_MS),
+            );
+            const shown = await self.registration.getNotifications({
+                tag: TAG,
+            });
             shown.forEach((notification) => notification.close());
         }
     }
@@ -363,10 +388,7 @@ self.addEventListener('notificationclick', (event) => {
                 return;
             }
 
-            const windows = await self.clients.matchAll({
-                type: 'window',
-                includeUncontrolled: true,
-            });
+            const windows = await appWindows();
             const existing = windows.find((client) => {
                 const url = new URL(client.url);
 

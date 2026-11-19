@@ -14,9 +14,9 @@ import {
     ShieldCheck,
     Unplug,
     UserRoundCheck,
-} from "@lucide/vue";
-import type { Component } from "vue";
-import type { AppNotification, NotificationKindValue } from "@/types";
+} from '@lucide/vue';
+import type { Component } from 'vue';
+import type { AppNotification, NotificationKindValue } from '@/types';
 
 /**
  * Semantic tone of a notification's icon: urgent kinds ask for an action
@@ -24,7 +24,11 @@ import type { AppNotification, NotificationKindValue } from "@/types";
  * file ready to download is a success.
  */
 export type NotificationTone =
-    "danger" | "warning" | "accent" | "muted" | "success";
+    | 'danger'
+    | 'warning'
+    | 'accent'
+    | 'muted'
+    | 'success';
 
 type KindMeta = {
     icon: Component;
@@ -36,106 +40,106 @@ type KindMeta = {
 };
 
 const KINDS: Record<NotificationKindValue, KindMeta> = {
-    "conversation.pending": {
+    'conversation.pending': {
         icon: Inbox,
-        label: "Pendiente",
-        tone: "warning",
-        unit: ["conversación", "conversaciones"],
+        label: 'Pendiente',
+        tone: 'warning',
+        unit: ['conversación', 'conversaciones'],
     },
-    "conversation.assigned": {
+    'conversation.assigned': {
         icon: UserRoundCheck,
-        label: "Asignación",
-        tone: "accent",
-        unit: ["asignación", "asignaciones"],
+        label: 'Asignación',
+        tone: 'accent',
+        unit: ['asignación', 'asignaciones'],
     },
-    "conversation.transferred": {
+    'conversation.transferred': {
         icon: ArrowLeftRight,
-        label: "Transferencia",
-        tone: "accent",
-        unit: ["transferencia", "transferencias"],
+        label: 'Transferencia',
+        tone: 'accent',
+        unit: ['transferencia', 'transferencias'],
     },
-    "conversation.message": {
+    'conversation.message': {
         icon: MessageCircle,
-        label: "Mensaje",
-        tone: "muted",
-        unit: ["mensaje", "mensajes"],
+        label: 'Mensaje',
+        tone: 'muted',
+        unit: ['mensaje', 'mensajes'],
     },
-    "team-chat.mention": {
+    'team-chat.mention': {
         icon: AtSign,
-        label: "Mención",
-        tone: "accent",
-        unit: ["mención", "menciones"],
+        label: 'Mención',
+        tone: 'accent',
+        unit: ['mención', 'menciones'],
     },
-    "team-chat.message": {
+    'team-chat.message': {
         icon: MessagesSquare,
-        label: "Chat interno",
-        tone: "muted",
-        unit: ["mensaje", "mensajes"],
+        label: 'Chat interno',
+        tone: 'muted',
+        unit: ['mensaje', 'mensajes'],
     },
-    "team-chat.desk-request": {
+    'team-chat.desk-request': {
         icon: Headset,
-        label: "Mesa de control",
-        tone: "warning",
-        unit: ["solicitud", "solicitudes"],
+        label: 'Mesa de control',
+        tone: 'warning',
+        unit: ['solicitud', 'solicitudes'],
     },
-    "export.finished": {
+    'export.finished': {
         icon: FileDown,
-        label: "Exportación",
-        tone: "success",
-        unit: ["aviso", "avisos"],
+        label: 'Exportación',
+        tone: 'success',
+        unit: ['aviso', 'avisos'],
     },
-    "import.finished": {
+    'import.finished': {
         icon: FileUp,
-        label: "Importación",
-        tone: "muted",
-        unit: ["aviso", "avisos"],
+        label: 'Importación',
+        tone: 'muted',
+        unit: ['aviso', 'avisos'],
     },
-    "connection.problem": {
+    'connection.problem': {
         icon: Unplug,
-        label: "Conexión",
-        tone: "danger",
-        unit: ["aviso", "avisos"],
+        label: 'Conexión',
+        tone: 'danger',
+        unit: ['aviso', 'avisos'],
     },
-    "account.access-changed": {
+    'account.access-changed': {
         icon: ShieldCheck,
-        label: "Tu acceso",
-        tone: "muted",
-        unit: ["cambio", "cambios"],
+        label: 'Tu acceso',
+        tone: 'muted',
+        unit: ['cambio', 'cambios'],
     },
-    "sla.warning": {
+    'sla.warning': {
         icon: Hourglass,
-        label: "SLA por vencer",
-        tone: "warning",
-        unit: ["aviso", "avisos"],
+        label: 'SLA por vencer',
+        tone: 'warning',
+        unit: ['aviso', 'avisos'],
     },
-    "sla.breach": {
+    'sla.breach': {
         icon: AlarmClock,
-        label: "SLA vencido",
-        tone: "danger",
-        unit: ["recordatorio", "recordatorios"],
+        label: 'SLA vencido',
+        tone: 'danger',
+        unit: ['recordatorio', 'recordatorios'],
     },
-    "chatbot.reply": {
+    'chatbot.reply': {
         icon: Bot,
-        label: "Chatbot",
-        tone: "accent",
-        unit: ["respuesta", "respuestas"],
+        label: 'Chatbot',
+        tone: 'accent',
+        unit: ['respuesta', 'respuestas'],
     },
 };
 
 const FALLBACK: KindMeta = {
     icon: Bell,
-    label: "Aviso",
-    tone: "muted",
-    unit: ["aviso", "avisos"],
+    label: 'Aviso',
+    tone: 'muted',
+    unit: ['aviso', 'avisos'],
 };
 
 type Presentable = Pick<
     AppNotification,
-    "kind" | "level" | "url" | "accessible"
+    'kind' | 'level' | 'url' | 'accessible'
 >;
 
 export function notificationKind(
-    item: Pick<AppNotification, "kind">,
+    item: Pick<AppNotification, 'kind'>,
 ): KindMeta {
     return KINDS[item.kind] ?? FALLBACK;
 }
@@ -150,17 +154,17 @@ export function notificationTone(item: Presentable): NotificationTone {
     const meta = notificationKind(item);
 
     if (!item.accessible) {
-        return "muted";
+        return 'muted';
     }
 
-    if (item.kind === "export.finished") {
-        return item.url ? "success" : "muted";
+    if (item.kind === 'export.finished') {
+        return item.url ? 'success' : 'muted';
     }
 
-    if (meta.tone === "danger" || meta.tone === "warning") {
-        return item.level === "urgent" || item.kind === "sla.warning"
+    if (meta.tone === 'danger' || meta.tone === 'warning') {
+        return item.level === 'urgent' || item.kind === 'sla.warning'
             ? meta.tone
-            : "muted";
+            : 'muted';
     }
 
     return meta.tone;
@@ -168,7 +172,7 @@ export function notificationTone(item: Presentable): NotificationTone {
 
 /** «3 mensajes», or null for a single occurrence. */
 export function occurrencesText(
-    item: Pick<AppNotification, "kind" | "occurrences">,
+    item: Pick<AppNotification, 'kind' | 'occurrences'>,
 ): string | null {
     if (item.occurrences <= 1) {
         return null;
@@ -181,20 +185,20 @@ export function occurrencesText(
 
 /** The label of the main action, or null when there is nothing to open. */
 export function notificationActionLabel(
-    item: Pick<AppNotification, "kind" | "url">,
+    item: Pick<AppNotification, 'kind' | 'url'>,
 ): string | null {
     if (!item.url) {
         return null;
     }
 
-    return item.kind === "export.finished" ? "Descargar" : "Abrir";
+    return item.kind === 'export.finished' ? 'Descargar' : 'Abrir';
 }
 
 /** Solid tinted square of each tone (background and icon color). */
 export const TONE_CLASSES: Record<NotificationTone, string> = {
-    danger: "bg-destructive-soft text-destructive-soft-foreground",
-    warning: "bg-warning-soft text-warning-soft-foreground",
-    accent: "bg-primary-soft text-primary-soft-foreground",
-    success: "bg-success-soft text-success-soft-foreground",
-    muted: "bg-muted text-muted-foreground",
+    danger: 'bg-destructive-soft text-destructive-soft-foreground',
+    warning: 'bg-warning-soft text-warning-soft-foreground',
+    accent: 'bg-primary-soft text-primary-soft-foreground',
+    success: 'bg-success-soft text-success-soft-foreground',
+    muted: 'bg-muted text-muted-foreground',
 };

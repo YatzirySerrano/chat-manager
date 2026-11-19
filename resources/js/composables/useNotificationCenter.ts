@@ -1,4 +1,4 @@
-import { router, useHttp, usePage } from "@inertiajs/vue3";
+import { router, useHttp, usePage } from '@inertiajs/vue3';
 import {
     computed,
     defineComponent,
@@ -8,13 +8,13 @@ import {
     onMounted,
     ref,
     watch,
-} from "vue";
-import { toast } from "vue-sonner";
-import NotificationKindIcon from "@/components/notifications/NotificationKindIcon.vue";
-import { useRealtimeStatus } from "@/composables/useRealtimeStatus";
-import { syncServerClock } from "@/composables/useServerNow";
-import { useUserChannel } from "@/composables/useUserChannel";
-import { afterUserVisits } from "@/lib/realtime";
+} from 'vue';
+import { toast } from 'vue-sonner';
+import NotificationKindIcon from '@/components/notifications/NotificationKindIcon.vue';
+import { useRealtimeStatus } from '@/composables/useRealtimeStatus';
+import { syncServerClock } from '@/composables/useServerNow';
+import { useUserChannel } from '@/composables/useUserChannel';
+import { afterUserVisits } from '@/lib/realtime';
 import {
     askNotificationPermissionOnFirstGesture,
     browserNotificationPermission,
@@ -22,28 +22,28 @@ import {
     playNotificationSound,
     showBrowserNotification,
     unlockNotificationSound,
-} from "@/lib/notifications/alerts";
-import { notificationTone } from "@/lib/notifications/kinds";
-import { ensurePushSubscription } from "@/lib/notifications/push";
+} from '@/lib/notifications/alerts';
+import { notificationTone } from '@/lib/notifications/kinds';
+import { ensurePushSubscription } from '@/lib/notifications/push';
 import {
     VIEWED_THREAD_HEARTBEAT_MS,
     announceViewedThread,
     claimNotificationSound,
     isThreadViewedInAnotherTab,
-} from "@/lib/notifications/tabs";
+} from '@/lib/notifications/tabs';
 import {
     index as notificationsIndex,
     read,
     readAll,
-} from "@/routes/notifications";
-import { read as readConversation } from "@/routes/notifications/conversations";
+} from '@/routes/notifications';
+import { read as readConversation } from '@/routes/notifications/conversations';
 import type {
     AppNotification,
     NotificationKindValue,
     NotificationListResponse,
     NotificationPreference,
     NotificationUnread,
-} from "@/types";
+} from '@/types';
 
 /** Refresh period while real-time signals are not available. */
 const FALLBACK_INTERVAL_MS = 60_000;
@@ -57,9 +57,9 @@ const STALE_ALERT_MS = 5 * 60_000;
 
 /** Internal chat kinds (their own, softer sound). */
 const TEAM_CHAT_KINDS: NotificationKindValue[] = [
-    "team-chat.message",
-    "team-chat.desk-request",
-    "team-chat.mention",
+    'team-chat.message',
+    'team-chat.desk-request',
+    'team-chat.mention',
 ];
 
 /**
@@ -69,8 +69,8 @@ const TEAM_CHAT_KINDS: NotificationKindValue[] = [
 function toastIcon(item: AppNotification) {
     return markRaw(
         defineComponent({
-            name: "NotificationToastIcon",
-            setup: () => () => h(NotificationKindIcon, { item, size: "sm" }),
+            name: 'NotificationToastIcon',
+            setup: () => () => h(NotificationKindIcon, { item, size: 'sm' }),
         }),
     );
 }
@@ -105,7 +105,7 @@ export type NotificationAlertPlan = {
  * listed in the bell.
  */
 export function notificationAlertPlan(
-    item: Pick<AppNotification, "conversation_id" | "team_thread_id" | "toast">,
+    item: Pick<AppNotification, 'conversation_id' | 'team_thread_id' | 'toast'>,
     context: {
         viewedConversationId: number | null;
         attended: boolean;
@@ -214,35 +214,39 @@ export function useNotificationCenter() {
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const viewedConversationId = computed<number | null>(() => {
-        if (!page.component.startsWith("conversations/")) {
+        if (!page.component.startsWith('conversations/')) {
             return null;
         }
 
         const props = page.props as Record<string, unknown>;
         const conversation = props.conversation as
-            { id?: number } | null | undefined;
+            | { id?: number }
+            | null
+            | undefined;
 
-        if (typeof conversation?.id === "number") {
+        if (typeof conversation?.id === 'number') {
             return conversation.id;
         }
 
-        return typeof props.selectedId === "number" ? props.selectedId : null;
+        return typeof props.selectedId === 'number' ? props.selectedId : null;
     });
 
     /** The internal chat open on this page (team-chat/Index with a thread). */
     const viewedThreadId = computed<number | null>(() => {
-        if (page.component !== "team-chat/Index") {
+        if (page.component !== 'team-chat/Index') {
             return null;
         }
 
         const thread = (page.props as Record<string, unknown>).activeThread as
-            { id?: number } | null | undefined;
+            | { id?: number }
+            | null
+            | undefined;
 
-        return typeof thread?.id === "number" ? thread.id : null;
+        return typeof thread?.id === 'number' ? thread.id : null;
     });
 
     function version(item: AppNotification): string {
-        return `${item.updated_at ?? ""}|${item.occurrences}`;
+        return `${item.updated_at ?? ''}|${item.occurrences}`;
     }
 
     function remember(list: AppNotification[]): AppNotification[] {
@@ -270,7 +274,7 @@ export function useNotificationCenter() {
      * open in a hidden tab or an unfocused window is not "on screen".
      */
     function pageIsAttended(): boolean {
-        return document.visibilityState === "visible" && document.hasFocus();
+        return document.visibilityState === 'visible' && document.hasFocus();
     }
 
     /**
@@ -391,7 +395,7 @@ export function useNotificationCenter() {
 
     function isStale(item: AppNotification, serverTime: string): boolean {
         const now = Date.parse(serverTime);
-        const at = Date.parse(item.updated_at ?? "");
+        const at = Date.parse(item.updated_at ?? '');
 
         return (
             Number.isFinite(now) &&
@@ -419,19 +423,19 @@ export function useNotificationCenter() {
         batch: AppNotification[],
     ): Promise<void> {
         try {
-            if (notificationSoundState.value !== "ready") {
+            if (notificationSoundState.value !== 'ready') {
                 if (
-                    notificationSoundState.value === "locked" &&
+                    notificationSoundState.value === 'locked' &&
                     !soundHintShown &&
-                    document.visibilityState === "visible"
+                    document.visibilityState === 'visible'
                 ) {
                     // Browsers keep audio blocked until the first click or
                     // key on the page after opening or reloading it.
                     soundHintShown = true;
-                    toast("Sonido de avisos en pausa", {
-                        id: "notification-sound-locked",
+                    toast('Sonido de avisos en pausa', {
+                        id: 'notification-sound-locked',
                         description:
-                            "El navegador lo activa cuando haces clic o pulsas una tecla en esta página.",
+                            'El navegador lo activa cuando haces clic o pulsas una tecla en esta página.',
                     });
                 }
 
@@ -446,7 +450,7 @@ export function useNotificationCenter() {
 
             const keys = batch.map((fresh) => `${fresh.id}|${version(fresh)}`);
             const urgent = batch.some(
-                (fresh) => fresh.level === "urgent" && !isTeamChat(fresh),
+                (fresh) => fresh.level === 'urgent' && !isTeamChat(fresh),
             );
 
             if (!(await claimNotificationSound(keys, urgent))) {
@@ -454,8 +458,8 @@ export function useNotificationCenter() {
             }
 
             playNotificationSound(
-                item.level === "urgent",
-                isTeamChat(item) ? "team-chat" : "default",
+                item.level === 'urgent',
+                isTeamChat(item) ? 'team-chat' : 'default',
             );
         } catch {
             // Sound is a courtesy: never break the page for it.
@@ -464,11 +468,11 @@ export function useNotificationCenter() {
 
     function alert(fresh: AppNotification[], serverTime: string): void {
         let played = false;
-        const visible = document.visibilityState === "visible";
+        const visible = document.visibilityState === 'visible';
         // Not looking at the platform (minimized, another tab, another app
         // in front): the alert goes to the operating system, when allowed.
         const systemAlerts =
-            !pageIsAttended() && browserNotificationPermission() === "granted";
+            !pageIsAttended() && browserNotificationPermission() === 'granted';
 
         for (const item of fresh) {
             const plan = notificationAlertPlan(item, {
@@ -523,13 +527,13 @@ export function useNotificationCenter() {
                     description: item.body ?? undefined,
                     icon: toastIcon(item),
                     class: `notification-toast tone-${notificationTone(item)}`,
-                    classes: { description: "line-clamp-2" },
+                    classes: { description: 'line-clamp-2' },
                     action: item.url
                         ? {
                               label:
-                                  item.kind === "export.finished"
-                                      ? "Descargar"
-                                      : "Abrir",
+                                  item.kind === 'export.finished'
+                                      ? 'Descargar'
+                                      : 'Abrir',
                               onClick: () => open(item),
                           }
                         : undefined,
@@ -570,7 +574,7 @@ export function useNotificationCenter() {
             });
         } catch {
             toast.error(
-                "No se pudieron marcar como leídas. Inténtalo de nuevo.",
+                'No se pudieron marcar como leídas. Inténtalo de nuevo.',
             );
         }
     }
@@ -614,17 +618,17 @@ export function useNotificationCenter() {
     // After the user's own visit in flight: a request in between would
     // consume the one-time flash (toast) of the operation being finished.
     useUserChannel({
-        ".notification": () => afterUserVisits(() => void load()),
+        '.notification': () => afterUserVisits(() => void load()),
     });
 
     watch(
         realtimeState,
         (state, previous) => {
-            if (state === "connected") {
+            if (state === 'connected') {
                 stopFallback();
 
                 // Recover what may have been missed while disconnected.
-                if (previous !== undefined && previous !== "connected") {
+                if (previous !== undefined && previous !== 'connected') {
                     void load();
                 }
             } else {
@@ -690,10 +694,10 @@ export function useNotificationCenter() {
                         null,
                 ),
         );
-        document.addEventListener("visibilitychange", onAttentionChange);
-        window.addEventListener("focus", onAttentionChange);
-        window.addEventListener("blur", onAttentionChange);
-        window.addEventListener("pagehide", forgetThread);
+        document.addEventListener('visibilitychange', onAttentionChange);
+        window.addEventListener('focus', onAttentionChange);
+        window.addEventListener('blur', onAttentionChange);
+        window.addEventListener('pagehide', forgetThread);
         announceThread();
         viewedHeartbeat = setInterval(() => {
             if (viewedThreadId.value !== null) {
@@ -705,10 +709,10 @@ export function useNotificationCenter() {
 
     onBeforeUnmount(() => {
         stopFallback();
-        document.removeEventListener("visibilitychange", onAttentionChange);
-        window.removeEventListener("focus", onAttentionChange);
-        window.removeEventListener("blur", onAttentionChange);
-        window.removeEventListener("pagehide", forgetThread);
+        document.removeEventListener('visibilitychange', onAttentionChange);
+        window.removeEventListener('focus', onAttentionChange);
+        window.removeEventListener('blur', onAttentionChange);
+        window.removeEventListener('pagehide', forgetThread);
 
         if (viewedHeartbeat !== null) {
             clearInterval(viewedHeartbeat);

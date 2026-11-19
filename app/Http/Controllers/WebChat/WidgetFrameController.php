@@ -55,7 +55,16 @@ class WidgetFrameController extends Controller
         $appOrigin = (string) WebChatWidget::normalizeOrigin($request->getSchemeAndHttpHost());
         $hostOrigin = $this->refererOrigin($request);
         $allowedOrigins = $this->allowedOrigins($widget);
-        $preview = $request->boolean('preview') && $hostOrigin !== null && $hostOrigin === $appOrigin;
+        // Behind a proxy that does not pass the scheme on, the request may
+        // look like http:// while the page is https://: APP_URL's origin
+        // counts as the application itself too.
+        $configuredOrigin = WebChatWidget::normalizeOrigin((string) config('app.url'));
+        $ownOrigins = array_values(array_unique(array_filter([$appOrigin, $configuredOrigin])));
+        $preview = $request->boolean('preview') && $hostOrigin !== null && in_array($hostOrigin, $ownOrigins, true);
+
+        if ($preview) {
+            $appOrigin = $hostOrigin;
+        }
         $authorized = ! $preview && $hostOrigin !== null && $widget->allowsOrigin($hostOrigin);
         $available = $connection->isOperational() && $connection->isConfigured();
 

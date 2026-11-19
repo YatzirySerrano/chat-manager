@@ -21,6 +21,13 @@ const props = defineProps<{
 }>();
 
 const iframe = ref<HTMLIFrameElement | null>(null);
+
+/*
+ * Light or dark visitor: the frame follows `color-scheme` of the iframe
+ * element (prefers-color-scheme inside it), so the preview starts light
+ * whatever the administrator's own system uses.
+ */
+const theme = ref<'light' | 'dark'>('light');
 const state = ref<'loading' | 'ready' | 'unavailable'>('loading');
 let unavailableTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -123,12 +130,38 @@ const launcher = computed(() => {
     <div class="grid gap-2">
         <div class="flex items-center justify-between gap-2">
             <h3 class="text-sm font-medium">Vista previa</h3>
-            <span
-                v-if="dirty"
-                class="text-xs text-muted-foreground"
-                aria-live="polite"
-                >Con cambios sin guardar</span
-            >
+            <div class="flex items-center gap-2">
+                <span
+                    v-if="dirty"
+                    class="text-xs text-muted-foreground"
+                    aria-live="polite"
+                    >Sin guardar</span
+                >
+                <div
+                    class="inline-flex rounded-md border bg-card p-0.5 text-xs"
+                    role="group"
+                    aria-label="Tema del visitante en la vista previa"
+                >
+                    <button
+                        v-for="option in [
+                            { value: 'light', label: 'Claro' },
+                            { value: 'dark', label: 'Oscuro' },
+                        ] as const"
+                        :key="option.value"
+                        type="button"
+                        class="rounded px-2 py-0.5 font-medium transition-colors"
+                        :class="
+                            theme === option.value
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                        "
+                        :aria-pressed="theme === option.value"
+                        @click="theme = option.value"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
+            </div>
         </div>
         <div
             class="relative h-[30rem] overflow-hidden rounded-lg border bg-muted/40"
@@ -138,6 +171,7 @@ const launcher = computed(() => {
                 :src="previewUrl"
                 title="Vista previa del chat web"
                 class="size-full border-0"
+                :style="{ colorScheme: theme }"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
                 referrerpolicy="origin"
                 allow=""

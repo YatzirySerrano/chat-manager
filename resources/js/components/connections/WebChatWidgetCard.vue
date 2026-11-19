@@ -88,6 +88,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     appearance: [appearance: WebChatPreviewAppearance, dirty: boolean];
+    /** Whether the widget has unsaved changes (the page's save bar saves them too). */
+    dirty: [dirty: boolean];
 }>();
 
 type WidgetForm = {
@@ -645,6 +647,18 @@ watch(
         validation.load(values);
     },
 );
+
+watch(
+    () => hasChanges.value,
+    (dirty) => emit('dirty', dirty),
+    { immediate: true },
+);
+
+defineExpose({
+    save: () => save(),
+    discard: () => discard(),
+    processing: () => form.processing,
+});
 
 function save(): void {
     if (!validation.validate() || duplicateOrigins.value) {

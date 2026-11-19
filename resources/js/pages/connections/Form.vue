@@ -508,7 +508,26 @@ const reopenSummary = computed(() => {
     return `Se reabrirá si el cliente escribe dentro de ${minutes} minutos después del cierre.`;
 });
 
+/** The web chat card saves on its own request; the bar below saves it too. */
+const widgetCard = ref<InstanceType<typeof WebChatWidgetCard> | null>(null);
+const widgetDirty = ref(false);
+
+/** Something to save: the connection, its widget, or both. */
+const pageDirty = computed(() => validation.hasChanges || widgetDirty.value);
+
+function discardAll(): void {
+    form.reset();
+    widgetCard.value?.discard();
+}
+
 function submit(): void {
+    // Only the widget changed: save it, the connection has nothing new.
+    if (connection.value && !validation.hasChanges && widgetDirty.value) {
+        widgetCard.value?.save();
+
+        return;
+    }
+
     if (!validation.validate()) {
         toast.error('Revisa los campos marcados.');
 
@@ -518,13 +537,19 @@ function submit(): void {
     const options = {
         preserveScroll: true,
         // Saved secrets are never sent back: the fields return to "keep".
-        onSuccess: () =>
+        onSuccess: () => {
             validation.load({
                 ...form.data(),
                 access_token: '',
                 app_secret: '',
                 webhook_verify_token: '',
-            }),
+            });
+
+            // Then the widget, after the connection (one request at a time).
+            if (widgetDirty.value) {
+                widgetCard.value?.save();
+            }
+        },
         onError: () => {
             toast.error('Revisa los campos marcados.');
         },
@@ -1573,7 +1598,9 @@ const flaggedSections = computed(() =>
                                 :options="widgetOptions"
                                 :can-update="can.update"
                                 class="gap-6! [&>section]:scroll-mt-32 xl:[&>section]:scroll-mt-24"
+                                ref="widgetCard"
                                 @appearance="onWidgetAppearance"
+                                @dirty="(dirty) => (widgetDirty = dirty)"
                             >
                                 <template v-if="previewAppearance" #preview>
                                     <WebChatPreview
@@ -2130,14 +2157,18 @@ const flaggedSections = computed(() =>
             class="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-t bg-background/95 px-4 py-3 backdrop-blur md:px-6 lg:px-8 min-[100rem]:px-10"
         >
             <span
-                v-if="validation.hasChanges"
+                v-if="pageDirty"
                 class="flex items-center gap-2 text-sm font-medium text-warning-soft-foreground max-sm:sr-only"
             >
                 <span
                     class="live-dot size-1.5 rounded-full bg-warning text-warning"
                     aria-hidden="true"
                 />
-                Cambios sin guardar
+                {{
+                    validation.hasChanges
+                        ? 'Cambios sin guardar'
+                        : 'Cambios del widget sin guardar'
+                }}
             </span>
             <span
                 v-else-if="isEditing"
@@ -2152,8 +2183,8 @@ const flaggedSections = computed(() =>
                     type="button"
                     variant="outline"
                     class="max-sm:flex-1"
-                    :disabled="!validation.hasChanges || form.processing"
-                    @click="form.reset()"
+                    :disabled="!pageDirty || form.processing"
+                    @click="discardAll"
                 >
                     Descartar
                 </Button>
@@ -2163,9 +2194,7 @@ const flaggedSections = computed(() =>
                 <Button
                     type="submit"
                     class="max-sm:flex-1"
-                    :disabled="
-                        validation.requiresChanges && !validation.hasChanges
-                    "
+                    :disabled="validation.requiresChanges && !pageDirty"
                     :loading="form.processing"
                 >
                     <Save />

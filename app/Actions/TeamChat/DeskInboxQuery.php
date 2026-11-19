@@ -41,7 +41,11 @@ class DeskInboxQuery
      */
     public static function rules(): array
     {
-        return ['desk' => ['nullable', 'string', Rule::in(self::TABS)]];
+        return [
+            'desk' => ['nullable', 'string', Rule::in(self::TABS)],
+            // «Chat privado»: the desk section opens by default otherwise.
+            'section' => ['nullable', 'string', Rule::in(['chats'])],
+        ];
     }
 
     /**

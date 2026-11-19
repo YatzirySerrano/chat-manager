@@ -68,6 +68,12 @@ class TeamChatController extends Controller
         $isRequester = $this->desk->isRequester($viewer);
         $attendsDesk = $this->desk->attends($viewer);
         $deskTab = is_string($validated['desk'] ?? null) ? $validated['desk'] : null;
+
+        // Whoever attends the desk lands on «Mesa de control» (pending
+        // requests); «Chat privado» is asked for with `section=chats`.
+        if ($attendsDesk && $deskTab === null && $thread === null && ($validated['section'] ?? null) !== 'chats') {
+            $deskTab = 'pending';
+        }
         $deskThread = $isRequester
             ? $this->desk->threadFor($viewer)
             // An auditor (or admin) may also write to the desk herself.

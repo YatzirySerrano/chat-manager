@@ -165,12 +165,8 @@ function openDeskSection(tab: TeamDeskTab | null): void {
     });
 }
 
+/* «Mesa de control» first (it opens by default), then the private chats. */
 const sectionTabs = computed<FilterTabOption<'chats' | 'desk'>[]>(() => [
-    {
-        value: 'chats',
-        label: 'Chat privado',
-        title: 'Habla en privado con alguien del equipo o en grupos',
-    },
     {
         value: 'desk',
         label: 'Mesa de control',
@@ -179,6 +175,11 @@ const sectionTabs = computed<FilterTabOption<'chats' | 'desk'>[]>(() => [
         srLabel: `${props.deskPending ?? 0} solicitudes en espera`,
         title: 'Solicitudes de la mesa de control',
         attrs: { 'data-desk-section': '' },
+    },
+    {
+        value: 'chats',
+        label: 'Chat privado',
+        title: 'Habla en privado con alguien del equipo o en grupos',
     },
 ]);
 
@@ -374,6 +375,11 @@ function listQuery(
     extra: Record<string, string | number> = {},
 ): Record<string, string | number> {
     const query: Record<string, string | number> = { ...extra };
+
+    // The desk opens by default: the private chats are asked for explicitly.
+    if (isAuditor.value && deskTab.value === null) {
+        query.section = 'chats';
+    }
 
     if (search.value.trim() !== '') {
         query.search = search.value.trim();

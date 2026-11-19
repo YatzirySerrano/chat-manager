@@ -8,6 +8,8 @@ defineProps<{
     number: number;
     title: string;
     hint?: string;
+    /** The step can be left empty. */
+    optional?: boolean;
 }>();
 </script>
 
@@ -28,6 +30,11 @@ defineProps<{
                     class="font-display text-base font-semibold"
                 >
                     <span class="sr-only">Paso {{ number }}: </span>{{ title }}
+                    <span
+                        v-if="optional"
+                        class="ml-1.5 rounded-full bg-muted px-2 py-0.5 align-middle font-sans text-[0.6875rem] font-medium text-muted-foreground"
+                        >Opcional</span
+                    >
                 </h3>
                 <p v-if="hint" class="text-sm text-muted-foreground">
                     {{ hint }}

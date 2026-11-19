@@ -39,6 +39,23 @@ class ChatbotMenus
         return $tree->level(null)->isEmpty() ? null : $tree;
     }
 
+    /**
+     * The welcome of an enabled menu that offers no options (none were
+     * added, or none works today), or null: such a chatbot only greets, and
+     * the conversation goes on to the ordinary routing at once.
+     */
+    public function greetingOnly(Connection $connection): ?string
+    {
+        $menu = ChatbotMenu::query()->where('connection_id', $connection->id)->where('is_enabled', true)->first();
+        $greeting = trim((string) $menu?->greeting);
+
+        if ($menu === null || $greeting === '' || ! $this->tree($menu, $connection)->level(null)->isEmpty()) {
+            return null;
+        }
+
+        return $greeting;
+    }
+
     public function tree(ChatbotMenu $menu, Connection $connection): ChatbotTree
     {
         $authorized = array_map('intval', $connection->departments()->pluck('departments.id')->all());

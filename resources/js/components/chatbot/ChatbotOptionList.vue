@@ -134,7 +134,7 @@ function numberPrefix(index: number): string {
                 {{
                     disabled
                         ? 'Este menú todavía no tiene opciones.'
-                        : 'Agrega la primera con el botón de abajo.'
+                        : 'Sin opciones, el bot solo manda la bienvenida y la conversación pasa a la fila. Agrega la primera con el botón de abajo.'
                 }}
             </p>
         </div>

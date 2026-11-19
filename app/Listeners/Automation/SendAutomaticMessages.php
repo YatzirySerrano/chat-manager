@@ -9,9 +9,12 @@ use App\Models\Connection;
 use App\Models\Conversation;
 use App\Models\ConversationEvent;
 use App\Models\Department;
+use App\Services\Automation\AutomaticMessageKind;
+use App\Services\Automation\AutomaticMessagePlan;
 use App\Services\Automation\AutomaticMessages;
 use App\Services\BusinessHours;
 use App\Services\Chatbot\ChatbotConversations;
+use App\Services\Chatbot\ChatbotMenus;
 use App\Support\Queues;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
@@ -65,6 +68,7 @@ class SendAutomaticMessages implements ShouldQueue
         private QueueAutomaticMessage $queueMessage,
         private BusinessHours $hours,
         private ChatbotConversations $chatbot,
+        private ChatbotMenus $menus,
     ) {}
 
     public function viaQueue(): string
@@ -137,6 +141,16 @@ class SendAutomaticMessages implements ShouldQueue
             if ($this->chatbot->sendMenu($conversation, $record->id) || ! $open) {
                 return;
             }
+        }
+
+        // A chatbot without options only greets: within hours its welcome
+        // takes the place of the usual one, and nothing waits for an answer.
+        if ($type === ConversationEventType::Created
+            && $this->hours->isOpenAt($department, now())
+            && ($greeting = $this->menus->greetingOnly($connection)) !== null) {
+            $this->queueMessage->handle($conversation, new AutomaticMessagePlan(AutomaticMessageKind::ChatbotMenu, $greeting, 'chatbot'), $conversation->reopen_count, $record->id);
+
+            return;
         }
 
         $this->greet($conversation, $connection, $department, $record);

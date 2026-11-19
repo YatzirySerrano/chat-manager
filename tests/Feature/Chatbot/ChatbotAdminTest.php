@@ -97,7 +97,7 @@ test('the welcome menu is saved with its options in order and audited on the con
     expect(AuditLog::query()->where('action', AuditAction::ChatbotMenuUpdated)->count())->toBe(1);
 });
 
-test('an active menu needs a greeting and an option; new options need an active department the connection may route to', function () {
+test('an active menu needs a greeting (options are optional); new options need an active department the connection may route to', function () {
     $other = Department::factory()->create();
     $this->connection->departments()->sync([$this->control->id, $this->orizaba->id]);
     $inactive = Department::factory()->inactive()->create();
@@ -107,8 +107,8 @@ test('an active menu needs a greeting and an option; new options need an active 
         ->assertSessionHasErrors(['greeting' => 'Escribe el saludo para activar el menú.']);
 
     $this->actingAs($this->admin)
-        ->put(route('admin.chatbot.menus.update', $this->connection), ['is_enabled' => true, 'greeting' => 'Hola', 'max_attempts' => 2, 'options' => []])
-        ->assertSessionHasErrors(['options' => 'Agrega al menos una opción para activar el menú.']);
+        ->put(route('admin.chatbot.menus.update', $this->connection), ['is_enabled' => true, 'greeting' => 'Hola', 'max_attempts' => 2, 'timeout_minutes' => 10, 'options' => []])
+        ->assertSessionDoesntHaveErrors('options');
 
     $this->actingAs($this->admin)
         ->put(route('admin.chatbot.menus.update', $this->connection), ['is_enabled' => true, 'greeting' => 'Hola', 'max_attempts' => 9, 'options' => [

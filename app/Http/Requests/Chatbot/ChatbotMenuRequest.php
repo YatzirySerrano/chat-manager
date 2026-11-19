@@ -76,13 +76,9 @@ class ChatbotMenuRequest extends FormRequest
 
                 /** @var Connection $connection */
                 $connection = $this->route('connection');
+                // Options are optional: a menu without them only sends its
+                // welcome and the conversation goes on to the queue.
                 $options = $this->options();
-
-                if ($this->boolean('is_enabled') && $options === []) {
-                    $validator->errors()->add('options', 'Agrega al menos una opción para activar el menú.');
-
-                    return;
-                }
 
                 $saved = array_map('intval', ChatbotMenu::query()
                     ->where('connection_id', $connection->id)

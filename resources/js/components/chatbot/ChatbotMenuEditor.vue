@@ -465,6 +465,7 @@ function save(): void {
             <ChatbotStep
                 :id="`chatbot-step-options-${connection.id}`"
                 :number="2"
+                optional
                 title="Opciones y respuestas"
                 :hint="`Cada opción hace algo: abre un submenú, contesta, o pasa a un departamento. Hasta ${limits.options} por menú y ${limits.depth} niveles.`"
             >
@@ -486,6 +487,7 @@ function save(): void {
             <ChatbotStep
                 :id="`chatbot-step-navigation-${connection.id}`"
                 :number="3"
+                optional
                 title="Regresar en los submenús"
                 hint="El cliente escribe 0 para volver al menú anterior o # para el principal. Esto se muestra debajo de cada submenú."
             >
@@ -506,6 +508,7 @@ function save(): void {
             <ChatbotStep
                 :id="`chatbot-step-retry-${connection.id}`"
                 :number="4"
+                optional
                 title="Si no contesta con una opción"
                 hint="Por ejemplo, si escribe «quiero informes» en vez de «1», o si deja de contestar."
             >

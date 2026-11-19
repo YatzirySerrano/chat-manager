@@ -3,6 +3,7 @@ import { router, useHttp } from '@inertiajs/vue3';
 import {
     ArrowLeftRight,
     BadgeCheck,
+    BellOff,
     CircleCheck,
     CircleHelp,
     EllipsisVertical,
@@ -165,10 +166,12 @@ const reasonDialogOpen = computed({
  * number connected through WhatsApp Web (QR), have none.
  */
 const closeEffect = computed(() =>
-    props.conversation.connection.channel === 'whatsapp' &&
-    !isWhatsAppWebProvider(props.conversation.connection.provider)
-        ? 'No se envía ningún mensaje al cliente ni cambia la ventana de WhatsApp.'
-        : `No se envía ningún mensaje al cliente por ${props.conversation.connection.channel_label}.`,
+    props.conversation.connection.farewell
+        ? 'Se envía al cliente el mensaje de despedida de la conexión.'
+        : props.conversation.connection.channel === 'whatsapp' &&
+            !isWhatsAppWebProvider(props.conversation.connection.provider)
+          ? 'No se envía ningún mensaje al cliente ni cambia la ventana de WhatsApp.'
+          : `No se envía ningún mensaje al cliente por ${props.conversation.connection.channel_label}.`,
 );
 
 const reasonCopy = computed<
@@ -386,11 +389,20 @@ const completeAsButton = computed(
     () => can.value.close && primary.value.length === 0,
 );
 
-/** Direct, with no comment: the request is done and leaves the list. */
-function openCompleted(): void {
+/**
+ * Direct, with no comment: the request is done and leaves the list. With a
+ * farewell configured on the connection, «Sin despedida» skips it.
+ */
+function openCompleted(farewell = true): void {
     errors.value = {};
-    operate(close.url(id.value), { completed: true });
+    operate(close.url(id.value), { completed: true, farewell });
 }
+
+const offersSilentComplete = computed(
+    () =>
+        completeAsButton.value &&
+        Boolean(props.conversation.connection.farewell),
+);
 
 /** «Eliminar chat definitivamente»: only with the permission, always last. */
 const permanentDeleteOpen = ref(false);
@@ -527,7 +539,7 @@ const secondary = computed<Action[]>(() => {
             aria-label="Solicitud completada"
             title="Cerrar la conversación como solicitud completada"
             data-conversation-action="complete"
-            @click="openCompleted"
+            @click="openCompleted()"
         >
             <BadgeCheck
                 class="size-4 shrink-0 transition-transform duration-(--duration-panel) ease-(--ease-spring) group-hover/complete:scale-115 group-hover/complete:-rotate-8"
@@ -536,6 +548,19 @@ const secondary = computed<Action[]>(() => {
             <span class="hidden sm:@xl/chat-header:inline">
                 Solicitud completada
             </span>
+        </button>
+        <button
+            v-if="offersSilentComplete"
+            type="button"
+            class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border bg-background px-2.5 text-sm font-medium text-muted-foreground shadow-(--shadow-control) outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center"
+            :disabled="processing"
+            aria-label="Solicitud completada sin despedida"
+            title="Cerrar como solicitud completada sin enviar el mensaje de despedida"
+            data-conversation-action="complete-silent"
+            @click="openCompleted(false)"
+        >
+            <BellOff class="size-4 shrink-0" aria-hidden="true" />
+            <span class="hidden sm:@xl/chat-header:inline">Sin despedida</span>
         </button>
         <!--
             «menu-extra»: chat controls the header moves into this menu on

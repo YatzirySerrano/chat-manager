@@ -25,7 +25,7 @@ import type { TeamThreadDetail } from '@/types/team-chat';
  */
 const props = defineProps<{ thread: TeamThreadDetail }>();
 
-const busy = ref<'accept' | 'complete' | null>(null);
+const busy = ref<'accept' | 'complete' | 'silent' | null>(null);
 
 /* «Seguimiento»: tags, internal notes and the dossier (desk staff only). */
 const followUpOpen = ref(false);
@@ -126,10 +126,14 @@ const status = computed(() => {
     }
 });
 
-function run(action: 'accept' | 'complete'): void {
+/*
+ * «Completar y despedir» posts the goodbye configured in Configuración and
+ * completes; «Completar sin mensaje» (silent) only completes.
+ */
+function run(action: 'accept' | 'complete' | 'silent'): void {
     router.post(
         (action === 'accept' ? accept : complete).url(props.thread.id),
-        {},
+        action === 'accept' ? {} : { farewell: action === 'complete' },
         {
             preserveScroll: true,
             preserveState: true,
@@ -185,15 +189,38 @@ function run(action: 'accept' | 'complete'): void {
             <Hand aria-hidden="true" /> Aceptar solicitud
         </Button>
         <Button
+            v-if="thread.can.completeDesk && thread.can.deskFarewell"
+            size="sm"
+            class="h-8 gap-1.5 rounded-full"
+            :loading="busy === 'complete'"
+            :disabled="busy !== null"
+            title="Envía el mensaje de despedida configurado y marca la solicitud como completa"
+            data-desk-complete
+            @click="run('complete')"
+        >
+            <CircleCheck aria-hidden="true" /> Completar y despedir
+        </Button>
+        <Button
             v-if="thread.can.completeDesk"
             size="sm"
             variant="outline"
             class="h-8 gap-1.5 rounded-full bg-background"
-            :loading="busy === 'complete'"
-            data-desk-complete
-            @click="run('complete')"
+            :loading="busy === 'silent'"
+            :disabled="busy !== null"
+            :title="
+                thread.can.deskFarewell
+                    ? 'Marca la solicitud como completa sin enviar la despedida'
+                    : 'Marca la solicitud como completa. Para enviar una despedida, configúrala en Administración → Configuración.'
+            "
+            data-desk-complete-silent
+            @click="run('silent')"
         >
-            <CircleCheck aria-hidden="true" /> Solicitud completa
+            <CircleCheck aria-hidden="true" />
+            {{
+                thread.can.deskFarewell
+                    ? 'Completar sin mensaje'
+                    : 'Solicitud completa'
+            }}
         </Button>
         <Button
             v-if="details"

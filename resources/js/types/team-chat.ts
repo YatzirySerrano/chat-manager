@@ -158,6 +158,8 @@ export type TeamThreadDetail = {
         acceptDesk?: boolean;
         /** «Solicitud completa» on the viewer's open desk request. */
         completeDesk?: boolean;
+        /** A goodbye is configured: «Completar y despedir» is offered. */
+        deskFarewell?: boolean;
     };
     post_blocked_reason: string | null;
     desk?: TeamDeskInfo | null;

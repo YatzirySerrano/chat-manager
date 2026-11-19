@@ -14,6 +14,7 @@ use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\Personalization\ChatAppearances;
 use App\Services\TeamChat\ControlDesk;
+use App\Services\TeamChat\DeskFarewell;
 use App\Services\TeamChat\TeamChatPresenter;
 use App\Support\Attachments\ServerUploadLimits;
 use Illuminate\Http\Request;
@@ -186,6 +187,8 @@ class TeamChatController extends Controller
                 // «Mesa de control»: «Aceptar solicitud» / «Solicitud completa».
                 'acceptDesk' => $canAttendDesk && $thread->desk_status === TeamDeskStatus::Pending,
                 'completeDesk' => $canAttendDesk && $thread->isDeskAssignedTo($viewer),
+                // «Completar y despedir»: a goodbye is configured (Configuración).
+                'deskFarewell' => $canAttendDesk && $thread->isDeskAssignedTo($viewer) && app(DeskFarewell::class)->message() !== null,
             ],
             'post_blocked_reason' => $canPost ? null : $postBlockedReason,
             'desk' => $this->presenter->desk($thread, $viewer),

@@ -71,6 +71,8 @@ class ConversationResource extends JsonResource
                     ! $this->channelConnection->is_active => 'inactive',
                     default => 'active',
                 },
+                // Whether closing sends the connection's farewell («Completar y despedir»).
+                'farewell' => (bool) $this->channelConnection->farewell_enabled && trim((string) $this->channelConnection->farewell_message) !== '',
                 'can_send' => ($sendBlockReason = $this->channelConnection->sendingBlockReason()) === null,
                 'send_block_reason' => $sendBlockReason,
                 'credentials_verified' => $this->channelConnection->credentials_verified_at !== null,

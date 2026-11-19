@@ -177,6 +177,13 @@ class SendAutomaticMessages implements ShouldQueue
 
     private function farewell(Conversation $conversation, Connection $connection, ConversationEvent $record): void
     {
+        // Closed with «sin despedida».
+        if ((($record->metadata ?? [])['farewell'] ?? null) === false) {
+            $this->skipped($conversation, 'farewell', 'closed_without_farewell');
+
+            return;
+        }
+
         $plan = $this->messages->farewell($connection);
 
         if ($plan === null) {

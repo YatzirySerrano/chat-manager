@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\TeamChat\ControlDesk;
+use App\Services\TeamChat\DeskFarewell;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -50,15 +51,17 @@ class TeamDeskController extends Controller
         return to_route('team-chat.threads.show', ['thread' => $thread, 'desk' => 'mine']);
     }
 
-    public function complete(Request $request, TeamThread $thread, CompleteDeskRequest $completeDeskRequest): RedirectResponse
+    public function complete(Request $request, TeamThread $thread, CompleteDeskRequest $completeDeskRequest, DeskFarewell $farewell): RedirectResponse
     {
         Gate::authorize('attendDesk', $thread);
 
         /** @var User $actor */
         $actor = $request->user();
+        // «Completar y despedir» (default) or «Completar sin mensaje».
+        $sent = $request->boolean('farewell', true) && $farewell->send($thread, $actor);
         $completeDeskRequest->handle($thread, $actor);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Solicitud completada. Si la persona vuelve a escribir, regresará a «Pendientes».']);
+        Inertia::flash('toast', ['type' => 'success', 'message' => ($sent ? 'Solicitud completada y despedida enviada.' : 'Solicitud completada.').' Si la persona vuelve a escribir, regresará a «Pendientes».']);
 
         return back();
     }

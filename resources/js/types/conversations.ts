@@ -171,6 +171,8 @@ export type ConversationConnection = {
     can_send: boolean;
     /** Why nothing can be sent through the connection, if so. */
     send_block_reason: string | null;
+    /** Closing sends the connection's farewell (it can be skipped). */
+    farewell?: boolean;
     /** Credentials accepted by Meta (a restored connection is not; always false for the web chat). */
     credentials_verified: boolean;
 };

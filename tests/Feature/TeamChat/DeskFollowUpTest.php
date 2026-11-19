@@ -82,3 +82,24 @@ test('the desk exports its requests and the dossier of one request', function ()
         ->post(route('exports.generate', ['desk-request-dossier', 'xlsx', 'thread' => $this->thread->id]))
         ->assertForbidden();
 });
+
+test('«Completar y despedir» posts the configured goodbye; «sin mensaje» does not', function () {
+    app(App\Services\PlatformSettings::class)->update(['control_desk' => ['farewell_enabled' => true, 'farewell_message' => '¡Listo {{nombre}}! Te atendió {{agente}}.']]);
+    $this->requester->forceFill(['name' => 'Rosa'])->save();
+    $this->auditor->forceFill(['name' => 'Laura'])->save();
+
+    $this->actingAs($this->auditor)->post(route('team-chat.threads.desk.accept', $this->thread))->assertRedirect();
+    $this->actingAs($this->auditor)->post(route('team-chat.threads.desk.complete', $this->thread), ['farewell' => true])->assertRedirect();
+
+    expect(App\Models\TeamChat\TeamMessage::query()->where('team_thread_id', $this->thread->id)->where('user_id', $this->auditor->id)->where('kind', 'message')->pluck('body')->all())
+        ->toBe(['¡Listo Rosa! Te atendió Laura.']);
+
+    $this->actingAs($this->requester)
+        ->postJson(route('team-chat.threads.messages.store', $this->thread), ['body' => 'Otra cosa'])
+        ->assertCreated();
+    $this->actingAs($this->auditor)->post(route('team-chat.threads.desk.accept', $this->thread))->assertRedirect();
+    $this->actingAs($this->auditor)->post(route('team-chat.threads.desk.complete', $this->thread), ['farewell' => false])->assertRedirect();
+
+    expect(App\Models\TeamChat\TeamMessage::query()->where('team_thread_id', $this->thread->id)->where('user_id', $this->auditor->id)->where('kind', 'message')->count())->toBe(1)
+        ->and($this->thread->fresh()->desk_status)->toBe(App\Enums\TeamChat\TeamDeskStatus::Closed);
+});

@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Cache;
  *     queue: array{min_wait_minutes: int, chronological_order: bool},
  *     sla_alerts: array{agent_warning: bool, agent_breach: bool, supervisor_warning: bool, supervisor_breach: bool, reminder_minutes: int|null, reminder_limit: int},
  *     video_exports: array{root_folder: string},
+ *     control_desk: array{farewell_enabled: bool, farewell_message: string},
  *     missing_info: array{intro: string, items: list<string>},
  * }
  */
@@ -216,6 +217,12 @@ class PlatformSettings
             // the disk of saved files (VideoFolders). Kept as VIDEOS so nothing moves.
             'video_exports' => [
                 'root_folder' => 'VIDEOS',
+            ],
+            // «Mesa de control»: the goodbye sent when a request is completed
+            // with «Completar y despedir» ({{nombre}}, {{agente}}, {{saludo}}).
+            'control_desk' => [
+                'farewell_enabled' => false,
+                'farewell_message' => 'Listo {{nombre}}, tu solicitud quedó completa. Si necesitas algo más, escríbenos aquí. ¡Gracias!',
             ],
             // «Marcar que necesita información»: the catalog the agent picks
             // from and the first line of the message sent to the customer

@@ -20,12 +20,14 @@ class ConversationStatusController extends ConversationOperationController
         $this->ensureVisible($conversation);
 
         $completed = $request->boolean('completed');
+        // «Completar sin despedida»: the connection's farewell is skipped.
+        $farewell = $request->boolean('farewell', true);
 
-        $close->handle($conversation, $request->user(), $request->reason(), $request->version(), $completed);
+        $close->handle($conversation, $request->user(), $request->reason(), $request->version(), $completed, $farewell);
 
-        return $this->done($conversation, $request->user(), $completed
+        return $this->done($conversation, $request->user(), ($completed
             ? 'Solicitud completada. Si el cliente vuelve a escribir, entrará como solicitud nueva a «Pendientes».'
-            : 'Conversación cerrada. Su historial se conserva.');
+            : 'Conversación cerrada. Su historial se conserva.').($farewell ? '' : ' No se envió mensaje de despedida.'));
     }
 
     public function reopen(ConversationOperationRequest $request, Conversation $conversation, ReopenConversation $reopen): RedirectResponse

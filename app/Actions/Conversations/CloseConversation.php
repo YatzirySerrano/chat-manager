@@ -28,11 +28,11 @@ class CloseConversation
      * the connection's reopening window; it starts a new request in the
      * waiting list (ReceiveInboundMessage).
      */
-    public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $completed = false): Conversation
+    public function handle(Conversation $conversation, User $actor, ?string $reason = null, ?int $expectedVersion = null, bool $completed = false, bool $farewell = true): Conversation
     {
         $reason = $reason === null || trim($reason) === '' ? null : trim($reason);
 
-        return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion, $completed): Conversation {
+        return DB::transaction(function () use ($conversation, $actor, $reason, $expectedVersion, $completed, $farewell): Conversation {
             $conversation = $this->lifecycle->lock($conversation);
             // Lock order step 2, before the event's foreign keys lock the user rows.
             $this->lifecycle->lockDepartment($conversation->department_id);
@@ -49,7 +49,8 @@ class CloseConversation
                 'from_user_id' => $conversation->assigned_user_id,
                 'from_department_id' => $conversation->department_id,
                 'note' => $reason,
-                ...($completed ? ['metadata' => ['completed' => true]] : []),
+                // «Sin despedida»: the connection's farewell is not sent this time.
+                ...($completed || ! $farewell ? ['metadata' => array_filter(['completed' => $completed ?: null, 'farewell' => $farewell ? null : false], fn (mixed $value): bool => $value !== null)] : []),
             ]);
 
             $this->assignAutomatically->distributeForAgentAfterCommit($conversation->assigned_user_id);

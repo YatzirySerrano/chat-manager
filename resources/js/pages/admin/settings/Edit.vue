@@ -6,6 +6,7 @@ import {
     Clock,
     Gauge,
     HardDriveDownload,
+    Headset,
     ListChecks,
     Lock,
     PlugZap,
@@ -29,6 +30,7 @@ import { AppSelect } from '@/components/ui/app-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { TimePicker } from '@/components/ui/time-picker';
 import { useFeatures } from '@/composables/useFeatures';
 import { useFormValidation } from '@/composables/useFormValidation';
@@ -109,6 +111,7 @@ const validation = useFormValidation(form, {
                 required('Escribe el nombre de la carpeta de archivos.'),
                 maxLength(120),
             ],
+            'control_desk.farewell_message': [maxLength(1000)],
         };
 
         // Service rules: bounds come from the server definition.
@@ -177,6 +180,7 @@ const sections = computed(() => [
     ...(phaseTwo.value
         ? [{ id: 'informacion-faltante', label: 'Información faltante' }]
         : []),
+    { id: 'mesa-de-control', label: 'Mesa de control' },
     { id: 'videos', label: 'Archivos en Synology' },
     { id: 'meta', label: 'Integración con Meta' },
 ]);
@@ -187,6 +191,7 @@ const SECTION_PREFIXES: Record<string, string> = {
     operacion: 'operations.',
     'alertas-sla': 'sla_alerts.',
     videos: 'video_exports.',
+    'mesa-de-control': 'control_desk.',
 };
 
 /** Sections with a field to review: marked in the navigation. */
@@ -898,6 +903,61 @@ const integrationConnected = computed(
                         :catalog="settings.missing_info"
                         :can-update="can.update"
                     />
+                </SettingsSection>
+
+                <SettingsSection
+                    v-if="form.control_desk"
+                    id="mesa-de-control"
+                    :icon="Headset"
+                    class="scroll-mt-32"
+                    title="Mesa de control"
+                    description="Mensaje que recibe la persona cuando su solicitud se marca con «Completar y despedir». «Completar sin mensaje» nunca lo envía."
+                    flush
+                >
+                    <div>
+                        <label
+                            class="flex items-center justify-between gap-4 border-b border-border/70 px-4 py-4 sm:px-6"
+                        >
+                            <span>
+                                <span class="block text-sm font-medium"
+                                    >Mensaje de despedida al completar</span
+                                >
+                                <span
+                                    class="block text-sm text-muted-foreground"
+                                >
+                                    Apagado, la mesa solo ve «Solicitud
+                                    completa».
+                                </span>
+                            </span>
+                            <Switch
+                                v-model="form.control_desk.farewell_enabled"
+                                :disabled="!can.update"
+                            />
+                        </label>
+                        <div class="px-4 py-4 sm:px-6">
+                            <FormField
+                                id="desk-farewell-message"
+                                label="Texto de la despedida"
+                                hint="Variables: {{nombre}} (quien pidió), {{agente}} (quien la completa) y {{saludo}} (Buenos días, tardes o noches)."
+                                :error="
+                                    validation.error(
+                                        'control_desk.farewell_message',
+                                    )
+                                "
+                            >
+                                <Textarea
+                                    id="desk-farewell-message"
+                                    v-model="form.control_desk.farewell_message"
+                                    rows="3"
+                                    maxlength="1000"
+                                    :disabled="
+                                        !can.update ||
+                                        !form.control_desk.farewell_enabled
+                                    "
+                                />
+                            </FormField>
+                        </div>
+                    </div>
                 </SettingsSection>
 
                 <SettingsSection

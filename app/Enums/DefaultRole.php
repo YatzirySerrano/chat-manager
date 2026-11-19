@@ -20,6 +20,7 @@ enum DefaultRole: string
     case Administrator = 'administrator';
     case Supervisor = 'supervisor';
     case Agent = 'agent';
+    case Client = 'client';
 
     public function label(): string
     {
@@ -28,6 +29,7 @@ enum DefaultRole: string
             self::Administrator => 'Administrador',
             self::Supervisor => 'Supervisor',
             self::Agent => 'Agente',
+            self::Client => 'Cliente',
         };
     }
 
@@ -38,6 +40,7 @@ enum DefaultRole: string
             self::Administrator => 'Administra usuarios, departamentos, conversaciones y configuraciones de toda la organización.',
             self::Supervisor => 'Supervisa las conversaciones y los miembros de sus departamentos.',
             self::Agent => 'Atiende las conversaciones que tiene asignadas.',
+            self::Client => 'Colaborador externo: solo usa el chat interno y escribe a la mesa de control, que le responde. No ve chats privados, conversaciones ni otras secciones.',
         };
     }
 
@@ -76,7 +79,7 @@ enum DefaultRole: string
         return match ($this) {
             self::SuperAdministrator, self::Administrator => DataScope::Global,
             self::Supervisor => DataScope::Departments,
-            self::Agent => DataScope::Assigned,
+            self::Agent, self::Client => DataScope::Assigned,
         };
     }
 
@@ -147,6 +150,11 @@ enum DefaultRole: string
                 Permission::ViewReports,
                 Permission::UseTeamChat,
                 Permission::AttendControlDesk,
+            ],
+            // External collaborators: the team chat without «Atender mesa de
+            // control» makes them requesters, so their only contact is the desk.
+            self::Client => [
+                Permission::UseTeamChat,
             ],
         };
     }

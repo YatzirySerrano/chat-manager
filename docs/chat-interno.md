@@ -175,6 +175,13 @@ aceptar → atender → completar), pero entre personas del equipo.
   chats y grupos anteriores), `TeamChatDirectory` (no llegan a nadie y nadie llega a ellas: el selector de personas
   solo ofrece auditoras), `TeamThreadListQuery`, `TeamUnreadCounter` (el badge solo cuenta su mesa), la búsqueda y
   los avisos (`NotifyTeamChatMessage` ya no les avisa de sus grupos anteriores).
+- **Rol «Cliente»** (predeterminado, lo crea `app:sync-permissions`): solo `team-chat.use`. Es para colaboradores
+  externos: al entrar llegan directo al chat interno (`LandingPage`) y su único contacto es «Mesa de control», como un
+  WhatsApp con un solo chat, sin depender de Meta. Para dar de alta uno, crea el usuario con el rol «Cliente».
+- **Auditoras y administradores también escriben a la mesa**: en la sección «Mesa de control», el botón «Escribir a la
+  mesa» (`POST team-chat/desk`, `TeamDeskController@open`) abre su propia mesa (creada la primera vez). Su solicitud
+  la atiende **otra** persona de la mesa: nadie acepta la suya (`TeamThreadPolicy::attendDesk`) ni la ve en sus
+  pestañas (`DeskInboxQuery` excluye la propia).
 - **Despliegue sin sorpresas**: la migración otorga el permiso a la autoridad raíz, al Administrador y a **todo rol
   existente que ya tenía `team-chat.use`**, y los roles predeterminados Supervisor y Agente lo incluyen en su
   definición. Así nadie pierde sus chats al actualizar. **Para convertir un rol en solicitante, quítale el permiso**
@@ -231,7 +238,7 @@ otra.». La carga se lee con lectura bloqueante bajo el bloqueo de su fila.
 - **Solicitante**: el contacto «Mesa de control» con una barra de estado («Tu solicitud está en espera / en
   atención / se completó…»). Ve el nombre de quien le responde en cada mensaje y en las líneas de sistema, pero no
   la lista de participantes ni quién tiene asignada la solicitud.
-- **Auditoras**: arriba de la lista, «Chats» | «Mesa de control» (con el número en espera). La sección tiene pestañas
+- **Auditoras**: arriba de la lista, «Chat privado» (predeterminada) | «Mesa de control» (con el número en espera). La sección tiene pestañas
   con contador: **Pendientes** (por omisión; la solicitud más reciente arriba, con botón «Aceptar» en cada fila),
   **Mías** (las que atiende, **la más antigua arriba**, con sus no leídos) y **Completadas** (la más reciente arriba), y
   el texto «Atiendes N de M solicitudes simultáneas». La URL guarda la pestaña (`?desk=pending|mine|completed`, también
@@ -249,8 +256,11 @@ otra.». La carga se lee con lectura bloqueante bajo el bloqueo de su fila.
 Pedir, aceptar y completar emiten `TeamThreadChanged` (`reason: desk`) con todas las auditoras como afectadas, y cada
 mensaje de una mesa avisa a todas por `users.{id}` (`.team-chat.changed`): sus listas (`deskInbox`, `deskPending`) se
 recargan solas; el hilo abierto recibe `thread.changed` y vuelve a pedir su estado (botones, barra). Sin Reverb, la
-lista se refresca cada 20 s como el resto del chat. No hay notificación de campana por solicitud nueva (solo el
-contador en vivo); la auditora asignada sí recibe los avisos normales de los mensajes de su solicitud.
+lista se refresca cada 20 s como el resto del chat. **Solicitud nueva**: el mensaje que la pone en espera avisa en la
+campana (y con sonido/notificación del sistema según preferencias) a todas las auditoras activas menos la solicitante
+(`NotifyDeskRequest`, tipo `team-chat.desk-request`, urgente, agrupado en un solo aviso); al aceptarse o completarse
+el aviso queda como informativo («Ya la atiende alguien…»). La auditora asignada recibe además los avisos normales de
+los mensajes de su solicitud.
 
 Código: `app/Services/TeamChat/ControlDesk.php`, `app/Actions/TeamChat/{AcceptDeskRequest,CompleteDeskRequest,DeskInboxQuery}.php`,
 `app/Http/Controllers/TeamChat/TeamDeskController.php`, `app/Exceptions/TeamDeskConflict.php`,

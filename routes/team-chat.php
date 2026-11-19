@@ -24,6 +24,8 @@ Route::middleware(['auth', 'verified'])->prefix('team-chat')->name('team-chat.')
     Route::get('search', TeamChatSearchController::class)->middleware('throttle:60,1')->name('search');
     Route::post('direct', [TeamThreadController::class, 'storeDirect'])->name('direct.store');
     Route::post('groups', [TeamThreadController::class, 'storeGroup'])->name('groups.store');
+    // «Mesa de control»: anyone of the team (admins and auditors too) writes to the desk.
+    Route::post('desk', [TeamDeskController::class, 'open'])->middleware('throttle:60,1')->name('desk.open');
 
     Route::prefix('threads/{thread}')->name('threads.')->scopeBindings()->group(function () {
         Route::get('/', [TeamChatController::class, 'show'])->name('show');

@@ -7,6 +7,7 @@ use App\Enums\DataTransferStatus;
 use App\Enums\Permission;
 use App\Enums\ResponseCycleKind;
 use App\Enums\TeamChat\TeamAttachmentKind;
+use App\Enums\TeamChat\TeamDeskStatus;
 use App\Http\Controllers\Conversations\ConversationController;
 use App\Listeners\Notifications\NotifyConnectionProblem;
 use App\Models\ChatbotKeywordRule;
@@ -18,6 +19,7 @@ use App\Models\ResponseCycle;
 use App\Models\TeamChat\TeamAttachment;
 use App\Models\TeamChat\TeamMessage;
 use App\Models\TeamChat\TeamParticipant;
+use App\Models\TeamChat\TeamThread;
 use App\Models\User;
 use App\Services\Conversations\ConversationAccess;
 use App\Services\WhatsAppWeb\WhatsAppWebContactProfiles;
@@ -119,6 +121,7 @@ class NotificationPresenter
             NotificationKind::ConversationMessage => $this->message($data, $viewer, $occurrences),
             NotificationKind::ChatbotReply => $this->chatbotReply($data, $viewer),
             NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage => $this->teamChat($kind, $data, $viewer, $occurrences),
+            NotificationKind::TeamChatDeskRequest => $this->deskRequest($data, $viewer, $occurrences, $settled),
             NotificationKind::ExportFinished, NotificationKind::ImportFinished => $this->transfer($kind, $data, $viewer),
             NotificationKind::ConnectionProblem => $this->connection($data, $viewer),
             NotificationKind::SlaWarning, NotificationKind::SlaBreach => $this->sla($kind, $data, $viewer, $settled),
@@ -140,7 +143,7 @@ class NotificationPresenter
             'created_at' => $notification->created_at?->toIso8601String(),
             'updated_at' => $notification->updated_at?->toIso8601String(),
             'conversation_id' => $accessible && isset($data['conversation_id']) && is_int($data['conversation_id']) ? $data['conversation_id'] : null,
-            'team_thread_id' => $accessible && in_array($kind, [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage], true) && is_int($data['thread_id'] ?? null) ? $data['thread_id'] : null,
+            'team_thread_id' => $accessible && in_array($kind, [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage, NotificationKind::TeamChatDeskRequest], true) && is_int($data['thread_id'] ?? null) ? $data['thread_id'] : null,
             'toast' => $accessible && $kind !== null && $kind->announcesInPage(),
             'subject' => $accessible ? $this->subject : null,
         ];
@@ -525,7 +528,46 @@ class NotificationPresenter
 
     private function isTeamChat(DatabaseNotification $notification): bool
     {
-        return in_array(NotificationKind::tryFrom((string) $notification->getAttribute('kind')), [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage], true);
+        return in_array(NotificationKind::tryFrom((string) $notification->getAttribute('kind')), [NotificationKind::TeamChatMention, NotificationKind::TeamChatMessage, NotificationKind::TeamChatDeskRequest], true);
+    }
+
+    /**
+     * A request waiting in the «Mesa de control»: who asks and a preview of
+     * the message, only for someone who still attends the desk. Once the
+     * request is accepted or completed it no longer asks for an action.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{string, string|null, string|null, bool}
+     */
+    private function deskRequest(array $data, User $viewer, int $occurrences, bool &$settled): array
+    {
+        $generic = $occurrences > 1 ? "{$occurrences} solicitudes nuevas en la mesa de control" : 'Solicitud nueva en la mesa de control';
+        $threadId = $data['thread_id'] ?? null;
+
+        if (! is_int($threadId) || ! $viewer->holdsPermission(Permission::UseTeamChat) || ! $viewer->holdsPermission(Permission::AttendControlDesk)) {
+            return [$generic, 'Ya no atiendes la mesa de control.', null, false];
+        }
+
+        $thread = TeamThread::query()->find($threadId, ['id', 'type', 'desk_status', 'desk_requester_id']);
+        $url = $this->routeOrNull('team-chat.threads.show', ['thread' => $threadId, 'desk' => 'pending']);
+        $author = $this->userName($data['author_id'] ?? null, $viewer);
+
+        if ($author !== null) {
+            $this->subject = ['type' => 'teammate', 'name' => $author, 'avatar_url' => null];
+        }
+
+        if ($thread === null || $thread->desk_status !== TeamDeskStatus::Pending) {
+            $settled = true;
+
+            return [$generic, 'Ya la atiende alguien de la mesa de control o se completó.', $url, true];
+        }
+
+        $message = $this->teamMessage($data['message_id'] ?? null);
+        $preview = $message !== null && $message->team_thread_id === $threadId ? $this->teamMessagePreview($message) : null;
+        $title = $occurrences > 1 ? $generic : ($author !== null ? "Solicitud de {$author} en la mesa de control" : $generic);
+        $body = $preview !== null ? ($occurrences > 1 && $author !== null ? "{$author}: {$preview}" : $preview) : 'Acéptala para atenderla.';
+
+        return [$title, $body, $url, true];
     }
 
     /**

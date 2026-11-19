@@ -19,6 +19,7 @@ enum NotificationKind: string
     case ConversationMessage = 'conversation.message';
     case TeamChatMention = 'team-chat.mention';
     case TeamChatMessage = 'team-chat.message';
+    case TeamChatDeskRequest = 'team-chat.desk-request';
     case ExportFinished = 'export.finished';
     case ImportFinished = 'import.finished';
     case ConnectionProblem = 'connection.problem';
@@ -36,6 +37,7 @@ enum NotificationKind: string
             self::ConversationMessage => 'Mensajes nuevos en mis conversaciones',
             self::TeamChatMention => 'Menciones en el chat interno',
             self::TeamChatMessage => 'Mensajes del chat interno',
+            self::TeamChatDeskRequest => 'Nuevas solicitudes de la mesa de control',
             self::ExportFinished => 'Archivos preparados',
             self::ImportFinished => 'Importaciones terminadas',
             self::ConnectionProblem => 'Problemas y recuperación de conexiones',
@@ -55,6 +57,7 @@ enum NotificationKind: string
             self::ConversationMessage => 'Cuando el cliente escribe en una conversación que atiendes. Se agrupan por conversación hasta que la abres.',
             self::TeamChatMention => 'Cuando un compañero te menciona en el chat interno, aunque hayas silenciado ese chat. Verás quién te escribió y un fragmento breve del mensaje.',
             self::TeamChatMessage => 'Cuando un compañero te escribe en un chat interno que no silenciaste. Verás quién escribió y un fragmento breve; si tienes ese chat abierto a la vista, no aparece el aviso ni suena.',
+            self::TeamChatDeskRequest => 'Cuando alguien escribe a la mesa de control y su solicitud queda en espera. La primera persona de la mesa que la acepta la atiende. Si llegan varias seguidas, recibes un solo aviso.',
             self::ExportFinished => 'Cuando un archivo que pediste generar en segundo plano está listo o falló.',
             self::ImportFinished => 'Cuando termina o falla una importación de contactos que iniciaste.',
             self::ConnectionProblem => 'Cuando una conexión (WhatsApp, Messenger, Instagram o chat web) deja de funcionar o Meta rechaza sus credenciales, y cuando vuelve a funcionar.',
@@ -72,6 +75,7 @@ enum NotificationKind: string
             self::ConversationAssigned,
             self::ConversationTransferred,
             self::TeamChatMention,
+            self::TeamChatDeskRequest,
             self::SlaBreach,
             self::ConnectionProblem => NotificationLevel::Urgent,
             default => NotificationLevel::Informative,
@@ -131,6 +135,7 @@ enum NotificationKind: string
                 && ($user->holdsPermission(Permission::ReplyConversations) || $user->holdsPermission(Permission::AcceptConversations)),
             self::TeamChatMention,
             self::TeamChatMessage => $user->holdsPermission(Permission::UseTeamChat),
+            self::TeamChatDeskRequest => $user->holdsPermission(Permission::UseTeamChat) && $user->holdsPermission(Permission::AttendControlDesk),
             self::ExportFinished => $user->holdsPermission(Permission::ExportReports) || $user->holdsPermission(Permission::ExportAuditLog),
             self::ImportFinished => $user->holdsPermission(Permission::ImportContacts),
             self::ConnectionProblem => $user->holdsPermission(Permission::ViewConnections) || $user->holdsPermission(Permission::ManageConnections),

@@ -1,19 +1,20 @@
-export type NotificationLevel = 'urgent' | 'informative';
+export type NotificationLevel = "urgent" | "informative";
 
 export type NotificationKindValue =
-    | 'conversation.pending'
-    | 'conversation.assigned'
-    | 'conversation.transferred'
-    | 'conversation.message'
-    | 'team-chat.mention'
-    | 'team-chat.message'
-    | 'export.finished'
-    | 'import.finished'
-    | 'connection.problem'
-    | 'account.access-changed'
-    | 'sla.warning'
-    | 'sla.breach'
-    | 'chatbot.reply';
+    | "conversation.pending"
+    | "conversation.assigned"
+    | "conversation.transferred"
+    | "conversation.message"
+    | "team-chat.mention"
+    | "team-chat.message"
+    | "team-chat.desk-request"
+    | "export.finished"
+    | "import.finished"
+    | "connection.problem"
+    | "account.access-changed"
+    | "sla.warning"
+    | "sla.breach"
+    | "chatbot.reply";
 
 /** How the user wants to receive one kind of notification. */
 export type NotificationPreference = {
@@ -53,7 +54,7 @@ export type AppNotification = {
 };
 
 export type NotificationSubject = {
-    type: 'contact' | 'teammate';
+    type: "contact" | "teammate";
     name: string;
     avatar_url: string | null;
 };
@@ -82,7 +83,7 @@ export type NotificationKindOption = {
 /** Read-only operating context shown on a department page. */
 export type DepartmentAutomation = {
     hours: {
-        mode: 'department' | 'platform' | 'continuous';
+        mode: "department" | "platform" | "continuous";
         is_open: boolean;
         next_opening: string | null;
         holiday: string | null;

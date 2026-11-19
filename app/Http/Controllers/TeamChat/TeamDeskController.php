@@ -7,6 +7,7 @@ use App\Actions\TeamChat\CompleteDeskRequest;
 use App\Http\Controllers\Controller;
 use App\Models\TeamChat\TeamThread;
 use App\Models\User;
+use App\Services\TeamChat\ControlDesk;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -20,6 +21,21 @@ use Inertia\Inertia;
  */
 class TeamDeskController extends Controller
 {
+    /**
+     * «Escribir a la mesa de control»: the person's own desk thread (created
+     * the first time). An administrator or auditor who writes there is
+     * attended by the rest of the desk, like any requester.
+     */
+    public function open(Request $request, ControlDesk $desk): RedirectResponse
+    {
+        Gate::authorize('viewAny', TeamThread::class);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        return to_route('team-chat.threads.show', ['thread' => $desk->threadFor($actor)]);
+    }
+
     public function accept(Request $request, TeamThread $thread, AcceptDeskRequest $acceptDeskRequest): RedirectResponse
     {
         Gate::authorize('attendDesk', $thread);

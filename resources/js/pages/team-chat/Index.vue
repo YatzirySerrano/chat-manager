@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, useHttp } from '@inertiajs/vue3';
+import { Head, Link, router, useHttp } from "@inertiajs/vue3";
 import {
     AtSign,
     Gauge,
@@ -16,8 +16,8 @@ import {
     SearchX,
     UserRound,
     UsersRound,
-} from '@lucide/vue';
-import { watchDebounced } from '@vueuse/core';
+} from "@lucide/vue";
+import { watchDebounced } from "@vueuse/core";
 import {
     computed,
     onBeforeUnmount,
@@ -25,44 +25,45 @@ import {
     onScopeDispose,
     ref,
     watch,
-} from 'vue';
-import ChatPaneEmpty from '@/components/chat/ChatPaneEmpty.vue';
-import FilteredEmpty from '@/components/filters/FilteredEmpty.vue';
-import FilterSearch from '@/components/filters/FilterSearch.vue';
-import FilterTabs from '@/components/filters/FilterTabs.vue';
-import FilterToggle from '@/components/filters/FilterToggle.vue';
-import HighlightMatch from '@/components/filters/HighlightMatch.vue';
-import type { FilterTabOption } from '@/components/filters/types';
-import ListSkeleton from '@/components/filters/ListSkeleton.vue';
-import { useRowMotion } from '@/components/filters/useRowMotion';
-import { useSelectionGlider } from '@/components/filters/useSelectionGlider';
-import ChatWindow from '@/components/team-chat/ChatWindow.vue';
-import DeskRequestBar from '@/components/team-chat/DeskRequestBar.vue';
-import DeskRequestItem from '@/components/team-chat/DeskRequestItem.vue';
-import NewDirectDialog from '@/components/team-chat/NewDirectDialog.vue';
-import NewGroupDialog from '@/components/team-chat/NewGroupDialog.vue';
-import ThreadListItem from '@/components/team-chat/ThreadListItem.vue';
-import ThreadPreview from '@/components/team-chat/ThreadPreview.vue';
-import ThreadSettingsSheet from '@/components/team-chat/ThreadSettingsSheet.vue';
-import { Button } from '@/components/ui/button';
+} from "vue";
+import ChatPaneEmpty from "@/components/chat/ChatPaneEmpty.vue";
+import FilteredEmpty from "@/components/filters/FilteredEmpty.vue";
+import FilterSearch from "@/components/filters/FilterSearch.vue";
+import FilterTabs from "@/components/filters/FilterTabs.vue";
+import FilterToggle from "@/components/filters/FilterToggle.vue";
+import HighlightMatch from "@/components/filters/HighlightMatch.vue";
+import type { FilterTabOption } from "@/components/filters/types";
+import ListSkeleton from "@/components/filters/ListSkeleton.vue";
+import { useRowMotion } from "@/components/filters/useRowMotion";
+import { useSelectionGlider } from "@/components/filters/useSelectionGlider";
+import ChatWindow from "@/components/team-chat/ChatWindow.vue";
+import DeskRequestBar from "@/components/team-chat/DeskRequestBar.vue";
+import DeskRequestItem from "@/components/team-chat/DeskRequestItem.vue";
+import NewDirectDialog from "@/components/team-chat/NewDirectDialog.vue";
+import NewGroupDialog from "@/components/team-chat/NewGroupDialog.vue";
+import ThreadListItem from "@/components/team-chat/ThreadListItem.vue";
+import ThreadPreview from "@/components/team-chat/ThreadPreview.vue";
+import ThreadSettingsSheet from "@/components/team-chat/ThreadSettingsSheet.vue";
+import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useChatViewport } from '@/composables/useChatViewport';
-import { useGuidedTour } from '@/composables/useGuidedTour';
-import { useLiveReload } from '@/composables/useLiveReload';
-import { userChannelName } from '@/composables/useUserChannel';
-import { formatRelative } from '@/lib/format';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useChatViewport } from "@/composables/useChatViewport";
+import { useGuidedTour } from "@/composables/useGuidedTour";
+import { useLiveReload } from "@/composables/useLiveReload";
+import { userChannelName } from "@/composables/useUserChannel";
+import { formatRelative } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
     index as teamChatIndex,
     search as searchMessages,
-} from '@/routes/team-chat';
-import { show as showThread } from '@/routes/team-chat/threads';
+} from "@/routes/team-chat";
+import { open as openOwnDesk } from "@/routes/team-chat/desk";
+import { show as showThread } from "@/routes/team-chat/threads";
 import type {
     TeamChatFilters,
     TeamChatLimits,
@@ -76,11 +77,11 @@ import type {
     TeamThreadFilter,
     TeamThreadList,
     TeamThreadSummary,
-} from '@/types/team-chat';
+} from "@/types/team-chat";
 
 defineOptions({
     layout: {
-        breadcrumbs: [{ title: 'Chat interno', href: teamChatIndex() }],
+        breadcrumbs: [{ title: "Chat interno", href: teamChatIndex() }],
     },
 });
 
@@ -120,8 +121,8 @@ function onPopState(): void {
     threadEntryOnList.value = false;
 }
 
-globalThis.addEventListener?.('popstate', onPopState);
-onScopeDispose(() => globalThis.removeEventListener?.('popstate', onPopState));
+globalThis.addEventListener?.("popstate", onPopState);
+onScopeDispose(() => globalThis.removeEventListener?.("popstate", onPopState));
 
 watch(
     () => props.activeThread?.id ?? null,
@@ -138,8 +139,8 @@ watch(
  * chats and the desk section (Pendientes, Mías, Completadas), which the URL
  * keeps (`desk`), also while a request is open.
  */
-const isRequester = computed(() => props.desk?.role === 'requester');
-const isAuditor = computed(() => props.desk?.role === 'auditor');
+const isRequester = computed(() => props.desk?.role === "requester");
+const isAuditor = computed(() => props.desk?.role === "auditor");
 const canStartDirect = computed(() => props.can.startDirect !== false);
 const deskTab = ref<TeamDeskTab | null>(props.desk?.tab ?? null);
 
@@ -148,12 +149,12 @@ watch(
     (tab) => (deskTab.value = tab ?? null),
 );
 
-const DESK_PROPS = ['desk', 'deskInbox', 'deskPending'];
+const DESK_PROPS = ["desk", "deskInbox", "deskPending"];
 
 function openDeskSection(tab: TeamDeskTab | null): void {
     deskTab.value = tab;
     router.get(currentPath(), tab === null ? listQuery() : { desk: tab }, {
-        only: [...DESK_PROPS, 'threads', 'filters', 'threadCounts'],
+        only: [...DESK_PROPS, "threads", "filters", "threadCounts"],
         preserveState: true,
         preserveScroll: true,
         replace: true,
@@ -162,16 +163,20 @@ function openDeskSection(tab: TeamDeskTab | null): void {
     });
 }
 
-const sectionTabs = computed<FilterTabOption<'chats' | 'desk'>[]>(() => [
-    { value: 'chats', label: 'Chats', title: 'Tus chats privados y grupos' },
+const sectionTabs = computed<FilterTabOption<"chats" | "desk">[]>(() => [
     {
-        value: 'desk',
-        label: 'Mesa de control',
+        value: "chats",
+        label: "Chat privado",
+        title: "Habla en privado con alguien del equipo o en grupos",
+    },
+    {
+        value: "desk",
+        label: "Mesa de control",
         count: props.deskPending ?? 0,
         attention: (props.deskPending ?? 0) > 0,
         srLabel: `${props.deskPending ?? 0} solicitudes en espera`,
-        title: 'Solicitudes de la mesa de control',
-        attrs: { 'data-desk-section': '' },
+        title: "Solicitudes de la mesa de control",
+        attrs: { "data-desk-section": "" },
     },
 ]);
 
@@ -184,28 +189,43 @@ const deskTabs = computed<FilterTabOption<TeamDeskTab>[]>(() => {
 
     return [
         {
-            value: 'pending',
-            label: 'Pendientes',
+            value: "pending",
+            label: "Pendientes",
             count: counts.pending,
             attention: counts.pending > 0,
             srLabel: `${counts.pending} en espera`,
-            title: 'Solicitudes en espera, la más reciente arriba',
+            title: "Solicitudes en espera, la más reciente arriba",
         },
         {
-            value: 'mine',
-            label: 'Mías',
+            value: "mine",
+            label: "Mías",
             count: counts.mine,
             srLabel: `${counts.mine} que atiendes`,
-            title: 'Las solicitudes que atiendes, la que más espera arriba',
+            title: "Las solicitudes que atiendes, la que más espera arriba",
         },
         {
-            value: 'completed',
-            label: 'Completadas',
+            value: "completed",
+            label: "Completadas",
             count: counts.completed,
-            title: 'Solicitudes completadas, la más reciente arriba',
+            title: "Solicitudes completadas, la más reciente arriba",
         },
     ];
 });
+
+/*
+ * Anyone who attends the desk (administrators included) may also write to
+ * it: the request goes to the waiting list and someone else of the desk
+ * accepts it. Opens her own desk thread (created the first time).
+ */
+function writeToDesk(): void {
+    if (props.desk?.thread_id) {
+        router.get(showThread(props.desk.thread_id).url, backQuery.value);
+
+        return;
+    }
+
+    router.post(openOwnDesk().url);
+}
 
 const deskCapacity = computed(() => {
     const capacity = props.deskInbox?.capacity;
@@ -217,7 +237,7 @@ const deskCapacity = computed(() => {
     return capacity.limit === null
         ? {
               text: `Atiendes ${capacity.load}, sin límite`,
-              title: `Atiendes ${capacity.load} ${capacity.load === 1 ? 'solicitud' : 'solicitudes'} (sin límite).`,
+              title: `Atiendes ${capacity.load} ${capacity.load === 1 ? "solicitud" : "solicitudes"} (sin límite).`,
           }
         : {
               text: `Atiendes ${capacity.load} de ${capacity.limit}`,
@@ -229,19 +249,19 @@ const deskEmptyCopy = computed(
     () =>
         ({
             pending: {
-                title: 'No hay solicitudes en espera',
-                description: 'Las nuevas solicitudes aparecerán aquí.',
+                title: "No hay solicitudes en espera",
+                description: "Las nuevas solicitudes aparecerán aquí.",
             },
             mine: {
-                title: 'No atiendes ninguna solicitud',
+                title: "No atiendes ninguna solicitud",
                 description:
-                    'Acepta una solicitud de «Pendientes» para atenderla.',
+                    "Acepta una solicitud de «Pendientes» para atenderla.",
             },
             completed: {
-                title: 'Sin solicitudes completadas',
-                description: 'Aquí verás las que se completen.',
+                title: "Sin solicitudes completadas",
+                description: "Aquí verás las que se completen.",
             },
-        })[deskTab.value ?? 'pending'],
+        })[deskTab.value ?? "pending"],
 );
 
 /* Back from an open request returns to the same desk tab. */
@@ -251,7 +271,7 @@ const backQuery = computed((): Record<string, string> =>
 
 /* The same canvas as the open chat (ChatWindow). */
 const CHAT_CANVAS =
-    'bg-surface-sunken bg-[radial-gradient(color-mix(in_oklch,var(--primary)_14%,transparent)_1px,transparent_1.5px)] bg-size-[20px_20px]';
+    "bg-surface-sunken bg-[radial-gradient(color-mix(in_oklch,var(--primary)_14%,transparent)_1px,transparent_1.5px)] bg-size-[20px_20px]";
 
 /*
  * The list's filters follow the inbox pattern (components/filters): the
@@ -261,25 +281,25 @@ const CHAT_CANVAS =
  * the last choice is remembered on this device, restored only on a clean
  * visit (no filter in the URL).
  */
-const FILTER_STORAGE_KEY = 'team-chat.filters';
+const FILTER_STORAGE_KEY = "team-chat.filters";
 /** Before the toggles existed only the chosen chip was remembered. */
-const LEGACY_FILTER_STORAGE_KEY = 'team-chat.filter';
+const LEGACY_FILTER_STORAGE_KEY = "team-chat.filter";
 const PAGE_STEP = 50;
 
-type TeamScope = Exclude<TeamThreadFilter, 'unread' | 'mentions'>;
+type TeamScope = Exclude<TeamThreadFilter, "unread" | "mentions">;
 
-const SCOPES: TeamScope[] = ['all', 'direct', 'groups', 'archived'];
+const SCOPES: TeamScope[] = ["all", "direct", "groups", "archived"];
 
 const scopeOf = (value: TeamThreadFilter): TeamScope =>
-    (SCOPES as string[]).includes(value) ? (value as TeamScope) : 'all';
+    (SCOPES as string[]).includes(value) ? (value as TeamScope) : "all";
 
 const search = ref(props.filters.search);
 const filter = ref<TeamScope>(scopeOf(props.filters.filter));
 const unreadOnly = ref(
-    props.filters.unread === true || props.filters.filter === 'unread',
+    props.filters.unread === true || props.filters.filter === "unread",
 );
 const mentionsOnly = ref(
-    props.filters.mentions === true || props.filters.filter === 'mentions',
+    props.filters.mentions === true || props.filters.filter === "mentions",
 );
 
 /* Follow the server when it normalizes the filters. */
@@ -288,29 +308,29 @@ watch(
     (filters) => {
         filter.value = scopeOf(filters.filter);
         unreadOnly.value =
-            filters.unread === true || filters.filter === 'unread';
+            filters.unread === true || filters.filter === "unread";
         mentionsOnly.value =
-            filters.mentions === true || filters.filter === 'mentions';
+            filters.mentions === true || filters.filter === "mentions";
     },
 );
 
 const scopeTabs = computed<FilterTabOption<TeamScope>[]>(() => [
-    { value: 'all', label: 'Todos', title: 'Todos tus chats sin archivar' },
+    { value: "all", label: "Todos", title: "Todos tus chats sin archivar" },
     {
-        value: 'direct',
-        label: 'Privados',
-        title: 'Chats uno a uno con alguien del equipo',
+        value: "direct",
+        label: "Privados",
+        title: "Chats uno a uno con alguien del equipo",
     },
-    { value: 'groups', label: 'Grupos', title: 'Los grupos en los que estás' },
+    { value: "groups", label: "Grupos", title: "Los grupos en los que estás" },
     {
-        value: 'archived',
-        label: 'Archivados',
-        title: 'Grupos archivados, con su historial',
+        value: "archived",
+        label: "Archivados",
+        title: "Grupos archivados, con su historial",
     },
 ]);
 
 /* Mentions only exist in groups. */
-const showMentions = computed(() => filter.value !== 'direct');
+const showMentions = computed(() => filter.value !== "direct");
 const counts = computed<TeamThreadCounts>(
     () => props.threadCounts ?? { unread: 0, mentions: 0 },
 );
@@ -318,11 +338,11 @@ const counts = computed<TeamThreadCounts>(
 /** A search or a toggle narrows the list: an empty result means "nothing matches". */
 const narrowed = computed(
     () =>
-        search.value.trim() !== '' ||
+        search.value.trim() !== "" ||
         unreadOnly.value ||
         (mentionsOnly.value && showMentions.value),
 );
-const hasFilters = computed(() => narrowed.value || filter.value !== 'all');
+const hasFilters = computed(() => narrowed.value || filter.value !== "all");
 const loadingList = ref(false);
 const newDirectOpen = ref(false);
 const newGroupOpen = ref(false);
@@ -353,11 +373,11 @@ function listQuery(
 ): Record<string, string | number> {
     const query: Record<string, string | number> = { ...extra };
 
-    if (search.value.trim() !== '') {
+    if (search.value.trim() !== "") {
         query.search = search.value.trim();
     }
 
-    if (filter.value !== 'all') {
+    if (filter.value !== "all") {
         query.filter = filter.value;
     }
 
@@ -397,7 +417,7 @@ function openFromPreview(id: number): void {
 
 function reloadList(limit?: number): void {
     router.get(currentPath(), listQuery(limit ? { limit } : {}), {
-        only: ['threads', 'filters', 'threadCounts'],
+        only: ["threads", "filters", "threadCounts"],
         preserveState: true,
         preserveScroll: true,
         replace: true,
@@ -429,7 +449,7 @@ function rememberFilters(): void {
 
 function chooseScope(value: TeamScope): void {
     // A second click on the chosen tab goes back to «Todos».
-    filter.value = filter.value === value ? 'all' : value;
+    filter.value = filter.value === value ? "all" : value;
     rememberFilters();
     reloadList();
 }
@@ -447,14 +467,14 @@ function toggleMentions(): void {
 }
 
 function clearFilters(): void {
-    filter.value = 'all';
+    filter.value = "all";
     unreadOnly.value = false;
     mentionsOnly.value = false;
     rememberFilters();
 
-    if (search.value !== '') {
+    if (search.value !== "") {
         // The debounced search watcher reloads the list.
-        search.value = '';
+        search.value = "";
     } else {
         reloadList();
     }
@@ -468,7 +488,7 @@ function rememberedFilters(): RememberedFilters | null {
         const value = JSON.parse(saved) as Partial<RememberedFilters>;
 
         return {
-            filter: scopeOf((value.filter ?? 'all') as TeamThreadFilter),
+            filter: scopeOf((value.filter ?? "all") as TeamThreadFilter),
             unread: value.unread === true,
             mentions: value.mentions === true,
         };
@@ -480,7 +500,7 @@ function rememberedFilters(): RememberedFilters | null {
         ? null
         : {
               filter: scopeOf(legacy as TeamThreadFilter),
-              unread: legacy === 'unread',
+              unread: legacy === "unread",
               mentions: false,
           };
 }
@@ -488,7 +508,7 @@ function rememberedFilters(): RememberedFilters | null {
 try {
     const parameters = new URLSearchParams(window.location.search);
     // The desk section (or a requester's single contact) has no chat filters.
-    const isUrlFiltered = ['filter', 'unread', 'mentions', 'desk'].some((key) =>
+    const isUrlFiltered = ["filter", "unread", "mentions", "desk"].some((key) =>
         parameters.has(key),
     );
     const remembered =
@@ -549,19 +569,19 @@ async function runMessageSearch(): Promise<void> {
 const threadList = ref<{ $el: HTMLElement } | null>(null);
 
 function focusFirstThread(): void {
-    threadList.value?.$el.querySelector<HTMLElement>('a[href]')?.focus();
+    threadList.value?.$el.querySelector<HTMLElement>("a[href]")?.focus();
 }
 
 /* Arrow keys move between the chats; up from the first one returns to the search. */
 const searchBox = ref<InstanceType<typeof FilterSearch> | null>(null);
 
 function onThreadsKeydown(event: KeyboardEvent): void {
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
     }
 
     const links = [
-        ...(threadList.value?.$el.querySelectorAll<HTMLElement>('a[href]') ??
+        ...(threadList.value?.$el.querySelectorAll<HTMLElement>("a[href]") ??
             []),
     ];
     const index = links.indexOf(document.activeElement as HTMLElement);
@@ -572,18 +592,18 @@ function onThreadsKeydown(event: KeyboardEvent): void {
 
     event.preventDefault();
 
-    if (event.key === 'ArrowUp' && index === 0) {
+    if (event.key === "ArrowUp" && index === 0) {
         searchBox.value?.focus();
 
         return;
     }
 
     const next =
-        event.key === 'Home'
+        event.key === "Home"
             ? 0
-            : event.key === 'End'
+            : event.key === "End"
               ? links.length - 1
-              : event.key === 'ArrowDown'
+              : event.key === "ArrowDown"
                 ? Math.min(links.length - 1, index + 1)
                 : Math.max(0, index - 1);
 
@@ -599,7 +619,7 @@ function openResult(result: TeamSearchResult): void {
 }
 
 /** Props that carry the unread totals (also brought by full visits). */
-const UNREAD_PROPS = ['unreadTotal', 'teamChatUnread'];
+const UNREAD_PROPS = ["unreadTotal", "teamChatUnread"];
 /** performance.now() when the latest visit bringing the totals started. */
 let unreadVisitStartedAt = Number.NEGATIVE_INFINITY;
 /** Visits bringing the totals still running, with when each started. */
@@ -607,7 +627,7 @@ const unreadVisitsInFlight = new Map<object, number>();
 /** requestedAt of the latest read whose totals were shown. */
 let readAppliedAt = Number.NEGATIVE_INFINITY;
 
-const stopUnreadVisitWatch = router.on('start', (event) => {
+const stopUnreadVisitWatch = router.on("start", (event) => {
     const visit = event.detail.visit;
     const only = visit.only;
 
@@ -622,7 +642,7 @@ const stopUnreadVisitWatch = router.on('start', (event) => {
  * before it: when it lands after the read was shown it puts the old (higher)
  * count back, so a live reload brings the current one.
  */
-const stopUnreadVisitFinish = router.on('finish', (event) => {
+const stopUnreadVisitFinish = router.on("finish", (event) => {
     const startedAt = unreadVisitsInFlight.get(event.detail.visit);
 
     if (startedAt === undefined) {
@@ -644,13 +664,13 @@ const stopUnreadVisitFinish = router.on('finish', (event) => {
 const openingThreadId = ref<number | null>(null);
 const openingVisits = new Set<object>();
 
-const stopOpeningStart = router.on('start', (event) => {
+const stopOpeningStart = router.on("start", (event) => {
     const visit = event.detail.visit;
     const match = /\/team-chat\/threads\/(\d+)$/.exec(visit.url.pathname);
 
     if (
         !match ||
-        visit.method !== 'get' ||
+        visit.method !== "get" ||
         visit.only.length > 0 ||
         visit.prefetch
     ) {
@@ -666,7 +686,7 @@ const stopOpeningStart = router.on('start', (event) => {
     }
 });
 
-const stopOpeningFinish = router.on('finish', (event) => {
+const stopOpeningFinish = router.on("finish", (event) => {
     if (openingVisits.delete(event.detail.visit) && openingVisits.size === 0) {
         openingThreadId.value = null;
     }
@@ -696,13 +716,13 @@ function onUnreadChanged(total: number, requestedAt: number): void {
 
     readAppliedAt = Math.max(readAppliedAt, requestedAt);
 
-    router.replaceProp('teamChatUnread', total);
-    router.replaceProp('unreadTotal', total);
+    router.replaceProp("teamChatUnread", total);
+    router.replaceProp("unreadTotal", total);
 
     const activeId = props.activeThread?.id;
 
     if (activeId !== undefined) {
-        router.replaceProp('threads', (current: unknown) => {
+        router.replaceProp("threads", (current: unknown) => {
             const list = current as TeamThreadList;
 
             return {
@@ -724,44 +744,44 @@ watch(
 
 // No PageHeader here: the global help button offers this module's tour
 // and guide.
-onBeforeUnmount(useGuidedTour().registerPageModule('chat-interno'));
+onBeforeUnmount(useGuidedTour().registerPageModule("chat-interno"));
 
 const liveReload = useLiveReload({
     channels: () => {
         const user = userChannelName();
 
-        return user ? [{ name: user, events: ['team-chat.changed'] }] : [];
+        return user ? [{ name: user, events: ["team-chat.changed"] }] : [];
     },
     only: [
-        'threads',
-        'unreadTotal',
-        'teamChatUnread',
-        'threadCounts',
-        'deskInbox',
-        'deskPending',
+        "threads",
+        "unreadTotal",
+        "teamChatUnread",
+        "threadCounts",
+        "deskInbox",
+        "deskPending",
     ],
     fallbackIntervalMs: 20_000,
 });
 
 /* Empty because of the filters: say which ones, offer to clear them. */
 const narrowedCopy = computed(() => {
-    if (search.value.trim() !== '') {
+    if (search.value.trim() !== "") {
         return {
-            title: 'No hay chats con estos filtros',
-            description: 'Prueba otro nombre o limpia los filtros.',
+            title: "No hay chats con estos filtros",
+            description: "Prueba otro nombre o limpia los filtros.",
         };
     }
 
     if (mentionsOnly.value && showMentions.value) {
         return {
-            title: 'Nadie te ha mencionado',
-            description: 'Aquí verás tus menciones (@) sin leer.',
+            title: "Nadie te ha mencionado",
+            description: "Aquí verás tus menciones (@) sin leer.",
         };
     }
 
     return {
-        title: 'Estás al día',
-        description: 'Nada sin leer con estos filtros.',
+        title: "Estás al día",
+        description: "Nada sin leer con estos filtros.",
     };
 });
 
@@ -780,20 +800,20 @@ const deskMotion = useRowMotion(
 const emptyListCopy = computed(() => {
     return {
         archived: {
-            title: 'Sin grupos archivados',
-            description: 'Aquí verás los grupos archivados.',
+            title: "Sin grupos archivados",
+            description: "Aquí verás los grupos archivados.",
         },
         direct: {
-            title: 'Sin chats privados',
-            description: 'Inicia un chat privado con alguien de tu equipo.',
+            title: "Sin chats privados",
+            description: "Inicia un chat privado con alguien de tu equipo.",
         },
         groups: {
-            title: 'Sin grupos',
-            description: 'Aún no participas en ningún grupo.',
+            title: "Sin grupos",
+            description: "Aún no participas en ningún grupo.",
         },
         all: {
-            title: 'Aún no tienes chats',
-            description: 'Escribe a alguien de tu equipo para empezar.',
+            title: "Aún no tienes chats",
+            description: "Escribe a alguien de tu equipo para empezar.",
         },
     }[filter.value];
 });
@@ -891,15 +911,32 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                             @update:model-value="openDeskSection"
                         />
                     </div>
-                    <p
-                        v-if="deskCapacity"
-                        class="ml-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
-                        :title="deskCapacity.title"
-                        data-desk-capacity
-                    >
-                        <Gauge class="size-3.5 shrink-0" aria-hidden="true" />
-                        {{ deskCapacity.text }}
-                    </p>
+                    <div class="flex items-center justify-between gap-2">
+                        <p
+                            v-if="deskCapacity"
+                            class="ml-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                            :title="deskCapacity.title"
+                            data-desk-capacity
+                        >
+                            <Gauge
+                                class="size-3.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                            {{ deskCapacity.text }}
+                        </p>
+                        <span v-else />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="h-7 shrink-0 gap-1.5 px-2 text-xs"
+                            title="Envía tu propia solicitud: la atenderá otra persona de la mesa de control"
+                            data-desk-write
+                            @click="writeToDesk"
+                        >
+                            <MessageCircle class="size-3.5" />
+                            Escribir a la mesa
+                        </Button>
+                    </div>
                 </template>
 
                 <div v-else class="flex items-center gap-1.5">
@@ -1341,7 +1378,11 @@ onMounted(() => globalThis.setTimeout(() => (firstPaint.value = false), 900));
                     "
                     hint="Acepta una de «Pendientes» para atenderla"
                     :hint-icon="Hand"
-                />
+                >
+                    <Button variant="outline" @click="writeToDesk">
+                        <MessageCircle /> Escribir a la mesa de control
+                    </Button>
+                </ChatPaneEmpty>
                 <ChatPaneEmpty
                     v-else
                     :icon="MessageCircle"

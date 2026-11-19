@@ -67,7 +67,10 @@ class TeamChatController extends Controller
         $isRequester = $this->desk->isRequester($viewer);
         $attendsDesk = $this->desk->attends($viewer);
         $deskTab = is_string($validated['desk'] ?? null) ? $validated['desk'] : null;
-        $deskThread = $isRequester ? $this->desk->threadFor($viewer) : null;
+        $deskThread = $isRequester
+            ? $this->desk->threadFor($viewer)
+            // An auditor (or admin) may also write to the desk herself.
+            : TeamThread::query()->where('desk_requester_id', $viewer->id)->first();
 
         $active = null;
         $messages = null;
@@ -108,11 +111,11 @@ class TeamChatController extends Controller
             // the URL opens it on that tab).
             'desk' => match (true) {
                 $isRequester => ['role' => 'requester', 'thread_id' => $deskThread?->id, 'tab' => null],
-                $attendsDesk => ['role' => 'auditor', 'thread_id' => null, 'tab' => $deskTab],
+                $attendsDesk => ['role' => 'auditor', 'thread_id' => $deskThread?->id, 'tab' => $deskTab],
                 default => null,
             },
             'deskInbox' => fn (): ?array => $attendsDesk && $deskTab !== null ? $this->deskInbox->handle($viewer, $deskTab) : null,
-            'deskPending' => fn (): ?int => $attendsDesk ? $this->deskInbox->pendingCount() : null,
+            'deskPending' => fn (): ?int => $attendsDesk ? $this->deskInbox->pendingCount($viewer) : null,
             'limits' => [
                 'messageMaxLength' => (int) config('team-chat.message_max_length'),
                 'maxFiles' => (int) config('team-chat.attachments.max_files'),

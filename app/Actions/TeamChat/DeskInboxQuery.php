@@ -80,9 +80,9 @@ class DeskInboxQuery
             ])->all()),
             'has_more' => $hasMore,
             'counts' => [
-                'pending' => $this->base()->where('desk_status', TeamDeskStatus::Pending)->count(),
+                'pending' => $this->base($viewer)->where('desk_status', TeamDeskStatus::Pending)->count(),
                 'mine' => $this->desk->load($viewer),
-                'completed' => $this->base()->where('desk_status', TeamDeskStatus::Closed)->count(),
+                'completed' => $this->base($viewer)->where('desk_status', TeamDeskStatus::Closed)->count(),
             ],
             'capacity' => [
                 'limit' => $this->desk->limit($viewer),
@@ -94,9 +94,9 @@ class DeskInboxQuery
     /**
      * Number of requests waiting, for the badge of the section.
      */
-    public function pendingCount(): int
+    public function pendingCount(User $viewer): int
     {
-        return $this->base()->where('desk_status', TeamDeskStatus::Pending)->count();
+        return $this->base($viewer)->where('desk_status', TeamDeskStatus::Pending)->count();
     }
 
     /**
@@ -105,16 +105,16 @@ class DeskInboxQuery
     private function tab(User $viewer, string $tab): Builder
     {
         return match ($tab) {
-            'mine' => $this->base()
+            'mine' => $this->base($viewer)
                 ->where('desk_status', TeamDeskStatus::Open)
                 ->where('desk_assigned_user_id', $viewer->id)
                 ->orderBy('desk_requested_at')
                 ->orderBy('id'),
-            'completed' => $this->base()
+            'completed' => $this->base($viewer)
                 ->where('desk_status', TeamDeskStatus::Closed)
                 ->orderByDesc('desk_completed_at')
                 ->orderByDesc('id'),
-            default => $this->base()
+            default => $this->base($viewer)
                 ->where('desk_status', TeamDeskStatus::Pending)
                 ->orderByDesc('desk_requested_at')
                 ->orderByDesc('id'),
@@ -122,10 +122,15 @@ class DeskInboxQuery
     }
 
     /**
+     * Every desk thread but the viewer's own: an auditor who writes to the
+     * desk herself is attended by the others and reaches it as a requester.
+     *
      * @return Builder<TeamThread>
      */
-    private function base(): Builder
+    private function base(User $viewer): Builder
     {
-        return TeamThread::query()->where('type', TeamThreadType::Desk);
+        return TeamThread::query()
+            ->where('type', TeamThreadType::Desk)
+            ->where(fn (Builder $query) => $query->whereNull('desk_requester_id')->orWhere('desk_requester_id', '!=', $viewer->id));
     }
 }
